@@ -519,6 +519,11 @@ impl<T: Deserializable + 'static> OwnedDriver<T> {
         }
     }
 
+    /// Returns a borrowed reference to the current deserializer state.
+    pub fn state(&self) -> &DeserializerState {
+        self.driver.state()
+    }
+
     /// Emits an event into the driver.
     ///
     /// For more information see [`Driver::emit`] which has the same behavior.
