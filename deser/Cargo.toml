@@ -1,8 +1,13 @@
 [package]
 name = "deser"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "An experimental serialization and deserialization library for Rust"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser"
 
 [dependencies]
