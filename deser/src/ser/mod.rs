@@ -100,9 +100,6 @@ use crate::event::Event;
 use crate::extensions::Extensions;
 
 mod impls;
-mod to_debug;
-
-pub use to_debug::ToDebug;
 
 /// Abstraction over borrowed and owned serializable
 pub enum SerializableHandle<'a> {

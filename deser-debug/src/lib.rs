@@ -1,7 +1,10 @@
+//! This library takes a [`Serializable`](deser::ser::Serializable) and
+//! formats it with [`std::fmt`] to debug representation.
 use std::fmt;
 use std::sync::atomic::{self, AtomicUsize};
 
-use crate::ser::{for_each_event, Event, Serializable};
+use deser::ser::{for_each_event, Serializable};
+use deser::Event;
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {

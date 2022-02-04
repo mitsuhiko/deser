@@ -28,6 +28,8 @@ formats such as bincode.
   providing the base functionality
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
+* [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats
+  a serializable to the `std::fmt` debug format
 
 ## Inspiration
 

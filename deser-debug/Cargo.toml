@@ -1,0 +1,14 @@
+[package]
+name = "deser-debug"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.1.0"
+edition = "2021"
+description = "Debug formatting extension for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-debug"
+
+[dependencies]
+deser = { version = "0.1.0", path = "../deser" }
