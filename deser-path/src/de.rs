@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use deser::de::{DeserializerState, MapSink, SeqSink, Sink, SinkRef};
 use deser::Error;
@@ -67,8 +69,10 @@ impl<'a> Sink for PathSink<'a> {
 
     fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
         self.set_segment(state);
+        state.get_mut::<Path>().segments.push(PathSegment::Index(0));
         Ok(Box::new(PathTrackingMapSink {
             sink: self.sink.map(state)?,
+            captured_segment: Rc::default(),
         }))
     }
 
@@ -88,18 +92,26 @@ impl<'a> Sink for PathSink<'a> {
 
 struct PathTrackingMapSink<'a> {
     sink: Box<dyn MapSink + 'a>,
+    captured_segment: Rc<RefCell<Option<PathSegment>>>,
 }
 
 impl<'a> MapSink for PathTrackingMapSink<'a> {
     fn key(&mut self) -> Result<SinkRef, Error> {
-        self.sink.key()
+        Ok(SinkRef::Owned(Box::new(KeyCapturingSink {
+            sink: self.sink.key()?,
+            captured_segment: self.captured_segment.clone(),
+        })))
     }
 
     fn value(&mut self) -> Result<SinkRef, Error> {
-        self.sink.value()
+        Ok(SinkRef::Owned(Box::new(PathSink {
+            sink: self.sink.value()?,
+            set_segment: self.captured_segment.take(),
+        })))
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        state.get_mut::<Path>().segments.pop();
         self.sink.finish(state)
     }
 }
@@ -121,5 +133,55 @@ impl<'a> SeqSink for PathTrackingSeqSink<'a> {
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
         state.get_mut::<Path>().segments.pop();
         self.sink.finish(state)
+    }
+}
+
+struct KeyCapturingSink<'a> {
+    sink: SinkRef<'a>,
+    captured_segment: Rc<RefCell<Option<PathSegment>>>,
+}
+
+impl<'a> Sink for KeyCapturingSink<'a> {
+    fn null(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.null(state)
+    }
+
+    fn bool(&mut self, value: bool, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.bool(value, state)
+    }
+
+    fn str(&mut self, value: &str, state: &DeserializerState) -> Result<(), Error> {
+        *self.captured_segment.borrow_mut() = Some(PathSegment::Key(value.to_string()));
+        self.sink.str(value, state)
+    }
+
+    fn bytes(&mut self, value: &[u8], state: &DeserializerState) -> Result<(), Error> {
+        self.sink.bytes(value, state)
+    }
+
+    fn u64(&mut self, value: u64, state: &DeserializerState) -> Result<(), Error> {
+        *self.captured_segment.borrow_mut() = Some(PathSegment::Index(value as usize));
+        self.sink.u64(value, state)
+    }
+
+    fn i64(&mut self, value: i64, state: &DeserializerState) -> Result<(), Error> {
+        *self.captured_segment.borrow_mut() = Some(PathSegment::Index(value as usize));
+        self.sink.i64(value, state)
+    }
+
+    fn f64(&mut self, value: f64, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.f64(value, state)
+    }
+
+    fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+        self.sink.map(state)
+    }
+
+    fn seq(&mut self, state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
+        self.sink.seq(state)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        self.sink.expecting()
     }
 }

@@ -413,12 +413,17 @@ enum Layer<'a> {
 impl<'a> Driver<'a> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserializable>(out: &'a mut Option<T>) -> Driver<'a> {
+        Driver::from_sink(T::attach(out))
+    }
+
+    /// Creates a new deserializer driver from a sink
+    pub fn from_sink(sink: SinkRef) -> Driver<'a> {
         Driver {
             state: ManuallyDrop::new(DeserializerState {
                 extensions: Extensions::default(),
                 stack: ManuallyDrop::new(Vec::new()),
             }),
-            current_sink: unsafe { SinkHandle::from(T::attach(out)) },
+            current_sink: unsafe { SinkHandle::from(sink) },
         }
     }
 
