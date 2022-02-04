@@ -10,7 +10,7 @@ struct MyBool(bool);
 deser::make_slot_wrapper!(SlotWrapper);
 
 impl Deserializable for MyBool {
-    fn attach(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 }
@@ -29,7 +29,7 @@ fn test_path() {
     let mut out = None::<BTreeMap<String, MyBool>>;
 
     {
-        let sink = PathSink::wrap_ref(Deserializable::attach(&mut out));
+        let sink = PathSink::wrap_ref(Deserializable::deserialize_into(&mut out));
         let mut driver = Driver::from_sink(SinkHandle::Owned(Box::new(sink)));
         driver.emit(&Event::MapStart).unwrap();
         driver.emit(&Event::Str("foo".into())).unwrap();

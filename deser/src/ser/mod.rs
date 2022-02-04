@@ -101,9 +101,19 @@ use crate::extensions::Extensions;
 
 mod impls;
 
-/// Abstraction over borrowed and owned serializable
+/// A handle to a [`Serializable`].
+///
+/// During serialization it common to be in a situation where one needs to
+/// return locally constructed [`Serializable`].  This is where
+/// [`SerializableHandle`] comes in.  In cases where the [`Serializable`] cannot
+/// be borrowed it can be boxed up inside the handle.
+///
+/// The equivalent for deserialization is the
+/// [`SinkHandle`](crate::de::SinkHandle).
 pub enum SerializableHandle<'a> {
+    /// A borrowed reference to a [`Serializable`].
     Borrowed(&'a dyn Serializable),
+    /// A boxed up [`Serializable`].
     Owned(Box<dyn Serializable + 'a>),
 }
 

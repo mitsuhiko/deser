@@ -80,7 +80,7 @@
 //! }
 //!
 //! impl Deserializable for MyBool {
-//!     fn attach(out: &mut Option<Self>) -> SinkHandle {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here and have it wrap
 //!         // the original slot.
 //!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
@@ -105,7 +105,7 @@
 //! }
 //!
 //! impl Deserializable for Flag {
-//!     fn attach(out: &mut Option<Self>) -> SinkHandle {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here
 //!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
 //!     }
@@ -140,15 +140,15 @@
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
-//!         Ok(Deserializable::attach(&mut self.key))
+//!         Ok(Deserializable::deserialize_into(&mut self.key))
 //!     }
 //!     
 //!     fn value(&mut self) -> Result<SinkHandle, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
-//!             Some("enabled") => Ok(Deserializable::attach(&mut self.enabled_field)),
-//!             Some("name") => Ok(Deserializable::attach(&mut self.name_field)),
+//!             Some("enabled") => Ok(Deserializable::deserialize_into(&mut self.enabled_field)),
+//!             Some("name") => Ok(Deserializable::deserialize_into(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
 //!             _ => Ok(SinkHandle::Borrowed(ignore())),
 //!         }
@@ -186,9 +186,20 @@ pub use self::ignore::ignore;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
-/// Abstraction over borrowed and owned sink
+/// A handle to a [`Sink`].
+///
+/// During deserialization the sinks often need to return other sinks
+/// to recurse into structures.  This poses a challenge if the target
+/// sink cannot be directly borrowed.  This is where [`SinkHandle`]
+/// comes in.  In cases where the [`Sink`] cannot be borrowed it can
+/// be boxed up inside the handle.
+///
+/// The equivalent for serialization is the
+/// [`SerializableHandle`](crate::ser::SerializableHandle).
 pub enum SinkHandle<'a> {
+    /// A borrowed reference to a [`Sink`].
     Borrowed(&'a mut dyn Sink),
+    /// A boxed up [`Sink`] within the handle.
     Owned(Box<dyn Sink + 'a>),
 }
 
@@ -213,9 +224,18 @@ impl<'a> DerefMut for SinkHandle<'a> {
 }
 
 /// A trait for deserializable types.
+///
+/// A type is deserializable if it can deserialize into a [`Sink`].  The
+/// actual deserialization logic itself is implemented by the returned
+/// [`Sink`].
 pub trait Deserializable: Sized {
     /// Creates a sink that deserializes the value into the given slot.
-    fn attach(out: &mut Option<Self>) -> SinkHandle;
+    ///
+    /// There are two typical implementations for this method: the common one is
+    /// to return a [`SlotWrapper`].  Custom types will most likely just return
+    /// that.  An alternative method is to "wrap" the deserializable in a custom
+    /// sink.
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle;
 
     /// Internal method to specialize byte arrays.
     #[doc(hidden)]
@@ -413,7 +433,7 @@ enum Layer<'a> {
 impl<'a> Driver<'a> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserializable>(out: &'a mut Option<T>) -> Driver<'a> {
-        Driver::from_sink(T::attach(out))
+        Driver::from_sink(T::deserialize_into(out))
     }
 
     /// Creates a new deserializer driver from a sink.

@@ -13,7 +13,7 @@ make_slot_wrapper!(SlotWrapper);
 macro_rules! deserializable {
     ($ty:ty) => {
         impl Deserializable for $ty {
-            fn attach(out: &mut Option<Self>) -> SinkHandle {
+            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
                 SinkHandle::Borrowed(SlotWrapper::wrap(out))
             }
         }
@@ -95,7 +95,7 @@ macro_rules! int_sink {
 int_sink!(u8);
 
 impl Deserializable for u8 {
-    fn attach(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 
@@ -188,7 +188,7 @@ impl<T: Deserializable + Clone> Sink for SlotWrapper<Vec<T>> {
 }
 
 impl<T: Deserializable + Clone> Deserializable for Vec<T> {
-    fn attach(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 }
@@ -217,7 +217,7 @@ where
     K: Ord + Deserializable,
     V: Deserializable,
 {
-    fn attach(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 }
@@ -252,11 +252,11 @@ where
 
     fn key(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::attach(&mut self.key))
+        Ok(Deserializable::deserialize_into(&mut self.key))
     }
 
     fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserializable::attach(&mut self.value))
+        Ok(Deserializable::deserialize_into(&mut self.value))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
@@ -292,7 +292,7 @@ where
     V: Deserializable,
     H: BuildHasher + Default,
 {
-    fn attach(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 }
@@ -329,11 +329,11 @@ where
 
     fn key(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::attach(&mut self.key))
+        Ok(Deserializable::deserialize_into(&mut self.key))
     }
 
     fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserializable::attach(&mut self.value))
+        Ok(Deserializable::deserialize_into(&mut self.value))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
@@ -370,7 +370,7 @@ impl<'a, T: Deserializable> SeqSink for VecSink<'a, T> {
 
     fn item(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::attach(&mut self.element))
+        Ok(Deserializable::deserialize_into(&mut self.element))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
