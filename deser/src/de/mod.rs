@@ -83,7 +83,7 @@
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here and have it wrap
 //!         // the original slot.
-//!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
+//!         SlotWrapper::make_handle(out)
 //!     }
 //! }
 //! ```
@@ -107,7 +107,7 @@
 //! impl Deserializable for Flag {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here
-//!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
+//!         SlotWrapper::make_handle(out)
 //!     }
 //! }
 //!

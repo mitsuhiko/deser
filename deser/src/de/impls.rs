@@ -14,7 +14,7 @@ macro_rules! deserializable {
     ($ty:ty) => {
         impl Deserializable for $ty {
             fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-                SinkHandle::Borrowed(SlotWrapper::wrap(out))
+                SlotWrapper::make_handle(out)
             }
         }
     };
@@ -96,7 +96,7 @@ int_sink!(u8);
 
 impl Deserializable for u8 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SinkHandle::Borrowed(SlotWrapper::wrap(out))
+        SlotWrapper::make_handle(out)
     }
 
     fn __private_byte_slice(bytes: &[u8]) -> Option<&[Self]>
@@ -189,7 +189,7 @@ impl<T: Deserializable + Clone> Sink for SlotWrapper<Vec<T>> {
 
 impl<T: Deserializable + Clone> Deserializable for Vec<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SinkHandle::Borrowed(SlotWrapper::wrap(out))
+        SlotWrapper::make_handle(out)
     }
 }
 
@@ -218,7 +218,7 @@ where
     V: Deserializable,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SinkHandle::Borrowed(SlotWrapper::wrap(out))
+        SlotWrapper::make_handle(out)
     }
 }
 
@@ -293,7 +293,7 @@ where
     H: BuildHasher + Default,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SinkHandle::Borrowed(SlotWrapper::wrap(out))
+        SlotWrapper::make_handle(out)
     }
 }
 

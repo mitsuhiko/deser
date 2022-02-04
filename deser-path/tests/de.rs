@@ -11,7 +11,7 @@ deser::make_slot_wrapper!(SlotWrapper);
 
 impl Deserializable for MyBool {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SinkHandle::Borrowed(SlotWrapper::wrap(out))
+        SlotWrapper::make_handle(out)
     }
 }
 
