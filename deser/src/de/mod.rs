@@ -26,25 +26,27 @@
 //!
 //! Because the serialization interface of `deser` is tricky to use with lifetimes
 //! without using a lot of stack space, a safe abstraction is provided with the
-//! [`Driver`] and [`OwnedDriver`] types which allow you to drive the
-//! deserialization process without using stack space.  You feed it events and
-//! internally the driver ensures that the deserlization system is driven in the
-//! right way.
+//! [`Driver`] type which allow you to drive the deserialization process without
+//! using stack space.  You feed it events and internally the driver ensures
+//! that the deserlization system is driven in the right way.
 //!
 //! ```rust
 //! use std::collections::BTreeMap;
-//! use deser::de::OwnedDriver;
+//! use deser::de::Driver;
 //! use deser::Event;
 //!
-//! let mut driver = OwnedDriver::<BTreeMap<u32, String>>::new();
-//! driver.emit(&Event::MapStart).unwrap();
-//! driver.emit(&Event::I64(1)).unwrap();
-//! driver.emit(&Event::Str("Hello".into())).unwrap();
-//! driver.emit(&Event::I64(2)).unwrap();
-//! driver.emit(&Event::Str("World".into())).unwrap();
-//! driver.emit(&Event::MapEnd).unwrap();
+//! let mut out = None::<BTreeMap<u32, String>>;
+//! {
+//!     let mut driver = Driver::new(&mut out);
+//!     driver.emit(&Event::MapStart).unwrap();
+//!     driver.emit(&Event::I64(1)).unwrap();
+//!     driver.emit(&Event::Str("Hello".into())).unwrap();
+//!     driver.emit(&Event::I64(2)).unwrap();
+//!     driver.emit(&Event::Str("World".into())).unwrap();
+//!     driver.emit(&Event::MapEnd).unwrap();
+//! }
 //!
-//! let map = driver.finish();
+//! let map = out.unwrap();
 //! assert_eq!(map[&1], "Hello");
 //! assert_eq!(map[&2], "World");
 //! ```
@@ -512,73 +514,6 @@ impl<'a> Drop for Driver<'a> {
         unsafe {
             ManuallyDrop::drop(&mut self.state.stack);
             ManuallyDrop::drop(&mut self.state);
-        }
-    }
-}
-
-/// An alternative version of [`Driver`] that owns the value.
-pub struct OwnedDriver<T> {
-    slot: Box<Option<T>>,
-    // the static lifetime is a lie.  It's in fact borrowed
-    // into the `slot` box.
-    driver: ManuallyDrop<Driver<'static>>,
-}
-
-impl<T: Deserializable + 'static> Default for OwnedDriver<T> {
-    fn default() -> Self {
-        OwnedDriver::new()
-    }
-}
-
-impl<T: Deserializable + 'static> OwnedDriver<T> {
-    /// Creates a new owned driver.
-    pub fn new() -> OwnedDriver<T> {
-        let mut slot = Box::new(None::<T>);
-        let driver = Driver::new(unsafe { extend_lifetime!(&mut slot, &mut Box<Option<T>>) });
-        OwnedDriver {
-            slot,
-            driver: ManuallyDrop::new(unsafe { extend_lifetime!(driver, Driver<'_>) }),
-        }
-    }
-
-    /// Returns a borrowed reference to the current deserializer state.
-    pub fn state(&self) -> &DeserializerState {
-        self.driver.state()
-    }
-
-    /// Emits an event into the driver.
-    ///
-    /// For more information see [`Driver::emit`] which has the same behavior.
-    pub fn emit(&mut self, event: &Event) -> Result<(), Error> {
-        self.driver.emit(event)
-    }
-
-    /// Returns `true` if the driver holds a value.
-    pub fn is_finished(&self) -> bool {
-        self.slot.is_some()
-    }
-
-    /// Finishes the driver and returns the produced value.
-    ///
-    /// # Panics
-    ///
-    /// Unlike the regular [`Driver`] and [`OwnedDriver`] panics if the driver
-    /// did not manage to produce a value.  This should not happen unless an
-    /// implementation of [`Deserializable`] returns a sink that ignores all values
-    /// which is not legal to do.  This method will not panic if
-    /// [`is_finished`](Self::is_finished) returns `true`.
-    pub fn finish(mut self) -> T {
-        self.slot
-            .take()
-            .expect("driver finished without producing value")
-    }
-}
-
-impl<T> Drop for OwnedDriver<T> {
-    fn drop(&mut self) {
-        // make sure to first drop the driver before the slot goes away.
-        unsafe {
-            ManuallyDrop::drop(&mut self.driver);
         }
     }
 }

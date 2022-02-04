@@ -54,7 +54,7 @@
 //!
 //! ```rust
 //! use std::borrow::Cow;
-//! use deser::ser::{Serializable, SerializerState, Chunk, StructEmitter};
+//! use deser::ser::{Serializable, SerializerState, Chunk, StructEmitter, SerializableRef};
 //! use deser::Error;
 //!
 //! struct User {
@@ -77,12 +77,12 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self) -> Option<(Cow<'_, str>, &dyn Serializable)> {
+//!     fn next(&mut self) -> Option<(Cow<'_, str>, SerializableRef)> {
 //!         let index = self.index;
 //!         self.index += 1;
 //!         match index {
-//!             0 => Some((Cow::Borrowed("id"), &self.user.id)),
-//!             1 => Some((Cow::Borrowed("username"), &self.user.username)),
+//!             0 => Some((Cow::Borrowed("id"), SerializableRef::Borrowed(&self.user.id))),
+//!             1 => Some((Cow::Borrowed("username"), SerializableRef::Borrowed(&self.user.username))),
 //!             _ => None
 //!         }
 //!     }
@@ -92,7 +92,7 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
 use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
@@ -106,7 +106,7 @@ pub use to_debug::ToDebug;
 
 /// Abstraction over borrowed and owned serializable
 pub enum SerializableRef<'a> {
-    Borrowed(&'a mut dyn Serializable),
+    Borrowed(&'a dyn Serializable),
     Owned(Box<dyn Serializable + 'a>),
 }
 
@@ -117,15 +117,6 @@ impl<'a> Deref for SerializableRef<'a> {
         match self {
             SerializableRef::Borrowed(val) => &**val,
             SerializableRef::Owned(val) => &**val,
-        }
-    }
-}
-
-impl<'a> DerefMut for SerializableRef<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            SerializableRef::Borrowed(val) => &mut **val,
-            SerializableRef::Owned(val) => &mut **val,
         }
     }
 }
@@ -221,16 +212,24 @@ impl<'a> SerializerState<'a> {
 ///
 /// The callback is invoked with three arguments: the current [`Event`], the top most
 /// [`Descriptor`] and the current [`SerializerState`].
-pub fn for_each_event<F>(mut serializable: &dyn Serializable, mut f: F) -> Result<(), Error>
+pub fn for_each_event<F>(serializable: &dyn Serializable, mut f: F) -> Result<(), Error>
 where
     F: FnMut(&Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
+    let mut serializable = SerializableRef::Borrowed(serializable);
     let mut state = SerializerState {
         extensions: Extensions::default(),
         stack: ManuallyDrop::new(Vec::new()),
     };
-    let mut chunk = serializable.serialize(&state)?;
-    let mut descriptor = serializable.descriptor();
+
+    macro_rules! extended_serializable {
+        () => {
+            extend_lifetime!(&serializable, &SerializableRef)
+        };
+    }
+
+    let mut chunk = unsafe { extended_serializable!() }.serialize(&state)?;
+    let mut descriptor = unsafe { extended_serializable!() }.descriptor();
 
     loop {
         let (event, emitter_opt) = match chunk {
@@ -266,14 +265,14 @@ where
                     Layer::Struct(ref mut s) => {
                         // this is safe as we maintain our own stack.
                         match unsafe {
-                            extend_lifetime!(s.next(), Option<(Cow<str>, &dyn Serializable)>)
+                            extend_lifetime!(s.next(), Option<(Cow<str>, SerializableRef)>)
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
                                 f(&Event::Str(Cow::Borrowed(&key)), key_descriptor, &state)?;
                                 serializable = value;
-                                chunk = value.serialize(&state)?;
-                                descriptor = value.descriptor();
+                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
+                                descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
                             None => f(&Event::MapEnd, layer.0, &state)?,
@@ -284,18 +283,18 @@ where
                         *feed_value = !old_feed_value;
                         if old_feed_value {
                             let value =
-                                unsafe { extend_lifetime!(m.next_value(), &dyn Serializable) };
+                                unsafe { extend_lifetime!(m.next_value(), SerializableRef) };
                             serializable = value;
-                            chunk = value.serialize(&state)?;
-                            descriptor = value.descriptor();
+                            chunk = unsafe { extended_serializable!() }.serialize(&state)?;
+                            descriptor = unsafe { extended_serializable!() }.descriptor();
                             break;
                         }
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(m.next_key(), Option<&dyn Serializable>) } {
+                        match unsafe { extend_lifetime!(m.next_key(), Option<SerializableRef>) } {
                             Some(key) => {
-                                chunk = key.serialize(&state)?;
-                                descriptor = key.descriptor();
                                 serializable = key;
+                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
+                                descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
                             None => f(&Event::MapEnd, layer.0, &state)?,
@@ -303,11 +302,11 @@ where
                     }
                     Layer::Seq(ref mut seq) => {
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(seq.next(), Option<&dyn Serializable>) } {
+                        match unsafe { extend_lifetime!(seq.next(), Option<SerializableRef>) } {
                             Some(next) => {
                                 serializable = next;
-                                chunk = next.serialize(&state)?;
-                                descriptor = next.descriptor();
+                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
+                                descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
                             None => f(&Event::SeqEnd, layer.0, &state)?,
@@ -327,7 +326,7 @@ where
 /// A struct emitter.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
-    fn next(&mut self) -> Option<(Cow<'_, str>, &dyn Serializable)>;
+    fn next(&mut self) -> Option<(Cow<'_, str>, SerializableRef)>;
 }
 
 /// A map emitter.
@@ -337,7 +336,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self) -> Option<&dyn Serializable>;
+    fn next_key(&mut self) -> Option<SerializableRef>;
 
     /// Produces the next value in the map.
     ///
@@ -345,13 +344,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self) -> &dyn Serializable;
+    fn next_value(&mut self) -> SerializableRef;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self) -> Option<&dyn Serializable>;
+    fn next(&mut self) -> Option<SerializableRef>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.
