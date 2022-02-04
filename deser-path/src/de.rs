@@ -7,16 +7,19 @@ use deser::Error;
 
 use crate::{Path, PathSegment};
 
+/// A path sink tracks the current path during deserialization.
 pub struct PathSink<'a> {
     sink: SinkRef<'a>,
     set_segment: Option<PathSegment>,
 }
 
 impl<'a> PathSink<'a> {
+    /// Wraps a sink.
     pub fn wrap(sink: &'a mut dyn Sink) -> PathSink<'a> {
         PathSink::wrap_ref(SinkRef::Borrowed(sink))
     }
 
+    /// Wraps a sink ref.
     pub fn wrap_ref(sink: SinkRef<'a>) -> PathSink<'a> {
         PathSink {
             sink,

@@ -416,7 +416,7 @@ impl<'a> Driver<'a> {
         Driver::from_sink(T::attach(out))
     }
 
-    /// Creates a new deserializer driver from a sink
+    /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkRef) -> Driver<'a> {
         Driver {
             state: ManuallyDrop::new(DeserializerState {

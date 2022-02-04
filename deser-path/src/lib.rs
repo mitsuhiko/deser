@@ -1,5 +1,6 @@
 //! This crate provides a wrapper type that observes the serialization to communicate
-//! the current path of the serialization into the [`SerializerState`].
+//! the current path of the serialization into the [`SerializerState`](deser::ser::SerializerState)
+//! and [`DeserializerState`](deser::de::DeserializerState).
 //!
 //! ```rust
 //! use deser_path::{Path, PathSerializable};
@@ -43,9 +44,9 @@ pub enum PathSegment {
 
 /// The current path of the serialization.
 ///
-/// This type is stored in the [`SerializerState`] and can be retrieved at any point.
-/// By inspecting the [`segments`](Self::segments) a serializer can figure out where
-/// it's invoked from.
+/// This type is stored in the state and can be retrieved at any point.  By
+/// inspecting the [`segments`](Self::segments) a serializer can figure out
+/// where it's invoked from.
 #[derive(Debug, Default, Clone)]
 pub struct Path {
     pub(crate) segments: Vec<PathSegment>,
