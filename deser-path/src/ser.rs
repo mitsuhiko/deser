@@ -39,8 +39,8 @@ impl<'a> Serializable for PathSerializable<'a> {
         }
     }
 
-    fn done(&self, state: &SerializerState) -> Result<(), Error> {
-        self.serializable.done(state)
+    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+        self.serializable.finish(state)
     }
 }
 
@@ -129,8 +129,8 @@ impl<'a> Serializable for SegmentPushingSerializable<'a> {
         }
     }
 
-    fn done(&self, state: &SerializerState) -> Result<(), Error> {
-        self.serializable.done(state)?;
+    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+        self.serializable.finish(state)?;
         let mut path = state.get_mut::<Path>();
         path.segments.pop();
         Ok(())
@@ -157,7 +157,7 @@ impl<'a> Serializable for SegmentCollectingSerializable<'a> {
         }
     }
 
-    fn done(&self, state: &SerializerState) -> Result<(), Error> {
-        self.serializable.done(state)
+    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+        self.serializable.finish(state)
     }
 }

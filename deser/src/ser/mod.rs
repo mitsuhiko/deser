@@ -250,13 +250,13 @@ where
         }
         f(&event, descriptor, &state)?;
         if done {
-            serializable.done(&state)?;
+            serializable.finish(&state)?;
         }
         loop {
             // special case: close down the key before going to value
             if let Some(layer) = state.stack.last() {
                 if let Layer::Map(_, true) = layer.1 {
-                    serializable.done(&state)?;
+                    serializable.finish(&state)?;
                 }
             }
 
@@ -318,7 +318,7 @@ where
             }
 
             state.stack.pop();
-            serializable.done(&state)?;
+            serializable.finish(&state)?;
         }
     }
 }
@@ -376,7 +376,7 @@ pub trait Serializable {
     ///
     /// This is primarily useful to undo some state change in the serializer
     /// state at the end of the processing.
-    fn done(&self, _state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, _state: &SerializerState) -> Result<(), Error> {
         Ok(())
     }
 
