@@ -22,8 +22,10 @@
 //! let path_serializable = PathSerializable::wrap(&serializable);
 //! // now serialize path_serializable instead
 //! ```
+mod de;
 mod ser;
 
+pub use de::*;
 pub use ser::*;
 
 /// A single segment in the path.

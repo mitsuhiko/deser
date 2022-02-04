@@ -1,6 +1,8 @@
 use crate::de::{MapSink, SeqSink, Sink, SinkRef};
 use crate::error::Error;
 
+use super::DeserializerState;
+
 /// A [`Sink`] that ignores all values.
 ///
 /// This can be used in places where a sink is required but no value
@@ -76,7 +78,7 @@ impl MapSink for Ignore {
         Ok(SinkRef::Borrowed(ignore()))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -86,7 +88,7 @@ impl SeqSink for Ignore {
         Ok(SinkRef::Borrowed(ignore()))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         Ok(())
     }
 }

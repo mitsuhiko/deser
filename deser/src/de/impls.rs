@@ -259,7 +259,7 @@ where
         Ok(Deserializable::attach(&mut self.value))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.map));
         Ok(())
@@ -336,7 +336,7 @@ where
         Ok(Deserializable::attach(&mut self.value))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.map));
         Ok(())
@@ -373,7 +373,7 @@ impl<'a, T: Deserializable> SeqSink for VecSink<'a, T> {
         Ok(Deserializable::attach(&mut self.element))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.vec));
         Ok(())

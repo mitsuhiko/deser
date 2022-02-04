@@ -154,7 +154,7 @@
 //!         }
 //!     }
 //!     
-//!     fn finish(&mut self) -> Result<(), Error> {
+//!     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
 //!         // when we're done, write the final value into the output slot.
 //!         *self.out = Some(Flag {
 //!             enabled: self.enabled_field.take().ok_or_else(|| {
@@ -330,7 +330,7 @@ pub trait MapSink {
     fn value(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all pairs were produced.
-    fn finish(&mut self) -> Result<(), Error>;
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
 }
 
 /// A trait to produce sinks for items in a sequence.
@@ -344,7 +344,7 @@ pub trait SeqSink {
     fn item(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all items were produced.
-    fn finish(&mut self) -> Result<(), Error>;
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
 }
 
 /// Gives access to the deserializer state.
@@ -461,7 +461,7 @@ impl<'a> Driver<'a> {
             }
             Event::MapEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Map(mut map_sink, _))) => {
-                    map_sink.finish()?;
+                    map_sink.finish(&self.state)?;
                     self.current_sink = next_sink;
                 }
                 _ => panic!("not inside a MapSink"),
@@ -476,7 +476,7 @@ impl<'a> Driver<'a> {
             }
             Event::SeqEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Seq(mut seq_sink))) => {
-                    seq_sink.finish()?;
+                    seq_sink.finish(&self.state)?;
                     self.current_sink = next_sink;
                 }
                 _ => panic!("not inside a SeqSink"),
