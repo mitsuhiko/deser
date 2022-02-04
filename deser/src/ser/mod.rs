@@ -92,6 +92,7 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
 use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
@@ -102,6 +103,32 @@ mod impls;
 mod to_debug;
 
 pub use to_debug::ToDebug;
+
+/// Abstraction over borrowed and owned serializable
+pub enum SerializableRef<'a> {
+    Borrowed(&'a mut dyn Serializable),
+    Owned(Box<dyn Serializable + 'a>),
+}
+
+impl<'a> Deref for SerializableRef<'a> {
+    type Target = dyn Serializable + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SerializableRef::Borrowed(val) => &**val,
+            SerializableRef::Owned(val) => &**val,
+        }
+    }
+}
+
+impl<'a> DerefMut for SerializableRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            SerializableRef::Borrowed(val) => &mut **val,
+            SerializableRef::Owned(val) => &mut **val,
+        }
+    }
+}
 
 /// A chunk represents the minimum state necessary to serialize a value.
 ///

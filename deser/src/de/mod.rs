@@ -57,7 +57,7 @@
 //! must be placed in the slot:
 //!
 //! ```rust
-//! use deser::de::{Sink, Deserializable, DeserializerState};
+//! use deser::de::{Sink, Deserializable, DeserializerState, SinkRef};
 //! use deser::{make_slot_wrapper, Error};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -78,10 +78,10 @@
 //! }
 //!
 //! impl Deserializable for MyBool {
-//!     fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
+//!     fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
 //!         // create your intended slot wrapper here and have it wrap
 //!         // the original slot.
-//!         SlotWrapper::wrap(out)
+//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //! ```
@@ -92,7 +92,7 @@
 //! [`MapSink`] and return it from the main [`Sink`]:
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserializable, Sink, MapSink, ignore};
+//! use deser::de::{DeserializerState, Deserializable, Sink, SinkRef, MapSink, ignore};
 //! use deser::{make_slot_wrapper, Error, ErrorKind};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -103,9 +103,9 @@
 //! }
 //!
 //! impl Deserializable for Flag {
-//!     fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
+//!     fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
 //!         // create your intended slot wrapper here
-//!         SlotWrapper::wrap(out)
+//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //!
@@ -134,21 +134,21 @@
 //! }
 //!     
 //! impl<'a> MapSink for FlagMapSink<'a> {
-//!     fn key(&mut self) -> Result<&mut dyn Sink, Error> {
+//!     fn key(&mut self) -> Result<SinkRef, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserializable::attach(&mut self.key))
 //!     }
 //!     
-//!     fn value(&mut self) -> Result<&mut dyn Sink, Error> {
+//!     fn value(&mut self) -> Result<SinkRef, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
 //!             Some("enabled") => Ok(Deserializable::attach(&mut self.enabled_field)),
 //!             Some("name") => Ok(Deserializable::attach(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
-//!             _ => Ok(ignore()),
+//!             _ => Ok(SinkRef::Borrowed(ignore())),
 //!         }
 //!     }
 //!     
@@ -169,8 +169,8 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::mem::ManuallyDrop;
-use std::ptr::NonNull;
+use std::mem::{replace, ManuallyDrop};
+use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
@@ -184,10 +184,36 @@ pub use self::ignore::ignore;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
+/// Abstraction over borrowed and owned sink
+pub enum SinkRef<'a> {
+    Borrowed(&'a mut dyn Sink),
+    Owned(Box<dyn Sink + 'a>),
+}
+
+impl<'a> Deref for SinkRef<'a> {
+    type Target = dyn Sink + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SinkRef::Borrowed(val) => &**val,
+            SinkRef::Owned(val) => &**val,
+        }
+    }
+}
+
+impl<'a> DerefMut for SinkRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            SinkRef::Borrowed(val) => &mut **val,
+            SinkRef::Owned(val) => &mut **val,
+        }
+    }
+}
+
 /// A trait for deserializable types.
 pub trait Deserializable: Sized {
     /// Creates a sink that deserializes the value into the given slot.
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink;
+    fn attach(out: &mut Option<Self>) -> SinkRef;
 
     /// Internal method to specialize byte arrays.
     #[doc(hidden)]
@@ -293,13 +319,13 @@ pub trait MapSink {
     }
 
     /// Produces the [`Sink`] for the next key.
-    fn key(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn key(&mut self) -> Result<SinkRef, Error>;
 
     /// Produces the [`Sink`] for the next value.
     ///
     /// This can inspect the last key to make a decision about which
     /// sink to produce.
-    fn value(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn value(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all pairs were produced.
     fn finish(&mut self) -> Result<(), Error>;
@@ -313,7 +339,7 @@ pub trait SeqSink {
     }
 
     /// Produces the [`Sink`] for the next item.
-    fn item(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn item(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all items were produced.
     fn finish(&mut self) -> Result<(), Error>;
@@ -363,16 +389,15 @@ pub struct Driver<'a> {
     current_sink: SinkHandle,
 }
 
-#[derive(Copy, Clone)]
 struct SinkHandle {
-    sink: NonNull<dyn Sink>,
+    sink: SinkRef<'static>,
     used: bool,
 }
 
 impl SinkHandle {
-    unsafe fn from(sink: &dyn Sink) -> SinkHandle {
+    unsafe fn from<'a>(sink: SinkRef<'a>) -> SinkHandle {
         SinkHandle {
-            sink: extend_lifetime!(NonNull::from(sink), NonNull<dyn Sink>),
+            sink: extend_lifetime!(sink, SinkRef<'_>),
             used: false,
         }
     }
@@ -415,7 +440,7 @@ impl<'a> Driver<'a> {
             "cannot emit event because sink has already been used"
         );
 
-        let current_sink = unsafe { self.current_sink.sink.as_mut() };
+        let current_sink = &mut self.current_sink.sink;
         match event {
             Event::Null => current_sink.null(&self.state)?,
             Event::Bool(v) => current_sink.bool(*v, &self.state)?,
@@ -426,11 +451,10 @@ impl<'a> Driver<'a> {
             Event::F64(v) => current_sink.f64(*v, &self.state)?,
             Event::MapStart => {
                 let mut map_sink = current_sink.map(&self.state)?;
-                let old_sink = self.current_sink;
-                self.current_sink = unsafe { SinkHandle::from(map_sink.key()?) };
-                self.state.stack.push((old_sink, unsafe {
-                    extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>)
-                }));
+                let key_sink = unsafe { SinkHandle::from(map_sink.key()?) };
+                let layer = unsafe { extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>) };
+                let old_sink = replace(&mut self.current_sink, key_sink);
+                self.state.stack.push((old_sink, layer));
                 return Ok(());
             }
             Event::MapEnd => match self.state.stack.pop() {
@@ -442,12 +466,10 @@ impl<'a> Driver<'a> {
             },
             Event::SeqStart => {
                 let mut seq_sink = current_sink.seq(&self.state)?;
-                let item_sink = seq_sink.item()?;
-                let old_sink = self.current_sink;
-                self.current_sink = unsafe { SinkHandle::from(item_sink) };
-                self.state.stack.push((old_sink, unsafe {
-                    extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>)
-                }));
+                let item_sink = unsafe { SinkHandle::from(seq_sink.item()?) };
+                let layer = unsafe { extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>) };
+                let old_sink = replace(&mut self.current_sink, item_sink);
+                self.state.stack.push((old_sink, layer));
                 return Ok(());
             }
             Event::SeqEnd => match self.state.stack.pop() {

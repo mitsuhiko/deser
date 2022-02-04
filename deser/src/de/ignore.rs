@@ -1,4 +1,4 @@
-use crate::de::{MapSink, SeqSink, Sink};
+use crate::de::{MapSink, SeqSink, Sink, SinkRef};
 use crate::error::Error;
 
 /// A [`Sink`] that ignores all values.
@@ -68,12 +68,12 @@ impl Sink for Ignore {
 }
 
 impl MapSink for Ignore {
-    fn key(&mut self) -> Result<&mut dyn Sink, crate::Error> {
-        Ok(ignore())
+    fn key(&mut self) -> Result<SinkRef<'_>, Error> {
+        Ok(SinkRef::Borrowed(ignore()))
     }
 
-    fn value(&mut self) -> Result<&mut dyn Sink, crate::Error> {
-        Ok(ignore())
+    fn value(&mut self) -> Result<SinkRef<'_>, Error> {
+        Ok(SinkRef::Borrowed(ignore()))
     }
 
     fn finish(&mut self) -> Result<(), Error> {
@@ -82,8 +82,8 @@ impl MapSink for Ignore {
 }
 
 impl SeqSink for Ignore {
-    fn item(&mut self) -> Result<&mut dyn Sink, Error> {
-        Ok(ignore())
+    fn item(&mut self) -> Result<SinkRef<'_>, Error> {
+        Ok(SinkRef::Borrowed(ignore()))
     }
 
     fn finish(&mut self) -> Result<(), Error> {
