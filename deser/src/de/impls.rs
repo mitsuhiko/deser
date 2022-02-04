@@ -4,7 +4,7 @@ use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::mem::take;
 
-use crate::de::{Deserializable, DeserializerState, MapSink, SeqSink, Sink};
+use crate::de::{Deserializable, DeserializerState, MapSink, SeqSink, Sink, SinkRef};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 
@@ -13,8 +13,8 @@ make_slot_wrapper!(SlotWrapper);
 macro_rules! deserializable {
     ($ty:ty) => {
         impl Deserializable for $ty {
-            fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
-                SlotWrapper::wrap(out)
+            fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
+                SinkRef::Borrowed(SlotWrapper::wrap(out))
             }
         }
     };
@@ -95,8 +95,8 @@ macro_rules! int_sink {
 int_sink!(u8);
 
 impl Deserializable for u8 {
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
-        SlotWrapper::wrap(out)
+    fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
+        SinkRef::Borrowed(SlotWrapper::wrap(out))
     }
 
     fn __private_byte_slice(bytes: &[u8]) -> Option<&[Self]>
@@ -188,8 +188,8 @@ impl<T: Deserializable + Clone> Sink for SlotWrapper<Vec<T>> {
 }
 
 impl<T: Deserializable + Clone> Deserializable for Vec<T> {
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
-        SlotWrapper::wrap(out)
+    fn attach(out: &mut Option<Self>) -> SinkRef {
+        SinkRef::Borrowed(SlotWrapper::wrap(out))
     }
 }
 
@@ -217,8 +217,8 @@ where
     K: Ord + Deserializable,
     V: Deserializable,
 {
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
-        SlotWrapper::wrap(out)
+    fn attach(out: &mut Option<Self>) -> SinkRef {
+        SinkRef::Borrowed(SlotWrapper::wrap(out))
     }
 }
 
@@ -250,16 +250,16 @@ where
         &DESCRIPTOR
     }
 
-    fn key(&mut self) -> Result<&mut dyn Sink, Error> {
+    fn key(&mut self) -> Result<SinkRef, Error> {
         self.flush();
         Ok(Deserializable::attach(&mut self.key))
     }
 
-    fn value(&mut self) -> Result<&mut dyn Sink, Error> {
+    fn value(&mut self) -> Result<SinkRef, Error> {
         Ok(Deserializable::attach(&mut self.value))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.map));
         Ok(())
@@ -292,8 +292,8 @@ where
     V: Deserializable,
     H: BuildHasher + Default,
 {
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
-        SlotWrapper::wrap(out)
+    fn attach(out: &mut Option<Self>) -> SinkRef {
+        SinkRef::Borrowed(SlotWrapper::wrap(out))
     }
 }
 
@@ -327,16 +327,16 @@ where
         &DESCRIPTOR
     }
 
-    fn key(&mut self) -> Result<&mut dyn Sink, Error> {
+    fn key(&mut self) -> Result<SinkRef, Error> {
         self.flush();
         Ok(Deserializable::attach(&mut self.key))
     }
 
-    fn value(&mut self) -> Result<&mut dyn Sink, Error> {
+    fn value(&mut self) -> Result<SinkRef, Error> {
         Ok(Deserializable::attach(&mut self.value))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.map));
         Ok(())
@@ -368,12 +368,12 @@ impl<'a, T: Deserializable> SeqSink for VecSink<'a, T> {
         }
     }
 
-    fn item(&mut self) -> Result<&mut dyn Sink, Error> {
+    fn item(&mut self) -> Result<SinkRef, Error> {
         self.flush();
         Ok(Deserializable::attach(&mut self.element))
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         self.flush();
         *self.slot = Some(take(&mut self.vec));
         Ok(())

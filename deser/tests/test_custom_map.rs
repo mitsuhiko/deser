@@ -1,6 +1,8 @@
-use deser::ser::{for_each_event, Chunk, MapEmitter, Serializable, SerializerState};
+use deser::ser::{
+    for_each_event, Chunk, MapEmitter, Serializable, SerializableRef, SerializerState,
+};
 use deser::Error;
-use std::collections::BTreeMap;
+use std::collections::{btree_map, BTreeMap};
 
 struct Flags(BTreeMap<u64, bool>);
 
@@ -8,31 +10,28 @@ impl Serializable for Flags {
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Map(Box::new(FlagsMapEmitter {
             iter: self.0.iter(),
-            key: String::new(),
             value: None,
         })))
     }
 }
 
 pub struct FlagsMapEmitter<'a> {
-    iter: std::collections::btree_map::Iter<'a, u64, bool>,
-    key: String,
+    iter: btree_map::Iter<'a, u64, bool>,
     value: Option<&'a bool>,
 }
 
 impl<'a> MapEmitter for FlagsMapEmitter<'a> {
-    fn next_key(&mut self) -> Option<&dyn Serializable> {
+    fn next_key(&mut self) -> Option<SerializableRef> {
         if let Some((key, value)) = self.iter.next() {
-            self.key = key.to_string();
             self.value = Some(value);
-            Some(&self.key)
+            Some(SerializableRef::Owned(Box::new(key.to_string())))
         } else {
             None
         }
     }
 
-    fn next_value(&mut self) -> &dyn Serializable {
-        self.value.unwrap()
+    fn next_value(&mut self) -> SerializableRef {
+        SerializableRef::Borrowed(self.value.unwrap())
     }
 }
 

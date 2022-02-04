@@ -26,25 +26,27 @@
 //!
 //! Because the serialization interface of `deser` is tricky to use with lifetimes
 //! without using a lot of stack space, a safe abstraction is provided with the
-//! [`Driver`] and [`OwnedDriver`] types which allow you to drive the
-//! deserialization process without using stack space.  You feed it events and
-//! internally the driver ensures that the deserlization system is driven in the
-//! right way.
+//! [`Driver`] type which allow you to drive the deserialization process without
+//! using stack space.  You feed it events and internally the driver ensures
+//! that the deserlization system is driven in the right way.
 //!
 //! ```rust
 //! use std::collections::BTreeMap;
-//! use deser::de::OwnedDriver;
+//! use deser::de::Driver;
 //! use deser::Event;
 //!
-//! let mut driver = OwnedDriver::<BTreeMap<u32, String>>::new();
-//! driver.emit(&Event::MapStart).unwrap();
-//! driver.emit(&Event::I64(1)).unwrap();
-//! driver.emit(&Event::Str("Hello".into())).unwrap();
-//! driver.emit(&Event::I64(2)).unwrap();
-//! driver.emit(&Event::Str("World".into())).unwrap();
-//! driver.emit(&Event::MapEnd).unwrap();
+//! let mut out = None::<BTreeMap<u32, String>>;
+//! {
+//!     let mut driver = Driver::new(&mut out);
+//!     driver.emit(&Event::MapStart).unwrap();
+//!     driver.emit(&Event::I64(1)).unwrap();
+//!     driver.emit(&Event::Str("Hello".into())).unwrap();
+//!     driver.emit(&Event::I64(2)).unwrap();
+//!     driver.emit(&Event::Str("World".into())).unwrap();
+//!     driver.emit(&Event::MapEnd).unwrap();
+//! }
 //!
-//! let map = driver.finish();
+//! let map = out.unwrap();
 //! assert_eq!(map[&1], "Hello");
 //! assert_eq!(map[&2], "World");
 //! ```
@@ -57,7 +59,7 @@
 //! must be placed in the slot:
 //!
 //! ```rust
-//! use deser::de::{Sink, Deserializable, DeserializerState};
+//! use deser::de::{Sink, Deserializable, DeserializerState, SinkRef};
 //! use deser::{make_slot_wrapper, Error};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -78,10 +80,10 @@
 //! }
 //!
 //! impl Deserializable for MyBool {
-//!     fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
+//!     fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
 //!         // create your intended slot wrapper here and have it wrap
 //!         // the original slot.
-//!         SlotWrapper::wrap(out)
+//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //! ```
@@ -92,7 +94,7 @@
 //! [`MapSink`] and return it from the main [`Sink`]:
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserializable, Sink, MapSink, ignore};
+//! use deser::de::{DeserializerState, Deserializable, Sink, SinkRef, MapSink, ignore};
 //! use deser::{make_slot_wrapper, Error, ErrorKind};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -103,9 +105,9 @@
 //! }
 //!
 //! impl Deserializable for Flag {
-//!     fn attach(out: &mut Option<Self>) -> &mut dyn Sink {
+//!     fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
 //!         // create your intended slot wrapper here
-//!         SlotWrapper::wrap(out)
+//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //!
@@ -134,25 +136,25 @@
 //! }
 //!     
 //! impl<'a> MapSink for FlagMapSink<'a> {
-//!     fn key(&mut self) -> Result<&mut dyn Sink, Error> {
+//!     fn key(&mut self) -> Result<SinkRef, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserializable::attach(&mut self.key))
 //!     }
 //!     
-//!     fn value(&mut self) -> Result<&mut dyn Sink, Error> {
+//!     fn value(&mut self) -> Result<SinkRef, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
 //!             Some("enabled") => Ok(Deserializable::attach(&mut self.enabled_field)),
 //!             Some("name") => Ok(Deserializable::attach(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
-//!             _ => Ok(ignore()),
+//!             _ => Ok(SinkRef::Borrowed(ignore())),
 //!         }
 //!     }
 //!     
-//!     fn finish(&mut self) -> Result<(), Error> {
+//!     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
 //!         // when we're done, write the final value into the output slot.
 //!         *self.out = Some(Flag {
 //!             enabled: self.enabled_field.take().ok_or_else(|| {
@@ -169,8 +171,8 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::mem::ManuallyDrop;
-use std::ptr::NonNull;
+use std::mem::{replace, ManuallyDrop};
+use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
@@ -184,10 +186,36 @@ pub use self::ignore::ignore;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
+/// Abstraction over borrowed and owned sink
+pub enum SinkRef<'a> {
+    Borrowed(&'a mut dyn Sink),
+    Owned(Box<dyn Sink + 'a>),
+}
+
+impl<'a> Deref for SinkRef<'a> {
+    type Target = dyn Sink + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SinkRef::Borrowed(val) => &**val,
+            SinkRef::Owned(val) => &**val,
+        }
+    }
+}
+
+impl<'a> DerefMut for SinkRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            SinkRef::Borrowed(val) => &mut **val,
+            SinkRef::Owned(val) => &mut **val,
+        }
+    }
+}
+
 /// A trait for deserializable types.
 pub trait Deserializable: Sized {
     /// Creates a sink that deserializes the value into the given slot.
-    fn attach(out: &mut Option<Self>) -> &mut dyn Sink;
+    fn attach(out: &mut Option<Self>) -> SinkRef;
 
     /// Internal method to specialize byte arrays.
     #[doc(hidden)]
@@ -293,16 +321,16 @@ pub trait MapSink {
     }
 
     /// Produces the [`Sink`] for the next key.
-    fn key(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn key(&mut self) -> Result<SinkRef, Error>;
 
     /// Produces the [`Sink`] for the next value.
     ///
     /// This can inspect the last key to make a decision about which
     /// sink to produce.
-    fn value(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn value(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all pairs were produced.
-    fn finish(&mut self) -> Result<(), Error>;
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
 }
 
 /// A trait to produce sinks for items in a sequence.
@@ -313,10 +341,10 @@ pub trait SeqSink {
     }
 
     /// Produces the [`Sink`] for the next item.
-    fn item(&mut self) -> Result<&mut dyn Sink, Error>;
+    fn item(&mut self) -> Result<SinkRef, Error>;
 
     /// Called when all items were produced.
-    fn finish(&mut self) -> Result<(), Error>;
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
 }
 
 /// Gives access to the deserializer state.
@@ -363,16 +391,15 @@ pub struct Driver<'a> {
     current_sink: SinkHandle,
 }
 
-#[derive(Copy, Clone)]
 struct SinkHandle {
-    sink: NonNull<dyn Sink>,
+    sink: SinkRef<'static>,
     used: bool,
 }
 
 impl SinkHandle {
-    unsafe fn from(sink: &dyn Sink) -> SinkHandle {
+    unsafe fn from<'a>(sink: SinkRef<'a>) -> SinkHandle {
         SinkHandle {
-            sink: extend_lifetime!(NonNull::from(sink), NonNull<dyn Sink>),
+            sink: extend_lifetime!(sink, SinkRef<'_>),
             used: false,
         }
     }
@@ -386,12 +413,17 @@ enum Layer<'a> {
 impl<'a> Driver<'a> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserializable>(out: &'a mut Option<T>) -> Driver<'a> {
+        Driver::from_sink(T::attach(out))
+    }
+
+    /// Creates a new deserializer driver from a sink.
+    pub fn from_sink(sink: SinkRef) -> Driver<'a> {
         Driver {
             state: ManuallyDrop::new(DeserializerState {
                 extensions: Extensions::default(),
                 stack: ManuallyDrop::new(Vec::new()),
             }),
-            current_sink: unsafe { SinkHandle::from(T::attach(out)) },
+            current_sink: unsafe { SinkHandle::from(sink) },
         }
     }
 
@@ -415,7 +447,7 @@ impl<'a> Driver<'a> {
             "cannot emit event because sink has already been used"
         );
 
-        let current_sink = unsafe { self.current_sink.sink.as_mut() };
+        let current_sink = &mut self.current_sink.sink;
         match event {
             Event::Null => current_sink.null(&self.state)?,
             Event::Bool(v) => current_sink.bool(*v, &self.state)?,
@@ -426,33 +458,30 @@ impl<'a> Driver<'a> {
             Event::F64(v) => current_sink.f64(*v, &self.state)?,
             Event::MapStart => {
                 let mut map_sink = current_sink.map(&self.state)?;
-                let old_sink = self.current_sink;
-                self.current_sink = unsafe { SinkHandle::from(map_sink.key()?) };
-                self.state.stack.push((old_sink, unsafe {
-                    extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>)
-                }));
+                let key_sink = unsafe { SinkHandle::from(map_sink.key()?) };
+                let layer = unsafe { extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>) };
+                let old_sink = replace(&mut self.current_sink, key_sink);
+                self.state.stack.push((old_sink, layer));
                 return Ok(());
             }
             Event::MapEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Map(mut map_sink, _))) => {
-                    map_sink.finish()?;
+                    map_sink.finish(&self.state)?;
                     self.current_sink = next_sink;
                 }
                 _ => panic!("not inside a MapSink"),
             },
             Event::SeqStart => {
                 let mut seq_sink = current_sink.seq(&self.state)?;
-                let item_sink = seq_sink.item()?;
-                let old_sink = self.current_sink;
-                self.current_sink = unsafe { SinkHandle::from(item_sink) };
-                self.state.stack.push((old_sink, unsafe {
-                    extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>)
-                }));
+                let item_sink = unsafe { SinkHandle::from(seq_sink.item()?) };
+                let layer = unsafe { extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>) };
+                let old_sink = replace(&mut self.current_sink, item_sink);
+                self.state.stack.push((old_sink, layer));
                 return Ok(());
             }
             Event::SeqEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Seq(mut seq_sink))) => {
-                    seq_sink.finish()?;
+                    seq_sink.finish(&self.state)?;
                     self.current_sink = next_sink;
                 }
                 _ => panic!("not inside a SeqSink"),
@@ -490,73 +519,6 @@ impl<'a> Drop for Driver<'a> {
         unsafe {
             ManuallyDrop::drop(&mut self.state.stack);
             ManuallyDrop::drop(&mut self.state);
-        }
-    }
-}
-
-/// An alternative version of [`Driver`] that owns the value.
-pub struct OwnedDriver<T> {
-    slot: Box<Option<T>>,
-    // the static lifetime is a lie.  It's in fact borrowed
-    // into the `slot` box.
-    driver: ManuallyDrop<Driver<'static>>,
-}
-
-impl<T: Deserializable + 'static> Default for OwnedDriver<T> {
-    fn default() -> Self {
-        OwnedDriver::new()
-    }
-}
-
-impl<T: Deserializable + 'static> OwnedDriver<T> {
-    /// Creates a new owned driver.
-    pub fn new() -> OwnedDriver<T> {
-        let mut slot = Box::new(None::<T>);
-        let driver = Driver::new(unsafe { extend_lifetime!(&mut slot, &mut Box<Option<T>>) });
-        OwnedDriver {
-            slot,
-            driver: ManuallyDrop::new(unsafe { extend_lifetime!(driver, Driver<'_>) }),
-        }
-    }
-
-    /// Returns a borrowed reference to the current deserializer state.
-    pub fn state(&self) -> &DeserializerState {
-        self.driver.state()
-    }
-
-    /// Emits an event into the driver.
-    ///
-    /// For more information see [`Driver::emit`] which has the same behavior.
-    pub fn emit(&mut self, event: &Event) -> Result<(), Error> {
-        self.driver.emit(event)
-    }
-
-    /// Returns `true` if the driver holds a value.
-    pub fn is_finished(&self) -> bool {
-        self.slot.is_some()
-    }
-
-    /// Finishes the driver and returns the produced value.
-    ///
-    /// # Panics
-    ///
-    /// Unlike the regular [`Driver`] and [`OwnedDriver`] panics if the driver
-    /// did not manage to produce a value.  This should not happen unless an
-    /// implementation of [`Deserializable`] returns a sink that ignores all values
-    /// which is not legal to do.  This method will not panic if
-    /// [`is_finished`](Self::is_finished) returns `true`.
-    pub fn finish(mut self) -> T {
-        self.slot
-            .take()
-            .expect("driver finished without producing value")
-    }
-}
-
-impl<T> Drop for OwnedDriver<T> {
-    fn drop(&mut self) {
-        // make sure to first drop the driver before the slot goes away.
-        unsafe {
-            ManuallyDrop::drop(&mut self.driver);
         }
     }
 }
