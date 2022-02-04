@@ -13,7 +13,7 @@ make_slot_wrapper!(SlotWrapper);
 macro_rules! deserializable {
     ($ty:ty) => {
         impl Deserializable for $ty {
-            fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
+            fn attach(out: &mut Option<Self>) -> SinkRef {
                 SinkRef::Borrowed(SlotWrapper::wrap(out))
             }
         }
@@ -95,7 +95,7 @@ macro_rules! int_sink {
 int_sink!(u8);
 
 impl Deserializable for u8 {
-    fn attach(out: &mut Option<Self>) -> SinkRef<'_> {
+    fn attach(out: &mut Option<Self>) -> SinkRef {
         SinkRef::Borrowed(SlotWrapper::wrap(out))
     }
 

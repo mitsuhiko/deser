@@ -70,11 +70,11 @@ impl Sink for Ignore {
 }
 
 impl MapSink for Ignore {
-    fn key(&mut self) -> Result<SinkRef<'_>, Error> {
+    fn key(&mut self) -> Result<SinkRef, Error> {
         Ok(SinkRef::Borrowed(ignore()))
     }
 
-    fn value(&mut self) -> Result<SinkRef<'_>, Error> {
+    fn value(&mut self) -> Result<SinkRef, Error> {
         Ok(SinkRef::Borrowed(ignore()))
     }
 
@@ -84,7 +84,7 @@ impl MapSink for Ignore {
 }
 
 impl SeqSink for Ignore {
-    fn item(&mut self) -> Result<SinkRef<'_>, Error> {
+    fn item(&mut self) -> Result<SinkRef, Error> {
         Ok(SinkRef::Borrowed(ignore()))
     }
 
