@@ -54,7 +54,7 @@
 //!
 //! ```rust
 //! use std::borrow::Cow;
-//! use deser::ser::{Serializable, SerializerState, Chunk, StructEmitter, SerializableRef};
+//! use deser::ser::{Serializable, SerializerState, Chunk, StructEmitter, SerializableHandle};
 //! use deser::Error;
 //!
 //! struct User {
@@ -77,12 +77,12 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self) -> Option<(Cow<'_, str>, SerializableRef)> {
+//!     fn next(&mut self) -> Option<(Cow<'_, str>, SerializableHandle)> {
 //!         let index = self.index;
 //!         self.index += 1;
 //!         match index {
-//!             0 => Some((Cow::Borrowed("id"), SerializableRef::Borrowed(&self.user.id))),
-//!             1 => Some((Cow::Borrowed("username"), SerializableRef::Borrowed(&self.user.username))),
+//!             0 => Some((Cow::Borrowed("id"), SerializableHandle::Borrowed(&self.user.id))),
+//!             1 => Some((Cow::Borrowed("username"), SerializableHandle::Borrowed(&self.user.username))),
 //!             _ => None
 //!         }
 //!     }
@@ -105,18 +105,18 @@ mod to_debug;
 pub use to_debug::ToDebug;
 
 /// Abstraction over borrowed and owned serializable
-pub enum SerializableRef<'a> {
+pub enum SerializableHandle<'a> {
     Borrowed(&'a dyn Serializable),
     Owned(Box<dyn Serializable + 'a>),
 }
 
-impl<'a> Deref for SerializableRef<'a> {
+impl<'a> Deref for SerializableHandle<'a> {
     type Target = dyn Serializable + 'a;
 
     fn deref(&self) -> &Self::Target {
         match self {
-            SerializableRef::Borrowed(val) => &**val,
-            SerializableRef::Owned(val) => &**val,
+            SerializableHandle::Borrowed(val) => &**val,
+            SerializableHandle::Owned(val) => &**val,
         }
     }
 }
@@ -216,7 +216,7 @@ pub fn for_each_event<F>(serializable: &dyn Serializable, mut f: F) -> Result<()
 where
     F: FnMut(&Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
-    let mut serializable = SerializableRef::Borrowed(serializable);
+    let mut serializable = SerializableHandle::Borrowed(serializable);
     let mut state = SerializerState {
         extensions: Extensions::default(),
         stack: ManuallyDrop::new(Vec::new()),
@@ -224,7 +224,7 @@ where
 
     macro_rules! extended_serializable {
         () => {
-            extend_lifetime!(&serializable, &SerializableRef)
+            extend_lifetime!(&serializable, &SerializableHandle)
         };
     }
 
@@ -265,7 +265,7 @@ where
                     Layer::Struct(ref mut s) => {
                         // this is safe as we maintain our own stack.
                         match unsafe {
-                            extend_lifetime!(s.next(), Option<(Cow<str>, SerializableRef)>)
+                            extend_lifetime!(s.next(), Option<(Cow<str>, SerializableHandle)>)
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
@@ -283,14 +283,15 @@ where
                         *feed_value = !old_feed_value;
                         if old_feed_value {
                             let value =
-                                unsafe { extend_lifetime!(m.next_value(), SerializableRef) };
+                                unsafe { extend_lifetime!(m.next_value(), SerializableHandle) };
                             serializable = value;
                             chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                             descriptor = unsafe { extended_serializable!() }.descriptor();
                             break;
                         }
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(m.next_key(), Option<SerializableRef>) } {
+                        match unsafe { extend_lifetime!(m.next_key(), Option<SerializableHandle>) }
+                        {
                             Some(key) => {
                                 serializable = key;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
@@ -302,7 +303,7 @@ where
                     }
                     Layer::Seq(ref mut seq) => {
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(seq.next(), Option<SerializableRef>) } {
+                        match unsafe { extend_lifetime!(seq.next(), Option<SerializableHandle>) } {
                             Some(next) => {
                                 serializable = next;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
@@ -326,7 +327,7 @@ where
 /// A struct emitter.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
-    fn next(&mut self) -> Option<(Cow<'_, str>, SerializableRef)>;
+    fn next(&mut self) -> Option<(Cow<'_, str>, SerializableHandle)>;
 }
 
 /// A map emitter.
@@ -336,7 +337,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self) -> Option<SerializableRef>;
+    fn next_key(&mut self) -> Option<SerializableHandle>;
 
     /// Produces the next value in the map.
     ///
@@ -344,13 +345,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self) -> SerializableRef;
+    fn next_value(&mut self) -> SerializableHandle;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self) -> Option<SerializableRef>;
+    fn next(&mut self) -> Option<SerializableHandle>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.

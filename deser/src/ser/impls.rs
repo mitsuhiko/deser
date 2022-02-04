@@ -4,7 +4,9 @@ use std::hash::BuildHasher;
 
 use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
-use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serializable, SerializableRef, SerializerState};
+use crate::ser::{
+    Chunk, MapEmitter, SeqEmitter, Serializable, SerializableHandle, SerializerState,
+};
 
 impl Serializable for bool {
     fn descriptor(&self) -> &dyn Descriptor {
@@ -254,8 +256,8 @@ where
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
 impl<'a, T: Serializable> SeqEmitter for SliceEmitter<'a, T> {
-    fn next(&mut self) -> Option<SerializableRef> {
-        self.0.next().map(|x| SerializableRef::Borrowed(x as _))
+    fn next(&mut self) -> Option<SerializableHandle> {
+        self.0.next().map(|x| SerializableHandle::Borrowed(x as _))
     }
 }
 
@@ -277,15 +279,15 @@ where
             K: Serializable,
             V: Serializable,
         {
-            fn next_key(&mut self) -> Option<SerializableRef> {
+            fn next_key(&mut self) -> Option<SerializableHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableRef::Borrowed(k as &dyn Serializable)
+                    SerializableHandle::Borrowed(k as &dyn Serializable)
                 })
             }
 
-            fn next_value(&mut self) -> SerializableRef {
-                SerializableRef::Borrowed(self.1.unwrap())
+            fn next_value(&mut self) -> SerializableHandle {
+                SerializableHandle::Borrowed(self.1.unwrap())
             }
         }
 
@@ -312,15 +314,15 @@ where
             K: Serializable,
             V: Serializable,
         {
-            fn next_key(&mut self) -> Option<SerializableRef> {
+            fn next_key(&mut self) -> Option<SerializableHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableRef::Borrowed(k as &dyn Serializable)
+                    SerializableHandle::Borrowed(k as &dyn Serializable)
                 })
             }
 
-            fn next_value(&mut self) -> SerializableRef {
-                SerializableRef::Borrowed(self.1.unwrap())
+            fn next_value(&mut self) -> SerializableHandle {
+                SerializableHandle::Borrowed(self.1.unwrap())
             }
         }
 
@@ -344,8 +346,8 @@ where
         where
             T: Serializable,
         {
-            fn next(&mut self) -> Option<SerializableRef> {
-                self.0.next().map(|v| SerializableRef::Borrowed(v as _))
+            fn next(&mut self) -> Option<SerializableHandle> {
+                self.0.next().map(|v| SerializableHandle::Borrowed(v as _))
             }
         }
 
@@ -369,8 +371,8 @@ where
         where
             T: Serializable,
         {
-            fn next(&mut self) -> Option<SerializableRef> {
-                self.0.next().map(|v| SerializableRef::Borrowed(v as _))
+            fn next(&mut self) -> Option<SerializableHandle> {
+                self.0.next().map(|v| SerializableHandle::Borrowed(v as _))
             }
         }
 

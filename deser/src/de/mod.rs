@@ -59,7 +59,7 @@
 //! must be placed in the slot:
 //!
 //! ```rust
-//! use deser::de::{Sink, Deserializable, DeserializerState, SinkRef};
+//! use deser::de::{Sink, Deserializable, DeserializerState, SinkHandle};
 //! use deser::{make_slot_wrapper, Error};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -80,10 +80,10 @@
 //! }
 //!
 //! impl Deserializable for MyBool {
-//!     fn attach(out: &mut Option<Self>) -> SinkRef {
+//!     fn attach(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here and have it wrap
 //!         // the original slot.
-//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
+//!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //! ```
@@ -94,7 +94,7 @@
 //! [`MapSink`] and return it from the main [`Sink`]:
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserializable, Sink, SinkRef, MapSink, ignore};
+//! use deser::de::{DeserializerState, Deserializable, Sink, SinkHandle, MapSink, ignore};
 //! use deser::{make_slot_wrapper, Error, ErrorKind};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -105,9 +105,9 @@
 //! }
 //!
 //! impl Deserializable for Flag {
-//!     fn attach(out: &mut Option<Self>) -> SinkRef {
+//!     fn attach(out: &mut Option<Self>) -> SinkHandle {
 //!         // create your intended slot wrapper here
-//!         SinkRef::Borrowed(SlotWrapper::wrap(out))
+//!         SinkHandle::Borrowed(SlotWrapper::wrap(out))
 //!     }
 //! }
 //!
@@ -136,21 +136,21 @@
 //! }
 //!     
 //! impl<'a> MapSink for FlagMapSink<'a> {
-//!     fn key(&mut self) -> Result<SinkRef, Error> {
+//!     fn key(&mut self) -> Result<SinkHandle, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserializable::attach(&mut self.key))
 //!     }
 //!     
-//!     fn value(&mut self) -> Result<SinkRef, Error> {
+//!     fn value(&mut self) -> Result<SinkHandle, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
 //!             Some("enabled") => Ok(Deserializable::attach(&mut self.enabled_field)),
 //!             Some("name") => Ok(Deserializable::attach(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
-//!             _ => Ok(SinkRef::Borrowed(ignore())),
+//!             _ => Ok(SinkHandle::Borrowed(ignore())),
 //!         }
 //!     }
 //!     
@@ -187,27 +187,27 @@ pub use self::ignore::ignore;
 __make_slot_wrapper!((pub), SlotWrapper);
 
 /// Abstraction over borrowed and owned sink
-pub enum SinkRef<'a> {
+pub enum SinkHandle<'a> {
     Borrowed(&'a mut dyn Sink),
     Owned(Box<dyn Sink + 'a>),
 }
 
-impl<'a> Deref for SinkRef<'a> {
+impl<'a> Deref for SinkHandle<'a> {
     type Target = dyn Sink + 'a;
 
     fn deref(&self) -> &Self::Target {
         match self {
-            SinkRef::Borrowed(val) => &**val,
-            SinkRef::Owned(val) => &**val,
+            SinkHandle::Borrowed(val) => &**val,
+            SinkHandle::Owned(val) => &**val,
         }
     }
 }
 
-impl<'a> DerefMut for SinkRef<'a> {
+impl<'a> DerefMut for SinkHandle<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            SinkRef::Borrowed(val) => &mut **val,
-            SinkRef::Owned(val) => &mut **val,
+            SinkHandle::Borrowed(val) => &mut **val,
+            SinkHandle::Owned(val) => &mut **val,
         }
     }
 }
@@ -215,7 +215,7 @@ impl<'a> DerefMut for SinkRef<'a> {
 /// A trait for deserializable types.
 pub trait Deserializable: Sized {
     /// Creates a sink that deserializes the value into the given slot.
-    fn attach(out: &mut Option<Self>) -> SinkRef;
+    fn attach(out: &mut Option<Self>) -> SinkHandle;
 
     /// Internal method to specialize byte arrays.
     #[doc(hidden)]
@@ -321,13 +321,13 @@ pub trait MapSink {
     }
 
     /// Produces the [`Sink`] for the next key.
-    fn key(&mut self) -> Result<SinkRef, Error>;
+    fn key(&mut self) -> Result<SinkHandle, Error>;
 
     /// Produces the [`Sink`] for the next value.
     ///
     /// This can inspect the last key to make a decision about which
     /// sink to produce.
-    fn value(&mut self) -> Result<SinkRef, Error>;
+    fn value(&mut self) -> Result<SinkHandle, Error>;
 
     /// Called when all pairs were produced.
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
@@ -341,7 +341,7 @@ pub trait SeqSink {
     }
 
     /// Produces the [`Sink`] for the next item.
-    fn item(&mut self) -> Result<SinkRef, Error>;
+    fn item(&mut self) -> Result<SinkHandle, Error>;
 
     /// Called when all items were produced.
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
@@ -350,7 +350,7 @@ pub trait SeqSink {
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
     extensions: Extensions,
-    stack: ManuallyDrop<Vec<(SinkRefWrapper, Layer<'a>)>>,
+    stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer<'a>)>>,
 }
 
 impl<'a> DeserializerState<'a> {
@@ -388,18 +388,18 @@ impl<'a> DeserializerState<'a> {
 /// hides the unsafety internally.
 pub struct Driver<'a> {
     state: ManuallyDrop<DeserializerState<'a>>,
-    current_sink: SinkRefWrapper,
+    current_sink: SinkHandleWrapper,
 }
 
-struct SinkRefWrapper {
-    sink: SinkRef<'static>,
+struct SinkHandleWrapper {
+    sink: SinkHandle<'static>,
     used: bool,
 }
 
-impl SinkRefWrapper {
-    unsafe fn from<'a>(sink: SinkRef<'a>) -> SinkRefWrapper {
-        SinkRefWrapper {
-            sink: extend_lifetime!(sink, SinkRef<'_>),
+impl SinkHandleWrapper {
+    unsafe fn from<'a>(sink: SinkHandle<'a>) -> SinkHandleWrapper {
+        SinkHandleWrapper {
+            sink: extend_lifetime!(sink, SinkHandle<'_>),
             used: false,
         }
     }
@@ -417,13 +417,13 @@ impl<'a> Driver<'a> {
     }
 
     /// Creates a new deserializer driver from a sink.
-    pub fn from_sink(sink: SinkRef) -> Driver<'a> {
+    pub fn from_sink(sink: SinkHandle) -> Driver<'a> {
         Driver {
             state: ManuallyDrop::new(DeserializerState {
                 extensions: Extensions::default(),
                 stack: ManuallyDrop::new(Vec::new()),
             }),
-            current_sink: unsafe { SinkRefWrapper::from(sink) },
+            current_sink: unsafe { SinkHandleWrapper::from(sink) },
         }
     }
 
@@ -458,7 +458,7 @@ impl<'a> Driver<'a> {
             Event::F64(v) => current_sink.f64(*v, &self.state)?,
             Event::MapStart => {
                 let mut map_sink = current_sink.map(&self.state)?;
-                let key_sink = unsafe { SinkRefWrapper::from(map_sink.key()?) };
+                let key_sink = unsafe { SinkHandleWrapper::from(map_sink.key()?) };
                 let layer = unsafe { extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>) };
                 let old_sink = replace(&mut self.current_sink, key_sink);
                 self.state.stack.push((old_sink, layer));
@@ -473,7 +473,7 @@ impl<'a> Driver<'a> {
             },
             Event::SeqStart => {
                 let mut seq_sink = current_sink.seq(&self.state)?;
-                let item_sink = unsafe { SinkRefWrapper::from(seq_sink.item()?) };
+                let item_sink = unsafe { SinkHandleWrapper::from(seq_sink.item()?) };
                 let layer = unsafe { extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>) };
                 let old_sink = replace(&mut self.current_sink, item_sink);
                 self.state.stack.push((old_sink, layer));
@@ -498,10 +498,10 @@ impl<'a> Driver<'a> {
                     map_sink.key()?
                 };
                 *is_key = !*is_key;
-                self.current_sink = unsafe { SinkRefWrapper::from(next_sink) };
+                self.current_sink = unsafe { SinkHandleWrapper::from(next_sink) };
             }
             Some((_, Layer::Seq(ref mut seq_sink))) => {
-                self.current_sink = unsafe { SinkRefWrapper::from(seq_sink.item()?) };
+                self.current_sink = unsafe { SinkHandleWrapper::from(seq_sink.item()?) };
             }
             _ => {}
         }

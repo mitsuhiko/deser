@@ -2,25 +2,25 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use deser::de::{DeserializerState, MapSink, SeqSink, Sink, SinkRef};
+use deser::de::{DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
 use deser::Error;
 
 use crate::{Path, PathSegment};
 
 /// A path sink tracks the current path during deserialization.
 pub struct PathSink<'a> {
-    sink: SinkRef<'a>,
+    sink: SinkHandle<'a>,
     set_segment: Option<PathSegment>,
 }
 
 impl<'a> PathSink<'a> {
     /// Wraps a sink.
     pub fn wrap(sink: &'a mut dyn Sink) -> PathSink<'a> {
-        PathSink::wrap_ref(SinkRef::Borrowed(sink))
+        PathSink::wrap_ref(SinkHandle::Borrowed(sink))
     }
 
     /// Wraps a sink ref.
-    pub fn wrap_ref(sink: SinkRef<'a>) -> PathSink<'a> {
+    pub fn wrap_ref(sink: SinkHandle<'a>) -> PathSink<'a> {
         PathSink {
             sink,
             set_segment: None,
@@ -99,15 +99,15 @@ struct PathTrackingMapSink<'a> {
 }
 
 impl<'a> MapSink for PathTrackingMapSink<'a> {
-    fn key(&mut self) -> Result<SinkRef, Error> {
-        Ok(SinkRef::Owned(Box::new(KeyCapturingSink {
+    fn key(&mut self) -> Result<SinkHandle, Error> {
+        Ok(SinkHandle::Owned(Box::new(KeyCapturingSink {
             sink: self.sink.key()?,
             captured_segment: self.captured_segment.clone(),
         })))
     }
 
-    fn value(&mut self) -> Result<SinkRef, Error> {
-        Ok(SinkRef::Owned(Box::new(PathSink {
+    fn value(&mut self) -> Result<SinkHandle, Error> {
+        Ok(SinkHandle::Owned(Box::new(PathSink {
             sink: self.sink.value()?,
             set_segment: self.captured_segment.take(),
         })))
@@ -125,12 +125,12 @@ struct PathTrackingSeqSink<'a> {
 }
 
 impl<'a> SeqSink for PathTrackingSeqSink<'a> {
-    fn item(&mut self) -> Result<SinkRef, Error> {
+    fn item(&mut self) -> Result<SinkHandle, Error> {
         let sink_wrapper = PathSink {
             sink: self.sink.item()?,
             set_segment: Some(PathSegment::Index(self.index)),
         };
-        Ok(SinkRef::Owned(Box::new(sink_wrapper)))
+        Ok(SinkHandle::Owned(Box::new(sink_wrapper)))
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
@@ -140,7 +140,7 @@ impl<'a> SeqSink for PathTrackingSeqSink<'a> {
 }
 
 struct KeyCapturingSink<'a> {
-    sink: SinkRef<'a>,
+    sink: SinkHandle<'a>,
     captured_segment: Rc<RefCell<Option<PathSegment>>>,
 }
 

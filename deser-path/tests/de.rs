@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::de::{Deserializable, DeserializerState, Driver, Sink, SinkRef};
+use deser::de::{Deserializable, DeserializerState, Driver, Sink, SinkHandle};
 use deser::{Error, Event};
 use deser_path::{Path, PathSink};
 
@@ -10,8 +10,8 @@ struct MyBool(bool);
 deser::make_slot_wrapper!(SlotWrapper);
 
 impl Deserializable for MyBool {
-    fn attach(out: &mut Option<Self>) -> SinkRef {
-        SinkRef::Borrowed(SlotWrapper::wrap(out))
+    fn attach(out: &mut Option<Self>) -> SinkHandle {
+        SinkHandle::Borrowed(SlotWrapper::wrap(out))
     }
 }
 
@@ -30,7 +30,7 @@ fn test_path() {
 
     {
         let sink = PathSink::wrap_ref(Deserializable::attach(&mut out));
-        let mut driver = Driver::from_sink(SinkRef::Owned(Box::new(sink)));
+        let mut driver = Driver::from_sink(SinkHandle::Owned(Box::new(sink)));
         driver.emit(&Event::MapStart).unwrap();
         driver.emit(&Event::Str("foo".into())).unwrap();
         driver.emit(&Event::Bool(true)).unwrap();

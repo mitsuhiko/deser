@@ -1,5 +1,5 @@
 use deser::ser::{
-    for_each_event, Chunk, MapEmitter, Serializable, SerializableRef, SerializerState,
+    for_each_event, Chunk, MapEmitter, Serializable, SerializableHandle, SerializerState,
 };
 use deser::Error;
 use std::collections::{btree_map, BTreeMap};
@@ -21,17 +21,17 @@ pub struct FlagsMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for FlagsMapEmitter<'a> {
-    fn next_key(&mut self) -> Option<SerializableRef> {
+    fn next_key(&mut self) -> Option<SerializableHandle> {
         if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
-            Some(SerializableRef::Owned(Box::new(key.to_string())))
+            Some(SerializableHandle::Owned(Box::new(key.to_string())))
         } else {
             None
         }
     }
 
-    fn next_value(&mut self) -> SerializableRef {
-        SerializableRef::Borrowed(self.value.unwrap())
+    fn next_value(&mut self) -> SerializableHandle {
+        SerializableHandle::Borrowed(self.value.unwrap())
     }
 }
 
