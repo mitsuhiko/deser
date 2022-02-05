@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::FieldAttrs;
+use crate::attr::{ContainerAttrs, FieldAttrs};
 use crate::bound::{where_clause_with_bound, with_lifetime_bound};
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -23,13 +23,17 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         Span::call_site(),
     );
 
+    let container_attrs = ContainerAttrs::of(input)?;
     let fieldname = &fields.named.iter().map(|f| &f.ident).collect::<Vec<_>>();
     let attrs = fields
         .named
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    let fieldstr = attrs.iter().map(|x| x.name()).collect::<Vec<_>>();
+    let fieldstr = attrs
+        .iter()
+        .map(|x| x.name(&container_attrs))
+        .collect::<Vec<_>>();
 
     let index = 0usize..;
 

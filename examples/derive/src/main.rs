@@ -2,9 +2,10 @@ use deser::Serialize;
 use deser_debug::ToDebug;
 
 #[derive(Serialize)]
+#[deser(rename_all = "camelCase")]
 pub struct User {
     id: usize,
-    email: String,
+    email_address: String,
 }
 
 fn main() {
@@ -12,7 +13,7 @@ fn main() {
         "{:#?}",
         ToDebug::new(&User {
             id: 42,
-            email: "john@example.com".into(),
+            email_address: "john@example.com".into(),
         })
     )
 }
