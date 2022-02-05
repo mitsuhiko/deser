@@ -10,7 +10,7 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
             fields: syn::Fields::Named(fields),
             ..
         }) => derive_struct(input, fields),
-        _ => panic!("only struct swith named fields are supported"),
+        _ => panic!("only structs with named fields are supported"),
     }
 }
 
@@ -49,7 +49,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
                 }
-                fn serialize(&self, _state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
+                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
                         index: 0,
@@ -72,9 +72,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self) -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)> {
-                    let index = self.index;
-                    self.index = index + 1;
-                    match index {
+                    let __index = self.index;
+                    self.index = __index + 1;
+                    match __index {
                         #(
                             #index => ::deser::__derive::Some((
                                 ::deser::__derive::Cow::Borrowed(#fieldstr),

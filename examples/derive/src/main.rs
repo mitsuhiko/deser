@@ -1,7 +1,7 @@
-use deser::Serialize;
+use deser::{Deserialize, Serialize};
 use deser_debug::ToDebug;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[deser(rename_all = "camelCase")]
 pub struct User {
     id: usize,

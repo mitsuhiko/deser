@@ -40,6 +40,10 @@ pub use self::{de::Deserialize, ser::Serialize};
 #[cfg(feature = "derive")]
 pub use deser_derive::Serialize;
 
+/// Provides automatic deriving for [`Deserialize`].
+#[cfg(feature = "derive")]
+pub use deser_derive::Deserialize;
+
 // These are re-exported fro the derive macro.  There is no good
 // reason for this right now as deser does not yet have no-std
 // support but this will make it easier later to add support.
