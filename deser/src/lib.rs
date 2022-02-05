@@ -25,6 +25,18 @@ pub use self::event::Event;
 #[doc(inline)]
 pub use self::{de::Deserialize, ser::Serialize};
 
+/// Provides automatic deriving for [`Serialize`].
+///
+/// At the moment this can only derive structs.  Special attributes
+/// can be provided with the `deser` attribute.  This is largely
+/// modelled after serde.  At the moment the following attributes
+/// exist:
+///
+/// * `#[deser(rename = "field")]`: renames a struct or field.
+/// * `#[deser(rename_all = "...")]`: renames all fields at once to a
+///   specific name style.  he possible values are `"lowercase"`, `"UPPERCASE"`,
+///   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
+///   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
 #[cfg(feature = "derive")]
 pub use deser_derive::Serialize;
 

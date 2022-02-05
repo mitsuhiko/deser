@@ -10,6 +10,9 @@ readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 derive = ["deser-derive"]
 
