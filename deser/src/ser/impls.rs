@@ -144,6 +144,34 @@ impl Serialize for i64 {
     }
 }
 
+impl Serialize for isize {
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
+            name: "isize",
+            precision: std::mem::size_of::<isize>() * 8,
+        };
+        &DESCRIPTOR
+    }
+
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+        Ok(Chunk::I64(*self as i64))
+    }
+}
+
+impl Serialize for usize {
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
+            name: "usize",
+            precision: std::mem::size_of::<usize>() * 8,
+        };
+        &DESCRIPTOR
+    }
+
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+        Ok(Chunk::U64(*self as u64))
+    }
+}
+
 impl Serialize for f32 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
