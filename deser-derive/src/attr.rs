@@ -33,7 +33,9 @@ impl RenameAll {
     }
 }
 
-pub struct ContainerAttrs {
+pub struct ContainerAttrs<'a> {
+    ident: &'a syn::Ident,
+    rename: Option<String>,
     rename_all: Option<RenameAll>,
 }
 
@@ -49,15 +51,36 @@ pub fn get_meta_items(attr: &syn::Attribute) -> syn::Result<Vec<syn::NestedMeta>
     }
 }
 
-impl ContainerAttrs {
-    pub fn of(input: &syn::DeriveInput) -> syn::Result<ContainerAttrs> {
-        let mut rv = ContainerAttrs { rename_all: None };
+fn get_lit_str(attr_name: &str, lit: &syn::Lit) -> syn::Result<String> {
+    if let syn::Lit::Str(lit) = lit {
+        Ok(lit.value())
+    } else {
+        Err(syn::Error::new_spanned(
+            lit,
+            format!(
+                "expected attribute to be a string: `{} = \"...\"`",
+                attr_name,
+            ),
+        ))
+    }
+}
+
+impl<'a> ContainerAttrs<'a> {
+    pub fn of(input: &'a syn::DeriveInput) -> syn::Result<ContainerAttrs<'a>> {
+        let mut rv = ContainerAttrs {
+            ident: &input.ident,
+            rename: None,
+            rename_all: None,
+        };
 
         for meta_item in input.attrs.iter().flat_map(get_meta_items).flatten() {
             if let syn::NestedMeta::Meta(meta) = meta_item {
                 match meta {
                     syn::Meta::NameValue(nv) if nv.path.is_ident("rename_all") => {
                         rv.rename_all = Some(RenameAll::parse(&nv.lit)?);
+                    }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename") => {
+                        rv.rename = Some(get_lit_str("rename", &nv.lit)?);
                     }
                     _ => return Err(syn::Error::new_spanned(meta, "unexpected attribute")),
                 }
@@ -67,6 +90,13 @@ impl ContainerAttrs {
         }
 
         Ok(rv)
+    }
+
+    pub fn container_name(&self) -> String {
+        match self.rename {
+            Some(ref name) => name.clone(),
+            None => self.ident.to_string(),
+        }
     }
 
     pub fn get_field_name(&self, field: &syn::Field) -> String {

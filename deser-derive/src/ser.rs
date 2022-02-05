@@ -16,7 +16,6 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
 
 fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    let type_name = ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let dummy = syn::Ident::new(
         &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
@@ -24,6 +23,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     );
 
     let container_attrs = ContainerAttrs::of(input)?;
+    let type_name = container_attrs.container_name();
     let fieldname = &fields.named.iter().map(|f| &f.ident).collect::<Vec<_>>();
     let attrs = fields
         .named
