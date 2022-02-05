@@ -257,7 +257,7 @@ struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
 impl<'a, T: Serializable> SeqEmitter for SliceEmitter<'a, T> {
     fn next(&mut self) -> Option<SerializableHandle> {
-        self.0.next().map(|x| SerializableHandle::Borrowed(x as _))
+        self.0.next().map(SerializableHandle::to)
     }
 }
 
@@ -282,12 +282,12 @@ where
             fn next_key(&mut self) -> Option<SerializableHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableHandle::Borrowed(k as &dyn Serializable)
+                    SerializableHandle::to(k)
                 })
             }
 
             fn next_value(&mut self) -> SerializableHandle {
-                SerializableHandle::Borrowed(self.1.unwrap())
+                SerializableHandle::to(self.1.unwrap())
             }
         }
 
@@ -317,12 +317,12 @@ where
             fn next_key(&mut self) -> Option<SerializableHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableHandle::Borrowed(k as &dyn Serializable)
+                    SerializableHandle::to(k)
                 })
             }
 
             fn next_value(&mut self) -> SerializableHandle {
-                SerializableHandle::Borrowed(self.1.unwrap())
+                SerializableHandle::to(self.1.unwrap())
             }
         }
 
@@ -347,7 +347,7 @@ where
             T: Serializable,
         {
             fn next(&mut self) -> Option<SerializableHandle> {
-                self.0.next().map(|v| SerializableHandle::Borrowed(v as _))
+                self.0.next().map(SerializableHandle::to)
             }
         }
 
@@ -372,7 +372,7 @@ where
             T: Serializable,
         {
             fn next(&mut self) -> Option<SerializableHandle> {
-                self.0.next().map(|v| SerializableHandle::Borrowed(v as _))
+                self.0.next().map(SerializableHandle::to)
             }
         }
 

@@ -81,8 +81,8 @@
 //!         let index = self.index;
 //!         self.index += 1;
 //!         match index {
-//!             0 => Some((Cow::Borrowed("id"), SerializableHandle::Borrowed(&self.user.id))),
-//!             1 => Some((Cow::Borrowed("username"), SerializableHandle::Borrowed(&self.user.username))),
+//!             0 => Some(("id".into(), SerializableHandle::to(&self.user.id))),
+//!             1 => Some(("username".into(), SerializableHandle::to(&self.user.username))),
 //!             _ => None
 //!         }
 //!     }
@@ -125,6 +125,18 @@ impl<'a> Deref for SerializableHandle<'a> {
             SerializableHandle::Borrowed(val) => &**val,
             SerializableHandle::Owned(val) => &**val,
         }
+    }
+}
+
+impl<'a> SerializableHandle<'a> {
+    /// Create a borrowed handle to a [`Serializable`].
+    pub fn to<S: Serializable + 'a>(val: &'a S) -> SerializableHandle<'a> {
+        SerializableHandle::Borrowed(val as &dyn Serializable)
+    }
+
+    /// Create an owned handle to a heap allocated [`Serializable`].
+    pub fn boxed<S: Serializable + 'a>(val: S) -> SerializableHandle<'a> {
+        SerializableHandle::Owned(Box::new(val))
     }
 }
 

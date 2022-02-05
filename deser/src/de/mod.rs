@@ -13,14 +13,17 @@
 //! is placed.  The system that places these values there is called a
 //! [`Sink`].
 //!
-//! To implement a sink you need to get a [`SlotWrapper`] for your own crate.
-//! Such a slot can be created with the [`make_slot_wrapper`] macro.  This
-//! wrapper acts as a newtype around an `Option<T>` and derefs into an
-//! `Option<T>`.  To use it implement your desired [`Sink`] for it.
+//! While sinks can be implemented on arbitrary types it's more typical to
+//! implement them on a [`SlotWrapper`].  Due to Rust's orphan rules you need
+//! to create your own [`SlotWrapper`] type in your crate by using the
+//! [`make_slot_wrapper`](crate::make_slot_wrapper`) macro ([more
+//! information](https://doc.rust-lang.org/error-index.html#E0117)).
 //!
-//! Each crate must create its own slot wrapper as it's otherwise not
-//! possible to implement a [`Sink`] for it due to [Rust's orphan
-//! rules](https://doc.rust-lang.org/error-index.html#E0117).
+//! A [`SlotWrapper`] acts as a newtype around an `Option<T>` and derefs into an
+//! `Option<T>`.  To use it implement your desired [`Sink`] for it.  This has the
+//! advantage that it does not need to be allocated.  By calling
+//! [`SlotWrapper::make_handle`] on a slot, one can directly retrieve a
+//! [`SinkHandle`] without the need to box up the slot.
 //!
 //! # Driver
 //!
@@ -81,8 +84,8 @@
 //!
 //! impl Deserializable for MyBool {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-//!         // create your intended slot wrapper here and have it wrap
-//!         // the original slot.
+//!         // Since we're using the SlotWrapper abstraction we can directly
+//!         // make a handle here by using the `make_handle` utility.
 //!         SlotWrapper::make_handle(out)
 //!     }
 //! }
@@ -106,7 +109,6 @@
 //!
 //! impl Deserializable for Flag {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-//!         // create your intended slot wrapper here
 //!         SlotWrapper::make_handle(out)
 //!     }
 //! }
@@ -119,7 +121,7 @@
 //!         // return a new map sink for our struct
 //!         Ok(Box::new(FlagMapSink {
 //!             // note that we can directly connect our slot wrapper
-//!             // to the output slot on the sink.
+//!             // to the output slot on the sink as it deref's into an Option
 //!             out: self,
 //!             key: None,
 //!             enabled_field: None,
@@ -150,7 +152,7 @@
 //!             Some("enabled") => Ok(Deserializable::deserialize_into(&mut self.enabled_field)),
 //!             Some("name") => Ok(Deserializable::deserialize_into(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
-//!             _ => Ok(SinkHandle::Borrowed(ignore())),
+//!             _ => Ok(SinkHandle::to(ignore())),
 //!         }
 //!     }
 //!     
@@ -220,6 +222,18 @@ impl<'a> DerefMut for SinkHandle<'a> {
             SinkHandle::Borrowed(val) => &mut **val,
             SinkHandle::Owned(val) => &mut **val,
         }
+    }
+}
+
+impl<'a> SinkHandle<'a> {
+    /// Create a borrowed handle to a [`Sink`].
+    pub fn to(val: &'a mut dyn Sink) -> SinkHandle<'a> {
+        SinkHandle::Borrowed(val)
+    }
+
+    /// Create an owned handle to a heap allocated [`Sink`].
+    pub fn boxed<S: Sink + 'a>(val: S) -> SinkHandle<'a> {
+        SinkHandle::Owned(Box::new(val))
     }
 }
 

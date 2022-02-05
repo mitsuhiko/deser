@@ -16,7 +16,7 @@ pub struct PathSink<'a> {
 impl<'a> PathSink<'a> {
     /// Wraps a sink.
     pub fn wrap(sink: &'a mut dyn Sink) -> PathSink<'a> {
-        PathSink::wrap_ref(SinkHandle::Borrowed(sink))
+        PathSink::wrap_ref(SinkHandle::to(sink))
     }
 
     /// Wraps a sink ref.
@@ -100,17 +100,17 @@ struct PathTrackingMapSink<'a> {
 
 impl<'a> MapSink for PathTrackingMapSink<'a> {
     fn key(&mut self) -> Result<SinkHandle, Error> {
-        Ok(SinkHandle::Owned(Box::new(KeyCapturingSink {
+        Ok(SinkHandle::boxed(KeyCapturingSink {
             sink: self.sink.key()?,
             captured_segment: self.captured_segment.clone(),
-        })))
+        }))
     }
 
     fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(SinkHandle::Owned(Box::new(PathSink {
+        Ok(SinkHandle::boxed(PathSink {
             sink: self.sink.value()?,
             set_segment: self.captured_segment.take(),
-        })))
+        }))
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
@@ -130,7 +130,7 @@ impl<'a> SeqSink for PathTrackingSeqSink<'a> {
             sink: self.sink.item()?,
             set_segment: Some(PathSegment::Index(self.index)),
         };
-        Ok(SinkHandle::Owned(Box::new(sink_wrapper)))
+        Ok(SinkHandle::boxed(sink_wrapper))
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {

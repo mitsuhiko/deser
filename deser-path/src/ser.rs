@@ -56,7 +56,7 @@ impl<'a> StructEmitter for PathStructEmitter<'a> {
             serializable: value,
             segment: RefCell::new(Some(new_segment)),
         };
-        Some((key, SerializableHandle::Owned(Box::new(value_serializable))))
+        Some((key, SerializableHandle::boxed(value_serializable)))
     }
 }
 
@@ -71,7 +71,7 @@ impl<'a> MapEmitter for PathMapEmitter<'a> {
             serializable: self.emitter.next_key()?,
             segment: self.path_segment.clone(),
         };
-        Some(SerializableHandle::Owned(Box::new(key_serializable)))
+        Some(SerializableHandle::boxed(key_serializable))
     }
 
     fn next_value(&mut self) -> SerializableHandle {
@@ -84,7 +84,7 @@ impl<'a> MapEmitter for PathMapEmitter<'a> {
             serializable: self.emitter.next_value(),
             segment: RefCell::new(Some(new_segment)),
         };
-        SerializableHandle::Owned(Box::new(value_serializable))
+        SerializableHandle::boxed(value_serializable)
     }
 }
 
@@ -103,7 +103,7 @@ impl<'a> SeqEmitter for PathSeqEmitter<'a> {
             serializable: value,
             segment: RefCell::new(Some(new_segment)),
         };
-        Some(SerializableHandle::Owned(Box::new(item_serializable)))
+        Some(SerializableHandle::boxed(item_serializable))
     }
 }
 

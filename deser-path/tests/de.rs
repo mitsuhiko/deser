@@ -30,7 +30,7 @@ fn test_path() {
 
     {
         let sink = PathSink::wrap_ref(Deserializable::deserialize_into(&mut out));
-        let mut driver = Driver::from_sink(SinkHandle::Owned(Box::new(sink)));
+        let mut driver = Driver::from_sink(SinkHandle::boxed(sink));
         driver.emit(&Event::MapStart).unwrap();
         driver.emit(&Event::Str("foo".into())).unwrap();
         driver.emit(&Event::Bool(true)).unwrap();

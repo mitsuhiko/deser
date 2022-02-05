@@ -24,14 +24,14 @@ impl<'a> MapEmitter for FlagsMapEmitter<'a> {
     fn next_key(&mut self) -> Option<SerializableHandle> {
         if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
-            Some(SerializableHandle::Owned(Box::new(key.to_string())))
+            Some(SerializableHandle::boxed(key.to_string()))
         } else {
             None
         }
     }
 
     fn next_value(&mut self) -> SerializableHandle {
-        SerializableHandle::Borrowed(self.value.unwrap())
+        SerializableHandle::to(self.value.unwrap())
     }
 }
 
