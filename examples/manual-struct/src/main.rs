@@ -78,6 +78,10 @@ struct UserSink<'a> {
 }
 
 impl<'a> MapSink for UserSink<'a> {
+    fn descriptor(&self) -> &dyn Descriptor {
+        &UserDescriptor
+    }
+
     fn key(&mut self) -> Result<SinkHandle, Error> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
