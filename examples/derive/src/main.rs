@@ -9,11 +9,9 @@ pub struct User {
 }
 
 fn main() {
-    println!(
-        "{:#?}",
-        ToDebug::new(&User {
-            id: 42,
-            email_address: "john@example.com".into(),
-        })
-    )
+    let user = User {
+        id: 42,
+        email_address: "john@example.com".into(),
+    };
+    println!("{:#?}", ToDebug::new(&user))
 }
