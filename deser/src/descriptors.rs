@@ -1,24 +1,18 @@
-use std::fmt::Debug;
-
 /// The default null descriptor.
-#[derive(Debug)]
 pub(crate) struct NullDescriptor;
 
 /// A primitive descriptor with just a name.
-#[derive(Debug)]
 pub(crate) struct NamedDescriptor {
     pub(crate) name: &'static str,
 }
 
 /// A number descriptor provides additional information about a number type.
-#[derive(Debug)]
 pub(crate) struct NumberDescriptor {
     pub(crate) name: &'static str,
     pub(crate) precision: usize,
 }
 
 /// A descriptor that is always unordered.
-#[derive(Debug)]
 pub(crate) struct UnorderedNamedDescriptor {
     pub(crate) name: &'static str,
 }
@@ -34,7 +28,7 @@ pub(crate) struct UnorderedNamedDescriptor {
 /// During serialization descriptors are generally created, for the deserialization
 /// system descriptors are only used when entering into a nested structure
 /// such as a map, struct or sequence.
-pub trait Descriptor: Debug {
+pub trait Descriptor {
     /// Returns a descriptive name for a type if such a name is available.
     fn name(&self) -> Option<&str> {
         None

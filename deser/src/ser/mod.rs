@@ -180,10 +180,42 @@ impl<'a> fmt::Debug for Layer<'a> {
 ///
 /// During serializer the [`SerializerState`] acts as a communciation device between
 /// the serializable types as the serializer.
-#[derive(Debug)]
 pub struct SerializerState<'a> {
     extensions: Extensions,
     stack: ManuallyDrop<Vec<(&'a dyn Descriptor, Layer<'a>)>>,
+}
+
+impl<'a> fmt::Debug for SerializerState<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Stack<'a>(&'a [(&'a dyn Descriptor, Layer<'a>)]);
+        struct Entry<'a>(&'a dyn Descriptor, &'a Layer<'a>);
+
+        impl<'a> fmt::Debug for Entry<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("Layer")
+                    .field("value", &self.1)
+                    .field("type_name", &self.0.name())
+                    .field("precision", &self.0.precision())
+                    .field("unordered", &self.0.unordered())
+                    .finish()
+            }
+        }
+
+        impl<'a> fmt::Debug for Stack<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut l = f.debug_list();
+                for item in self.0 {
+                    l.entry(&Entry(item.0, &item.1));
+                }
+                l.finish()
+            }
+        }
+
+        f.debug_struct("SerializerState")
+            .field("extensions", &self.extensions)
+            .field("stack", &Stack(&self.stack))
+            .finish()
+    }
 }
 
 impl<'a> Drop for SerializerState<'a> {
