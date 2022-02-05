@@ -5,4 +5,5 @@ members = [
   "deser-derive",
   "deser-path",
   "examples/derive",
+  "examples/manual-struct",
 ]
