@@ -1,17 +1,19 @@
 [package]
-name = "deser"
+name = "deser-derive"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 version = "0.2.0"
 edition = "2021"
-description = "An experimental serialization and deserialization library for Rust"
+description = "Derive extension for deser"
 repository = "https://github.com/mitsuhiko/deser"
 keywords = ["serialization", "deserialization"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser"
 
-[features]
-derive = ["deser-derive"]
+[lib]
+proc-macro = true
 
 [dependencies]
-deser-derive = { version = "0.2.0", path = "../deser-derive", optional = true }
+proc-macro2 = "1.0.30"
+quote = "1.0.10"
+syn = "1.0.80"

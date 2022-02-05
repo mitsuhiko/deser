@@ -1,6 +1,8 @@
 [workspace]
 members = [
   "deser",
-  "deser-path",
   "deser-debug",
+  "deser-derive",
+  "deser-path",
+  "examples/derive",
 ]
