@@ -41,7 +41,9 @@ modelled after `miniserde`.
 
 ## Safety
 
-Deser (currently) uses excessive amounts of unsafe code internally.
+Deser (currently) uses excessive amounts of unsafe code internally.  It is not vetted and
+it is likely completely wrong.  If this design turns out to be useful there will be need
+to be a re-design of the internals.
 
 ## License and Links
 
