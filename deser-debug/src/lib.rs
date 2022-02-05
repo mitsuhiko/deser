@@ -1,9 +1,9 @@
-//! This library takes a [`Serializable`](deser::ser::Serializable) and
+//! This library takes a [`Serialize`](deser::ser::Serialize) and
 //! formats it with [`std::fmt`] to debug representation.
 use std::fmt;
 use std::sync::atomic::{self, AtomicUsize};
 
-use deser::ser::{for_each_event, Serializable};
+use deser::ser::{for_each_event, Serialize};
 use deser::Event;
 
 /// Serializes a serializable value to `Debug` format.
@@ -25,7 +25,7 @@ impl fmt::Debug for ToDebug {
 
 impl ToDebug {
     /// Creates a new [`ToDebug`] object from a serializable value.
-    pub fn new(value: &dyn Serializable) -> ToDebug {
+    pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut events = Vec::new();
         for_each_event(value, |event, descriptor, _| {
             events.push((event.to_static(), descriptor.name().map(|x| x.to_string())));

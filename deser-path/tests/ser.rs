@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use deser::ser::{for_each_event, Chunk, Serializable, SerializerState};
+use deser::ser::{for_each_event, Chunk, Serialize, SerializerState};
 use deser::Error;
 use deser_path::{Path, PathSerializable};
 
 struct MyBool(bool);
 
-impl Serializable for MyBool {
+impl Serialize for MyBool {
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
         let path = state.get::<Path>();
         assert_eq!(path.segments().len(), 2);

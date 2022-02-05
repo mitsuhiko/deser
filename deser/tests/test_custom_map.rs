@@ -1,12 +1,10 @@
-use deser::ser::{
-    for_each_event, Chunk, MapEmitter, Serializable, SerializableHandle, SerializerState,
-};
+use deser::ser::{for_each_event, Chunk, MapEmitter, Serialize, SerializeHandle, SerializerState};
 use deser::Error;
 use std::collections::{btree_map, BTreeMap};
 
 struct Flags(BTreeMap<u64, bool>);
 
-impl Serializable for Flags {
+impl Serialize for Flags {
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Map(Box::new(FlagsMapEmitter {
             iter: self.0.iter(),
@@ -21,17 +19,17 @@ pub struct FlagsMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for FlagsMapEmitter<'a> {
-    fn next_key(&mut self) -> Option<SerializableHandle> {
+    fn next_key(&mut self) -> Option<SerializeHandle> {
         if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
-            Some(SerializableHandle::boxed(key.to_string()))
+            Some(SerializeHandle::boxed(key.to_string()))
         } else {
             None
         }
     }
 
-    fn next_value(&mut self) -> SerializableHandle {
-        SerializableHandle::to(self.value.unwrap())
+    fn next_value(&mut self) -> SerializeHandle {
+        SerializeHandle::to(self.value.unwrap())
     }
 }
 

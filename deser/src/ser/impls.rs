@@ -4,11 +4,9 @@ use std::hash::BuildHasher;
 
 use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
-use crate::ser::{
-    Chunk, MapEmitter, SeqEmitter, Serializable, SerializableHandle, SerializerState,
-};
+use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState};
 
-impl Serializable for bool {
+impl Serialize for bool {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
         &DESCRIPTOR
@@ -19,7 +17,7 @@ impl Serializable for bool {
     }
 }
 
-impl Serializable for () {
+impl Serialize for () {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "()" };
         &DESCRIPTOR
@@ -30,7 +28,7 @@ impl Serializable for () {
     }
 }
 
-impl Serializable for u8 {
+impl Serialize for u8 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "u8",
@@ -48,7 +46,7 @@ impl Serializable for u8 {
     }
 }
 
-impl Serializable for u16 {
+impl Serialize for u16 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "u16",
@@ -62,7 +60,7 @@ impl Serializable for u16 {
     }
 }
 
-impl Serializable for u32 {
+impl Serialize for u32 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "u32",
@@ -76,7 +74,7 @@ impl Serializable for u32 {
     }
 }
 
-impl Serializable for u64 {
+impl Serialize for u64 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "u64",
@@ -90,7 +88,7 @@ impl Serializable for u64 {
     }
 }
 
-impl Serializable for i8 {
+impl Serialize for i8 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "i8",
@@ -104,7 +102,7 @@ impl Serializable for i8 {
     }
 }
 
-impl Serializable for i16 {
+impl Serialize for i16 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "i16",
@@ -118,7 +116,7 @@ impl Serializable for i16 {
     }
 }
 
-impl Serializable for i32 {
+impl Serialize for i32 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "i32",
@@ -132,7 +130,7 @@ impl Serializable for i32 {
     }
 }
 
-impl Serializable for i64 {
+impl Serialize for i64 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "i64",
@@ -146,7 +144,7 @@ impl Serializable for i64 {
     }
 }
 
-impl Serializable for f32 {
+impl Serialize for f32 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "f32",
@@ -160,7 +158,7 @@ impl Serializable for f32 {
     }
 }
 
-impl Serializable for f64 {
+impl Serialize for f64 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "f64",
@@ -174,7 +172,7 @@ impl Serializable for f64 {
     }
 }
 
-impl Serializable for String {
+impl Serialize for String {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "String" };
         &DESCRIPTOR
@@ -185,7 +183,7 @@ impl Serializable for String {
     }
 }
 
-impl<'a> Serializable for &'a str {
+impl<'a> Serialize for &'a str {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
         &DESCRIPTOR
@@ -196,7 +194,7 @@ impl<'a> Serializable for &'a str {
     }
 }
 
-impl<'a> Serializable for Cow<'a, str> {
+impl<'a> Serialize for Cow<'a, str> {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
         &DESCRIPTOR
@@ -207,9 +205,9 @@ impl<'a> Serializable for Cow<'a, str> {
     }
 }
 
-impl<T> Serializable for Vec<T>
+impl<T> Serialize for Vec<T>
 where
-    T: Serializable,
+    T: Serialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
@@ -230,9 +228,9 @@ where
     }
 }
 
-impl<'a, T> Serializable for &'a [T]
+impl<'a, T> Serialize for &'a [T]
 where
-    T: Serializable,
+    T: Serialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "slice" };
@@ -255,16 +253,16 @@ where
 
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
-impl<'a, T: Serializable> SeqEmitter for SliceEmitter<'a, T> {
-    fn next(&mut self) -> Option<SerializableHandle> {
-        self.0.next().map(SerializableHandle::to)
+impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
+    fn next(&mut self) -> Option<SerializeHandle> {
+        self.0.next().map(SerializeHandle::to)
     }
 }
 
-impl<K, V> Serializable for BTreeMap<K, V>
+impl<K, V> Serialize for BTreeMap<K, V>
 where
-    K: Serializable,
-    V: Serializable,
+    K: Serialize,
+    V: Serialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
@@ -276,18 +274,18 @@ where
 
         impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
         where
-            K: Serializable,
-            V: Serializable,
+            K: Serialize,
+            V: Serialize,
         {
-            fn next_key(&mut self) -> Option<SerializableHandle> {
+            fn next_key(&mut self) -> Option<SerializeHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableHandle::to(k)
+                    SerializeHandle::to(k)
                 })
             }
 
-            fn next_value(&mut self) -> SerializableHandle {
-                SerializableHandle::to(self.1.unwrap())
+            fn next_value(&mut self) -> SerializeHandle {
+                SerializeHandle::to(self.1.unwrap())
             }
         }
 
@@ -295,10 +293,10 @@ where
     }
 }
 
-impl<K, V, H> Serializable for HashMap<K, V, H>
+impl<K, V, H> Serialize for HashMap<K, V, H>
 where
-    K: Serializable,
-    V: Serializable,
+    K: Serialize,
+    V: Serialize,
     H: BuildHasher,
 {
     fn descriptor(&self) -> &dyn Descriptor {
@@ -311,18 +309,18 @@ where
 
         impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
         where
-            K: Serializable,
-            V: Serializable,
+            K: Serialize,
+            V: Serialize,
         {
-            fn next_key(&mut self) -> Option<SerializableHandle> {
+            fn next_key(&mut self) -> Option<SerializeHandle> {
                 self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
-                    SerializableHandle::to(k)
+                    SerializeHandle::to(k)
                 })
             }
 
-            fn next_value(&mut self) -> SerializableHandle {
-                SerializableHandle::to(self.1.unwrap())
+            fn next_value(&mut self) -> SerializeHandle {
+                SerializeHandle::to(self.1.unwrap())
             }
         }
 
@@ -330,9 +328,9 @@ where
     }
 }
 
-impl<T> Serializable for BTreeSet<T>
+impl<T> Serialize for BTreeSet<T>
 where
-    T: Serializable,
+    T: Serialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
@@ -344,10 +342,10 @@ where
 
         impl<'a, T> SeqEmitter for Emitter<'a, T>
         where
-            T: Serializable,
+            T: Serialize,
         {
-            fn next(&mut self) -> Option<SerializableHandle> {
-                self.0.next().map(SerializableHandle::to)
+            fn next(&mut self) -> Option<SerializeHandle> {
+                self.0.next().map(SerializeHandle::to)
             }
         }
 
@@ -355,9 +353,9 @@ where
     }
 }
 
-impl<T> Serializable for HashSet<T>
+impl<T> Serialize for HashSet<T>
 where
-    T: Serializable,
+    T: Serialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashSet" };
@@ -369,10 +367,10 @@ where
 
         impl<'a, T> SeqEmitter for Emitter<'a, T>
         where
-            T: Serializable,
+            T: Serialize,
         {
-            fn next(&mut self) -> Option<SerializableHandle> {
-                self.0.next().map(SerializableHandle::to)
+            fn next(&mut self) -> Option<SerializeHandle> {
+                self.0.next().map(SerializeHandle::to)
             }
         }
 

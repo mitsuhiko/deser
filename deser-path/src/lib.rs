@@ -4,12 +4,12 @@
 //!
 //! ```rust
 //! use deser_path::{Path, PathSerializable};
-//! use deser::ser::{Serializable, SerializerState, Chunk};
+//! use deser::ser::{Serialize, SerializerState, Chunk};
 //! use deser::Error;
 //!
 //! struct MyInt(u32);
 //!
-//! impl Serializable for MyInt {
+//! impl Serialize for MyInt {
 //!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.

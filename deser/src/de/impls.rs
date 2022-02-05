@@ -4,15 +4,15 @@ use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::mem::take;
 
-use crate::de::{Deserializable, DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
+use crate::de::{Deserialize, DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 
 make_slot_wrapper!(SlotWrapper);
 
-macro_rules! deserializable {
+macro_rules! deserialize {
     ($ty:ty) => {
-        impl Deserializable for $ty {
+        impl Deserialize for $ty {
             fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
                 SlotWrapper::make_handle(out)
             }
@@ -30,7 +30,7 @@ impl Sink for SlotWrapper<()> {
         Ok(())
     }
 }
-deserializable!(());
+deserialize!(());
 
 impl Sink for SlotWrapper<bool> {
     fn expecting(&self) -> Cow<'_, str> {
@@ -42,7 +42,7 @@ impl Sink for SlotWrapper<bool> {
         Ok(())
     }
 }
-deserializable!(bool);
+deserialize!(bool);
 
 impl Sink for SlotWrapper<String> {
     fn expecting(&self) -> Cow<'_, str> {
@@ -54,7 +54,7 @@ impl Sink for SlotWrapper<String> {
         Ok(())
     }
 }
-deserializable!(String);
+deserialize!(String);
 
 macro_rules! int_sink {
     ($ty:ty) => {
@@ -94,7 +94,7 @@ macro_rules! int_sink {
 
 int_sink!(u8);
 
-impl Deserializable for u8 {
+impl Deserialize for u8 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SlotWrapper::make_handle(out)
     }
@@ -108,23 +108,23 @@ impl Deserializable for u8 {
 }
 
 int_sink!(u16);
-deserializable!(u16);
+deserialize!(u16);
 int_sink!(u32);
-deserializable!(u32);
+deserialize!(u32);
 int_sink!(u64);
-deserializable!(u64);
+deserialize!(u64);
 int_sink!(i8);
-deserializable!(i8);
+deserialize!(i8);
 int_sink!(i16);
-deserializable!(i16);
+deserialize!(i16);
 int_sink!(i32);
-deserializable!(i32);
+deserialize!(i32);
 int_sink!(i64);
-deserializable!(i64);
+deserialize!(i64);
 int_sink!(isize);
-deserializable!(isize);
+deserialize!(isize);
 int_sink!(usize);
-deserializable!(usize);
+deserialize!(usize);
 
 macro_rules! float_sink {
     ($ty:ty) => {
@@ -152,12 +152,12 @@ macro_rules! float_sink {
 }
 
 float_sink!(f32);
-deserializable!(f32);
+deserialize!(f32);
 
 float_sink!(f64);
-deserializable!(f64);
+deserialize!(f64);
 
-impl<T: Deserializable + Clone> Sink for SlotWrapper<Vec<T>> {
+impl<T: Deserialize + Clone> Sink for SlotWrapper<Vec<T>> {
     fn expecting(&self) -> Cow<'_, str> {
         if T::__private_byte_slice(&[][..]).is_some() {
             "bytes".into()
@@ -187,7 +187,7 @@ impl<T: Deserializable + Clone> Sink for SlotWrapper<Vec<T>> {
     }
 }
 
-impl<T: Deserializable + Clone> Deserializable for Vec<T> {
+impl<T: Deserialize + Clone> Deserialize for Vec<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SlotWrapper::make_handle(out)
     }
@@ -195,8 +195,8 @@ impl<T: Deserializable + Clone> Deserializable for Vec<T> {
 
 impl<K, V> Sink for SlotWrapper<BTreeMap<K, V>>
 where
-    K: Ord + Deserializable,
-    V: Deserializable,
+    K: Ord + Deserialize,
+    V: Deserialize,
 {
     fn expecting(&self) -> Cow<'_, str> {
         "map".into()
@@ -212,10 +212,10 @@ where
     }
 }
 
-impl<K, V> Deserializable for BTreeMap<K, V>
+impl<K, V> Deserialize for BTreeMap<K, V>
 where
-    K: Ord + Deserializable,
-    V: Deserializable,
+    K: Ord + Deserialize,
+    V: Deserialize,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SlotWrapper::make_handle(out)
@@ -242,8 +242,8 @@ where
 
 impl<'a, K, V> MapSink for BTreeMapSink<'a, K, V>
 where
-    K: Ord + Deserializable,
-    V: Deserializable,
+    K: Ord + Deserialize,
+    V: Deserialize,
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
@@ -252,11 +252,11 @@ where
 
     fn key(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::deserialize_into(&mut self.key))
+        Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
     fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserializable::deserialize_into(&mut self.value))
+        Ok(Deserialize::deserialize_into(&mut self.value))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
@@ -268,8 +268,8 @@ where
 
 impl<K, V, H> Sink for SlotWrapper<HashMap<K, V, H>>
 where
-    K: Hash + Eq + Deserializable,
-    V: Deserializable,
+    K: Hash + Eq + Deserialize,
+    V: Deserialize,
     H: BuildHasher + Default,
 {
     fn expecting(&self) -> Cow<'_, str> {
@@ -286,10 +286,10 @@ where
     }
 }
 
-impl<K, V, H> Deserializable for HashMap<K, V, H>
+impl<K, V, H> Deserialize for HashMap<K, V, H>
 where
-    K: Hash + Eq + Deserializable,
-    V: Deserializable,
+    K: Hash + Eq + Deserialize,
+    V: Deserialize,
     H: BuildHasher + Default,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
@@ -318,8 +318,8 @@ where
 
 impl<'a, K, V, H> MapSink for HashMapSink<'a, K, V, H>
 where
-    K: Hash + Eq + Deserializable,
-    V: Deserializable,
+    K: Hash + Eq + Deserialize,
+    V: Deserialize,
     H: BuildHasher + Default,
 {
     fn descriptor(&self) -> &dyn Descriptor {
@@ -329,11 +329,11 @@ where
 
     fn key(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::deserialize_into(&mut self.key))
+        Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
     fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserializable::deserialize_into(&mut self.value))
+        Ok(Deserialize::deserialize_into(&mut self.value))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
@@ -357,7 +357,7 @@ impl<'a, T: 'a> VecSink<'a, T> {
     }
 }
 
-impl<'a, T: Deserializable> SeqSink for VecSink<'a, T> {
+impl<'a, T: Deserialize> SeqSink for VecSink<'a, T> {
     fn descriptor(&self) -> &dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
         static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
@@ -370,7 +370,7 @@ impl<'a, T: Deserializable> SeqSink for VecSink<'a, T> {
 
     fn item(&mut self) -> Result<SinkHandle, Error> {
         self.flush();
-        Ok(Deserializable::deserialize_into(&mut self.element))
+        Ok(Deserialize::deserialize_into(&mut self.element))
     }
 
     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {

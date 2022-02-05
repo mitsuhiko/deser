@@ -1,6 +1,6 @@
 //! Generic data structure deserialization framework.
 //!
-//! Deserialization is based on the [`Sink`] and [`Deserializable`] traits.
+//! Deserialization is based on the [`Sink`] and [`Deserialize`] traits.
 //! When deserialization is started the target deserializable object
 //! is attached to a destination slot.  As deserialization is happening
 //! the value is placed there.
@@ -62,7 +62,7 @@
 //! must be placed in the slot:
 //!
 //! ```rust
-//! use deser::de::{Sink, Deserializable, DeserializerState, SinkHandle};
+//! use deser::de::{Sink, Deserialize, DeserializerState, SinkHandle};
 //! use deser::{make_slot_wrapper, Error};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -82,7 +82,7 @@
 //!     }
 //! }
 //!
-//! impl Deserializable for MyBool {
+//! impl Deserialize for MyBool {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         // Since we're using the SlotWrapper abstraction we can directly
 //!         // make a handle here by using the `make_handle` utility.
@@ -97,7 +97,7 @@
 //! [`MapSink`] and return it from the main [`Sink`]:
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserializable, Sink, SinkHandle, MapSink, ignore};
+//! use deser::de::{DeserializerState, Deserialize, Sink, SinkHandle, MapSink, ignore};
 //! use deser::{make_slot_wrapper, Error, ErrorKind};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -107,7 +107,7 @@
 //!     name: String,
 //! }
 //!
-//! impl Deserializable for Flag {
+//! impl Deserialize for Flag {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
 //!         SlotWrapper::make_handle(out)
 //!     }
@@ -142,15 +142,15 @@
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
-//!         Ok(Deserializable::deserialize_into(&mut self.key))
+//!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
 //!     fn value(&mut self) -> Result<SinkHandle, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
-//!             Some("enabled") => Ok(Deserializable::deserialize_into(&mut self.enabled_field)),
-//!             Some("name") => Ok(Deserializable::deserialize_into(&mut self.name_field)),
+//!             Some("enabled") => Ok(Deserialize::deserialize_into(&mut self.enabled_field)),
+//!             Some("name") => Ok(Deserialize::deserialize_into(&mut self.name_field)),
 //!             // if we don't know the key, return a ignore sink to drop the value.
 //!             _ => Ok(SinkHandle::to(ignore())),
 //!         }
@@ -197,7 +197,7 @@ __make_slot_wrapper!((pub), SlotWrapper);
 /// be boxed up inside the handle.
 ///
 /// The equivalent for serialization is the
-/// [`SerializableHandle`](crate::ser::SerializableHandle).
+/// [`SerializeHandle`](crate::ser::SerializeHandle).
 pub enum SinkHandle<'a> {
     /// A borrowed reference to a [`Sink`].
     Borrowed(&'a mut dyn Sink),
@@ -242,7 +242,7 @@ impl<'a> SinkHandle<'a> {
 /// A type is deserializable if it can deserialize into a [`Sink`].  The
 /// actual deserialization logic itself is implemented by the returned
 /// [`Sink`].
-pub trait Deserializable: Sized {
+pub trait Deserialize: Sized {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// There are two typical implementations for this method: the common one is
@@ -414,9 +414,9 @@ impl<'a> DeserializerState<'a> {
     }
 }
 
-/// A driver allows emitting deserialization events into a [`Deserializable`].
+/// A driver allows emitting deserialization events into a [`Deserialize`].
 ///
-/// This is a convenient way to safely drive a [`Sink`] of a [`Deserializable`]
+/// This is a convenient way to safely drive a [`Sink`] of a [`Deserialize`]
 /// without using the runtime stack.  As rust lifetimes make what this type does
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
@@ -446,7 +446,7 @@ enum Layer<'a> {
 
 impl<'a> Driver<'a> {
     /// Creates a new deserializer driver.
-    pub fn new<T: Deserializable>(out: &'a mut Option<T>) -> Driver<'a> {
+    pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> Driver<'a> {
         Driver::from_sink(T::deserialize_into(out))
     }
 
