@@ -48,9 +48,8 @@
 //! # Serializing structs
 //!
 //! To serialize compounds like structs you return a chunk containing an emitter.
-//! Note that the emitter returns [`&dyn Serialize`](crate::ser::Serialize) references.
-//! If want you want to serialize is not already available so you can borrow from,
-//! you an stash away a temporary value on the emitter itself and return a loan to it.
+//! Note that the emitter returns a [`SerializeHandle`].  If want you want to
+//! serialize is not already available the handle can hold a boxed [`Serialize`].
 //!
 //! ```rust
 //! use std::borrow::Cow;
