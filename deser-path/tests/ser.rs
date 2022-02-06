@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use deser::ser::{for_each_event, Chunk, Serialize, SerializerState};
-use deser::{Error, Atom};
+use deser::{Atom, Error};
 use deser_path::{Path, PathSerializable};
 
 struct MyBool(bool);
