@@ -36,16 +36,17 @@
 //! ```rust
 //! use std::collections::BTreeMap;
 //! use deser::de::Driver;
-//! use deser::{Atom, Event};
+//! use deser::Event;
 //!
 //! let mut out = None::<BTreeMap<u32, String>>;
 //! {
 //!     let mut driver = Driver::new(&mut out);
+//!     // emit takes values that implement Into<Event>
 //!     driver.emit(Event::MapStart).unwrap();
-//!     driver.emit(Event::Atom(Atom::I64(1))).unwrap();
-//!     driver.emit(Event::Atom(Atom::Str("Hello".into()))).unwrap();
-//!     driver.emit(Event::Atom(Atom::I64(2))).unwrap();
-//!     driver.emit(Event::Atom(Atom::Str("World".into()))).unwrap();
+//!     driver.emit(1i64).unwrap();
+//!     driver.emit("Hello").unwrap();
+//!     driver.emit(2i64).unwrap();
+//!     driver.emit("World").unwrap();
 //!     driver.emit(Event::MapEnd).unwrap();
 //! }
 //!

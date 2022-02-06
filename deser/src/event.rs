@@ -46,6 +46,20 @@ impl<'a> Atom<'a> {
     }
 
     /// Creates an "unexpected" error.
+    ///
+    /// This is useful when implementing sinks that do not want to deal with an
+    /// atom of a specific type.  The default implementation of a
+    /// [`Sink`](crate::de::Sink) uses this method as follows:
+    ///
+    /// ```
+    /// # use deser::{Atom, Error, de::{DeserializerState, Sink}};
+    /// # struct MySink;
+    /// impl Sink for MySink {
+    ///     fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    ///         Err(atom.unexpected_error(&self.expecting()))
+    ///     }
+    /// }
+    /// ```
     pub fn unexpected_error(&self, expectation: &str) -> Error {
         Error::new(
             ErrorKind::Unexpected,
