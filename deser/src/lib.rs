@@ -1,11 +1,35 @@
-//! Deser is an experimental serialization and deserialization library for Rust.
+//! Deser is an experimental serialization system for Rust.  It wants to explore
+//! the possibilities of serialization and deserialization of structural formats
+//! such as JSON or msgpack.  It intentionally does not desire to support non
+//! self describing formats such as bincode.
 //!
 //! There is not much in terms of actual serialization and deserialization yet
 //! as this library at this point is an exploration in API design for the
 //! abstraction layer itself.
 //!
+#![cfg_attr(
+    feature = "derive",
+    doc = r#"
+```rust
+use deser::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+#[deser(rename_all = "camelCase")]
+pub struct Account {
+    id: usize,
+    account_holder: String,
+    is_deactivated: bool,
+}
+```
+"#
+)]
+//!
 //! For more information have a look at the GitHub repository:
 //! [mitsuhiko/deser](https://github.com/mitsuhiko/deser).
+//!
+//! ## Features
+//!
+//! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].
 
 #[macro_use]
 mod macros;
