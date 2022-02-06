@@ -379,3 +379,61 @@ impl<'a, T: Deserialize> SeqSink for VecSink<'a, T> {
         Ok(())
     }
 }
+
+impl<T> Deserialize for Option<T>
+where
+    T: Deserialize,
+{
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        *out = Some(None);
+        SinkHandle::boxed(NullIgnoringSink {
+            sink: Deserialize::deserialize_into(out.as_mut().unwrap()),
+        })
+    }
+}
+
+struct NullIgnoringSink<'a> {
+    sink: SinkHandle<'a>,
+}
+
+impl<'a> Sink for NullIgnoringSink<'a> {
+    fn null(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn bool(&mut self, value: bool, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.bool(value, state)
+    }
+
+    fn str(&mut self, value: &str, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.str(value, state)
+    }
+
+    fn bytes(&mut self, value: &[u8], state: &DeserializerState) -> Result<(), Error> {
+        self.sink.bytes(value, state)
+    }
+
+    fn u64(&mut self, value: u64, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.u64(value, state)
+    }
+
+    fn i64(&mut self, value: i64, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.i64(value, state)
+    }
+
+    fn f64(&mut self, value: f64, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.f64(value, state)
+    }
+
+    fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+        self.sink.map(state)
+    }
+
+    fn seq(&mut self, state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
+        self.sink.seq(state)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        "optional".into()
+    }
+}

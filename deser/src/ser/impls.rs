@@ -405,3 +405,20 @@ where
         Ok(Chunk::Seq(Box::new(Emitter(self.iter()))))
     }
 }
+
+impl<T> Serialize for Option<T>
+where
+    T: Serialize,
+{
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
+        &DESCRIPTOR
+    }
+
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+        match self {
+            Some(value) => value.serialize(state),
+            None => Ok(Chunk::Null),
+        }
+    }
+}

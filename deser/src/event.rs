@@ -14,7 +14,7 @@ use std::borrow::Cow;
 ///
 /// During deserialization events are passed to a [`Driver`](crate::de::Driver)
 /// to drive the deserialization.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Event<'a> {
     Null,
     Bool(bool),

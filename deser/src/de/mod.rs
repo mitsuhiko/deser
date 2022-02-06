@@ -328,6 +328,10 @@ pub trait Sink {
         ))
     }
 
+    fn alt_map_sink(&mut self, _state: &DeserializerState) -> Option<SinkHandle> {
+        None
+    }
+
     fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
         Err(Error::new(
             ErrorKind::Unexpected,
