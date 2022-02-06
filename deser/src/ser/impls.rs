@@ -47,159 +47,35 @@ impl Serialize for u8 {
     }
 }
 
-impl Serialize for u16 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "u16",
-            precision: 16,
-        };
-        &DESCRIPTOR
-    }
+macro_rules! serialize_int {
+    ($ty:ty, $atom:ident) => {
+        impl Serialize for $ty {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
+                    name: stringify!($ty),
+                    precision: std::mem::size_of::<$ty>() * 8,
+                };
+                &DESCRIPTOR
+            }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::U64(*self as u64)))
-    }
+            fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+                Ok(Chunk::Atom(Atom::$atom(*self as _)))
+            }
+        }
+    };
 }
 
-impl Serialize for u32 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "u32",
-            precision: 32,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::U64(*self as u64)))
-    }
-}
-
-impl Serialize for u64 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "u64",
-            precision: 64,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::U64(*self)))
-    }
-}
-
-impl Serialize for i8 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "i8",
-            precision: 8,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::I64(*self as i64)))
-    }
-}
-
-impl Serialize for i16 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "i16",
-            precision: 16,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::I64(*self as i64)))
-    }
-}
-
-impl Serialize for i32 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "i32",
-            precision: 32,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::I64(*self as i64)))
-    }
-}
-
-impl Serialize for i64 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "i64",
-            precision: 64,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::I64(*self)))
-    }
-}
-
-impl Serialize for isize {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "isize",
-            precision: std::mem::size_of::<isize>() * 8,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::I64(*self as i64)))
-    }
-}
-
-impl Serialize for usize {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "usize",
-            precision: std::mem::size_of::<usize>() * 8,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::U64(*self as u64)))
-    }
-}
-
-impl Serialize for f32 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "f32",
-            precision: 32,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::F64(*self as f64)))
-    }
-}
-
-impl Serialize for f64 {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "f64",
-            precision: 64,
-        };
-        &DESCRIPTOR
-    }
-
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Atom(Atom::F64(*self)))
-    }
-}
+serialize_int!(u16, U64);
+serialize_int!(u32, U64);
+serialize_int!(u64, U64);
+serialize_int!(i8, I64);
+serialize_int!(i16, I64);
+serialize_int!(i32, I64);
+serialize_int!(i64, I64);
+serialize_int!(isize, I64);
+serialize_int!(usize, U64);
+serialize_int!(f32, F64);
+serialize_int!(f64, F64);
 
 impl Serialize for String {
     fn descriptor(&self) -> &dyn Descriptor {
