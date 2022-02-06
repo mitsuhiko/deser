@@ -5,7 +5,7 @@
 //! ```rust
 //! use deser_path::{Path, PathSerializable};
 //! use deser::ser::{Serialize, SerializerState, Chunk};
-//! use deser::Error;
+//! use deser::{Atom, Error};
 //!
 //! struct MyInt(u32);
 //!
@@ -15,7 +15,7 @@
 //!         // any point request the current path from the state.
 //!         let path = state.get::<Path>();
 //!         println!("{:?}", path.segments());
-//!         Ok(Chunk::U64(self.0 as u64))
+//!         self.0.serialize(state)
 //!     }
 //! }
 //!

@@ -20,7 +20,7 @@ mod extensions;
 
 pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
-pub use self::event::Event;
+pub use self::event::{Atom, Event};
 
 #[doc(inline)]
 pub use self::{de::Deserialize, ser::Serialize};

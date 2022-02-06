@@ -17,7 +17,7 @@
 //!
 //! ```rust
 //! use deser::ser::{Serialize, SerializerState, Chunk};
-//! use deser::{Descriptor, Error};
+//! use deser::{Atom, Descriptor, Error};
 //!
 //! struct MyInt(u32);
 //!
@@ -39,8 +39,9 @@
 //!         &MyIntDescriptor
 //!     }
 //!
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-//!         Ok(Chunk::U64(self.0 as u64))
+//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+//!         // one can also just do `self.0.serialize(state)`
+//!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
 //!     }
 //! }
 //! ```
@@ -95,10 +96,13 @@ use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::event::Event;
+use crate::event::{Atom, Event};
 use crate::extensions::Extensions;
 
+mod chunk;
 mod impls;
+
+pub use self::chunk::Chunk;
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -137,26 +141,6 @@ impl<'a> SerializeHandle<'a> {
     pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
     }
-}
-
-/// A chunk represents the minimum state necessary to serialize a value.
-///
-/// Chunks are of two types: atomic primitives and stateful emitters.
-/// For instance `Chunk::Bool(true)` is an atomic primitive.  It can be emitted
-/// to a serializer directly.  On the other hand a `Chunk::Map` contains a
-/// stateful emitter that keeps yielding values until it's done walking over
-/// the map.
-pub enum Chunk<'a> {
-    Null,
-    Bool(bool),
-    Str(Cow<'a, str>),
-    Bytes(Cow<'a, [u8]>),
-    U64(u64),
-    I64(i64),
-    F64(f64),
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>),
-    Seq(Box<dyn SeqEmitter + 'a>),
 }
 
 enum Layer<'a> {
@@ -264,7 +248,7 @@ impl<'a> SerializerState<'a> {
 /// [`Descriptor`] and the current [`SerializerState`].
 pub fn for_each_event<F>(serializable: &dyn Serialize, mut f: F) -> Result<(), Error>
 where
-    F: FnMut(&Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
+    F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
     let mut serializable = SerializeHandle::Borrowed(serializable);
     let mut state = SerializerState {
@@ -283,13 +267,7 @@ where
 
     loop {
         let (event, emitter_opt) = match chunk {
-            Chunk::Null => (Event::Null, None),
-            Chunk::Bool(value) => (Event::Bool(value), None),
-            Chunk::Str(value) => (Event::Str(value), None),
-            Chunk::Bytes(value) => (Event::Bytes(value), None),
-            Chunk::U64(value) => (Event::U64(value), None),
-            Chunk::I64(value) => (Event::I64(value), None),
-            Chunk::F64(value) => (Event::F64(value), None),
+            Chunk::Atom(atom) => (Event::Atom(atom), None),
             Chunk::Struct(emitter) => (Event::MapStart, Some(Layer::Struct(emitter))),
             Chunk::Map(emitter) => (Event::MapStart, Some(Layer::Map(emitter, false))),
             Chunk::Seq(emitter) => (Event::SeqStart, Some(Layer::Seq(emitter))),
@@ -298,7 +276,7 @@ where
         if let Some(emitter) = emitter_opt {
             state.stack.push((descriptor, emitter));
         }
-        f(&event, descriptor, &state)?;
+        f(event, descriptor, &state)?;
         if done {
             serializable.finish(&state)?;
         }
@@ -319,13 +297,17 @@ where
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
-                                f(&Event::Str(Cow::Borrowed(&key)), key_descriptor, &state)?;
+                                f(
+                                    Event::Atom(Atom::Str(Cow::Borrowed(&key))),
+                                    key_descriptor,
+                                    &state,
+                                )?;
                                 serializable = value;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, layer.0, &state)?,
                         }
                     }
                     Layer::Map(ref mut m, ref mut feed_value) => {
@@ -347,7 +329,7 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, layer.0, &state)?,
                         }
                     }
                     Layer::Seq(ref mut seq) => {
@@ -359,7 +341,7 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::SeqEnd, layer.0, &state)?,
+                            None => f(Event::SeqEnd, layer.0, &state)?,
                         }
                     }
                 }
@@ -374,6 +356,10 @@ where
 }
 
 /// A struct emitter.
+///
+/// A struct emitter is a simplified version of a [`MapEmitter`] which produces struct
+/// field and value in one go.  The object model itself however does not know structs,
+/// it only knows about maps.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
     fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)>;
@@ -461,17 +447,17 @@ fn test_serialize() {
         &v[..],
         [
             "MapStart",
-            "Bool(false)",
+            "Atom(Bool(false))",
             "SeqStart",
             "SeqEnd",
-            "Bool(true)",
+            "Atom(Bool(true))",
             "SeqStart",
             "SeqStart",
-            "Bytes([120])",
-            "Bytes([121, 121, 121])",
+            "Atom(Bytes([120]))",
+            "Atom(Bytes([121, 121, 121]))",
             "SeqEnd",
             "SeqStart",
-            "Bytes([122, 122, 122, 122])",
+            "Atom(Bytes([122, 122, 122, 122]))",
             "SeqEnd",
             "SeqEnd",
             "MapEnd",

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use deser::ser::{for_each_event, Chunk, Serialize, SerializerState};
-use deser::Error;
+use deser::{Atom, Error};
 use deser_path::{Path, PathSerializable};
 
 struct MyBool(bool);
@@ -10,7 +10,7 @@ impl Serialize for MyBool {
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
         let path = state.get::<Path>();
         assert_eq!(path.segments().len(), 2);
-        Ok(Chunk::Bool(self.0))
+        Ok(Chunk::Atom(Atom::Bool(self.0)))
     }
 }
 
@@ -32,10 +32,10 @@ fn test_path() {
         events,
         vec![
             "MapStart|[]",
-            "Str(\"key\")|[]",
+            "Atom(Str(\"key\"))|[]",
             "SeqStart|[Key(\"key\")]",
-            "Bool(false)|[Key(\"key\"), Index(0)]",
-            "Bool(true)|[Key(\"key\"), Index(1)]",
+            "Atom(Bool(false))|[Key(\"key\"), Index(0)]",
+            "Atom(Bool(true))|[Key(\"key\"), Index(1)]",
             "SeqEnd|[Key(\"key\")]",
             "MapEnd|[]"
         ]

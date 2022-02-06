@@ -5,7 +5,7 @@ use std::rc::Rc;
 use deser::ser::{
     Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState, StructEmitter,
 };
-use deser::Error;
+use deser::{Atom, Error};
 
 use crate::{Path, PathSegment};
 
@@ -145,13 +145,13 @@ struct SegmentCollectingSerializable<'a> {
 impl<'a> Serialize for SegmentCollectingSerializable<'a> {
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
         match self.serializable.serialize(state)? {
-            Chunk::Str(key) => {
+            Chunk::Atom(Atom::Str(key)) => {
                 *self.segment.borrow_mut() = Some(PathSegment::Key(key.to_string()));
-                Ok(Chunk::Str(key))
+                Ok(Chunk::Atom(Atom::Str(key)))
             }
-            Chunk::U64(val) => {
+            Chunk::Atom(Atom::U64(val)) => {
                 *self.segment.borrow_mut() = Some(PathSegment::Index(val as usize));
-                Ok(Chunk::U64(val))
+                Ok(Chunk::Atom(Atom::U64(val)))
             }
             other => Ok(other),
         }

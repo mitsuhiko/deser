@@ -7,6 +7,7 @@ use std::mem::take;
 use crate::de::{Deserialize, DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
+use crate::event::Atom;
 
 make_slot_wrapper!(SlotWrapper);
 
@@ -25,9 +26,14 @@ impl Sink for SlotWrapper<()> {
         "null".into()
     }
 
-    fn null(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        **self = Some(());
-        Ok(())
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Null => {
+                **self = Some(());
+                Ok(())
+            }
+            other => Err(other.unexpected_error(&self.expecting())),
+        }
     }
 }
 deserialize!(());
@@ -37,9 +43,14 @@ impl Sink for SlotWrapper<bool> {
         "bool".into()
     }
 
-    fn bool(&mut self, value: bool, _state: &DeserializerState) -> Result<(), Error> {
-        **self = Some(value);
-        Ok(())
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Bool(value) => {
+                **self = Some(value);
+                Ok(())
+            }
+            other => Err(other.unexpected_error(&self.expecting())),
+        }
     }
 }
 deserialize!(bool);
@@ -49,9 +60,14 @@ impl Sink for SlotWrapper<String> {
         "string".into()
     }
 
-    fn str(&mut self, value: &str, _state: &DeserializerState) -> Result<(), Error> {
-        **self = Some(value.to_string());
-        Ok(())
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Str(value) => {
+                **self = Some(value.to_string());
+                Ok(())
+            }
+            other => Err(other.unexpected_error(&self.expecting())),
+        }
     }
 }
 deserialize!(String);
@@ -63,29 +79,33 @@ macro_rules! int_sink {
                 stringify!($ty).into()
             }
 
-            fn u64(&mut self, value: u64, _state: &DeserializerState) -> Result<(), Error> {
-                let truncated = value as $ty;
-                if truncated as u64 == value {
-                    **self = Some(truncated);
-                    Ok(())
-                } else {
-                    Err(Error::new(
-                        ErrorKind::OutOfRange,
-                        "value out of range for u8",
-                    ))
-                }
-            }
-
-            fn i64(&mut self, value: i64, _state: &DeserializerState) -> Result<(), Error> {
-                let truncated = value as $ty;
-                if truncated as i64 == value {
-                    **self = Some(truncated);
-                    Ok(())
-                } else {
-                    Err(Error::new(
-                        ErrorKind::OutOfRange,
-                        concat!("value out of range for ", stringify!($ty)),
-                    ))
+            fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+                match atom {
+                    Atom::U64(value) => {
+                        let truncated = value as $ty;
+                        if truncated as u64 == value {
+                            **self = Some(truncated);
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                ErrorKind::OutOfRange,
+                                "value out of range for type",
+                            ))
+                        }
+                    }
+                    Atom::I64(value) => {
+                        let truncated = value as $ty;
+                        if truncated as i64 == value {
+                            **self = Some(truncated);
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                ErrorKind::OutOfRange,
+                                "value out of range for type",
+                            ))
+                        }
+                    }
+                    other => Err(other.unexpected_error(&self.expecting())),
                 }
             }
         }
@@ -133,19 +153,22 @@ macro_rules! float_sink {
                 stringify!($ty).into()
             }
 
-            fn u64(&mut self, value: u64, _state: &DeserializerState) -> Result<(), Error> {
-                **self = Some(value as $ty);
-                Ok(())
-            }
-
-            fn i64(&mut self, value: i64, _state: &DeserializerState) -> Result<(), Error> {
-                **self = Some(value as $ty);
-                Ok(())
-            }
-
-            fn f64(&mut self, value: f64, _state: &DeserializerState) -> Result<(), Error> {
-                **self = Some(value as $ty);
-                Ok(())
+            fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+                match atom {
+                    Atom::U64(value) => {
+                        **self = Some(value as $ty);
+                        Ok(())
+                    }
+                    Atom::I64(value) => {
+                        **self = Some(value as $ty);
+                        Ok(())
+                    }
+                    Atom::F64(value) => {
+                        **self = Some(value as $ty);
+                        Ok(())
+                    }
+                    other => Err(other.unexpected_error(&self.expecting())),
+                }
             }
         }
     };
@@ -166,15 +189,20 @@ impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
         }
     }
 
-    fn bytes(&mut self, value: &[u8], _state: &DeserializerState) -> Result<(), Error> {
-        if let Some(bytes) = T::__private_byte_slice_to_vec(value) {
-            **self = Some(bytes);
-            Ok(())
-        } else {
-            Err(Error::new(
-                ErrorKind::Unexpected,
-                format!("unexpected bytes, expected {}", self.expecting()),
-            ))
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Bytes(value) => {
+                if let Some(bytes) = T::__private_byte_slice_to_vec(&value) {
+                    **self = Some(bytes);
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::Unexpected,
+                        format!("unexpected bytes, expected {}", self.expecting()),
+                    ))
+                }
+            }
+            other => Err(other.unexpected_error(&self.expecting())),
         }
     }
 
@@ -397,32 +425,11 @@ struct NullIgnoringSink<'a> {
 }
 
 impl<'a> Sink for NullIgnoringSink<'a> {
-    fn null(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn bool(&mut self, value: bool, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.bool(value, state)
-    }
-
-    fn str(&mut self, value: &str, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.str(value, state)
-    }
-
-    fn bytes(&mut self, value: &[u8], state: &DeserializerState) -> Result<(), Error> {
-        self.sink.bytes(value, state)
-    }
-
-    fn u64(&mut self, value: u64, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.u64(value, state)
-    }
-
-    fn i64(&mut self, value: i64, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.i64(value, state)
-    }
-
-    fn f64(&mut self, value: f64, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.f64(value, state)
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Null => Ok(()),
+            other => self.sink.atom(other, state),
+        }
     }
 
     fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
