@@ -4,6 +4,7 @@ use std::hash::BuildHasher;
 
 use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
+use crate::event::Atom;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState};
 
 impl Serialize for bool {
@@ -13,7 +14,7 @@ impl Serialize for bool {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Bool(*self))
+        Ok(Chunk::Atom(Atom::Bool(*self)))
     }
 }
 
@@ -24,7 +25,7 @@ impl Serialize for () {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Null)
+        Ok(Chunk::Atom(Atom::Null))
     }
 }
 
@@ -38,7 +39,7 @@ impl Serialize for u8 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::U64(*self as u64))
+        Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 
     fn __private_slice_as_bytes(val: &[u8]) -> Option<&[u8]> {
@@ -56,7 +57,7 @@ impl Serialize for u16 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::U64(*self as u64))
+        Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 }
 
@@ -70,7 +71,7 @@ impl Serialize for u32 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::U64(*self as u64))
+        Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 }
 
@@ -84,7 +85,7 @@ impl Serialize for u64 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::U64(*self))
+        Ok(Chunk::Atom(Atom::U64(*self)))
     }
 }
 
@@ -98,7 +99,7 @@ impl Serialize for i8 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::I64(*self as i64))
+        Ok(Chunk::Atom(Atom::I64(*self as i64)))
     }
 }
 
@@ -112,7 +113,7 @@ impl Serialize for i16 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::I64(*self as i64))
+        Ok(Chunk::Atom(Atom::I64(*self as i64)))
     }
 }
 
@@ -126,7 +127,7 @@ impl Serialize for i32 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::I64(*self as i64))
+        Ok(Chunk::Atom(Atom::I64(*self as i64)))
     }
 }
 
@@ -140,7 +141,7 @@ impl Serialize for i64 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::I64(*self))
+        Ok(Chunk::Atom(Atom::I64(*self)))
     }
 }
 
@@ -154,7 +155,7 @@ impl Serialize for isize {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::I64(*self as i64))
+        Ok(Chunk::Atom(Atom::I64(*self as i64)))
     }
 }
 
@@ -168,7 +169,7 @@ impl Serialize for usize {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::U64(*self as u64))
+        Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 }
 
@@ -182,7 +183,7 @@ impl Serialize for f32 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::F64(*self as f64))
+        Ok(Chunk::Atom(Atom::F64(*self as f64)))
     }
 }
 
@@ -196,7 +197,7 @@ impl Serialize for f64 {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::F64(*self))
+        Ok(Chunk::Atom(Atom::F64(*self)))
     }
 }
 
@@ -207,7 +208,7 @@ impl Serialize for String {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Str(self.as_str().into()))
+        Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
     }
 }
 
@@ -218,7 +219,7 @@ impl<'a> Serialize for &'a str {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Str((*self).into()))
+        Ok(Chunk::Atom(Atom::Str((*self).into())))
     }
 }
 
@@ -229,7 +230,7 @@ impl<'a> Serialize for Cow<'a, str> {
     }
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-        Ok(Chunk::Str(Cow::Borrowed(self)))
+        Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self))))
     }
 }
 
@@ -249,7 +250,7 @@ where
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
-            Ok(Chunk::Bytes(Cow::Borrowed(bytes)))
+            Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(bytes))))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter((&self[..]).iter()))))
         }
@@ -272,7 +273,7 @@ where
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
-            Ok(Chunk::Bytes(Cow::Borrowed(bytes)))
+            Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(bytes))))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
@@ -418,7 +419,7 @@ where
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
         match self {
             Some(value) => value.serialize(state),
-            None => Ok(Chunk::Null),
+            None => Ok(Chunk::Atom(Atom::Null)),
         }
     }
 }

@@ -17,7 +17,7 @@
 //!
 //! ```rust
 //! use deser::ser::{Serialize, SerializerState, Chunk};
-//! use deser::{Descriptor, Error};
+//! use deser::{Atom, Descriptor, Error};
 //!
 //! struct MyInt(u32);
 //!
@@ -39,8 +39,9 @@
 //!         &MyIntDescriptor
 //!     }
 //!
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
-//!         Ok(Chunk::U64(self.0 as u64))
+//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+//!         // one can also just do `self.0.serialize(state)`
+//!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
 //!     }
 //! }
 //! ```
@@ -98,7 +99,10 @@ use crate::error::Error;
 use crate::event::{Atom, Event};
 use crate::extensions::Extensions;
 
+mod chunk;
 mod impls;
+
+pub use self::chunk::Chunk;
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -137,26 +141,6 @@ impl<'a> SerializeHandle<'a> {
     pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
     }
-}
-
-/// A chunk represents the minimum state necessary to serialize a value.
-///
-/// Chunks are of two types: atomic primitives and stateful emitters.
-/// For instance `Chunk::Bool(true)` is an atomic primitive.  It can be emitted
-/// to a serializer directly.  On the other hand a `Chunk::Map` contains a
-/// stateful emitter that keeps yielding values until it's done walking over
-/// the map.
-pub enum Chunk<'a> {
-    Null,
-    Bool(bool),
-    Str(Cow<'a, str>),
-    Bytes(Cow<'a, [u8]>),
-    U64(u64),
-    I64(i64),
-    F64(f64),
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>),
-    Seq(Box<dyn SeqEmitter + 'a>),
 }
 
 enum Layer<'a> {
@@ -283,13 +267,7 @@ where
 
     loop {
         let (event, emitter_opt) = match chunk {
-            Chunk::Null => (Event::Atom(Atom::Null), None),
-            Chunk::Bool(value) => (Event::Atom(Atom::Bool(value)), None),
-            Chunk::Str(value) => (Event::Atom(Atom::Str(value)), None),
-            Chunk::Bytes(value) => (Event::Atom(Atom::Bytes(value)), None),
-            Chunk::U64(value) => (Event::Atom(Atom::U64(value)), None),
-            Chunk::I64(value) => (Event::Atom(Atom::I64(value)), None),
-            Chunk::F64(value) => (Event::Atom(Atom::F64(value)), None),
+            Chunk::Atom(atom) => (Event::Atom(atom), None),
             Chunk::Struct(emitter) => (Event::MapStart, Some(Layer::Struct(emitter))),
             Chunk::Map(emitter) => (Event::MapStart, Some(Layer::Map(emitter, false))),
             Chunk::Seq(emitter) => (Event::SeqStart, Some(Layer::Seq(emitter))),
@@ -378,6 +356,10 @@ where
 }
 
 /// A struct emitter.
+///
+/// A struct emitter is a simplified version of a [`MapEmitter`] which produces struct
+/// field and value in one go.  The object model itself however does not know structs,
+/// it only knows about maps.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
     fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)>;

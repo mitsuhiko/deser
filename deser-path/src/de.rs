@@ -116,18 +116,12 @@ struct KeyCapturingSink<'a> {
 
 impl<'a> Sink for KeyCapturingSink<'a> {
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        match atom {
-            Atom::Str(ref value) => {
-                *self.captured_segment.borrow_mut() = Some(PathSegment::Key(value.to_string()));
-            }
-            Atom::U64(value) => {
-                *self.captured_segment.borrow_mut() = Some(PathSegment::Index(value as usize));
-            }
-            Atom::I64(value) => {
-                *self.captured_segment.borrow_mut() = Some(PathSegment::Index(value as usize));
-            }
-            _ => {}
-        }
+        *self.captured_segment.borrow_mut() = match atom {
+            Atom::Str(ref value) => Some(PathSegment::Key(value.to_string())),
+            Atom::U64(value) => Some(PathSegment::Index(value as usize)),
+            Atom::I64(value) => Some(PathSegment::Index(value as usize)),
+            _ => None,
+        };
         self.sink.atom(atom, state)?;
         Ok(())
     }

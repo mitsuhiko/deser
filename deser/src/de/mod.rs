@@ -512,10 +512,10 @@ fn test_driver() {
     {
         let mut driver = Driver::new(&mut out);
         driver.emit(Event::MapStart).unwrap();
-        driver.emit(Event::Atom(Atom::I64(1))).unwrap();
-        driver.emit(Event::Atom(Atom::Str("Hello".into()))).unwrap();
-        driver.emit(Event::Atom(Atom::I64(2))).unwrap();
-        driver.emit(Event::Atom(Atom::Str("World".into()))).unwrap();
+        driver.emit(1u64).unwrap();
+        driver.emit("Hello").unwrap();
+        driver.emit(2u64).unwrap();
+        driver.emit("World").unwrap();
         driver.emit(Event::MapEnd).unwrap();
     }
 
