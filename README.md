@@ -9,6 +9,8 @@ possibilities of serialization and deserialization of structural formats such as
 JSON or msgpack.  It intentionally does not desire to support non self
 describing formats such as bincode.
 
+**This is not a production ready yet.**
+
 ```rust
 use deser::{Serialize, Deserialize};
 

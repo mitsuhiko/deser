@@ -7,6 +7,8 @@
 //! as this library at this point is an exploration in API design for the
 //! abstraction layer itself.
 //!
+//! **This is not a production ready yet.**
+//!
 #![cfg_attr(
     feature = "derive",
     doc = r#"
