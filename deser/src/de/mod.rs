@@ -253,7 +253,7 @@ pub trait Deserialize: Sized {
 
     /// Internal method to specialize byte arrays.
     #[doc(hidden)]
-    fn __private_byte_slice(_bytes: &[u8]) -> Option<&[Self]>
+    fn __private_byte_slice_to_vec(_bytes: &[u8]) -> Option<Vec<Self>>
     where
         Self: Sized,
     {

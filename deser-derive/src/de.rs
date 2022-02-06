@@ -82,9 +82,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> ::deser::__derive::Result<::deser::__derive::Box<dyn ::deser::de::MapSink + '_>>
                 {
                     ::deser::__derive::Ok(::deser::__derive::Box::new(__MapSink {
-                        key: None,
+                        key: ::deser::__derive::None,
                         #(
-                            #sink_fieldname: None,
+                            #sink_fieldname: ::deser::__derive::None,
                         )*
                         out: &mut self.slot,
                     }))

@@ -99,11 +99,11 @@ impl Deserialize for u8 {
         SlotWrapper::make_handle(out)
     }
 
-    fn __private_byte_slice(bytes: &[u8]) -> Option<&[Self]>
+    fn __private_byte_slice_to_vec(bytes: &[u8]) -> Option<Vec<Self>>
     where
         Self: Sized,
     {
-        Some(bytes)
+        Some(bytes.to_vec())
     }
 }
 
@@ -157,9 +157,9 @@ deserialize!(f32);
 float_sink!(f64);
 deserialize!(f64);
 
-impl<T: Deserialize + Clone> Sink for SlotWrapper<Vec<T>> {
+impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
     fn expecting(&self) -> Cow<'_, str> {
-        if T::__private_byte_slice(&[][..]).is_some() {
+        if T::__private_byte_slice_to_vec(&[][..]).is_some() {
             "bytes".into()
         } else {
             "vec".into()
@@ -167,8 +167,8 @@ impl<T: Deserialize + Clone> Sink for SlotWrapper<Vec<T>> {
     }
 
     fn bytes(&mut self, value: &[u8], _state: &DeserializerState) -> Result<(), Error> {
-        if let Some(byte_slice) = T::__private_byte_slice(value) {
-            **self = Some(byte_slice.to_vec());
+        if let Some(bytes) = T::__private_byte_slice_to_vec(value) {
+            **self = Some(bytes);
             Ok(())
         } else {
             Err(Error::new(
@@ -187,7 +187,7 @@ impl<T: Deserialize + Clone> Sink for SlotWrapper<Vec<T>> {
     }
 }
 
-impl<T: Deserialize + Clone> Deserialize for Vec<T> {
+impl<T: Deserialize> Deserialize for Vec<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         SlotWrapper::make_handle(out)
     }
@@ -361,7 +361,7 @@ impl<'a, T: Deserialize> SeqSink for VecSink<'a, T> {
     fn descriptor(&self) -> &dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
         static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
-        if T::__private_byte_slice(&[]).is_some() {
+        if T::__private_byte_slice_to_vec(&[]).is_some() {
             &BYTES_DESCRIPTOR
         } else {
             &SLICE_DESCRIPTOR
