@@ -36,17 +36,17 @@
 //! ```rust
 //! use std::collections::BTreeMap;
 //! use deser::de::Driver;
-//! use deser::Event;
+//! use deser::{Atom, Event};
 //!
 //! let mut out = None::<BTreeMap<u32, String>>;
 //! {
 //!     let mut driver = Driver::new(&mut out);
-//!     driver.emit(&Event::MapStart).unwrap();
-//!     driver.emit(&Event::I64(1)).unwrap();
-//!     driver.emit(&Event::Str("Hello".into())).unwrap();
-//!     driver.emit(&Event::I64(2)).unwrap();
-//!     driver.emit(&Event::Str("World".into())).unwrap();
-//!     driver.emit(&Event::MapEnd).unwrap();
+//!     driver.emit(Event::MapStart).unwrap();
+//!     driver.emit(Event::Atom(Atom::I64(1))).unwrap();
+//!     driver.emit(Event::Atom(Atom::Str("Hello".into()))).unwrap();
+//!     driver.emit(Event::Atom(Atom::I64(2))).unwrap();
+//!     driver.emit(Event::Atom(Atom::Str("World".into()))).unwrap();
+//!     driver.emit(Event::MapEnd).unwrap();
 //! }
 //!
 //! let map = out.unwrap();
@@ -58,27 +58,34 @@
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
 //! implement the necessary callback.  For instance to accept a `bool` implement
-//! the corresponding [`bool`](Sink::bool) method.  The resulting value then
-//! must be placed in the slot:
+//! the [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
+//! resulting value then must be placed in the slot:
 //!
 //! ```rust
 //! use deser::de::{Sink, Deserialize, DeserializerState, SinkHandle};
-//! use deser::{make_slot_wrapper, Error};
+//! use deser::{make_slot_wrapper, Error, Atom};
 //!
 //! make_slot_wrapper!(SlotWrapper);
 //!
 //! struct MyBool(bool);
 //!
 //! impl Sink for SlotWrapper<MyBool> {
-//!     fn bool(
+//!     fn atom(
 //!         &mut self,
-//!         value: bool,
+//!         atom: Atom,
 //!         _state: &DeserializerState,
 //!     ) -> Result<(), Error> {
-//!         // note the extra star here to reach through the deref
-//!         // of the slot wrapper.
-//!         **self = Some(MyBool(value));
-//!         Ok(())
+//!         match atom {
+//!             Atom::Bool(value) => {
+//!                 // note the extra star here to reach through the deref
+//!                 // of the slot wrapper.
+//!                 **self = Some(MyBool(value));
+//!                 Ok(())
+//!             }
+//!             // for any other value we create an unexpected error.  This is
+//!             // the default implementation of this method.
+//!             other => Err(other.unexpected_error(&self.expecting())),
+//!         }
 //!     }
 //! }
 //!
@@ -178,7 +185,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
-use crate::event::Event;
+use crate::event::{Atom, Event};
 use crate::extensions::Extensions;
 
 mod ignore;
@@ -267,69 +274,8 @@ pub trait Deserialize: Sized {
 /// produce a value to it.  The sink then places the value in the slot behind
 /// the sink.
 pub trait Sink {
-    fn null(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected null, expected {}", self.expecting()),
-        ))
-    }
-
-    fn bool(&mut self, value: bool, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected bool ({}), expected {}", value, self.expecting()),
-        ))
-    }
-
-    fn str(&mut self, _value: &str, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected string, expected {}", self.expecting()),
-        ))
-    }
-
-    fn bytes(&mut self, _value: &[u8], _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected bytes, expected {}", self.expecting()),
-        ))
-    }
-
-    fn u64(&mut self, value: u64, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!(
-                "unexpected unsigned integer ({}), expected {}",
-                value,
-                self.expecting()
-            ),
-        ))
-    }
-
-    fn i64(&mut self, value: i64, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!(
-                "unexpected signed integer ({}), expected {}",
-                value,
-                self.expecting()
-            ),
-        ))
-    }
-
-    fn f64(&mut self, value: f64, _state: &DeserializerState) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!(
-                "unexpected float ({}), expected {}",
-                value,
-                self.expecting()
-            ),
-        ))
-    }
-
-    fn alt_map_sink(&mut self, _state: &DeserializerState) -> Option<SinkHandle> {
-        None
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        Err(atom.unexpected_error(&self.expecting()))
     }
 
     fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
@@ -479,7 +425,11 @@ impl<'a> Driver<'a> {
     /// feed two events into a sink that was already used is guarded against.
     /// Likewise sending an unexpected `MapEnd` event or similar into the
     /// driver will cause a panic.
-    pub fn emit(&mut self, event: &Event) -> Result<(), Error> {
+    pub fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error> {
+        self._emit(event.into())
+    }
+
+    fn _emit(&mut self, event: Event) -> Result<(), Error> {
         debug_assert!(
             !self.current_sink.used,
             "cannot emit event because sink has already been used"
@@ -487,13 +437,7 @@ impl<'a> Driver<'a> {
 
         let current_sink = &mut self.current_sink.sink;
         match event {
-            Event::Null => current_sink.null(&self.state)?,
-            Event::Bool(v) => current_sink.bool(*v, &self.state)?,
-            Event::Str(v) => current_sink.str(v, &self.state)?,
-            Event::Bytes(v) => current_sink.bytes(v, &self.state)?,
-            Event::U64(v) => current_sink.u64(*v, &self.state)?,
-            Event::I64(v) => current_sink.i64(*v, &self.state)?,
-            Event::F64(v) => current_sink.f64(*v, &self.state)?,
+            Event::Atom(atom) => current_sink.atom(atom, &self.state)?,
             Event::MapStart => {
                 let mut map_sink = current_sink.map(&self.state)?;
                 let key_sink = unsafe { SinkHandleWrapper::from(map_sink.key()?) };
@@ -566,12 +510,12 @@ fn test_driver() {
     let mut out: Option<std::collections::BTreeMap<u32, String>> = None;
     {
         let mut driver = Driver::new(&mut out);
-        driver.emit(&Event::MapStart).unwrap();
-        driver.emit(&Event::I64(1)).unwrap();
-        driver.emit(&Event::Str("Hello".into())).unwrap();
-        driver.emit(&Event::I64(2)).unwrap();
-        driver.emit(&Event::Str("World".into())).unwrap();
-        driver.emit(&Event::MapEnd).unwrap();
+        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::Atom(Atom::I64(1))).unwrap();
+        driver.emit(Event::Atom(Atom::Str("Hello".into()))).unwrap();
+        driver.emit(Event::Atom(Atom::I64(2))).unwrap();
+        driver.emit(Event::Atom(Atom::Str("World".into()))).unwrap();
+        driver.emit(Event::MapEnd).unwrap();
     }
 
     let map = out.unwrap();

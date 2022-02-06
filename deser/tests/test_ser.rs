@@ -1,5 +1,5 @@
 use deser::ser::for_each_event;
-use deser::{Event, Serialize};
+use deser::{Atom, Event, Serialize};
 
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
@@ -14,8 +14,8 @@ fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
 #[test]
 fn test_optional() {
     let events = capture_events(&None::<usize>);
-    assert_eq!(events, vec![Event::Null]);
+    assert_eq!(events, vec![Event::Atom(Atom::Null)]);
 
     let events = capture_events(&Some(42usize));
-    assert_eq!(events, vec![Event::U64(42)]);
+    assert_eq!(events, vec![Event::Atom(Atom::U64(42))]);
 }

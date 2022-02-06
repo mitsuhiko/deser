@@ -1,5 +1,6 @@
 use crate::de::{DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
 use crate::error::Error;
+use crate::Atom;
 
 /// A [`Sink`] that ignores all values.
 ///
@@ -16,31 +17,7 @@ pub fn ignore() -> &'static mut dyn Sink {
 pub struct Ignore;
 
 impl Sink for Ignore {
-    fn null(&mut self, _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn bool(&mut self, _value: bool, _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn str(&mut self, _value: &str, _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn bytes(&mut self, _value: &[u8], _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn u64(&mut self, _value: u64, _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn i64(&mut self, _value: i64, _state: &DeserializerState) -> Result<(), crate::Error> {
-        Ok(())
-    }
-
-    fn f64(&mut self, _value: f64, _state: &DeserializerState) -> Result<(), crate::Error> {
+    fn atom(&mut self, _atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
         Ok(())
     }
 

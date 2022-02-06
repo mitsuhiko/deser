@@ -53,12 +53,12 @@ fn test_as_string_map() {
         events,
         vec![
             "MapStart",
-            "Str(\"0\")",
-            "Bool(true)",
-            "Str(\"1\")",
-            "Bool(true)",
-            "Str(\"2\")",
-            "Bool(false)",
+            "Atom(Str(\"0\"))",
+            "Atom(Bool(true))",
+            "Atom(Str(\"1\"))",
+            "Atom(Bool(true))",
+            "Atom(Str(\"2\"))",
+            "Atom(Bool(false))",
             "MapEnd"
         ]
     );

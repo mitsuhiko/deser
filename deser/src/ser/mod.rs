@@ -95,7 +95,7 @@ use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::event::Event;
+use crate::event::{Atom, Event};
 use crate::extensions::Extensions;
 
 mod impls;
@@ -264,7 +264,7 @@ impl<'a> SerializerState<'a> {
 /// [`Descriptor`] and the current [`SerializerState`].
 pub fn for_each_event<F>(serializable: &dyn Serialize, mut f: F) -> Result<(), Error>
 where
-    F: FnMut(&Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
+    F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
     let mut serializable = SerializeHandle::Borrowed(serializable);
     let mut state = SerializerState {
@@ -283,13 +283,13 @@ where
 
     loop {
         let (event, emitter_opt) = match chunk {
-            Chunk::Null => (Event::Null, None),
-            Chunk::Bool(value) => (Event::Bool(value), None),
-            Chunk::Str(value) => (Event::Str(value), None),
-            Chunk::Bytes(value) => (Event::Bytes(value), None),
-            Chunk::U64(value) => (Event::U64(value), None),
-            Chunk::I64(value) => (Event::I64(value), None),
-            Chunk::F64(value) => (Event::F64(value), None),
+            Chunk::Null => (Event::Atom(Atom::Null), None),
+            Chunk::Bool(value) => (Event::Atom(Atom::Bool(value)), None),
+            Chunk::Str(value) => (Event::Atom(Atom::Str(value)), None),
+            Chunk::Bytes(value) => (Event::Atom(Atom::Bytes(value)), None),
+            Chunk::U64(value) => (Event::Atom(Atom::U64(value)), None),
+            Chunk::I64(value) => (Event::Atom(Atom::I64(value)), None),
+            Chunk::F64(value) => (Event::Atom(Atom::F64(value)), None),
             Chunk::Struct(emitter) => (Event::MapStart, Some(Layer::Struct(emitter))),
             Chunk::Map(emitter) => (Event::MapStart, Some(Layer::Map(emitter, false))),
             Chunk::Seq(emitter) => (Event::SeqStart, Some(Layer::Seq(emitter))),
@@ -298,7 +298,7 @@ where
         if let Some(emitter) = emitter_opt {
             state.stack.push((descriptor, emitter));
         }
-        f(&event, descriptor, &state)?;
+        f(event, descriptor, &state)?;
         if done {
             serializable.finish(&state)?;
         }
@@ -319,13 +319,17 @@ where
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
-                                f(&Event::Str(Cow::Borrowed(&key)), key_descriptor, &state)?;
+                                f(
+                                    Event::Atom(Atom::Str(Cow::Borrowed(&key))),
+                                    key_descriptor,
+                                    &state,
+                                )?;
                                 serializable = value;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, layer.0, &state)?,
                         }
                     }
                     Layer::Map(ref mut m, ref mut feed_value) => {
@@ -347,7 +351,7 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, layer.0, &state)?,
                         }
                     }
                     Layer::Seq(ref mut seq) => {
@@ -359,7 +363,7 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(&Event::SeqEnd, layer.0, &state)?,
+                            None => f(Event::SeqEnd, layer.0, &state)?,
                         }
                     }
                 }
@@ -461,17 +465,17 @@ fn test_serialize() {
         &v[..],
         [
             "MapStart",
-            "Bool(false)",
+            "Atom(Bool(false))",
             "SeqStart",
             "SeqEnd",
-            "Bool(true)",
+            "Atom(Bool(true))",
             "SeqStart",
             "SeqStart",
-            "Bytes([120])",
-            "Bytes([121, 121, 121])",
+            "Atom(Bytes([120]))",
+            "Atom(Bytes([121, 121, 121]))",
             "SeqEnd",
             "SeqStart",
-            "Bytes([122, 122, 122, 122])",
+            "Atom(Bytes([122, 122, 122, 122]))",
             "SeqEnd",
             "SeqEnd",
             "MapEnd",

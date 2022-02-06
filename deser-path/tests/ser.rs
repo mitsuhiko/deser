@@ -32,10 +32,10 @@ fn test_path() {
         events,
         vec![
             "MapStart|[]",
-            "Str(\"key\")|[]",
+            "Atom(Str(\"key\"))|[]",
             "SeqStart|[Key(\"key\")]",
-            "Bool(false)|[Key(\"key\"), Index(0)]",
-            "Bool(true)|[Key(\"key\"), Index(1)]",
+            "Atom(Bool(false))|[Key(\"key\"), Index(0)]",
+            "Atom(Bool(true))|[Key(\"key\"), Index(1)]",
             "SeqEnd|[Key(\"key\")]",
             "MapEnd|[]"
         ]

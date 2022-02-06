@@ -4,7 +4,7 @@ use std::fmt;
 use std::sync::atomic::{self, AtomicUsize};
 
 use deser::ser::{for_each_event, Serialize};
-use deser::Event;
+use deser::{Atom, Event};
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {
@@ -42,10 +42,10 @@ fn dump<'a, 'f>(
 ) -> Result<&'a [(Event<'a>, Option<String>)], fmt::Error> {
     if let Some((first, mut rest)) = tokens.split_first() {
         match first.0 {
-            Event::Null => fmt::Debug::fmt(&(), f)?,
-            Event::Bool(v) => fmt::Debug::fmt(&v, f)?,
-            Event::Str(ref v) => fmt::Debug::fmt(v, f)?,
-            Event::Bytes(ref v) => {
+            Event::Atom(Atom::Null) => fmt::Debug::fmt(&(), f)?,
+            Event::Atom(Atom::Bool(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::Str(ref v)) => fmt::Debug::fmt(v, f)?,
+            Event::Atom(Atom::Bytes(ref v)) => {
                 write!(f, "b\"")?;
                 for &b in &v[..] {
                     if b == b'\n' {
@@ -66,9 +66,9 @@ fn dump<'a, 'f>(
                 }
                 write!(f, "\"")?;
             }
-            Event::U64(v) => fmt::Debug::fmt(&v, f)?,
-            Event::I64(v) => fmt::Debug::fmt(&v, f)?,
-            Event::F64(v) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::MapStart => {
                 if let Some(ref name) = first.1 {
                     write!(f, "{} ", name)?;
