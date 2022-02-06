@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use deser::de::{ignore, DeserializerState, MapSink, Sink, SinkHandle};
+use deser::de::{ignore, DeserializerState, MapSink, Sink, SinkHandle, Driver};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
-use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Serialize};
+use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Serialize, Event};
 use deser_debug::ToDebug;
 
 make_slot_wrapper!(SlotWrapper);
@@ -110,9 +110,15 @@ impl<'a> MapSink for UserSink<'a> {
 }
 
 fn main() {
-    let user = User {
-        id: 42,
-        email_address: "john@example.com".into(),
-    };
-    println!("{:#?}", ToDebug::new(&user))
+    let mut user = None::<User>;
+    {
+        let mut driver = Driver::new(&mut user);
+        driver.emit(Event::MapStart).unwrap();
+        driver.emit("id").unwrap();
+        driver.emit(23u64).unwrap();
+        driver.emit("emailAddress").unwrap();
+        driver.emit("jane@example.com").unwrap();
+        driver.emit(Event::MapEnd).unwrap();
+    }
+    println!("{:#?}", ToDebug::new(&user.unwrap()));
 }
