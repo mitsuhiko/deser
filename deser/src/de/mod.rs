@@ -105,7 +105,7 @@
 //! [`MapSink`] and return it from the main [`Sink`]:
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserialize, Sink, SinkHandle, MapSink, ignore};
+//! use deser::de::{DeserializerState, Deserialize, Sink, SinkHandle, MapSink};
 //! use deser::{make_slot_wrapper, Error, ErrorKind};
 //!
 //! make_slot_wrapper!(SlotWrapper);
@@ -159,8 +159,8 @@
 //!         match self.key.take().as_deref() {
 //!             Some("enabled") => Ok(Deserialize::deserialize_into(&mut self.enabled_field)),
 //!             Some("name") => Ok(Deserialize::deserialize_into(&mut self.name_field)),
-//!             // if we don't know the key, return a ignore sink to drop the value.
-//!             _ => Ok(SinkHandle::to(ignore())),
+//!             // if we don't know the key, return a null handle to drop the value.
+//!             _ => Ok(SinkHandle::null()),
 //!         }
 //!     }
 //!     
@@ -181,7 +181,7 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::mem::{replace, ManuallyDrop};
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -191,8 +191,6 @@ use crate::extensions::Extensions;
 
 mod ignore;
 mod impls;
-
-pub use self::ignore::ignore;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
@@ -211,6 +209,10 @@ pub enum SinkHandle<'a> {
     Borrowed(&'a mut dyn Sink),
     /// A boxed up [`Sink`] within the handle.
     Owned(Box<dyn Sink + 'a>),
+    /// A special handle that drops all values.
+    ///
+    /// To create this handle call [`SinkHandle::null`].
+    Null(ignore::Ignore),
 }
 
 impl<'a> Deref for SinkHandle<'a> {
@@ -220,6 +222,7 @@ impl<'a> Deref for SinkHandle<'a> {
         match self {
             SinkHandle::Borrowed(val) => &**val,
             SinkHandle::Owned(val) => &**val,
+            SinkHandle::Null(ref val) => val,
         }
     }
 }
@@ -229,6 +232,7 @@ impl<'a> DerefMut for SinkHandle<'a> {
         match self {
             SinkHandle::Borrowed(val) => &mut **val,
             SinkHandle::Owned(val) => &mut **val,
+            SinkHandle::Null(ref mut val) => val,
         }
     }
 }
@@ -242,6 +246,16 @@ impl<'a> SinkHandle<'a> {
     /// Create an owned handle to a heap allocated [`Sink`].
     pub fn boxed<S: Sink + 'a>(val: S) -> SinkHandle<'a> {
         SinkHandle::Owned(Box::new(val))
+    }
+
+    /// Creates a sink handle that drops all values.
+    ///
+    /// This can be used in places where a sink is required but no value
+    /// wants to be collected.  For instance it can be tricky to provide a
+    /// mutable reference to a sink from a function that doesn't have a way
+    /// to put a slot somewhere.
+    pub fn null() -> SinkHandle<'a> {
+        SinkHandle::Null(ignore::Ignore)
     }
 }
 
@@ -260,12 +274,24 @@ pub trait Deserialize: Sized {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle;
 
     /// Internal method to specialize byte arrays.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe as it must only ever return `Some` here if `Self` is `u8`.
+    /// Returning this true for any other type will cause undefined behavior due to how
+    /// the arrays are implemented.
     #[doc(hidden)]
-    fn __private_byte_slice_to_vec(_bytes: &[u8]) -> Option<Vec<Self>>
+    unsafe fn __private_slice_from_bytes(_bytes: &[u8]) -> Option<Vec<Self>>
     where
         Self: Sized,
     {
         None
+    }
+
+    /// Internal method to specialize byte arrays.
+    #[doc(hidden)]
+    fn __private_is_bytes() -> bool {
+        false
     }
 }
 
@@ -373,7 +399,7 @@ impl<'a> DeserializerState<'a> {
 /// hides the unsafety internally.
 pub struct Driver<'a> {
     state: ManuallyDrop<DeserializerState<'a>>,
-    current_sink: SinkHandleWrapper,
+    current_sink: Option<SinkHandleWrapper>,
 }
 
 struct SinkHandleWrapper {
@@ -408,7 +434,7 @@ impl<'a> Driver<'a> {
                 extensions: Extensions::default(),
                 stack: ManuallyDrop::new(Vec::new()),
             }),
-            current_sink: unsafe { SinkHandleWrapper::from(sink) },
+            current_sink: Some(unsafe { SinkHandleWrapper::from(sink) }),
         }
     }
 
@@ -431,63 +457,70 @@ impl<'a> Driver<'a> {
     }
 
     fn _emit(&mut self, event: Event) -> Result<(), Error> {
-        debug_assert!(
-            !self.current_sink.used,
-            "cannot emit event because sink has already been used"
-        );
+        macro_rules! target_sink {
+            () => {{
+                match self.state.stack.last_mut() {
+                    Some((_, Layer::Map(ref mut map_sink, ref mut is_key))) => {
+                        let next_sink = if *is_key {
+                            map_sink.key()?
+                        } else {
+                            map_sink.value()?
+                        };
+                        *is_key = !*is_key;
+                        self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
+                    }
+                    Some((_, Layer::Seq(ref mut seq_sink))) => {
+                        self.current_sink =
+                            Some(unsafe { SinkHandleWrapper::from(seq_sink.item()?) });
+                    }
+                    _ => {}
+                }
+                let top = self.current_sink.as_mut().expect("no active sink");
+                if top.used {
+                    panic!("sink has already been used");
+                } else {
+                    &mut top.sink
+                }
+            }};
+        }
 
-        let current_sink = &mut self.current_sink.sink;
         match event {
-            Event::Atom(atom) => current_sink.atom(atom, &self.state)?,
+            Event::Atom(atom) => target_sink!().atom(atom, &self.state)?,
             Event::MapStart => {
-                let mut map_sink = current_sink.map(&self.state)?;
-                let key_sink = unsafe { SinkHandleWrapper::from(map_sink.key()?) };
+                let current_sink = target_sink!();
+                let map_sink = current_sink.map(&self.state)?;
                 let layer = unsafe { extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>) };
-                let old_sink = replace(&mut self.current_sink, key_sink);
-                self.state.stack.push((old_sink, layer));
+                self.state
+                    .stack
+                    .push((self.current_sink.take().unwrap(), layer));
                 return Ok(());
             }
             Event::MapEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Map(mut map_sink, _))) => {
                     map_sink.finish(&self.state)?;
-                    self.current_sink = next_sink;
+                    self.current_sink = Some(next_sink);
                 }
                 _ => panic!("not inside a MapSink"),
             },
             Event::SeqStart => {
-                let mut seq_sink = current_sink.seq(&self.state)?;
-                let item_sink = unsafe { SinkHandleWrapper::from(seq_sink.item()?) };
+                let current_sink = target_sink!();
+                let seq_sink = current_sink.seq(&self.state)?;
                 let layer = unsafe { extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>) };
-                let old_sink = replace(&mut self.current_sink, item_sink);
-                self.state.stack.push((old_sink, layer));
+                self.state
+                    .stack
+                    .push((self.current_sink.take().unwrap(), layer));
                 return Ok(());
             }
             Event::SeqEnd => match self.state.stack.pop() {
                 Some((next_sink, Layer::Seq(mut seq_sink))) => {
                     seq_sink.finish(&self.state)?;
-                    self.current_sink = next_sink;
+                    self.current_sink = Some(next_sink);
                 }
                 _ => panic!("not inside a SeqSink"),
             },
         }
 
-        self.current_sink.used = true;
-
-        match self.state.stack.last_mut() {
-            Some((_, Layer::Map(ref mut map_sink, ref mut is_key))) => {
-                let next_sink = if *is_key {
-                    map_sink.value()?
-                } else {
-                    map_sink.key()?
-                };
-                *is_key = !*is_key;
-                self.current_sink = unsafe { SinkHandleWrapper::from(next_sink) };
-            }
-            Some((_, Layer::Seq(ref mut seq_sink))) => {
-                self.current_sink = unsafe { SinkHandleWrapper::from(seq_sink.item()?) };
-            }
-            _ => {}
-        }
+        self.current_sink.as_mut().unwrap().used = true;
 
         Ok(())
     }

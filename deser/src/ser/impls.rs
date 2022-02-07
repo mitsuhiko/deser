@@ -46,8 +46,8 @@ impl Serialize for u8 {
         Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 
-    fn __private_slice_as_bytes(val: &[u8]) -> Option<&[u8]> {
-        Some(val)
+    fn __private_slice_as_bytes(val: &[u8]) -> Option<Cow<'_, [u8]>> {
+        Some(Cow::Borrowed(val))
     }
 }
 
@@ -130,7 +130,7 @@ where
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
-            Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(bytes))))
+            Ok(Chunk::Atom(Atom::Bytes(bytes)))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter((&self[..]).iter()))))
         }
@@ -153,7 +153,7 @@ where
 
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
-            Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(bytes))))
+            Ok(Chunk::Atom(Atom::Bytes(bytes)))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
@@ -304,6 +304,72 @@ where
         match self {
             Some(value) => value.serialize(state),
             None => Ok(Chunk::Atom(Atom::Null)),
+        }
+    }
+}
+
+macro_rules! serialize_for_tuple {
+    () => ();
+    ($($name:ident,)+) => (
+        impl<$($name: Serialize),*> Serialize for ($($name,)*) {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
+                &DESCRIPTOR
+            }
+
+            #[allow(non_snake_case)]
+            fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+                struct TupleSeqEmitter<'a, $($name,)*> {
+                    tuple: &'a ($($name,)*),
+                    index: usize,
+                }
+
+                impl<'a, $($name,)*> SeqEmitter for TupleSeqEmitter<'a, $($name,)*>
+                where
+                    $($name: Serialize,)*
+                {
+                    fn next(&mut self) -> Option<SerializeHandle> {
+                        let ($(ref $name,)*) = self.tuple;
+                        let __index = self.index;
+                        self.index += 1;
+                        let mut __counter = 0;
+                        $(
+                            if __index == __counter {
+                                return Some(SerializeHandle::to($name));
+                            }
+                            __counter += 1;
+                        )*
+                        None
+                    }
+                }
+
+                Ok(Chunk::Seq(Box::new(TupleSeqEmitter {
+                    tuple: self,
+                    index: 0,
+                })))
+            }
+        }
+        serialize_for_tuple_peel!($($name,)*);
+    )
+}
+
+macro_rules! serialize_for_tuple_peel {
+    ($name:ident, $($other:ident,)*) => (serialize_for_tuple!($($other,)*);)
+}
+
+serialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
+
+impl<T: Serialize, const N: usize> Serialize for [T; N] {
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
+        &DESCRIPTOR
+    }
+
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+        if let Some(bytes) = T::__private_slice_as_bytes(self) {
+            Ok(Chunk::Atom(Atom::Bytes(bytes)))
+        } else {
+            Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
     }
 }

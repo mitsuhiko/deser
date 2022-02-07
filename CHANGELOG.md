@@ -6,6 +6,9 @@ All notable changes to deser are documented here.
 
 - Added support for `#[deser(default)]` in deriving.
 - Added support for `#[deser(skip_serializing_optionals)]`.
+- Removed `ignore` and replaced it with `SinkHandle::null`.
+- Added tuple support.
+- Added array support.
 
 ## 0.4.0
 

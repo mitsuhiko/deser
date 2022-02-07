@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser::de::{ignore, DeserializerState, Driver, MapSink, Sink, SinkHandle};
+use deser::de::{DeserializerState, Driver, MapSink, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
 use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
@@ -90,7 +90,7 @@ impl<'a> MapSink for UserSink<'a> {
         match self.key.take().as_deref() {
             Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
             Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),
-            _ => Ok(SinkHandle::to(ignore())),
+            _ => Ok(SinkHandle::null()),
         }
     }
 

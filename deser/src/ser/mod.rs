@@ -434,7 +434,7 @@ pub trait Serialize {
     /// casing of bytes for the serialization system.  It allows a vector of
     /// bytes to be emitted as `Chunk::Bytes` rather than a `Seq`.
     #[doc(hidden)]
-    fn __private_slice_as_bytes(_val: &[Self]) -> Option<&[u8]>
+    fn __private_slice_as_bytes(_val: &[Self]) -> Option<Cow<'_, [u8]>>
     where
         Self: Sized,
     {

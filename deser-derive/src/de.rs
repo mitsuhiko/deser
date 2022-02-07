@@ -190,7 +190,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         #(
                             ::deser::__derive::Some(#fieldstr) => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
                         )*
-                        _ => ::deser::__derive::Ok(::deser::de::SinkHandle::to(::deser::de::ignore())),
+                        _ => ::deser::__derive::Ok(::deser::de::SinkHandle::null()),
                     }
                 }
 

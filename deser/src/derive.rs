@@ -43,7 +43,7 @@
 //! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
 //! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
 //!   skip over all optional values that are currently not set.  This uses the
-//!   [`is_optional`](crate::ser::Sererialize::is_optional) serialize method to figure out if a
+//!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
 //!   a field is optional.  At the moment only `None` and `()` are considered optional.
 //!
 //! ## Enum Attributes
