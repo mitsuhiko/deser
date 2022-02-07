@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs};
+use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault};
 use crate::bound::{where_clause_with_bound, with_lifetime_bound};
 
 pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -46,15 +46,83 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(|x| x.name(&container_attrs))
         .collect::<Vec<_>>();
-    let missing_field_error = attrs
-        .iter()
-        .map(|x| format!("Missing field '{}'", x.name(&container_attrs)))
-        .collect::<Vec<_>>();
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
     let bound = syn::parse_quote!(::deser::Serialize);
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+
+    let field_stage1_default = attrs
+        .iter()
+        .map(|attrs| match attrs.default() {
+            Some(TypeDefault::Implicit) => {
+                quote! { take().unwrap_or_else(::deser::__derive::Default::default) }
+            }
+            Some(TypeDefault::Explicit(path)) => {
+                quote! { take().unwrap_or_else(#path) }
+            }
+            None => quote!(take()),
+        })
+        .collect::<Vec<_>>();
+    let field_take = sink_fieldname
+        .iter()
+        .zip(attrs.iter())
+        .map(|(name, attrs)| {
+            if attrs.default().is_some() {
+                quote! { #name }
+            } else if container_attrs.default().is_some() {
+                quote! { #name.unwrap() }
+            } else {
+                let error = format!("Missing field '{}'", attrs.name(&container_attrs));
+                quote! {
+                    #name.ok_or_else(|| {
+                        ::deser::Error::new(::deser::ErrorKind::MissingField, #error)
+                    })?
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let stage2_default = if container_attrs.default().is_some() {
+        let need_container_default = sink_fieldname
+            .iter()
+            .zip(fieldname.iter())
+            .zip(attrs.iter())
+            .filter_map(|((sink_name, original_name), attrs)| {
+                if attrs.default().is_none() {
+                    Some((sink_name, *original_name))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if !need_container_default.is_empty() {
+            let (sink_name, original_name): (Vec<_>, Vec<_>) =
+                need_container_default.into_iter().unzip();
+            let type_default = match container_attrs.default().unwrap() {
+                TypeDefault::Implicit => quote! {
+                    <#ident as ::deser::__derive::Default>::default()
+                },
+                TypeDefault::Explicit(path) => quote! { #path() },
+            };
+            Some(quote! {
+                if [
+                    #(
+                        #sink_name.as_ref().is_none()
+                    ),*
+                ].iter().any(|x| *x) {
+                    let __default = #type_default;
+                    #(
+                        #sink_name = #sink_name.or_else(|| Some(__default.#original_name));
+                    )*
+                }
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     Ok(quote! {
         #[allow(non_upper_case_globals)]
@@ -127,11 +195,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn finish(&mut self, __state: &::deser::de::DeserializerState) -> ::deser::__derive::Result<()> {
+                    #![allow(unused_mut)]
+                    #(
+                        let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
+                    )*
+                    #stage2_default
                     *self.out = ::deser::__derive::Some(#ident {
                         #(
-                            #fieldname: self.#sink_fieldname.take().ok_or_else(|| {
-                                ::deser::Error::new(::deser::ErrorKind::MissingField, #missing_field_error)
-                            })?,
+                            #fieldname: #field_take,
                         )*
                     });
                     ::deser::__derive::Ok(())

@@ -31,7 +31,8 @@ pub struct Account {
 //!
 //! ## Features
 //!
-//! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].
+//! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
+//!   information see [`derive`](crate::derive).
 
 #[macro_use]
 mod macros;
@@ -48,27 +49,17 @@ pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
 pub use self::event::{Atom, Event};
 
-#[doc(inline)]
+// common re-exports
+
+#[doc(no_inline)]
 pub use self::{de::Deserialize, ser::Serialize};
 
-/// Provides automatic deriving for [`Serialize`].
-///
-/// At the moment this can only derive structs.  Special attributes
-/// can be provided with the `deser` attribute.  This is largely
-/// modelled after serde.  At the moment the following attributes
-/// exist:
-///
-/// * `#[deser(rename = "field")]`: renames a struct or field.
-/// * `#[deser(rename_all = "...")]`: renames all fields at once to a
-///   specific name style.  he possible values are `"lowercase"`, `"UPPERCASE"`,
-///   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
-///   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
 #[cfg(feature = "derive")]
-pub use deser_derive::Serialize;
+#[doc(no_inline)]
+pub use self::derive::{Deserialize, Serialize};
 
-/// Provides automatic deriving for [`Deserialize`].
 #[cfg(feature = "derive")]
-pub use deser_derive::Deserialize;
+pub mod derive;
 
 // These are re-exported fro the derive macro.  There is no good
 // reason for this right now as deser does not yet have no-std
@@ -78,6 +69,7 @@ pub use deser_derive::Deserialize;
 pub mod __derive {
     pub use std::borrow::Cow;
     pub use std::boxed::Box;
+    pub use std::default::Default;
     pub use std::option::Option::{self, None, Some};
     pub use std::result::Result::{Err, Ok};
     pub type Result<T> = std::result::Result<T, super::Error>;

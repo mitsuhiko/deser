@@ -2,6 +2,10 @@
 
 All notable changes to deser are documented here.
 
+## 0.5.0
+
+- Added support for `#[deser(default)]` in deriving.
+
 ## 0.4.0
 
 - Restructure serialization and deserialization to pass `Atom` values
