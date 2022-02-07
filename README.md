@@ -1,4 +1,7 @@
-# deser
+<div align="center">
+ <img src="artwork/logo.svg?raw=true" width="250" height="250">
+ <p><strong>deser: an experimental serialization and deserialization library for Rust</strong></p>
+</div>
 
 [![Crates.io](https://img.shields.io/crates/d/deser.svg)](https://crates.io/crates/deser)
 [![License](https://img.shields.io/github/license/mitsuhiko/deser)](https://github.com/mitsuhiko/deser/blob/main/LICENSE)
