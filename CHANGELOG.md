@@ -9,3 +9,4 @@ All notable changes to deser are documented here.
   type specific methods on the sink to passing an entire `Atom` instead.
 - Events are now passed by value rather than reference.
 - Added basic support for `Option<T>`.
+- Added basic support for deriving simple enums.
