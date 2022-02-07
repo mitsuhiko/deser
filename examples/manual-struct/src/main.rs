@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use deser::de::{ignore, DeserializerState, MapSink, Sink, SinkHandle, Driver};
+use deser::de::{ignore, DeserializerState, Driver, MapSink, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
-use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Serialize, Event};
+use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
 
 make_slot_wrapper!(SlotWrapper);

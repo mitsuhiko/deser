@@ -142,6 +142,49 @@ impl<'a> ContainerAttrs<'a> {
             name
         }
     }
+
+    pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
+        let name = variant.ident.to_string();
+        if let Some(rename_all) = self.rename_all {
+            match rename_all {
+                RenameAll::PascalCase => name,
+                RenameAll::LowerCase => name.to_ascii_lowercase(),
+                RenameAll::UpperCase => name.to_ascii_uppercase(),
+                RenameAll::CamelCase => name[..1].to_ascii_lowercase() + &name[1..],
+                RenameAll::SnakeCase
+                | RenameAll::ScreamingSnakeCase
+                | RenameAll::KebabCase
+                | RenameAll::ScreamingKebabCase => {
+                    let sep = if matches!(
+                        rename_all,
+                        RenameAll::SnakeCase | RenameAll::ScreamingSnakeCase
+                    ) {
+                        '_'
+                    } else {
+                        '-'
+                    };
+                    let upper = matches!(
+                        rename_all,
+                        RenameAll::ScreamingKebabCase | RenameAll::ScreamingSnakeCase
+                    );
+                    let mut rv = String::new();
+                    for (i, ch) in name.char_indices() {
+                        if i > 0 && ch.is_uppercase() {
+                            rv.push(sep);
+                        }
+                        rv.push(if upper {
+                            ch.to_ascii_uppercase()
+                        } else {
+                            ch.to_ascii_lowercase()
+                        });
+                    }
+                    rv
+                }
+            }
+        } else {
+            name
+        }
+    }
 }
 
 pub struct FieldAttrs<'a> {
@@ -182,5 +225,46 @@ impl<'a> FieldAttrs<'a> {
             .as_deref()
             .map(Cow::Borrowed)
             .unwrap_or_else(|| container_attrs.get_field_name(self.field).into())
+    }
+}
+
+pub struct EnumVariantAttrs<'a> {
+    variant: &'a syn::Variant,
+    rename: Option<String>,
+}
+
+impl<'a> EnumVariantAttrs<'a> {
+    pub fn of(variant: &'a syn::Variant) -> syn::Result<EnumVariantAttrs<'a>> {
+        let mut rv = EnumVariantAttrs {
+            variant,
+            rename: None,
+        };
+
+        for meta_item in variant.attrs.iter().flat_map(get_meta_items).flatten() {
+            if let syn::NestedMeta::Meta(syn::Meta::NameValue(value)) = &meta_item {
+                if value.path.is_ident("rename") {
+                    if let syn::Lit::Str(s) = &value.lit {
+                        if rv.rename.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                meta_item,
+                                "duplicate rename attribute",
+                            ));
+                        }
+                        rv.rename = Some(s.value());
+                        continue;
+                    }
+                }
+            }
+            return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
+        }
+
+        Ok(rv)
+    }
+
+    pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
+        self.rename
+            .as_deref()
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| container_attrs.get_variant_name(self.variant).into())
     }
 }

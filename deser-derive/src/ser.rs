@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::{ContainerAttrs, FieldAttrs};
+use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs};
 use crate::bound::{where_clause_with_bound, with_lifetime_bound};
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -10,6 +10,7 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
             fields: syn::Fields::Named(fields),
             ..
         }) => derive_struct(input, fields),
+        syn::Data::Enum(enumeration) => derive_enum(input, enumeration),
         _ => panic!("only structs with named fields are supported"),
     }
 }
@@ -83,6 +84,62 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         )*
                         _ => ::deser::__derive::None,
                     }
+                }
+            }
+        };
+    })
+}
+
+fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Result<TokenStream> {
+    if input.generics.lt_token.is_some() || input.generics.where_clause.is_some() {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "Only basic enums are supported (no generics)",
+        ));
+    }
+
+    let ident = &input.ident;
+    let dummy = syn::Ident::new(
+        &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
+        Span::call_site(),
+    );
+
+    let container_attrs = ContainerAttrs::of(input)?;
+    let var_idents = enumeration
+        .variants
+        .iter()
+        .map(|variant| match variant.fields {
+            syn::Fields::Unit => Ok(&variant.ident),
+            _ => Err(syn::Error::new_spanned(
+                variant,
+                "Invalid variant: only simple enum variants without fields are supported",
+            )),
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    let attrs = enumeration
+        .variants
+        .iter()
+        .map(EnumVariantAttrs::of)
+        .collect::<syn::Result<Vec<_>>>()?;
+    let names = attrs
+        .iter()
+        .map(|x| x.name(&container_attrs))
+        .collect::<Vec<_>>();
+
+    Ok(quote! {
+        #[allow(non_upper_case_globals)]
+        const #dummy: () = {
+            impl ::deser::Serialize for #ident {
+                fn serialize(&self, __state: &::deser::ser::SerializerState)
+                    -> ::deser::__derive::Result<::deser::ser::Chunk>
+                {
+                    ::deser::__derive::Ok(match *self {
+                        #(
+                            #ident::#var_idents => {
+                                ::deser::ser::Chunk::Atom(::deser::Atom::Str(::deser::__derive::Cow::Borrowed(#names)))
+                            }
+                        )*
+                    })
                 }
             }
         };
