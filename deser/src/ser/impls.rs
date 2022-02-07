@@ -27,6 +27,10 @@ impl Serialize for () {
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Atom(Atom::Null))
     }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
 }
 
 impl Serialize for u8 {
@@ -290,6 +294,10 @@ where
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
         &DESCRIPTOR
+    }
+
+    fn is_optional(&self) -> bool {
+        self.is_none()
     }
 
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {

@@ -416,6 +416,18 @@ pub trait Serialize {
         Ok(())
     }
 
+    /// Checks if the current value that would be serialized represents an
+    /// optional value.
+    ///
+    /// This can be used by an emitter to skip over values that are currently
+    /// in the optional state.  For instance `Option<T>` returns `true` here if
+    /// the value is `None` and the struct emitter created by the `derive` feature
+    /// will skip over these if `#[deser(skip_serializing_optionals)]` is set on
+    /// the struct.
+    fn is_optional(&self) -> bool {
+        false
+    }
+
     /// Hidden internal trait method to allow specializations of bytes.
     ///
     /// This method is used by `u8` and `Vec<T>` / `&[T]` to achieve special

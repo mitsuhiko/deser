@@ -35,6 +35,34 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(|x| x.name(&container_attrs))
         .collect::<Vec<_>>();
+    let skip_if = attrs
+        .iter()
+        .zip(fieldname.iter())
+        .map(|(attrs, name)| {
+            let field_skip = if let Some(path) = attrs.skip_serializing_if() {
+                quote! {
+                    if #path(&self.data.#name) {
+                        continue;
+                    }
+                }
+            } else {
+                quote! {}
+            };
+            let optional_skip = if container_attrs.skip_serializing_optionals() {
+                quote! {
+                    if __handle.is_optional() {
+                        continue;
+                    }
+                }
+            } else {
+                quote! {}
+            };
+            quote! {
+                #field_skip
+                #optional_skip
+            }
+        })
+        .collect::<Vec<_>>();
 
     let index = 0usize..;
 
@@ -73,16 +101,22 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self) -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)> {
-                    let __index = self.index;
-                    self.index = __index + 1;
-                    match __index {
-                        #(
-                            #index => ::deser::__derive::Some((
-                                ::deser::__derive::Cow::Borrowed(#fieldstr),
-                                ::deser::ser::SerializeHandle::to(&self.data.#fieldname),
-                            )),
-                        )*
-                        _ => ::deser::__derive::None,
+                    loop {
+                        let __index = self.index;
+                        self.index = __index + 1;
+                        match __index {
+                            #(
+                                #index => {
+                                    let __handle = ::deser::ser::SerializeHandle::to(&self.data.#fieldname);
+                                    #skip_if
+                                    return::deser::__derive::Some((
+                                        ::deser::__derive::Cow::Borrowed(#fieldstr),
+                                        __handle,
+                                    ))
+                                }
+                            )*
+                            _ => return ::deser::__derive::None,
+                        }
                     }
                 }
             }

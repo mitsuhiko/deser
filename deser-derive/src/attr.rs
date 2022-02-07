@@ -44,6 +44,7 @@ pub struct ContainerAttrs<'a> {
     rename: Option<String>,
     rename_all: Option<RenameAll>,
     default: Option<TypeDefault>,
+    skip_serializing_optionals: bool,
 }
 
 pub fn get_meta_items(attr: &syn::Attribute) -> syn::Result<Vec<syn::NestedMeta>> {
@@ -98,6 +99,7 @@ impl<'a> ContainerAttrs<'a> {
             rename: None,
             rename_all: None,
             default: None,
+            skip_serializing_optionals: false,
         };
 
         for meta_item in input.attrs.iter().flat_map(get_meta_items).flatten() {
@@ -129,6 +131,15 @@ impl<'a> ContainerAttrs<'a> {
                             ));
                         }
                         rv.default = Some(TypeDefault::Implicit);
+                    }
+                    syn::Meta::Path(path) if path.is_ident("skip_serializing_optionals") => {
+                        if rv.skip_serializing_optionals {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "duplicate skip_serializing_optionals attribute",
+                            ));
+                        }
+                        rv.skip_serializing_optionals = true;
                     }
                     syn::Meta::NameValue(nv) if nv.path.is_ident("default") => {
                         if rv.default.is_some() {
@@ -206,6 +217,10 @@ impl<'a> ContainerAttrs<'a> {
         self.default.as_ref()
     }
 
+    pub fn skip_serializing_optionals(&self) -> bool {
+        self.skip_serializing_optionals
+    }
+
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
         let name = variant.ident.to_string();
         if let Some(rename_all) = self.rename_all {
@@ -254,6 +269,7 @@ pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
     rename: Option<String>,
     default: Option<TypeDefault>,
+    skip_serializing_if: Option<syn::ExprPath>,
 }
 
 impl<'a> FieldAttrs<'a> {
@@ -262,6 +278,7 @@ impl<'a> FieldAttrs<'a> {
             field,
             rename: None,
             default: None,
+            skip_serializing_if: None,
         };
 
         for meta_item in field.attrs.iter().flat_map(get_meta_items).flatten() {
@@ -296,6 +313,16 @@ impl<'a> FieldAttrs<'a> {
                             "default", &nv.lit,
                         )?));
                     }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("skip_serializing_if") => {
+                        if rv.skip_serializing_if.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "duplicate skip_serializing_if attribute",
+                            ));
+                        }
+                        rv.skip_serializing_if =
+                            Some(parse_lit_into_expr_path("skip_serializing_if", &nv.lit)?);
+                    }
                     _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
                 }
             } else {
@@ -315,6 +342,10 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
+    }
+
+    pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
+        self.skip_serializing_if.as_ref()
     }
 }
 

@@ -41,6 +41,10 @@
 //! * `#[deser(default)]`: Instructs the deserializer to fill in all missing fields from [`Default`].
 //!   Default will be lazily invoked if any of the fields is not filled in.
 //! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
+//! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
+//!   skip over all optional values that are currently not set.  This uses the
+//!   [`is_optional`](crate::ser::Sererialize::is_optional) serialize method to figure out if a
+//!   a field is optional.  At the moment only `None` and `()` are considered optional.
 //!
 //! ## Enum Attributes
 //!
@@ -56,6 +60,8 @@
 //! * `#[deser(rename = "...")]`: renames the field.
 //! * `#[deser(default)]`: fills in the field default value from [`Default`].
 //! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
+//! * `#[deser(skip_serializing_if = "...")]`: invokes the provided callback with the value to check
+//!   if it should be skipped during serialization.
 //!
 //! ## Enum Variant Attributes
 //!

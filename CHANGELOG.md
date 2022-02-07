@@ -5,6 +5,7 @@ All notable changes to deser are documented here.
 ## 0.5.0
 
 - Added support for `#[deser(default)]` in deriving.
+- Added support for `#[deser(skip_serializing_optionals)]`.
 
 ## 0.4.0
 
