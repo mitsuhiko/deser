@@ -273,7 +273,7 @@ pub trait Deserialize: Sized {
     /// sink.
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle;
 
-    /// Internal method to specialize byte arrays.
+    /// Returns `true` if this deserialize is `u8`.
     ///
     /// # Safety
     ///
@@ -281,30 +281,29 @@ pub trait Deserialize: Sized {
     /// Returning this true for any other type will cause undefined behavior due to how
     /// the arrays are implemented.
     #[doc(hidden)]
-    unsafe fn __private_slice_from_bytes(_bytes: &[u8]) -> Option<Vec<Self>>
-    where
-        Self: Sized,
-    {
-        None
-    }
-
-    /// Internal method to specialize byte arrays.
-    #[doc(hidden)]
-    fn __private_is_bytes() -> bool {
+    unsafe fn __private_is_bytes() -> bool {
         false
     }
 }
 
 /// Trait to place values in a slot.
 ///
-/// During deserialization the deserializer will invoke the right method to
-/// produce a value to it.  The sink then places the value in the slot behind
-/// the sink.
+/// A sink acts as an abstraction to receive a value during deserialization from
+/// the deserializer.  Sinks in deser are one-shot receivers.  A deserializer must
+/// invoke one receiver method for a total of zero or one times.
+///
+/// The sink then places the received value in the slot connected to the sink.
 pub trait Sink {
+    /// Receives an [`Atom`].
+    ///
+    /// The default implementation returns an error.
     fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
         Err(atom.unexpected_error(&self.expecting()))
     }
 
+    /// Begins the receiving process for maps.
+    ///
+    /// The default implementation returns an error.
     fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
         Err(Error::new(
             ErrorKind::Unexpected,
@@ -312,6 +311,9 @@ pub trait Sink {
         ))
     }
 
+    /// Begins the receiving process for sequences.
+    ///
+    /// The default implementation returns an error.
     fn seq(&mut self, _state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
         Err(Error::new(
             ErrorKind::Unexpected,
@@ -319,6 +321,7 @@ pub trait Sink {
         ))
     }
 
+    /// Utility method to return an expectation message that is used in error messages.
     fn expecting(&self) -> Cow<'_, str> {
         "compatible type".into()
     }

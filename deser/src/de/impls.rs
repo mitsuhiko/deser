@@ -119,14 +119,7 @@ impl Deserialize for u8 {
         SlotWrapper::make_handle(out)
     }
 
-    unsafe fn __private_slice_from_bytes(bytes: &[u8]) -> Option<Vec<Self>>
-    where
-        Self: Sized,
-    {
-        Some(bytes.to_vec())
-    }
-
-    fn __private_is_bytes() -> bool {
+    unsafe fn __private_is_bytes() -> bool {
         true
     }
 }
@@ -186,7 +179,7 @@ deserialize!(f64);
 
 impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
     fn expecting(&self) -> Cow<'_, str> {
-        if T::__private_is_bytes() {
+        if unsafe { T::__private_is_bytes() } {
             "bytes".into()
         } else {
             "vec".into()
@@ -196,8 +189,8 @@ impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
     fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bytes(value) => unsafe {
-                if let Some(bytes) = T::__private_slice_from_bytes(&value) {
-                    **self = Some(bytes);
+                if T::__private_is_bytes() {
+                    **self = Some(std::mem::transmute(value.into_owned()));
                     Ok(())
                 } else {
                     Err(Error::new(
@@ -393,7 +386,7 @@ impl<'a, T: Deserialize> SeqSink for VecSink<'a, T> {
     fn descriptor(&self) -> &dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
         static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
-        if T::__private_is_bytes() {
+        if unsafe { T::__private_is_bytes() } {
             &BYTES_DESCRIPTOR
         } else {
             &SLICE_DESCRIPTOR
@@ -531,12 +524,12 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::Bytes(value) => {
-                        if let Some(bytes) = unsafe { T::__private_slice_from_bytes(&value) } {
-                            if bytes.len() == N {
+                        if unsafe { T::__private_is_bytes() } {
+                            if value.len() == N {
                                 *self.out = Some(unsafe {
                                     let mut rv = MaybeUninit::<[T; N]>::uninit();
                                     std::ptr::copy_nonoverlapping(
-                                        bytes.as_slice().as_ptr() as *const T,
+                                        value.as_ptr() as *const T,
                                         rv.as_mut_ptr() as *mut T,
                                         N,
                                     );
