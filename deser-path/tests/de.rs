@@ -24,7 +24,7 @@ impl Sink for SlotWrapper<MyBool> {
                 **self = Some(MyBool(value));
                 Ok(())
             }
-            other => Err(other.unexpected_error(&self.expecting())),
+            other => self.unexpected_atom(other, state),
         }
     }
 }

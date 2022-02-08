@@ -7,7 +7,13 @@ use crate::error::{Error, ErrorKind};
 /// Atoms are values that are sent directly to a serializer or deserializer.
 /// Examples for this are booleans or integers.  This is in contrast to
 /// compound values like maps, structs or sequences.
+///
+/// Atoms are non exhaustive which means that new variants might appear
+/// in the future.  Deser tries to build around this restriction for instance
+/// through APIs like [`unexpected_atom`](crate::de::Sink::unexpected_atom) so that
+/// one always have something to call.
 #[derive(Debug, PartialEq, Clone)]
+#[non_exhaustive]
 pub enum Atom<'a> {
     Null,
     Bool(bool),
@@ -98,6 +104,12 @@ impl From<()> for Event<'static> {
 impl<'a> From<&'a str> for Event<'a> {
     fn from(value: &'a str) -> Event<'a> {
         Event::Atom(Atom::Str(Cow::Borrowed(value)))
+    }
+}
+
+impl<'a> From<&'a [u8]> for Event<'a> {
+    fn from(value: &'a [u8]) -> Event<'a> {
+        Event::Atom(Atom::Bytes(Cow::Borrowed(value)))
     }
 }
 

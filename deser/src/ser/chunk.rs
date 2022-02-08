@@ -53,6 +53,12 @@ impl<'a> From<&'a str> for Chunk<'a> {
     }
 }
 
+impl<'a> From<&'a [u8]> for Chunk<'a> {
+    fn from(value: &'a [u8]) -> Chunk<'a> {
+        Chunk::Atom(Atom::Bytes(Cow::Borrowed(value)))
+    }
+}
+
 impl From<String> for Chunk<'static> {
     fn from(value: String) -> Chunk<'static> {
         Chunk::Atom(Atom::Str(Cow::Owned(value)))

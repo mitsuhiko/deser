@@ -74,7 +74,7 @@
 //!     fn atom(
 //!         &mut self,
 //!         atom: Atom,
-//!         _state: &DeserializerState,
+//!         state: &DeserializerState,
 //!     ) -> Result<(), Error> {
 //!         match atom {
 //!             Atom::Bool(value) => {
@@ -83,9 +83,10 @@
 //!                 **self = Some(MyBool(value));
 //!                 Ok(())
 //!             }
-//!             // for any other value we create an unexpected error.  This is
-//!             // the default implementation of this method.
-//!             other => Err(other.unexpected_error(&self.expecting())),
+//!             // for any other value we dispatch to the default handling
+//!             // which creates an unexpected type error but might have
+//!             // more elaborate default behavior in the future.
+//!             other => self.unexpected_atom(other, state)
 //!         }
 //!     }
 //! }
@@ -296,8 +297,13 @@ pub trait Deserialize: Sized {
 pub trait Sink {
     /// Receives an [`Atom`].
     ///
-    /// The default implementation returns an error.
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        self.unexpected_atom(atom, state)
+    }
+
+    /// Implements a default fallback handling for atoms.
+    fn unexpected_atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
         Err(atom.unexpected_error(&self.expecting()))
     }
 

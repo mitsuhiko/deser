@@ -70,6 +70,7 @@ fn dump<'a, 'f>(
             Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(..) => f.debug_struct("?").finish()?,
             Event::MapStart => {
                 if let Some(ref name) = first.1 {
                     write!(f, "{} ", name)?;

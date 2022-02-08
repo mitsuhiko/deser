@@ -26,13 +26,13 @@ impl Sink for SlotWrapper<()> {
         "null".into()
     }
 
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Null => {
                 **self = Some(());
                 Ok(())
             }
-            other => Err(other.unexpected_error(&self.expecting())),
+            other => self.unexpected_atom(other, state),
         }
     }
 }
@@ -43,13 +43,13 @@ impl Sink for SlotWrapper<bool> {
         "bool".into()
     }
 
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
                 **self = Some(value);
                 Ok(())
             }
-            other => Err(other.unexpected_error(&self.expecting())),
+            other => self.unexpected_atom(other, state),
         }
     }
 }
@@ -60,13 +60,13 @@ impl Sink for SlotWrapper<String> {
         "string".into()
     }
 
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Str(value) => {
                 **self = Some(value.to_string());
                 Ok(())
             }
-            other => Err(other.unexpected_error(&self.expecting())),
+            other => self.unexpected_atom(other, state),
         }
     }
 }
@@ -79,7 +79,7 @@ macro_rules! int_sink {
                 stringify!($ty).into()
             }
 
-            fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::U64(value) => {
                         let truncated = value as $ty;
@@ -105,7 +105,7 @@ macro_rules! int_sink {
                             ))
                         }
                     }
-                    other => Err(other.unexpected_error(&self.expecting())),
+                    other => self.unexpected_atom(other, state),
                 }
             }
         }
@@ -148,11 +148,11 @@ impl Sink for SlotWrapper<char> {
         "char".into()
     }
 
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Char(value) => {
                 **self = Some(value);
-                return Ok(());
+                Ok(())
             }
             Atom::Str(ref s) => {
                 let mut chars = s.chars();
@@ -162,10 +162,10 @@ impl Sink for SlotWrapper<char> {
                         return Ok(());
                     }
                 }
+                Err(atom.unexpected_error(&self.expecting()))
             }
-            _ => {}
+            other => self.unexpected_atom(other, state),
         }
-        Err(atom.unexpected_error(&self.expecting()))
     }
 }
 deserialize!(char);
@@ -177,7 +177,7 @@ macro_rules! float_sink {
                 stringify!($ty).into()
             }
 
-            fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::U64(value) => {
                         **self = Some(value as $ty);
@@ -191,7 +191,7 @@ macro_rules! float_sink {
                         **self = Some(value as $ty);
                         Ok(())
                     }
-                    other => Err(other.unexpected_error(&self.expecting())),
+                    other => self.unexpected_atom(other, state),
                 }
             }
         }
@@ -213,7 +213,7 @@ impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
         }
     }
 
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bytes(value) => unsafe {
                 if T::__private_is_bytes() {
@@ -226,7 +226,7 @@ impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
                     ))
                 }
             },
-            other => Err(other.unexpected_error(&self.expecting())),
+            other => self.unexpected_atom(other, state),
         }
     }
 
@@ -548,7 +548,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 "array".into()
             }
 
-            fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::Bytes(value) => {
                         if unsafe { T::__private_is_bytes() } {
@@ -576,7 +576,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                             ))
                         }
                     }
-                    other => Err(other.unexpected_error(&self.expecting())),
+                    other => self.unexpected_atom(other, state),
                 }
             }
 

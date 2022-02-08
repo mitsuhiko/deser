@@ -347,7 +347,7 @@ pub fn derive_enum(
                 ) -> ::deser::__derive::Result<()> {
                     let s = match __atom {
                         ::deser::Atom::Str(ref s) => &s as &::deser::__derive::str,
-                        __other => return Err(__other.unexpected_error(&self.expecting()))
+                        __other => return self.unexpected_atom(__other, __state),
                     };
                     let value = match s {
                         #( #matcher => #ident::#var_idents, )*
