@@ -171,3 +171,17 @@ fn test_byte_array() {
 fn test_byte_array_wrong_length() {
     let _: [u8; 4] = deserialize(vec![Event::Atom(Atom::Bytes(Cow::Borrowed(&b"012"[..])))]);
 }
+
+#[test]
+fn test_chars() {
+    let x: char = deserialize(vec!['x'.into()]);
+    assert_eq!(x, 'x');
+    let x: char = deserialize(vec!["x".into()]);
+    assert_eq!(x, 'x');
+}
+
+#[test]
+#[should_panic = "unexpected string, expected char"]
+fn test_chars_long_string() {
+    let _: char = deserialize(vec!["Harry".into()]);
+}

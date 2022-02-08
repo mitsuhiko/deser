@@ -10,6 +10,7 @@ All notable changes to deser are documented here.
 - Added tuple support.
 - Added array support.
 - Added support for `#[deser(alias)]`.
+- Added support for characters to the data model.
 
 ## 0.4.0
 

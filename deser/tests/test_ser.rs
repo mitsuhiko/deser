@@ -64,3 +64,9 @@ fn test_array() {
         vec![Event::Atom(Atom::Bytes(Cow::Borrowed(b"Hello")))]
     );
 }
+
+#[test]
+fn test_chars() {
+    let events = capture_events(&'x');
+    assert_eq!(events, vec!['x'.into()]);
+}

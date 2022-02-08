@@ -143,6 +143,33 @@ deserialize!(isize);
 int_sink!(usize);
 deserialize!(usize);
 
+impl Sink for SlotWrapper<char> {
+    fn expecting(&self) -> Cow<'_, str> {
+        "char".into()
+    }
+
+    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+        match atom {
+            Atom::Char(value) => {
+                **self = Some(value);
+                return Ok(());
+            }
+            Atom::Str(ref s) => {
+                let mut chars = s.chars();
+                if let Some(first_char) = chars.next() {
+                    if chars.next().is_none() {
+                        **self = Some(first_char);
+                        return Ok(());
+                    }
+                }
+            }
+            _ => {}
+        }
+        Err(atom.unexpected_error(&self.expecting()))
+    }
+}
+deserialize!(char);
+
 macro_rules! float_sink {
     ($ty:ty) => {
         impl Sink for SlotWrapper<$ty> {

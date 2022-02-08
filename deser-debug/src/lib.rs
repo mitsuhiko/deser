@@ -66,6 +66,7 @@ fn dump<'a, 'f>(
                 }
                 write!(f, "\"")?;
             }
+            Event::Atom(Atom::Char(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,

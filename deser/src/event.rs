@@ -13,6 +13,7 @@ pub enum Atom<'a> {
     Bool(bool),
     Str(Cow<'a, str>),
     Bytes(Cow<'a, [u8]>),
+    Char(char),
     U64(u64),
     I64(i64),
     F64(f64),
@@ -26,6 +27,7 @@ impl<'a> Atom<'a> {
             Atom::Bool(v) => Atom::Bool(v),
             Atom::Str(ref v) => Atom::Str(Cow::Owned(v.to_string())),
             Atom::Bytes(ref v) => Atom::Bytes(Cow::Owned(v.to_vec())),
+            Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
             Atom::F64(v) => Atom::F64(v),
@@ -39,6 +41,7 @@ impl<'a> Atom<'a> {
             Atom::Bool(_) => "bool",
             Atom::Str(_) => "string",
             Atom::Bytes(_) => "bytes",
+            Atom::Char(_) => "char",
             Atom::U64(_) => "unsigned integer",
             Atom::I64(_) => "signed integer",
             Atom::F64(_) => "float",
@@ -84,6 +87,7 @@ impl_from!(f64, F64);
 impl_from!(usize, U64);
 impl_from!(isize, I64);
 impl_from!(bool, Bool);
+impl_from!(char, Char);
 
 impl From<()> for Event<'static> {
     fn from(_: ()) -> Event<'static> {

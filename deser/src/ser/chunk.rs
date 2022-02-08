@@ -39,6 +39,7 @@ impl_from!(f64, F64);
 impl_from!(usize, U64);
 impl_from!(isize, I64);
 impl_from!(bool, Bool);
+impl_from!(char, Char);
 
 impl From<()> for Chunk<'static> {
     fn from(_: ()) -> Chunk<'static> {

@@ -51,6 +51,17 @@ impl Serialize for u8 {
     }
 }
 
+impl Serialize for char {
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
+        &DESCRIPTOR
+    }
+
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+        Ok(Chunk::Atom(Atom::Char(*self)))
+    }
+}
+
 macro_rules! serialize_int {
     ($ty:ty, $atom:ident) => {
         impl Serialize for $ty {
