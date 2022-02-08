@@ -329,3 +329,32 @@ fn test_rename() {
     assert_eq!(s.ty, 1);
     assert_eq!(s.value, 2);
 }
+
+#[test]
+fn test_field_alias() {
+    #[derive(Deserialize)]
+    struct Test {
+        #[deser(alias = "type", alias = "ty")]
+        kind: usize,
+    }
+
+    let s: Test = deserialize(vec![
+        Event::MapStart,
+        "ty".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ]);
+    assert_eq!(s.kind, 1);
+}
+
+#[test]
+fn test_variant_alias() {
+    #[derive(Deserialize, PartialEq, Debug)]
+    enum Stuff {
+        #[deser(alias = "a", alias = "alpha")]
+        A,
+    }
+
+    let s: Stuff = deserialize(vec!["alpha".into()]);
+    assert_eq!(s, Stuff::A);
+}

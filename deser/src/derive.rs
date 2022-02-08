@@ -62,12 +62,16 @@
 //! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
 //! * `#[deser(skip_serializing_if = "...")]`: invokes the provided callback with the value to check
 //!   if it should be skipped during serialization.
+//! * `#[deser(alias = "...")]`: provides an alias for the field name for deserialization.  This is ignored
+//!   for serialization.
 //!
 //! ## Enum Variant Attributes
 //!
 //! The following attributes can be added to enum variants:
 //!
 //! * `#[deser(rename = "...")]`: renames the enum variant.
+//! * `#[deser(alias = "...")]`: provides an alias for the variant name for deserialization.  This is ignored
+//!   for serialization.
 
 // these exist as explicit aliases only
 

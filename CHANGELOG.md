@@ -9,6 +9,7 @@ All notable changes to deser are documented here.
 - Removed `ignore` and replaced it with `SinkHandle::null`.
 - Added tuple support.
 - Added array support.
+- Added support for `#[deser(alias)]`.
 
 ## 0.4.0
 

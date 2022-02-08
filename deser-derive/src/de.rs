@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
@@ -42,10 +44,41 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    let fieldstr = attrs
+
+    let mut seen_names = HashSet::new();
+    let mut first_duplicate_name = None;
+    let matcher = attrs
         .iter()
-        .map(|x| x.name(&container_attrs))
+        .map(|x| {
+            let name = x.name(&container_attrs).to_string();
+            if first_duplicate_name.is_none() && seen_names.contains(&name) {
+                first_duplicate_name = Some((name.clone(), x.field()));
+            }
+            seen_names.insert(name.clone());
+
+            let mut rv = quote! {
+                ::deser::__derive::Some(#name)
+            };
+            for alias in x.aliases() {
+                let alias = alias.clone();
+                if first_duplicate_name.is_none() && seen_names.contains(&alias) {
+                    first_duplicate_name = Some((alias.clone(), x.field()));
+                }
+                seen_names.insert(alias.clone());
+                rv = quote! {
+                    #rv | ::deser::__derive::Some(#alias)
+                };
+            }
+            rv
+        })
         .collect::<Vec<_>>();
+
+    if let Some((first_duplicate_name, field)) = first_duplicate_name {
+        return Err(syn::Error::new_spanned(
+            field,
+            format!("field name '{}' used more than once", first_duplicate_name),
+        ));
+    }
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
@@ -188,7 +221,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
                     match self.key.take().as_deref() {
                         #(
-                            ::deser::__derive::Some(#fieldstr) => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
+                            #matcher => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
                         )*
                         _ => ::deser::__derive::Ok(::deser::de::SinkHandle::null()),
                     }
@@ -246,10 +279,43 @@ pub fn derive_enum(
         .iter()
         .map(EnumVariantAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    let names = attrs
+
+    let mut seen_names = HashSet::new();
+    let mut first_duplicate_name = None;
+    let matcher = attrs
         .iter()
-        .map(|x| x.name(&container_attrs))
+        .map(|x| {
+            let name = x.name(&container_attrs).to_string();
+            if first_duplicate_name.is_none() && seen_names.contains(&name) {
+                first_duplicate_name = Some((name.clone(), x.variant()));
+            }
+            seen_names.insert(name.clone());
+
+            let mut rv = quote! {
+                #name
+            };
+            for alias in x.aliases() {
+                let alias = alias.clone();
+                if first_duplicate_name.is_none() && seen_names.contains(&alias) {
+                    first_duplicate_name = Some((alias.clone(), x.variant()));
+                }
+                seen_names.insert(alias.clone());
+                rv = quote! {
+                    #rv | #alias
+                };
+            }
+            rv
+        })
         .collect::<Vec<_>>();
+    if let Some((first_duplicate_name, field)) = first_duplicate_name {
+        return Err(syn::Error::new_spanned(
+            field,
+            format!(
+                "variant name '{}' used more than once",
+                first_duplicate_name
+            ),
+        ));
+    }
 
     Ok(quote! {
         #[allow(non_upper_case_globals)]
@@ -284,7 +350,7 @@ pub fn derive_enum(
                         __other => return Err(__other.unexpected_error(&self.expecting()))
                     };
                     let value = match s {
-                        #( #names => #ident::#var_idents, )*
+                        #( #matcher => #ident::#var_idents, )*
                         _ => return ::deser::__derive::Err(
                             ::deser::Error::new(::deser::ErrorKind::Unexpected, "unexpected value for enum")
                         )

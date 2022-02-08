@@ -268,6 +268,7 @@ impl<'a> ContainerAttrs<'a> {
 pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
     rename: Option<String>,
+    aliases: Vec<String>,
     default: Option<TypeDefault>,
     skip_serializing_if: Option<syn::ExprPath>,
 }
@@ -277,6 +278,7 @@ impl<'a> FieldAttrs<'a> {
         let mut rv = FieldAttrs {
             field,
             rename: None,
+            aliases: Vec::new(),
             default: None,
             skip_serializing_if: None,
         };
@@ -292,6 +294,9 @@ impl<'a> FieldAttrs<'a> {
                             ));
                         }
                         rv.rename = Some(get_lit_str("rename", &nv.lit)?);
+                    }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("alias") => {
+                        rv.aliases.push(get_lit_str("alias", &nv.lit)?);
                     }
                     syn::Meta::Path(path) if path.is_ident("default") => {
                         if rv.default.is_some() {
@@ -333,11 +338,19 @@ impl<'a> FieldAttrs<'a> {
         Ok(rv)
     }
 
+    pub fn field(&self) -> &syn::Field {
+        self.field
+    }
+
     pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
         self.rename
             .as_deref()
             .map(Cow::Borrowed)
             .unwrap_or_else(|| container_attrs.get_field_name(self.field).into())
+    }
+
+    pub fn aliases(&self) -> &[String] {
+        &self.aliases
     }
 
     pub fn default(&self) -> Option<&TypeDefault> {
@@ -352,6 +365,7 @@ impl<'a> FieldAttrs<'a> {
 pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     rename: Option<String>,
+    aliases: Vec<String>,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -359,27 +373,36 @@ impl<'a> EnumVariantAttrs<'a> {
         let mut rv = EnumVariantAttrs {
             variant,
             rename: None,
+            aliases: Vec::new(),
         };
 
         for meta_item in variant.attrs.iter().flat_map(get_meta_items).flatten() {
-            if let syn::NestedMeta::Meta(syn::Meta::NameValue(value)) = &meta_item {
-                if value.path.is_ident("rename") {
-                    if let syn::Lit::Str(s) = &value.lit {
+            if let syn::NestedMeta::Meta(meta) = meta_item {
+                match &meta {
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename") => {
                         if rv.rename.is_some() {
                             return Err(syn::Error::new_spanned(
-                                meta_item,
+                                meta,
                                 "duplicate rename attribute",
                             ));
                         }
-                        rv.rename = Some(s.value());
-                        continue;
+                        rv.rename = Some(get_lit_str("rename", &nv.lit)?);
                     }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("alias") => {
+                        rv.aliases.push(get_lit_str("alias", &nv.lit)?);
+                    }
+                    _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
                 }
+            } else {
+                return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
             }
-            return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
         }
 
         Ok(rv)
+    }
+
+    pub fn variant(&self) -> &syn::Variant {
+        self.variant
     }
 
     pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
@@ -387,5 +410,9 @@ impl<'a> EnumVariantAttrs<'a> {
             .as_deref()
             .map(Cow::Borrowed)
             .unwrap_or_else(|| container_attrs.get_variant_name(self.variant).into())
+    }
+
+    pub fn aliases(&self) -> &[String] {
+        &self.aliases
     }
 }
