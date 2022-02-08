@@ -70,3 +70,9 @@ fn test_chars() {
     let events = capture_events(&'x');
     assert_eq!(events, vec!['x'.into()]);
 }
+
+#[test]
+fn test_refs() {
+    let events = capture_events(&&&&42u64);
+    assert_eq!(events, vec![42u64.into()]);
+}

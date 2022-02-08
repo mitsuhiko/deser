@@ -384,3 +384,15 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
         }
     }
 }
+
+impl<'a, T: Serialize> Serialize for &'a T {
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+        Serialize::serialize(*self, state)
+    }
+}
+
+impl<'a, T: Serialize> Serialize for &'a mut T {
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+        Serialize::serialize(*self, state)
+    }
+}

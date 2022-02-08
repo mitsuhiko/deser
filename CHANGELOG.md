@@ -11,6 +11,7 @@ All notable changes to deser are documented here.
 - Added array support.
 - Added support for `#[deser(alias)]`.
 - Added support for characters to the data model.
+- Added support for serializing references.
 
 ## 0.4.0
 
