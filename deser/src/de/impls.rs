@@ -440,16 +440,16 @@ impl<'a> Sink for NullIgnoringSink<'a> {
         self.sink.map(state)
     }
 
+    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.seq(state)
+    }
+
     fn next_key(&mut self) -> Result<SinkHandle, Error> {
         self.sink.next_key()
     }
 
     fn next_value(&mut self) -> Result<SinkHandle, Error> {
         self.sink.next_value()
-    }
-
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.seq(state)
     }
 
     fn descriptor(&self) -> &dyn Descriptor {

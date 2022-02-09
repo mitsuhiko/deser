@@ -2,14 +2,21 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use deser::de::{DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
-use deser::{Atom, Error};
+use deser::de::{DeserializerState, Sink, SinkHandle};
+use deser::{Atom, Descriptor, Error};
 
 use crate::{Path, PathSegment};
+
+enum Container {
+    None,
+    Map(Rc<RefCell<Option<PathSegment>>>),
+    Seq(usize),
+}
 
 /// A path sink tracks the current path during deserialization.
 pub struct PathSink<'a> {
     sink: SinkHandle<'a>,
+    container: Container,
     set_segment: Option<PathSegment>,
 }
 
@@ -23,6 +30,7 @@ impl<'a> PathSink<'a> {
     pub fn wrap_ref(sink: SinkHandle<'a>) -> PathSink<'a> {
         PathSink {
             sink,
+            container: Container::None,
             set_segment: None,
         }
     }
@@ -37,101 +45,69 @@ impl<'a> PathSink<'a> {
 impl<'a> Sink for PathSink<'a> {
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
+        if let Container::Map(ref capture) = self.container {
+            *capture.borrow_mut() = match atom {
+                Atom::Str(ref value) => Some(PathSegment::Key(value.to_string())),
+                Atom::U64(value) => Some(PathSegment::Index(value as usize)),
+                Atom::I64(value) => Some(PathSegment::Index(value as usize)),
+                _ => None,
+            };
+        }
         self.sink.atom(atom, state)
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
-        state.get_mut::<Path>().segments.push(PathSegment::Index(0));
-        Ok(Box::new(PathTrackingMapSink {
-            sink: self.sink.map(state)?,
-            captured_segment: Rc::default(),
-        }))
-    }
-
-    fn seq(&mut self, state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
-        self.set_segment(state);
-        state.get_mut::<Path>().segments.push(PathSegment::Index(0));
-        Ok(Box::new(PathTrackingSeqSink {
-            sink: self.sink.seq(state)?,
-            index: 0,
-        }))
-    }
-
-    fn expecting(&self) -> Cow<'_, str> {
-        self.sink.expecting()
-    }
-}
-
-struct PathTrackingMapSink<'a> {
-    sink: Box<dyn MapSink + 'a>,
-    captured_segment: Rc<RefCell<Option<PathSegment>>>,
-}
-
-impl<'a> MapSink for PathTrackingMapSink<'a> {
-    fn key(&mut self) -> Result<SinkHandle, Error> {
-        Ok(SinkHandle::boxed(KeyCapturingSink {
-            sink: self.sink.key()?,
-            captured_segment: self.captured_segment.clone(),
-        }))
-    }
-
-    fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(SinkHandle::boxed(PathSink {
-            sink: self.sink.value()?,
-            set_segment: self.captured_segment.take(),
-        }))
-    }
-
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        state.get_mut::<Path>().segments.pop();
-        self.sink.finish(state)
-    }
-}
-
-struct PathTrackingSeqSink<'a> {
-    sink: Box<dyn SeqSink + 'a>,
-    index: usize,
-}
-
-impl<'a> SeqSink for PathTrackingSeqSink<'a> {
-    fn item(&mut self) -> Result<SinkHandle, Error> {
-        let sink_wrapper = PathSink {
-            sink: self.sink.item()?,
-            set_segment: Some(PathSegment::Index(self.index)),
-        };
-        Ok(SinkHandle::boxed(sink_wrapper))
-    }
-
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        state.get_mut::<Path>().segments.pop();
-        self.sink.finish(state)
-    }
-}
-
-struct KeyCapturingSink<'a> {
-    sink: SinkHandle<'a>,
-    captured_segment: Rc<RefCell<Option<PathSegment>>>,
-}
-
-impl<'a> Sink for KeyCapturingSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        *self.captured_segment.borrow_mut() = match atom {
-            Atom::Str(ref value) => Some(PathSegment::Key(value.to_string())),
-            Atom::U64(value) => Some(PathSegment::Index(value as usize)),
-            Atom::I64(value) => Some(PathSegment::Index(value as usize)),
-            _ => None,
-        };
-        self.sink.atom(atom, state)?;
-        Ok(())
-    }
-
-    fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+        state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        self.container = Container::Map(Rc::default());
         self.sink.map(state)
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
+    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.set_segment(state);
+        state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        self.container = Container::Seq(0);
         self.sink.seq(state)
+    }
+
+    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+        self.sink.next_key().map(|sink| {
+            SinkHandle::boxed(PathSink {
+                sink,
+                container: match self.container {
+                    Container::Map(ref capture) => Container::Map(capture.clone()),
+                    _ => unreachable!(),
+                },
+                set_segment: None,
+            })
+        })
+    }
+
+    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+        let set_segment = match self.container {
+            Container::None => None,
+            Container::Map(ref captured_key) => captured_key.borrow_mut().take(),
+            Container::Seq(ref mut index) => {
+                let old_index = *index;
+                *index += 1;
+                Some(PathSegment::Index(old_index))
+            }
+        };
+        self.sink.next_value().map(|sink| {
+            SinkHandle::boxed(PathSink {
+                sink,
+                container: Container::None,
+                set_segment,
+            })
+        })
+    }
+
+    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink.finish(state)
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        self.sink.descriptor()
     }
 
     fn expecting(&self) -> Cow<'_, str> {
