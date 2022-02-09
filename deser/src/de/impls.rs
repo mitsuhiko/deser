@@ -1,10 +1,9 @@
-use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::mem::{take, MaybeUninit};
 
-use crate::de::{Deserialize, DeserializerState, MapSink, SeqSink, Sink, SinkHandle};
+use crate::de::{Deserialize, DeserializerState, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
@@ -22,8 +21,9 @@ macro_rules! deserialize {
 }
 
 impl Sink for SlotWrapper<()> {
-    fn expecting(&self) -> Cow<'_, str> {
-        "null".into()
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
+        &DESCRIPTOR
     }
 
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -39,8 +39,9 @@ impl Sink for SlotWrapper<()> {
 deserialize!(());
 
 impl Sink for SlotWrapper<bool> {
-    fn expecting(&self) -> Cow<'_, str> {
-        "bool".into()
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
+        &DESCRIPTOR
     }
 
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -56,8 +57,9 @@ impl Sink for SlotWrapper<bool> {
 deserialize!(bool);
 
 impl Sink for SlotWrapper<String> {
-    fn expecting(&self) -> Cow<'_, str> {
-        "string".into()
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
+        &DESCRIPTOR
     }
 
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -75,8 +77,11 @@ deserialize!(String);
 macro_rules! int_sink {
     ($ty:ty) => {
         impl Sink for SlotWrapper<$ty> {
-            fn expecting(&self) -> Cow<'_, str> {
-                stringify!($ty).into()
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
+                    name: stringify!($ty),
+                };
+                &DESCRIPTOR
             }
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -144,8 +149,9 @@ int_sink!(usize);
 deserialize!(usize);
 
 impl Sink for SlotWrapper<char> {
-    fn expecting(&self) -> Cow<'_, str> {
-        "char".into()
+    fn descriptor(&self) -> &dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
+        &DESCRIPTOR
     }
 
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -173,8 +179,11 @@ deserialize!(char);
 macro_rules! float_sink {
     ($ty:ty) => {
         impl Sink for SlotWrapper<$ty> {
-            fn expecting(&self) -> Cow<'_, str> {
-                stringify!($ty).into()
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
+                    name: stringify!($ty),
+                };
+                &DESCRIPTOR
             }
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -204,63 +213,76 @@ deserialize!(f32);
 float_sink!(f64);
 deserialize!(f64);
 
-impl<T: Deserialize> Sink for SlotWrapper<Vec<T>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        if unsafe { T::__private_is_bytes() } {
-            "bytes".into()
-        } else {
-            "vec".into()
-        }
-    }
-
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        match atom {
-            Atom::Bytes(value) => unsafe {
-                if T::__private_is_bytes() {
-                    **self = Some(std::mem::transmute(value.into_owned()));
-                    Ok(())
-                } else {
-                    Err(Error::new(
-                        ErrorKind::Unexpected,
-                        format!("unexpected bytes, expected {}", self.expecting()),
-                    ))
-                }
-            },
-            other => self.unexpected_atom(other, state),
-        }
-    }
-
-    fn seq(&mut self, _state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
-        Ok(Box::new(VecSink {
-            slot: self,
-            vec: Vec::new(),
-            element: None,
-        }))
-    }
-}
-
 impl<T: Deserialize> Deserialize for Vec<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SlotWrapper::make_handle(out)
-    }
-}
+        struct VecSink<'a, T> {
+            slot: &'a mut Option<Vec<T>>,
+            vec: Vec<T>,
+            element: Option<T>,
+            is_seq: bool,
+        }
 
-impl<K, V> Sink for SlotWrapper<BTreeMap<K, V>>
-where
-    K: Ord + Deserialize,
-    V: Deserialize,
-{
-    fn expecting(&self) -> Cow<'_, str> {
-        "map".into()
-    }
+        impl<'a, T: 'a> VecSink<'a, T> {
+            fn flush(&mut self) {
+                if let Some(element) = self.element.take() {
+                    self.vec.push(element);
+                }
+            }
+        }
 
-    fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn super::MapSink + '_>, Error> {
-        Ok(Box::new(BTreeMapSink {
-            slot: self,
-            map: BTreeMap::new(),
-            key: None,
-            value: None,
-        }))
+        impl<'a, T: Deserialize> Sink for VecSink<'a, T> {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
+                static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
+                if unsafe { T::__private_is_bytes() } {
+                    &BYTES_DESCRIPTOR
+                } else {
+                    &SLICE_DESCRIPTOR
+                }
+            }
+
+            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+                match atom {
+                    Atom::Bytes(value) => unsafe {
+                        if T::__private_is_bytes() {
+                            *self.slot = Some(std::mem::transmute(value.into_owned()));
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                ErrorKind::Unexpected,
+                                format!("unexpected bytes, expected {}", self.expecting()),
+                            ))
+                        }
+                    },
+                    other => self.unexpected_atom(other, state),
+                }
+            }
+
+            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.is_seq = true;
+                Ok(())
+            }
+
+            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+                self.flush();
+                Ok(Deserialize::deserialize_into(&mut self.element))
+            }
+
+            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                if self.is_seq {
+                    self.flush();
+                    *self.slot = Some(take(&mut self.vec));
+                }
+                Ok(())
+            }
+        }
+
+        SinkHandle::boxed(VecSink {
+            slot: out,
+            vec: Vec::new(),
+            element: None,
+            is_seq: false,
+        })
     }
 }
 
@@ -270,71 +292,61 @@ where
     V: Deserialize,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SlotWrapper::make_handle(out)
-    }
-}
-
-struct BTreeMapSink<'a, K: 'a, V: 'a> {
-    slot: &'a mut Option<BTreeMap<K, V>>,
-    map: BTreeMap<K, V>,
-    key: Option<K>,
-    value: Option<V>,
-}
-
-impl<'a, K, V> BTreeMapSink<'a, K, V>
-where
-    K: Ord,
-{
-    fn flush(&mut self) {
-        if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
-            self.map.insert(key, value);
+        struct MapSink<'a, K: 'a, V: 'a> {
+            slot: &'a mut Option<BTreeMap<K, V>>,
+            map: BTreeMap<K, V>,
+            key: Option<K>,
+            value: Option<V>,
         }
-    }
-}
 
-impl<'a, K, V> MapSink for BTreeMapSink<'a, K, V>
-where
-    K: Ord + Deserialize,
-    V: Deserialize,
-{
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
-        &DESCRIPTOR
-    }
+        impl<'a, K, V> MapSink<'a, K, V>
+        where
+            K: Ord,
+        {
+            fn flush(&mut self) {
+                if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
+                    self.map.insert(key, value);
+                }
+            }
+        }
 
-    fn key(&mut self) -> Result<SinkHandle, Error> {
-        self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.key))
-    }
+        impl<'a, K, V> Sink for MapSink<'a, K, V>
+        where
+            K: Ord + Deserialize,
+            V: Deserialize,
+        {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: UnorderedNamedDescriptor =
+                    UnorderedNamedDescriptor { name: "map" };
+                &DESCRIPTOR
+            }
 
-    fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserialize::deserialize_into(&mut self.value))
-    }
+            fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                Ok(())
+            }
 
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.flush();
-        *self.slot = Some(take(&mut self.map));
-        Ok(())
-    }
-}
+            fn next_key(&mut self) -> Result<SinkHandle, Error> {
+                self.flush();
+                Ok(Deserialize::deserialize_into(&mut self.key))
+            }
 
-impl<K, V, H> Sink for SlotWrapper<HashMap<K, V, H>>
-where
-    K: Hash + Eq + Deserialize,
-    V: Deserialize,
-    H: BuildHasher + Default,
-{
-    fn expecting(&self) -> Cow<'_, str> {
-        "map".into()
-    }
+            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+                Ok(Deserialize::deserialize_into(&mut self.value))
+            }
 
-    fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn super::MapSink + '_>, Error> {
-        Ok(Box::new(HashMapSink {
-            slot: self,
-            map: HashMap::default(),
+            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.flush();
+                *self.slot = Some(take(&mut self.map));
+                Ok(())
+            }
+        }
+
+        SinkHandle::boxed(MapSink {
+            slot: out,
+            map: BTreeMap::new(),
             key: None,
             value: None,
-        }))
+        })
     }
 }
 
@@ -345,90 +357,59 @@ where
     H: BuildHasher + Default,
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SlotWrapper::make_handle(out)
-    }
-}
-
-struct HashMapSink<'a, K: 'a, V: 'a, H> {
-    slot: &'a mut Option<HashMap<K, V, H>>,
-    map: HashMap<K, V, H>,
-    key: Option<K>,
-    value: Option<V>,
-}
-
-impl<'a, K, V, H> HashMapSink<'a, K, V, H>
-where
-    K: Hash + Eq,
-    H: BuildHasher,
-{
-    fn flush(&mut self) {
-        if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
-            self.map.insert(key, value);
+        struct MapSink<'a, K: 'a, V: 'a, H> {
+            slot: &'a mut Option<HashMap<K, V, H>>,
+            map: HashMap<K, V, H>,
+            key: Option<K>,
+            value: Option<V>,
         }
-    }
-}
 
-impl<'a, K, V, H> MapSink for HashMapSink<'a, K, V, H>
-where
-    K: Hash + Eq + Deserialize,
-    V: Deserialize,
-    H: BuildHasher + Default,
-{
-    fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashMap" };
-        &DESCRIPTOR
-    }
-
-    fn key(&mut self) -> Result<SinkHandle, Error> {
-        self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.key))
-    }
-
-    fn value(&mut self) -> Result<SinkHandle, Error> {
-        Ok(Deserialize::deserialize_into(&mut self.value))
-    }
-
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.flush();
-        *self.slot = Some(take(&mut self.map));
-        Ok(())
-    }
-}
-
-struct VecSink<'a, T: 'a> {
-    slot: &'a mut Option<Vec<T>>,
-    vec: Vec<T>,
-    element: Option<T>,
-}
-
-impl<'a, T: 'a> VecSink<'a, T> {
-    fn flush(&mut self) {
-        if let Some(element) = self.element.take() {
-            self.vec.push(element);
+        impl<'a, K, V, H> MapSink<'a, K, V, H>
+        where
+            K: Hash + Eq,
+            H: BuildHasher,
+        {
+            fn flush(&mut self) {
+                if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
+                    self.map.insert(key, value);
+                }
+            }
         }
-    }
-}
 
-impl<'a, T: Deserialize> SeqSink for VecSink<'a, T> {
-    fn descriptor(&self) -> &dyn Descriptor {
-        static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
-        static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
-        if unsafe { T::__private_is_bytes() } {
-            &BYTES_DESCRIPTOR
-        } else {
-            &SLICE_DESCRIPTOR
+        impl<'a, K, V, H> Sink for MapSink<'a, K, V, H>
+        where
+            K: Hash + Eq + Deserialize,
+            V: Deserialize,
+            H: BuildHasher + Default,
+        {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: UnorderedNamedDescriptor =
+                    UnorderedNamedDescriptor { name: "map" };
+                &DESCRIPTOR
+            }
+
+            fn next_key(&mut self) -> Result<SinkHandle, Error> {
+                self.flush();
+                Ok(Deserialize::deserialize_into(&mut self.key))
+            }
+
+            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+                Ok(Deserialize::deserialize_into(&mut self.value))
+            }
+
+            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.flush();
+                *self.slot = Some(take(&mut self.map));
+                Ok(())
+            }
         }
-    }
 
-    fn item(&mut self) -> Result<SinkHandle, Error> {
-        self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.element))
-    }
-
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.flush();
-        *self.slot = Some(take(&mut self.vec));
-        Ok(())
+        SinkHandle::boxed(MapSink {
+            slot: out,
+            map: HashMap::default(),
+            key: None,
+            value: None,
+        })
     }
 }
 
@@ -456,16 +437,24 @@ impl<'a> Sink for NullIgnoringSink<'a> {
         }
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.sink.map(state)
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
+    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.sink.seq(state)
     }
 
-    fn expecting(&self) -> Cow<'_, str> {
-        "optional".into()
+    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+        self.sink.next_key()
+    }
+
+    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+        self.sink.next_value()
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        self.sink.descriptor()
     }
 }
 
@@ -474,13 +463,8 @@ macro_rules! deserialize_for_tuple {
     ($($name:ident,)+) => (
         impl<$($name: Deserialize),*> Deserialize for ($($name,)*) {
             fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-                SlotWrapper::make_handle(out)
-            }
-        }
+                #![allow(non_snake_case)]
 
-        impl<$($name: Deserialize),*> Sink for SlotWrapper<($($name,)*)> {
-            #[allow(non_snake_case)]
-            fn seq(&mut self, _state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
                 struct TupleSink<'a, $($name,)*> {
                     slot: &'a mut Option<($($name,)*)>,
                     index: usize,
@@ -489,8 +473,17 @@ macro_rules! deserialize_for_tuple {
                     )*
                 }
 
-                impl<'a, $($name: Deserialize,)*> SeqSink for TupleSink<'a, $($name,)*> {
-                    fn item(&mut self) -> Result<SinkHandle, Error> {
+                impl<'a, $($name: Deserialize,)*> Sink for TupleSink<'a, $($name,)*> {
+                    fn descriptor(&self) -> &dyn Descriptor {
+                        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
+                        &DESCRIPTOR
+                    }
+
+                    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                        Ok(())
+                    }
+
+                    fn next_value(&mut self) -> Result<SinkHandle, Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -513,17 +506,13 @@ macro_rules! deserialize_for_tuple {
                     }
                 }
 
-                Ok(Box::new(TupleSink {
-                    slot: self,
+                SinkHandle::boxed(TupleSink {
+                    slot: out,
                     index: 0,
                     $(
                         $name: None,
                     )*
-                }))
-            }
-
-            fn expecting(&self) -> Cow<'_, str> {
-                "tuple".into()
+                })
             }
         }
 
@@ -540,12 +529,41 @@ deserialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         struct ArraySink<'a, T, const N: usize> {
-            out: &'a mut Option<[T; N]>,
+            slot: &'a mut Option<[T; N]>,
+            buffer: Option<[MaybeUninit<T>; N]>,
+            element: Option<T>,
+            index: usize,
+            is_seq: bool,
+        }
+
+        impl<'a, T, const N: usize> ArraySink<'a, T, N> {
+            unsafe fn flush(&mut self) {
+                if let Some(element) = self.element.take() {
+                    let buffer = self.buffer.as_mut().unwrap();
+                    buffer[self.index].write(element);
+                    self.index += 1;
+                }
+            }
+        }
+
+        impl<'a, T, const N: usize> Drop for ArraySink<'a, T, N> {
+            fn drop(&mut self) {
+                if std::mem::needs_drop::<T>() {
+                    if let Some(arr) = &mut self.buffer {
+                        for elem in &mut arr[0..self.index] {
+                            unsafe {
+                                std::ptr::drop_in_place(elem.as_mut_ptr());
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         impl<'a, T: Deserialize + 'a, const N: usize> Sink for ArraySink<'a, T, N> {
-            fn expecting(&self) -> Cow<'_, str> {
-                "array".into()
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
+                &DESCRIPTOR
             }
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
@@ -553,7 +571,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                     Atom::Bytes(value) => {
                         if unsafe { T::__private_is_bytes() } {
                             if value.len() == N {
-                                *self.out = Some(unsafe {
+                                *self.slot = Some(unsafe {
                                     let mut rv = MaybeUninit::<[T; N]>::uninit();
                                     std::ptr::copy_nonoverlapping(
                                         value.as_ptr() as *const T,
@@ -580,49 +598,12 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 }
             }
 
-            fn seq(&mut self, _state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
-                Ok(Box::new(ArraySeqSink {
-                    slot: self.out,
-                    buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
-                    element: None,
-                    index: 0,
-                }))
+            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.is_seq = true;
+                Ok(())
             }
-        }
 
-        struct ArraySeqSink<'a, T, const N: usize> {
-            slot: &'a mut Option<[T; N]>,
-            buffer: Option<[MaybeUninit<T>; N]>,
-            element: Option<T>,
-            index: usize,
-        }
-
-        impl<'a, T, const N: usize> ArraySeqSink<'a, T, N> {
-            unsafe fn flush(&mut self) {
-                if let Some(element) = self.element.take() {
-                    let buffer = self.buffer.as_mut().unwrap();
-                    buffer[self.index].write(element);
-                    self.index += 1;
-                }
-            }
-        }
-
-        impl<'a, T, const N: usize> Drop for ArraySeqSink<'a, T, N> {
-            fn drop(&mut self) {
-                if std::mem::needs_drop::<T>() {
-                    if let Some(arr) = &mut self.buffer {
-                        for elem in &mut arr[0..self.index] {
-                            unsafe {
-                                std::ptr::drop_in_place(elem.as_mut_ptr());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        impl<'a, T: Deserialize, const N: usize> SeqSink for ArraySeqSink<'a, T, N> {
-            fn item(&mut self) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self) -> Result<SinkHandle, Error> {
                 unsafe {
                     self.flush();
                 }
@@ -637,6 +618,9 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
 
             fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                if !self.is_seq {
+                    return Ok(());
+                }
                 unsafe {
                     self.flush();
                 }
@@ -654,6 +638,12 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
         }
 
-        SinkHandle::boxed(ArraySink { out })
+        SinkHandle::boxed(ArraySink {
+            slot: out,
+            buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
+            element: None,
+            index: 0,
+            is_seq: false,
+        })
     }
 }

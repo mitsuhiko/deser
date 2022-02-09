@@ -160,65 +160,44 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
-            #[repr(transparent)]
-            struct __SlotWrapper #impl_generics #where_clause {
-                slot: ::deser::__derive::Option<#ident #ty_generics>,
+            struct __Sink #wrapper_impl_generics #where_clause {
+                slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
+                key: ::deser::__derive::Option<String>,
+                #(
+                    #sink_fieldname: ::deser::__derive::Option<#fieldty>,
+                )*
             }
 
             impl #impl_generics ::deser::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>,
                 ) -> ::deser::de::SinkHandle {
-                    ::deser::de::SinkHandle::to(unsafe {
-                        &mut *{
-                            __slot
-                            as *mut ::deser::__derive::Option<Self>
-                            as *mut __SlotWrapper #ty_generics
-                        }
-                    })
-                }
-            }
-
-            impl ::deser::de::Sink for __SlotWrapper #ty_generics #bounded_where_clause {
-                fn map(&mut self, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::__derive::Box<dyn ::deser::de::MapSink + '_>>
-                {
-                    ::deser::__derive::Ok(::deser::__derive::Box::new(__MapSink {
+                    ::deser::de::SinkHandle::boxed(__Sink {
+                        slot: __slot,
                         key: ::deser::__derive::None,
                         #(
                             #sink_fieldname: ::deser::__derive::None,
                         )*
-                        out: &mut self.slot,
-                    }))
+                    })
                 }
             }
 
-            struct __Descriptor;
-
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
-                }
-            }
-
-            struct __MapSink #wrapper_impl_generics #where_clause {
-                key: ::deser::__derive::Option<String>,
-                #(
-                    #sink_fieldname: ::deser::__derive::Option<#fieldty>,
-                )*
-                out: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
-            }
-
-            impl #wrapper_impl_generics ::deser::de::MapSink for __MapSink #wrapper_ty_generics #bounded_where_clause {
+            impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
                 }
 
-                fn key(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn map(&mut self, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<()>
+                {
+                    ::deser::__derive::Ok(())
+                }
+
+                fn next_key(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
                     ::deser::__derive::Ok(::deser::de::Deserialize::deserialize_into(&mut self.key))
                 }
 
-                fn value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn next_value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
                     match self.key.take().as_deref() {
                         #(
                             #matcher => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
@@ -233,12 +212,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
                     )*
                     #stage2_default
-                    *self.out = ::deser::__derive::Some(#ident {
+                    *self.slot = ::deser::__derive::Some(#ident {
                         #(
                             #fieldname: #field_take,
                         )*
                     });
                     ::deser::__derive::Ok(())
+                }
+            }
+
+            struct __Descriptor;
+
+            impl ::deser::Descriptor for __Descriptor {
+                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
+                    ::deser::__derive::Some(#type_name)
                 }
             }
         };

@@ -1,11 +1,9 @@
 use std::borrow::Cow;
 
-use deser::de::{DeserializerState, Driver, MapSink, Sink, SinkHandle};
+use deser::de::{DeserializerState, Driver, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
-use deser::{make_slot_wrapper, Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
-
-make_slot_wrapper!(SlotWrapper);
 
 pub struct User {
     id: usize,
@@ -55,18 +53,12 @@ impl<'a> StructEmitter for UserEmitter<'a> {
 
 impl Deserialize for User {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-        SlotWrapper::make_handle(out)
-    }
-}
-
-impl Sink for SlotWrapper<User> {
-    fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
-        Ok(Box::new(UserSink {
-            out: self,
+        SinkHandle::boxed(UserSink {
+            out,
             key: None,
             id: None,
             email_address: None,
-        }))
+        })
     }
 }
 
@@ -77,16 +69,20 @@ struct UserSink<'a> {
     email_address: Option<String>,
 }
 
-impl<'a> MapSink for UserSink<'a> {
+impl<'a> Sink for UserSink<'a> {
     fn descriptor(&self) -> &dyn Descriptor {
         &UserDescriptor
     }
 
-    fn key(&mut self) -> Result<SinkHandle, Error> {
+    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn next_key(&mut self) -> Result<SinkHandle, Error> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn value(&mut self) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self) -> Result<SinkHandle, Error> {
         match self.key.take().as_deref() {
             Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
             Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),

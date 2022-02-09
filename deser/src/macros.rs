@@ -4,17 +4,17 @@ macro_rules! extend_lifetime {
     };
 }
 
-/// Creates a typed slot wrapper.
+/// Creates a newtype wrapper around `Option<T>`.
 ///
-/// Slot wrappers are required to implement deserialization.  For
-/// more information see [`de`](crate::de).  To see the generated
+/// Slot wrappers are useful to implement deserialization when stateless
+/// deserialization is an option.  This way an allocation is avoided.
+/// For more information see [`de`](crate::de).  To see the generated
 /// slot wrapper API see [`SlotWrapper`](crate::de::SlotWrapper).
 ///
 /// ## Example
 ///
 /// ```rust
-/// use deser::make_slot_wrapper;
-/// make_slot_wrapper!(SlotWrapper);
+/// deser::make_slot_wrapper!(SlotWrapper);
 /// ```
 #[macro_export]
 macro_rules! make_slot_wrapper {
