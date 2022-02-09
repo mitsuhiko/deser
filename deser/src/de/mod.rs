@@ -7,11 +7,11 @@
 //!
 //! # Slots and Sinks
 //!
-//! The system of slots and sinks can be relatively hard to understand.
-//! The basic idea is that when a type should be deserialized a "slot"
-//! is passed to it.  The slot is just an `Option` where the final value
-//! is placed.  The system that places these values there is called a
-//! [`Sink`].
+//! Deserialization is based on "slots" and "sinks".  The basic idea is that when a
+//! type should be deserialized a slot in the form of an `Option<T>` is passed
+//! to it where the deserialized value will be placed.  The abstraction that
+//! places these values there is called a [`Sink`] which is returned within a
+//! [`SinkHandle`] from the deserializer.
 //!
 //! If you can get away with stateless deserialization you can avoid an
 //! allocation by using a newtype wrapper around `Option<T>`.  You can
@@ -23,46 +23,17 @@
 //! one from this module directly.  ([more
 //! information](https://doc.rust-lang.org/error-index.html#E0117)).
 //!
-//! This [`SlotWrapper`] acts as a newtype around an `Option<T>` and derefs into an
-//! `Option<T>`.  By calling [`SlotWrapper::make_handle`] with a slot, one can
-//! directly retrieve a [`SinkHandle`] without the need to box up the slot.
-//!
-//! # Driver
-//!
-//! Because the serialization interface of `deser` is tricky to use with lifetimes
-//! without using a lot of stack space, a safe abstraction is provided with the
-//! [`Driver`] type which allow you to drive the deserialization process without
-//! using stack space.  You feed it events and internally the driver ensures
-//! that the deserlization system is driven in the right way.
-//!
-//! ```rust
-//! use std::collections::BTreeMap;
-//! use deser::de::Driver;
-//! use deser::Event;
-//!
-//! let mut out = None::<BTreeMap<u32, String>>;
-//! {
-//!     let mut driver = Driver::new(&mut out);
-//!     // emit takes values that implement Into<Event>
-//!     driver.emit(Event::MapStart).unwrap();
-//!     driver.emit(1i64).unwrap();
-//!     driver.emit("Hello").unwrap();
-//!     driver.emit(2i64).unwrap();
-//!     driver.emit("World").unwrap();
-//!     driver.emit(Event::MapEnd).unwrap();
-//! }
-//!
-//! let map = out.unwrap();
-//! assert_eq!(map[&1], "Hello");
-//! assert_eq!(map[&2], "World");
-//! ```
+//! This [`SlotWrapper`] derefs into an `Option<T>` which makes it quite
+//! convenient to use.  By calling [`SlotWrapper::make_handle`] with a slot, one
+//! can directly retrieve a [`SinkHandle`].
 //!
 //! # Deserializing primitives
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
 //! implement the necessary callback.  You can do this as you do not need any
-//! state on the sink normally.  For instance to accept a `bool` implement
-//! the [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
+//! state on the sink so we can use a [`SlotWrapper`].  In this example we
+//! want to accept a `bool` so we just need to implement the
+//! [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
 //! resulting value then must be placed in the slot:
 //!
 //! ```rust
@@ -174,6 +145,36 @@
 //!         Ok(())
 //!     }
 //! }
+//! ```
+//!
+//! # Driver
+//!
+//! Because the serialization interface of `deser` is tricky to use because of
+//! lifetimes, a safe abstraction is provided with the [`Driver`] type which
+//! allow you to drive the deserialization process without using stack space.
+//! You feed it events and internally the driver ensures that the deserlization
+//! system is driven in the right way.
+//!
+//! ```rust
+//! use std::collections::BTreeMap;
+//! use deser::de::Driver;
+//! use deser::Event;
+//!
+//! let mut out = None::<BTreeMap<u32, String>>;
+//! {
+//!     let mut driver = Driver::new(&mut out);
+//!     // emit takes values that implement Into<Event>
+//!     driver.emit(Event::MapStart).unwrap();
+//!     driver.emit(1i64).unwrap();
+//!     driver.emit("Hello").unwrap();
+//!     driver.emit(2i64).unwrap();
+//!     driver.emit("World").unwrap();
+//!     driver.emit(Event::MapEnd).unwrap();
+//! }
+//!
+//! let map = out.unwrap();
+//! assert_eq!(map[&1], "Hello");
+//! assert_eq!(map[&2], "World");
 //! ```
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
