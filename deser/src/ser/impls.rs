@@ -20,7 +20,7 @@ impl Serialize for bool {
 
 impl Serialize for () {
     fn descriptor(&self) -> &dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "()" };
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
         &DESCRIPTOR
     }
 

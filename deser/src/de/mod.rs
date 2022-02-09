@@ -300,13 +300,9 @@ pub trait Sink {
     }
 
     /// Implements a default fallback handling for atoms.
-    fn unexpected_atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        let _ = state;
         Err(atom.unexpected_error(&self.expecting()))
-    }
-
-    /// Utility method to return an expectation message that is used in error messages.
-    fn expecting(&self) -> Cow<'_, str> {
-        "compatible type".into()
     }
 
     /// Begins the deserialization of a map.
@@ -316,7 +312,8 @@ pub trait Sink {
     /// called alternatingly.  The map is ended by [`finish`](Self::finish).
     ///
     /// The default implementation returns an error.
-    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        let _ = state;
         Err(Error::new(
             ErrorKind::Unexpected,
             format!("unexpected map, expected {}", self.expecting()),
@@ -330,7 +327,8 @@ pub trait Sink {
     /// The sequence is ended by [`finish`](Self::finish).
     ///
     /// The default implementation returns an error.
-    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        let _ = state;
         Err(Error::new(
             ErrorKind::Unexpected,
             format!("unexpected sequence, expected {}", self.expecting()),
@@ -347,16 +345,24 @@ pub trait Sink {
         Ok(SinkHandle::null())
     }
 
+    /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).
+    ///
+    /// The default implementation does nothing.
+    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        let _ = state;
+        Ok(())
+    }
+
     /// Returns a descriptor for this type.
     fn descriptor(&self) -> &dyn Descriptor {
         &NullDescriptor
     }
 
-    /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).
+    /// Utility method to return an expectation message that is used in error messages.
     ///
-    /// The default implementation does nothing.
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        Ok(())
+    /// The default implementation returns the type name of the descriptor if available.
+    fn expecting(&self) -> Cow<'_, str> {
+        self.descriptor().name().unwrap_or("compatible type").into()
     }
 }
 

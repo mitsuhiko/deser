@@ -400,11 +400,6 @@ pub trait SeqEmitter {
 ///   compound values like lists or similar, the piece contains a boxed emitter
 ///   which can be further processed to walk the embedded compound value.
 pub trait Serialize {
-    /// Returns the descriptor of this serializable if it exists.
-    fn descriptor(&self) -> &dyn Descriptor {
-        &NullDescriptor
-    }
-
     /// Serializes this serializable.
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error>;
 
@@ -426,6 +421,11 @@ pub trait Serialize {
     /// the struct.
     fn is_optional(&self) -> bool {
         false
+    }
+
+    /// Returns the descriptor of this serializable if it exists.
+    fn descriptor(&self) -> &dyn Descriptor {
+        &NullDescriptor
     }
 
     /// Hidden internal trait method to allow specializations of bytes.
