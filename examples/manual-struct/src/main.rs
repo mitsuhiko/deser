@@ -60,7 +60,7 @@ impl Deserialize for User {
 }
 
 impl Sink for SlotWrapper<User> {
-    fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+    fn old_map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
         Ok(Box::new(UserSink {
             out: self,
             key: None,

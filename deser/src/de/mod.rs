@@ -13,17 +13,19 @@
 //! is placed.  The system that places these values there is called a
 //! [`Sink`].
 //!
-//! While sinks can be implemented on arbitrary types it's more typical to
-//! implement them on a [`SlotWrapper`].  Due to Rust's orphan rules you need
-//! to create your own [`SlotWrapper`] type in your crate by using the
+//! If you can get away with stateless deserialization you can avoid an
+//! allocation by using a newtype wrapper around `Option<T>`.  You can
+//! get such a wrapper by using the
 //! [`make_slot_wrapper`](crate::make_slot_wrapper`) macro ([more
+//! information](https://doc.rust-lang.org/error-index.html#E0117))
+//! which will create a type [`SlotWrapper`].  Due to Rust's orphan rules
+//! you need to create your own type in your crate and you can't use the
+//! one from this module directly.  ([more
 //! information](https://doc.rust-lang.org/error-index.html#E0117)).
 //!
-//! A [`SlotWrapper`] acts as a newtype around an `Option<T>` and derefs into an
-//! `Option<T>`.  To use it implement your desired [`Sink`] for it.  This has the
-//! advantage that it does not need to be allocated.  By calling
-//! [`SlotWrapper::make_handle`] on a slot, one can directly retrieve a
-//! [`SinkHandle`] without the need to box up the slot.
+//! This [`SlotWrapper`] acts as a newtype around an `Option<T>` and derefs into an
+//! `Option<T>`.  By calling [`SlotWrapper::make_handle`] with a slot, one can
+//! directly retrieve a [`SinkHandle`] without the need to box up the slot.
 //!
 //! # Driver
 //!
@@ -58,7 +60,8 @@
 //! # Deserializing primitives
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
-//! implement the necessary callback.  For instance to accept a `bool` implement
+//! implement the necessary callback.  You can do this as you do not need any
+//! state on the sink normally.  For instance to accept a `bool` implement
 //! the [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
 //! resulting value then must be placed in the slot:
 //!
@@ -102,14 +105,13 @@
 //!
 //! # Struct deserialization
 //!
-//! If you want to deserialize a struct you need to implement a
-//! [`MapSink`] and return it from the main [`Sink`]:
+//! If you want to deserialize a struct you need to implement the map methods.
+//! As you need to keep track of state you will need to return a boxed sink
+//! and you can't use the slot wrapper.
 //!
 //! ```rust
-//! use deser::de::{DeserializerState, Deserialize, Sink, SinkHandle, MapSink};
-//! use deser::{make_slot_wrapper, Error, ErrorKind};
-//!
-//! make_slot_wrapper!(SlotWrapper);
+//! use deser::de::{DeserializerState, Deserialize, Sink, SinkHandle};
+//! use deser::{Error, ErrorKind};
 //!
 //! struct Flag {
 //!     enabled: bool,
@@ -118,43 +120,37 @@
 //!
 //! impl Deserialize for Flag {
 //!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
-//!         SlotWrapper::make_handle(out)
-//!     }
-//! }
-//!
-//! impl Sink for SlotWrapper<Flag> {
-//!     fn map(
-//!         &mut self,
-//!         _state: &DeserializerState,
-//!     ) -> Result<Box<dyn MapSink + '_>, Error> {
-//!         // return a new map sink for our struct
-//!         Ok(Box::new(FlagMapSink {
-//!             // note that we can directly connect our slot wrapper
-//!             // to the output slot on the sink as it deref's into an Option
-//!             out: self,
+//!         SinkHandle::boxed(FlagSink {
+//!             out,
 //!             key: None,
 //!             enabled_field: None,
 //!             name_field: None,
-//!         }))
+//!         })
 //!     }
 //! }
-//!     
-//! struct FlagMapSink<'a> {
+//!
+//! struct FlagSink<'a> {
 //!     out: &'a mut Option<Flag>,
 //!     key: Option<String>,
 //!     enabled_field: Option<bool>,
 //!     name_field: Option<String>,
 //! }
 //!     
-//! impl<'a> MapSink for FlagMapSink<'a> {
-//!     fn key(&mut self) -> Result<SinkHandle, Error> {
+//! impl<'a> Sink for FlagSink<'a> {
+//!     fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+//!         // the default implementation returns an error, so we need to
+//!         // override it to remove this error.
+//!         Ok(())
+//!     }
+//!
+//!     fn next_key(&mut self) -> Result<SinkHandle, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn value(&mut self) -> Result<SinkHandle, Error> {
+//!     fn next_value(&mut self) -> Result<SinkHandle, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
@@ -182,6 +178,7 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
@@ -307,10 +304,19 @@ pub trait Sink {
         Err(atom.unexpected_error(&self.expecting()))
     }
 
-    /// Begins the receiving process for maps.
+    /// Utility method to return an expectation message that is used in error messages.
+    fn expecting(&self) -> Cow<'_, str> {
+        "compatible type".into()
+    }
+
+    /// Begins the deserialization of a map.
+    ///
+    /// While the deserialization of a map is ongoing the methods
+    /// [`next_key`](Self::next_key) and [`next_value`](Self::next_value) are
+    /// called alternatingly.  The map is ended by [`finish`](Self::finish).
     ///
     /// The default implementation returns an error.
-    fn map(&mut self, _state: &DeserializerState) -> Result<Box<dyn MapSink + '_>, Error> {
+    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         Err(Error::new(
             ErrorKind::Unexpected,
             format!("unexpected map, expected {}", self.expecting()),
@@ -319,58 +325,46 @@ pub trait Sink {
 
     /// Begins the receiving process for sequences.
     ///
+    /// While the deserialization of a sequence is ongoing the method
+    /// [`next_value`](Self::next_value) is called for every new item.
+    /// The sequence is ended by [`finish`](Self::finish).
+    ///
     /// The default implementation returns an error.
-    fn seq(&mut self, _state: &DeserializerState) -> Result<Box<dyn SeqSink + '_>, Error> {
+    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         Err(Error::new(
             ErrorKind::Unexpected,
             format!("unexpected sequence, expected {}", self.expecting()),
         ))
     }
 
-    /// Utility method to return an expectation message that is used in error messages.
-    fn expecting(&self) -> Cow<'_, str> {
-        "compatible type".into()
+    /// Returns a sink for the next key in a map.
+    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+        Ok(SinkHandle::null())
     }
-}
 
-/// A trait to produce sinks for key and value pairs of a map or structs.
-pub trait MapSink {
-    /// Returns the [`Descriptor`] for this map.
+    /// Returns a sink for the next value in a map or sequence.
+    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+        Ok(SinkHandle::null())
+    }
+
+    /// Returns a descriptor for this type.
     fn descriptor(&self) -> &dyn Descriptor {
         &NullDescriptor
     }
 
-    /// Produces the [`Sink`] for the next key.
-    fn key(&mut self) -> Result<SinkHandle, Error>;
-
-    /// Produces the [`Sink`] for the next value.
+    /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).
     ///
-    /// This can inspect the last key to make a decision about which
-    /// sink to produce.
-    fn value(&mut self) -> Result<SinkHandle, Error>;
-
-    /// Called when all pairs were produced.
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
-}
-
-/// A trait to produce sinks for items in a sequence.
-pub trait SeqSink {
-    /// Returns the [`Descriptor`] for this seq.
-    fn descriptor(&self) -> &dyn Descriptor {
-        &NullDescriptor
+    /// The default implementation does nothing.
+    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+        Ok(())
     }
-
-    /// Produces the [`Sink`] for the next item.
-    fn item(&mut self) -> Result<SinkHandle, Error>;
-
-    /// Called when all items were produced.
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error>;
 }
 
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
     extensions: Extensions,
-    stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer<'a>)>>,
+    stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
+    _marker: PhantomData<&'a Driver<'a>>,
 }
 
 impl<'a> DeserializerState<'a> {
@@ -393,10 +387,7 @@ impl<'a> DeserializerState<'a> {
     ///
     /// This descriptor always points to a container as the descriptor.
     pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.stack.last().map(|x| match &x.1 {
-            Layer::Map(map, _) => map.descriptor(),
-            Layer::Seq(seq) => seq.descriptor(),
-        })
+        self.stack.last().map(|x| x.0.sink.descriptor())
     }
 }
 
@@ -425,9 +416,9 @@ impl SinkHandleWrapper {
     }
 }
 
-enum Layer<'a> {
-    Map(Box<dyn MapSink + 'a>, bool),
-    Seq(Box<dyn SeqSink + 'a>),
+enum Layer {
+    Map(bool),
+    Seq,
 }
 
 impl<'a> Driver<'a> {
@@ -442,6 +433,7 @@ impl<'a> Driver<'a> {
             state: ManuallyDrop::new(DeserializerState {
                 extensions: Extensions::default(),
                 stack: ManuallyDrop::new(Vec::new()),
+                _marker: PhantomData,
             }),
             current_sink: Some(unsafe { SinkHandleWrapper::from(sink) }),
         }
@@ -469,18 +461,18 @@ impl<'a> Driver<'a> {
         macro_rules! target_sink {
             () => {{
                 match self.state.stack.last_mut() {
-                    Some((_, Layer::Map(ref mut map_sink, ref mut is_key))) => {
+                    Some((map_sink, Layer::Map(ref mut is_key))) => {
                         let next_sink = if *is_key {
-                            map_sink.key()?
+                            map_sink.sink.next_key()?
                         } else {
-                            map_sink.value()?
+                            map_sink.sink.next_value()?
                         };
                         *is_key = !*is_key;
                         self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
                     }
-                    Some((_, Layer::Seq(ref mut seq_sink))) => {
+                    Some((seq_sink, Layer::Seq)) => {
                         self.current_sink =
-                            Some(unsafe { SinkHandleWrapper::from(seq_sink.item()?) });
+                            Some(unsafe { SinkHandleWrapper::from(seq_sink.sink.next_value()?) });
                     }
                     _ => {}
                 }
@@ -494,36 +486,38 @@ impl<'a> Driver<'a> {
         }
 
         match event {
-            Event::Atom(atom) => target_sink!().atom(atom, &self.state)?,
+            Event::Atom(atom) => {
+                let current_sink = target_sink!();
+                current_sink.atom(atom, &self.state)?;
+                current_sink.finish(&self.state)?;
+            }
             Event::MapStart => {
                 let current_sink = target_sink!();
-                let map_sink = current_sink.map(&self.state)?;
-                let layer = unsafe { extend_lifetime!(Layer::Map(map_sink, true), Layer<'_>) };
+                current_sink.map(&self.state)?;
                 self.state
                     .stack
-                    .push((self.current_sink.take().unwrap(), layer));
+                    .push((self.current_sink.take().unwrap(), Layer::Map(true)));
                 return Ok(());
             }
             Event::MapEnd => match self.state.stack.pop() {
-                Some((next_sink, Layer::Map(mut map_sink, _))) => {
-                    map_sink.finish(&self.state)?;
-                    self.current_sink = Some(next_sink);
+                Some((mut map_sink, Layer::Map(_))) => {
+                    map_sink.sink.finish(&self.state)?;
+                    self.current_sink = Some(map_sink);
                 }
                 _ => panic!("not inside a MapSink"),
             },
             Event::SeqStart => {
                 let current_sink = target_sink!();
-                let seq_sink = current_sink.seq(&self.state)?;
-                let layer = unsafe { extend_lifetime!(Layer::Seq(seq_sink), Layer<'_>) };
+                current_sink.seq(&self.state)?;
                 self.state
                     .stack
-                    .push((self.current_sink.take().unwrap(), layer));
+                    .push((self.current_sink.take().unwrap(), Layer::Seq));
                 return Ok(());
             }
             Event::SeqEnd => match self.state.stack.pop() {
-                Some((next_sink, Layer::Seq(mut seq_sink))) => {
-                    seq_sink.finish(&self.state)?;
-                    self.current_sink = Some(next_sink);
+                Some((mut seq_sink, Layer::Seq)) => {
+                    seq_sink.sink.finish(&self.state)?;
+                    self.current_sink = Some(seq_sink);
                 }
                 _ => panic!("not inside a SeqSink"),
             },
