@@ -103,6 +103,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             ::deser::__derive::None => {
                                 self.index += 1;
                                 self.nested_emitter_exhausted = true;
+                                self.data.#name.finish(__state)?;
                                 continue;
                             }
                             // we need this transmute here because of limitations in the borrow
