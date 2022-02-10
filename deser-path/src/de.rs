@@ -70,8 +70,8 @@ impl<'a> Sink for PathSink<'a> {
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self) -> Result<SinkHandle, Error> {
-        self.sink.next_key().map(|sink| {
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        self.sink.next_key(state).map(|sink| {
             SinkHandle::boxed(PathSink {
                 sink,
                 container: match self.container {
@@ -83,7 +83,7 @@ impl<'a> Sink for PathSink<'a> {
         })
     }
 
-    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
         let set_segment = match self.container {
             Container::None => None,
             Container::Map(ref captured_key) => captured_key.borrow_mut().take(),
@@ -93,7 +93,7 @@ impl<'a> Sink for PathSink<'a> {
                 Some(PathSegment::Index(old_index))
             }
         };
-        self.sink.next_value().map(|sink| {
+        self.sink.next_value(state).map(|sink| {
             SinkHandle::boxed(PathSink {
                 sink,
                 container: Container::None,
