@@ -190,6 +190,9 @@ use crate::extensions::Extensions;
 
 mod ignore;
 mod impls;
+mod owned;
+
+pub use self::owned::OwnedSink;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
@@ -344,6 +347,17 @@ pub trait Sink {
     /// Returns a sink for the next value in a map or sequence.
     fn next_value(&mut self) -> Result<SinkHandle, Error> {
         Ok(SinkHandle::null())
+    }
+
+    /// Returns a value sink for a specific struct field.
+    ///
+    /// This is a special method that is supposed to be implemented by structs
+    /// if they want to support flattening.  A struct that gets flattened into
+    /// another struct will have this method called to figure out if a key is
+    /// used by it.  The default implementation always returns `None`.
+    fn value_for_key(&mut self, key: &str) -> Option<SinkHandle> {
+        let _ = key;
+        None
     }
 
     /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).

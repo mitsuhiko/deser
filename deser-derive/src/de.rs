@@ -27,49 +27,76 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
-    let fieldname = &fields.named.iter().map(|f| &f.ident).collect::<Vec<_>>();
-    let fieldty = fields.named.iter().map(|f| &f.ty);
-    let sink_fieldname = &fields
-        .named
-        .iter()
-        .map(|f| {
-            syn::Ident::new(
-                &format!("field_{}", f.ident.as_ref().unwrap()),
-                Span::call_site(),
-            )
-        })
-        .collect::<Vec<_>>();
     let attrs = fields
         .named
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
+    let fieldname = attrs.iter().map(|x| &x.field().ident).collect::<Vec<_>>();
+    let sink_fieldname = attrs
+        .iter()
+        .map(|x| {
+            syn::Ident::new(
+                &format!("field_{}", x.field().ident.as_ref().unwrap()),
+                Span::call_site(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let sink_fieldty = attrs
+        .iter()
+        .map(|f| {
+            let ty = &f.field().ty;
+            if f.flatten() {
+                quote! {
+                    ::deser::de::OwnedSink<#ty>
+                }
+            } else {
+                quote! {
+                    ::deser::__derive::Option<#ty>
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let sink_defaults = attrs
+        .iter()
+        .map(|f| {
+            if f.flatten() {
+                quote! {
+                    ::deser::de::OwnedSink::deserialize()
+                }
+            } else {
+                quote! {
+                    ::deser::__derive::None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
 
     let mut seen_names = HashSet::new();
     let mut first_duplicate_name = None;
     let matcher = attrs
         .iter()
-        .map(|x| {
+        .filter_map(|x| {
+            if x.flatten() {
+                return None;
+            }
+
             let name = x.name(&container_attrs).to_string();
             if first_duplicate_name.is_none() && seen_names.contains(&name) {
                 first_duplicate_name = Some((name.clone(), x.field()));
             }
             seen_names.insert(name.clone());
 
-            let mut rv = quote! {
-                ::deser::__derive::Some(#name)
-            };
+            let mut rv = quote! { #name };
             for alias in x.aliases() {
                 let alias = alias.clone();
                 if first_duplicate_name.is_none() && seen_names.contains(&alias) {
                     first_duplicate_name = Some((alias.clone(), x.field()));
                 }
                 seen_names.insert(alias.clone());
-                rv = quote! {
-                    #rv | ::deser::__derive::Some(#alias)
-                };
+                rv = quote! { #rv | #alias };
             }
-            rv
+            Some(rv)
         })
         .collect::<Vec<_>>();
 
@@ -114,6 +141,19 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
         })
+        .collect::<Vec<_>>();
+    let flatten_fields = sink_fieldname
+        .iter()
+        .zip(attrs.iter())
+        .filter_map(
+            |(name, attrs)| {
+                if attrs.flatten() {
+                    Some(name)
+                } else {
+                    None
+                }
+            },
+        )
         .collect::<Vec<_>>();
 
     let stage2_default = if container_attrs.default().is_some() {
@@ -164,7 +204,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
                 key: ::deser::__derive::Option<String>,
                 #(
-                    #sink_fieldname: ::deser::__derive::Option<#fieldty>,
+                    #sink_fieldname: #sink_fieldty,
                 )*
             }
 
@@ -176,7 +216,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         slot: __slot,
                         key: ::deser::__derive::None,
                         #(
-                            #sink_fieldname: ::deser::__derive::None,
+                            #sink_fieldname: #sink_defaults,
                         )*
                     })
                 }
@@ -198,16 +238,34 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn next_value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
-                    match self.key.take().as_deref() {
+                    let __key = self.key.take().unwrap();
+                    ::deser::__derive::Ok(match self.value_for_key(&__key) {
+                        ::deser::__derive::Some(__sink) => __sink,
+                        ::deser::__derive::None => ::deser::de::SinkHandle::null(),
+                    })
+                }
+
+                fn value_for_key(&mut self, __key: &str) -> ::deser::__derive::Option<::deser::de::SinkHandle> {
+                    match __key {
                         #(
-                            #matcher => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
+                            #matcher => return ::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
                         )*
-                        _ => ::deser::__derive::Ok(::deser::de::SinkHandle::null()),
+                        __other => {
+                            #(
+                                if let ::deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other) {
+                                    return ::deser::__derive::Some(__sink);
+                                }
+                            )*
+                        }
                     }
+                    ::deser::__derive::None
                 }
 
                 fn finish(&mut self, __state: &::deser::de::DeserializerState) -> ::deser::__derive::Result<()> {
                     #![allow(unused_mut)]
+                    #(
+                        self.#flatten_fields.borrow_mut().finish(__state)?;
+                    )*
                     #(
                         let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
                     )*

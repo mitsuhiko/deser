@@ -270,6 +270,7 @@ pub struct FieldAttrs<'a> {
     rename: Option<String>,
     aliases: Vec<String>,
     default: Option<TypeDefault>,
+    flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
 }
 
@@ -280,6 +281,7 @@ impl<'a> FieldAttrs<'a> {
             rename: None,
             aliases: Vec::new(),
             default: None,
+            flatten: false,
             skip_serializing_if: None,
         };
 
@@ -318,6 +320,15 @@ impl<'a> FieldAttrs<'a> {
                             "default", &nv.lit,
                         )?));
                     }
+                    syn::Meta::Path(path) if path.is_ident("flatten") => {
+                        if rv.flatten {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "duplicate flatten attribute",
+                            ));
+                        }
+                        rv.flatten = true;
+                    }
                     syn::Meta::NameValue(nv) if nv.path.is_ident("skip_serializing_if") => {
                         if rv.skip_serializing_if.is_some() {
                             return Err(syn::Error::new_spanned(
@@ -333,6 +344,13 @@ impl<'a> FieldAttrs<'a> {
             } else {
                 return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
             }
+        }
+
+        if rv.flatten && rv.default.is_some() {
+            return Err(syn::Error::new_spanned(
+                field,
+                "cannot combine flatten and default",
+            ));
         }
 
         Ok(rv)
@@ -355,6 +373,10 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
+    }
+
+    pub fn flatten(&self) -> bool {
+        self.flatten
     }
 
     pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
