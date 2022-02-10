@@ -174,8 +174,8 @@ where
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
 impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
-    fn next(&mut self, _state: &SerializerState) -> Option<SerializeHandle> {
-        self.0.next().map(SerializeHandle::to)
+    fn next(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
+        Ok(self.0.next().map(SerializeHandle::to))
     }
 }
 
@@ -197,15 +197,18 @@ where
             K: Serialize,
             V: Serialize,
         {
-            fn next_key(&mut self, _state: &SerializerState) -> Option<SerializeHandle> {
-                self.0.next().map(|(k, v)| {
+            fn next_key(
+                &mut self,
+                _state: &SerializerState,
+            ) -> Result<Option<SerializeHandle>, Error> {
+                Ok(self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
                     SerializeHandle::to(k)
-                })
+                }))
             }
 
-            fn next_value(&mut self, _state: &SerializerState) -> SerializeHandle {
-                SerializeHandle::to(self.1.unwrap())
+            fn next_value(&mut self, _state: &SerializerState) -> Result<SerializeHandle, Error> {
+                Ok(SerializeHandle::to(self.1.unwrap()))
             }
         }
 
@@ -232,15 +235,18 @@ where
             K: Serialize,
             V: Serialize,
         {
-            fn next_key(&mut self, _state: &SerializerState) -> Option<SerializeHandle> {
-                self.0.next().map(|(k, v)| {
+            fn next_key(
+                &mut self,
+                _state: &SerializerState,
+            ) -> Result<Option<SerializeHandle>, Error> {
+                Ok(self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
                     SerializeHandle::to(k)
-                })
+                }))
             }
 
-            fn next_value(&mut self, _state: &SerializerState) -> SerializeHandle {
-                SerializeHandle::to(self.1.unwrap())
+            fn next_value(&mut self, _state: &SerializerState) -> Result<SerializeHandle, Error> {
+                Ok(SerializeHandle::to(self.1.unwrap()))
             }
         }
 
@@ -264,8 +270,8 @@ where
         where
             T: Serialize,
         {
-            fn next(&mut self, _state: &SerializerState) -> Option<SerializeHandle> {
-                self.0.next().map(SerializeHandle::to)
+            fn next(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
+                Ok(self.0.next().map(SerializeHandle::to))
             }
         }
 
@@ -289,8 +295,8 @@ where
         where
             T: Serialize,
         {
-            fn next(&mut self, _state: &SerializerState) -> Option<SerializeHandle> {
-                self.0.next().map(SerializeHandle::to)
+            fn next(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
+                Ok(self.0.next().map(SerializeHandle::to))
             }
         }
 
@@ -339,18 +345,18 @@ macro_rules! serialize_for_tuple {
                 where
                     $($name: Serialize,)*
                 {
-                    fn next(&mut self,_state: &SerializerState) -> Option<SerializeHandle> {
+                    fn next(&mut self,_state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
                         let ($(ref $name,)*) = self.tuple;
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
                         $(
                             if __index == __counter {
-                                return Some(SerializeHandle::to($name));
+                                return Ok(Some(SerializeHandle::to($name)));
                             }
                             __counter += 1;
                         )*
-                        None
+                        Ok(None)
                     }
                 }
 

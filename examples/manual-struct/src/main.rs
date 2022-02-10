@@ -21,14 +21,11 @@ impl Serialize for User {
         &UserDescriptor
     }
 
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Struct(Box::new(UserEmitter {
             user: self,
             index: 0,
-            attrs_emitter: match self.attrs.serialize(state)? {
-                Chunk::Struct(emitter) => emitter,
-                _ => unimplemented!(),
-            },
+            struct_emitter: None,
         })))
     }
 }
@@ -44,14 +41,17 @@ impl Descriptor for UserDescriptor {
 struct UserEmitter<'a> {
     user: &'a User,
     index: usize,
-    attrs_emitter: Box<dyn StructEmitter + 'a>,
+    struct_emitter: Option<Box<dyn StructEmitter + 'a>>,
 }
 
 impl<'a> StructEmitter for UserEmitter<'a> {
-    fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
+    fn next(
+        &mut self,
+        state: &SerializerState,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error> {
         let index = self.index;
         self.index += 1;
-        match index {
+        Ok(match index {
             0 => Some((Cow::Borrowed("id"), SerializeHandle::to(&self.user.id))),
             1 => Some((
                 Cow::Borrowed("emailAddress"),
@@ -59,10 +59,16 @@ impl<'a> StructEmitter for UserEmitter<'a> {
             )),
             2 => {
                 self.index -= 1;
-                self.attrs_emitter.next()
+                if self.struct_emitter.is_none() {
+                    self.struct_emitter = Some(match self.user.attrs.serialize(state).unwrap() {
+                        Chunk::Struct(emitter) => emitter,
+                        _ => unimplemented!(),
+                    });
+                }
+                self.struct_emitter.as_mut().unwrap().next(state)?
             }
             _ => None,
-        }
+        })
     }
 }
 

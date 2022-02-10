@@ -77,14 +77,16 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
+//!     fn next(&mut self, _state: &SerializerState)
+//!         -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error>
+//!     {
 //!         let index = self.index;
 //!         self.index += 1;
-//!         match index {
+//!         Ok(match index {
 //!             0 => Some(("id".into(), SerializeHandle::to(&self.user.id))),
 //!             1 => Some(("username".into(), SerializeHandle::to(&self.user.username))),
 //!             _ => None
-//!         }
+//!         })
 //!     }
 //! }
 //! ```
@@ -296,7 +298,7 @@ where
                     Layer::Struct(ref mut s) => {
                         // this is safe as we maintain our own stack.
                         match unsafe {
-                            extend_lifetime!(s.next(&state), Option<(Cow<str>, SerializeHandle)>)
+                            extend_lifetime!(s.next(&state)?, Option<(Cow<str>, SerializeHandle)>)
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
@@ -318,7 +320,7 @@ where
                         *feed_value = !old_feed_value;
                         if old_feed_value {
                             let value =
-                                unsafe { extend_lifetime!(m.next_value(&state), SerializeHandle) };
+                                unsafe { extend_lifetime!(m.next_value(&state)?, SerializeHandle) };
                             serializable = value;
                             chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                             descriptor = unsafe { extended_serializable!() }.descriptor();
@@ -326,7 +328,7 @@ where
                         }
                         // this is safe as we maintain our own stack.
                         match unsafe {
-                            extend_lifetime!(m.next_key(&state), Option<SerializeHandle>)
+                            extend_lifetime!(m.next_key(&state)?, Option<SerializeHandle>)
                         } {
                             Some(key) => {
                                 serializable = key;
@@ -339,8 +341,9 @@ where
                     }
                     Layer::Seq(ref mut seq) => {
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(seq.next(&state), Option<SerializeHandle>) }
-                        {
+                        match unsafe {
+                            extend_lifetime!(seq.next(&state)?, Option<SerializeHandle>)
+                        } {
                             Some(next) => {
                                 serializable = next;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
@@ -369,7 +372,10 @@ where
 /// it only knows about maps.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
-    fn next(&mut self, state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)>;
+    fn next(
+        &mut self,
+        state: &SerializerState,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error>;
 }
 
 /// A map emitter.
@@ -379,7 +385,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self, state: &SerializerState) -> Option<SerializeHandle>;
+    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error>;
 
     /// Produces the next value in the map.
     ///
@@ -387,13 +393,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self, state: &SerializerState) -> SerializeHandle;
+    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle, Error>;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self, state: &SerializerState) -> Option<SerializeHandle>;
+    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.

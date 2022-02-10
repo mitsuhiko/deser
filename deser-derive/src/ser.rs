@@ -136,7 +136,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self, __state: &::deser::ser::SerializerState)
-                    -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>
+                    -> ::deser::__derive::Result<::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>>
                 {
                     loop {
                         let __index = self.index;
@@ -146,13 +146,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                                     self.index = __index + 1;
                                     let __handle = ::deser::ser::SerializeHandle::to(&self.data.#fieldname);
                                     #skip_if
-                                    return::deser::__derive::Some((
+                                    return ::deser::__derive::Ok(::deser::__derive::Some((
                                         ::deser::__derive::Cow::Borrowed(#fieldstr),
                                         __handle,
-                                    ))
+                                    )));
                                 }
                             )*
-                            _ => return ::deser::__derive::None,
+                            _ => return ::deser::__derive::Ok(::deser::__derive::None),
                         }
                     }
                 }

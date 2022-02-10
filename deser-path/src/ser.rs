@@ -49,14 +49,20 @@ struct PathStructEmitter<'a> {
 }
 
 impl<'a> StructEmitter for PathStructEmitter<'a> {
-    fn next(&mut self, state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
-        let (key, value) = self.emitter.next(state)?;
+    fn next(
+        &mut self,
+        state: &SerializerState,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error> {
+        let (key, value) = match self.emitter.next(state)? {
+            Some(result) => result,
+            None => return Ok(None),
+        };
         let new_segment = PathSegment::Key(key.to_string());
         let value_serializable = SegmentPushingSerializable {
             serializable: value,
             segment: RefCell::new(Some(new_segment)),
         };
-        Some((key, SerializeHandle::boxed(value_serializable)))
+        Ok(Some((key, SerializeHandle::boxed(value_serializable))))
     }
 }
 
@@ -66,25 +72,28 @@ struct PathMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for PathMapEmitter<'a> {
-    fn next_key(&mut self, state: &SerializerState) -> Option<SerializeHandle> {
+    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
         let key_serializable = SegmentCollectingSerializable {
-            serializable: self.emitter.next_key(state)?,
+            serializable: match self.emitter.next_key(state)? {
+                Some(result) => result,
+                None => return Ok(None),
+            },
             segment: self.path_segment.clone(),
         };
-        Some(SerializeHandle::boxed(key_serializable))
+        Ok(Some(SerializeHandle::boxed(key_serializable)))
     }
 
-    fn next_value(&mut self, state: &SerializerState) -> SerializeHandle {
+    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle, Error> {
         let new_segment = self
             .path_segment
             .borrow_mut()
             .take()
             .unwrap_or(PathSegment::Unknown);
         let value_serializable = SegmentPushingSerializable {
-            serializable: self.emitter.next_value(state),
+            serializable: self.emitter.next_value(state)?,
             segment: RefCell::new(Some(new_segment)),
         };
-        SerializeHandle::boxed(value_serializable)
+        Ok(SerializeHandle::boxed(value_serializable))
     }
 }
 
@@ -94,16 +103,19 @@ struct PathSeqEmitter<'a> {
 }
 
 impl<'a> SeqEmitter for PathSeqEmitter<'a> {
-    fn next(&mut self, state: &SerializerState) -> Option<SerializeHandle> {
+    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
         let index = self.index;
         self.index += 1;
-        let value = self.emitter.next(state)?;
+        let value = match self.emitter.next(state)? {
+            Some(result) => result,
+            None => return Ok(None),
+        };
         let new_segment = PathSegment::Index(index);
         let item_serializable = SegmentPushingSerializable {
             serializable: value,
             segment: RefCell::new(Some(new_segment)),
         };
-        Some(SerializeHandle::boxed(item_serializable))
+        Ok(Some(SerializeHandle::boxed(item_serializable)))
     }
 }
 
