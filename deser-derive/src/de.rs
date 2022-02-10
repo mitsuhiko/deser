@@ -193,11 +193,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     ::deser::__derive::Ok(())
                 }
 
-                fn next_key(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn next_key(&mut self, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                {
                     ::deser::__derive::Ok(::deser::de::Deserialize::deserialize_into(&mut self.key))
                 }
 
-                fn next_value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn next_value(&mut self, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                {
                     match self.key.take().as_deref() {
                         #(
                             #matcher => ::deser::__derive::Ok(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),

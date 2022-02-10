@@ -91,7 +91,6 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -165,7 +164,7 @@ impl<'a> fmt::Debug for Layer<'a> {
 /// the serializable types as the serializer.
 pub struct SerializerState<'a> {
     extensions: Extensions,
-    descriptor_stack: ManuallyDrop<Vec<&'a dyn Descriptor>>,
+    descriptor_stack: Vec<&'a dyn Descriptor>,
 }
 
 impl<'a> fmt::Debug for SerializerState<'a> {
@@ -200,18 +199,6 @@ impl<'a> fmt::Debug for SerializerState<'a> {
     }
 }
 
-impl<'a> Drop for SerializerState<'a> {
-    fn drop(&mut self) {
-        // it's important that we drop the values in inverse order.
-        while let Some(_last) = self.descriptor_stack.pop() {
-            // drop in inverse order
-        }
-        unsafe {
-            ManuallyDrop::drop(&mut self.descriptor_stack);
-        }
-    }
-}
-
 impl<'a> SerializerState<'a> {
     /// Returns an extension value.
     pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
@@ -237,6 +224,19 @@ impl<'a> SerializerState<'a> {
     }
 }
 
+#[derive(Default)]
+struct EmitterStack<'a> {
+    layers: Vec<Layer<'a>>,
+}
+
+impl<'a> Drop for EmitterStack<'a> {
+    fn drop(&mut self) {
+        while let Some(_item) = self.layers.pop() {
+            // drop in inverse order
+        }
+    }
+}
+
 /// Invokes a callback for each event of a serializable.
 ///
 /// Deser understands the complexities of recursive structures.  This function will
@@ -252,9 +252,9 @@ where
     let mut serializable = SerializeHandle::Borrowed(serializable);
     let mut state = SerializerState {
         extensions: Extensions::default(),
-        descriptor_stack: ManuallyDrop::new(Vec::new()),
+        descriptor_stack: Vec::new(),
     };
-    let mut emitter_stack = Vec::new();
+    let mut emitter_stack = EmitterStack::default();
 
     macro_rules! extended_serializable {
         () => {
@@ -275,7 +275,7 @@ where
         let done = emitter_opt.is_none();
         if let Some(emitter) = emitter_opt {
             state.descriptor_stack.push(descriptor);
-            emitter_stack.push(emitter);
+            emitter_stack.layers.push(emitter);
         }
         f(event, descriptor, &state)?;
         if done {
@@ -283,11 +283,11 @@ where
         }
         loop {
             // special case: close down the key before going to value
-            if let Some(Layer::Map(_, true)) = emitter_stack.last() {
+            if let Some(Layer::Map(_, true)) = emitter_stack.layers.last() {
                 serializable.finish(&state)?;
             }
 
-            if let Some(layer) = emitter_stack.last_mut() {
+            if let Some(layer) = emitter_stack.layers.last_mut() {
                 match layer {
                     Layer::Struct(ref mut s) => {
                         // this is safe as we maintain our own stack.
@@ -352,7 +352,7 @@ where
             }
 
             state.descriptor_stack.pop();
-            emitter_stack.pop();
+            emitter_stack.layers.pop();
             serializable.finish(&state)?;
         }
     }

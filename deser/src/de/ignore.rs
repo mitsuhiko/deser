@@ -17,11 +17,11 @@ impl Sink for Ignore {
         Ok(())
     }
 
-    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
         Ok(SinkHandle::null())
     }
 
-    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
         Ok(SinkHandle::null())
     }
 }
