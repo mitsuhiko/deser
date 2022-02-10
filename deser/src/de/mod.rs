@@ -180,6 +180,7 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -408,7 +409,7 @@ impl<'a> DeserializerState<'a> {
 pub struct Driver<'a> {
     state: DeserializerState<'a>,
     current_sink: Option<SinkHandleWrapper>,
-    sink_stack: SinkStack,
+    sink_stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
 }
 
 struct SinkHandleWrapper {
@@ -430,19 +431,6 @@ enum Layer {
     Seq,
 }
 
-#[derive(Default)]
-struct SinkStack {
-    layers: Vec<(SinkHandleWrapper, Layer)>,
-}
-
-impl Drop for SinkStack {
-    fn drop(&mut self) {
-        while let Some(_item) = self.layers.pop() {
-            // drop in inverse order
-        }
-    }
-}
-
 impl<'a> Driver<'a> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> Driver<'a> {
@@ -457,7 +445,7 @@ impl<'a> Driver<'a> {
                 descriptor_stack: Vec::new(),
                 _marker: PhantomData,
             },
-            sink_stack: SinkStack::default(),
+            sink_stack: ManuallyDrop::new(Default::default()),
             current_sink: Some(unsafe { SinkHandleWrapper::from(sink) }),
         }
     }
@@ -483,7 +471,7 @@ impl<'a> Driver<'a> {
     fn _emit(&mut self, event: Event) -> Result<(), Error> {
         macro_rules! target_sink {
             () => {{
-                match self.sink_stack.layers.last_mut() {
+                match self.sink_stack.last_mut() {
                     Some((map_sink, Layer::Map(ref mut is_key))) => {
                         let next_sink = if *is_key {
                             map_sink.sink.next_key(&self.state)?
@@ -523,11 +511,10 @@ impl<'a> Driver<'a> {
                     .descriptor_stack
                     .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
                 self.sink_stack
-                    .layers
                     .push((self.current_sink.take().unwrap(), Layer::Map(true)));
                 return Ok(());
             }
-            Event::MapEnd => match self.sink_stack.layers.pop() {
+            Event::MapEnd => match self.sink_stack.pop() {
                 Some((mut map_sink, Layer::Map(_))) => {
                     map_sink.sink.finish(&self.state)?;
                     self.state.descriptor_stack.pop();
@@ -543,11 +530,10 @@ impl<'a> Driver<'a> {
                     .descriptor_stack
                     .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
                 self.sink_stack
-                    .layers
                     .push((self.current_sink.take().unwrap(), Layer::Seq));
                 return Ok(());
             }
-            Event::SeqEnd => match self.sink_stack.layers.pop() {
+            Event::SeqEnd => match self.sink_stack.pop() {
                 Some((mut seq_sink, Layer::Seq)) => {
                     seq_sink.sink.finish(&self.state)?;
                     self.state.descriptor_stack.pop();
@@ -560,6 +546,17 @@ impl<'a> Driver<'a> {
         self.current_sink.as_mut().unwrap().used = true;
 
         Ok(())
+    }
+}
+
+impl<'a> Drop for Driver<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            while let Some(_item) = self.sink_stack.pop() {
+                // drop in inverse order
+            }
+            ManuallyDrop::drop(&mut self.sink_stack);
+        }
     }
 }
 

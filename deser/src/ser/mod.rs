@@ -91,6 +91,7 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -226,13 +227,16 @@ impl<'a> SerializerState<'a> {
 
 #[derive(Default)]
 struct EmitterStack<'a> {
-    layers: Vec<Layer<'a>>,
+    layers: ManuallyDrop<Vec<Layer<'a>>>,
 }
 
 impl<'a> Drop for EmitterStack<'a> {
     fn drop(&mut self) {
         while let Some(_item) = self.layers.pop() {
             // drop in inverse order
+        }
+        unsafe {
+            ManuallyDrop::drop(&mut self.layers);
         }
     }
 }
