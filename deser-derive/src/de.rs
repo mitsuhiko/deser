@@ -243,7 +243,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> ::deser::__derive::Result<::deser::de::SinkHandle>
                 {
                     let __key = self.key.take().unwrap();
-                    ::deser::__derive::Ok(match self.value_for_key(&__key) {
+                    ::deser::__derive::Ok(match self.value_for_key(&__key, __state) {
                         ::deser::__derive::Some(__sink) => __sink,
                         ::deser::__derive::None => ::deser::de::SinkHandle::null(),
                     })
