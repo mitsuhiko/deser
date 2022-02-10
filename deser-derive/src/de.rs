@@ -76,7 +76,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut first_duplicate_name = None;
     let matcher = attrs
         .iter()
-        .filter_map(|x| {
+        .zip(sink_fieldname.iter())
+        .filter_map(|(x, fieldname)| {
             if x.flatten() {
                 return None;
             }
@@ -96,7 +97,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 seen_names.insert(alias.clone());
                 rv = quote! { #rv | #alias };
             }
-            Some(rv)
+            Some(quote! {
+                #rv => return ::deser::__derive::Ok(::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#fieldname))),
+            })
         })
         .collect::<Vec<_>>();
 
@@ -254,7 +257,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 {
                     match __key {
                         #(
-                            #matcher => return ::deser::__derive::Ok(::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname))),
+                            #matcher
                         )*
                         __other => {
                             #(

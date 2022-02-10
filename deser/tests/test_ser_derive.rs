@@ -84,3 +84,63 @@ fn test_skip_serializing_optionals_some() {
         vec![Event::MapStart, "b".into(), 2u64.into(), Event::MapEnd]
     );
 }
+
+#[test]
+fn test_flatten_basics() {
+    #[derive(Serialize)]
+    struct Test {
+        a: usize,
+        b: usize,
+        #[deser(flatten)]
+        inner1: Inner1,
+        #[deser(flatten)]
+        inner2: Inner2,
+        c: usize,
+    }
+
+    #[derive(Serialize)]
+    struct Inner1 {
+        inner1_a: usize,
+        inner1_b: usize,
+    }
+
+    #[derive(Serialize)]
+    struct Inner2 {
+        inner2_a: usize,
+        inner2_b: usize,
+    }
+
+    assert_eq!(
+        serialize(&Test {
+            a: 1,
+            b: 2,
+            c: 3,
+            inner1: Inner1 {
+                inner1_a: 99,
+                inner1_b: 100,
+            },
+            inner2: Inner2 {
+                inner2_a: 199,
+                inner2_b: 200,
+            },
+        }),
+        vec![
+            Event::MapStart,
+            "a".into(),
+            1u64.into(),
+            "b".into(),
+            2u64.into(),
+            "inner1_a".into(),
+            99u64.into(),
+            "inner1_b".into(),
+            100u64.into(),
+            "inner2_a".into(),
+            199u64.into(),
+            "inner2_b".into(),
+            200u64.into(),
+            "c".into(),
+            3u64.into(),
+            Event::MapEnd,
+        ]
+    );
+}
