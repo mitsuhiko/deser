@@ -52,20 +52,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .enumerate()
         .map(|(index, attrs)| {
             let name = &attrs.field().ident;
+            let optional_skip = if container_attrs.skip_serializing_optionals() {
+                quote! {
+                    if __handle.is_optional() {
+                        continue;
+                    }
+                }
+            } else {
+                quote! {}
+            };
             if !attrs.flatten() {
                 let fieldstr = attrs.name(&container_attrs);
                 let field_skip = if let Some(path) = attrs.skip_serializing_if() {
                     quote! {
                         if #path(&self.data.#name) {
-                            continue;
-                        }
-                    }
-                } else {
-                    quote! {}
-                };
-                let optional_skip = if container_attrs.skip_serializing_optionals() {
-                    quote! {
-                        if __handle.is_optional() {
                             continue;
                         }
                     }
@@ -112,9 +112,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             // makes it into Rust this can go.
                             //
                             // This can be validated with `-Zpolonius`
-                            __item => return ::deser::__derive::Ok(unsafe {
-                                ::std::mem::transmute::<_, _>(__item)
-                            }),
+                            ::deser::__derive::Some((__key, __handle)) => {
+                                #optional_skip
+                                return ::deser::__derive::Ok(::deser::__derive::Some(unsafe {
+                                    ::std::mem::transmute::<_, _>((
+                                        __key,
+                                        __handle
+                                    ))
+                                }))
+                            }
                         }
                     }
                 }

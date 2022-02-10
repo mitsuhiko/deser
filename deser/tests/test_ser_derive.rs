@@ -144,3 +144,50 @@ fn test_flatten_basics() {
         ]
     );
 }
+
+#[test]
+fn test_flatten_skip_optionals() {
+    #[derive(Serialize)]
+    #[deser(skip_serializing_optionals)]
+    struct Outer {
+        required: bool,
+        first: Option<usize>,
+        #[deser(flatten)]
+        inner: Inner,
+    }
+
+    #[derive(Serialize)]
+    struct Inner {
+        second: Option<usize>,
+    }
+
+    assert_eq!(
+        serialize(&Outer {
+            required: true,
+            first: None,
+            inner: Inner { second: None }
+        }),
+        vec![
+            Event::MapStart,
+            "required".into(),
+            true.into(),
+            Event::MapEnd,
+        ]
+    );
+
+    assert_eq!(
+        serialize(&Outer {
+            required: true,
+            first: None,
+            inner: Inner { second: Some(111) }
+        }),
+        vec![
+            Event::MapStart,
+            "required".into(),
+            true.into(),
+            "second".into(),
+            111u64.into(),
+            Event::MapEnd,
+        ]
+    );
+}
