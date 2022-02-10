@@ -8,6 +8,12 @@ use deser_debug::ToDebug;
 pub struct User {
     id: usize,
     email_address: String,
+    attrs: Attrs,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Attrs {
+    is_special: bool,
 }
 
 impl Serialize for User {
@@ -15,10 +21,14 @@ impl Serialize for User {
         &UserDescriptor
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Struct(Box::new(UserEmitter {
             user: self,
             index: 0,
+            attrs_emitter: match self.attrs.serialize(state)? {
+                Chunk::Struct(emitter) => emitter,
+                _ => unimplemented!(),
+            },
         })))
     }
 }
@@ -34,6 +44,7 @@ impl Descriptor for UserDescriptor {
 struct UserEmitter<'a> {
     user: &'a User,
     index: usize,
+    attrs_emitter: Box<dyn StructEmitter + 'a>,
 }
 
 impl<'a> StructEmitter for UserEmitter<'a> {
@@ -46,6 +57,10 @@ impl<'a> StructEmitter for UserEmitter<'a> {
                 Cow::Borrowed("emailAddress"),
                 SerializeHandle::to(&self.user.email_address),
             )),
+            2 => {
+                self.index -= 1;
+                self.attrs_emitter.next()
+            }
             _ => None,
         }
     }
@@ -100,6 +115,7 @@ impl<'a> Sink for UserSink<'a> {
                 .email_address
                 .take()
                 .ok_or_else(|| Error::new(ErrorKind::MissingField, "missing field"))?,
+            attrs: Attrs::default(),
         });
         Ok(())
     }

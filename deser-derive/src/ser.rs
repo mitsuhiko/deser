@@ -63,6 +63,29 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
         })
         .collect::<Vec<_>>();
+    let nested_emitters = attrs
+        .iter()
+        .filter_map(|attrs| {
+            if attrs.flatten() {
+                Some(syn::Ident::new(
+                    &format!("emitter_{}", attrs.field().ident.as_ref().unwrap()),
+                    Span::call_site(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let nested_emitters_fields = attrs
+        .iter()
+        .filter_map(|attrs| {
+            if attrs.flatten() {
+                Some(attrs.field().ident.as_ref().unwrap())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
 
     let index = 0usize..;
 
@@ -82,6 +105,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
                         index: 0,
+                        #(
+                            #nested_emitters: match self.#nested_emitters_fields.serialize(__state)? {
+                                ::deser::ser::Chunk::Struct(emitter) => emitter,
+                                _ => return ::deser::__derive::Err(::deser::Error::new(
+                                    ::deser::ErrorKind::Unexpected,
+                                    "cannot flatten non-struct types"
+                                ))
+                            },
+                        )*
                     })))
                 }
             }
@@ -89,6 +121,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             struct __StructEmitter #wrapper_impl_generics #where_clause {
                 data: &'__a #ident #ty_generics,
                 index: usize,
+                #(
+                    #nested_emitters: Box<dyn ::deser::ser::StructEmitter + '__a>,
+                )*
             }
 
             struct __Descriptor;
@@ -103,10 +138,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn next(&mut self) -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)> {
                     loop {
                         let __index = self.index;
-                        self.index = __index + 1;
                         match __index {
                             #(
                                 #index => {
+                                    self.index = __index + 1;
                                     let __handle = ::deser::ser::SerializeHandle::to(&self.data.#fieldname);
                                     #skip_if
                                     return::deser::__derive::Some((
