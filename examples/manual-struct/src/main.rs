@@ -37,7 +37,7 @@ struct UserEmitter<'a> {
 }
 
 impl<'a> StructEmitter for UserEmitter<'a> {
-    fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)> {
+    fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
         let index = self.index;
         self.index += 1;
         match index {

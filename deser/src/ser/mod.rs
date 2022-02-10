@@ -77,7 +77,7 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)> {
+//!     fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
 //!         let index = self.index;
 //!         self.index += 1;
 //!         match index {
@@ -165,18 +165,17 @@ impl<'a> fmt::Debug for Layer<'a> {
 /// the serializable types as the serializer.
 pub struct SerializerState<'a> {
     extensions: Extensions,
-    stack: ManuallyDrop<Vec<(&'a dyn Descriptor, Layer<'a>)>>,
+    descriptor_stack: ManuallyDrop<Vec<&'a dyn Descriptor>>,
 }
 
 impl<'a> fmt::Debug for SerializerState<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Stack<'a>(&'a [(&'a dyn Descriptor, Layer<'a>)]);
-        struct Entry<'a>(&'a dyn Descriptor, &'a Layer<'a>);
+        struct Stack<'a>(&'a [&'a dyn Descriptor]);
+        struct Entry<'a>(&'a dyn Descriptor);
 
         impl<'a> fmt::Debug for Entry<'a> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("Layer")
-                    .field("value", &self.1)
                     .field("type_name", &self.0.name())
                     .field("precision", &self.0.precision())
                     .field("unordered", &self.0.unordered())
@@ -187,8 +186,8 @@ impl<'a> fmt::Debug for SerializerState<'a> {
         impl<'a> fmt::Debug for Stack<'a> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut l = f.debug_list();
-                for item in self.0 {
-                    l.entry(&Entry(item.0, &item.1));
+                for item in self.0.iter() {
+                    l.entry(&Entry(*item));
                 }
                 l.finish()
             }
@@ -196,7 +195,7 @@ impl<'a> fmt::Debug for SerializerState<'a> {
 
         f.debug_struct("SerializerState")
             .field("extensions", &self.extensions)
-            .field("stack", &Stack(&self.stack))
+            .field("stack", &Stack(&self.descriptor_stack))
             .finish()
     }
 }
@@ -204,11 +203,11 @@ impl<'a> fmt::Debug for SerializerState<'a> {
 impl<'a> Drop for SerializerState<'a> {
     fn drop(&mut self) {
         // it's important that we drop the values in inverse order.
-        while let Some(_last) = self.stack.pop() {
+        while let Some(_last) = self.descriptor_stack.pop() {
             // drop in inverse order
         }
         unsafe {
-            ManuallyDrop::drop(&mut self.stack);
+            ManuallyDrop::drop(&mut self.descriptor_stack);
         }
     }
 }
@@ -226,7 +225,7 @@ impl<'a> SerializerState<'a> {
 
     /// Returns the current recursion depth.
     pub fn depth(&self) -> usize {
-        self.stack.len()
+        self.descriptor_stack.len()
     }
 
     /// Returns the topmost descriptor.
@@ -234,7 +233,7 @@ impl<'a> SerializerState<'a> {
     /// This descriptor always points to a container as the descriptor of a value itself
     /// will always be passed to the callback explicitly.
     pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.stack.last().map(|x| x.0)
+        self.descriptor_stack.last().copied()
     }
 }
 
@@ -253,8 +252,9 @@ where
     let mut serializable = SerializeHandle::Borrowed(serializable);
     let mut state = SerializerState {
         extensions: Extensions::default(),
-        stack: ManuallyDrop::new(Vec::new()),
+        descriptor_stack: ManuallyDrop::new(Vec::new()),
     };
+    let mut emitter_stack = Vec::new();
 
     macro_rules! extended_serializable {
         () => {
@@ -274,7 +274,8 @@ where
         };
         let done = emitter_opt.is_none();
         if let Some(emitter) = emitter_opt {
-            state.stack.push((descriptor, emitter));
+            state.descriptor_stack.push(descriptor);
+            emitter_stack.push(emitter);
         }
         f(event, descriptor, &state)?;
         if done {
@@ -282,18 +283,16 @@ where
         }
         loop {
             // special case: close down the key before going to value
-            if let Some(layer) = state.stack.last() {
-                if let Layer::Map(_, true) = layer.1 {
-                    serializable.finish(&state)?;
-                }
+            if let Some(Layer::Map(_, true)) = emitter_stack.last() {
+                serializable.finish(&state)?;
             }
 
-            if let Some(layer) = state.stack.last_mut() {
-                match layer.1 {
+            if let Some(layer) = emitter_stack.last_mut() {
+                match layer {
                     Layer::Struct(ref mut s) => {
                         // this is safe as we maintain our own stack.
                         match unsafe {
-                            extend_lifetime!(s.next(), Option<(Cow<str>, SerializeHandle)>)
+                            extend_lifetime!(s.next(&state), Option<(Cow<str>, SerializeHandle)>)
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
@@ -307,7 +306,7 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
                         }
                     }
                     Layer::Map(ref mut m, ref mut feed_value) => {
@@ -315,33 +314,36 @@ where
                         *feed_value = !old_feed_value;
                         if old_feed_value {
                             let value =
-                                unsafe { extend_lifetime!(m.next_value(), SerializeHandle) };
+                                unsafe { extend_lifetime!(m.next_value(&state), SerializeHandle) };
                             serializable = value;
                             chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                             descriptor = unsafe { extended_serializable!() }.descriptor();
                             break;
                         }
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(m.next_key(), Option<SerializeHandle>) } {
+                        match unsafe {
+                            extend_lifetime!(m.next_key(&state), Option<SerializeHandle>)
+                        } {
                             Some(key) => {
                                 serializable = key;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::MapEnd, layer.0, &state)?,
+                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
                         }
                     }
                     Layer::Seq(ref mut seq) => {
                         // this is safe as we maintain our own stack.
-                        match unsafe { extend_lifetime!(seq.next(), Option<SerializeHandle>) } {
+                        match unsafe { extend_lifetime!(seq.next(&state), Option<SerializeHandle>) }
+                        {
                             Some(next) => {
                                 serializable = next;
                                 chunk = unsafe { extended_serializable!() }.serialize(&state)?;
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::SeqEnd, layer.0, &state)?,
+                            None => f(Event::SeqEnd, state.top_descriptor().unwrap(), &state)?,
                         }
                     }
                 }
@@ -349,7 +351,8 @@ where
                 return Ok(());
             }
 
-            state.stack.pop();
+            state.descriptor_stack.pop();
+            emitter_stack.pop();
             serializable.finish(&state)?;
         }
     }
@@ -362,7 +365,7 @@ where
 /// it only knows about maps.
 pub trait StructEmitter {
     /// Produces the next field and value in the struct.
-    fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)>;
+    fn next(&mut self, state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)>;
 }
 
 /// A map emitter.
@@ -372,7 +375,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self) -> Option<SerializeHandle>;
+    fn next_key(&mut self, state: &SerializerState) -> Option<SerializeHandle>;
 
     /// Produces the next value in the map.
     ///
@@ -380,13 +383,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self) -> SerializeHandle;
+    fn next_value(&mut self, state: &SerializerState) -> SerializeHandle;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self) -> Option<SerializeHandle>;
+    fn next(&mut self, state: &SerializerState) -> Option<SerializeHandle>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.
