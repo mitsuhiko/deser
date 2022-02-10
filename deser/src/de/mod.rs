@@ -114,14 +114,14 @@
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self) -> Result<SinkHandle, Error> {
+//!     fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn next_value(&mut self) -> Result<SinkHandle, Error> {
+//!     fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
 //!         // whenever we are looking for a value slot, look at the last key
 //!         // to decide which value slot to connect.
 //!         match self.key.take().as_deref() {
@@ -340,12 +340,14 @@ pub trait Sink {
     }
 
     /// Returns a sink for the next key in a map.
-    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        let _ = state;
         Ok(SinkHandle::null())
     }
 
     /// Returns a sink for the next value in a map or sequence.
-    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        let _ = state;
         Ok(SinkHandle::null())
     }
 
@@ -355,8 +357,9 @@ pub trait Sink {
     /// if they want to support flattening.  A struct that gets flattened into
     /// another struct will have this method called to figure out if a key is
     /// used by it.  The default implementation always returns `None`.
-    fn value_for_key(&mut self, key: &str) -> Option<SinkHandle> {
+    fn value_for_key(&mut self, key: &str, state: &DeserializerState) -> Option<SinkHandle> {
         let _ = key;
+        let _ = state;
         None
     }
 
@@ -384,7 +387,7 @@ pub trait Sink {
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
     extensions: Extensions,
-    stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
+    descriptor_stack: Vec<&'a dyn Descriptor>,
     _marker: PhantomData<&'a Driver<'a>>,
 }
 
@@ -401,14 +404,14 @@ impl<'a> DeserializerState<'a> {
 
     /// Returns the current recursion depth.
     pub fn depth(&self) -> usize {
-        self.stack.len()
+        self.descriptor_stack.len()
     }
 
     /// Returns the topmost descriptor.
     ///
     /// This descriptor always points to a container as the descriptor.
     pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.stack.last().map(|x| x.0.sink.descriptor())
+        self.descriptor_stack.last().copied()
     }
 }
 
@@ -419,8 +422,9 @@ impl<'a> DeserializerState<'a> {
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
 pub struct Driver<'a> {
-    state: ManuallyDrop<DeserializerState<'a>>,
+    state: DeserializerState<'a>,
     current_sink: Option<SinkHandleWrapper>,
+    sink_stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
 }
 
 struct SinkHandleWrapper {
@@ -451,11 +455,12 @@ impl<'a> Driver<'a> {
     /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkHandle) -> Driver<'a> {
         Driver {
-            state: ManuallyDrop::new(DeserializerState {
+            state: DeserializerState {
                 extensions: Extensions::default(),
-                stack: ManuallyDrop::new(Vec::new()),
+                descriptor_stack: Vec::new(),
                 _marker: PhantomData,
-            }),
+            },
+            sink_stack: ManuallyDrop::new(Default::default()),
             current_sink: Some(unsafe { SinkHandleWrapper::from(sink) }),
         }
     }
@@ -481,19 +486,20 @@ impl<'a> Driver<'a> {
     fn _emit(&mut self, event: Event) -> Result<(), Error> {
         macro_rules! target_sink {
             () => {{
-                match self.state.stack.last_mut() {
+                match self.sink_stack.last_mut() {
                     Some((map_sink, Layer::Map(ref mut is_key))) => {
                         let next_sink = if *is_key {
-                            map_sink.sink.next_key()?
+                            map_sink.sink.next_key(&self.state)?
                         } else {
-                            map_sink.sink.next_value()?
+                            map_sink.sink.next_value(&self.state)?
                         };
                         *is_key = !*is_key;
                         self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
                     }
                     Some((seq_sink, Layer::Seq)) => {
-                        self.current_sink =
-                            Some(unsafe { SinkHandleWrapper::from(seq_sink.sink.next_value()?) });
+                        self.current_sink = Some(unsafe {
+                            SinkHandleWrapper::from(seq_sink.sink.next_value(&self.state)?)
+                        });
                     }
                     _ => {}
                 }
@@ -515,14 +521,18 @@ impl<'a> Driver<'a> {
             Event::MapStart => {
                 let current_sink = target_sink!();
                 current_sink.map(&self.state)?;
+                let descriptor = current_sink.descriptor();
                 self.state
-                    .stack
+                    .descriptor_stack
+                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
+                self.sink_stack
                     .push((self.current_sink.take().unwrap(), Layer::Map(true)));
                 return Ok(());
             }
-            Event::MapEnd => match self.state.stack.pop() {
+            Event::MapEnd => match self.sink_stack.pop() {
                 Some((mut map_sink, Layer::Map(_))) => {
                     map_sink.sink.finish(&self.state)?;
+                    self.state.descriptor_stack.pop();
                     self.current_sink = Some(map_sink);
                 }
                 _ => panic!("not inside a MapSink"),
@@ -530,14 +540,18 @@ impl<'a> Driver<'a> {
             Event::SeqStart => {
                 let current_sink = target_sink!();
                 current_sink.seq(&self.state)?;
+                let descriptor = current_sink.descriptor();
                 self.state
-                    .stack
+                    .descriptor_stack
+                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
+                self.sink_stack
                     .push((self.current_sink.take().unwrap(), Layer::Seq));
                 return Ok(());
             }
-            Event::SeqEnd => match self.state.stack.pop() {
+            Event::SeqEnd => match self.sink_stack.pop() {
                 Some((mut seq_sink, Layer::Seq)) => {
                     seq_sink.sink.finish(&self.state)?;
+                    self.state.descriptor_stack.pop();
                     self.current_sink = Some(seq_sink);
                 }
                 _ => panic!("not inside a SeqSink"),
@@ -552,13 +566,11 @@ impl<'a> Driver<'a> {
 
 impl<'a> Drop for Driver<'a> {
     fn drop(&mut self) {
-        // it's important that we drop the values in inverse order.
-        while let Some(_last) = self.state.stack.pop() {
-            // drop in inverse order
-        }
         unsafe {
-            ManuallyDrop::drop(&mut self.state.stack);
-            ManuallyDrop::drop(&mut self.state);
+            while let Some(_item) = self.sink_stack.pop() {
+                // drop in inverse order
+            }
+            ManuallyDrop::drop(&mut self.sink_stack);
         }
     }
 }

@@ -135,7 +135,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
 
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                fn next(&mut self) -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)> {
+                fn next(&mut self, __state: &::deser::ser::SerializerState)
+                    -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>
+                {
                     loop {
                         let __index = self.index;
                         match __index {

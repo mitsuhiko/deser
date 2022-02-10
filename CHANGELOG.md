@@ -7,6 +7,8 @@ All notable changes to deser are documented here.
 - Made `Atom` non exhaustive and added `unexpected_atom` to `Deserialize`.
 - Removed `MapSink` and `SeqSink`.  The functionality of these is now
   directly on the `Sink`.
+- The serializer state and deserializer state is now passed to `next_key`/
+  `next_value` and `next` on the sinks and emitters.
 
 ## 0.5.0
 

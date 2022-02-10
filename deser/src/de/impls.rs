@@ -263,7 +263,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
                 Ok(())
             }
 
-            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
@@ -325,12 +325,12 @@ where
                 Ok(())
             }
 
-            fn next_key(&mut self) -> Result<SinkHandle, Error> {
+            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
@@ -388,12 +388,12 @@ where
                 &DESCRIPTOR
             }
 
-            fn next_key(&mut self) -> Result<SinkHandle, Error> {
+            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
@@ -445,12 +445,12 @@ impl<'a> Sink for NullIgnoringSink<'a> {
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self) -> Result<SinkHandle, Error> {
-        self.sink.next_key()
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        self.sink.next_key(state)
     }
 
-    fn next_value(&mut self) -> Result<SinkHandle, Error> {
-        self.sink.next_value()
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        self.sink.next_value(state)
     }
 
     fn descriptor(&self) -> &dyn Descriptor {
@@ -483,7 +483,7 @@ macro_rules! deserialize_for_tuple {
                         Ok(())
                     }
 
-                    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+                    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -603,7 +603,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 Ok(())
             }
 
-            fn next_value(&mut self) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
                 unsafe {
                     self.flush();
                 }

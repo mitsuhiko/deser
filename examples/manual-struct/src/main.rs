@@ -48,7 +48,7 @@ struct UserEmitter<'a> {
 }
 
 impl<'a> StructEmitter for UserEmitter<'a> {
-    fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)> {
+    fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
         let index = self.index;
         self.index += 1;
         match index {
@@ -93,11 +93,11 @@ impl<'a> Sink for UserSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self) -> Result<SinkHandle, Error> {
+    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
         match self.key.take().as_deref() {
             Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
             Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),

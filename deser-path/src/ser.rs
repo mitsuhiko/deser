@@ -49,8 +49,8 @@ struct PathStructEmitter<'a> {
 }
 
 impl<'a> StructEmitter for PathStructEmitter<'a> {
-    fn next(&mut self) -> Option<(Cow<'_, str>, SerializeHandle)> {
-        let (key, value) = self.emitter.next()?;
+    fn next(&mut self, state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
+        let (key, value) = self.emitter.next(state)?;
         let new_segment = PathSegment::Key(key.to_string());
         let value_serializable = SegmentPushingSerializable {
             serializable: value,
@@ -66,22 +66,22 @@ struct PathMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for PathMapEmitter<'a> {
-    fn next_key(&mut self) -> Option<SerializeHandle> {
+    fn next_key(&mut self, state: &SerializerState) -> Option<SerializeHandle> {
         let key_serializable = SegmentCollectingSerializable {
-            serializable: self.emitter.next_key()?,
+            serializable: self.emitter.next_key(state)?,
             segment: self.path_segment.clone(),
         };
         Some(SerializeHandle::boxed(key_serializable))
     }
 
-    fn next_value(&mut self) -> SerializeHandle {
+    fn next_value(&mut self, state: &SerializerState) -> SerializeHandle {
         let new_segment = self
             .path_segment
             .borrow_mut()
             .take()
             .unwrap_or(PathSegment::Unknown);
         let value_serializable = SegmentPushingSerializable {
-            serializable: self.emitter.next_value(),
+            serializable: self.emitter.next_value(state),
             segment: RefCell::new(Some(new_segment)),
         };
         SerializeHandle::boxed(value_serializable)
@@ -94,10 +94,10 @@ struct PathSeqEmitter<'a> {
 }
 
 impl<'a> SeqEmitter for PathSeqEmitter<'a> {
-    fn next(&mut self) -> Option<SerializeHandle> {
+    fn next(&mut self, state: &SerializerState) -> Option<SerializeHandle> {
         let index = self.index;
         self.index += 1;
-        let value = self.emitter.next()?;
+        let value = self.emitter.next(state)?;
         let new_segment = PathSegment::Index(index);
         let item_serializable = SegmentPushingSerializable {
             serializable: value,

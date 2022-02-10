@@ -233,11 +233,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     ::deser::__derive::Ok(())
                 }
 
-                fn next_key(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn next_key(&mut self, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                {
                     ::deser::__derive::Ok(::deser::de::Deserialize::deserialize_into(&mut self.key))
                 }
 
-                fn next_value(&mut self) -> ::deser::__derive::Result<::deser::de::SinkHandle> {
+                fn next_value(&mut self, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                {
                     let __key = self.key.take().unwrap();
                     ::deser::__derive::Ok(match self.value_for_key(&__key) {
                         ::deser::__derive::Some(__sink) => __sink,
@@ -245,14 +249,16 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     })
                 }
 
-                fn value_for_key(&mut self, __key: &str) -> ::deser::__derive::Option<::deser::de::SinkHandle> {
+                fn value_for_key(&mut self, __key: &str, __state: &::deser::de::DeserializerState)
+                    -> ::deser::__derive::Option<::deser::de::SinkHandle>
+                {
                     match __key {
                         #(
                             #matcher => return ::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#sink_fieldname)),
                         )*
                         __other => {
                             #(
-                                if let ::deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other) {
+                                if let ::deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other, __state) {
                                     return ::deser::__derive::Some(__sink);
                                 }
                             )*
