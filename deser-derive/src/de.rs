@@ -133,6 +133,17 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .map(|(name, attrs)| {
             if attrs.default().is_some() {
                 quote! { #name }
+            } else if attrs.flatten() {
+                // this should never happen unless the inner deserializer fucked up
+                let error = format!(
+                    "Failed to deserialize flattened field '{}'",
+                    attrs.name(&container_attrs)
+                );
+                quote! {
+                    #name.ok_or_else(|| {
+                        ::deser::Error::new(::deser::ErrorKind::Unexpected, #error)
+                    })?
+                }
             } else if container_attrs.default().is_some() {
                 quote! { #name.unwrap() }
             } else {
@@ -211,6 +222,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 )*
             }
 
+            #[automatically_derived]
             impl #impl_generics ::deser::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>,
@@ -225,6 +237,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
 
+            #[automatically_derived]
             impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
@@ -379,6 +392,7 @@ pub fn derive_enum(
                 slot: ::deser::__derive::Option<#ident>,
             }
 
+            #[automatically_derived]
             impl ::deser::de::Deserialize for #ident {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>

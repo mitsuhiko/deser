@@ -361,8 +361,6 @@ fn test_variant_alias() {
 
 #[test]
 fn test_flatten_basics() {
-    #![allow(dead_code)]
-
     #[derive(Deserialize, PartialEq, Eq, Debug)]
     struct Test {
         a: usize,
@@ -421,4 +419,27 @@ fn test_flatten_basics() {
             },
         }
     );
+}
+
+#[test]
+#[should_panic = "Missing field 'b'"]
+fn test_flatten_incomplete_inner() {
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    struct Test {
+        a: usize,
+        #[deser(flatten)]
+        inner: Inner,
+    }
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    struct Inner {
+        b: usize,
+    }
+
+    let _: Test = deserialize(vec![
+        Event::MapStart,
+        "a".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ]);
 }

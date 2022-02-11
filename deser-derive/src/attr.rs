@@ -352,12 +352,6 @@ impl<'a> FieldAttrs<'a> {
                 "cannot combine flatten and default",
             ));
         }
-        if rv.flatten && rv.skip_serializing_if.is_some() {
-            return Err(syn::Error::new_spanned(
-                field,
-                "cannot combine flatten and skip_serializing_if",
-            ));
-        }
 
         Ok(rv)
     }

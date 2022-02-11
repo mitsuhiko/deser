@@ -75,8 +75,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     #index => {
                         self.index = __index + 1;
-                        let __handle = ::deser::ser::SerializeHandle::to(&self.data.#name);
                         #field_skip
+                        let __handle = ::deser::ser::SerializeHandle::to(&self.data.#name);
                         #optional_skip
                         return ::deser::__derive::Ok(::deser::__derive::Some((
                             ::deser::__derive::Cow::Borrowed(#fieldstr),
@@ -85,8 +85,19 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                 }
             } else {
+                let field_skip = if let Some(path) = attrs.skip_serializing_if() {
+                    quote! {
+                        if #path(&self.data.#name) {
+                            self.index += 1;
+                            continue;
+                        }
+                    }
+                } else {
+                    quote! {}
+                };
                 quote! {
                     #index => {
+                        #field_skip
                         if self.nested_emitter_exhausted {
                             self.nested_emitter = match self.data.#name.serialize(__state)? {
                                 ::deser::ser::Chunk::Struct(__inner) => {
@@ -136,6 +147,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
+            #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
@@ -163,6 +175,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
 
+            #[automatically_derived]
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self, __state: &::deser::ser::SerializerState)
                     -> ::deser::__derive::Result<::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>>
@@ -222,6 +235,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
+            #[automatically_derived]
             impl ::deser::Serialize for #ident {
                 fn serialize(&self, __state: &::deser::ser::SerializerState)
                     -> ::deser::__derive::Result<::deser::ser::Chunk>

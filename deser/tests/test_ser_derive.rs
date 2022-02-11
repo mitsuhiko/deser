@@ -191,3 +191,35 @@ fn test_flatten_skip_optionals() {
         ]
     );
 }
+
+#[test]
+fn test_flatten_skip_serializing_if() {
+    fn not_inner(_inner: &Inner) -> bool {
+        true
+    }
+
+    #[derive(Serialize)]
+    struct Outer {
+        required: bool,
+        #[deser(flatten, skip_serializing_if = "not_inner")]
+        inner: Inner,
+    }
+
+    #[derive(Serialize)]
+    struct Inner {
+        second: usize,
+    }
+
+    assert_eq!(
+        serialize(&Outer {
+            required: true,
+            inner: Inner { second: 42 }
+        }),
+        vec![
+            Event::MapStart,
+            "required".into(),
+            true.into(),
+            Event::MapEnd,
+        ]
+    );
+}
