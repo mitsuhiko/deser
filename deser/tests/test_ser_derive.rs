@@ -194,8 +194,8 @@ fn test_flatten_skip_optionals() {
 
 #[test]
 fn test_flatten_skip_serializing_if() {
-    fn not_inner(_inner: &Inner) -> bool {
-        true
+    fn not_inner(inner: &Inner) -> bool {
+        inner.second == 42
     }
 
     #[derive(Serialize)]
@@ -219,6 +219,21 @@ fn test_flatten_skip_serializing_if() {
             Event::MapStart,
             "required".into(),
             true.into(),
+            Event::MapEnd,
+        ]
+    );
+
+    assert_eq!(
+        serialize(&Outer {
+            required: true,
+            inner: Inner { second: 23 }
+        }),
+        vec![
+            Event::MapStart,
+            "required".into(),
+            true.into(),
+            "second".into(),
+            23u64.into(),
             Event::MapEnd,
         ]
     );
