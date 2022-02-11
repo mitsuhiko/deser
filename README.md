@@ -82,6 +82,10 @@ This crate heavily borrows from
 system](https://github.com/getsentry/relay).  The general trait design was
 modelled after `miniserde`.
 
+In particular for the relationship to Serde there is a [Serde
+Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) document
+providing more details.
+
 ## Safety
 
 Deser (currently) uses excessive amounts of unsafe code internally.  It is not vetted and
