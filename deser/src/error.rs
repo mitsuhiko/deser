@@ -17,6 +17,7 @@ pub enum ErrorKind {
 pub struct Error {
     kind: ErrorKind,
     msg: Cow<'static, str>,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 impl Error {
@@ -25,7 +26,14 @@ impl Error {
         Error {
             kind,
             msg: msg.into(),
+            source: None,
         }
+    }
+
+    /// Attaches another error as source to this error.
+    pub fn with_source<E: std::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
+        self.source = Some(Box::new(source));
+        self
     }
 
     /// Returns the kind of the error.
@@ -40,4 +48,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|err| err.as_ref() as _)
+    }
+}
