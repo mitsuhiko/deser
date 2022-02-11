@@ -64,6 +64,9 @@
 //!   if it should be skipped during serialization.
 //! * `#[deser(alias = "...")]`: provides an alias for the field name for deserialization.  This is ignored
 //!   for serialization.
+//! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the
+//!   parent struct.  Note that flattening only works with structs (more specifically with string) keys.
+//!   This feature is enabled by [`value_for_key`](crate::de::Sink::value_for_key).
 //!
 //! ## Enum Variant Attributes
 //!
