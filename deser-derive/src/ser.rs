@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs};
+use crate::attr::{ensure_no_field_attrs, ContainerAttrs, EnumVariantAttrs, FieldAttrs};
 use crate::bound::{where_clause_with_bound, with_lifetime_bound};
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -10,6 +10,10 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
             fields: syn::Fields::Named(fields),
             ..
         }) => derive_struct(input, fields),
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Unnamed(fields),
+            ..
+        }) if fields.unnamed.len() == 1 => derive_newtype_struct(input, &fields.unnamed[0]),
         syn::Data::Enum(enumeration) => derive_enum(input, enumeration),
         _ => panic!("only structs with named fields are supported"),
     }
@@ -247,6 +251,46 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                             }
                         )*
                     })
+                }
+            }
+        };
+    })
+}
+
+fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+    let dummy = syn::Ident::new(
+        &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
+        Span::call_site(),
+    );
+
+    // TODO: we want to report the type name here but the current descriptor
+    // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
+    let container_attrs = ContainerAttrs::of(input)?;
+    let _type_name = container_attrs.container_name();
+
+    ensure_no_field_attrs(field)?;
+
+    let bound = syn::parse_quote!(::deser::Serialize);
+    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+
+    Ok(quote! {
+        #[allow(non_upper_case_globals)]
+        const #dummy: () = {
+            #[automatically_derived]
+            impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                    self.0.descriptor()
+                }
+                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
+                    ::deser::ser::Serialize::serialize(&self.0, __state)
+                }
+                fn finish(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<()> {
+                    ::deser::ser::Serialize::finish(&self.0, __state)
+                }
+                fn is_optional(&self) -> bool {
+                    ::deser::ser::Serialize::is_optional(&self.0)
                 }
             }
         };

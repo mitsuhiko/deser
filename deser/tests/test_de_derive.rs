@@ -443,3 +443,13 @@ fn test_flatten_incomplete_inner() {
         Event::MapEnd,
     ]);
 }
+
+#[test]
+fn test_deserializing_newtype() {
+    #[derive(Deserialize)]
+    struct MyInt(u32);
+
+    let x: MyInt = deserialize(vec![1u64.into()]);
+
+    assert_eq!(x.0, 1);
+}

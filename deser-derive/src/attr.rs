@@ -265,6 +265,14 @@ impl<'a> ContainerAttrs<'a> {
     }
 }
 
+pub fn ensure_no_field_attrs(field: &syn::Field) -> syn::Result<()> {
+    if let Some(first) = field.attrs.iter().flat_map(get_meta_items).flatten().next() {
+        Err(syn::Error::new_spanned(first, "unsupported attribute"))
+    } else {
+        Ok(())
+    }
+}
+
 pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
     rename: Option<String>,
