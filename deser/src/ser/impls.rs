@@ -402,3 +402,9 @@ impl<'a, T: Serialize> Serialize for &'a mut T {
         Serialize::serialize(*self, state)
     }
 }
+
+impl<T: Serialize> Serialize for Box<T> {
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+        Serialize::serialize(&**self, state)
+    }
+}

@@ -76,3 +76,9 @@ fn test_refs() {
     let events = capture_events(&&&&42u64);
     assert_eq!(events, vec![42u64.into()]);
 }
+
+#[test]
+fn test_box() {
+    let events = capture_events(&Box::new(true));
+    assert_eq!(events, vec![true.into()]);
+}

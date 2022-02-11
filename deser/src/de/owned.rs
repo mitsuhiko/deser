@@ -72,7 +72,8 @@ impl<T: Deserialize> OwnedSink<T> {
     }
 
     /// Immutably borrows from an owned sink.
-    pub fn borrow(&mut self) -> &SinkHandle<'_> {
+    #[allow(clippy::should_implement_trait)]
+    pub fn borrow(&self) -> &SinkHandle<'_> {
         unsafe { extend_lifetime!(self.sink.as_ref().unwrap(), &SinkHandle<'_>) }
     }
 

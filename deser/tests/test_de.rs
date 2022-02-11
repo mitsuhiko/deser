@@ -185,3 +185,9 @@ fn test_chars() {
 fn test_chars_long_string() {
     let _: char = deserialize(vec!["Harry".into()]);
 }
+
+#[test]
+fn test_box() {
+    let x: Box<u64> = deserialize(vec![0u64.into()]);
+    assert_eq!(*x, 0);
+}

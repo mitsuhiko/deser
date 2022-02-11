@@ -2,6 +2,10 @@
 
 All notable changes to deser are documented here.
 
+## 0.7.0
+
+- Added support for `Box<T>`.
+
 ## 0.6.0
 
 - Made `Atom` non exhaustive and added `unexpected_atom` to `Deserialize`.

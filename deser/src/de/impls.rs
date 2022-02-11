@@ -3,7 +3,7 @@ use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::mem::{take, MaybeUninit};
 
-use crate::de::{Deserialize, DeserializerState, Sink, SinkHandle};
+use crate::de::{Deserialize, DeserializerState, OwnedSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
@@ -644,6 +644,64 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             element: None,
             index: 0,
             is_seq: false,
+        })
+    }
+}
+
+impl<T: Deserialize> Deserialize for Box<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        struct BoxSink<'a, T> {
+            out: &'a mut Option<Box<T>>,
+            sink: OwnedSink<T>,
+        }
+
+        impl<'a, T: Deserialize> Sink for BoxSink<'a, T> {
+            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+                self.sink.borrow_mut().atom(atom, state)
+            }
+
+            fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+                self.sink.borrow_mut().map(state)
+            }
+
+            fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+                self.sink.borrow_mut().seq(state)
+            }
+
+            fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+                self.sink.borrow_mut().next_key(state)
+            }
+
+            fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+                self.sink.borrow_mut().next_value(state)
+            }
+
+            fn value_for_key(
+                &mut self,
+                key: &str,
+                state: &DeserializerState,
+            ) -> Result<Option<SinkHandle>, Error> {
+                self.sink.borrow_mut().value_for_key(key, state)
+            }
+
+            fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+                self.sink.borrow_mut().finish(state)?;
+                *self.out = self.sink.take().map(Box::new);
+                Ok(())
+            }
+
+            fn descriptor(&self) -> &dyn Descriptor {
+                self.sink.borrow().descriptor()
+            }
+
+            fn expecting(&self) -> std::borrow::Cow<'_, str> {
+                self.sink.borrow().expecting()
+            }
+        }
+
+        SinkHandle::boxed(BoxSink {
+            out,
+            sink: OwnedSink::deserialize(),
         })
     }
 }
