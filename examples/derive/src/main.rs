@@ -8,6 +8,15 @@ pub struct User {
     id: usize,
     email_address: String,
     kind: UserKind,
+    #[deser(flatten)]
+    user_attributes: UserAttributes,
+}
+
+#[derive(Serialize, Deserialize)]
+#[deser(rename_all = "camelCase")]
+struct UserAttributes {
+    is_special: bool,
+    is_powerful: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,6 +37,10 @@ fn main() {
         driver.emit("jane@example.com").unwrap();
         driver.emit("kind").unwrap();
         driver.emit("admin").unwrap();
+        driver.emit("isPowerful").unwrap();
+        driver.emit(true).unwrap();
+        driver.emit("isSpecial").unwrap();
+        driver.emit(true).unwrap();
         driver.emit(Event::MapEnd).unwrap();
     }
     println!("{:#?}", ToDebug::new(&user.unwrap()));

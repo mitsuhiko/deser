@@ -37,17 +37,20 @@ struct UserEmitter<'a> {
 }
 
 impl<'a> StructEmitter for UserEmitter<'a> {
-    fn next(&mut self, _state: &SerializerState) -> Option<(Cow<'_, str>, SerializeHandle)> {
+    fn next(
+        &mut self,
+        _state: &SerializerState,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error> {
         let index = self.index;
         self.index += 1;
-        match index {
+        Ok(match index {
             0 => Some((Cow::Borrowed("id"), SerializeHandle::to(&self.user.id))),
             1 => Some((
                 Cow::Borrowed("emailAddress"),
                 SerializeHandle::to(&self.user.email_address),
             )),
             _ => None,
-        }
+        })
     }
 }
 

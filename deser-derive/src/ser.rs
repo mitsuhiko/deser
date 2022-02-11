@@ -25,29 +25,33 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
-    let fieldname = &fields.named.iter().map(|f| &f.ident).collect::<Vec<_>>();
     let attrs = fields
         .named
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    let fieldstr = attrs
+
+    let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
+        Some(quote! {
+            nested_emitter: ::deser::__derive::Option<::deser::__derive::Box<dyn ::deser::ser::StructEmitter + '__a>>,
+            nested_emitter_exhausted: bool,
+        })
+    } else {
+        None
+    };
+    let temp_emitter_init = if attrs.iter().any(|x| x.flatten()) {
+        Some(quote! {
+            nested_emitter: ::deser::__derive::None,
+            nested_emitter_exhausted: true,
+        })
+    } else {
+        None
+    };
+    let state_handler = attrs
         .iter()
-        .map(|x| x.name(&container_attrs))
-        .collect::<Vec<_>>();
-    let skip_if = attrs
-        .iter()
-        .zip(fieldname.iter())
-        .map(|(attrs, name)| {
-            let field_skip = if let Some(path) = attrs.skip_serializing_if() {
-                quote! {
-                    if #path(&self.data.#name) {
-                        continue;
-                    }
-                }
-            } else {
-                quote! {}
-            };
+        .enumerate()
+        .map(|(index, attrs)| {
+            let name = &attrs.field().ident;
             let optional_skip = if container_attrs.skip_serializing_optionals() {
                 quote! {
                     if __handle.is_optional() {
@@ -57,14 +61,83 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             } else {
                 quote! {}
             };
-            quote! {
-                #field_skip
-                #optional_skip
+            if !attrs.flatten() {
+                let fieldstr = attrs.name(&container_attrs);
+                let field_skip = if let Some(path) = attrs.skip_serializing_if() {
+                    quote! {
+                        if #path(&self.data.#name) {
+                            continue;
+                        }
+                    }
+                } else {
+                    quote! {}
+                };
+                quote! {
+                    #index => {
+                        self.index = __index + 1;
+                        #field_skip
+                        let __handle = ::deser::ser::SerializeHandle::to(&self.data.#name);
+                        #optional_skip
+                        return ::deser::__derive::Ok(::deser::__derive::Some((
+                            ::deser::__derive::Cow::Borrowed(#fieldstr),
+                            __handle,
+                        )));
+                    }
+                }
+            } else {
+                let field_skip = if let Some(path) = attrs.skip_serializing_if() {
+                    quote! {
+                        if #path(&self.data.#name) {
+                            self.index += 1;
+                            continue;
+                        }
+                    }
+                } else {
+                    quote! {}
+                };
+                quote! {
+                    #index => {
+                        #field_skip
+                        if self.nested_emitter_exhausted {
+                            self.nested_emitter = match self.data.#name.serialize(__state)? {
+                                ::deser::ser::Chunk::Struct(__inner) => {
+                                    Some(__inner)
+                                }
+                                _ => return ::deser::__derive::Err(::deser::Error::new(
+                                    ::deser::ErrorKind::Unexpected,
+                                    "unable to flatten on struct into struct"
+                                ))
+                            };
+                            self.nested_emitter_exhausted = false;
+                        }
+                        match self.nested_emitter.as_mut().unwrap().next(__state)? {
+                            ::deser::__derive::None => {
+                                self.index += 1;
+                                self.nested_emitter_exhausted = true;
+                                self.data.#name.finish(__state)?;
+                                continue;
+                            }
+                            // we need this transmute here because of limitations in the borrow
+                            // checker.  The borrow checker does not understand that the borrow
+                            // does not continue into the next loop iteration.  If polonius ever
+                            // makes it into Rust this can go.
+                            //
+                            // This can be validated with `-Zpolonius`
+                            ::deser::__derive::Some((__key, __handle)) => {
+                                #optional_skip
+                                return ::deser::__derive::Ok(::deser::__derive::Some(unsafe {
+                                    ::std::mem::transmute::<_, _>((
+                                        __key,
+                                        __handle
+                                    ))
+                                }))
+                            }
+                        }
+                    }
+                }
             }
         })
         .collect::<Vec<_>>();
-
-    let index = 0usize..;
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
@@ -74,6 +147,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
+            #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
@@ -82,6 +156,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
                         index: 0,
+                        #temp_emitter_init
                     })))
                 }
             }
@@ -89,6 +164,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             struct __StructEmitter #wrapper_impl_generics #where_clause {
                 data: &'__a #ident #ty_generics,
                 index: usize,
+                #temp_emitter
             }
 
             struct __Descriptor;
@@ -99,25 +175,19 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
 
+            #[automatically_derived]
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self, __state: &::deser::ser::SerializerState)
-                    -> ::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>
+                    -> ::deser::__derive::Result<::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>>
                 {
+                    #[allow(clippy::never_loop)]
                     loop {
                         let __index = self.index;
-                        self.index = __index + 1;
                         match __index {
                             #(
-                                #index => {
-                                    let __handle = ::deser::ser::SerializeHandle::to(&self.data.#fieldname);
-                                    #skip_if
-                                    return::deser::__derive::Some((
-                                        ::deser::__derive::Cow::Borrowed(#fieldstr),
-                                        __handle,
-                                    ))
-                                }
+                                #state_handler
                             )*
-                            _ => return ::deser::__derive::None,
+                            _ => return ::deser::__derive::Ok(::deser::__derive::None),
                         }
                     }
                 }
@@ -165,6 +235,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
+            #[automatically_derived]
             impl ::deser::Serialize for #ident {
                 fn serialize(&self, __state: &::deser::ser::SerializerState)
                     -> ::deser::__derive::Result<::deser::ser::Chunk>

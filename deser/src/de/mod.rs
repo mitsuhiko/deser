@@ -121,15 +121,23 @@
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
-//!         // whenever we are looking for a value slot, look at the last key
-//!         // to decide which value slot to connect.
-//!         match self.key.take().as_deref() {
-//!             Some("enabled") => Ok(Deserialize::deserialize_into(&mut self.enabled_field)),
-//!             Some("name") => Ok(Deserialize::deserialize_into(&mut self.name_field)),
-//!             // if we don't know the key, return a null handle to drop the value.
-//!             _ => Ok(SinkHandle::null()),
-//!         }
+//!     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+//!         let key = self.key.take().unwrap();
+//!         // since we implement a sink for a struct, move the actual logic for
+//!         // matching into `value_for_key` so that our deserializer can support
+//!         // struct flattening.  If we don't know the key, just return a null
+//!         // handle to ignore it.
+//!         Ok(self.value_for_key(&key, state)?.unwrap_or_else(SinkHandle::null))
+//!     }
+//!
+//!     fn value_for_key(&mut self, key: &str, _state: &DeserializerState)
+//!         -> Result<Option<SinkHandle>, Error>
+//!     {
+//!         Ok(Some(match key {
+//!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field),
+//!             "name" => Deserialize::deserialize_into(&mut self.name_field),
+//!             _ => return Ok(None)
+//!         }))
 //!     }
 //!     
 //!     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
@@ -190,6 +198,9 @@ use crate::extensions::Extensions;
 
 mod ignore;
 mod impls;
+mod owned;
+
+pub use self::owned::OwnedSink;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
@@ -346,6 +357,22 @@ pub trait Sink {
     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
         let _ = state;
         Ok(SinkHandle::null())
+    }
+
+    /// Returns a value sink for a specific struct field.
+    ///
+    /// This is a special method that is supposed to be implemented by structs
+    /// if they want to support flattening.  A struct that gets flattened into
+    /// another struct will have this method called to figure out if a key is
+    /// used by it.  The default implementation always returns `None`.
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &DeserializerState,
+    ) -> Result<Option<SinkHandle>, Error> {
+        let _ = key;
+        let _ = state;
+        Ok(None)
     }
 
     /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).

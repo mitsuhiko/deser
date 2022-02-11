@@ -9,6 +9,7 @@ All notable changes to deser are documented here.
   directly on the `Sink`.
 - The serializer state and deserializer state is now passed to `next_key`/
   `next_value` and `next` on the sinks and emitters.
+- Added support for `#[deser(flatten)]`.
 
 ## 0.5.0
 
