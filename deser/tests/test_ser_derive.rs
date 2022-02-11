@@ -238,3 +238,11 @@ fn test_flatten_skip_serializing_if() {
         ]
     );
 }
+
+#[test]
+fn test_serializing_newtype() {
+    #[derive(Serialize, Debug)]
+    struct MyInt(u32);
+
+    assert_eq!(serialize(&MyInt(42)), vec![42u64.into()]);
+}

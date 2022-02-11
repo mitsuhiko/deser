@@ -5,6 +5,7 @@ All notable changes to deser are documented here.
 ## 0.7.0
 
 - Added support for `Box<T>`.
+- Added newtype struct support for derive feature.
 
 ## 0.6.0
 

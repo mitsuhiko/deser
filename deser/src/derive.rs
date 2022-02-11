@@ -25,6 +25,14 @@
 //! }
 //! ```
 //!
+//! # Supported Types
+//!
+//! Currently the following types can be derived:
+//!
+//! * Structs
+//! * Newtype structs
+//! * Basic enums
+//!
 //! # Customization
 //!
 //! The automatically derived features can be customized via attributes:
