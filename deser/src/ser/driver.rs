@@ -42,7 +42,9 @@ enum DriverState {
     Serialize {
         serializable: SerializeHandle<'static>,
     },
-    PopEmitter,
+    PopEmitter {
+        serializable: SerializeHandle<'static>,
+    },
     FinishSerialize {
         serializable: SerializeHandle<'static>,
     },
@@ -187,7 +189,8 @@ impl<'a> Driver<'a> {
                             });
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            self.state_stack
+                                .push(DriverState::PopEmitter { serializable });
                         }
                     }
                 }
@@ -206,7 +209,8 @@ impl<'a> Driver<'a> {
                             });
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            self.state_stack
+                                .push(DriverState::PopEmitter { serializable });
                         }
                     }
                 }
@@ -244,7 +248,8 @@ impl<'a> Driver<'a> {
                             });
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            self.state_stack
+                                .push(DriverState::PopEmitter { serializable });
                         }
                     }
                 }
@@ -256,8 +261,10 @@ impl<'a> Driver<'a> {
                         serializable,
                     });
                 }
-                DriverState::PopEmitter => {
+                DriverState::PopEmitter { serializable } => {
                     let descriptor = self.state.descriptor_stack.pop().unwrap();
+                    self.state_stack
+                        .push(DriverState::FinishSerialize { serializable });
                     self.next_event = Some((
                         match self.emitter_stack.pop().unwrap() {
                             Emitter::Seq(_) => Event::SeqEnd,
