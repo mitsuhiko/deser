@@ -7,6 +7,7 @@ All notable changes to deser are documented here.
 - Added support for `Box<T>`.
 - Added newtype struct support for derive feature.
 - `Driver` is now called `DeserializeDriver`.
+- Added `SerializeDriver`.
 
 ## 0.6.0
 
