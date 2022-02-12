@@ -165,12 +165,12 @@
 //!
 //! ```rust
 //! use std::collections::BTreeMap;
-//! use deser::de::Driver;
+//! use deser::de::DeserializeDriver;
 //! use deser::Event;
 //!
 //! let mut out = None::<BTreeMap<u32, String>>;
 //! {
-//!     let mut driver = Driver::new(&mut out);
+//!     let mut driver = DeserializeDriver::new(&mut out);
 //!     // emit takes values that implement Into<Event>
 //!     driver.emit(Event::MapStart).unwrap();
 //!     driver.emit(1i64).unwrap();
@@ -198,7 +198,7 @@ mod ignore;
 mod impls;
 mod owned;
 
-pub use self::driver::Driver;
+pub use self::driver::DeserializeDriver;
 pub use self::owned::OwnedSink;
 use crate::extensions::Extensions;
 

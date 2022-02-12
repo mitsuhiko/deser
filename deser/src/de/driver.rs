@@ -12,7 +12,7 @@ use crate::extensions::Extensions;
 /// without using the runtime stack.  As rust lifetimes make what this type does
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
-pub struct Driver<'a> {
+pub struct DeserializeDriver<'a> {
     state: DeserializerState<'a>,
     current_sink: Option<SinkHandleWrapper>,
     sink_stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
@@ -37,15 +37,15 @@ enum Layer {
     Seq,
 }
 
-impl<'a> Driver<'a> {
+impl<'a> DeserializeDriver<'a> {
     /// Creates a new deserializer driver.
-    pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> Driver<'a> {
-        Driver::from_sink(T::deserialize_into(out))
+    pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> DeserializeDriver<'a> {
+        DeserializeDriver::from_sink(T::deserialize_into(out))
     }
 
     /// Creates a new deserializer driver from a sink.
-    pub fn from_sink(sink: SinkHandle) -> Driver<'a> {
-        Driver {
+    pub fn from_sink(sink: SinkHandle) -> DeserializeDriver<'a> {
+        DeserializeDriver {
             state: DeserializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::new(),
@@ -154,7 +154,7 @@ impl<'a> Driver<'a> {
     }
 }
 
-impl<'a> Drop for Driver<'a> {
+impl<'a> Drop for DeserializeDriver<'a> {
     fn drop(&mut self) {
         unsafe {
             while let Some(_item) = self.sink_stack.pop() {
@@ -169,7 +169,7 @@ impl<'a> Drop for Driver<'a> {
 fn test_driver() {
     let mut out: Option<std::collections::BTreeMap<u32, String>> = None;
     {
-        let mut driver = Driver::new(&mut out);
+        let mut driver = DeserializeDriver::new(&mut out);
         driver.emit(Event::MapStart).unwrap();
         driver.emit(1u64).unwrap();
         driver.emit("Hello").unwrap();

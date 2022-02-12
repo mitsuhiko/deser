@@ -1,4 +1,4 @@
-use deser::de::Driver;
+use deser::de::DeserializeDriver;
 use deser::{Deserialize, Event, Serialize};
 use deser_debug::ToDebug;
 
@@ -29,7 +29,7 @@ pub enum UserKind {
 fn main() {
     let mut user = None::<User>;
     {
-        let mut driver = Driver::new(&mut user);
+        let mut driver = DeserializeDriver::new(&mut user);
         driver.emit(Event::MapStart).unwrap();
         driver.emit("id").unwrap();
         driver.emit(23u64).unwrap();

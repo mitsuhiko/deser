@@ -5,9 +5,8 @@
 //! an atomic chunk or a chunk containing an emitter which yields further values.
 //!
 //! This allows the system to support unlimited recursion.  This is tricky to with
-//! the borrow checker due to lifetimes.  The [`for_each_event`] function is provided
-//! which calls a callback for each event in the produced chunks as a safe convenience
-//! API.
+//! the borrow checker due to lifetimes.  The [`SerializeDriver`] is provided
+//! which yields events from the produced chunks as a safe convenience API.
 //!
 //! # Serializing primitives
 //!
@@ -106,7 +105,7 @@ mod impls;
 
 pub use self::chunk::Chunk;
 
-pub use driver::Driver;
+pub use driver::SerializeDriver;
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -225,7 +224,7 @@ pub fn for_each_event<F>(serializable: &dyn Serialize, mut callback: F) -> Resul
 where
     F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
-    let mut driver = Driver::new(serializable);
+    let mut driver = SerializeDriver::new(serializable);
     while let Some((event, descriptor, state)) = driver.next()? {
         callback(event, descriptor, state)?;
     }

@@ -13,7 +13,7 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// This is the only way to convert from a [`Serialize`] into an event
 /// stream.  As a user one has to call [`next`](Self::next) until `None`
 /// is returned, indicating the end of the event stream.
-pub struct Driver<'a> {
+pub struct SerializeDriver<'a> {
     state: SerializerState<'static>,
     state_stack: ManuallyDrop<Vec<DriverState>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
@@ -54,7 +54,7 @@ enum Emitter {
     Struct(Box<dyn StructEmitter>),
 }
 
-impl<'a> Drop for Driver<'a> {
+impl<'a> Drop for SerializeDriver<'a> {
     fn drop(&mut self) {
         self.next_event.take();
         while let Some(_emitter) = self.emitter_stack.pop() {
@@ -70,12 +70,12 @@ impl<'a> Drop for Driver<'a> {
     }
 }
 
-impl<'a> Driver<'a> {
+impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
-    pub fn new(serializable: &'a dyn Serialize) -> Driver<'a> {
+    pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
         let serializable =
             unsafe { extend_lifetime!(SerializeHandle::Borrowed(serializable), SerializeHandle) };
-        Driver {
+        SerializeDriver {
             state: SerializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::new(),
@@ -276,7 +276,7 @@ impl<'a> Driver<'a> {
 fn test_seq_emitting() {
     let vec = vec![vec![1u64, 2], vec![3, 4]];
 
-    let mut driver = Driver::new(&vec);
+    let mut driver = SerializeDriver::new(&vec);
     let mut events = Vec::new();
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
@@ -305,7 +305,7 @@ fn test_map_emitting() {
     map.insert((1u32, 2u32), "first");
     map.insert((2, 3), "second");
 
-    let mut driver = Driver::new(&map);
+    let mut driver = SerializeDriver::new(&map);
     let mut events = Vec::new();
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
