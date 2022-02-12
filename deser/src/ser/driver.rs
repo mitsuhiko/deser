@@ -14,7 +14,6 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// stream.  As a user one has to call [`next`](Self::next) until `None`
 /// is returned, indicating the end of the event stream.
 pub struct Driver<'a> {
-    serializable: Option<SerializeHandle<'a>>,
     state: SerializerState<'static>,
     state_stack: ManuallyDrop<Vec<DriverState>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
@@ -22,7 +21,6 @@ pub struct Driver<'a> {
 }
 
 enum DriverState {
-    Initial,
     ProcessChunk {
         chunk: Chunk<'static>,
         serializable: SerializeHandle<'static>,
@@ -75,14 +73,15 @@ impl<'a> Drop for Driver<'a> {
 impl<'a> Driver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> Driver<'a> {
+        let serializable =
+            unsafe { extend_lifetime!(SerializeHandle::Borrowed(serializable), SerializeHandle) };
         Driver {
-            serializable: Some(SerializeHandle::Borrowed(serializable)),
             state: SerializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::new(),
             },
             emitter_stack: ManuallyDrop::new(Vec::new()),
-            state_stack: ManuallyDrop::new(vec![DriverState::Initial]),
+            state_stack: ManuallyDrop::new(vec![DriverState::Serialize { serializable }]),
             next_event: None,
         }
     }
@@ -120,17 +119,6 @@ impl<'a> Driver<'a> {
             unsafe { extend_lifetime!(self.state_stack.pop(), Option<DriverState>) }
         {
             match state {
-                DriverState::Initial => {
-                    let serializable = unsafe {
-                        extend_lifetime!(self.serializable.take().unwrap(), SerializeHandle)
-                    };
-                    let chunk =
-                        unsafe { extend_lifetime!(serializable.serialize(&self.state)?, Chunk) };
-                    self.state_stack.push(DriverState::ProcessChunk {
-                        chunk,
-                        serializable,
-                    })
-                }
                 DriverState::ProcessChunk {
                     chunk,
                     serializable,
