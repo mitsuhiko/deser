@@ -102,6 +102,7 @@ use crate::event::{Atom, Event};
 use crate::extensions::Extensions;
 
 mod chunk;
+mod driver;
 mod impls;
 
 pub use self::chunk::Chunk;
@@ -251,7 +252,7 @@ impl<'a> Drop for EmitterStack<'a> {
 ///
 /// The callback is invoked with three arguments: the current [`Event`], the top most
 /// [`Descriptor`] and the current [`SerializerState`].
-pub fn for_each_event<F>(serializable: &dyn Serialize, mut f: F) -> Result<(), Error>
+pub fn for_each_event<F>(serializable: &dyn Serialize, mut callback: F) -> Result<(), Error>
 where
     F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
@@ -283,7 +284,7 @@ where
             state.descriptor_stack.push(descriptor);
             emitter_stack.layers.push(emitter);
         }
-        f(event, descriptor, &state)?;
+        callback(event, descriptor, &state)?;
         if done {
             serializable.finish(&state)?;
         }
@@ -302,7 +303,7 @@ where
                         } {
                             Some((key, value)) => {
                                 let key_descriptor = key.descriptor();
-                                f(
+                                callback(
                                     Event::Atom(Atom::Str(Cow::Borrowed(&key))),
                                     key_descriptor,
                                     &state,
@@ -312,7 +313,9 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
+                            None => {
+                                callback(Event::MapEnd, state.top_descriptor().unwrap(), &state)?
+                            }
                         }
                     }
                     Layer::Map(ref mut m, ref mut feed_value) => {
@@ -336,7 +339,9 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
+                            None => {
+                                callback(Event::MapEnd, state.top_descriptor().unwrap(), &state)?
+                            }
                         }
                     }
                     Layer::Seq(ref mut seq) => {
@@ -350,7 +355,9 @@ where
                                 descriptor = unsafe { extended_serializable!() }.descriptor();
                                 break;
                             }
-                            None => f(Event::SeqEnd, state.top_descriptor().unwrap(), &state)?,
+                            None => {
+                                callback(Event::SeqEnd, state.top_descriptor().unwrap(), &state)?
+                            }
                         }
                     }
                 }
