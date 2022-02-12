@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser::de::{DeserializerState, Driver, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializerState, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
 use deser::{Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
@@ -111,7 +111,7 @@ impl<'a> Sink for UserSink<'a> {
 fn main() {
     let mut user = None::<User>;
     {
-        let mut driver = Driver::new(&mut user);
+        let mut driver = DeserializeDriver::new(&mut user);
         driver.emit(Event::MapStart).unwrap();
         driver.emit("id").unwrap();
         driver.emit(23u64).unwrap();

@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::sync::atomic::{self, AtomicUsize};
 
-use deser::de::{Driver, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, Sink, SinkHandle};
 use deser::{make_slot_wrapper, Atom, Deserialize, Event};
 
 fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
     {
-        let mut driver = Driver::new(&mut out);
+        let mut driver = DeserializeDriver::new(&mut out);
         for event in events {
             driver.emit(event).unwrap();
         }
@@ -19,14 +19,14 @@ fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
 fn test_optional() {
     let mut out = None::<Option<usize>>;
     {
-        let mut driver = Driver::new(&mut out);
+        let mut driver = DeserializeDriver::new(&mut out);
         driver.emit(Event::Atom(Atom::U64(42))).unwrap();
     }
     assert_eq!(out, Some(Some(42)));
 
     let mut out = None::<Option<usize>>;
     {
-        let mut driver = Driver::new(&mut out);
+        let mut driver = DeserializeDriver::new(&mut out);
         driver.emit(Event::Atom(Atom::Null)).unwrap();
     }
     assert_eq!(out, Some(None));

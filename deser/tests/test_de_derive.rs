@@ -1,10 +1,10 @@
-use deser::de::Driver;
+use deser::de::DeserializeDriver;
 use deser::{Deserialize, Event};
 
 fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
     {
-        let mut driver = Driver::new(&mut out);
+        let mut driver = DeserializeDriver::new(&mut out);
         for event in events {
             driver.emit(event).unwrap();
         }

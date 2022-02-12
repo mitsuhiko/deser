@@ -5,9 +5,8 @@
 //! an atomic chunk or a chunk containing an emitter which yields further values.
 //!
 //! This allows the system to support unlimited recursion.  This is tricky to with
-//! the borrow checker due to lifetimes.  The [`for_each_event`] function is provided
-//! which calls a callback for each event in the produced chunks as a safe convenience
-//! API.
+//! the borrow checker due to lifetimes.  The [`SerializeDriver`] is provided
+//! which yields events from the produced chunks as a safe convenience API.
 //!
 //! # Serializing primitives
 //!
@@ -93,18 +92,20 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::event::{Atom, Event};
+use crate::event::Event;
 use crate::extensions::Extensions;
 
 mod chunk;
+mod driver;
 mod impls;
 
 pub use self::chunk::Chunk;
+
+pub use driver::SerializeDriver;
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -142,22 +143,6 @@ impl<'a> SerializeHandle<'a> {
     /// Create an owned handle to a heap allocated [`Serialize`].
     pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
-    }
-}
-
-enum Layer<'a> {
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>, bool),
-    Seq(Box<dyn SeqEmitter + 'a>),
-}
-
-impl<'a> fmt::Debug for Layer<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Struct(_) => f.debug_tuple("StructEmitter").finish(),
-            Self::Map(..) => f.debug_tuple("MapEmitter").finish(),
-            Self::Seq(_) => f.debug_tuple("SeqEmitter").finish(),
-        }
     }
 }
 
@@ -227,22 +212,6 @@ impl<'a> SerializerState<'a> {
     }
 }
 
-#[derive(Default)]
-struct EmitterStack<'a> {
-    layers: ManuallyDrop<Vec<Layer<'a>>>,
-}
-
-impl<'a> Drop for EmitterStack<'a> {
-    fn drop(&mut self) {
-        while let Some(_item) = self.layers.pop() {
-            // drop in inverse order
-        }
-        unsafe {
-            ManuallyDrop::drop(&mut self.layers);
-        }
-    }
-}
-
 /// Invokes a callback for each event of a serializable.
 ///
 /// Deser understands the complexities of recursive structures.  This function will
@@ -251,118 +220,15 @@ impl<'a> Drop for EmitterStack<'a> {
 ///
 /// The callback is invoked with three arguments: the current [`Event`], the top most
 /// [`Descriptor`] and the current [`SerializerState`].
-pub fn for_each_event<F>(serializable: &dyn Serialize, mut f: F) -> Result<(), Error>
+pub fn for_each_event<F>(serializable: &dyn Serialize, mut callback: F) -> Result<(), Error>
 where
     F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
 {
-    let mut serializable = SerializeHandle::Borrowed(serializable);
-    let mut state = SerializerState {
-        extensions: Extensions::default(),
-        descriptor_stack: Vec::new(),
-    };
-    let mut emitter_stack = EmitterStack::default();
-
-    macro_rules! extended_serializable {
-        () => {
-            extend_lifetime!(&serializable, &SerializeHandle)
-        };
+    let mut driver = SerializeDriver::new(serializable);
+    while let Some((event, descriptor, state)) = driver.next()? {
+        callback(event, descriptor, state)?;
     }
-
-    let mut chunk = unsafe { extended_serializable!() }.serialize(&state)?;
-    let mut descriptor = unsafe { extended_serializable!() }.descriptor();
-
-    loop {
-        let (event, emitter_opt) = match chunk {
-            Chunk::Atom(atom) => (Event::Atom(atom), None),
-            Chunk::Struct(emitter) => (Event::MapStart, Some(Layer::Struct(emitter))),
-            Chunk::Map(emitter) => (Event::MapStart, Some(Layer::Map(emitter, false))),
-            Chunk::Seq(emitter) => (Event::SeqStart, Some(Layer::Seq(emitter))),
-        };
-        let done = emitter_opt.is_none();
-        if let Some(emitter) = emitter_opt {
-            state.descriptor_stack.push(descriptor);
-            emitter_stack.layers.push(emitter);
-        }
-        f(event, descriptor, &state)?;
-        if done {
-            serializable.finish(&state)?;
-        }
-        loop {
-            // special case: close down the key before going to value
-            if let Some(Layer::Map(_, true)) = emitter_stack.layers.last() {
-                serializable.finish(&state)?;
-            }
-
-            if let Some(layer) = emitter_stack.layers.last_mut() {
-                match layer {
-                    Layer::Struct(ref mut s) => {
-                        // this is safe as we maintain our own stack.
-                        match unsafe {
-                            extend_lifetime!(s.next(&state)?, Option<(Cow<str>, SerializeHandle)>)
-                        } {
-                            Some((key, value)) => {
-                                let key_descriptor = key.descriptor();
-                                f(
-                                    Event::Atom(Atom::Str(Cow::Borrowed(&key))),
-                                    key_descriptor,
-                                    &state,
-                                )?;
-                                serializable = value;
-                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
-                                descriptor = unsafe { extended_serializable!() }.descriptor();
-                                break;
-                            }
-                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
-                        }
-                    }
-                    Layer::Map(ref mut m, ref mut feed_value) => {
-                        let old_feed_value = *feed_value;
-                        *feed_value = !old_feed_value;
-                        if old_feed_value {
-                            let value =
-                                unsafe { extend_lifetime!(m.next_value(&state)?, SerializeHandle) };
-                            serializable = value;
-                            chunk = unsafe { extended_serializable!() }.serialize(&state)?;
-                            descriptor = unsafe { extended_serializable!() }.descriptor();
-                            break;
-                        }
-                        // this is safe as we maintain our own stack.
-                        match unsafe {
-                            extend_lifetime!(m.next_key(&state)?, Option<SerializeHandle>)
-                        } {
-                            Some(key) => {
-                                serializable = key;
-                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
-                                descriptor = unsafe { extended_serializable!() }.descriptor();
-                                break;
-                            }
-                            None => f(Event::MapEnd, state.top_descriptor().unwrap(), &state)?,
-                        }
-                    }
-                    Layer::Seq(ref mut seq) => {
-                        // this is safe as we maintain our own stack.
-                        match unsafe {
-                            extend_lifetime!(seq.next(&state)?, Option<SerializeHandle>)
-                        } {
-                            Some(next) => {
-                                serializable = next;
-                                chunk = unsafe { extended_serializable!() }.serialize(&state)?;
-                                descriptor = unsafe { extended_serializable!() }.descriptor();
-                                break;
-                            }
-                            None => f(Event::SeqEnd, state.top_descriptor().unwrap(), &state)?,
-                        }
-                    }
-                }
-            } else {
-                return Ok(());
-            }
-
-            state.descriptor_stack.pop();
-            emitter_stack.layers.pop();
-            serializable.finish(&state)?;
-        }
-    }
+    Ok(())
 }
 
 /// A struct emitter.

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::de::{Deserialize, DeserializerState, Driver, Sink, SinkHandle};
+use deser::de::{Deserialize, DeserializeDriver, DeserializerState, Sink, SinkHandle};
 use deser::{Atom, Error, Event};
 use deser_path::{Path, PathSink};
 
@@ -35,7 +35,7 @@ fn test_path() {
 
     {
         let sink = PathSink::wrap_ref(Deserialize::deserialize_into(&mut out));
-        let mut driver = Driver::from_sink(SinkHandle::boxed(sink));
+        let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
         driver.emit(Event::MapStart).unwrap();
         driver.emit("foo").unwrap();
         driver.emit(true).unwrap();
