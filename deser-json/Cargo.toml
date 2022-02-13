@@ -10,8 +10,13 @@ readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-json"
 
+[features]
+speedups = ["itoa", "ryu"]
+
 [dependencies]
 deser = { version = "0.7.0", path = "../deser" }
+itoa = { version = "1.0.1", optional = true }
+ryu = { version = "1.0.9", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.7.0", path = "../deser", features = ["derive"] }

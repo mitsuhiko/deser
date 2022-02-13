@@ -110,11 +110,36 @@ impl<W: Write> Serializer<W> {
                     Atom::Str(val) => self.write_escaped_str(&val),
                     Atom::Bytes(_val) => unsupported!("JSON doesn't support bytes"),
                     Atom::Char(c) => self.write_escaped_str(&(c as u32).to_string()),
-                    Atom::U64(val) => self.write_str(&val.to_string()),
-                    Atom::I64(val) => self.write_str(&val.to_string()),
+                    Atom::U64(val) => {
+                        #[cfg(feature = "speedups")]
+                        {
+                            self.write_str(itoa::Buffer::new().format(val))
+                        }
+                        #[cfg(not(feature = "speedups"))]
+                        {
+                            self.write_str(&val.to_string())
+                        }
+                    }
+                    Atom::I64(val) => {
+                        #[cfg(feature = "speedups")]
+                        {
+                            self.write_str(itoa::Buffer::new().format(val))
+                        }
+                        #[cfg(not(feature = "speedups"))]
+                        {
+                            self.write_str(&val.to_string())
+                        }
+                    }
                     Atom::F64(val) => {
                         if val.is_finite() {
-                            self.write_str(val.to_string().as_str())
+                            #[cfg(feature = "speedups")]
+                            {
+                                self.write_str(ryu::Buffer::new().format_finite(val))
+                            }
+                            #[cfg(not(feature = "speedups"))]
+                            {
+                                self.write_str(val.to_string().as_str())
+                            }
                         } else {
                             self.write_str("null")
                         }

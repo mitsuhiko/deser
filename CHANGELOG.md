@@ -5,6 +5,7 @@ All notable changes to deser are documented here.
 ## 0.8.0
 
 - Removed `for_each_event`.
+- Added `speedups` feature for `serde-json` to use `ryu` and `itoa`.
 
 ## 0.7.0
 
