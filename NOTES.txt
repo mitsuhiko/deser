@@ -1,9 +1,0 @@
-Things to note:
-
-* separate self describing and non self describing serialization
-* data model needs to allow extension types
-* support for unlimited precision
-* unlimited recursion
-* faster compile times
-* stateful serialization and deserialization
-* hash map ordering independent of compile time feature
