@@ -8,6 +8,7 @@ All notable changes to deser are documented here.
 - Added newtype struct support for derive feature.
 - `Driver` is now called `DeserializeDriver`.
 - Added `SerializeDriver`.
+- Added `deser-json`.
 
 ## 0.6.0
 
