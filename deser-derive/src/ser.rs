@@ -103,7 +103,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #index => {
                         #field_skip
                         if self.nested_emitter_exhausted {
-                            self.nested_emitter = match self.data.#name.serialize(__state)? {
+                            self.nested_emitter = match ::deser::ser::Serialize::serialize(&self.data.#name, __state)? {
                                 ::deser::ser::Chunk::Struct(__inner) => {
                                     Some(__inner)
                                 }
@@ -118,7 +118,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             ::deser::__derive::None => {
                                 self.index += 1;
                                 self.nested_emitter_exhausted = true;
-                                self.data.#name.finish(__state)?;
+                                ::deser::ser::Serialize::finish(&self.data.#name, __state)?;
                                 continue;
                             }
                             // we need this transmute here because of limitations in the borrow
