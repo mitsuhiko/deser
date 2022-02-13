@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
 use deser::de::{DeserializeDriver, Sink, SinkHandle};
@@ -190,4 +191,18 @@ fn test_chars_long_string() {
 fn test_box() {
     let x: Box<u64> = deserialize(vec![0u64.into()]);
     assert_eq!(*x, 0);
+}
+
+#[test]
+fn test_set() {
+    let x: BTreeSet<String> = deserialize(vec![
+        Event::SeqStart,
+        "foo".into(),
+        "bar".into(),
+        Event::SeqEnd,
+    ]);
+    let mut set = BTreeSet::new();
+    set.insert("foo".into());
+    set.insert("bar".into());
+    assert_eq!(x, set);
 }

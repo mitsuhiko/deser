@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::mem::{take, MaybeUninit};
@@ -409,6 +409,112 @@ where
             map: HashMap::default(),
             key: None,
             value: None,
+        })
+    }
+}
+
+impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        struct BTreeSetSink<'a, T> {
+            slot: &'a mut Option<BTreeSet<T>>,
+            set: BTreeSet<T>,
+            element: Option<T>,
+        }
+
+        impl<'a, T: 'a + Ord> BTreeSetSink<'a, T> {
+            fn flush(&mut self) {
+                if let Some(element) = self.element.take() {
+                    self.set.insert(element);
+                }
+            }
+        }
+
+        impl<'a, T: Deserialize + Ord> Sink for BTreeSetSink<'a, T> {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: UnorderedNamedDescriptor =
+                    UnorderedNamedDescriptor { name: "BTreeSet" };
+                &DESCRIPTOR
+            }
+
+            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                Ok(())
+            }
+
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+                self.flush();
+                Ok(Deserialize::deserialize_into(&mut self.element))
+            }
+
+            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.flush();
+                *self.slot = Some(take(&mut self.set));
+                Ok(())
+            }
+        }
+
+        SinkHandle::boxed(BTreeSetSink {
+            slot: out,
+            set: BTreeSet::new(),
+            element: None,
+        })
+    }
+}
+
+impl<T, H> Deserialize for HashSet<T, H>
+where
+    T: Deserialize + Hash + Eq,
+    H: BuildHasher + Default,
+{
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        struct HashSetSink<'a, T, H> {
+            slot: &'a mut Option<HashSet<T, H>>,
+            set: HashSet<T, H>,
+            element: Option<T>,
+        }
+
+        impl<'a, T, H> HashSetSink<'a, T, H>
+        where
+            T: Hash + Eq,
+            H: BuildHasher,
+        {
+            fn flush(&mut self) {
+                if let Some(element) = self.element.take() {
+                    self.set.insert(element);
+                }
+            }
+        }
+
+        impl<'a, T, H> Sink for HashSetSink<'a, T, H>
+        where
+            T: Hash + Eq + Deserialize,
+            H: BuildHasher + Default,
+        {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: UnorderedNamedDescriptor =
+                    UnorderedNamedDescriptor { name: "HashSet" };
+                &DESCRIPTOR
+            }
+
+            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                Ok(())
+            }
+
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+                self.flush();
+                Ok(Deserialize::deserialize_into(&mut self.element))
+            }
+
+            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                self.flush();
+                *self.slot = Some(take(&mut self.set));
+                Ok(())
+            }
+        }
+
+        SinkHandle::boxed(HashSetSink {
+            slot: out,
+            set: HashSet::default(),
+            element: None,
         })
     }
 }

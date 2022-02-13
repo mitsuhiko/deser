@@ -6,6 +6,7 @@ All notable changes to deser are documented here.
 
 - Removed `for_each_event`.
 - Added `speedups` feature for `serde-json` to use `ryu` and `itoa`.
+- Added deserialization support for BTreeSet and HashSet.
 
 ## 0.7.0
 

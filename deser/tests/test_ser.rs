@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use deser::ser::SerializeDriver;
 use deser::{Atom, Event, Serialize};
@@ -80,4 +81,16 @@ fn test_refs() {
 fn test_box() {
     let events = capture_events(&Box::new(true));
     assert_eq!(events, vec![true.into()]);
+}
+
+#[test]
+fn test_set() {
+    let mut set = BTreeSet::new();
+    set.insert("foo");
+    set.insert("bar");
+    let events = capture_events(&set);
+    assert_eq!(
+        events,
+        vec![Event::SeqStart, "bar".into(), "foo".into(), Event::SeqEnd]
+    );
 }
