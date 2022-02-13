@@ -31,11 +31,8 @@ This generates out the necessary
 [`Deserialize`](https://docs.rs/deser/latest/deser/de/trait.Deserialize.html)
 implementations.
 
-To see what this looks like behind the scenes there are two examples
-that show how structs are implemented:
-
-* [derive](https://github.com/mitsuhiko/deser/tree/main/examples/derive): shows an example using automatic deriving
-* [manual-struct](https://github.com/mitsuhiko/deser/tree/main/examples/manual-struct): shows the same example with a manual implementation
+To see some practical examples of this have a look at the
+[examples](https://github.com/mitsuhiko/deser/tree/main/examples).
 
 ## Design Goals
 
@@ -69,6 +66,8 @@ that show how structs are implemented:
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
   providing the base functionality
+* [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): basic
+  JSON implementation for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats

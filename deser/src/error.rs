@@ -10,6 +10,7 @@ pub enum ErrorKind {
     MissingField,
     OutOfRange,
     WrongLength,
+    EndOfFile,
 }
 
 /// An error for deser.
