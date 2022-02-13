@@ -146,18 +146,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     attrs.name(&container_attrs)
                 );
                 quote! {
-                    #name.ok_or_else(|| {
-                        ::deser::Error::new(::deser::ErrorKind::Unexpected, #error)
-                    })?
+                    match #name {
+                        ::deser::__derive::Some(val) => val,
+                        ::deser::__derive::None => return ::deser::__derive::Err(::deser::Error::new(::deser::ErrorKind::Unexpected, #error))
+                    }
                 }
             } else if container_attrs.default().is_some() {
                 quote! { #name.unwrap() }
             } else {
-                let error = format!("Missing field '{}'", attrs.name(&container_attrs));
+                let str_name = attrs.name(&container_attrs);
                 quote! {
-                    #name.ok_or_else(|| {
-                        ::deser::Error::new(::deser::ErrorKind::MissingField, #error)
-                    })?
+                    match #name {
+                        ::deser::__derive::Some(val) => val,
+                        ::deser::__derive::None => return ::deser::__derive::Err(::deser::__derive::new_missing_field_error(#str_name))
+                    }
                 }
             }
         })

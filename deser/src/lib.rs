@@ -80,6 +80,13 @@ pub mod __derive {
     pub type Result<T> = std::result::Result<T, super::Error>;
     pub type StrCow<'a> = Cow<'a, str>;
 
+    pub fn new_missing_field_error(name: &str) -> super::Error {
+        super::Error::new(
+            super::ErrorKind::MissingField,
+            format!("Missing field '{}'", name),
+        )
+    }
+
     mod _hack {
         pub type Str = str;
     }
