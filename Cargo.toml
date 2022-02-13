@@ -3,6 +3,7 @@ members = [
   "deser",
   "deser-debug",
   "deser-derive",
+  "deser-json",
   "deser-path",
   "examples/derive",
   "examples/manual-struct",

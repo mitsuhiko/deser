@@ -1,0 +1,14 @@
+[package]
+name = "deser-json"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.6.0"
+edition = "2021"
+description = "JSON support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-json"
+
+[dependencies]
+deser = { version = "0.6.0", path = "../deser" }
