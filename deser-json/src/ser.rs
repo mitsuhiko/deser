@@ -42,12 +42,16 @@ impl<W: Write> Serializer<W> {
             // try to exit containers first
             match event {
                 Event::MapEnd => {
-                    container_stack.pop();
+                    if !matches!(container_stack.pop(), Some(ContainerState::Map { .. })) {
+                        return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
+                    }
                     try_io!(self.write_byte(b'}'));
                     continue;
                 }
                 Event::SeqEnd => {
-                    container_stack.pop();
+                    if !matches!(container_stack.pop(), Some(ContainerState::Seq { .. })) {
+                        return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
+                    }
                     try_io!(self.write_byte(b']'));
                     continue;
                 }

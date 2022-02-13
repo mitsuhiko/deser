@@ -73,26 +73,31 @@ impl<'a> DeserializeDriver<'a> {
         self._emit(event.into())
     }
 
+    fn update_current_sink(&mut self) -> Result<(), Error> {
+        match self.sink_stack.last_mut() {
+            Some((map_sink, Layer::Map(ref mut is_key))) => {
+                let next_sink = if *is_key {
+                    map_sink.sink.next_key(&self.state)?
+                } else {
+                    map_sink.sink.next_value(&self.state)?
+                };
+                *is_key = !*is_key;
+                self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
+            }
+            Some((seq_sink, Layer::Seq)) => {
+                self.current_sink = Some(unsafe {
+                    SinkHandleWrapper::from(seq_sink.sink.next_value(&self.state)?)
+                });
+            }
+            None => {}
+        }
+        Ok(())
+    }
+
     fn _emit(&mut self, event: Event) -> Result<(), Error> {
-        macro_rules! target_sink {
+        macro_rules! current_sink {
             () => {{
-                match self.sink_stack.last_mut() {
-                    Some((map_sink, Layer::Map(ref mut is_key))) => {
-                        let next_sink = if *is_key {
-                            map_sink.sink.next_key(&self.state)?
-                        } else {
-                            map_sink.sink.next_value(&self.state)?
-                        };
-                        *is_key = !*is_key;
-                        self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
-                    }
-                    Some((seq_sink, Layer::Seq)) => {
-                        self.current_sink = Some(unsafe {
-                            SinkHandleWrapper::from(seq_sink.sink.next_value(&self.state)?)
-                        });
-                    }
-                    _ => {}
-                }
+                self.update_current_sink()?;
                 let top = self.current_sink.as_mut().expect("no active sink");
                 if top.used {
                     panic!("sink has already been used");
@@ -104,12 +109,12 @@ impl<'a> DeserializeDriver<'a> {
 
         match event {
             Event::Atom(atom) => {
-                let current_sink = target_sink!();
+                let current_sink = current_sink!();
                 current_sink.atom(atom, &self.state)?;
                 current_sink.finish(&self.state)?;
             }
             Event::MapStart => {
-                let current_sink = target_sink!();
+                let current_sink = current_sink!();
                 current_sink.map(&self.state)?;
                 let descriptor = current_sink.descriptor();
                 self.state
@@ -128,7 +133,7 @@ impl<'a> DeserializeDriver<'a> {
                 _ => panic!("not inside a MapSink"),
             },
             Event::SeqStart => {
-                let current_sink = target_sink!();
+                let current_sink = current_sink!();
                 current_sink.seq(&self.state)?;
                 let descriptor = current_sink.descriptor();
                 self.state
