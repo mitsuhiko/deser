@@ -326,6 +326,14 @@ pub trait Deserialize: Sized {
     }
 }
 
+/// Generates the default error for unexpected maps and sequences.
+fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {
+    Err(Error::new(
+        ErrorKind::Unexpected,
+        format!("unexpected {}, expected {}", got, expecting),
+    ))
+}
+
 /// Trait to place values in a slot.
 ///
 /// A sink acts as an abstraction to receive a value during deserialization from
@@ -356,10 +364,7 @@ pub trait Sink {
     /// The default implementation returns an error.
     fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         let _ = state;
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected map, expected {}", self.expecting()),
-        ))
+        fail_unexpected("map", &self.expecting())
     }
 
     /// Begins the receiving process for sequences.
@@ -371,10 +376,7 @@ pub trait Sink {
     /// The default implementation returns an error.
     fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         let _ = state;
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("unexpected sequence, expected {}", self.expecting()),
-        ))
+        fail_unexpected("sequence", &self.expecting())
     }
 
     /// Returns a sink for the next key in a map.
@@ -422,6 +424,6 @@ pub trait Sink {
     ///
     /// The default implementation returns the type name of the descriptor if available.
     fn expecting(&self) -> Cow<'_, str> {
-        self.descriptor().name().unwrap_or("compatible type").into()
+        Cow::Borrowed(self.descriptor().name().unwrap_or("compatible type"))
     }
 }
