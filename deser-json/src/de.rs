@@ -51,14 +51,16 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the value.
     pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
         let mut out = None;
-        self.deserialize_into(&mut out)?;
+        {
+            let mut driver = DeserializeDriver::new(&mut out);
+            self.deserialize_into(&mut driver)?;
+        }
         out.take()
             .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
     }
 
-    fn deserialize_into<T: Deserialize>(&mut self, out: &mut Option<T>) -> Result<(), Error> {
+    fn deserialize_into(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
         let mut token = self.next_token()?;
-        let mut driver = DeserializeDriver::new(out);
         let mut stack = vec![];
 
         loop {
