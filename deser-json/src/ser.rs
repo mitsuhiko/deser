@@ -14,10 +14,12 @@ enum ContainerState {
 }
 
 impl<W: Write> Serializer<W> {
+    /// Creates a new serializer that writes into the given writer.
     pub fn new(writer: W) -> Serializer<W> {
         Serializer { writer }
     }
 
+    /// Serializes the given value.
     pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
         let mut driver = SerializeDriver::new(value);
         let mut container_stack = Vec::new();

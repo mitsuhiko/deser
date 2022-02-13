@@ -56,8 +56,7 @@ impl<'a> Deserializer<'a> {
             .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
     }
 
-    /// Deserializes into the given slot.
-    pub fn deserialize_into<T: Deserialize>(&mut self, out: &mut Option<T>) -> Result<(), Error> {
+    fn deserialize_into<T: Deserialize>(&mut self, out: &mut Option<T>) -> Result<(), Error> {
         let mut token = self.next_token()?;
         let mut driver = DeserializeDriver::new(out);
         let mut stack = vec![];
