@@ -133,12 +133,12 @@ impl<'a> From<Atom<'a>> for Event<'a> {
 /// is stateful whereas [`Event`] represents a single event from a chunk.
 /// Atomic chunks directly create an event whereas compound chunks keep emitting
 /// more chunks which again can produce events.  To go from chunks to events use
-/// the [`for_each_event`](crate::ser::for_each_event) method.
+/// the [`SerializeDriver`](crate::ser::SerializeDriver) method.
 ///
 /// ## Deserialization
 ///
-/// During deserialization events are passed to a [`Driver`](crate::de::Driver)
-/// to drive the deserialization.
+/// During deserialization events are passed to a
+/// [`DeserializeDriver`](crate::de::DeserializeDriver) to drive the deserialization.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Event<'a> {
     Atom(Atom<'a>),
