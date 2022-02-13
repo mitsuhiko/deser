@@ -158,7 +158,7 @@
 //! # Driver
 //!
 //! Because the serialization interface of `deser` is tricky to use because of
-//! lifetimes, a safe abstraction is provided with the [`Driver`] type which
+//! lifetimes, a safe abstraction is provided with the [`DeserializeDriver`] type which
 //! allow you to drive the deserialization process without using stack space.
 //! You feed it events and internally the driver ensures that the deserlization
 //! system is driven in the right way.
