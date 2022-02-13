@@ -36,23 +36,40 @@ To see some practical examples of this have a look at the
 
 ## Design Goals
 
-* **Fast Compile Times:** deser avoids excessive monomorphization by encouraging dynamic dispatch.
-* **Unlimited Recursion:** the real world is nasty and incoming data might be badly nested.
-  Do not exhaust the call stack no matter how deep your data is.
-  It accomplishes this by an alternative trait design to serde where
-  handles to "sinks" or "serializable" objects are returned.  This
-  means that it's up to the caller to manage the recursion.
+* **Fast Compile Times:** deser avoids excessive monomorphization by encouraging
+  dynamic dispatch.  The goal is to avoid generating a lot of duplicate code that
+  produces bloat the compiler needs to churn through.
 * **Simple Data Model:** deser simplifies the data model on the serialization
   and deserialization interface.  For instance instead of making a distinction
   between `u8` and `u64` they are represented the same in the model.  To compensate
   for this, it provides type descriptors that provide auxiliary information for
-  when a serializer wants to process it.
-* **Meta Information:** deser compensates the simplified data model with providing
-  a space to hold meta information.  This for instance can be used to automatically
-  keep track of the "path" to the current structure during serialization and
-  deserialization.
-* **Native Byte Serialization:** deser has built-in specialization for serializing
-  bytes and byte vectors as distinct formats from slices and vectors.
+  when a serializer wants to process it.  This helps with compile times and makes
+  using the crate easier.
+* **Native Bytes Support:** deser has built-in specialization for serializing
+  bytes and byte vectors.  A `Vec<u8>` is serialized as bytes and does not need
+  special handling for text-only formats such as JSON.
+* **Unlimited Recursion:** the real world is nasty and incoming data might be
+  badly nested.  Deser does not exhaust the call stack no matter how deep your
+  data is.  It accomplishes this by an alternative trait design to serde where
+  handles to "sinks" or "serializable" objects are returned.  This means that
+  it's up to the caller to manage the recursion.
+* **Native Optionals:** the serialization system has a built-in understanding of
+  the concept of optional data.  This means that with a single attribute a struct
+  serializer can skip over all fields currently set to null.
+* **Native Flattening Support:** deser's serialization and deserialization support
+  has native support for flattening of structs.  This means no internal buffering
+  is required for `#[deser(flatten)]`.
+* **Stateful Processing:** deser compensates the simplified data model with providing
+  a space to hold meta information.  Out of the box it provides information
+  about the types that are being serialized.  The additional space can be used
+  to keep track of the "path" to the current structure during serialization and
+  deserialization.  (See [deser-path](https://docs.rs/deser-path/) for a
+  practical example)
+
+Deser does not intend on replacing serde but it attempts to address some if it's
+shortcomings.  For more information there is a document about [Serde
+Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) with
+more details.
 
 ## Future Plans
 
@@ -80,10 +97,6 @@ This crate heavily borrows from
 [`serde`](https://serde.rs/) and [Sentry Relay's meta
 system](https://github.com/getsentry/relay).  The general trait design was
 modelled after `miniserde`.
-
-In particular for the relationship to Serde there is a [Serde
-Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) document
-providing more details.
 
 ## Safety
 

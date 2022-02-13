@@ -98,3 +98,16 @@ data format in serde 1.0 and that was the addition of `i128` and `u128` as
 adding new values is a semver hazard.
 
 This is currently unresolved in deser but it's a space that requires exploration.
+
+## Mandatory Buffering
+
+Serde currently requires mandatory internal buffering even to implement features
+that do not necessarily require it.  For instance to support flattening with
+`#[serde(flatten)]` it needs to buffer a part of the stream.
+
+## Recursion for Serialization and Deserialization
+
+Serde depends on recursion for serialization as well as deserialization. E very
+level of nesting in your data means more stack usage until eventually you
+overflow the stack. Some formats set a cap on nesting depth to prevent stack
+overflows and just refuse to deserialize deeply nested data.
