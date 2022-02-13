@@ -10,25 +10,31 @@ Current results:
 ```
 serde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 6.02s
+    Finished dev [unoptimized + debuginfo] target(s) in 5.78s
+  check again
+    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 6.36s
+    Finished dev [unoptimized + debuginfo] target(s) in 6.14s
   build --release
-    Finished release [optimized] target(s) in 7.00s
+    Finished release [optimized] target(s) in 6.65s
 
 miniserde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 2.77s
+    Finished dev [unoptimized + debuginfo] target(s) in 2.74s
+  check again
+    Finished dev [unoptimized + debuginfo] target(s) in 0.08s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 2.98s
+    Finished dev [unoptimized + debuginfo] target(s) in 2.96s
   build --release
-    Finished release [optimized] target(s) in 3.30s
+    Finished release [optimized] target(s) in 3.11s
 
 deser
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 3.61s
+    Finished dev [unoptimized + debuginfo] target(s) in 3.82s
+  check again
+    Finished dev [unoptimized + debuginfo] target(s) in 0.09s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 3.94s
+    Finished dev [unoptimized + debuginfo] target(s) in 3.72s
   build --release
-    Finished release [optimized] target(s) in 3.64s
+    Finished release [optimized] target(s) in 3.63s
 ```
