@@ -69,6 +69,8 @@ that show how structs are implemented:
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
   providing the base functionality
+* [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): basic
+  JSON implementation for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats

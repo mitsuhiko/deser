@@ -66,13 +66,10 @@ impl<'a> Deserializer<'a> {
             // try to exit containers first
             match token {
                 Token::MapEnd => {
-                    if !matches!(
-                        stack.pop(),
-                        Some(ContainerState::Map { key_pos: false, .. })
-                    ) {
+                    if !matches!(stack.pop(), Some(ContainerState::Map { .. })) {
                         return Err(Error::new(ErrorKind::Unexpected, "unexpected end of map"));
                     }
-                    driver.emit(Event::MapStart)?;
+                    driver.emit(Event::MapEnd)?;
                 }
                 Token::SeqEnd => {
                     if !matches!(stack.pop(), Some(ContainerState::Seq { .. })) {
@@ -82,40 +79,38 @@ impl<'a> Deserializer<'a> {
                 }
                 _ => {
                     // do we need a comma?
-                    if let Some(ContainerState::Seq { first } | ContainerState::Map { first, .. }) =
-                        stack.last_mut()
+                    if let Some(
+                        ContainerState::Seq { first: false }
+                        | ContainerState::Map {
+                            first: false,
+                            key_pos: true,
+                        },
+                    ) = stack.last_mut()
                     {
-                        if !*first {
-                            if !matches!(token, Token::Comma) {
-                                return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
-                            }
-                            token = self.next_token()?;
+                        if !matches!(token, Token::Comma) {
+                            return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
                         }
-                        *first = false;
+                        token = self.next_token()?;
                     }
 
                     // handle keys
-                    if let Some(ContainerState::Map { key_pos, .. }) = stack.last_mut() {
-                        let is_key = *key_pos;
-                        *key_pos = !*key_pos;
-                        if is_key {
-                            match token {
-                                Token::Str(val) => driver.emit(Event::from(val))?,
-                                _ => {
-                                    return Err(Error::new(
-                                        ErrorKind::Unexpected,
-                                        "expected map key",
-                                    ))
-                                }
-                            }
-                            match self.next_token()? {
-                                Token::Colon => {}
-                                _ => {
-                                    return Err(Error::new(ErrorKind::Unexpected, "expected colon"))
-                                }
-                            }
-                            token = self.next_token()?;
+                    if let Some(ContainerState::Map {
+                        first,
+                        key_pos: key_pos @ true,
+                    }) = stack.last_mut()
+                    {
+                        match token {
+                            Token::Str(val) => driver.emit(Event::from(val))?,
+                            _ => return Err(Error::new(ErrorKind::Unexpected, "expected map key")),
                         }
+                        match self.next_token()? {
+                            Token::Colon => {}
+                            _ => return Err(Error::new(ErrorKind::Unexpected, "expected colon")),
+                        }
+                        token = self.next_token()?;
+                        *first = false;
+                        *key_pos = false;
+                        continue;
                     }
 
                     match token {
@@ -127,14 +122,18 @@ impl<'a> Deserializer<'a> {
                         Token::F64(val) => driver.emit(Event::from(val))?,
                         Token::MapStart => {
                             stack.push(ContainerState::Map {
-                                key_pos: true,
                                 first: true,
+                                key_pos: true,
                             });
                             driver.emit(Event::MapStart)?;
+                            token = self.next_token()?;
+                            continue;
                         }
                         Token::SeqStart => {
                             stack.push(ContainerState::Seq { first: true });
                             driver.emit(Event::SeqStart)?;
+                            token = self.next_token()?;
+                            continue;
                         }
                         Token::Comma => {
                             return Err(Error::new(ErrorKind::Unexpected, "unexpected comma"));
@@ -147,14 +146,23 @@ impl<'a> Deserializer<'a> {
                 }
             }
 
-            if stack.is_empty() {
-                if self.parse_whitespace().is_some() {
-                    return Err(Error::new(ErrorKind::Unexpected, "garbage after input"));
-                } else {
-                    return Ok(());
+            match stack.last_mut() {
+                None => {
+                    return if self.parse_whitespace().is_some() {
+                        Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
+                    } else {
+                        Ok(())
+                    }
                 }
-            } else {
-                token = self.next_token()?;
+                Some(ContainerState::Map { first, key_pos }) => {
+                    token = self.next_token()?;
+                    *key_pos = true;
+                    *first = false;
+                }
+                Some(ContainerState::Seq { first }) => {
+                    token = self.next_token()?;
+                    *first = false;
+                }
             }
         }
     }

@@ -53,8 +53,13 @@ impl<W: Write> Serializer<W> {
             }
 
             // do we need a comma?
-            if let Some(ContainerState::Seq { first } | ContainerState::Map { first, .. }) =
-                container_stack.last_mut()
+            if let Some(
+                ContainerState::Seq { first }
+                | ContainerState::Map {
+                    first,
+                    key_pos: true,
+                },
+            ) = container_stack.last_mut()
             {
                 if !*first {
                     try_io!(self.write_byte(b','));
