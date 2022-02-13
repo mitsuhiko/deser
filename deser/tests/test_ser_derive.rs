@@ -1,13 +1,12 @@
-use deser::ser::for_each_event;
+use deser::ser::SerializeDriver;
 use deser::{Event, Serialize};
 
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut rv = Vec::new();
-    for_each_event(value, |event, _, _| {
+    let mut driver = SerializeDriver::new(value);
+    while let Some((event, _, _)) = driver.next().unwrap() {
         rv.push(event.to_static());
-        Ok(())
-    })
-    .unwrap();
+    }
     rv
 }
 

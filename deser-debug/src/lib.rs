@@ -3,7 +3,7 @@
 use std::fmt;
 use std::sync::atomic::{self, AtomicUsize};
 
-use deser::ser::{for_each_event, Serialize};
+use deser::ser::{Serialize, SerializeDriver};
 use deser::{Atom, Event};
 
 /// Serializes a serializable value to `Debug` format.
@@ -27,11 +27,10 @@ impl ToDebug {
     /// Creates a new [`ToDebug`] object from a serializable value.
     pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut events = Vec::new();
-        for_each_event(value, |event, descriptor, _| {
+        let mut driver = SerializeDriver::new(value);
+        while let Some((event, descriptor, _)) = driver.next().unwrap() {
             events.push((event.to_static(), descriptor.name().map(|x| x.to_string())));
-            Ok(())
-        })
-        .unwrap();
+        }
         ToDebug { events }
     }
 }

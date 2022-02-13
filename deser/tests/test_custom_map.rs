@@ -1,4 +1,4 @@
-use deser::ser::{for_each_event, Chunk, MapEmitter, Serialize, SerializeHandle, SerializerState};
+use deser::ser::{Chunk, MapEmitter, Serialize, SerializeDriver, SerializeHandle, SerializerState};
 use deser::Error;
 use std::collections::{btree_map, BTreeMap};
 
@@ -43,11 +43,10 @@ fn test_as_string_map() {
         map.insert(2, false);
         map
     });
-    for_each_event(&flags, |event, _, _| {
+    let mut driver = SerializeDriver::new(&flags);
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(format!("{:?}", event));
-        Ok(())
-    })
-    .unwrap();
+    }
 
     assert_eq!(
         events,

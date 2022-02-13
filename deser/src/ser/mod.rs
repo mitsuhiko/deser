@@ -96,7 +96,6 @@ use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::event::Event;
 use crate::extensions::Extensions;
 
 mod chunk;
@@ -212,25 +211,6 @@ impl<'a> SerializerState<'a> {
     }
 }
 
-/// Invokes a callback for each event of a serializable.
-///
-/// Deser understands the complexities of recursive structures.  This function will
-/// invoke the callback for every [`Event`] produced from the serialization system.
-/// It does so without recursion so the call stack stays flat.
-///
-/// The callback is invoked with three arguments: the current [`Event`], the top most
-/// [`Descriptor`] and the current [`SerializerState`].
-pub fn for_each_event<F>(serializable: &dyn Serialize, mut callback: F) -> Result<(), Error>
-where
-    F: FnMut(Event, &dyn Descriptor, &SerializerState) -> Result<(), Error>,
-{
-    let mut driver = SerializeDriver::new(serializable);
-    while let Some((event, descriptor, state)) = driver.next()? {
-        callback(event, descriptor, state)?;
-    }
-    Ok(())
-}
-
 /// A struct emitter.
 ///
 /// A struct emitter is a simplified version of a [`MapEmitter`] which produces struct
@@ -328,11 +308,10 @@ fn test_serialize() {
     m.insert(true, vec![vec![&b"x"[..], b"yyy"], vec![b"zzzz"]]);
     m.insert(false, vec![]);
 
-    for_each_event(&m, |event, _, _| {
+    let mut driver = SerializeDriver::new(&m);
+    while let Some((event, _, _)) = driver.next().unwrap() {
         v.push(format!("{:?}", event));
-        Ok(())
-    })
-    .unwrap();
+    }
 
     assert_eq!(
         &v[..],

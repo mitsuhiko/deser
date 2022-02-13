@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::ser::{for_each_event, Chunk, Serialize, SerializerState};
+use deser::ser::{Chunk, Serialize, SerializeDriver, SerializerState};
 use deser::{Atom, Error};
 use deser_path::{Path, PathSerializable};
 
@@ -20,13 +20,11 @@ fn test_path() {
     let mut map = BTreeMap::new();
     map.insert("key", vec![MyBool(false), MyBool(true)]);
 
-    for_each_event(&PathSerializable::wrap(&map), |event, _, state| {
+    let serializable = PathSerializable::wrap(&map);
+    let mut driver = SerializeDriver::new(&serializable);
+    while let Some((event, _, state)) = driver.next().unwrap() {
         events.push(format!("{:?}|{:?}", event, state.get::<Path>().segments()));
-        Ok(())
-    })
-    .unwrap();
-
-    dbg!(&events);
+    }
 
     assert_eq!(
         events,

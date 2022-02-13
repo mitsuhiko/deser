@@ -1,15 +1,14 @@
 use std::borrow::Cow;
 
-use deser::ser::for_each_event;
+use deser::ser::SerializeDriver;
 use deser::{Atom, Event, Serialize};
 
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    for_each_event(s, |event, _, _| {
+    let mut driver = SerializeDriver::new(s);
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
-        Ok(())
-    })
-    .unwrap();
+    }
     events
 }
 
