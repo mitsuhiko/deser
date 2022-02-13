@@ -6,13 +6,6 @@ pub struct User {
     id: usize,
     email_address: String,
     kind: UserKind,
-    #[serde(flatten)]
-    user_attributes: UserAttributes,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UserAttributes {
     is_special: bool,
     is_powerful: bool,
 }

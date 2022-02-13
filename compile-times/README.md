@@ -1,40 +1,38 @@
 # Compile Times
 
-This folder contains the same code for serde and deser to compare the impact on
-compile times.  Both use JSON and deriving for a comparison.  It also compares it
-against miniserde, but the miniserde example does not use flattening or automatic
-field renaming as this is not supported.
+This folder contains the same code for serde, deser and miniserde to compare the
+impact on compile times.  Both use JSON and deriving for a comparison.
 
 Current results:
 
 ```
 serde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 5.78s
+    Finished dev [unoptimized + debuginfo] target(s) in 5.76s
   check again
-    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
+    Finished dev [unoptimized + debuginfo] target(s) in 0.10s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 6.14s
+    Finished dev [unoptimized + debuginfo] target(s) in 6.26s
   build --release
-    Finished release [optimized] target(s) in 6.65s
+    Finished release [optimized] target(s) in 7.43s
 
 miniserde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 2.74s
-  check again
-    Finished dev [unoptimized + debuginfo] target(s) in 0.08s
-  build
-    Finished dev [unoptimized + debuginfo] target(s) in 2.96s
-  build --release
-    Finished release [optimized] target(s) in 3.11s
-
-deser
-  check
-    Finished dev [unoptimized + debuginfo] target(s) in 3.82s
+    Finished dev [unoptimized + debuginfo] target(s) in 3.37s
   check again
     Finished dev [unoptimized + debuginfo] target(s) in 0.09s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 3.72s
+    Finished dev [unoptimized + debuginfo] target(s) in 3.04s
+  build --release
+    Finished release [optimized] target(s) in 3.36s
+
+deser
+  check
+    Finished dev [unoptimized + debuginfo] target(s) in 3.60s
+  check again
+    Finished dev [unoptimized + debuginfo] target(s) in 0.09s
+  build
+    Finished dev [unoptimized + debuginfo] target(s) in 3.85s
   build --release
     Finished release [optimized] target(s) in 3.63s
 ```
