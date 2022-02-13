@@ -31,11 +31,8 @@ This generates out the necessary
 [`Deserialize`](https://docs.rs/deser/latest/deser/de/trait.Deserialize.html)
 implementations.
 
-To see what this looks like behind the scenes there are two examples
-that show how structs are implemented:
-
-* [derive](https://github.com/mitsuhiko/deser/tree/main/examples/derive): shows an example using automatic deriving
-* [manual-struct](https://github.com/mitsuhiko/deser/tree/main/examples/manual-struct): shows the same example with a manual implementation
+To see some practical examples of this have a look at the
+[examples](https://github.com/mitsuhiko/deser/tree/main/examples).
 
 ## Design Goals
 
