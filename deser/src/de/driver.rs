@@ -14,22 +14,8 @@ use crate::extensions::Extensions;
 /// hides the unsafety internally.
 pub struct DeserializeDriver<'a> {
     state: DeserializerState<'a>,
-    current_sink: Option<SinkHandleWrapper>,
-    sink_stack: ManuallyDrop<Vec<(SinkHandleWrapper, Layer)>>,
-}
-
-struct SinkHandleWrapper {
-    sink: SinkHandle<'static>,
-    used: bool,
-}
-
-impl SinkHandleWrapper {
-    unsafe fn from<'a>(sink: SinkHandle<'a>) -> SinkHandleWrapper {
-        SinkHandleWrapper {
-            sink: extend_lifetime!(sink, SinkHandle<'_>),
-            used: false,
-        }
-    }
+    current_sink: Option<SinkHandle<'static>>,
+    sink_stack: ManuallyDrop<Vec<(SinkHandle<'static>, Layer)>>,
 }
 
 enum Layer {
@@ -51,7 +37,7 @@ impl<'a> DeserializeDriver<'a> {
                 descriptor_stack: Vec::new(),
             },
             sink_stack: ManuallyDrop::new(Default::default()),
-            current_sink: Some(unsafe { SinkHandleWrapper::from(sink) }),
+            current_sink: Some(unsafe { extend_lifetime!(sink, SinkHandle<'_>) }),
         }
     }
 
@@ -65,10 +51,7 @@ impl<'a> DeserializeDriver<'a> {
     /// # Panics
     ///
     /// The driver keeps an internal state and emitting events when they are
-    /// not expected will cause the driver to panic.  For instance trying to
-    /// feed two events into a sink that was already used is guarded against.
-    /// Likewise sending an unexpected `MapEnd` event or similar into the
-    /// driver will cause a panic.
+    /// not expected will cause the driver to panic.
     pub fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error> {
         self._emit(event.into())
     }
@@ -77,16 +60,16 @@ impl<'a> DeserializeDriver<'a> {
         match self.sink_stack.last_mut() {
             Some((map_sink, Layer::Map(ref mut is_key))) => {
                 let next_sink = if *is_key {
-                    map_sink.sink.next_key(&self.state)?
+                    map_sink.next_key(&self.state)?
                 } else {
-                    map_sink.sink.next_value(&self.state)?
+                    map_sink.next_value(&self.state)?
                 };
                 *is_key = !*is_key;
-                self.current_sink = Some(unsafe { SinkHandleWrapper::from(next_sink) });
+                self.current_sink = Some(unsafe { extend_lifetime!(next_sink, SinkHandle<'_>) });
             }
             Some((seq_sink, Layer::Seq)) => {
                 self.current_sink = Some(unsafe {
-                    SinkHandleWrapper::from(seq_sink.sink.next_value(&self.state)?)
+                    extend_lifetime!(seq_sink.next_value(&self.state)?, SinkHandle<'_>)
                 });
             }
             None => {}
@@ -98,12 +81,7 @@ impl<'a> DeserializeDriver<'a> {
         macro_rules! current_sink {
             () => {{
                 self.update_current_sink()?;
-                let top = self.current_sink.as_mut().expect("no active sink");
-                if top.used {
-                    panic!("sink has already been used");
-                } else {
-                    &mut top.sink
-                }
+                self.current_sink.as_mut().expect("no active sink")
             }};
         }
 
@@ -126,7 +104,7 @@ impl<'a> DeserializeDriver<'a> {
             }
             Event::MapEnd => match self.sink_stack.pop() {
                 Some((mut map_sink, Layer::Map(_))) => {
-                    map_sink.sink.finish(&self.state)?;
+                    map_sink.finish(&self.state)?;
                     self.state.descriptor_stack.pop();
                     self.current_sink = Some(map_sink);
                 }
@@ -145,15 +123,13 @@ impl<'a> DeserializeDriver<'a> {
             }
             Event::SeqEnd => match self.sink_stack.pop() {
                 Some((mut seq_sink, Layer::Seq)) => {
-                    seq_sink.sink.finish(&self.state)?;
+                    seq_sink.finish(&self.state)?;
                     self.state.descriptor_stack.pop();
                     self.current_sink = Some(seq_sink);
                 }
                 _ => panic!("not inside a SeqSink"),
             },
         }
-
-        self.current_sink.as_mut().unwrap().used = true;
 
         Ok(())
     }

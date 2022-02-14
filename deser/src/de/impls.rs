@@ -65,7 +65,7 @@ impl Sink for SlotWrapper<String> {
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Str(value) => {
-                **self = Some(value.to_string());
+                **self = Some(value.into_owned());
                 Ok(())
             }
             other => self.unexpected_atom(other, state),
