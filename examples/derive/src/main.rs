@@ -17,6 +17,7 @@ pub struct User {
 struct UserAttributes {
     is_special: bool,
     is_powerful: bool,
+    extra: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

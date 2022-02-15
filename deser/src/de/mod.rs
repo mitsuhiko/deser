@@ -313,6 +313,19 @@ pub trait Deserialize: Sized {
     /// sink.
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle;
 
+    /// Provides the initial value for a slot when deserializing structures.
+    ///
+    /// This is not used when a `#[deser(default)]` is used.  This should become
+    /// public API longer term but for now it's private as there are some unresolved
+    /// questions about how null vs missing fields in structs should be handled.
+    #[doc(hidden)]
+    fn __private_initial_value() -> Option<Self>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
     /// Returns `true` if this deserialize is `u8`.
     ///
     /// # Safety

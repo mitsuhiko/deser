@@ -70,9 +70,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     ::deser::de::OwnedSink::deserialize()
                 }
-            } else {
+            } else if f.default().is_some() {
                 quote! {
                     ::deser::__derive::None
+                }
+            } else {
+                quote! {
+                    ::deser::de::Deserialize::__private_initial_value()
                 }
             }
         })

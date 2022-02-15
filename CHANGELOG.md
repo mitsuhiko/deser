@@ -7,6 +7,9 @@ All notable changes to deser are documented here.
 - Removed `for_each_event`.
 - Added `speedups` feature for `serde-json` to use `ryu` and `itoa`.
 - Added deserialization support for BTreeSet and HashSet.
+- `Option<T>` is now automatically defaulted in structs, even if
+  `#[deser(default)]` is not provided.  If this distinction between
+  missing and null is needed `Option<Option<T>>` can be used.
 
 ## 0.7.0
 
