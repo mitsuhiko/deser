@@ -64,6 +64,60 @@ fn test_field_defaults() {
 }
 
 #[test]
+fn test_option_defaults() {
+    #[derive(Deserialize)]
+    pub struct MyContainer {
+        val: Option<String>,
+    }
+
+    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert_eq!(s.val, None);
+
+    let s: MyContainer = deserialize(vec![
+        Event::MapStart,
+        "val".into(),
+        "foo".into(),
+        Event::MapEnd,
+    ]);
+    assert_eq!(s.val, Some("foo".into()));
+
+    fn other_default() -> Option<String> {
+        Some("aha!".into())
+    }
+
+    #[derive(Deserialize)]
+    pub struct MyOtherContainer {
+        #[deser(default = "other_default")]
+        val: Option<String>,
+    }
+
+    let s: MyOtherContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert_eq!(s.val, Some("aha!".into()));
+}
+
+#[test]
+fn test_nested_option_defaults() {
+    #[derive(Deserialize)]
+    pub struct MyContainer {
+        first: Option<Option<bool>>,
+        second: Option<Option<bool>>,
+        third: Option<Option<bool>>,
+    }
+
+    let s: MyContainer = deserialize(vec![
+        Event::MapStart,
+        "first".into(),
+        true.into(),
+        "second".into(),
+        ().into(),
+        Event::MapEnd,
+    ]);
+    assert_eq!(s.first, Some(Some(true)));
+    assert_eq!(s.second, Some(None));
+    assert_eq!(s.third, None);
+}
+
+#[test]
 fn test_container_and_field_defaults() {
     #[derive(Deserialize)]
     #[deser(default)]

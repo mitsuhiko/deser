@@ -529,6 +529,10 @@ where
             sink: Deserialize::deserialize_into(out.as_mut().unwrap()),
         })
     }
+
+    fn __private_initial_value() -> Option<Self> {
+        Some(None)
+    }
 }
 
 struct NullIgnoringSink<'a> {
