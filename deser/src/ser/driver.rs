@@ -19,6 +19,7 @@ pub struct SerializeDriver<'a> {
     serializable_stack: ManuallyDrop<Vec<SerializeHandle<'static>>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
     next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
+    current_key: Option<Cow<'static, str>>,
 }
 
 enum DriverState {
@@ -81,6 +82,7 @@ impl<'a> SerializeDriver<'a> {
                 vec
             }),
             next_event: None,
+            current_key: None,
         }
     }
 
@@ -173,7 +175,16 @@ impl<'a> SerializeDriver<'a> {
                             self.serializable_stack.push(value_serializable);
                             self.state_stack.push(DriverState::Serialize);
 
-                            self.serializable_stack.push(SerializeHandle::boxed(key));
+                            assert!(
+                                self.current_key.is_none(),
+                                "unexpected nested key in key position"
+                            );
+                            self.current_key = Some(key);
+                            let key_serializable = SerializeHandle::to(unsafe {
+                                extend_lifetime!(self.current_key.as_ref().unwrap(), &Cow<'_, str>)
+                            });
+
+                            self.serializable_stack.push(key_serializable);
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -237,6 +248,7 @@ impl<'a> SerializeDriver<'a> {
                 }
                 DriverState::FinishSerialize => {
                     self.next_event = None;
+                    self.current_key = None;
                     self.state_stack.pop();
                     let serializable = self.serializable_stack.pop().unwrap();
                     serializable.finish(&self.state)?;
