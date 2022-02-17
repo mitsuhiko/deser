@@ -57,6 +57,8 @@ impl<'a> Drop for SerializeDriver<'a> {
     }
 }
 
+const STACK_CAPACITY: usize = 128;
+
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
@@ -65,11 +67,19 @@ impl<'a> SerializeDriver<'a> {
         SerializeDriver {
             state: SerializerState {
                 extensions: Extensions::default(),
-                descriptor_stack: Vec::new(),
+                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
             },
-            emitter_stack: ManuallyDrop::new(Vec::new()),
-            serializable_stack: ManuallyDrop::new(vec![serializable]),
-            state_stack: ManuallyDrop::new(vec![DriverState::Serialize]),
+            emitter_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
+            serializable_stack: ManuallyDrop::new({
+                let mut vec = Vec::with_capacity(STACK_CAPACITY);
+                vec.push(serializable);
+                vec
+            }),
+            state_stack: ManuallyDrop::new({
+                let mut vec = Vec::with_capacity(STACK_CAPACITY);
+                vec.push(DriverState::Serialize);
+                vec
+            }),
             next_event: None,
         }
     }
@@ -103,9 +113,7 @@ impl<'a> SerializeDriver<'a> {
             };
         }
 
-        while let Some(state) =
-            unsafe { extend_lifetime!(self.state_stack.pop(), Option<DriverState>) }
-        {
+        while let Some(state) = self.state_stack.last_mut() {
             match state {
                 DriverState::SeqEmitterAdvance => {
                     let emitter = top_emitter!(Seq);
@@ -114,13 +122,13 @@ impl<'a> SerializeDriver<'a> {
                     } {
                         Some(item_serializable) => {
                             // continue iteration
-                            self.state_stack.push(DriverState::SeqEmitterAdvance);
+                            *state = DriverState::SeqEmitterAdvance;
                             // and serialize the current item
                             self.serializable_stack.push(item_serializable);
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            *state = DriverState::PopEmitter;
                         }
                     }
                 }
@@ -131,13 +139,13 @@ impl<'a> SerializeDriver<'a> {
                     } {
                         Some(key_serializable) => {
                             // continue with value
-                            self.state_stack.push(DriverState::MapEmitterNextValue);
+                            *state = DriverState::MapEmitterNextValue;
                             // and serialize the current key
                             self.serializable_stack.push(key_serializable);
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            *state = DriverState::PopEmitter;
                         }
                     }
                 }
@@ -147,7 +155,7 @@ impl<'a> SerializeDriver<'a> {
                         extend_lifetime!(emitter.next_value(&self.state)?, SerializeHandle)
                     };
                     // continue with key again
-                    self.state_stack.push(DriverState::MapEmitterNextKey);
+                    *state = DriverState::MapEmitterNextKey;
                     // and serialize the current value
                     self.serializable_stack.push(value_serializable);
                     self.state_stack.push(DriverState::Serialize);
@@ -161,16 +169,15 @@ impl<'a> SerializeDriver<'a> {
                         )
                     } {
                         Some((key, value_serializable)) => {
-                            // continue iteration
-                            self.state_stack.push(DriverState::StructEmitterAdvance);
                             // and serialize key and value
                             self.serializable_stack.push(value_serializable);
                             self.state_stack.push(DriverState::Serialize);
+
                             self.serializable_stack.push(SerializeHandle::boxed(key));
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
-                            self.state_stack.push(DriverState::PopEmitter);
+                            *state = DriverState::PopEmitter;
                         }
                     }
                 }
@@ -181,7 +188,7 @@ impl<'a> SerializeDriver<'a> {
                             self.next_event = Some((Event::Atom(atom), unsafe {
                                 extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
                             }));
-                            self.state_stack.push(DriverState::FinishSerialize);
+                            *state = DriverState::FinishSerialize;
                             return Ok(());
                         }
                         Chunk::Struct(emitter) => {
@@ -190,7 +197,7 @@ impl<'a> SerializeDriver<'a> {
                             };
                             self.next_event = Some((Event::MapStart, descriptor));
                             self.emitter_stack.push(Emitter::Struct(emitter));
-                            self.state_stack.push(DriverState::StructEmitterAdvance);
+                            *state = DriverState::StructEmitterAdvance;
                             self.state.descriptor_stack.push(descriptor);
                             return Ok(());
                         }
@@ -200,7 +207,7 @@ impl<'a> SerializeDriver<'a> {
                             };
                             self.next_event = Some((Event::MapStart, descriptor));
                             self.emitter_stack.push(Emitter::Map(emitter));
-                            self.state_stack.push(DriverState::MapEmitterNextKey);
+                            *state = DriverState::MapEmitterNextKey;
                             self.state.descriptor_stack.push(descriptor);
                             return Ok(());
                         }
@@ -210,7 +217,7 @@ impl<'a> SerializeDriver<'a> {
                             };
                             self.next_event = Some((Event::SeqStart, descriptor));
                             self.emitter_stack.push(Emitter::Seq(emitter));
-                            self.state_stack.push(DriverState::SeqEmitterAdvance);
+                            *state = DriverState::SeqEmitterAdvance;
                             self.state.descriptor_stack.push(descriptor);
                             return Ok(());
                         }
@@ -218,7 +225,7 @@ impl<'a> SerializeDriver<'a> {
                 }
                 DriverState::PopEmitter => {
                     let descriptor = self.state.descriptor_stack.pop().unwrap();
-                    self.state_stack.push(DriverState::FinishSerialize);
+                    *state = DriverState::FinishSerialize;
                     self.next_event = Some((
                         match self.emitter_stack.pop().unwrap() {
                             Emitter::Seq(_) => Event::SeqEnd,
@@ -229,6 +236,8 @@ impl<'a> SerializeDriver<'a> {
                     return Ok(());
                 }
                 DriverState::FinishSerialize => {
+                    self.next_event = None;
+                    self.state_stack.pop();
                     let serializable = self.serializable_stack.pop().unwrap();
                     serializable.finish(&self.state)?;
                 }

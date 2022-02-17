@@ -127,7 +127,7 @@ impl<'a> Deref for SerializeHandle<'a> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            SerializeHandle::Borrowed(val) => &**val,
+            SerializeHandle::Borrowed(val) => *val,
             SerializeHandle::Owned(val) => &**val,
         }
     }

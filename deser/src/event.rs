@@ -107,6 +107,12 @@ impl<'a> From<&'a str> for Event<'a> {
     }
 }
 
+impl<'a> From<Cow<'a, str>> for Event<'a> {
+    fn from(value: Cow<'a, str>) -> Event<'a> {
+        Event::Atom(Atom::Str(value))
+    }
+}
+
 impl<'a> From<&'a [u8]> for Event<'a> {
     fn from(value: &'a [u8]) -> Event<'a> {
         Event::Atom(Atom::Bytes(Cow::Borrowed(value)))

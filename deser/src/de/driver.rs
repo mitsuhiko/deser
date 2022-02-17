@@ -18,6 +18,8 @@ pub struct DeserializeDriver<'a> {
     sink_stack: ManuallyDrop<Vec<(SinkHandle<'static>, Layer)>>,
 }
 
+const STACK_CAPACITY: usize = 128;
+
 enum Layer {
     Map(bool),
     Seq,
@@ -34,9 +36,9 @@ impl<'a> DeserializeDriver<'a> {
         DeserializeDriver {
             state: DeserializerState {
                 extensions: Extensions::default(),
-                descriptor_stack: Vec::new(),
+                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
             },
-            sink_stack: ManuallyDrop::new(Default::default()),
+            sink_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             current_sink: Some(unsafe { extend_lifetime!(sink, SinkHandle<'_>) }),
         }
     }

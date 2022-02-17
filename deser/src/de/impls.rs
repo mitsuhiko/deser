@@ -525,9 +525,11 @@ where
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         *out = Some(None);
-        SinkHandle::boxed(NullIgnoringSink {
-            sink: Deserialize::deserialize_into(out.as_mut().unwrap()),
-        })
+        let sink = Deserialize::deserialize_into(out.as_mut().unwrap());
+        match sink {
+            SinkHandle::Null(_) => SinkHandle::null(),
+            sink => SinkHandle::boxed(NullIgnoringSink { sink }),
+        }
     }
 
     fn __private_initial_value() -> Option<Self> {
@@ -809,9 +811,10 @@ impl<T: Deserialize> Deserialize for Box<T> {
             }
         }
 
-        SinkHandle::boxed(BoxSink {
-            out,
-            sink: OwnedSink::deserialize(),
-        })
+        let sink = OwnedSink::<T>::deserialize();
+        match sink.borrow() {
+            SinkHandle::Null(_) => SinkHandle::null(),
+            _ => SinkHandle::boxed(BoxSink { out, sink }),
+        }
     }
 }
