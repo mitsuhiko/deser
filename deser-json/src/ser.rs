@@ -1,11 +1,9 @@
-use std::io::{self, Write};
-
 use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 /// Serializes a serializable to JSON.
-pub struct Serializer<W: Write> {
-    writer: W,
+pub struct Serializer {
+    out: String,
 }
 
 enum ContainerState {
@@ -13,14 +11,20 @@ enum ContainerState {
     Seq { first: bool },
 }
 
-impl<W: Write> Serializer<W> {
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
     /// Creates a new serializer that writes into the given writer.
-    pub fn new(writer: W) -> Serializer<W> {
-        Serializer { writer }
+    pub fn new() -> Serializer {
+        Serializer { out: String::new() }
     }
 
     /// Serializes the given value.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize(mut self, value: &dyn Serialize) -> Result<String, Error> {
         let mut driver = SerializeDriver::new(value);
         let mut container_stack = Vec::new();
 
@@ -30,14 +34,6 @@ impl<W: Write> Serializer<W> {
             }};
         }
 
-        macro_rules! try_io {
-            ($expr:expr) => {
-                $expr.map_err(|err| {
-                    Error::new(ErrorKind::Unexpected, "IO error while serializing").with_source(err)
-                })?
-            };
-        }
-
         while let Some((event, _, _)) = driver.next()? {
             // try to exit containers first
             match event {
@@ -45,14 +41,14 @@ impl<W: Write> Serializer<W> {
                     if !matches!(container_stack.pop(), Some(ContainerState::Map { .. })) {
                         return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
                     }
-                    try_io!(self.write_byte(b'}'));
+                    self.write_char('}');
                     continue;
                 }
                 Event::SeqEnd => {
                     if !matches!(container_stack.pop(), Some(ContainerState::Seq { .. })) {
                         return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
                     }
-                    try_io!(self.write_byte(b']'));
+                    self.write_char(']');
                     continue;
                 }
                 _ => {}
@@ -68,7 +64,7 @@ impl<W: Write> Serializer<W> {
             ) = container_stack.last_mut()
             {
                 if !*first {
-                    try_io!(self.write_byte(b','));
+                    self.write_char(',');
                 }
                 *first = false;
             }
@@ -79,30 +75,28 @@ impl<W: Write> Serializer<W> {
                 *key_pos = !*key_pos;
                 if is_key {
                     match event {
-                        Event::Atom(Atom::Str(val)) => {
-                            try_io!(self.write_escaped_str(&val))
-                        }
+                        Event::Atom(Atom::Str(val)) => self.write_escaped_str(&val),
                         Event::Atom(Atom::Char(c)) => {
-                            try_io!(self.write_escaped_str(&(c as u32).to_string()))
+                            self.write_escaped_str(&(c as u32).to_string())
                         }
                         Event::Atom(Atom::U64(val)) => {
-                            try_io!(self.write_byte(b'"'));
-                            try_io!(self.write_str(&val.to_string()));
-                            try_io!(self.write_byte(b'"'));
+                            self.write_char('"');
+                            self.write_str(&val.to_string());
+                            self.write_char('"');
                         }
                         Event::Atom(Atom::I64(val)) => {
-                            try_io!(self.write_byte(b'"'));
-                            try_io!(self.write_str(&val.to_string()));
-                            try_io!(self.write_byte(b'"'));
+                            self.write_char('"');
+                            self.write_str(&val.to_string());
+                            self.write_char('"');
                         }
                         _ => unsupported!("JSON does not support this value for map keys"),
                     }
-                    try_io!(self.write_byte(b':'));
+                    self.write_char(':');
                     continue;
                 }
             }
 
-            try_io!(match event {
+            match event {
                 Event::Atom(atom) => match atom {
                     Atom::Null => self.write_str("null"),
                     Atom::Bool(true) => self.write_str("true"),
@@ -151,33 +145,29 @@ impl<W: Write> Serializer<W> {
                         first: true,
                         key_pos: true,
                     });
-                    self.write_byte(b'{')
+                    self.write_char('{')
                 }
                 Event::SeqStart => {
                     container_stack.push(ContainerState::Seq { first: true });
-                    self.write_byte(b'[')
+                    self.write_char('[')
                 }
                 Event::SeqEnd | Event::MapEnd => unreachable!(),
-            })
+            }
         }
 
-        Ok(())
+        Ok(self.out)
     }
 
-    fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.writer.write_all(bytes)
+    fn write_str(&mut self, s: &str) {
+        self.out.push_str(s);
     }
 
-    fn write_str(&mut self, s: &str) -> io::Result<()> {
-        self.write(s.as_bytes())
+    fn write_char(&mut self, c: char) {
+        self.out.push(c);
     }
 
-    fn write_byte(&mut self, c: u8) -> io::Result<()> {
-        self.writer.write_all(&[c])
-    }
-
-    fn write_escaped_str(&mut self, value: &str) -> io::Result<()> {
-        self.write_byte(b'"')?;
+    fn write_escaped_str(&mut self, value: &str) {
+        self.write_char('"');
 
         let bytes = value.as_bytes();
         let mut start = 0;
@@ -189,22 +179,22 @@ impl<W: Write> Serializer<W> {
             }
 
             if start < i {
-                self.write_str(&value[start..i])?;
+                self.write_str(&value[start..i]);
             }
 
             match escape {
-                self::BB => self.write_str("\\b")?,
-                self::TT => self.write_str("\\t")?,
-                self::NN => self.write_str("\\n")?,
-                self::FF => self.write_str("\\f")?,
-                self::RR => self.write_str("\\r")?,
-                self::QU => self.write_str("\\\"")?,
-                self::BS => self.write_str("\\\\")?,
+                self::BB => self.write_str("\\b"),
+                self::TT => self.write_str("\\t"),
+                self::NN => self.write_str("\\n"),
+                self::FF => self.write_str("\\f"),
+                self::RR => self.write_str("\\r"),
+                self::QU => self.write_str("\\\""),
+                self::BS => self.write_str("\\\\"),
                 self::U => {
                     static HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
-                    self.write_str("\\u00")?;
-                    self.write_byte(HEX_DIGITS[(byte >> 4) as usize])?;
-                    self.write_byte(HEX_DIGITS[(byte & 0xF) as usize])?;
+                    self.write_str("\\u00");
+                    self.write_char(HEX_DIGITS[(byte >> 4) as usize] as char);
+                    self.write_char(HEX_DIGITS[(byte & 0xF) as usize] as char);
                 }
                 _ => unreachable!(),
             }
@@ -213,12 +203,10 @@ impl<W: Write> Serializer<W> {
         }
 
         if start != bytes.len() {
-            self.write_str(&value[start..])?;
+            self.write_str(&value[start..]);
         }
 
-        self.write_byte(b'"')?;
-
-        Ok(())
+        self.write_char('"');
     }
 }
 
@@ -256,8 +244,5 @@ static ESCAPE: [u8; 256] = [
 
 /// Serializes a value to JSON.
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
-    let mut rv: Vec<u8> = Vec::new();
-    let mut serializer = Serializer::new(&mut rv);
-    serializer.serialize(value)?;
-    Ok(unsafe { String::from_utf8_unchecked(rv) })
+    Serializer::new().serialize(value)
 }

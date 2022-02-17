@@ -10,6 +10,7 @@ All notable changes to deser are documented here.
 - `Option<T>` is now automatically defaulted in structs, even if
   `#[deser(default)]` is not provided.  If this distinction between
   missing and null is needed `Option<Option<T>>` can be used.
+- Removed non String serialization support for deser-json for now.
 
 ## 0.7.0
 
