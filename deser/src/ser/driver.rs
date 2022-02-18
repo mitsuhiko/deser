@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
+use std::ops::Deref;
 
 use crate::error::Error;
 use crate::extensions::Extensions;
@@ -15,11 +16,29 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// is returned, indicating the end of the event stream.
 pub struct SerializeDriver<'a> {
     state: SerializerState<'static>,
-    state_stack: ManuallyDrop<Vec<DriverState>>,
-    serializable_stack: ManuallyDrop<Vec<SerializeHandle<'static>>>,
+    state_stack: Vec<DriverState>,
+    serializable_stack: ManuallyDrop<Vec<SerializableOnStack>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
     next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
     current_key: Option<Cow<'static, str>>,
+}
+
+// We like to hold on to Cow<'_, str> in addition to a SerializeHandle
+// so we can get away without an extra boxed allocation.
+enum SerializableOnStack {
+    Handle(SerializeHandle<'static>),
+    StrCow(Cow<'static, str>),
+}
+
+impl Deref for SerializableOnStack {
+    type Target = dyn Serialize;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SerializableOnStack::Handle(handle) => &**handle,
+            SerializableOnStack::StrCow(cow) => &*cow,
+        }
+    }
 }
 
 enum DriverState {
@@ -44,15 +63,11 @@ impl<'a> Drop for SerializeDriver<'a> {
         while let Some(_emitter) = self.emitter_stack.pop() {
             // drop in inverse order
         }
-        while let Some(_emitter) = self.state_stack.pop() {
-            // drop in inverse order
-        }
         while let Some(_emitter) = self.serializable_stack.pop() {
             // drop in inverse order
         }
         unsafe {
             ManuallyDrop::drop(&mut self.serializable_stack);
-            ManuallyDrop::drop(&mut self.state_stack);
             ManuallyDrop::drop(&mut self.emitter_stack);
         }
     }
@@ -73,14 +88,14 @@ impl<'a> SerializeDriver<'a> {
             emitter_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             serializable_stack: ManuallyDrop::new({
                 let mut vec = Vec::with_capacity(STACK_CAPACITY);
-                vec.push(serializable);
+                vec.push(SerializableOnStack::Handle(serializable));
                 vec
             }),
-            state_stack: ManuallyDrop::new({
+            state_stack: {
                 let mut vec = Vec::with_capacity(STACK_CAPACITY);
                 vec.push(DriverState::Serialize);
                 vec
-            }),
+            },
             next_event: None,
             current_key: None,
         }
@@ -126,7 +141,8 @@ impl<'a> SerializeDriver<'a> {
                             // continue iteration
                             *state = DriverState::SeqEmitterAdvance;
                             // and serialize the current item
-                            self.serializable_stack.push(item_serializable);
+                            self.serializable_stack
+                                .push(SerializableOnStack::Handle(item_serializable));
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -143,7 +159,8 @@ impl<'a> SerializeDriver<'a> {
                             // continue with value
                             *state = DriverState::MapEmitterNextValue;
                             // and serialize the current key
-                            self.serializable_stack.push(key_serializable);
+                            self.serializable_stack
+                                .push(SerializableOnStack::Handle(key_serializable));
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -159,7 +176,8 @@ impl<'a> SerializeDriver<'a> {
                     // continue with key again
                     *state = DriverState::MapEmitterNextKey;
                     // and serialize the current value
-                    self.serializable_stack.push(value_serializable);
+                    self.serializable_stack
+                        .push(SerializableOnStack::Handle(value_serializable));
                     self.state_stack.push(DriverState::Serialize);
                 }
                 DriverState::StructEmitterAdvance => {
@@ -172,19 +190,17 @@ impl<'a> SerializeDriver<'a> {
                     } {
                         Some((key, value_serializable)) => {
                             // and serialize key and value
-                            self.serializable_stack.push(value_serializable);
+                            self.serializable_stack
+                                .push(SerializableOnStack::Handle(value_serializable));
                             self.state_stack.push(DriverState::Serialize);
 
                             assert!(
                                 self.current_key.is_none(),
                                 "unexpected nested key in key position"
                             );
-                            self.current_key = Some(key);
-                            let key_serializable = SerializeHandle::to(unsafe {
-                                extend_lifetime!(self.current_key.as_ref().unwrap(), &Cow<'_, str>)
-                            });
 
-                            self.serializable_stack.push(key_serializable);
+                            self.serializable_stack
+                                .push(SerializableOnStack::StrCow(key));
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -247,8 +263,6 @@ impl<'a> SerializeDriver<'a> {
                     return Ok(());
                 }
                 DriverState::FinishSerialize => {
-                    self.next_event = None;
-                    self.current_key = None;
                     self.state_stack.pop();
                     let serializable = self.serializable_stack.pop().unwrap();
                     serializable.finish(&self.state)?;
