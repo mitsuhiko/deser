@@ -20,7 +20,6 @@ pub struct SerializeDriver<'a> {
     serializable_stack: ManuallyDrop<Vec<SerializableOnStack>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
     next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
-    current_key: Option<Cow<'static, str>>,
 }
 
 // We like to hold on to Cow<'_, str> in addition to a SerializeHandle
@@ -97,7 +96,6 @@ impl<'a> SerializeDriver<'a> {
                 vec
             },
             next_event: None,
-            current_key: None,
         }
     }
 
@@ -193,12 +191,6 @@ impl<'a> SerializeDriver<'a> {
                             self.serializable_stack
                                 .push(SerializableOnStack::Handle(value_serializable));
                             self.state_stack.push(DriverState::Serialize);
-
-                            assert!(
-                                self.current_key.is_none(),
-                                "unexpected nested key in key position"
-                            );
-
                             self.serializable_stack
                                 .push(SerializableOnStack::StrCow(key));
                             self.state_stack.push(DriverState::Serialize);
