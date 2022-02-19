@@ -1,7 +1,7 @@
 [package]
 name = "deser"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "An experimental serialization and deserialization library for Rust"
 repository = "https://github.com/mitsuhiko/deser"
@@ -17,4 +17,4 @@ all-features = true
 derive = ["deser-derive"]
 
 [dependencies]
-deser-derive = { version = "0.7.0", path = "../deser-derive", optional = true }
+deser-derive = { version = "0.8.0", path = "../deser-derive", optional = true }
