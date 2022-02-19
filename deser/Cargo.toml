@@ -14,6 +14,7 @@ documentation = "https://docs.rs/deser"
 all-features = true
 
 [features]
+default = ["derive"]
 derive = ["deser-derive"]
 
 [dependencies]

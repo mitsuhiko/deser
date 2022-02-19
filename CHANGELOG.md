@@ -2,6 +2,10 @@
 
 All notable changes to deser are documented here.
 
+## Unreleased
+
+- Made `derive` a default feature.
+
 ## 0.8.0
 
 - Removed `for_each_event`.

@@ -14,7 +14,7 @@ documentation = "https://docs.rs/deser-json"
 speedups = ["itoa", "ryu"]
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser" }
+deser = { version = "0.8.0", path = "../deser", default-features = false }
 itoa = { version = "1.0.1", optional = true }
 ryu = { version = "1.0.9", optional = true }
 

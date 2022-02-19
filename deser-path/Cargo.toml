@@ -11,4 +11,4 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-path"
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser" }
+deser = { version = "0.8.0", path = "../deser", default-features = false }
