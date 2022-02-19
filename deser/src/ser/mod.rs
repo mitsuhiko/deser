@@ -4,15 +4,32 @@
 //! [`Chunk`] objects.  A serializable object walks an object and produces either
 //! an atomic chunk or a chunk containing an emitter which yields further values.
 //!
-//! This allows the system to support unlimited recursion.  This is tricky to with
-//! the borrow checker due to lifetimes.  The [`SerializeDriver`] is provided
-//! which yields events from the produced chunks as a safe convenience API.
+//! # Streaming Serialization
 //!
-//! # Serializing primitives
+//! For convenient serialization, Deser provides a [`SerializeDriver`] that allows
+//! streaming serialization of values.  A driver can be created by passing a reference
+//! to a [`Serialize`] value to the constructor.  Then [`next`](SerializeDriver::next)
+//! is called repeatedly until no more events are produced.
 //!
-//! Primitives are trivial to serialize as you just directly return the right type
-//! of [`Chunk`] from the serialization method.  In this example we also provide
-//! an optional [`Descriptor`] which can help serializers make better decisions.
+//! ```
+//! # use deser::ser::SerializeDriver;
+//! # fn do_it() -> Result<(), deser::Error> {
+//! let serializable = vec!["foo", "bar", "baz"];
+//! let mut driver = SerializeDriver::new(&serializable);
+//! while let Some((event, descriptor, state)) = driver.next()? {
+//!     // serialize each event for the target format such as JSON
+//! }
+//! # Ok(()) }; do_it().unwrap();
+//! ```
+//!
+//! This type of interface also permits the serialization of almost unlimited depth.
+//!
+//! # Serializing Primitives
+//!
+//! Primitive values such as integers are trivial to serialize as you just
+//! directly return the right type of [`Chunk`] from the serialization method.
+//! In this example we also provide an optional [`Descriptor`] which can help
+//! serializers make better decisions.
 //!
 //! ```rust
 //! use deser::ser::{Serialize, SerializerState, Chunk};
@@ -20,7 +37,6 @@
 //!
 //! struct MyInt(u32);
 //!
-//! #[derive(Debug)]
 //! struct MyIntDescriptor;
 //!
 //! impl Descriptor for MyIntDescriptor {
@@ -45,7 +61,7 @@
 //! }
 //! ```
 //!
-//! # Serializing structs
+//! # Serializing Structs
 //!
 //! To serialize compounds like structs you return a chunk containing an emitter.
 //! Note that the emitter returns a [`SerializeHandle`].  If want you want to

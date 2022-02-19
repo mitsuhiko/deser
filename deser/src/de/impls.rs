@@ -813,7 +813,7 @@ impl<T: Deserialize> Deserialize for Box<T> {
 
         SinkHandle::boxed(BoxSink {
             out,
-            sink: OwnedSink::<T>::deserialize(),
+            sink: OwnedSink::deserialize(),
         })
     }
 }
