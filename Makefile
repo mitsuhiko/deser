@@ -27,4 +27,7 @@ lint:
 bench:
 	@cd benchmark; RUSTC_BOOTSTRAP=1 cargo bench
 
-.PHONY: all test miri-test check doc format format-check lint bench
+bench-compile-times:
+	@cd compile-times/; ./bench.sh
+
+.PHONY: all test miri-test check doc format format-check lint bench bench-compile-times
