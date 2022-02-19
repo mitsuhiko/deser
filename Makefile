@@ -24,4 +24,7 @@ lint:
 	@rustup component add clippy 2> /dev/null
 	@cargo clippy
 
-.PHONY: all test miri-test check doc format format-check lint
+bench:
+	@cd benchmark; RUSTC_BOOTSTRAP=1 cargo bench
+
+.PHONY: all test miri-test check doc format format-check lint bench
