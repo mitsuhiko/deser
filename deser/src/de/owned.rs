@@ -48,6 +48,44 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 /// a slot that needs to be allocated on the heap and hold it together
 /// with the sink handle.  Rust's lifetimes make this impossible so this
 /// abstraction is provided to allow this.
+///
+/// # Example
+///
+/// This example demonstrates the use of an [`OwnedSink`] to implement
+/// [`Deserialize`] for a newtype wrapper.  For simplicities sake only
+/// atoms have been implemented here.
+///
+/// ```rust
+/// use deser::{Atom, Error};
+/// use deser::de::{OwnedSink, SinkHandle, Sink, Deserialize, DeserializerState};
+///
+/// struct AtomWrapper<T>(T);
+///
+/// impl<T: Deserialize> Deserialize for AtomWrapper<T> {
+///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+///         SinkHandle::boxed(WrapperSink {
+///             out,
+///             sink: OwnedSink::deserialize(),
+///         })
+///     }
+/// }
+///
+/// struct WrapperSink<'a, T> {
+///     out: &'a mut Option<AtomWrapper<T>>,
+///     sink: OwnedSink<T>,
+/// }
+///
+/// impl<'a, T: Deserialize> Sink for WrapperSink<'a, T> {
+///     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+///         self.sink.borrow_mut().atom(atom, state)
+///     }
+///     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+///         self.sink.borrow_mut().finish(state)?;
+///         *self.out = self.sink.take().map(AtomWrapper);
+///         Ok(())
+///     }
+/// }
+/// ```
 pub struct OwnedSink<T> {
     storage: NonuniqueBox<Option<T>>,
     sink: Option<ManuallyDrop<SinkHandle<'static>>>,

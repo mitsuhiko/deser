@@ -27,7 +27,37 @@
 //! convenient to use.  By calling [`SlotWrapper::make_handle`] with a slot, one
 //! can directly retrieve a [`SinkHandle`].
 //!
-//! # Deserializing primitives
+//! # Streaming Deserialization
+//!
+//! Because the serialization interface of Deser is tricky due to use of
+//! lifetimes, a safe abstraction is provided with the [`DeserializeDriver`].
+//! This type which allow you to drive the deserialization process without using
+//! stack space.  You feed it events and internally the driver ensures that the
+//! deserlization system is driven in the right way.
+//!
+//! ```rust
+//! use std::collections::BTreeMap;
+//! use deser::de::DeserializeDriver;
+//! use deser::Event;
+//!
+//! let mut out = None::<BTreeMap<u32, String>>;
+//! {
+//!     let mut driver = DeserializeDriver::new(&mut out);
+//!     // emit takes values that implement Into<Event>
+//!     driver.emit(Event::MapStart).unwrap();
+//!     driver.emit(1i64).unwrap();
+//!     driver.emit("Hello").unwrap();
+//!     driver.emit(2i64).unwrap();
+//!     driver.emit("World").unwrap();
+//!     driver.emit(Event::MapEnd).unwrap();
+//! }
+//!
+//! let map = out.unwrap();
+//! assert_eq!(map[&1], "Hello");
+//! assert_eq!(map[&2], "World");
+//! ```
+//!
+//! # Deserializing Primitives
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
 //! implement the necessary callback.  You can do this as you do not need any
@@ -74,7 +104,7 @@
 //! }
 //! ```
 //!
-//! # Struct deserialization
+//! # Struct Deserialization
 //!
 //! If you want to deserialize a struct you need to implement the map methods.
 //! As you need to keep track of state you will need to return a boxed sink
@@ -155,35 +185,12 @@
 //! }
 //! ```
 //!
-//! # Driver
+//! # Owned Sinks and Slots
 //!
-//! Because the serialization interface of `deser` is tricky to use because of
-//! lifetimes, a safe abstraction is provided with the [`DeserializeDriver`] type which
-//! allow you to drive the deserialization process without using stack space.
-//! You feed it events and internally the driver ensures that the deserlization
-//! system is driven in the right way.
-//!
-//! ```rust
-//! use std::collections::BTreeMap;
-//! use deser::de::DeserializeDriver;
-//! use deser::Event;
-//!
-//! let mut out = None::<BTreeMap<u32, String>>;
-//! {
-//!     let mut driver = DeserializeDriver::new(&mut out);
-//!     // emit takes values that implement Into<Event>
-//!     driver.emit(Event::MapStart).unwrap();
-//!     driver.emit(1i64).unwrap();
-//!     driver.emit("Hello").unwrap();
-//!     driver.emit(2i64).unwrap();
-//!     driver.emit("World").unwrap();
-//!     driver.emit(Event::MapEnd).unwrap();
-//! }
-//!
-//! let map = out.unwrap();
-//! assert_eq!(map[&1], "Hello");
-//! assert_eq!(map[&2], "World");
-//! ```
+//! From the above model you can see that deserialization requires a mutable reference
+//! to an `Option`.  In certain situations it can become necessary to "make up a slot
+//! on the spot" to temporarily deserialize into.  For more information see
+//! [`OwnedSink`].
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;

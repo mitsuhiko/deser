@@ -8,11 +8,8 @@
 //! such as JSON or msgpack.  It intentionally does not desire to support non
 //! self describing formats such as bincode.
 //!
-//! There is not much in terms of actual serialization and deserialization yet
-//! as this library at this point is an exploration in API design for the
-//! abstraction layer itself.
-//!
-//! **This is not a production ready yet.**
+//! It supports deriving structures that can be serialized and derserialized
+//! automatically:
 //!
 #![cfg_attr(
     feature = "derive",
@@ -31,13 +28,16 @@ pub struct Account {
 "#
 )]
 //!
-//! For more information have a look at the GitHub repository:
-//! [mitsuhiko/deser](https://github.com/mitsuhiko/deser).
+//! To serialize or deserialize this a data format implementation is needed.  At the moment
+//! only JSON is supported:
 //!
-//! ## Features
+//! * [`deser-json`](https://docs.rs/deser-json): implements JSON serialization and
+//!   deserialization.
+//!
+//! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
-//!   information see [`derive`](crate::derive).
+//!   information see [`derive`](crate::derive).  This feature is enabled by default.
 
 #[macro_use]
 mod macros;
