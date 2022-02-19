@@ -527,7 +527,7 @@ where
         *out = Some(None);
         let sink = Deserialize::deserialize_into(out.as_mut().unwrap());
         match sink {
-            SinkHandle::Null(_) => SinkHandle::null(),
+            SinkHandle::Null(_) => sink,
             sink => SinkHandle::boxed(NullIgnoringSink { sink }),
         }
     }
@@ -811,10 +811,9 @@ impl<T: Deserialize> Deserialize for Box<T> {
             }
         }
 
-        let sink = OwnedSink::<T>::deserialize();
-        match sink.borrow() {
-            SinkHandle::Null(_) => SinkHandle::null(),
-            _ => SinkHandle::boxed(BoxSink { out, sink }),
-        }
+        SinkHandle::boxed(BoxSink {
+            out,
+            sink: OwnedSink::<T>::deserialize(),
+        })
     }
 }
