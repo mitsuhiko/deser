@@ -79,6 +79,13 @@ more details.
   should be possible without falling back to in-band
   signalling.
 
+## Known Limitations
+
+The current design of this system is very allocation heavy.  This is the consequence
+of a certain level of flexibility paired with the dynamic dispatch nature.  For instance
+for JSON parsing, Serde is more than 3 times faster than Deser and for deserialization
+2.5 times.
+
 ## Crates
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
