@@ -1,7 +1,4 @@
-#![allow(clippy::struct_excessive_bools)]
-
 use deser::{Deserialize, Serialize};
-use miniserde::{Deserialize as MiniDeserialize, Serialize as MiniSerialize};
 
 fn input_json() -> String {
     std::fs::read_to_string("benches/twitter.json").unwrap()
@@ -14,39 +11,23 @@ fn input_struct() -> Twitter {
 
 fn main() {
     let j = input_json();
-    let args = std::env::args().collect::<Vec<_>>();
     for _ in 0..100 {
-        match args[1].as_str() {
-            "deser" => {
-                deser_json::from_str::<Twitter>(&j).unwrap();
-            }
-            "miniserde" => {
-                miniserde::json::from_str::<Twitter>(&j).unwrap();
-            }
-            _ => unimplemented!(),
-        }
-    } /*
-      let s = input_struct();
-      for _ in 0..100 {
-          match args[1].as_str() {
-              "deser" => {
-                  deser_json::to_string(&s).unwrap();
-              }
-              "miniserde" => {
-                  miniserde::json::to_string(&s);
-              }
-              _ => unimplemented!(),
-          }
-      }*/
+        deser_json::from_str::<Twitter>(&j).unwrap();
+    }
+
+    let s = input_struct();
+    for _ in 0..100 {
+        deser_json::to_string(&s).unwrap();
+    }
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Twitter {
     statuses: Vec<Status>,
     search_metadata: SearchMetadata,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Status {
     metadata: Metadata,
     created_at: String,
@@ -75,13 +56,13 @@ struct Status {
     lang: String,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Metadata {
     result_type: String,
     iso_language_code: String,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct User {
     id: u32,
     id_str: String,
@@ -125,18 +106,18 @@ struct User {
     notifications: bool,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct UserEntities {
     url: Option<UserUrl>,
     description: UserEntitiesDescription,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct UserUrl {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Url {
     url: String,
     expanded_url: String,
@@ -144,12 +125,12 @@ struct Url {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct UserEntitiesDescription {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct StatusEntities {
     hashtags: Vec<Hashtag>,
     symbols: Vec<()>,
@@ -158,13 +139,13 @@ struct StatusEntities {
     media: Option<Vec<Media>>,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Hashtag {
     text: String,
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct UserMention {
     screen_name: String,
     name: String,
@@ -173,7 +154,7 @@ struct UserMention {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Media {
     id: u64,
     id_str: String,
@@ -184,14 +165,13 @@ struct Media {
     display_url: String,
     expanded_url: String,
     #[deser(rename = "type")]
-    #[serde(rename = "type")]
     media_type: String,
     sizes: Sizes,
     source_status_id: Option<u64>,
     source_status_id_str: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Sizes {
     medium: Size,
     small: Size,
@@ -199,7 +179,7 @@ struct Sizes {
     large: Size,
 }
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct Size {
     w: u16,
     h: u16,
@@ -208,7 +188,7 @@ struct Size {
 
 type Indices = (u8, u8);
 
-#[derive(Serialize, Deserialize, MiniDeserialize, MiniSerialize)]
+#[derive(Serialize, Deserialize)]
 struct SearchMetadata {
     completed_in: f32,
     max_id: u64,
