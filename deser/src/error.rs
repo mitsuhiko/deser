@@ -5,6 +5,7 @@ use std::fmt;
 /// Describes the kind of error.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ErrorKind {
+    InvalidValue,
     UnsupportedType,
     Unexpected,
     MissingField,

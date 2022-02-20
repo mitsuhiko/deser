@@ -1,7 +1,7 @@
 //! Provides the extension interface used by serializers and deserializers.
 use std::any::{type_name, Any, TypeId};
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 
@@ -27,6 +27,22 @@ impl PartialEq for TypeKey {
 
 impl Eq for TypeKey {}
 
+impl PartialOrd for TypeKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.0.partial_cmp(&other.0) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.1.partial_cmp(other.1)
+    }
+}
+
+impl Ord for TypeKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 impl Debug for TypeKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.1)
@@ -50,7 +66,7 @@ impl<T: Any + Debug + 'static> DebugAny for T {
 /// A container holding extension values.
 #[derive(Default, Debug)]
 pub struct Extensions {
-    map: RefCell<HashMap<TypeKey, Box<dyn DebugAny>>>,
+    map: RefCell<BTreeMap<TypeKey, Box<dyn DebugAny>>>,
 }
 
 impl Extensions {
@@ -99,5 +115,48 @@ impl Extensions {
         if self.map.borrow().get(&TypeKey::of::<T>()).is_none() {
             self.set(T::default());
         }
+    }
+
+    /// Utility to set a flag.
+    pub fn set_flag<F: Flag + 'static>(&self, value: F::Value) {
+        self.get_mut::<F>().set(value);
+    }
+
+    /// Utility to read a flag.
+    pub fn get_flag<F: Flag + 'static>(&self) -> F::Value {
+        match self.get::<F>() {
+            Some(value) => value.get(),
+            None => F::default().get(),
+        }
+    }
+}
+
+/// Represents a flag.
+pub trait Flag: Default + Debug {
+    /// Type value type of the flag.
+    type Value: PartialEq + Eq;
+
+    /// Sets the flag to a new value.
+    fn set(&mut self, value: Self::Value);
+
+    /// Reads the value of the flag.
+    fn get(&self) -> Self::Value;
+}
+
+/// A flag that indicates that string tunneling should be used.
+#[derive(Debug, Default)]
+pub struct StringTunneling {
+    enabled: bool,
+}
+
+impl Flag for StringTunneling {
+    type Value = bool;
+
+    fn set(&mut self, value: Self::Value) {
+        self.enabled = value;
+    }
+
+    fn get(&self) -> Self::Value {
+        self.enabled
     }
 }
