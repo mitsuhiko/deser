@@ -79,16 +79,6 @@ impl Serializer {
                         Event::Atom(Atom::Char(c)) => {
                             self.write_escaped_str(&(c as u32).to_string())
                         }
-                        Event::Atom(Atom::U64(val)) => {
-                            self.write_char('"');
-                            self.write_str(&val.to_string());
-                            self.write_char('"');
-                        }
-                        Event::Atom(Atom::I64(val)) => {
-                            self.write_char('"');
-                            self.write_str(&val.to_string());
-                            self.write_char('"');
-                        }
                         _ => unsupported!("JSON does not support this value for map keys"),
                     }
                     self.write_char(':');

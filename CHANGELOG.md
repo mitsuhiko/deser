@@ -5,6 +5,7 @@ All notable changes to deser are documented here.
 ## Unreleased
 
 - Made `derive` a default feature.
+- Removed number serialization support in JSON serializer.
 
 ## 0.8.0
 
