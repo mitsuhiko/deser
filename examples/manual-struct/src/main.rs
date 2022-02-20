@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use deser::de::{DeserializeDriver, DeserializerState, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, SerializerState, StructEmitter};
-use deser::{Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
 
 pub struct User {
@@ -11,23 +11,11 @@ pub struct User {
 }
 
 impl Serialize for User {
-    fn descriptor(&self) -> &dyn Descriptor {
-        &UserDescriptor
-    }
-
     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
         Ok(Chunk::Struct(Box::new(UserEmitter {
             user: self,
             index: 0,
         })))
-    }
-}
-
-struct UserDescriptor;
-
-impl Descriptor for UserDescriptor {
-    fn name(&self) -> Option<&str> {
-        Some("User")
     }
 }
 
@@ -73,10 +61,6 @@ struct UserSink<'a> {
 }
 
 impl<'a> Sink for UserSink<'a> {
-    fn descriptor(&self) -> &dyn Descriptor {
-        &UserDescriptor
-    }
-
     fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
         Ok(())
     }

@@ -7,7 +7,7 @@ use deser::{Atom, Event, Serialize};
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events

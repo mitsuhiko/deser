@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use deser::de::{DeserializerState, Sink, SinkHandle};
-use deser::{Atom, Descriptor, Error};
+use deser::{Atom, Error};
 
 use crate::{Path, PathSegment};
 
@@ -104,10 +104,6 @@ impl<'a> Sink for PathSink<'a> {
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.sink.finish(state)
-    }
-
-    fn descriptor(&self) -> &dyn Descriptor {
-        self.sink.descriptor()
     }
 
     fn expecting(&self) -> Cow<'_, str> {

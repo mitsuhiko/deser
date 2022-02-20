@@ -1,11 +1,12 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use crate::error::Error;
 use crate::extensions::Extensions;
 use crate::ser::{Chunk, SerializerState};
-use crate::{Descriptor, Event, Serialize};
+use crate::{Event, Serialize};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -19,7 +20,7 @@ pub struct SerializeDriver<'a> {
     state_stack: Vec<DriverState>,
     serializable_stack: ManuallyDrop<Vec<SerializableOnStack>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
-    next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
+    next_event: Option<Event<'a>>,
 }
 
 // We like to hold on to Cow<'_, str> in addition to a SerializeHandle
@@ -82,7 +83,8 @@ impl<'a> SerializeDriver<'a> {
         SerializeDriver {
             state: SerializerState {
                 extensions: Extensions::default(),
-                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
+                depth: 0,
+                _marker: PhantomData,
             },
             emitter_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             serializable_stack: ManuallyDrop::new({
@@ -110,12 +112,9 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// The driver will panic if the data fed from the serializer is malformed.
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Option<(Event, &dyn Descriptor, &SerializerState)>, Error> {
+    pub fn next(&mut self) -> Result<Option<(Event, &SerializerState)>, Error> {
         self.advance()?;
-        Ok(self
-            .next_event
-            .take()
-            .map(|(event, descriptor)| (event, descriptor, &self.state)))
+        Ok(self.next_event.take().map(|event| (event, &self.state)))
     }
 
     fn advance(&mut self) -> Result<(), Error> {
@@ -204,54 +203,40 @@ impl<'a> SerializeDriver<'a> {
                     let serializable = self.serializable_stack.last().unwrap();
                     match unsafe { extend_lifetime!(serializable.serialize(&self.state)?, Chunk) } {
                         Chunk::Atom(atom) => {
-                            self.next_event = Some((Event::Atom(atom), unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            }));
+                            self.next_event = Some(Event::Atom(atom));
                             *state = DriverState::FinishSerialize;
                             return Ok(());
                         }
                         Chunk::Struct(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::MapStart, descriptor));
+                            self.next_event = Some(Event::MapStart);
                             self.emitter_stack.push(Emitter::Struct(emitter));
                             *state = DriverState::StructEmitterAdvance;
-                            self.state.descriptor_stack.push(descriptor);
+                            self.state.depth += 1;
                             return Ok(());
                         }
                         Chunk::Map(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::MapStart, descriptor));
+                            self.next_event = Some(Event::MapStart);
                             self.emitter_stack.push(Emitter::Map(emitter));
                             *state = DriverState::MapEmitterNextKey;
-                            self.state.descriptor_stack.push(descriptor);
+                            self.state.depth += 1;
                             return Ok(());
                         }
                         Chunk::Seq(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::SeqStart, descriptor));
+                            self.next_event = Some(Event::SeqStart);
                             self.emitter_stack.push(Emitter::Seq(emitter));
                             *state = DriverState::SeqEmitterAdvance;
-                            self.state.descriptor_stack.push(descriptor);
+                            self.state.depth += 1;
                             return Ok(());
                         }
                     }
                 }
                 DriverState::PopEmitter => {
-                    let descriptor = self.state.descriptor_stack.pop().unwrap();
+                    self.state.depth -= 1;
                     *state = DriverState::FinishSerialize;
-                    self.next_event = Some((
-                        match self.emitter_stack.pop().unwrap() {
-                            Emitter::Seq(_) => Event::SeqEnd,
-                            Emitter::Map(_) | Emitter::Struct(_) => Event::MapEnd,
-                        },
-                        descriptor,
-                    ));
+                    self.next_event = Some(match self.emitter_stack.pop().unwrap() {
+                        Emitter::Seq(_) => Event::SeqEnd,
+                        Emitter::Map(_) | Emitter::Struct(_) => Event::MapEnd,
+                    });
                     return Ok(());
                 }
                 DriverState::FinishSerialize => {
@@ -272,7 +257,7 @@ fn test_seq_emitting() {
 
     let mut driver = SerializeDriver::new(&vec);
     let mut events = Vec::new();
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
 
@@ -301,7 +286,7 @@ fn test_map_emitting() {
 
     let mut driver = SerializeDriver::new(&map);
     let mut events = Vec::new();
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
 

@@ -194,9 +194,9 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
@@ -279,7 +279,8 @@ impl<'a> SinkHandle<'a> {
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
     extensions: Extensions,
-    descriptor_stack: Vec<&'a dyn Descriptor>,
+    depth: usize,
+    _marker: PhantomData<&'a ()>,
 }
 
 impl<'a> DeserializerState<'a> {
@@ -295,14 +296,7 @@ impl<'a> DeserializerState<'a> {
 
     /// Returns the current recursion depth.
     pub fn depth(&self) -> usize {
-        self.descriptor_stack.len()
-    }
-
-    /// Returns the topmost descriptor.
-    ///
-    /// This descriptor always points to a container as the descriptor.
-    pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.descriptor_stack.last().copied()
+        self.depth
     }
 }
 
@@ -435,15 +429,10 @@ pub trait Sink {
         Ok(())
     }
 
-    /// Returns a descriptor for this type.
-    fn descriptor(&self) -> &dyn Descriptor {
-        &NullDescriptor
-    }
-
     /// Utility method to return an expectation message that is used in error messages.
     ///
-    /// The default implementation returns the type name of the descriptor if available.
+    /// The default implementation returns "compatible type".
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.descriptor().name().unwrap_or("compatible type"))
+        Cow::Borrowed("compatible type")
     }
 }
