@@ -192,8 +192,6 @@
 //! on the spot" to temporarily deserialize into.  For more information see
 //! [`OwnedSink`].
 use std::borrow::Cow;
-use std::cell::{Ref, RefMut};
-use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -207,7 +205,7 @@ mod owned;
 
 pub use self::driver::DeserializeDriver;
 pub use self::owned::OwnedSink;
-use crate::extensions::Extensions;
+use crate::ext::Extensions;
 
 __make_slot_wrapper!((pub), SlotWrapper);
 
@@ -283,14 +281,9 @@ pub struct DeserializerState<'a> {
 }
 
 impl<'a> DeserializerState<'a> {
-    /// Returns an extension value.
-    pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
-        self.extensions.get()
-    }
-
-    /// Returns a mutable extension value.
-    pub fn get_mut<T: Default + fmt::Debug + 'static>(&self) -> RefMut<'_, T> {
-        self.extensions.get_mut()
+    /// Returns the associated extensions.
+    pub fn extensions(&self) -> &Extensions {
+        &self.extensions
     }
 
     /// Returns the current recursion depth.
