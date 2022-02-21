@@ -7,6 +7,7 @@ use crate::de::{Deserialize, DeserializerState, OwnedSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
+use crate::ext::StringTunneling;
 
 make_slot_wrapper!(SlotWrapper);
 
@@ -46,6 +47,17 @@ impl Sink for SlotWrapper<bool> {
 
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
+            Atom::Str(value) if state.extensions().get_flag::<StringTunneling>() => {
+                if let Ok(value) = value.parse() {
+                    **self = Some(value);
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::InvalidValue,
+                        "invalid value for bool",
+                    ))
+                }
+            }
             Atom::Bool(value) => {
                 **self = Some(value);
                 Ok(())
@@ -86,6 +98,17 @@ macro_rules! int_sink {
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
+                    Atom::Str(value) if state.extensions().get_flag::<StringTunneling>() => {
+                        if let Ok(value) = value.parse() {
+                            **self = Some(value);
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                ErrorKind::InvalidValue,
+                                "invalid value for numeric",
+                            ))
+                        }
+                    }
                     Atom::U64(value) => {
                         let truncated = value as $ty;
                         if truncated as u64 == value {
@@ -188,6 +211,17 @@ macro_rules! float_sink {
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
+                    Atom::Str(value) if state.extensions().get_flag::<StringTunneling>() => {
+                        if let Ok(value) = value.parse() {
+                            **self = Some(value);
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                ErrorKind::InvalidValue,
+                                "invalid value for float",
+                            ))
+                        }
+                    }
                     Atom::U64(value) => {
                         **self = Some(value as $ty);
                         Ok(())
@@ -386,6 +420,10 @@ where
                 static DESCRIPTOR: UnorderedNamedDescriptor =
                     UnorderedNamedDescriptor { name: "map" };
                 &DESCRIPTOR
+            }
+
+            fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                Ok(())
             }
 
             fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {

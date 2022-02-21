@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use deser::Deserialize;
 use deser_json::from_str;
 
@@ -46,4 +48,19 @@ fn test_flatten() {
             }
         }
     )
+}
+
+#[test]
+fn test_int_key() {
+    let map: HashMap<u32, bool> = from_str(
+        r#"
+    {
+        "1": true,
+        "2": false
+    }
+    "#,
+    )
+    .unwrap();
+    assert!(map[&1]);
+    assert!(!map[&2]);
 }

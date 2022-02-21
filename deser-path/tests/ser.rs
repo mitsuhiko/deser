@@ -8,7 +8,7 @@ struct MyBool(bool);
 
 impl Serialize for MyBool {
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
-        let path = state.get::<Path>();
+        let path = state.extensions().get_or_default::<Path>();
         assert_eq!(path.segments().len(), 2);
         Ok(Chunk::Atom(Atom::Bool(self.0)))
     }
@@ -23,7 +23,11 @@ fn test_path() {
     let serializable = PathSerializable::wrap(&map);
     let mut driver = SerializeDriver::new(&serializable);
     while let Some((event, _, state)) = driver.next().unwrap() {
-        events.push(format!("{:?}|{:?}", event, state.get::<Path>().segments()));
+        events.push(format!(
+            "{:?}|{:?}",
+            event,
+            state.extensions().get_or_default::<Path>().segments()
+        ));
     }
 
     assert_eq!(

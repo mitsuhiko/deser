@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use crate::error::Error;
-use crate::extensions::Extensions;
+use crate::ext::Extensions;
 use crate::ser::{Chunk, SerializerState};
 use crate::{Descriptor, Event, Serialize};
 

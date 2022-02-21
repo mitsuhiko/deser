@@ -13,7 +13,7 @@
 //!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.
-//!         let path = state.get::<Path>();
+//!         let path = state.extensions().get_or_default::<Path>();
 //!         println!("{:?}", path.segments());
 //!         self.0.serialize(state)
 //!     }
