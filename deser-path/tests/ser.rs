@@ -22,7 +22,7 @@ fn test_path() {
 
     let serializable = PathSerializable::wrap(&map);
     let mut driver = SerializeDriver::new(&serializable);
-    while let Some((event, _, state)) = driver.next().unwrap() {
+    while let Some((event, state)) = driver.next().unwrap() {
         events.push(format!("{:?}|{:?}", event, state.get::<Path>().segments()));
     }
 

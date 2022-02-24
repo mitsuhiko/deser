@@ -16,7 +16,7 @@
 //! # fn do_it() -> Result<(), deser::Error> {
 //! let serializable = vec!["foo", "bar", "baz"];
 //! let mut driver = SerializeDriver::new(&serializable);
-//! while let Some((event, descriptor, state)) = driver.next()? {
+//! while let Some((event, state)) = driver.next()? {
 //!     // serialize each event for the target format such as JSON
 //! }
 //! # Ok(()) }; do_it().unwrap();
@@ -28,32 +28,14 @@
 //!
 //! Primitive values such as integers are trivial to serialize as you just
 //! directly return the right type of [`Chunk`] from the serialization method.
-//! In this example we also provide an optional [`Descriptor`] which can help
-//! serializers make better decisions.
 //!
 //! ```rust
 //! use deser::ser::{Serialize, SerializerState, Chunk};
-//! use deser::{Atom, Descriptor, Error};
+//! use deser::{Atom, Error};
 //!
 //! struct MyInt(u32);
 //!
-//! struct MyIntDescriptor;
-//!
-//! impl Descriptor for MyIntDescriptor {
-//!     fn name(&self) -> Option<&str> {
-//!         Some("MyInt")
-//!     }
-//!
-//!     fn precision(&self) -> Option<usize> {
-//!         Some(32)
-//!     }
-//! }
-//!
 //! impl Serialize for MyInt {
-//!     fn descriptor(&self) -> &dyn Descriptor {
-//!         &MyIntDescriptor
-//!     }
-//!
 //!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
 //!         // one can also just do `self.0.serialize(state)`
 //!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
@@ -108,9 +90,9 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::Deref;
 
-use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
 use crate::extensions::Extensions;
 
@@ -167,37 +149,14 @@ impl<'a> SerializeHandle<'a> {
 /// the serializable types as the serializer.
 pub struct SerializerState<'a> {
     extensions: Extensions,
-    descriptor_stack: Vec<&'a dyn Descriptor>,
+    depth: usize,
+    _marker: PhantomData<&'a ()>,
 }
 
 impl<'a> fmt::Debug for SerializerState<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Stack<'a>(&'a [&'a dyn Descriptor]);
-        struct Entry<'a>(&'a dyn Descriptor);
-
-        impl<'a> fmt::Debug for Entry<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("Layer")
-                    .field("type_name", &self.0.name())
-                    .field("precision", &self.0.precision())
-                    .field("unordered", &self.0.unordered())
-                    .finish()
-            }
-        }
-
-        impl<'a> fmt::Debug for Stack<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let mut l = f.debug_list();
-                for item in self.0.iter() {
-                    l.entry(&Entry(*item));
-                }
-                l.finish()
-            }
-        }
-
         f.debug_struct("SerializerState")
             .field("extensions", &self.extensions)
-            .field("stack", &Stack(&self.descriptor_stack))
             .finish()
     }
 }
@@ -215,15 +174,7 @@ impl<'a> SerializerState<'a> {
 
     /// Returns the current recursion depth.
     pub fn depth(&self) -> usize {
-        self.descriptor_stack.len()
-    }
-
-    /// Returns the topmost descriptor.
-    ///
-    /// This descriptor always points to a container as the descriptor of a value itself
-    /// will always be passed to the callback explicitly.
-    pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.descriptor_stack.last().copied()
+        self.depth
     }
 }
 
@@ -266,14 +217,12 @@ pub trait SeqEmitter {
 
 /// A data structure that can be serialized into any data format supported by Deser.
 ///
-/// This trait provides two things:
+/// The most important methods are:
 ///
-/// * [`descriptor`](Self::descriptor) returns a reference to the closest descriptor
-///   of this value.  The descriptor provides auxiliary information about the value
-///   that the serialization system does not expose.
 /// * [`serialize`](Self::serialize) serializes the value into a [`Chunk`].  For
 ///   compound values like lists or similar, the piece contains a boxed emitter
 ///   which can be further processed to walk the embedded compound value.
+/// * [`finish`](Self::finish) is invoked after the serialization is done.
 pub trait Serialize {
     /// Serializes this serializable.
     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error>;
@@ -298,11 +247,6 @@ pub trait Serialize {
         false
     }
 
-    /// Returns the descriptor of this serializable if it exists.
-    fn descriptor(&self) -> &dyn Descriptor {
-        &NullDescriptor
-    }
-
     /// Hidden internal trait method to allow specializations of bytes.
     ///
     /// This method is used by `u8` and `Vec<T>` / `&[T]` to achieve special
@@ -325,7 +269,7 @@ fn test_serialize() {
     m.insert(false, vec![]);
 
     let mut driver = SerializeDriver::new(&m);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         v.push(format!("{:?}", event));
     }
 

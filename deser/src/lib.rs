@@ -47,10 +47,8 @@ pub mod de;
 mod error;
 pub mod ser;
 
-mod descriptors;
 mod extensions;
 
-pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
 pub use self::event::{Atom, Event};
 

@@ -44,7 +44,7 @@ fn test_as_string_map() {
         map
     });
     let mut driver = SerializeDriver::new(&flags);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(format!("{:?}", event));
     }
 

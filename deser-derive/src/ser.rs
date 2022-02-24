@@ -28,7 +28,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     );
 
     let container_attrs = ContainerAttrs::of(input)?;
-    let type_name = container_attrs.container_name();
     let attrs = fields
         .named
         .iter()
@@ -153,9 +152,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         const #dummy: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
-                    &__Descriptor
-                }
                 fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
@@ -169,14 +165,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 data: &'__a #ident #ty_generics,
                 index: usize,
                 #temp_emitter
-            }
-
-            struct __Descriptor;
-
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
-                }
             }
 
             #[automatically_derived]
@@ -265,8 +253,6 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         Span::call_site(),
     );
 
-    // TODO: we want to report the type name here but the current descriptor
-    // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
     let container_attrs = ContainerAttrs::of(input)?;
     let _type_name = container_attrs.container_name();
 
@@ -280,9 +266,6 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         const #dummy: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
-                    self.0.descriptor()
-                }
                 fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
                     ::deser::ser::Serialize::serialize(&self.0, __state)
                 }
