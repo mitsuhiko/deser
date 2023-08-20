@@ -19,7 +19,7 @@ impl Sink for SlotWrapper<MyBool> {
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
-                let path = state.get::<Path>();
+                let path = state.extensions().get_or_default::<Path>();
                 assert_eq!(path.segments().len(), 1);
                 **self = Some(MyBool(value));
                 Ok(())

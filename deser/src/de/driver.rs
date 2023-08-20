@@ -4,7 +4,7 @@ use crate::de::{Deserialize, DeserializerState, SinkHandle};
 use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Event;
-use crate::extensions::Extensions;
+use crate::ext::Extensions;
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///

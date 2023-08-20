@@ -37,7 +37,12 @@ impl<'a> PathSink<'a> {
 
     fn set_segment(&mut self, state: &DeserializerState) {
         if let Some(segment) = self.set_segment.take() {
-            *state.get_mut::<Path>().segments.last_mut().unwrap() = segment;
+            *state
+                .extensions()
+                .get_mut::<Path>()
+                .segments
+                .last_mut()
+                .unwrap() = segment;
         }
     }
 }
@@ -58,14 +63,22 @@ impl<'a> Sink for PathSink<'a> {
 
     fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
-        state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        state
+            .extensions()
+            .get_mut::<Path>()
+            .segments
+            .push(PathSegment::Unknown);
         self.container = Container::Map(Rc::default());
         self.sink.map(state)
     }
 
     fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
-        state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        state
+            .extensions()
+            .get_mut::<Path>()
+            .segments
+            .push(PathSegment::Unknown);
         self.container = Container::Seq(0);
         self.sink.seq(state)
     }

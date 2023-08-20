@@ -1,6 +1,7 @@
 use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver};
+use deser::ext::StringTunneling;
 use deser::Atom;
 use deser::Event;
 use deser::{Error, ErrorKind};
@@ -111,6 +112,10 @@ impl<'a> Deserializer<'a> {
                         token = self.next_token()?;
                         *first = false;
                         *key_pos = false;
+                        driver
+                            .state()
+                            .extensions()
+                            .set_flag::<StringTunneling>(false);
                         continue;
                     }
 
@@ -126,6 +131,10 @@ impl<'a> Deserializer<'a> {
                                 first: true,
                                 key_pos: true,
                             });
+                            driver
+                                .state()
+                                .extensions()
+                                .set_flag::<StringTunneling>(true);
                             driver.emit(Event::MapStart)?;
                             token = self.next_token()?;
                             continue;
@@ -159,6 +168,10 @@ impl<'a> Deserializer<'a> {
                     token = self.next_token()?;
                     *key_pos = true;
                     *first = false;
+                    driver
+                        .state()
+                        .extensions()
+                        .set_flag::<StringTunneling>(true);
                 }
                 Some(ContainerState::Seq { first }) => {
                     token = self.next_token()?;
