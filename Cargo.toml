@@ -9,3 +9,4 @@ members = [
   "examples/json",
   "examples/manual-struct",
 ]
+resolver = "2"
