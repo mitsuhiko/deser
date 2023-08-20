@@ -1,7 +1,7 @@
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 
 use crate::de::{Deserialize, DeserializerState, SinkHandle};
-use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Event;
 use crate::extensions::Extensions;
@@ -36,7 +36,8 @@ impl<'a> DeserializeDriver<'a> {
         DeserializeDriver {
             state: DeserializerState {
                 extensions: Extensions::default(),
-                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
+                depth: 0,
+                _marker: PhantomData,
             },
             sink_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             current_sink: Some(unsafe { extend_lifetime!(sink, SinkHandle<'_>) }),
@@ -96,10 +97,7 @@ impl<'a> DeserializeDriver<'a> {
             Event::MapStart => {
                 let current_sink = current_sink!();
                 current_sink.map(&self.state)?;
-                let descriptor = current_sink.descriptor();
-                self.state
-                    .descriptor_stack
-                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
+                self.state.depth += 1;
                 self.sink_stack
                     .push((self.current_sink.take().unwrap(), Layer::Map(true)));
                 return Ok(());
@@ -107,7 +105,7 @@ impl<'a> DeserializeDriver<'a> {
             Event::MapEnd => match self.sink_stack.pop() {
                 Some((mut map_sink, Layer::Map(_))) => {
                     map_sink.finish(&self.state)?;
-                    self.state.descriptor_stack.pop();
+                    self.state.depth -= 1;
                     self.current_sink = Some(map_sink);
                 }
                 _ => panic!("not inside a MapSink"),
@@ -115,10 +113,7 @@ impl<'a> DeserializeDriver<'a> {
             Event::SeqStart => {
                 let current_sink = current_sink!();
                 current_sink.seq(&self.state)?;
-                let descriptor = current_sink.descriptor();
-                self.state
-                    .descriptor_stack
-                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
+                self.state.depth += 1;
                 self.sink_stack
                     .push((self.current_sink.take().unwrap(), Layer::Seq));
                 return Ok(());
@@ -126,7 +121,7 @@ impl<'a> DeserializeDriver<'a> {
             Event::SeqEnd => match self.sink_stack.pop() {
                 Some((mut seq_sink, Layer::Seq)) => {
                     seq_sink.finish(&self.state)?;
-                    self.state.descriptor_stack.pop();
+                    self.state.depth -= 1;
                     self.current_sink = Some(seq_sink);
                 }
                 _ => panic!("not inside a SeqSink"),

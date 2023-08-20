@@ -34,7 +34,7 @@ impl Serializer {
             }};
         }
 
-        while let Some((event, _, _)) = driver.next()? {
+        while let Some((event, _)) = driver.next()? {
             // try to exit containers first
             match event {
                 Event::MapEnd => {

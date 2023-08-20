@@ -32,7 +32,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     );
 
     let container_attrs = ContainerAttrs::of(input)?;
-    let type_name = container_attrs.container_name();
     let attrs = fields
         .named
         .iter()
@@ -251,10 +250,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             #[automatically_derived]
             impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
-                    &__Descriptor
-                }
-
                 fn map(&mut self, __state: &::deser::de::DeserializerState)
                     -> ::deser::__derive::Result<()>
                 {
@@ -310,14 +305,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         )*
                     });
                     ::deser::__derive::Ok(())
-                }
-            }
-
-            struct __Descriptor;
-
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
                 }
             }
         };
@@ -451,8 +438,6 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         Span::call_site(),
     );
 
-    // TODO: we want to report the type name here but the current descriptor
-    // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
     let container_attrs = ContainerAttrs::of(input)?;
     let _type_name = container_attrs.container_name();
 
@@ -524,10 +509,6 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     self.sink.borrow_mut().finish(__state)?;
                     *self.slot = self.sink.take().map(#ident);
                     Ok(())
-                }
-
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
-                    self.sink.borrow().descriptor()
                 }
 
                 fn expecting(&self) -> ::deser::__derive::StrCow<'_> {

@@ -8,7 +8,7 @@ use deser::{Atom, Event};
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {
-    events: Vec<(Event<'static>, Option<String>)>,
+    events: Vec<Event<'static>>,
 }
 
 impl fmt::Display for ToDebug {
@@ -28,19 +28,19 @@ impl ToDebug {
     pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut events = Vec::new();
         let mut driver = SerializeDriver::new(value);
-        while let Some((event, descriptor, _)) = driver.next().unwrap() {
-            events.push((event.to_static(), descriptor.name().map(|x| x.to_string())));
+        while let Some((event, _)) = driver.next().unwrap() {
+            events.push(event.to_static());
         }
         ToDebug { events }
     }
 }
 
 fn dump<'a, 'f>(
-    tokens: &'a [(Event<'a>, Option<String>)],
+    tokens: &'a [Event<'a>],
     f: &'f mut fmt::Formatter<'_>,
-) -> Result<&'a [(Event<'a>, Option<String>)], fmt::Error> {
+) -> Result<&'a [Event<'a>], fmt::Error> {
     if let Some((first, mut rest)) = tokens.split_first() {
-        match first.0 {
+        match first {
             Event::Atom(Atom::Null) => fmt::Debug::fmt(&(), f)?,
             Event::Atom(Atom::Bool(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::Str(ref v)) => fmt::Debug::fmt(v, f)?,
@@ -71,13 +71,10 @@ fn dump<'a, 'f>(
             Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(..) => f.debug_struct("?").finish()?,
             Event::MapStart => {
-                if let Some(ref name) = first.1 {
-                    write!(f, "{} ", name)?;
-                }
                 let mut map = f.debug_map();
                 let mut is_key = true;
                 loop {
-                    if rest.get(0).map_or(false, |x| matches!(x.0, Event::MapEnd)) {
+                    if rest.get(0).map_or(false, |x| matches!(x, Event::MapEnd)) {
                         rest = &rest[1..];
                         break;
                     }
@@ -94,14 +91,9 @@ fn dump<'a, 'f>(
             }
             Event::MapEnd => unreachable!(),
             Event::SeqStart => {
-                if let Some(ref name) = first.1 {
-                    if name != "Vec" && name != "slice" {
-                        write!(f, "{} ", name)?;
-                    }
-                }
                 let mut list = f.debug_list();
                 loop {
-                    if rest.get(0).map_or(false, |x| matches!(x.0, Event::SeqEnd)) {
+                    if rest.get(0).map_or(false, |x| matches!(x, Event::SeqEnd)) {
                         rest = &rest[1..];
                         break;
                     }
@@ -119,7 +111,7 @@ fn dump<'a, 'f>(
     }
 }
 
-struct Helper<'a>(&'a [(Event<'a>, Option<String>)], AtomicUsize);
+struct Helper<'a>(&'a [Event<'a>], AtomicUsize);
 
 impl<'a> fmt::Debug for Helper<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -138,6 +130,6 @@ fn test_debug_format() {
 
     assert_eq!(
         ToDebug::new(&m).to_string(),
-        "BTreeMap {false: [], true: [[b\"x\", b\"yyy\"], [b\"zzzz\\0\\x01\"]]}"
+        "{false: [], true: [[b\"x\", b\"yyy\"], [b\"zzzz\\0\\x01\"]]}"
     );
 }
