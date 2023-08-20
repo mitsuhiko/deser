@@ -106,13 +106,10 @@
 //! }
 //! ```
 use std::borrow::Cow;
-use std::cell::{Ref, RefMut};
-use std::fmt;
 use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::extensions::Extensions;
 
 mod chunk;
 mod driver;
@@ -120,7 +117,7 @@ mod impls;
 
 pub use self::chunk::Chunk;
 
-pub use driver::SerializeDriver;
+pub use driver::{ContainerState, SerializeDriver, SerializerState};
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -158,72 +155,6 @@ impl<'a> SerializeHandle<'a> {
     /// Create an owned handle to a heap allocated [`Serialize`].
     pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
-    }
-}
-
-/// The current state of the serializer.
-///
-/// During serializer the [`SerializerState`] acts as a communciation device between
-/// the serializable types as the serializer.
-pub struct SerializerState<'a> {
-    extensions: Extensions,
-    descriptor_stack: Vec<&'a dyn Descriptor>,
-}
-
-impl<'a> fmt::Debug for SerializerState<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Stack<'a>(&'a [&'a dyn Descriptor]);
-        struct Entry<'a>(&'a dyn Descriptor);
-
-        impl<'a> fmt::Debug for Entry<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("Layer")
-                    .field("type_name", &self.0.name())
-                    .field("precision", &self.0.precision())
-                    .field("unordered", &self.0.unordered())
-                    .finish()
-            }
-        }
-
-        impl<'a> fmt::Debug for Stack<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let mut l = f.debug_list();
-                for item in self.0.iter() {
-                    l.entry(&Entry(*item));
-                }
-                l.finish()
-            }
-        }
-
-        f.debug_struct("SerializerState")
-            .field("extensions", &self.extensions)
-            .field("stack", &Stack(&self.descriptor_stack))
-            .finish()
-    }
-}
-
-impl<'a> SerializerState<'a> {
-    /// Returns an extension value.
-    pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
-        self.extensions.get()
-    }
-
-    /// Returns a mutable extension value.
-    pub fn get_mut<T: Default + fmt::Debug + 'static>(&self) -> RefMut<'_, T> {
-        self.extensions.get_mut()
-    }
-
-    /// Returns the current recursion depth.
-    pub fn depth(&self) -> usize {
-        self.descriptor_stack.len()
-    }
-
-    /// Returns the topmost descriptor.
-    ///
-    /// This descriptor always points to a container as the descriptor of a value itself
-    /// will always be passed to the callback explicitly.
-    pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
-        self.descriptor_stack.last().copied()
     }
 }
 

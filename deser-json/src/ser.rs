@@ -1,14 +1,11 @@
-use deser::ser::SerializeDriver;
+use std::fmt::Display;
+
+use deser::ser::{ContainerState, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 /// Serializes a serializable to JSON.
 pub struct Serializer {
     out: String,
-}
-
-enum ContainerState {
-    Map { first: bool, key_pos: bool },
-    Seq { first: bool },
 }
 
 impl Default for Serializer {
@@ -26,7 +23,6 @@ impl Serializer {
     /// Serializes the given value.
     pub fn serialize(mut self, value: &dyn Serialize) -> Result<String, Error> {
         let mut driver = SerializeDriver::new(value);
-        let mut container_stack = Vec::new();
 
         macro_rules! unsupported {
             ($msg:expr) => {{
@@ -34,56 +30,31 @@ impl Serializer {
             }};
         }
 
-        while let Some((event, _, _)) = driver.next()? {
-            // try to exit containers first
-            match event {
-                Event::MapEnd => {
-                    if !matches!(container_stack.pop(), Some(ContainerState::Map { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
-                    }
-                    self.write_char('}');
-                    continue;
-                }
-                Event::SeqEnd => {
-                    if !matches!(container_stack.pop(), Some(ContainerState::Seq { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
-                    }
-                    self.write_char(']');
-                    continue;
-                }
-                _ => {}
-            }
-
-            // do we need a comma?
-            if let Some(
-                ContainerState::Seq { first }
-                | ContainerState::Map {
-                    first,
+        while let Some((event, _, state)) = driver.next()? {
+            match state.container_state() {
+                Some(ContainerState::Map {
                     key_pos: true,
-                },
-            ) = container_stack.last_mut()
-            {
-                if !*first {
-                    self.write_char(',');
-                }
-                *first = false;
-            }
-
-            // keys need special handling
-            if let Some(ContainerState::Map { key_pos, .. }) = container_stack.last_mut() {
-                let is_key = *key_pos;
-                *key_pos = !*key_pos;
-                if is_key {
+                    first,
+                }) => {
+                    if !first {
+                        self.write_char(',');
+                    }
                     match event {
                         Event::Atom(Atom::Str(val)) => self.write_escaped_str(&val),
                         Event::Atom(Atom::Char(c)) => {
-                            self.write_escaped_str(&(c as u32).to_string())
+                            self.write_char('"');
+                            self.write_display(c as u32);
+                            self.write_char('"');
                         }
                         _ => unsupported!("JSON does not support this value for map keys"),
                     }
                     self.write_char(':');
                     continue;
                 }
+                Some(ContainerState::Seq { first: false }) => {
+                    self.write_char(',');
+                }
+                _ => {}
             }
 
             match event {
@@ -93,7 +64,11 @@ impl Serializer {
                     Atom::Bool(false) => self.write_str("false"),
                     Atom::Str(val) => self.write_escaped_str(&val),
                     Atom::Bytes(_val) => unsupported!("JSON doesn't support bytes"),
-                    Atom::Char(c) => self.write_escaped_str(&(c as u32).to_string()),
+                    Atom::Char(c) => {
+                        self.write_char('"');
+                        self.write_display(c as u32);
+                        self.write_char('"');
+                    }
                     Atom::U64(val) => {
                         #[cfg(feature = "speedups")]
                         {
@@ -101,7 +76,7 @@ impl Serializer {
                         }
                         #[cfg(not(feature = "speedups"))]
                         {
-                            self.write_str(&val.to_string())
+                            self.write_display(val);
                         }
                     }
                     Atom::I64(val) => {
@@ -111,7 +86,7 @@ impl Serializer {
                         }
                         #[cfg(not(feature = "speedups"))]
                         {
-                            self.write_str(&val.to_string())
+                            self.write_display(val);
                         }
                     }
                     Atom::F64(val) => {
@@ -130,18 +105,10 @@ impl Serializer {
                     }
                     _ => unsupported!("unknown atom"),
                 },
-                Event::MapStart => {
-                    container_stack.push(ContainerState::Map {
-                        first: true,
-                        key_pos: true,
-                    });
-                    self.write_char('{')
-                }
-                Event::SeqStart => {
-                    container_stack.push(ContainerState::Seq { first: true });
-                    self.write_char('[')
-                }
-                Event::SeqEnd | Event::MapEnd => unreachable!(),
+                Event::MapStart => self.write_char('{'),
+                Event::SeqStart => self.write_char('['),
+                Event::MapEnd => self.write_char('}'),
+                Event::SeqEnd => self.write_char(']'),
             }
         }
 
@@ -150,6 +117,11 @@ impl Serializer {
 
     fn write_str(&mut self, s: &str) {
         self.out.push_str(s);
+    }
+
+    fn write_display<D: Display>(&mut self, s: D) {
+        use std::fmt::Write;
+        write!(self.out, "{}", s).unwrap()
     }
 
     fn write_char(&mut self, c: char) {
