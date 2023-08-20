@@ -88,7 +88,7 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 /// ```
 pub struct OwnedSink<T> {
     storage: NonuniqueBox<Option<T>>,
-    sink: Option<ManuallyDrop<SinkHandle<'static>>>,
+    sink: ManuallyDrop<SinkHandle<'static>>,
 }
 
 impl<T: Deserialize> OwnedSink<T> {
@@ -104,7 +104,7 @@ impl<T: Deserialize> OwnedSink<T> {
             let sink = extend_lifetime!(T::deserialize_into(ptr), SinkHandle<'_>);
             OwnedSink {
                 storage,
-                sink: Some(ManuallyDrop::new(extend_lifetime!(sink, SinkHandle<'_>))),
+                sink: ManuallyDrop::new(extend_lifetime!(sink, SinkHandle<'_>)),
             }
         }
     }
@@ -112,13 +112,13 @@ impl<T: Deserialize> OwnedSink<T> {
     /// Immutably borrows from an owned sink.
     #[allow(clippy::should_implement_trait)]
     pub fn borrow(&self) -> &SinkHandle<'_> {
-        unsafe { extend_lifetime!(self.sink.as_ref().unwrap(), &SinkHandle<'_>) }
+        unsafe { extend_lifetime!(&self.sink, &SinkHandle<'_>) }
     }
 
     /// Mutably borrows from the owned sink.
     #[allow(clippy::should_implement_trait)]
     pub fn borrow_mut(&mut self) -> &mut SinkHandle<'_> {
-        unsafe { extend_lifetime!(self.sink.as_mut().unwrap(), &mut SinkHandle<'_>) }
+        unsafe { extend_lifetime!(&mut self.sink, &mut SinkHandle<'_>) }
     }
 
     /// Takes the value produced by the sink.
@@ -130,9 +130,7 @@ impl<T: Deserialize> OwnedSink<T> {
 impl<T> Drop for OwnedSink<T> {
     fn drop(&mut self) {
         unsafe {
-            if let Some(ref mut sink) = self.sink.take() {
-                ManuallyDrop::drop(sink);
-            }
+            ManuallyDrop::drop(&mut self.sink);
         }
     }
 }

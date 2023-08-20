@@ -4,7 +4,7 @@ test:
 	@cargo test
 
 miri-test:
-	cd deser; MIRIFLAGS=-Zmiri-tag-raw-pointers cargo +nightly miri test --all-features
+	cd deser; MIRIFLAGS="-Zmiri-tag-raw-pointers -Zmiri-strict-provenance" cargo +nightly miri test --all-features
 
 check:
 	@cargo check --all-features
