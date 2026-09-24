@@ -79,8 +79,9 @@ fn test_skip_to_escape() {
 
     let alphabet: &[u8] = b"a\"\\\x00\x1f\x20\x7f\x80\xff\xe3";
     let mut state = 0x2545f4914f6cdd1du64;
+    let rounds = if cfg!(miri) { 2 } else { 200 };
     for len in 0..40 {
-        for _ in 0..200 {
+        for _ in 0..rounds {
             let input: Vec<u8> = (0..len)
                 .map(|_| {
                     state ^= state << 13;
