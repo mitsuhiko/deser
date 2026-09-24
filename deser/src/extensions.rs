@@ -2,9 +2,36 @@ use std::any::{type_name, Any, TypeId};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 pub struct TypeKey(TypeId, &'static str);
+
+/// A hasher for type ids.
+///
+/// Type ids are already hashes, so there is no need to hash them again.
+#[derive(Default)]
+struct TypeIdHasher(u64);
+
+impl Hasher for TypeIdHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        // type ids only write integers, but be defensive
+        for &byte in bytes {
+            self.0 = self.0.rotate_left(8) ^ u64::from(byte);
+        }
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 ^= value;
+    }
+
+    fn write_u128(&mut self, value: u128) {
+        self.0 ^= value as u64 ^ (value >> 64) as u64;
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
 
 impl TypeKey {
     pub fn of<T: 'static>() -> TypeKey {
@@ -48,37 +75,39 @@ impl<T: Any + Debug + 'static> DebugAny for T {
 
 #[derive(Default, Debug)]
 pub struct Extensions {
-    map: RefCell<HashMap<TypeKey, Box<dyn DebugAny>>>,
+    map: RefCell<HashMap<TypeKey, Box<dyn DebugAny>, BuildHasherDefault<TypeIdHasher>>>,
 }
 
 impl Extensions {
-    pub fn insert<T: Debug + 'static>(&self, value: T) {
-        self.map
-            .borrow_mut()
-            .insert(TypeKey::of::<T>(), Box::new(value));
-    }
-
     pub fn get<T: Default + Debug + 'static>(&self) -> Ref<'_, T> {
-        self.ensure::<T>();
-        Ref::map(self.map.borrow(), |m| {
+        match Ref::filter_map(self.map.borrow(), |m| {
             m.get(&TypeKey::of::<T>())
                 .and_then(|b| (**b).as_any().downcast_ref())
-                .unwrap()
-        })
+        }) {
+            Ok(rv) => rv,
+            Err(map) => {
+                drop(map);
+                self.insert_default::<T>();
+                self.get()
+            }
+        }
     }
 
     pub fn get_mut<T: Default + Debug + 'static>(&self) -> RefMut<'_, T> {
-        self.ensure::<T>();
         RefMut::map(self.map.borrow_mut(), |m| {
-            m.get_mut(&TypeKey::of::<T>())
-                .and_then(|b| (**b).as_any_mut().downcast_mut())
+            m.entry(TypeKey::of::<T>())
+                .or_insert_with(|| Box::new(T::default()))
+                .as_mut()
+                .as_any_mut()
+                .downcast_mut()
                 .unwrap()
         })
     }
 
-    fn ensure<T: Default + Debug + 'static>(&self) {
-        if self.map.borrow().get(&TypeKey::of::<T>()).is_none() {
-            self.insert(T::default());
-        }
+    #[cold]
+    fn insert_default<T: Default + Debug + 'static>(&self) {
+        self.map
+            .borrow_mut()
+            .insert(TypeKey::of::<T>(), Box::new(T::default()));
     }
 }
