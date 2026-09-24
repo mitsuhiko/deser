@@ -84,10 +84,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let mut seen_names = HashSet::new();
     let mut first_duplicate_name = None;
+    let mut key_matcher = Vec::new();
+    let mut key_dispatch = Vec::new();
     let matcher = attrs
         .iter()
         .zip(sink_fieldname.iter())
-        .filter_map(|(x, fieldname)| {
+        .enumerate()
+        .filter_map(|(index, (x, fieldname))| {
             if x.flatten() {
                 return None;
             }
@@ -107,6 +110,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 seen_names.insert(alias.clone());
                 rv = quote! { #rv | #alias };
             }
+            key_matcher.push(quote! {
+                #rv => __Key::Field(#index),
+            });
+            key_dispatch.push(quote! {
+                __Key::Field(#index) => ::deser::Deserialize::deserialize_into(&mut self.#fieldname),
+            });
             Some(quote! {
                 #rv => return ::deser::__derive::Ok(::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#fieldname))),
             })
@@ -223,12 +232,73 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         None
     };
 
+    // Keys are resolved to a field index directly in the key sink so that
+    // deserializing a struct does not need to allocate a string per key.  Only
+    // if flattened fields exist are unknown keys retained so that they can be
+    // looked up on the flattened sinks.
+    let has_flatten = !flatten_fields.is_empty();
+    let other_key_variant = if has_flatten {
+        Some(quote! { Other(::deser::__derive::String), })
+    } else {
+        None
+    };
+    let other_key_match = if has_flatten {
+        quote! { __Key::Other(__other.into_owned()) }
+    } else {
+        quote! { { let _ = __other; __Key::Unknown } }
+    };
+    let other_key_dispatch = if has_flatten {
+        Some(quote! {
+            __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
+                ::deser::__derive::Some(__sink) => __sink,
+                ::deser::__derive::None => ::deser::de::SinkHandle::null(),
+            },
+        })
+    } else {
+        None
+    };
+
     Ok(quote! {
         #[allow(non_upper_case_globals)]
         const #dummy: () = {
+            enum __Key {
+                Unknown,
+                Field(usize),
+                #other_key_variant
+            }
+
+            struct __KeySink {
+                key: __Key,
+            }
+
+            impl ::deser::de::Sink for __KeySink {
+                fn atom(
+                    &mut self,
+                    __atom: ::deser::Atom,
+                    __state: &::deser::de::DeserializerState,
+                ) -> ::deser::__derive::Result<()> {
+                    match __atom {
+                        ::deser::Atom::Str(__other) => {
+                            self.key = match &__other as &::deser::__derive::str {
+                                #(
+                                    #key_matcher
+                                )*
+                                _ => #other_key_match,
+                            };
+                            ::deser::__derive::Ok(())
+                        }
+                        __other => self.unexpected_atom(__other, __state),
+                    }
+                }
+
+                fn expecting(&self) -> ::deser::__derive::StrCow<'_> {
+                    ::deser::__derive::StrCow::Borrowed("string")
+                }
+            }
+
             struct __Sink #wrapper_impl_generics #where_clause {
                 slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
-                key: ::deser::__derive::Option<String>,
+                key: __KeySink,
                 #(
                     #sink_fieldname: #sink_fieldty,
                 )*
@@ -241,7 +311,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 ) -> ::deser::de::SinkHandle {
                     ::deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
-                        key: ::deser::__derive::None,
+                        key: __KeySink { key: __Key::Unknown },
                         #(
                             #sink_fieldname: #sink_defaults,
                         )*
@@ -264,16 +334,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn next_key(&mut self, __state: &::deser::de::DeserializerState)
                     -> ::deser::__derive::Result<::deser::de::SinkHandle>
                 {
-                    ::deser::__derive::Ok(::deser::de::Deserialize::deserialize_into(&mut self.key))
+                    self.key.key = __Key::Unknown;
+                    ::deser::__derive::Ok(::deser::de::SinkHandle::to(&mut self.key))
                 }
 
                 fn next_value(&mut self, __state: &::deser::de::DeserializerState)
                     -> ::deser::__derive::Result<::deser::de::SinkHandle>
                 {
-                    let __key = self.key.take().unwrap();
-                    ::deser::__derive::Ok(match self.value_for_key(&__key, __state)? {
-                        ::deser::__derive::Some(__sink) => __sink,
-                        ::deser::__derive::None => ::deser::de::SinkHandle::null(),
+                    ::deser::__derive::Ok(match ::deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                        #(
+                            #key_dispatch
+                        )*
+                        #other_key_dispatch
+                        #[allow(unreachable_patterns)]
+                        __Key::Unknown | __Key::Field(_) => ::deser::de::SinkHandle::null(),
                     })
                 }
 

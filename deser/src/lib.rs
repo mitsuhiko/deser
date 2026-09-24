@@ -75,8 +75,10 @@ pub mod __derive {
     pub use std::borrow::Cow;
     pub use std::boxed::Box;
     pub use std::default::Default;
+    pub use std::mem::replace;
     pub use std::option::Option::{self, None, Some};
     pub use std::result::Result::{Err, Ok};
+    pub use std::string::String;
     pub type Result<T> = std::result::Result<T, super::Error>;
     pub type StrCow<'a> = Cow<'a, str>;
 

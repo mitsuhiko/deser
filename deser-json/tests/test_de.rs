@@ -160,3 +160,36 @@ fn test_char() {
     let c: char = from_str(r#""x""#).unwrap();
     assert_eq!(c, 'x');
 }
+
+#[test]
+fn test_unknown_keys() {
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct Simple {
+        a: u32,
+    }
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct WithFlatten {
+        a: u32,
+        #[deser(flatten)]
+        simple: Inner,
+    }
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct Inner {
+        #[deser(alias = "bee")]
+        b: u32,
+    }
+
+    let s: Simple = from_str(r#"{"x": {"y": [1, 2]}, "a": 1, "z": null}"#).unwrap();
+    assert_eq!(s, Simple { a: 1 });
+
+    let s: WithFlatten = from_str(r#"{"x": [1], "bee": 2, "a": 1, "z": null}"#).unwrap();
+    assert_eq!(
+        s,
+        WithFlatten {
+            a: 1,
+            simple: Inner { b: 2 }
+        }
+    );
+}
