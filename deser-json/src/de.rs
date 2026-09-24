@@ -327,18 +327,28 @@ impl<'a> Deserializer<'a> {
 
     #[inline]
     fn parse_whitespace(&mut self) -> Option<u8> {
+        const SPACES: u64 = u64::from_ne_bytes([b' '; 8]);
         let input = self.input;
         let mut pos = self.pos;
-        while pos < input.len() {
-            let c = input[pos];
-            if c != b' ' && c != b'\n' && c != b'\t' && c != b'\r' {
-                self.pos = pos;
-                return Some(c);
+        loop {
+            // indented JSON contains long runs of spaces, skip them a word
+            // at a time.
+            if pos + 8 <= input.len() {
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&input[pos..pos + 8]);
+                if u64::from_ne_bytes(bytes) == SPACES {
+                    pos += 8;
+                    continue;
+                }
             }
-            pos += 1;
+            match input.get(pos) {
+                Some(b' ' | b'\n' | b'\t' | b'\r') => pos += 1,
+                other => {
+                    self.pos = pos;
+                    return other.copied();
+                }
+            }
         }
-        self.pos = pos;
-        None
     }
 
     fn parse_ident(&mut self, ident: &[u8]) -> Result<(), Error> {
