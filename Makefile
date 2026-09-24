@@ -27,7 +27,7 @@ format-check:
 
 lint:
 	@rustup component add clippy 2> /dev/null
-	@cargo clippy
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 bench:
 	@cd benchmark; RUSTC_BOOTSTRAP=1 cargo bench
