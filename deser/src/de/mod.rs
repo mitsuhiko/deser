@@ -322,6 +322,18 @@ fn is_null_ext(ext: &crate::ext::ExtValue) -> bool {
     matches!(ext.fallback(), Atom::Null)
 }
 
+/// Checks if an atom is a null for the purpose of optionals.
+#[inline]
+pub(crate) fn is_null_atom(atom: &Atom) -> bool {
+    match atom {
+        Atom::Null => true,
+        // an extension value that falls back to null (for instance a
+        // null with additional information attached) is a null too.
+        Atom::Ext(ref ext) => is_null_ext(ext),
+        _ => false,
+    }
+}
+
 // The methods on the handle are inherent so that they can be used without
 // having the `Sink` trait in scope.  The `Sink` implementation delegates to
 // them.
@@ -330,14 +342,7 @@ impl<'a> SinkHandle<'a> {
     #[inline]
     pub fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
-            let is_null = match atom {
-                Atom::Null => true,
-                // an extension value that falls back to null (for instance a
-                // null with additional information attached) is a null too.
-                Atom::Ext(ref ext) => is_null_ext(ext),
-                _ => false,
-            };
-            if is_null {
+            if is_null_atom(&atom) {
                 *self = SinkHandle::null();
                 return Ok(());
             }
@@ -376,6 +381,18 @@ impl<'a> SinkHandle<'a> {
     #[inline]
     pub fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.sink_mut().next_value(state)
+    }
+
+    /// Forwards to [`Sink::key_atom`].
+    #[inline]
+    pub fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        self.sink_mut().key_atom(atom, state)
+    }
+
+    /// Forwards to [`Sink::value_atom`].
+    #[inline]
+    pub fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        self.sink_mut().value_atom(atom, state)
     }
 
     /// Forwards to [`Sink::value_for_key`].
@@ -432,6 +449,16 @@ impl<'a> Sink for SinkHandle<'a> {
     #[inline]
     fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         SinkHandle::next_value(self, state)
+    }
+
+    #[inline]
+    fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        SinkHandle::key_atom(self, atom, state)
+    }
+
+    #[inline]
+    fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        SinkHandle::value_atom(self, atom, state)
     }
 
     fn value_for_key(
@@ -575,6 +602,23 @@ pub trait Deserialize: Sized {
         None
     }
 
+    /// Deserializes an atom into the slot.
+    ///
+    /// This must behave exactly like invoking [`atom`](Sink::atom) and
+    /// [`finish`](Sink::finish) on the sink returned by
+    /// [`deserialize_into`](Self::deserialize_into), which is what the default
+    /// implementation does.  Types with stateless sinks override this so that
+    /// atoms can be deserialized without dynamic dispatch.
+    #[doc(hidden)]
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<Self>,
+        atom: Atom,
+        state: &mut DeserializerState,
+    ) -> Result<(), Error> {
+        atom_into_handle(Self::deserialize_into(out), atom, state)
+    }
+
     /// Returns `true` if this deserialize is `u8`.
     ///
     /// This is used to specialize the handling of bytes for vectors and
@@ -604,6 +648,32 @@ pub trait Deserialize: Sized {
         let _ = bytes;
         None
     }
+}
+
+/// Deserializes an atom into a slot.
+///
+/// This is equivalent to what the default implementation of
+/// [`Sink::value_atom`] does with the sink of the slot.
+#[doc(hidden)]
+#[inline]
+pub fn atom_into<T: Deserialize>(
+    slot: &mut Option<T>,
+    atom: Atom,
+    state: &mut DeserializerState,
+) -> Result<(), Error> {
+    T::__private_atom_into(slot, atom, state)
+}
+
+/// Deserializes an atom into a sink handle.
+#[doc(hidden)]
+#[inline]
+pub fn atom_into_handle(
+    mut sink: SinkHandle<'_>,
+    atom: Atom,
+    state: &mut DeserializerState,
+) -> Result<(), Error> {
+    sink.atom(atom, state)?;
+    sink.finish(state)
 }
 
 /// Generates the default error for unexpected maps and sequences.
@@ -681,6 +751,36 @@ pub trait Sink {
     fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
+    }
+
+    /// Receives an atom as the next key in a map.
+    ///
+    /// This is a shortcut for invoking [`next_key`](Self::next_key) and then
+    /// [`atom`](Self::atom) and [`finish`](Self::finish) on the returned sink,
+    /// which is exactly what the default implementation does.  The driver
+    /// uses this for keys that are atoms which is the overwhelmingly common
+    /// case.  Sinks can override this to avoid creating a sink for the key,
+    /// but the behavior must be the same as with the default implementation.
+    /// Sinks that override [`next_key`](Self::next_key) to wrap the returned
+    /// sink should not override this method.
+    #[inline]
+    fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        let mut sink = self.next_key(state)?;
+        sink.atom(atom, state)?;
+        sink.finish(state)
+    }
+
+    /// Receives an atom as the next value in a map or sequence.
+    ///
+    /// This is a shortcut for invoking [`next_value`](Self::next_value) and
+    /// then [`atom`](Self::atom) and [`finish`](Self::finish) on the returned
+    /// sink, which is exactly what the default implementation does.  See
+    /// [`key_atom`](Self::key_atom) for more information.
+    #[inline]
+    fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        let mut sink = self.next_value(state)?;
+        sink.atom(atom, state)?;
+        sink.finish(state)
     }
 
     /// Returns a value sink for a specific struct field.

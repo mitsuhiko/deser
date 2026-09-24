@@ -96,6 +96,9 @@ pub mod __derive {
     pub use crate::ser::enums::{FieldsSer, SeqSer, TaggedNewtype};
     pub use std::vec::Vec;
 
+    pub use crate::de::{atom_into, atom_into_handle};
+
+    #[cold]
     pub fn new_missing_field_error(name: &str) -> super::Error {
         super::Error::new(
             super::ErrorKind::MissingField,

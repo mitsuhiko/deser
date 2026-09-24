@@ -17,6 +17,14 @@ impl Sink for Ignore {
         Ok(())
     }
 
+    fn key_atom(&mut self, _atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn value_atom(&mut self, _atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+        Ok(())
+    }
+
     fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::null())
     }

@@ -82,6 +82,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut first_duplicate_name = None;
     let mut key_matcher = Vec::new();
     let mut key_dispatch = Vec::new();
+    let mut key_atom_dispatch = Vec::new();
     let matcher = attrs
         .iter()
         .zip(sink_fieldname.iter())
@@ -111,6 +112,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             });
             key_dispatch.push(quote! {
                 __Key::Field(#index) => ::deser::Deserialize::deserialize_into(&mut self.#fieldname),
+            });
+            key_atom_dispatch.push(quote! {
+                __Key::Field(#index) => ::deser::__derive::atom_into(&mut self.#fieldname, __atom, __state),
             });
             Some(quote! {
                 #rv => return ::deser::__derive::Ok(::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#fieldname))),
@@ -253,6 +257,16 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     } else {
         None
     };
+    let other_key_atom_dispatch = if has_flatten {
+        Some(quote! {
+            __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
+                ::deser::__derive::Some(__sink) => ::deser::__derive::atom_into_handle(__sink, __atom, __state),
+                ::deser::__derive::None => ::deser::__derive::Ok(()),
+            },
+        })
+    } else {
+        None
+    };
 
     Ok(quote! {
         const _: () = {
@@ -344,6 +358,26 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         #[allow(unreachable_patterns)]
                         __Key::Unknown | __Key::Field(_) => ::deser::de::SinkHandle::null(),
                     })
+                }
+
+                fn key_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<()>
+                {
+                    self.key.key = __Key::Unknown;
+                    ::deser::de::Sink::atom(&mut self.key, __atom, __state)
+                }
+
+                fn value_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<()>
+                {
+                    match ::deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                        #(
+                            #key_atom_dispatch
+                        )*
+                        #other_key_atom_dispatch
+                        #[allow(unreachable_patterns)]
+                        __Key::Unknown | __Key::Field(_) => ::deser::__derive::Ok(()),
+                    }
                 }
 
                 fn value_for_key(&mut self, __key: &str, __state: &mut ::deser::de::DeserializerState)
@@ -494,6 +528,23 @@ pub fn derive_enum(
                         }
                     })
                 }
+
+                #[inline]
+                fn __private_atom_into(
+                    __slot: &mut ::deser::__derive::Option<Self>,
+                    __atom: ::deser::Atom,
+                    __state: &mut ::deser::de::DeserializerState,
+                ) -> ::deser::__derive::Result<()> {
+                    let __sink = unsafe {
+                        &mut *{
+                            __slot
+                            as *mut ::deser::__derive::Option<Self>
+                            as *mut __SlotWrapper
+                        }
+                    };
+                    ::deser::de::Sink::atom(__sink, __atom, __state)?;
+                    ::deser::de::Sink::finish(__sink, __state)
+                }
             }
 
             impl ::deser::de::Sink for __SlotWrapper {
@@ -553,6 +604,18 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                         sink: ::deser::de::OwnedSink::deserialize(),
                     })
                 }
+
+                #[inline]
+                fn __private_atom_into(
+                    __slot: &mut ::deser::__derive::Option<Self>,
+                    __atom: ::deser::Atom,
+                    __state: &mut ::deser::de::DeserializerState,
+                ) -> ::deser::__derive::Result<()> {
+                    let mut __inner = ::deser::__derive::None;
+                    <#field_type as ::deser::de::Deserialize>::__private_atom_into(&mut __inner, __atom, __state)?;
+                    *__slot = __inner.map(#ident);
+                    ::deser::__derive::Ok(())
+                }
             }
 
             impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
@@ -580,6 +643,18 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
                 {
                     self.sink.borrow_mut().next_value(__state)
+                }
+
+                fn key_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().key_atom(__atom, __state)
+                }
+
+                fn value_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
+                    -> ::deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().value_atom(__atom, __state)
                 }
 
                 fn value_for_key(
