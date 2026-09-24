@@ -25,6 +25,13 @@ All notable changes to deser are documented here.
   them up.  `deser-json` supports this with the `locations` feature and
   `Deserializer::track_locations`.
 - Improved the performance of deserializer state extensions.
+- Added `deser::de::Recording` to record values and replay them into sinks
+  later.  Extensions in the deserializer state can be marked as replayable
+  with `DeserializerState::set_replayable`, recordings capture and restore
+  them per event.  `deser-location` and `deser-path` register their state.
+- Added support for internally tagged enums (`#[deser(tag = "...")]`) with
+  unit and struct variants to the derive.
+- Added `SinkHandle::shorten` and `Atom::as_borrowed` / `Event::as_borrowed`.
 - Fixed `deser_path::PathSink` not removing path segments when leaving
   containers.
 - Added an extensible data model.  `Atom::Ext` carries values implementing

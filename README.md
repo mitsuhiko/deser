@@ -59,6 +59,12 @@ To see some practical examples of this have a look at the
 * **Native Flattening Support:** deser's serialization and deserialization support
   has native support for flattening of structs.  This means no internal buffering
   is required for `#[deser(flatten)]`.
+* **Lossless Buffering:** where buffering cannot be avoided (for instance for
+  internally tagged enums where the tag does not come first) values are
+  recorded as events together with the state the format published for each
+  event (such as source locations) and replayed as such.  Format specific
+  behavior like integer map keys in JSON, extension values or location
+  tracking keeps working for buffered values.
 * **Extensible Data Model:** the data model can be extended with types that are
   not native to the serialization interface through extension atoms.  Every
   extension value carries a fallback into the core data model.  Serializers
