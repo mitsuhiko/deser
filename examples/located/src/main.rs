@@ -5,32 +5,31 @@
 //!
 //! This is similar to what `serde_spanned` or `serde_path_to_error` do for
 //! serde.  The interesting part is that this keeps working when a value is
-//! internally buffered and replayed (as untagged enums have to do).  In serde
-//! such information is typically lost in that case (serde issue #1183).
+//! internally buffered and replayed, as untagged enums or internally tagged
+//! enums (where the tag does not come first) have to do.  In serde such
+//! information is typically lost in that case (serde issue #1183).
 //!
-//! The pieces are:
+//! There are two ways to carry such information and both survive buffering:
 //!
-//! * The JSON deserializer publishes the location of every event into the
-//!   deserializer state (`deser_location::Locations`) and
-//!   `deser_path::PathSink` maintains the path there.  This information is
-//!   out-of-band: it's only available while an event is processed.
-//! * [`LocatedAtom`]: an extension value that carries a primitive value
-//!   together with its path and location.  Its fallback is the plain value,
-//!   so types that do not know about it continue to work.
-//! * [`Annotator`]: a sink wrapper which sits between the format and the
-//!   target type.  It turns every primitive value into a [`LocatedAtom`]
-//!   which moves the out-of-band information in-band.
-//! * [`Located`]: a type that picks up path and location from the extension
-//!   value (in-band).
-//! * `deser_location::Spanned`: for comparison, a type that reads the
-//!   location from the deserializer state (out-of-band).
-//! * [`Either`]: an untagged enum that has to buffer its input and replays it
-//!   into its variants.
+//! * Out-of-band in the deserializer state.  The JSON deserializer publishes
+//!   the location of every event (`deser_location::Locations`) and
+//!   `deser_path::PathSink` maintains the path there.  Both are registered
+//!   as replayable state, so a `deser::de::Recording` captures them for
+//!   every recorded event and restores them on replay.
+//!   `deser_location::Spanned` reads the location from the state.
+//! * In-band as extension values.  [`Annotator`] is a sink wrapper which
+//!   turns every primitive value into a [`LocatedAtom`] extension value
+//!   carrying the value, its path and its location.  Its fallback is the
+//!   plain value, so types that do not know about it continue to work.
+//!   [`Located`] picks the information up from the extension value.
+//!
+//! [`Either`] is a hand written untagged enum on top of
+//! `Recording::capture`, [`Backend`] is a derived internally tagged enum.
 use std::fmt;
 
-use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Recording, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
-use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind, Event};
+use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind};
 use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathSegment, PathSink};
 
@@ -257,111 +256,35 @@ pub enum Either<A, B> {
 
 impl<A: Deserialize, B: Deserialize> Deserialize for Either<A, B> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        SinkHandle::boxed(EitherSink {
-            out,
-            events: Vec::new(),
-            end: None,
+        Recording::capture(move |recording, state| {
+            let mut left = None;
+            if recording
+                .replay(A::deserialize_into(&mut left), state)
+                .is_ok()
+            {
+                *out = left.map(Either::Left);
+            } else {
+                let mut right = None;
+                recording.replay(B::deserialize_into(&mut right), state)?;
+                *out = right.map(Either::Right);
+            }
+            Ok(())
         })
     }
 }
 
-struct EitherSink<'a, A, B> {
-    out: &'a mut Option<Either<A, B>>,
-    events: Vec<Event<'static>>,
-    end: Option<Event<'static>>,
-}
-
-/// Replays recorded events into a fresh driver.
-fn replay<T: Deserialize>(events: &[Event<'static>]) -> Result<T, Error> {
-    let mut out = None;
-    {
-        let mut driver = DeserializeDriver::new(&mut out);
-        for event in events {
-            driver.emit(event.clone())?;
-        }
-    }
-    out.ok_or_else(|| Error::new(ErrorKind::Unexpected, "no value"))
-}
-
-impl<'a, A: Deserialize, B: Deserialize> Sink for EitherSink<'a, A, B> {
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
-        // `to_static` clones extension values, so the location survives
-        self.events.push(Event::Atom(atom.to_static()));
-        Ok(())
-    }
-
-    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.push(Event::MapStart);
-        self.end = Some(Event::MapEnd);
-        Ok(())
-    }
-
-    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.push(Event::SeqStart);
-        self.end = Some(Event::SeqEnd);
-        Ok(())
-    }
-
-    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        Ok(SinkHandle::boxed(Recorder::new(&mut self.events)))
-    }
-
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        Ok(SinkHandle::boxed(Recorder::new(&mut self.events)))
-    }
-
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.extend(self.end.take());
-        *self.out = Some(match replay::<A>(&self.events) {
-            Ok(value) => Either::Left(value),
-            Err(_) => Either::Right(replay::<B>(&self.events)?),
-        });
-        Ok(())
-    }
-}
-
-/// Records all events of a value into a buffer.
-struct Recorder<'a> {
-    events: &'a mut Vec<Event<'static>>,
-    end: Option<Event<'static>>,
-}
-
-impl<'a> Recorder<'a> {
-    fn new(events: &'a mut Vec<Event<'static>>) -> Recorder<'a> {
-        Recorder { events, end: None }
-    }
-}
-
-impl<'a> Sink for Recorder<'a> {
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.push(Event::Atom(atom.to_static()));
-        Ok(())
-    }
-
-    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.push(Event::MapStart);
-        self.end = Some(Event::MapEnd);
-        Ok(())
-    }
-
-    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.push(Event::SeqStart);
-        self.end = Some(Event::SeqEnd);
-        Ok(())
-    }
-
-    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        Ok(SinkHandle::boxed(Recorder::new(self.events)))
-    }
-
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        Ok(SinkHandle::boxed(Recorder::new(self.events)))
-    }
-
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
-        self.events.extend(self.end.take());
-        Ok(())
-    }
+/// An internally tagged enum.  If the tag does not come first, the fields
+/// have to be buffered until the tag is known.
+#[derive(Debug, Deserialize)]
+#[deser(tag = "type", rename_all = "lowercase")]
+pub enum Backend {
+    Http {
+        url: Located<String>,
+        timeout: Spanned<u32>,
+    },
+    File {
+        path: Located<String>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -373,10 +296,14 @@ pub struct Config {
     // the out-of-band location from the state works as long as nothing is
     // buffered
     pub workers: Spanned<u32>,
-    // untagged values are buffered, the in-band information survives this
+    // untagged values are buffered and replayed, in-band information
+    // survives this
     pub timeout: Either<Located<u64>, Located<String>>,
-    // the out-of-band location from the state does not survive buffering
+    // as does out-of-band information from the state as recordings capture
+    // and restore it
     pub retries: Either<Spanned<u64>, Spanned<String>>,
+    // the tag comes last, so the fields are buffered
+    pub backend: Backend,
     // out-of-band spans also work for maps and sequences
     pub servers: Vec<Spanned<Server>>,
 }
@@ -396,6 +323,11 @@ const INPUT: &str = r#"
     "workers": 4,
     "timeout": "30s",
     "retries": 3,
+    "backend": {
+        "url": "https://example.com/",
+        "timeout": 30,
+        "type": "http"
+    },
     "servers": [
         {"host": "a.example.com", "weight": 2, "backup": false},
         {"host": "b.example.com", "weight": null, "backup": null}
