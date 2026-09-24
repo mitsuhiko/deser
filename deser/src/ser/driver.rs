@@ -111,7 +111,7 @@ impl<'a> SerializeDriver<'a> {
                 Phase::Pending => {
                     let serializable = &*frame.serializable;
                     let descriptor = serializable.descriptor();
-                    let chunk = serializable.serialize(&self.state)?;
+                    let chunk = serializable.serialize(&mut self.state)?;
                     let chunk = unsafe { std::mem::transmute::<Chunk<'_>, Chunk<'static>>(chunk) };
                     let event = match chunk {
                         Chunk::Atom(atom) => {
@@ -136,11 +136,11 @@ impl<'a> SerializeDriver<'a> {
                 }
                 Phase::Finish => {
                     let frame = self.stack.pop().unwrap();
-                    frame.serializable.finish(&self.state)?;
+                    frame.serializable.finish(&mut self.state)?;
                     continue;
                 }
                 Phase::Seq(ref mut emitter) => {
-                    if let Some(item) = emitter.next(&self.state)? {
+                    if let Some(item) = emitter.next(&mut self.state)? {
                         self.push(item);
                         continue;
                     }
@@ -148,17 +148,17 @@ impl<'a> SerializeDriver<'a> {
                 Phase::Map(ref mut emitter, ref mut is_value) => {
                     if *is_value {
                         *is_value = false;
-                        let value = emitter.next_value(&self.state)?;
+                        let value = emitter.next_value(&mut self.state)?;
                         self.push(value);
                         continue;
-                    } else if let Some(key) = emitter.next_key(&self.state)? {
+                    } else if let Some(key) = emitter.next_key(&mut self.state)? {
                         *is_value = true;
                         self.push(key);
                         continue;
                     }
                 }
                 Phase::Struct(ref mut emitter) => {
-                    if let Some((key, value)) = emitter.next(&self.state)? {
+                    if let Some((key, value)) = emitter.next(&mut self.state)? {
                         // the key is emitted directly as event, the value
                         // is serialized on the next iteration.
                         let key =

@@ -38,7 +38,7 @@ impl Extension for Timestamp {
 }
 
 impl Serialize for Timestamp {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
     }
 }
@@ -46,7 +46,7 @@ impl Serialize for Timestamp {
 make_slot_wrapper!(SlotWrapper);
 
 impl Sink for SlotWrapper<Timestamp> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<Timestamp>() => {
                 **self = ext.downcast_ref::<Timestamp>().cloned();

@@ -33,8 +33,8 @@
 //! let mut out = None::<Spanned<bool>>;
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
-//!     Locations::set_source_map(driver.state(), Arc::new(SourceMap::new(input)));
-//!     Locations::set_current(driver.state(), 0, 4);
+//!     Locations::set_source_map(driver.state_mut(), Arc::new(SourceMap::new(input)));
+//!     Locations::set_current(driver.state_mut(), 0, 4);
 //!     driver.emit(Event::from(true)).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
@@ -226,14 +226,14 @@ impl Locations {
     /// This also marks the locations as replayable so that values which are
     /// internally buffered (for instance for internally tagged enums) retain
     /// their locations.
-    pub fn set_source_map(state: &DeserializerState, source_map: Arc<SourceMap>) {
+    pub fn set_source_map(state: &mut DeserializerState, source_map: Arc<SourceMap>) {
         state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
     }
 
     /// Sets the byte offsets of the current event.  Called by formats for
     /// every event.
-    pub fn set_current(state: &DeserializerState, start: usize, end: usize) {
+    pub fn set_current(state: &mut DeserializerState, start: usize, end: usize) {
         state.get_mut::<Locations>().current = Some((start, end));
     }
 
@@ -374,40 +374,40 @@ impl<'a, T: Deserialize> SpannedSink<'a, T> {
 }
 
 impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         let mut sink = T::deserialize_into(&mut self.slot);
         sink.atom(atom, state)?;
         sink.finish(state)
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         self.compound().map(state)
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         self.compound().seq(state)
     }
 
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_key(state)
     }
 
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_value(state)
     }
 
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &DeserializerState,
+        state: &mut DeserializerState,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.compound().value_for_key(key, state)
     }
 
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
                 compound.borrow_mut().finish(state)?;
@@ -439,11 +439,11 @@ impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
 }
 
 impl<T: Serialize> Serialize for Spanned<T> {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         self.value.serialize(state)
     }
 
-    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.value.finish(state)
     }
 

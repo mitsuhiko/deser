@@ -85,10 +85,10 @@ impl<'a> Deserializer<'a> {
 
     /// Publishes the offsets of the token that was parsed last.
     #[inline(always)]
-    fn publish_span<const LOCATIONS: bool>(&mut self, driver: &DeserializeDriver) {
+    fn publish_span<const LOCATIONS: bool>(&mut self, driver: &mut DeserializeDriver) {
         #[cfg(feature = "locations")]
         if LOCATIONS {
-            deser_location::Locations::set_current(driver.state(), self.token_start, self.pos);
+            deser_location::Locations::set_current(driver.state_mut(), self.token_start, self.pos);
         }
         #[cfg(not(feature = "locations"))]
         let _ = driver;
@@ -116,7 +116,7 @@ impl<'a> Deserializer<'a> {
         #[cfg(feature = "locations")]
         let rv = if self.track_locations {
             deser_location::Locations::set_source_map(
-                driver.state(),
+                driver.state_mut(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.source)),
             );
             self.drive_impl::<true>(driver, &mut buffer)

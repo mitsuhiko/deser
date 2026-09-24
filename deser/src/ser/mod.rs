@@ -54,7 +54,7 @@
 //!         &MyIntDescriptor
 //!     }
 //!
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
 //!         // one can also just do `self.0.serialize(state)`
 //!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
 //!     }
@@ -78,7 +78,7 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
 //!         Ok(Chunk::Struct(Box::new(UserEmitter {
 //!             user: self,
 //!             index: 0,
@@ -92,7 +92,7 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self, _state: &SerializerState)
+//!     fn next(&mut self, _state: &mut SerializerState)
 //!         -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>
 //!     {
 //!         let index = self.index;
@@ -238,7 +238,7 @@ pub trait StructEmitter {
     /// Produces the next field and value in the struct.
     fn next(
         &mut self,
-        state: &SerializerState,
+        state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>;
 }
 
@@ -249,7 +249,10 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
+    fn next_key(
+        &mut self,
+        state: &mut SerializerState,
+    ) -> Result<Option<SerializeHandle<'_>>, Error>;
 
     /// Produces the next value in the map.
     ///
@@ -257,13 +260,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle<'_>, Error>;
+    fn next_value(&mut self, state: &mut SerializerState) -> Result<SerializeHandle<'_>, Error>;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
+    fn next(&mut self, state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.
@@ -278,13 +281,13 @@ pub trait SeqEmitter {
 ///   which can be further processed to walk the embedded compound value.
 pub trait Serialize {
     /// Serializes this serializable.
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error>;
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error>;
 
     /// Invoked after the serialization finished.
     ///
     /// This is primarily useful to undo some state change in the serializer
     /// state at the end of the processing.
-    fn finish(&self, _state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, _state: &mut SerializerState) -> Result<(), Error> {
         Ok(())
     }
 

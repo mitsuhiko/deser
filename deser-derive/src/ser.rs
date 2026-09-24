@@ -154,7 +154,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
                 }
-                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
+                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
                         index: 0,
@@ -179,7 +179,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             #[automatically_derived]
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                fn next(&mut self, __state: &::deser::ser::SerializerState)
+                fn next(&mut self, __state: &mut ::deser::ser::SerializerState)
                     -> ::deser::__derive::Result<::deser::__derive::Option<(::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>)>>
                 {
                     #[allow(clippy::never_loop)]
@@ -229,7 +229,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         const _: () = {
             #[automatically_derived]
             impl ::deser::Serialize for #ident {
-                fn serialize(&self, __state: &::deser::ser::SerializerState)
+                fn serialize(&self, __state: &mut ::deser::ser::SerializerState)
                     -> ::deser::__derive::Result<::deser::ser::Chunk<'_>>
                 {
                     ::deser::__derive::Ok(match *self {
@@ -266,10 +266,10 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     self.0.descriptor()
                 }
-                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
+                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
                     ::deser::ser::Serialize::serialize(&self.0, __state)
                 }
-                fn finish(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<()> {
+                fn finish(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<()> {
                     ::deser::ser::Serialize::finish(&self.0, __state)
                 }
                 fn is_optional(&self) -> bool {

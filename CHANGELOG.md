@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The deserializer and serializer states are now passed as
+  `&mut DeserializerState` and `&mut SerializerState` to all methods of
+  `Sink`, `Serialize` and the emitters.  Added
+  `DeserializeDriver::state_mut` for formats.
 - Fixed multiple soundness issues:
   - `DeserializeDriver::from_sink` now ties the sink to the driver's lifetime.
   - The deserialize driver now drops child sinks before it uses or drops

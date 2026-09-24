@@ -10,11 +10,10 @@
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.
-//!         let path = state.get::<Path>();
-//!         println!("{:?}", path.segments());
+//!         println!("{:?}", state.get::<Path>().segments());
 //!         self.0.serialize(state)
 //!     }
 //! }

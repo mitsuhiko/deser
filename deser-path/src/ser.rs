@@ -27,7 +27,7 @@ impl<'a> PathSerializable<'a> {
 }
 
 impl<'a> Serialize for PathSerializable<'a> {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         match self.serializable.serialize(state)? {
             Chunk::Struct(emitter) => Ok(Chunk::Struct(Box::new(PathStructEmitter { emitter }))),
             Chunk::Map(emitter) => Ok(Chunk::Map(Box::new(PathMapEmitter {
@@ -39,7 +39,7 @@ impl<'a> Serialize for PathSerializable<'a> {
         }
     }
 
-    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)
     }
 
@@ -59,7 +59,7 @@ struct PathStructEmitter<'a> {
 impl<'a> StructEmitter for PathStructEmitter<'a> {
     fn next(
         &mut self,
-        state: &SerializerState,
+        state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let (key, value) = match self.emitter.next(state)? {
             Some(result) => result,
@@ -80,7 +80,10 @@ struct PathMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for PathMapEmitter<'a> {
-    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next_key(
+        &mut self,
+        state: &mut SerializerState,
+    ) -> Result<Option<SerializeHandle<'_>>, Error> {
         let key_serializable = SegmentCollectingSerializable {
             serializable: match self.emitter.next_key(state)? {
                 Some(result) => result,
@@ -91,7 +94,7 @@ impl<'a> MapEmitter for PathMapEmitter<'a> {
         Ok(Some(SerializeHandle::boxed(key_serializable)))
     }
 
-    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut SerializerState) -> Result<SerializeHandle<'_>, Error> {
         let new_segment = self
             .path_segment
             .borrow_mut()
@@ -111,7 +114,7 @@ struct PathSeqEmitter<'a> {
 }
 
 impl<'a> SeqEmitter for PathSeqEmitter<'a> {
-    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next(&mut self, state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
         let index = self.index;
         self.index += 1;
         let value = match self.emitter.next(state)? {
@@ -133,7 +136,7 @@ struct SegmentPushingSerializable<'a> {
 }
 
 impl<'a> Serialize for SegmentPushingSerializable<'a> {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         {
             let mut path = state.get_mut::<Path>();
             path.segments.push(self.segment.take().unwrap());
@@ -149,7 +152,7 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
         }
     }
 
-    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)?;
         let mut path = state.get_mut::<Path>();
         path.segments.pop();
@@ -171,7 +174,7 @@ struct SegmentCollectingSerializable<'a> {
 }
 
 impl<'a> Serialize for SegmentCollectingSerializable<'a> {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         match self.serializable.serialize(state)? {
             Chunk::Atom(Atom::Str(key)) => {
                 *self.segment.borrow_mut() = Some(PathSegment::Key(key.to_string()));
@@ -185,7 +188,7 @@ impl<'a> Serialize for SegmentCollectingSerializable<'a> {
         }
     }
 
-    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)
     }
 

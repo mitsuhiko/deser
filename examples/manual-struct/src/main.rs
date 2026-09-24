@@ -15,7 +15,7 @@ impl Serialize for User {
         &UserDescriptor
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(UserEmitter {
             user: self,
             index: 0,
@@ -39,7 +39,7 @@ struct UserEmitter<'a> {
 impl<'a> StructEmitter for UserEmitter<'a> {
     fn next(
         &mut self,
-        _state: &SerializerState,
+        _state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
@@ -77,15 +77,15 @@ impl<'a> Sink for UserSink<'a> {
         &UserDescriptor
     }
 
-    fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         match self.key.take().as_deref() {
             Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
             Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),
@@ -93,7 +93,7 @@ impl<'a> Sink for UserSink<'a> {
         }
     }
 
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
         *self.out = Some(User {
             id: self
                 .id

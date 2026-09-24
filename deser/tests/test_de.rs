@@ -128,7 +128,7 @@ fn test_array_dropping_on_error() {
         fn atom(
             &mut self,
             _atom: Atom,
-            _state: &deser::de::DeserializerState,
+            _state: &mut deser::de::DeserializerState,
         ) -> Result<(), deser::Error> {
             **self = Some(X);
             Ok(())

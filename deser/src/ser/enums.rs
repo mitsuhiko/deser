@@ -20,7 +20,7 @@ impl<'a> FieldsSer<'a> {
 }
 
 impl<'a> Serialize for FieldsSer<'a> {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(FieldsEmitter {
             fields: self
                 .0
@@ -40,7 +40,7 @@ struct FieldsEmitter<'a> {
 impl<'a> StructEmitter for FieldsEmitter<'a> {
     fn next(
         &mut self,
-        _state: &SerializerState,
+        _state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
@@ -65,7 +65,7 @@ impl<'a> SeqSer<'a> {
 }
 
 impl<'a> Serialize for SeqSer<'a> {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Seq(Box::new(SeqValuesEmitter {
             values: self
                 .0
@@ -83,7 +83,7 @@ struct SeqValuesEmitter<'a> {
 }
 
 impl<'a> SeqEmitter for SeqValuesEmitter<'a> {
-    fn next(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next(&mut self, _state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
         let index = self.index;
         self.index += 1;
         Ok(self
@@ -130,7 +130,7 @@ struct TaggedNewtypeEmitter<'a> {
 impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
     fn next(
         &mut self,
-        state: &SerializerState,
+        state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         if !self.started {
             self.started = true;

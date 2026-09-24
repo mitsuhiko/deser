@@ -34,9 +34,9 @@ use crate::extensions::Snapshot;
 /// let mut out = None::<Vec<u32>>;
 /// {
 ///     let mut driver_out = None::<()>;
-///     let driver = DeserializeDriver::new(&mut driver_out);
+///     let mut driver = DeserializeDriver::new(&mut driver_out);
 ///     recording
-///         .replay(Deserialize::deserialize_into(&mut out), driver.state())
+///         .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
 ///         .unwrap();
 /// }
 /// assert_eq!(out, Some(vec![1, 2]));
@@ -113,7 +113,7 @@ impl Recording {
     /// ```
     pub fn capture<'a, F>(then: F) -> SinkHandle<'a>
     where
-        F: FnOnce(Recording, &DeserializerState) -> Result<(), Error> + 'a,
+        F: FnOnce(Recording, &mut DeserializerState) -> Result<(), Error> + 'a,
     {
         SinkHandle::boxed(CaptureSink {
             recording: Recording::new(),
@@ -146,17 +146,21 @@ impl Recording {
     ///
     /// The state is the state of the ongoing deserialization.  The replayable
     /// extensions in it are restored to their current values after replaying.
-    pub fn replay(&self, sink: SinkHandle<'_>, state: &DeserializerState) -> Result<(), Error> {
+    pub fn replay(&self, sink: SinkHandle<'_>, state: &mut DeserializerState) -> Result<(), Error> {
         let live = state.extensions().snapshot();
         let rv = self.replay_events(sink, state);
         state.extensions().restore(&live);
         rv
     }
 
-    fn replay_events(&self, sink: SinkHandle<'_>, state: &DeserializerState) -> Result<(), Error> {
+    fn replay_events(
+        &self,
+        sink: SinkHandle<'_>,
+        state: &mut DeserializerState,
+    ) -> Result<(), Error> {
         let mut driver = DeserializeDriver::nested(state, sink.shorten(), self.is_map_key);
         for (event, snapshot) in self.events.iter() {
-            driver.state().extensions().restore(snapshot);
+            driver.state_mut().extensions().restore(snapshot);
             driver.emit(event.as_borrowed())?;
         }
         Ok(())
@@ -177,7 +181,8 @@ fn record(
         .push((event, state.extensions().snapshot()));
 }
 
-type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &DeserializerState) -> Result<(), Error> + 'a>;
+type CaptureCallback<'a> =
+    Box<dyn FnOnce(Recording, &mut DeserializerState) -> Result<(), Error> + 'a>;
 
 /// Records a value into an owned recording and invokes a callback with it.
 struct CaptureSink<'a> {
@@ -197,7 +202,7 @@ impl<'a> CaptureSink<'a> {
 }
 
 impl<'a> Sink for CaptureSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         record(
             &mut self.recording,
             true,
@@ -207,27 +212,27 @@ impl<'a> Sink for CaptureSink<'a> {
         Ok(())
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         record(&mut self.recording, true, Event::MapStart, state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         record(&mut self.recording, true, Event::SeqStart, state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             record(&mut self.recording, true, end, state);
         }
@@ -260,32 +265,32 @@ impl<'a> Recorder<'a> {
 }
 
 impl<'a> Sink for Recorder<'a> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         self.record(Event::Atom(atom.to_static()), state);
         Ok(())
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.record(Event::MapStart, state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.record(Event::SeqStart, state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             self.record(end, state);
         }

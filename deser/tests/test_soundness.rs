@@ -149,8 +149,8 @@ fn test_arrays() {
 fn test_array_sink_misuse() {
     // sinks are public API and can be called in any order
     let mut driver_out = None::<()>;
-    let driver = DeserializeDriver::new(&mut driver_out);
-    let state = driver.state();
+    let mut driver = DeserializeDriver::new(&mut driver_out);
+    let state = driver.state_mut();
 
     let mut out = None::<[String; 2]>;
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -214,7 +214,7 @@ impl<'a> Drop for CommitOnDrop<'a> {
 }
 
 impl<'a> Sink for CommitOnDrop<'a> {
-    fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
         if let Atom::U64(v) = atom {
             self.value = Some(v);
         }
@@ -223,18 +223,18 @@ impl<'a> Sink for CommitOnDrop<'a> {
 }
 
 impl Sink for Parent {
-    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::boxed(CommitOnDrop {
             slot: &mut self.slot,
             value: None,
         }))
     }
 
-    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
         self.finished_with = Some(self.slot);
         Ok(())
     }
@@ -259,8 +259,8 @@ fn test_child_sinks_dropped_before_parent_is_used() {
 #[test]
 fn test_owned_sink_after_take() {
     let mut driver_out = None::<()>;
-    let driver = DeserializeDriver::new(&mut driver_out);
-    let state = driver.state();
+    let mut driver = DeserializeDriver::new(&mut driver_out);
+    let state = driver.state_mut();
 
     let mut owned = OwnedSink::<Vec<String>>::deserialize();
     owned.borrow_mut().seq(state).unwrap();
@@ -284,8 +284,8 @@ fn test_owned_sink_after_take() {
 #[test]
 fn test_owned_sink_dropped_half_way() {
     let mut driver_out = None::<()>;
-    let driver = DeserializeDriver::new(&mut driver_out);
-    let state = driver.state();
+    let mut driver = DeserializeDriver::new(&mut driver_out);
+    let state = driver.state_mut();
 
     let mut owned = OwnedSink::<BTreeMap<String, Inner>>::deserialize();
     owned.borrow_mut().map(state).unwrap();
@@ -380,7 +380,7 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(BufferEmitter {
             depth: self.0,
             index: 0,
@@ -393,7 +393,7 @@ impl Serialize for Nested {
 impl<'a> StructEmitter for BufferEmitter<'a> {
     fn next(
         &mut self,
-        _state: &SerializerState,
+        _state: &mut SerializerState,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
@@ -431,7 +431,7 @@ fn test_borrowed_keys_across_reallocation() {
 struct Panicking;
 
 impl Serialize for Panicking {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         panic!("serialize panicked");
     }
 }
@@ -439,7 +439,7 @@ impl Serialize for Panicking {
 struct PanickingSink;
 
 impl Sink for PanickingSink {
-    fn atom(&mut self, _atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, _atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
         panic!("sink panicked");
     }
 }

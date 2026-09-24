@@ -76,10 +76,10 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 /// }
 ///
 /// impl<'a, T: Deserialize> Sink for WrapperSink<'a, T> {
-///     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+///     fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
 ///         self.sink.borrow_mut().atom(atom, state)
 ///     }
-///     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+///     fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
 ///         self.sink.borrow_mut().finish(state)?;
 ///         *self.out = self.sink.take().map(AtomWrapper);
 ///         Ok(())

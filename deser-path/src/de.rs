@@ -39,7 +39,7 @@ impl<'a> PathSink<'a> {
         }
     }
 
-    fn enter_container(&mut self, state: &DeserializerState, container: Container) {
+    fn enter_container(&mut self, state: &mut DeserializerState, container: Container) {
         state.set_replayable::<Path>();
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
         self.entered_container = true;
@@ -50,7 +50,7 @@ impl<'a> PathSink<'a> {
 /// Sets the segment of the current container to a key.
 ///
 /// This reuses the allocation of the previous key if possible.
-fn set_key(state: &DeserializerState, atom: &Atom) {
+fn set_key(state: &mut DeserializerState, atom: &Atom) {
     let mut path = state.get_mut::<Path>();
     let segment = match path.segments.last_mut() {
         Some(segment) => segment,
@@ -79,29 +79,29 @@ fn set_key(state: &DeserializerState, atom: &Atom) {
 }
 
 impl<'a> Sink for PathSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         if self.is_key {
             set_key(state, &atom);
         }
         self.sink.atom(atom, state)
     }
 
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.enter_container(state, Container::Map);
         self.sink.map(state)
     }
 
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.enter_container(state, Container::Seq(0));
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let sink = self.sink.next_key(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, true)))
     }
 
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         if let Container::Seq(ref mut index) = self.container {
             if let Some(segment) = state.get_mut::<Path>().segments.last_mut() {
                 *segment = PathSegment::Index(*index);
@@ -112,7 +112,7 @@ impl<'a> Sink for PathSink<'a> {
         Ok(SinkHandle::boxed(PathSink::new(sink, false)))
     }
 
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         let rv = self.sink.finish(state);
         // leave the container this sink entered
         if self.entered_container {

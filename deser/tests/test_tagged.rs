@@ -284,11 +284,11 @@ fn test_recording() {
 
     // a recording can be replayed multiple times
     let mut driver_out = None::<()>;
-    let driver = DeserializeDriver::new(&mut driver_out);
+    let mut driver = DeserializeDriver::new(&mut driver_out);
     for _ in 0..2 {
         let mut out = None::<BTreeMap<String, Vec<u32>>>;
         recording
-            .replay(Deserialize::deserialize_into(&mut out), driver.state())
+            .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
             .unwrap();
         assert_eq!(out.unwrap()["a"], Vec::<u32>::new());
     }

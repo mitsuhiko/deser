@@ -91,7 +91,7 @@ impl<'a> Atom<'a> {
     /// # use deser::{Atom, Error, de::{DeserializerState, Sink}};
     /// # struct MySink;
     /// impl Sink for MySink {
-    ///     fn atom(&mut self, atom: Atom, _state: &DeserializerState) -> Result<(), Error> {
+    ///     fn atom(&mut self, atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
     ///         Err(atom.unexpected_error(&self.expecting()))
     ///     }
     /// }

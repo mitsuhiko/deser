@@ -26,7 +26,7 @@ impl Sink for SlotWrapper<()> {
         &DESCRIPTOR
     }
 
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Null => {
                 **self = Some(());
@@ -44,7 +44,7 @@ impl Sink for SlotWrapper<bool> {
         &DESCRIPTOR
     }
 
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
                 **self = Some(value);
@@ -62,7 +62,7 @@ impl Sink for SlotWrapper<String> {
         &DESCRIPTOR
     }
 
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Str(value) => {
                 **self = Some(value.into_owned());
@@ -85,7 +85,7 @@ macro_rules! int_sink {
             }
 
             #[allow(clippy::useless_conversion)]
-            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
                 let value = match atom {
                     Atom::U64(value) => <$ty>::try_from(value).ok(),
                     Atom::I64(value) => <$ty>::try_from(value).ok(),
@@ -165,7 +165,7 @@ impl Sink for SlotWrapper<char> {
         &DESCRIPTOR
     }
 
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Char(value) => {
                 **self = Some(value);
@@ -197,7 +197,7 @@ macro_rules! float_sink {
                 &DESCRIPTOR
             }
 
-            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::U64(value) => {
                         **self = Some(value as $ty);
@@ -260,7 +260,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
                 }
             }
 
-            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::Bytes(value) => match T::__private_vec_from_bytes(value.into_owned()) {
                         Some(vec) => {
@@ -276,17 +276,20 @@ impl<T: Deserialize> Deserialize for Vec<T> {
                 }
             }
 
-            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.is_seq = true;
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 if self.is_seq {
                     self.flush();
                     *self.slot = Some(take(&mut self.vec));
@@ -338,20 +341,26 @@ where
                 &DESCRIPTOR
             }
 
-            fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_key(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.flush();
                 *self.slot = Some(take(&mut self.map));
                 Ok(())
@@ -405,20 +414,26 @@ where
                 &DESCRIPTOR
             }
 
-            fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_key(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.flush();
                 *self.slot = Some(take(&mut self.map));
                 Ok(())
@@ -456,16 +471,19 @@ impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
                 &DESCRIPTOR
             }
 
-            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.flush();
                 *self.slot = Some(take(&mut self.set));
                 Ok(())
@@ -515,16 +533,19 @@ where
                 &DESCRIPTOR
             }
 
-            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.flush();
                 *self.slot = Some(take(&mut self.set));
                 Ok(())
@@ -574,11 +595,11 @@ macro_rules! deserialize_for_tuple {
                         &DESCRIPTOR
                     }
 
-                    fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                    fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                         Ok(())
                     }
 
-                    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+                    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -591,7 +612,7 @@ macro_rules! deserialize_for_tuple {
                         Err(Error::new(ErrorKind::WrongLength, "too many elements in tuple"))
                     }
 
-                    fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                         *self.slot = Some(($(
                             self.$name
                                 .take()
@@ -663,7 +684,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 &DESCRIPTOR
             }
 
-            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
                 match atom {
                     Atom::Bytes(value) => match T::__private_array_from_bytes::<N>(&value) {
                         Some(array) => {
@@ -683,12 +704,15 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 }
             }
 
-            fn seq(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 self.is_seq = true;
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                _state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 if self.index >= N {
                     Err(Error::new(
@@ -700,7 +724,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 }
             }
 
-            fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
                 if !self.is_seq {
                     return Ok(());
                 }
@@ -746,35 +770,38 @@ impl<T: Deserialize> Deserialize for Box<T> {
         }
 
         impl<'a, T: Deserialize> Sink for BoxSink<'a, T> {
-            fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+            fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
                 self.sink.borrow_mut().atom(atom, state)
             }
 
-            fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+            fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
                 self.sink.borrow_mut().map(state)
             }
 
-            fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+            fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
                 self.sink.borrow_mut().seq(state)
             }
 
-            fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.sink.borrow_mut().next_key(state)
             }
 
-            fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(
+                &mut self,
+                state: &mut DeserializerState,
+            ) -> Result<SinkHandle<'_>, Error> {
                 self.sink.borrow_mut().next_value(state)
             }
 
             fn value_for_key(
                 &mut self,
                 key: &str,
-                state: &DeserializerState,
+                state: &mut DeserializerState,
             ) -> Result<Option<SinkHandle<'_>>, Error> {
                 self.sink.borrow_mut().value_for_key(key, state)
             }
 
-            fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+            fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
                 self.sink.borrow_mut().finish(state)?;
                 *self.out = self.sink.take().map(Box::new);
                 Ok(())

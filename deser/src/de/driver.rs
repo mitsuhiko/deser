@@ -52,7 +52,7 @@ impl<'a> DeserializeDriver<'a> {
     /// This is used to replay recorded events within an ongoing
     /// deserialization.
     pub(crate) fn nested(
-        parent: &'a DeserializerState<'_>,
+        parent: &'a mut DeserializerState<'_>,
         sink: SinkHandle<'a>,
         is_map_key: bool,
     ) -> DeserializeDriver<'a> {
@@ -71,8 +71,16 @@ impl<'a> DeserializeDriver<'a> {
     }
 
     /// Returns a borrowed reference to the current deserializer state.
-    pub fn state(&self) -> &DeserializerState<'_> {
+    pub fn state(&self) -> &DeserializerState<'a> {
         &self.state
+    }
+
+    /// Returns a mutable reference to the current deserializer state.
+    ///
+    /// Formats use this to publish information for the event they emit
+    /// next into the state.
+    pub fn state_mut(&mut self) -> &mut DeserializerState<'a> {
+        &mut self.state
     }
 
     /// Emits an event into the driver.
@@ -98,9 +106,9 @@ impl<'a> DeserializeDriver<'a> {
         let next_sink = match self.sink_stack.last_mut() {
             Some((map_sink, Layer::Map(ref mut is_key))) => {
                 let next_sink = if *is_key {
-                    map_sink.next_key(&self.state)?
+                    map_sink.next_key(&mut self.state)?
                 } else {
-                    map_sink.next_value(&self.state)?
+                    map_sink.next_value(&mut self.state)?
                 };
                 self.state.is_map_key = *is_key;
                 *is_key = !*is_key;
@@ -108,7 +116,7 @@ impl<'a> DeserializeDriver<'a> {
             }
             Some((seq_sink, Layer::Seq)) => {
                 self.state.is_map_key = false;
-                seq_sink.next_value(&self.state)?
+                seq_sink.next_value(&mut self.state)?
             }
             None => unreachable!(),
         };
@@ -130,16 +138,16 @@ impl<'a> DeserializeDriver<'a> {
         match event {
             Event::Atom(atom) => {
                 let current_sink = current_sink!();
-                current_sink.atom(atom, &self.state)?;
-                current_sink.finish(&self.state)?;
+                current_sink.atom(atom, &mut self.state)?;
+                current_sink.finish(&mut self.state)?;
             }
             Event::MapStart | Event::SeqStart => {
                 let current_sink = current_sink!();
                 let layer = if let Event::MapStart = event {
-                    current_sink.map(&self.state)?;
+                    current_sink.map(&mut self.state)?;
                     Layer::Map(true)
                 } else {
-                    current_sink.seq(&self.state)?;
+                    current_sink.seq(&mut self.state)?;
                     Layer::Seq
                 };
                 self.state.descriptor_stack.push(current_sink.descriptor());
@@ -158,7 +166,7 @@ impl<'a> DeserializeDriver<'a> {
                 self.current_sink = None;
                 let (mut sink, _) = self.sink_stack.pop().unwrap();
                 self.state.descriptor_stack.pop();
-                sink.finish(&self.state)?;
+                sink.finish(&mut self.state)?;
                 self.current_sink = Some(sink);
             }
         }

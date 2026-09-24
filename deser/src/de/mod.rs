@@ -78,7 +78,7 @@
 //!     fn atom(
 //!         &mut self,
 //!         atom: Atom,
-//!         state: &DeserializerState,
+//!         state: &mut DeserializerState,
 //!     ) -> Result<(), Error> {
 //!         match atom {
 //!             Atom::Bool(value) => {
@@ -138,20 +138,20 @@
 //! }
 //!     
 //! impl<'a> Sink for FlagSink<'a> {
-//!     fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+//!     fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
 //!         // the default implementation returns an error, so we need to
 //!         // override it to remove this error.
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+//!     fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+//!     fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
 //!         let key = self.key.take().unwrap();
 //!         // since we implement a sink for a struct, move the actual logic for
 //!         // matching into `value_for_key` so that our deserializer can support
@@ -160,7 +160,7 @@
 //!         Ok(self.value_for_key(&key, state)?.unwrap_or_else(SinkHandle::null))
 //!     }
 //!
-//!     fn value_for_key(&mut self, key: &str, _state: &DeserializerState)
+//!     fn value_for_key(&mut self, key: &str, _state: &mut DeserializerState)
 //!         -> Result<Option<SinkHandle<'_>>, Error>
 //!     {
 //!         Ok(Some(match key {
@@ -170,7 +170,7 @@
 //!         }))
 //!     }
 //!     
-//!     fn finish(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+//!     fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
 //!         // when we're done, write the final value into the output slot.
 //!         *self.out = Some(Flag {
 //!             enabled: self.enabled_field.take().ok_or_else(|| {
@@ -329,7 +329,7 @@ fn is_null_ext(ext: &crate::ext::ExtValue) -> bool {
 impl<'a> SinkHandle<'a> {
     /// Forwards to [`Sink::atom`].
     #[inline]
-    pub fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    pub fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
             let is_null = match atom {
                 Atom::Null => true,
@@ -347,31 +347,35 @@ impl<'a> SinkHandle<'a> {
     }
 
     /// Forwards to [`Sink::unexpected_atom`].
-    pub fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    pub fn unexpected_atom(
+        &mut self,
+        atom: Atom,
+        state: &mut DeserializerState,
+    ) -> Result<(), Error> {
         self.sink_mut().unexpected_atom(atom, state)
     }
 
     /// Forwards to [`Sink::map`].
     #[inline]
-    pub fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    pub fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.sink_mut().map(state)
     }
 
     /// Forwards to [`Sink::seq`].
     #[inline]
-    pub fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    pub fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.sink_mut().seq(state)
     }
 
     /// Forwards to [`Sink::next_key`].
     #[inline]
-    pub fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    pub fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.sink_mut().next_key(state)
     }
 
     /// Forwards to [`Sink::next_value`].
     #[inline]
-    pub fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    pub fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.sink_mut().next_value(state)
     }
 
@@ -379,14 +383,14 @@ impl<'a> SinkHandle<'a> {
     pub fn value_for_key(
         &mut self,
         key: &str,
-        state: &DeserializerState,
+        state: &mut DeserializerState,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.sink_mut().value_for_key(key, state)
     }
 
     /// Forwards to [`Sink::finish`].
     #[inline]
-    pub fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    pub fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         self.sink_mut().finish(state)
     }
 
@@ -403,44 +407,44 @@ impl<'a> SinkHandle<'a> {
 
 impl<'a> Sink for SinkHandle<'a> {
     #[inline]
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         SinkHandle::atom(self, atom, state)
     }
 
-    fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn unexpected_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         SinkHandle::unexpected_atom(self, atom, state)
     }
 
     #[inline]
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         SinkHandle::map(self, state)
     }
 
     #[inline]
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         SinkHandle::seq(self, state)
     }
 
     #[inline]
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         SinkHandle::next_key(self, state)
     }
 
     #[inline]
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         SinkHandle::next_value(self, state)
     }
 
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &DeserializerState,
+        state: &mut DeserializerState,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         SinkHandle::value_for_key(self, key, state)
     }
 
     #[inline]
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         SinkHandle::finish(self, state)
     }
 
@@ -611,7 +615,7 @@ pub trait Sink {
     /// This is particularly important for [`Atom::Ext`] as the default
     /// implementation of `unexpected_atom` will retry with the fallback atom
     /// of the extension value.
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         self.unexpected_atom(atom, state)
     }
 
@@ -620,7 +624,7 @@ pub trait Sink {
     /// For [`Atom::Ext`] values the atom is lowered into the core data model
     /// with [`fallback`](crate::ext::ExtValue::fallback) and passed to
     /// [`atom`](Self::atom) again.  For all other atoms an error is returned.
-    fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+    fn unexpected_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         if let Atom::Ext(ref ext) = atom {
             let fallback = ext.fallback();
             if !matches!(fallback, Atom::Ext(_)) {
@@ -637,7 +641,7 @@ pub trait Sink {
     /// called alternatingly.  The map is ended by [`finish`](Self::finish).
     ///
     /// The default implementation returns an error.
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         let _ = state;
         fail_unexpected("map", &self.expecting())
     }
@@ -649,19 +653,19 @@ pub trait Sink {
     /// The sequence is ended by [`finish`](Self::finish).
     ///
     /// The default implementation returns an error.
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         let _ = state;
         fail_unexpected("sequence", &self.expecting())
     }
 
     /// Returns a sink for the next key in a map.
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
 
     /// Returns a sink for the next value in a map or sequence.
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
@@ -675,7 +679,7 @@ pub trait Sink {
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &DeserializerState,
+        state: &mut DeserializerState,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         let _ = key;
         let _ = state;
@@ -685,7 +689,7 @@ pub trait Sink {
     /// Called after [`atom`](Self::atom), [`map`](Self::map) or [`seq](Self::seq).
     ///
     /// The default implementation does nothing.
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
         let _ = state;
         Ok(())
     }

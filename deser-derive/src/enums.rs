@@ -692,7 +692,7 @@ pub fn derive_serialize(
 
                 fn serialize(
                     &self,
-                    __state: &::deser::ser::SerializerState,
+                    __state: &mut ::deser::ser::SerializerState,
                 ) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
                     ::deser::__derive::Ok(match *self {
                         #(#arms)*

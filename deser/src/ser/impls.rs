@@ -14,7 +14,7 @@ impl Serialize for bool {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Bool(*self)))
     }
 }
@@ -25,7 +25,7 @@ impl Serialize for () {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Null))
     }
 
@@ -43,7 +43,7 @@ impl Serialize for u8 {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
 
@@ -58,7 +58,7 @@ impl Serialize for char {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Char(*self)))
     }
 }
@@ -74,7 +74,7 @@ macro_rules! serialize_int {
                 &DESCRIPTOR
             }
 
-            fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+            fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::$atom(*self as _)))
             }
         }
@@ -104,7 +104,7 @@ macro_rules! serialize_ext_int {
                 &DESCRIPTOR
             }
 
-            fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+            fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
             }
         }
@@ -120,7 +120,7 @@ impl Serialize for String {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
     }
 }
@@ -131,7 +131,7 @@ impl Serialize for &str {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str((*self).into())))
     }
 }
@@ -142,7 +142,7 @@ impl<'a> Serialize for Cow<'a, str> {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self))))
     }
 }
@@ -161,7 +161,7 @@ where
         }
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
             Ok(Chunk::Atom(Atom::Bytes(bytes)))
         } else {
@@ -184,7 +184,7 @@ where
         }
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
             Ok(Chunk::Atom(Atom::Bytes(bytes)))
         } else {
@@ -196,7 +196,7 @@ where
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
 impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
-    fn next(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next(&mut self, _state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.0.next().map(SerializeHandle::to))
     }
 }
@@ -211,7 +211,7 @@ where
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         struct Emitter<'a, K, V>(std::collections::btree_map::Iter<'a, K, V>, Option<&'a V>);
 
         impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
@@ -221,7 +221,7 @@ where
         {
             fn next_key(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<Option<SerializeHandle<'_>>, Error> {
                 Ok(self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
@@ -231,7 +231,7 @@ where
 
             fn next_value(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<SerializeHandle<'_>, Error> {
                 Ok(SerializeHandle::to(self.1.unwrap()))
             }
@@ -252,7 +252,7 @@ where
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         struct Emitter<'a, K, V>(std::collections::hash_map::Iter<'a, K, V>, Option<&'a V>);
 
         impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
@@ -262,7 +262,7 @@ where
         {
             fn next_key(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<Option<SerializeHandle<'_>>, Error> {
                 Ok(self.0.next().map(|(k, v)| {
                     self.1 = Some(v);
@@ -272,7 +272,7 @@ where
 
             fn next_value(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<SerializeHandle<'_>, Error> {
                 Ok(SerializeHandle::to(self.1.unwrap()))
             }
@@ -291,7 +291,7 @@ where
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         struct Emitter<'a, T>(std::collections::btree_set::Iter<'a, T>);
 
         impl<'a, T> SeqEmitter for Emitter<'a, T>
@@ -300,7 +300,7 @@ where
         {
             fn next(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<Option<SerializeHandle<'_>>, Error> {
                 Ok(self.0.next().map(SerializeHandle::to))
             }
@@ -319,7 +319,7 @@ where
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         struct Emitter<'a, T>(std::collections::hash_set::Iter<'a, T>);
 
         impl<'a, T> SeqEmitter for Emitter<'a, T>
@@ -328,7 +328,7 @@ where
         {
             fn next(
                 &mut self,
-                _state: &SerializerState,
+                _state: &mut SerializerState,
             ) -> Result<Option<SerializeHandle<'_>>, Error> {
                 Ok(self.0.next().map(SerializeHandle::to))
             }
@@ -354,14 +354,14 @@ where
         self.is_none()
     }
 
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         match self {
             Some(value) => value.serialize(state),
             None => Ok(Chunk::Atom(Atom::Null)),
         }
     }
 
-    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         match self {
             Some(value) => value.finish(state),
             None => Ok(()),
@@ -379,7 +379,7 @@ macro_rules! serialize_for_tuple {
             }
 
             #[allow(non_snake_case)]
-            fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+            fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
                 struct TupleSeqEmitter<'a, $($name,)*> {
                     tuple: &'a ($($name,)*),
                     index: usize,
@@ -389,7 +389,7 @@ macro_rules! serialize_for_tuple {
                 where
                     $($name: Serialize,)*
                 {
-                    fn next(&mut self,_state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+                    fn next(&mut self,_state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
                         let ($(ref $name,)*) = self.tuple;
                         let __index = self.index;
                         self.index += 1;
@@ -426,7 +426,7 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
         &DESCRIPTOR
     }
 
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
             Ok(Chunk::Atom(Atom::Bytes(bytes)))
         } else {
@@ -439,11 +439,11 @@ macro_rules! forward_serialize {
     ($($ty:ty),*) => {
         $(
             impl<'a, T: Serialize + ?Sized> Serialize for $ty {
-                fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
+                fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
                     Serialize::serialize(&**self, state)
                 }
 
-                fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+                fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
                     Serialize::finish(&**self, state)
                 }
 
