@@ -22,10 +22,6 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
 fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let dummy = syn::Ident::new(
-        &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
@@ -152,14 +148,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     &__Descriptor
                 }
-                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
+                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
                     ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                         data: self,
                         index: 0,
@@ -185,7 +180,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             #[automatically_derived]
             impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
                 fn next(&mut self, __state: &::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::__derive::Option<(deser::__derive::StrCow, ::deser::ser::SerializeHandle)>>
+                    -> ::deser::__derive::Result<::deser::__derive::Option<(::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>)>>
                 {
                     #[allow(clippy::never_loop)]
                     loop {
@@ -212,10 +207,6 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     }
 
     let ident = &input.ident;
-    let dummy = syn::Ident::new(
-        &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     let container_attrs = ContainerAttrs::of(input)?;
     let var_idents = enumeration
@@ -240,12 +231,11 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .collect::<Vec<_>>();
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             #[automatically_derived]
             impl ::deser::Serialize for #ident {
                 fn serialize(&self, __state: &::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::ser::Chunk>
+                    -> ::deser::__derive::Result<::deser::ser::Chunk<'_>>
                 {
                     ::deser::__derive::Ok(match *self {
                         #(
@@ -263,10 +253,6 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-    let dummy = syn::Ident::new(
-        &format!("_DESER_SERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     // TODO: we want to report the type name here but the current descriptor
     // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
@@ -279,14 +265,13 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &dyn ::deser::Descriptor {
                     self.0.descriptor()
                 }
-                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk> {
+                fn serialize(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
                     ::deser::ser::Serialize::serialize(&self.0, __state)
                 }
                 fn finish(&self, __state: &::deser::ser::SerializerState) -> ::deser::__derive::Result<()> {

@@ -26,10 +26,6 @@ pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStre
 fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let dummy = syn::Ident::new(
-        &format!("_DESER_DESERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
@@ -259,8 +255,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     };
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             enum __Key {
                 Unknown,
                 Field(usize),
@@ -308,7 +303,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             impl #impl_generics ::deser::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>,
-                ) -> ::deser::de::SinkHandle {
+                ) -> ::deser::de::SinkHandle<'_> {
                     ::deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         key: __KeySink { key: __Key::Unknown },
@@ -332,14 +327,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn next_key(&mut self, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
                 {
                     self.key.key = __Key::Unknown;
                     ::deser::__derive::Ok(::deser::de::SinkHandle::to(&mut self.key))
                 }
 
                 fn next_value(&mut self, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
                 {
                     ::deser::__derive::Ok(match ::deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
                         #(
@@ -352,7 +347,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn value_for_key(&mut self, __key: &str, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle>>
+                    -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle<'_>>>
                 {
                     match __key {
                         #(
@@ -410,10 +405,6 @@ pub fn derive_enum(
     }
 
     let ident = &input.ident;
-    let dummy = syn::Ident::new(
-        &format!("_DESER_DESERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     let container_attrs = ContainerAttrs::of(input)?;
     let var_idents = enumeration
@@ -471,8 +462,7 @@ pub fn derive_enum(
     }
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             #[repr(transparent)]
             struct __SlotWrapper {
                 slot: ::deser::__derive::Option<#ident>,
@@ -482,7 +472,7 @@ pub fn derive_enum(
             impl ::deser::de::Deserialize for #ident {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>
-                ) -> ::deser::de::SinkHandle {
+                ) -> ::deser::de::SinkHandle<'_> {
                     ::deser::de::SinkHandle::to(unsafe {
                         &mut *{
                             __slot
@@ -520,10 +510,6 @@ pub fn derive_enum(
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let dummy = syn::Ident::new(
-        &format!("_DESER_DESERIALIZE_IMPL_FOR_{}", ident),
-        Span::call_site(),
-    );
 
     // TODO: we want to report the type name here but the current descriptor
     // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
@@ -540,8 +526,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     Ok(quote! {
-        #[allow(non_upper_case_globals)]
-        const #dummy: () = {
+        const _: () = {
             struct __Sink #wrapper_impl_generics #where_clause {
                 slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
                 sink: ::deser::de::OwnedSink<#field_type>,
@@ -551,7 +536,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
             impl #impl_generics ::deser::de::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut ::deser::__derive::Option<Self>
-                ) -> ::deser::de::SinkHandle {
+                ) -> ::deser::de::SinkHandle<'_> {
                     ::deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         sink: ::deser::de::OwnedSink::deserialize(),
@@ -575,13 +560,13 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 }
 
                 fn next_key(&mut self, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
                 {
                     self.sink.borrow_mut().next_key(__state)
                 }
 
                 fn next_value(&mut self, __state: &::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle>
+                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
                 {
                     self.sink.borrow_mut().next_value(__state)
                 }
@@ -590,7 +575,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     &mut self,
                     __key: &str,
                     __state: &::deser::de::DeserializerState,
-                ) -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle>> {
+                ) -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle<'_>>> {
                     self.sink.borrow_mut().value_for_key(__key, __state)
                 }
 
