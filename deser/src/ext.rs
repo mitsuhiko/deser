@@ -21,7 +21,10 @@
 //! This avoids in-band signalling: the value keeps its identity for everybody
 //! who understands it, and degrades gracefully for everybody else.
 //!
-//! Deser itself uses this for `u128` and `i128`.
+//! Deser itself uses this for `u128` and `i128`.  For a more complete
+//! example which annotates every value with its path and shows how that
+//! information survives internal buffering, see the
+//! [`located` example](https://github.com/mitsuhiko/deser/tree/main/examples/located).
 //!
 //! # Example
 //!

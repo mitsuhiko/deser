@@ -7,6 +7,7 @@ members = [
   "deser-path",
   "examples/derive",
   "examples/json",
+  "examples/located",
   "examples/manual-struct",
 ]
 resolver = "2"

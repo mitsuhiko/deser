@@ -17,6 +17,11 @@ All notable changes to deser are documented here.
     an unsafe hook on `Deserialize`.
   - `deser_json::Deserializer::new` now takes a `&str`.
 - Extension types now need to be `Send` and `Sync`.
+- `Option<T>` now also treats extension values that fall back to null as
+  null.
+- Added `deser_json::Deserializer::drive` to deserialize into custom sinks.
+- Fixed `deser_path::PathSink` not removing path segments when leaving
+  containers.
 - Added an extensible data model.  `Atom::Ext` carries values implementing
   the new `deser::ext::Extension` trait which provide a fallback into the
   core data model for consumers that do not understand them.

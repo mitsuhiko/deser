@@ -1,0 +1,10 @@
+[package]
+name = "located"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+deser = { path = "../../deser" }
+deser-json = { path = "../../deser-json" }
+deser-path = { path = "../../deser-path" }
