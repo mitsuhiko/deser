@@ -193,3 +193,15 @@ fn test_unknown_keys() {
         }
     );
 }
+
+#[test]
+fn test_strings() {
+    let s: String = from_str(r#""hello world, this is a longer string""#).unwrap();
+    assert_eq!(s, "hello world, this is a longer string");
+    let s: String = from_str(r#""a longer string with \"escapes\" and \u00e9 and \\""#).unwrap();
+    assert_eq!(s, "a longer string with \"escapes\" and \u{e9} and \\");
+    let s: String = from_str("\"日本語のテキストもちゃんと動く\"").unwrap();
+    assert_eq!(s, "日本語のテキストもちゃんと動く");
+    assert!(from_str::<String>("\"control \x01 character\"").is_err());
+    assert!(from_str::<String>("\"unterminated string").is_err());
+}
