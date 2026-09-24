@@ -56,8 +56,12 @@ type NextEvent<'a> = Option<(Event<'a>, &'a dyn Descriptor)>;
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
-        let serializable =
-            unsafe { extend_lifetime!(SerializeHandle::Borrowed(serializable), SerializeHandle) };
+        // SAFETY: the driver cannot outlive 'a
+        let serializable = unsafe {
+            std::mem::transmute::<SerializeHandle<'_>, SerializeHandle<'static>>(
+                SerializeHandle::Borrowed(serializable),
+            )
+        };
         let mut stack = Vec::with_capacity(STACK_CAPACITY);
         stack.push(Frame {
             phase: Phase::Pending,

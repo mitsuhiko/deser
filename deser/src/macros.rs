@@ -1,9 +1,3 @@
-macro_rules! extend_lifetime {
-    ($expr:expr, $t:ty) => {
-        std::mem::transmute::<$t, $t>($expr)
-    };
-}
-
 /// Creates a newtype wrapper around `Option<T>`.
 ///
 /// Slot wrappers are useful to implement deserialization when stateless
