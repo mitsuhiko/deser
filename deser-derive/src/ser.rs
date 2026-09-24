@@ -151,7 +151,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         const _: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
                     &__Descriptor
                 }
                 fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
@@ -263,7 +263,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         const _: () = {
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
                     self.0.descriptor()
                 }
                 fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {

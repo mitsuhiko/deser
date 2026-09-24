@@ -50,7 +50,7 @@
 //! }
 //!
 //! impl Serialize for MyInt {
-//!     fn descriptor(&self) -> &dyn Descriptor {
+//!     fn descriptor(&self) -> &'static dyn Descriptor {
 //!         &MyIntDescriptor
 //!     }
 //!
@@ -166,12 +166,12 @@ impl<'a> SerializeHandle<'a> {
 ///
 /// During serializer the [`SerializerState`] acts as a communciation device between
 /// the serializable types as the serializer.
-pub struct SerializerState<'a> {
+pub struct SerializerState {
     extensions: Extensions,
-    descriptor_stack: Vec<&'a dyn Descriptor>,
+    descriptor_stack: Vec<&'static dyn Descriptor>,
 }
 
-impl<'a> fmt::Debug for SerializerState<'a> {
+impl fmt::Debug for SerializerState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct Stack<'a>(&'a [&'a dyn Descriptor]);
         struct Entry<'a>(&'a dyn Descriptor);
@@ -203,7 +203,7 @@ impl<'a> fmt::Debug for SerializerState<'a> {
     }
 }
 
-impl<'a> SerializerState<'a> {
+impl SerializerState {
     /// Returns an extension value.
     ///
     /// Returns `None` if the value was never set.
@@ -229,7 +229,7 @@ impl<'a> SerializerState<'a> {
     ///
     /// This descriptor always points to a container as the descriptor of a value itself
     /// will always be passed to the callback explicitly.
-    pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
+    pub fn top_descriptor(&self) -> Option<&'static dyn Descriptor> {
         self.descriptor_stack.last().copied()
     }
 }
@@ -309,7 +309,10 @@ pub trait Serialize {
     }
 
     /// Returns the descriptor of this serializable if it exists.
-    fn descriptor(&self) -> &dyn Descriptor {
+    ///
+    /// Descriptors have to be `'static` as the serializer state holds on to
+    /// them while the value is serialized.
+    fn descriptor(&self) -> &'static dyn Descriptor {
         &NullDescriptor
     }
 

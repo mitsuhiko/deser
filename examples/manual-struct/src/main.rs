@@ -11,7 +11,7 @@ pub struct User {
 }
 
 impl Serialize for User {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         &UserDescriptor
     }
 

@@ -9,7 +9,7 @@ use crate::ext::ExtValue;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState};
 
 impl Serialize for bool {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
         &DESCRIPTOR
     }
@@ -20,7 +20,7 @@ impl Serialize for bool {
 }
 
 impl Serialize for () {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
         &DESCRIPTOR
     }
@@ -35,7 +35,7 @@ impl Serialize for () {
 }
 
 impl Serialize for u8 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
             name: "u8",
             precision: 8,
@@ -53,7 +53,7 @@ impl Serialize for u8 {
 }
 
 impl Serialize for char {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
         &DESCRIPTOR
     }
@@ -66,7 +66,7 @@ impl Serialize for char {
 macro_rules! serialize_int {
     ($ty:ty, $atom:ident) => {
         impl Serialize for $ty {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
                     name: stringify!($ty),
                     precision: std::mem::size_of::<$ty>() * 8,
@@ -96,7 +96,7 @@ serialize_int!(f64, F64);
 macro_rules! serialize_ext_int {
     ($ty:ty) => {
         impl Serialize for $ty {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
                     name: stringify!($ty),
                     precision: std::mem::size_of::<$ty>() * 8,
@@ -115,7 +115,7 @@ serialize_ext_int!(u128);
 serialize_ext_int!(i128);
 
 impl Serialize for String {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "String" };
         &DESCRIPTOR
     }
@@ -126,7 +126,7 @@ impl Serialize for String {
 }
 
 impl Serialize for &str {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
         &DESCRIPTOR
     }
@@ -137,7 +137,7 @@ impl Serialize for &str {
 }
 
 impl<'a> Serialize for Cow<'a, str> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
         &DESCRIPTOR
     }
@@ -151,7 +151,7 @@ impl<T> Serialize for Vec<T>
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
         static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
         if T::__private_slice_as_bytes(self).is_some() {
@@ -174,7 +174,7 @@ impl<T> Serialize for &[T]
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "slice" };
         static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
         if T::__private_slice_as_bytes(self).is_some() {
@@ -206,7 +206,7 @@ where
     K: Serialize,
     V: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
         &DESCRIPTOR
     }
@@ -247,7 +247,7 @@ where
     V: Serialize,
     H: BuildHasher,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashMap" };
         &DESCRIPTOR
     }
@@ -286,7 +286,7 @@ impl<T> Serialize for BTreeSet<T>
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
         &DESCRIPTOR
     }
@@ -314,7 +314,7 @@ impl<T> Serialize for HashSet<T>
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashSet" };
         &DESCRIPTOR
     }
@@ -342,7 +342,7 @@ impl<T> Serialize for Option<T>
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
         match self {
             Some(value) => value.descriptor(),
@@ -373,7 +373,7 @@ macro_rules! serialize_for_tuple {
     () => ();
     ($($name:ident,)+) => (
         impl<$($name: Serialize),*> Serialize for ($($name,)*) {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
                 &DESCRIPTOR
             }
@@ -421,7 +421,7 @@ macro_rules! serialize_for_tuple_peel {
 serialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 
 impl<T: Serialize, const N: usize> Serialize for [T; N] {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
         &DESCRIPTOR
     }
@@ -451,7 +451,7 @@ macro_rules! forward_serialize {
                     Serialize::is_optional(&**self)
                 }
 
-                fn descriptor(&self) -> &dyn Descriptor {
+                fn descriptor(&self) -> &'static dyn Descriptor {
                     Serialize::descriptor(&**self)
                 }
             }

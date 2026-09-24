@@ -47,7 +47,7 @@ impl<'a> Serialize for PathSerializable<'a> {
         self.serializable.is_optional()
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         self.serializable.descriptor()
     }
 }
@@ -163,7 +163,7 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
         self.serializable.is_optional()
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         self.serializable.descriptor()
     }
 }
@@ -196,7 +196,7 @@ impl<'a> Serialize for SegmentCollectingSerializable<'a> {
         self.serializable.is_optional()
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         self.serializable.descriptor()
     }
 }

@@ -13,6 +13,11 @@ All notable changes to deser are documented here.
   `None` if the value was never set.  `set_replayable` takes the state
   mutably.  Conflicting borrows of extension values are now compile time
   instead of runtime errors.
+- `Serialize::descriptor` now returns a `&'static dyn Descriptor` like
+  `Sink::descriptor`.  `SerializerState` no longer has a lifetime parameter,
+  `SerializeDriver::next` and `top_descriptor` on both states return
+  `'static` descriptors.  Added `SerializeDriver::state_mut` to place
+  extension values into the state before or during serialization.
 - Fixed multiple soundness issues:
   - `DeserializeDriver::from_sink` now ties the sink to the driver's lifetime.
   - The deserialize driver now drops child sinks before it uses or drops

@@ -686,7 +686,7 @@ pub fn derive_serialize(
 
             #[automatically_derived]
             impl #impl_generics ::deser::Serialize for #ident #ty_generics #where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
                     &__Descriptor
                 }
 

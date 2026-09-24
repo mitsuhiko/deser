@@ -451,7 +451,7 @@ impl<T: Serialize> Serialize for Spanned<T> {
         self.value.is_optional()
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         self.value.descriptor()
     }
 }

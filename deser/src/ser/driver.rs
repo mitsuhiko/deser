@@ -15,7 +15,7 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// stream.  As a user one has to call [`next`](Self::next) until `None`
 /// is returned, indicating the end of the event stream.
 pub struct SerializeDriver<'a> {
-    state: SerializerState<'static>,
+    state: SerializerState,
     // Frames refer to data borrowed from the serializables of the frames
     // below them, which is why the lifetimes are erased to `'static`.
     stack: Vec<Frame>,
@@ -51,7 +51,7 @@ impl<'a> Drop for SerializeDriver<'a> {
 
 const STACK_CAPACITY: usize = 128;
 
-type NextEvent<'a> = Option<(Event<'a>, &'a dyn Descriptor)>;
+type NextEvent<'a> = Option<(Event<'a>, &'static dyn Descriptor)>;
 
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
@@ -78,8 +78,16 @@ impl<'a> SerializeDriver<'a> {
     }
 
     /// Returns a borrowed reference to the current serializer state.
-    pub fn state(&self) -> &SerializerState<'_> {
+    pub fn state(&self) -> &SerializerState {
         &self.state
+    }
+
+    /// Returns a mutable reference to the current serializer state.
+    ///
+    /// This can be used to place extension values into the state which the
+    /// serializable values can then pick up.
+    pub fn state_mut(&mut self) -> &mut SerializerState {
+        &mut self.state
     }
 
     /// Produces the next serialization event.
@@ -91,7 +99,7 @@ impl<'a> SerializeDriver<'a> {
     #[inline]
     pub fn next(
         &mut self,
-    ) -> Result<Option<(Event<'_>, &dyn Descriptor, &SerializerState<'_>)>, Error> {
+    ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &SerializerState)>, Error> {
         Ok(self
             .advance()?
             .map(|(event, descriptor)| (event, descriptor, &self.state)))
@@ -249,5 +257,38 @@ fn test_map_emitting() {
             "second".into(),
             Event::MapEnd
         ]
+    );
+}
+
+#[test]
+fn test_state_mut() {
+    #[derive(Debug, Default)]
+    struct Uppercase(bool);
+
+    struct Name(&'static str);
+
+    impl Serialize for Name {
+        fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+            Ok(Chunk::Atom(Atom::Str(
+                if state.get::<Uppercase>().is_some_and(|x| x.0) {
+                    self.0.to_uppercase().into()
+                } else {
+                    self.0.into()
+                },
+            )))
+        }
+    }
+
+    let names = vec![Name("foo"), Name("bar")];
+    let mut driver = SerializeDriver::new(&names);
+    driver.state_mut().get_mut::<Uppercase>().0 = true;
+    let mut events = Vec::new();
+    while let Some((event, _, _)) = driver.next().unwrap() {
+        events.push(event.to_static());
+    }
+
+    assert_eq!(
+        events,
+        vec![Event::SeqStart, "FOO".into(), "BAR".into(), Event::SeqEnd],
     );
 }

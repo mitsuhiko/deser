@@ -459,7 +459,7 @@ impl<'a> Sink for SinkHandle<'a> {
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
     extensions: StateExtensions<'a>,
-    descriptor_stack: Vec<&'a dyn Descriptor>,
+    descriptor_stack: Vec<&'static dyn Descriptor>,
     is_map_key: bool,
 }
 
@@ -533,7 +533,7 @@ impl<'a> DeserializerState<'a> {
     /// Returns the topmost descriptor.
     ///
     /// This descriptor always points to a container as the descriptor.
-    pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
+    pub fn top_descriptor(&self) -> Option<&'static dyn Descriptor> {
         self.descriptor_stack.last().copied()
     }
 
