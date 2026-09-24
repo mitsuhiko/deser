@@ -3,7 +3,7 @@ all: test
 test:
 	@cargo test
 
-MIRI_CRATES := deser deser-json deser-path deser-debug
+MIRI_CRATES := deser deser-json deser-location deser-path deser-debug
 
 miri-test:
 	@for crate in $(MIRI_CRATES); do \

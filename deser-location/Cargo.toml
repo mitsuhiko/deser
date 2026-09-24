@@ -1,0 +1,17 @@
+[package]
+name = "deser-location"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition = "2021"
+description = "Source location tracking for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-location"
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

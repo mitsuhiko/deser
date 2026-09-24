@@ -4,6 +4,7 @@ members = [
   "deser-debug",
   "deser-derive",
   "deser-json",
+  "deser-location",
   "deser-path",
   "examples/derive",
   "examples/json",
