@@ -534,75 +534,11 @@ where
 {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
         *out = Some(None);
-        let sink = Deserialize::deserialize_into(out.as_mut().unwrap());
-        match sink {
-            SinkHandle::Null(_) => sink,
-            sink => SinkHandle::boxed(NullIgnoringSink {
-                sink,
-                is_null: false,
-            }),
-        }
+        Deserialize::deserialize_into(out.as_mut().unwrap()).ignore_null()
     }
 
     fn __private_initial_value() -> Option<Self> {
         Some(None)
-    }
-}
-
-struct NullIgnoringSink<'a> {
-    sink: SinkHandle<'a>,
-    is_null: bool,
-}
-
-impl<'a> Sink for NullIgnoringSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        match atom {
-            Atom::Null => {
-                self.is_null = true;
-                Ok(())
-            }
-            other => self.sink.atom(other, state),
-        }
-    }
-
-    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.map(state)
-    }
-
-    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.seq(state)
-    }
-
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
-        self.sink.next_key(state)
-    }
-
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
-        self.sink.next_value(state)
-    }
-
-    fn value_for_key(
-        &mut self,
-        key: &str,
-        state: &DeserializerState,
-    ) -> Result<Option<SinkHandle>, Error> {
-        self.sink.value_for_key(key, state)
-    }
-
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        if self.is_null {
-            Ok(())
-        } else {
-            self.sink.finish(state)
-        }
-    }
-
-    fn descriptor(&self) -> &dyn Descriptor {
-        self.sink.descriptor()
-    }
-
-    fn expecting(&self) -> std::borrow::Cow<'_, str> {
-        self.sink.expecting()
     }
 }
 

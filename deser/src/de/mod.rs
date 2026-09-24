@@ -194,7 +194,6 @@
 use std::borrow::Cow;
 use std::cell::{Ref, RefMut};
 use std::fmt;
-use std::ops::{Deref, DerefMut};
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
@@ -219,50 +218,33 @@ __make_slot_wrapper!((pub), SlotWrapper);
 /// comes in.  In cases where the [`Sink`] cannot be borrowed it can
 /// be boxed up inside the handle.
 ///
+/// The handle itself implements [`Sink`] and forwards all calls to the
+/// sink it holds.
+///
 /// The equivalent for serialization is the
 /// [`SerializeHandle`](crate::ser::SerializeHandle).
-pub enum SinkHandle<'a> {
-    /// A borrowed reference to a [`Sink`].
+pub struct SinkHandle<'a>(HandleInner<'a>);
+
+enum HandleInner<'a> {
     Borrowed(&'a mut dyn Sink),
-    /// A boxed up [`Sink`] within the handle.
     Owned(Box<dyn Sink + 'a>),
-    /// A special handle that drops all values.
-    ///
-    /// To create this handle call [`SinkHandle::null`].
     Null(ignore::Ignore),
-}
-
-impl<'a> Deref for SinkHandle<'a> {
-    type Target = dyn Sink + 'a;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            SinkHandle::Borrowed(val) => &**val,
-            SinkHandle::Owned(val) => &**val,
-            SinkHandle::Null(ref val) => val,
-        }
-    }
-}
-
-impl<'a> DerefMut for SinkHandle<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            SinkHandle::Borrowed(val) => &mut **val,
-            SinkHandle::Owned(val) => &mut **val,
-            SinkHandle::Null(ref mut val) => val,
-        }
-    }
+    // The optional variants are used to implement `Option<T>` without an
+    // extra allocation: a null atom is not forwarded but turns the handle
+    // into a null handle so that `finish` is not forwarded either.
+    OptionalBorrowed(&'a mut dyn Sink),
+    OptionalOwned(Box<dyn Sink + 'a>),
 }
 
 impl<'a> SinkHandle<'a> {
     /// Create a borrowed handle to a [`Sink`].
     pub fn to(val: &'a mut dyn Sink) -> SinkHandle<'a> {
-        SinkHandle::Borrowed(val)
+        SinkHandle(HandleInner::Borrowed(val))
     }
 
     /// Create an owned handle to a heap allocated [`Sink`].
     pub fn boxed<S: Sink + 'a>(val: S) -> SinkHandle<'a> {
-        SinkHandle::Owned(Box::new(val))
+        SinkHandle(HandleInner::Owned(Box::new(val)))
     }
 
     /// Creates a sink handle that drops all values.
@@ -272,7 +254,169 @@ impl<'a> SinkHandle<'a> {
     /// mutable reference to a sink from a function that doesn't have a way
     /// to put a slot somewhere.
     pub fn null() -> SinkHandle<'a> {
-        SinkHandle::Null(ignore::Ignore)
+        SinkHandle(HandleInner::Null(ignore::Ignore))
+    }
+
+    /// Returns `true` if this is a null handle.
+    pub fn is_null(&self) -> bool {
+        matches!(self.0, HandleInner::Null(_))
+    }
+
+    /// Converts the handle into one that ignores null atoms.
+    ///
+    /// When a null atom is received the wrapped sink is not invoked (not even
+    /// [`finish`](Sink::finish)).  This is used to implement `Option<T>`.
+    pub(crate) fn ignore_null(self) -> SinkHandle<'a> {
+        SinkHandle(match self.0 {
+            HandleInner::Borrowed(sink) => HandleInner::OptionalBorrowed(sink),
+            HandleInner::Owned(sink) => HandleInner::OptionalOwned(sink),
+            other => other,
+        })
+    }
+
+    #[inline(always)]
+    fn sink(&self) -> &(dyn Sink + 'a) {
+        match self.0 {
+            HandleInner::Borrowed(ref sink) | HandleInner::OptionalBorrowed(ref sink) => &**sink,
+            HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => &**sink,
+            HandleInner::Null(ref sink) => sink,
+        }
+    }
+
+    #[inline(always)]
+    fn sink_mut(&mut self) -> &mut (dyn Sink + 'a) {
+        match self.0 {
+            HandleInner::Borrowed(ref mut sink) | HandleInner::OptionalBorrowed(ref mut sink) => {
+                &mut **sink
+            }
+            HandleInner::Owned(ref mut sink) | HandleInner::OptionalOwned(ref mut sink) => {
+                &mut **sink
+            }
+            HandleInner::Null(ref mut sink) => sink,
+        }
+    }
+}
+
+// The methods on the handle are inherent so that they can be used without
+// having the `Sink` trait in scope.  The `Sink` implementation delegates to
+// them.
+impl<'a> SinkHandle<'a> {
+    /// Forwards to [`Sink::atom`].
+    #[inline]
+    pub fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        if let Atom::Null = atom {
+            if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
+                *self = SinkHandle::null();
+                return Ok(());
+            }
+        }
+        self.sink_mut().atom(atom, state)
+    }
+
+    /// Forwards to [`Sink::unexpected_atom`].
+    pub fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        self.sink_mut().unexpected_atom(atom, state)
+    }
+
+    /// Forwards to [`Sink::map`].
+    #[inline]
+    pub fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink_mut().map(state)
+    }
+
+    /// Forwards to [`Sink::seq`].
+    #[inline]
+    pub fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink_mut().seq(state)
+    }
+
+    /// Forwards to [`Sink::next_key`].
+    #[inline]
+    pub fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        self.sink_mut().next_key(state)
+    }
+
+    /// Forwards to [`Sink::next_value`].
+    #[inline]
+    pub fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        self.sink_mut().next_value(state)
+    }
+
+    /// Forwards to [`Sink::value_for_key`].
+    pub fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &DeserializerState,
+    ) -> Result<Option<SinkHandle>, Error> {
+        self.sink_mut().value_for_key(key, state)
+    }
+
+    /// Forwards to [`Sink::finish`].
+    #[inline]
+    pub fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        self.sink_mut().finish(state)
+    }
+
+    /// Forwards to [`Sink::descriptor`].
+    pub fn descriptor(&self) -> &dyn Descriptor {
+        self.sink().descriptor()
+    }
+
+    /// Forwards to [`Sink::expecting`].
+    pub fn expecting(&self) -> Cow<'_, str> {
+        self.sink().expecting()
+    }
+}
+
+impl<'a> Sink for SinkHandle<'a> {
+    #[inline]
+    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        SinkHandle::atom(self, atom, state)
+    }
+
+    fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        SinkHandle::unexpected_atom(self, atom, state)
+    }
+
+    #[inline]
+    fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        SinkHandle::map(self, state)
+    }
+
+    #[inline]
+    fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        SinkHandle::seq(self, state)
+    }
+
+    #[inline]
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        SinkHandle::next_key(self, state)
+    }
+
+    #[inline]
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+        SinkHandle::next_value(self, state)
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &DeserializerState,
+    ) -> Result<Option<SinkHandle>, Error> {
+        SinkHandle::value_for_key(self, key, state)
+    }
+
+    #[inline]
+    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
+        SinkHandle::finish(self, state)
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        SinkHandle::descriptor(self)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        SinkHandle::expecting(self)
     }
 }
 

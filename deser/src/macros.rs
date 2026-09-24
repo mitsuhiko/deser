@@ -49,9 +49,9 @@ macro_rules! __make_slot_wrapper {
             /// This wraps a slot (an `Option<T>`) in a slot wrapper and then
             /// returns a [`SinkHandle`] to it.
             ///
-            /// Equivalent to `SinkHandle::Borrowed(SlotWrapper::wrap(...))`.
+            /// Equivalent to `SinkHandle::to(SlotWrapper::wrap(...))`.
             pub fn make_handle(out: &mut Option<T>) -> $crate::de::SinkHandle<'_> where $name<T>: $crate::de::Sink {
-                $crate::de::SinkHandle::Borrowed(Self::wrap(out))
+                $crate::de::SinkHandle::to(Self::wrap(out))
             }
         }
 
