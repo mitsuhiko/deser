@@ -92,3 +92,25 @@ fn test_string_escapes() {
         "\"日本語のテキスト\u{1f600}\""
     );
 }
+
+#[test]
+fn test_nested_containers() {
+    use std::collections::BTreeMap;
+
+    assert_eq!(
+        to_string(&vec![vec![1u32, 2], vec![], vec![3]]).unwrap(),
+        "[[1,2],[],[3]]"
+    );
+
+    let mut inner = BTreeMap::new();
+    inner.insert("x", vec![1u32]);
+    inner.insert("y", vec![]);
+    let mut map = BTreeMap::new();
+    map.insert("a", inner.clone());
+    map.insert("b", BTreeMap::new());
+    map.insert("c", inner);
+    assert_eq!(
+        to_string(&vec![map]).unwrap(),
+        r#"[{"a":{"x":[1],"y":[]},"b":{},"c":{"x":[1],"y":[]}}]"#
+    );
+}

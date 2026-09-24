@@ -8,9 +8,11 @@ pub struct Serializer {
     out: String,
 }
 
-enum ContainerState {
-    Map { first: bool, key_pos: bool },
-    Seq { first: bool },
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Container {
+    Top,
+    Seq,
+    Map,
 }
 
 impl Default for Serializer {
@@ -30,7 +32,13 @@ impl Serializer {
     /// Serializes the given value.
     pub fn serialize(mut self, value: &dyn Serialize) -> Result<String, Error> {
         let mut driver = SerializeDriver::new(value);
-        let mut container_stack = Vec::new();
+
+        // the state of the current container is held in locals, the state
+        // of the outer containers is saved on the stack.
+        let mut stack = Vec::new();
+        let mut container = Container::Top;
+        let mut first = true;
+        let mut is_key = false;
 
         macro_rules! unsupported {
             ($msg:expr) => {{
@@ -39,105 +47,109 @@ impl Serializer {
         }
 
         while let Some((event, _, _)) = driver.next()? {
-            // try to exit containers first
-            match event {
-                Event::MapEnd => {
-                    if !matches!(container_stack.pop(), Some(ContainerState::Map { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
+            let atom = match event {
+                Event::Atom(atom) => atom,
+                Event::MapStart | Event::SeqStart if is_key => {
+                    unsupported!("JSON does not support this value for map keys")
+                }
+                Event::MapStart | Event::SeqStart => {
+                    if container == Container::Seq && !first {
+                        self.write_char(',');
                     }
-                    self.write_char('}');
+                    stack.push(container);
+                    first = true;
+                    if let Event::MapStart = event {
+                        container = Container::Map;
+                        is_key = true;
+                        self.write_char('{');
+                    } else {
+                        container = Container::Seq;
+                        is_key = false;
+                        self.write_char('[');
+                    }
                     continue;
                 }
-                Event::SeqEnd => {
-                    if !matches!(container_stack.pop(), Some(ContainerState::Seq { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
+                Event::MapEnd | Event::SeqEnd => {
+                    if event == Event::MapEnd {
+                        if container != Container::Map || !is_key {
+                            return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
+                        }
+                        self.write_char('}');
+                    } else {
+                        if container != Container::Seq {
+                            return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
+                        }
+                        self.write_char(']');
                     }
-                    self.write_char(']');
+                    container = stack.pop().unwrap_or(Container::Top);
+                    // a container is never a key, so after it the next item
+                    // in a map is a key again.
+                    first = false;
+                    is_key = container == Container::Map;
                     continue;
                 }
-                _ => {}
-            }
+            };
 
-            // do we need a comma?
-            if let Some(
-                ContainerState::Seq { first }
-                | ContainerState::Map {
-                    first,
-                    key_pos: true,
-                },
-            ) = container_stack.last_mut()
-            {
-                if !*first {
+            if is_key {
+                if !first {
                     self.write_char(',');
                 }
-                *first = false;
-            }
-
-            // keys need special handling
-            if let Some(ContainerState::Map { key_pos, .. }) = container_stack.last_mut() {
-                let is_key = *key_pos;
-                *key_pos = !*key_pos;
-                if is_key {
-                    match event {
-                        Event::Atom(Atom::Str(val)) => self.write_escaped_str(&val),
-                        Event::Atom(Atom::Char(c)) => {
-                            self.write_escaped_str(c.encode_utf8(&mut [0u8; 4]))
-                        }
-                        Event::Atom(Atom::U64(val)) => {
-                            self.write_char('"');
-                            self.write_u64(val);
-                            self.write_char('"');
-                        }
-                        Event::Atom(Atom::I64(val)) => {
-                            self.write_char('"');
-                            self.write_i64(val);
-                            self.write_char('"');
-                        }
-                        _ => unsupported!("JSON does not support this value for map keys"),
-                    }
-                    self.write_char(':');
-                    continue;
-                }
-            }
-
-            match event {
-                Event::Atom(atom) => match atom {
-                    Atom::Null => self.write_str("null"),
-                    Atom::Bool(true) => self.write_str("true"),
-                    Atom::Bool(false) => self.write_str("false"),
+                first = false;
+                is_key = false;
+                match atom {
                     Atom::Str(val) => self.write_escaped_str(&val),
-                    Atom::Bytes(_val) => unsupported!("JSON doesn't support bytes"),
                     Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
-                    Atom::U64(val) => self.write_u64(val),
-                    Atom::I64(val) => self.write_i64(val),
-                    Atom::F64(val) => {
-                        if val.is_finite() {
-                            #[cfg(feature = "speedups")]
-                            {
-                                self.write_str(ryu::Buffer::new().format_finite(val))
-                            }
-                            #[cfg(not(feature = "speedups"))]
-                            {
-                                self.write_str(val.to_string().as_str())
-                            }
-                        } else {
-                            self.write_str("null")
-                        }
+                    Atom::U64(val) => {
+                        self.write_char('"');
+                        self.write_u64(val);
+                        self.write_char('"');
                     }
-                    _ => unsupported!("unknown atom"),
-                },
-                Event::MapStart => {
-                    container_stack.push(ContainerState::Map {
-                        first: true,
-                        key_pos: true,
-                    });
-                    self.write_char('{')
+                    Atom::I64(val) => {
+                        self.write_char('"');
+                        self.write_i64(val);
+                        self.write_char('"');
+                    }
+                    _ => unsupported!("JSON does not support this value for map keys"),
                 }
-                Event::SeqStart => {
-                    container_stack.push(ContainerState::Seq { first: true });
-                    self.write_char('[')
+                self.write_char(':');
+                continue;
+            }
+
+            match container {
+                Container::Seq => {
+                    if !first {
+                        self.write_char(',');
+                    }
+                    first = false;
                 }
-                Event::SeqEnd | Event::MapEnd => unreachable!(),
+                Container::Map => is_key = true,
+                Container::Top => {}
+            }
+
+            match atom {
+                Atom::Null => self.write_str("null"),
+                Atom::Bool(true) => self.write_str("true"),
+                Atom::Bool(false) => self.write_str("false"),
+                Atom::Str(val) => self.write_escaped_str(&val),
+                Atom::Bytes(_val) => unsupported!("JSON doesn't support bytes"),
+                Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
+                Atom::U64(val) => self.write_u64(val),
+                Atom::I64(val) => self.write_i64(val),
+                Atom::F64(val) => {
+                    if val.is_finite() {
+                        #[cfg(feature = "speedups")]
+                        {
+                            self.write_str(ryu::Buffer::new().format_finite(val))
+                        }
+                        #[cfg(not(feature = "speedups"))]
+                        {
+                            self.write_str(val.to_string().as_str())
+                        }
+                    } else {
+                        self.write_str("null")
+                    }
+                }
+                _ => unsupported!("unknown atom"),
             }
         }
 
