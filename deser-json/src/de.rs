@@ -37,6 +37,13 @@ pub struct Deserializer<'a> {
     input: &'a [u8],
     pos: usize,
     buffer: Vec<u8>,
+    // the offset where the last token started
+    #[cfg(feature = "locations")]
+    token_start: usize,
+    #[cfg(feature = "locations")]
+    source: &'a str,
+    #[cfg(feature = "locations")]
+    track_locations: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,7 +62,36 @@ impl<'a> Deserializer<'a> {
             input: input.as_bytes(),
             pos: 0,
             buffer: Vec::new(),
+            #[cfg(feature = "locations")]
+            token_start: 0,
+            #[cfg(feature = "locations")]
+            source: input,
+            #[cfg(feature = "locations")]
+            track_locations: false,
         }
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// When enabled the byte offsets of every event and a source map are
+    /// published into the deserializer state as
+    /// [`Locations`](deser_location::Locations).  Types like
+    /// [`Spanned`](deser_location::Spanned) can then pick them up.
+    #[cfg(feature = "locations")]
+    pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
+        self.track_locations = yes;
+        self
+    }
+
+    /// Publishes the offsets of the token that was parsed last.
+    #[inline(always)]
+    fn publish_span<const LOCATIONS: bool>(&mut self, driver: &DeserializeDriver) {
+        #[cfg(feature = "locations")]
+        if LOCATIONS {
+            deser_location::Locations::set_current(driver.state(), self.token_start, self.pos);
+        }
+        #[cfg(not(feature = "locations"))]
+        let _ = driver;
     }
 
     /// Deserializes the value.
@@ -74,6 +110,37 @@ impl<'a> Deserializer<'a> {
     /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink)
     /// or to wrap the sink of a value, for instance to track the path.
     pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+        // the scratch buffer for strings is moved out of the deserializer
+        // so that tokens borrowing from it do not borrow the deserializer.
+        let mut buffer = std::mem::take(&mut self.buffer);
+        #[cfg(feature = "locations")]
+        let rv = if self.track_locations {
+            deser_location::Locations::set_source_map(
+                driver.state(),
+                std::sync::Arc::new(deser_location::SourceMap::new(self.source)),
+            );
+            self.drive_impl::<true>(driver, &mut buffer)
+        } else {
+            self.drive_impl::<false>(driver, &mut buffer)
+        };
+        #[cfg(not(feature = "locations"))]
+        let rv = self.drive_impl::<false>(driver, &mut buffer);
+        self.buffer = buffer;
+        rv
+    }
+
+    fn drive_impl<const LOCATIONS: bool>(
+        &mut self,
+        driver: &mut DeserializeDriver,
+        buffer: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        macro_rules! emit {
+            ($emit:expr) => {{
+                self.publish_span::<LOCATIONS>(driver);
+                $emit?
+            }};
+        }
+
         // the state of the current container is held in locals, the outer
         // containers are saved on the stack.
         let mut stack = Vec::new();
@@ -81,7 +148,7 @@ impl<'a> Deserializer<'a> {
         let mut first = true;
 
         loop {
-            let mut token = self.next_token()?;
+            let mut token = self.next_token(buffer)?;
 
             match token {
                 Token::MapEnd | Token::SeqEnd => {
@@ -99,7 +166,7 @@ impl<'a> Deserializer<'a> {
                             },
                         ));
                     }
-                    driver.emit(event)?;
+                    emit!(driver.emit(event));
                     container = stack.pop().unwrap_or(Container::Top);
                 }
                 _ => {
@@ -107,38 +174,38 @@ impl<'a> Deserializer<'a> {
                         if !matches!(token, Token::Comma) {
                             return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
                         }
-                        token = self.next_token()?;
+                        token = self.next_token(buffer)?;
                     }
 
                     if container == Container::Map {
                         match token {
-                            Token::Str(val) => driver.emit(Event::from(val))?,
+                            Token::Str(val) => emit!(driver.emit(Event::from(val))),
                             _ => return Err(Error::new(ErrorKind::Unexpected, "expected map key")),
                         }
-                        match self.next_token()? {
+                        match self.next_token(buffer)? {
                             Token::Colon => {}
                             _ => return Err(Error::new(ErrorKind::Unexpected, "expected colon")),
                         }
-                        token = self.next_token()?;
+                        token = self.next_token(buffer)?;
                     }
 
                     match token {
-                        Token::Null => driver.emit(Event::Atom(Atom::Null))?,
-                        Token::Bool(val) => driver.emit(Event::from(val))?,
-                        Token::Str(val) => driver.emit(Event::from(val))?,
-                        Token::I64(val) => driver.emit(Event::from(val))?,
-                        Token::U64(val) => driver.emit(Event::from(val))?,
-                        Token::F64(val) => driver.emit(Event::from(val))?,
-                        Token::BigInt(val) => emit_big_int(driver, val)?,
+                        Token::Null => emit!(driver.emit(Event::Atom(Atom::Null))),
+                        Token::Bool(val) => emit!(driver.emit(Event::from(val))),
+                        Token::Str(val) => emit!(driver.emit(Event::from(val))),
+                        Token::I64(val) => emit!(driver.emit(Event::from(val))),
+                        Token::U64(val) => emit!(driver.emit(Event::from(val))),
+                        Token::F64(val) => emit!(driver.emit(Event::from(val))),
+                        Token::BigInt(val) => emit!(emit_big_int(driver, val)),
                         Token::MapStart | Token::SeqStart => {
                             stack.push(container);
                             first = true;
                             if let Token::MapStart = token {
                                 container = Container::Map;
-                                driver.emit(Event::MapStart)?;
+                                emit!(driver.emit(Event::MapStart));
                             } else {
                                 container = Container::Seq;
-                                driver.emit(Event::SeqStart)?;
+                                emit!(driver.emit(Event::SeqStart));
                             }
                             // containers can close immediately
                             continue;
@@ -198,7 +265,10 @@ impl<'a> Deserializer<'a> {
         self.pos += 1;
     }
 
-    fn parse_str(&mut self) -> Result<&str, Error> {
+    fn parse_str<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<&'b str, Error>
+    where
+        'a: 'b,
+    {
         fn result(bytes: &[u8]) -> &str {
             // SAFETY: the input is valid UTF-8 as it comes from a `&str`.  The
             // borrowed slices start and end at ASCII characters (quotes and
@@ -209,7 +279,7 @@ impl<'a> Deserializer<'a> {
 
         // Index of the first byte not yet copied into the scratch space.
         let mut start = self.pos;
-        self.buffer.clear();
+        buffer.clear();
 
         loop {
             self.pos = skip_to_escape(self.input, self.pos);
@@ -221,22 +291,22 @@ impl<'a> Deserializer<'a> {
             }
             match self.input[self.pos] {
                 b'"' => {
-                    if self.buffer.is_empty() {
+                    if buffer.is_empty() {
                         // Fast path: return a slice of the raw JSON without any
                         // copying.
                         let borrowed = &self.input[start..self.pos];
                         self.pos += 1;
                         return Ok(result(borrowed));
                     } else {
-                        self.buffer.extend_from_slice(&self.input[start..self.pos]);
+                        buffer.extend_from_slice(&self.input[start..self.pos]);
                         self.pos += 1;
-                        return Ok(result(&self.buffer));
+                        return Ok(result(buffer));
                     }
                 }
                 b'\\' => {
-                    self.buffer.extend_from_slice(&self.input[start..self.pos]);
+                    buffer.extend_from_slice(&self.input[start..self.pos]);
                     self.pos += 1;
-                    self.parse_escape()?;
+                    self.parse_escape(buffer)?;
                     start = self.pos;
                 }
                 _ => {
@@ -256,18 +326,18 @@ impl<'a> Deserializer<'a> {
 
     /// Parses a JSON escape sequence and appends it into the scratch space. Assumes
     /// the previous byte read was a backslash.
-    fn parse_escape(&mut self) -> Result<(), Error> {
+    fn parse_escape(&mut self, buffer: &mut Vec<u8>) -> Result<(), Error> {
         let ch = self.next_or_eof()?;
 
         match ch {
-            b'"' => self.buffer.push(b'"'),
-            b'\\' => self.buffer.push(b'\\'),
-            b'/' => self.buffer.push(b'/'),
-            b'b' => self.buffer.push(b'\x08'),
-            b'f' => self.buffer.push(b'\x0c'),
-            b'n' => self.buffer.push(b'\n'),
-            b'r' => self.buffer.push(b'\r'),
-            b't' => self.buffer.push(b'\t'),
+            b'"' => buffer.push(b'"'),
+            b'\\' => buffer.push(b'\\'),
+            b'/' => buffer.push(b'/'),
+            b'b' => buffer.push(b'\x08'),
+            b'f' => buffer.push(b'\x0c'),
+            b'n' => buffer.push(b'\n'),
+            b'r' => buffer.push(b'\r'),
+            b't' => buffer.push(b'\t'),
             b'u' => {
                 let c = match self.decode_hex_escape()? {
                     0xDC00..=0xDFFF => {
@@ -308,8 +378,7 @@ impl<'a> Deserializer<'a> {
                     },
                 };
 
-                self.buffer
-                    .extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
+                buffer.extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
             }
             _ => {
                 return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
@@ -380,7 +449,7 @@ impl<'a> Deserializer<'a> {
         Ok(())
     }
 
-    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Token<'_>, Error> {
+    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Token<'a>, Error> {
         match first_digit {
             b'0' => match self.peek_or_nul() {
                 b'0'..=b'9' => Err(Error::new(
@@ -493,7 +562,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Token<'_>, Error> {
+    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Token<'a>, Error> {
         match self.peek_or_nul() {
             b'.' => self
                 .parse_decimal(nonnegative, significand, 0)
@@ -626,14 +695,21 @@ impl<'a> Deserializer<'a> {
         Ok(if nonnegative { 0.0 } else { -0.0 })
     }
 
-    fn next_token(&mut self) -> Result<Token<'_>, Error> {
+    fn next_token<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<Token<'b>, Error>
+    where
+        'a: 'b,
+    {
         let peek = match self.parse_whitespace() {
             Some(b) => b,
             None => return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
         };
+        #[cfg(feature = "locations")]
+        {
+            self.token_start = self.pos;
+        }
         self.bump();
         match peek {
-            b'"' => self.parse_str().map(Token::Str),
+            b'"' => self.parse_str(buffer).map(Token::Str),
             digit @ b'0'..=b'9' => self.parse_integer(true, digit),
             b'-' => {
                 let first_digit = self.next_or_nul();
