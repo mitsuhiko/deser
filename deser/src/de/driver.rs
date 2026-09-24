@@ -1,7 +1,6 @@
 use crate::de::{Deserialize, DeserializerState, SinkHandle};
 use crate::error::Error;
 use crate::event::Event;
-use crate::extensions::Extensions;
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
@@ -45,12 +44,26 @@ impl<'a> DeserializeDriver<'a> {
 
     /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
+        DeserializeDriver::with_state(DeserializerState::new(None), sink)
+    }
+
+    /// Creates a driver that shares the extensions of another state.
+    ///
+    /// This is used to replay recorded events within an ongoing
+    /// deserialization.
+    pub(crate) fn nested(
+        parent: &'a DeserializerState<'_>,
+        sink: SinkHandle<'a>,
+        is_map_key: bool,
+    ) -> DeserializeDriver<'a> {
+        let mut state = DeserializerState::new(Some(parent.extensions()));
+        state.is_map_key = is_map_key;
+        DeserializeDriver::with_state(state, sink)
+    }
+
+    fn with_state(state: DeserializerState<'a>, sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
         DeserializeDriver {
-            state: DeserializerState {
-                extensions: Extensions::default(),
-                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
-                is_map_key: false,
-            },
+            state,
             sink_stack: Vec::with_capacity(STACK_CAPACITY),
             // SAFETY: the driver cannot outlive 'a
             current_sink: Some(unsafe { erase_lifetime(sink) }),

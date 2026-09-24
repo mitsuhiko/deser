@@ -203,9 +203,11 @@ mod driver;
 mod ignore;
 mod impls;
 mod owned;
+mod recording;
 
 pub use self::driver::DeserializeDriver;
 pub use self::owned::OwnedSink;
+pub use self::recording::Recording;
 use crate::extensions::Extensions;
 
 __make_slot_wrapper!((pub), SlotWrapper);
@@ -255,6 +257,23 @@ impl<'a> SinkHandle<'a> {
     /// to put a slot somewhere.
     pub fn null() -> SinkHandle<'a> {
         SinkHandle(HandleInner::Null(ignore::Ignore))
+    }
+
+    /// Shortens the lifetime of the handle.
+    ///
+    /// Handles are invariant over their lifetime, this performs the
+    /// conversion explicitly.
+    pub fn shorten<'b>(self) -> SinkHandle<'b>
+    where
+        'a: 'b,
+    {
+        SinkHandle(match self.0 {
+            HandleInner::Borrowed(sink) => HandleInner::Borrowed(sink),
+            HandleInner::Owned(sink) => HandleInner::Owned(sink),
+            HandleInner::Null(sink) => HandleInner::Null(sink),
+            HandleInner::OptionalBorrowed(sink) => HandleInner::OptionalBorrowed(sink),
+            HandleInner::OptionalOwned(sink) => HandleInner::OptionalOwned(sink),
+        })
     }
 
     /// Returns `true` if this is a null handle.
@@ -434,20 +453,57 @@ impl<'a> Sink for SinkHandle<'a> {
 
 /// Gives access to the deserializer state.
 pub struct DeserializerState<'a> {
-    extensions: Extensions,
+    extensions: StateExtensions<'a>,
     descriptor_stack: Vec<&'a dyn Descriptor>,
     is_map_key: bool,
 }
 
+/// The extensions of a state are either owned or borrowed from the state of
+/// an outer driver (for instance when replaying recordings).
+enum StateExtensions<'a> {
+    Owned(Extensions),
+    Borrowed(&'a Extensions),
+}
+
 impl<'a> DeserializerState<'a> {
+    pub(crate) fn new(extensions: Option<&'a Extensions>) -> DeserializerState<'a> {
+        DeserializerState {
+            extensions: match extensions {
+                Some(extensions) => StateExtensions::Borrowed(extensions),
+                None => StateExtensions::Owned(Extensions::default()),
+            },
+            descriptor_stack: Vec::with_capacity(128),
+            is_map_key: false,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn extensions(&self) -> &Extensions {
+        match self.extensions {
+            StateExtensions::Owned(ref extensions) => extensions,
+            StateExtensions::Borrowed(extensions) => extensions,
+        }
+    }
+
     /// Returns an extension value.
     pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
-        self.extensions.get()
+        self.extensions().get()
     }
 
     /// Returns a mutable extension value.
     pub fn get_mut<T: Default + fmt::Debug + 'static>(&self) -> RefMut<'_, T> {
-        self.extensions.get_mut()
+        self.extensions().get_mut()
+    }
+
+    /// Marks an extension type as replayable.
+    ///
+    /// When a value is internally buffered (for instance for internally
+    /// tagged enums, see [`Recording`]) the values of replayable extensions
+    /// are captured for every event and restored when the event is replayed.
+    /// This is used for information that formats or wrappers put into the
+    /// state for the current event, such as source locations or paths.
+    pub fn set_replayable<T: Clone + Default + fmt::Debug + 'static>(&self) {
+        self.extensions().set_replayable::<T>();
     }
 
     /// Returns the current recursion depth.

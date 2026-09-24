@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 
+#[derive(Copy, Clone)]
 pub struct TypeKey(TypeId, &'static str);
 
 /// A hasher for type ids.
@@ -73,9 +74,16 @@ impl<T: Any + Debug + 'static> DebugAny for T {
     }
 }
 
+type CloneFn = fn(&dyn DebugAny) -> Box<dyn DebugAny>;
+
+fn clone_value<T: Clone + Debug + 'static>(value: &dyn DebugAny) -> Box<dyn DebugAny> {
+    Box::new(value.as_any().downcast_ref::<T>().unwrap().clone())
+}
+
 #[derive(Default, Debug)]
 pub struct Extensions {
     map: RefCell<HashMap<TypeKey, Box<dyn DebugAny>, BuildHasherDefault<TypeIdHasher>>>,
+    replayable: RefCell<Vec<(TypeKey, CloneFn)>>,
 }
 
 impl Extensions {
@@ -109,5 +117,65 @@ impl Extensions {
         self.map
             .borrow_mut()
             .insert(TypeKey::of::<T>(), Box::new(T::default()));
+    }
+
+    /// Marks an extension type as replayable.
+    pub fn set_replayable<T: Clone + Debug + 'static>(&self) {
+        let key = TypeKey::of::<T>();
+        let mut replayable = self.replayable.borrow_mut();
+        if !replayable.iter().any(|(k, _)| *k == key) {
+            replayable.push((key, clone_value::<T>));
+        }
+    }
+
+    /// Captures the current values of all replayable extensions.
+    pub fn snapshot(&self) -> Snapshot {
+        let replayable = self.replayable.borrow();
+        if replayable.is_empty() {
+            return Snapshot(Vec::new());
+        }
+        let map = self.map.borrow();
+        Snapshot(
+            replayable
+                .iter()
+                .filter_map(|&(key, clone)| {
+                    map.get(&key).map(|value| (key, clone(&**value), clone))
+                })
+                .collect(),
+        )
+    }
+
+    /// Restores the values from a snapshot.
+    pub fn restore(&self, snapshot: &Snapshot) {
+        if snapshot.0.is_empty() {
+            return;
+        }
+        let mut map = self.map.borrow_mut();
+        for (key, value, clone) in snapshot.0.iter() {
+            map.insert(*key, clone(&**value));
+        }
+    }
+}
+
+/// The captured values of the replayable extensions.
+#[derive(Default)]
+pub struct Snapshot(Vec<(TypeKey, Box<dyn DebugAny>, CloneFn)>);
+
+impl Clone for Snapshot {
+    fn clone(&self) -> Snapshot {
+        Snapshot(
+            self.0
+                .iter()
+                .map(|(key, value, clone)| (*key, clone(&**value), *clone))
+                .collect(),
+        )
+    }
+}
+
+impl Debug for Snapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.0.iter().map(|(key, value, _)| (key, value)))
+            .finish()
     }
 }

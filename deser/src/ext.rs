@@ -157,6 +157,11 @@ impl<'a> ExtValue<'a> {
         self.get().as_any().downcast_ref::<T>()
     }
 
+    /// Returns a value borrowing from this one.
+    pub fn as_borrowed(&self) -> ExtValue<'_> {
+        ExtValue(Repr::Borrowed(self.get()))
+    }
+
     /// Makes a static clone of the value decoupling the lifetimes.
     pub fn to_static(&self) -> ExtValue<'static> {
         ExtValue(Repr::Owned(self.get().clone_box()))

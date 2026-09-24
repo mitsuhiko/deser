@@ -49,6 +49,23 @@ impl<'a> Atom<'a> {
         }
     }
 
+    /// Returns an atom borrowing from this one.
+    ///
+    /// This is useful to pass a stored atom on without cloning its data.
+    pub fn as_borrowed(&self) -> Atom<'_> {
+        match *self {
+            Atom::Null => Atom::Null,
+            Atom::Bool(v) => Atom::Bool(v),
+            Atom::Str(ref v) => Atom::Str(Cow::Borrowed(v)),
+            Atom::Bytes(ref v) => Atom::Bytes(Cow::Borrowed(v)),
+            Atom::Char(v) => Atom::Char(v),
+            Atom::U64(v) => Atom::U64(v),
+            Atom::I64(v) => Atom::I64(v),
+            Atom::F64(v) => Atom::F64(v),
+            Atom::Ext(ref v) => Atom::Ext(v.as_borrowed()),
+        }
+    }
+
     /// Returns the human readable name of the atom.
     pub fn name(&self) -> &str {
         match *self {
@@ -177,6 +194,17 @@ pub enum Event<'a> {
 }
 
 impl<'a> Event<'a> {
+    /// Returns an event borrowing from this one.
+    pub fn as_borrowed(&self) -> Event<'_> {
+        match *self {
+            Event::Atom(ref atom) => Event::Atom(atom.as_borrowed()),
+            Event::MapStart => Event::MapStart,
+            Event::MapEnd => Event::MapEnd,
+            Event::SeqStart => Event::SeqStart,
+            Event::SeqEnd => Event::SeqEnd,
+        }
+    }
+
     /// Makes a static clone of the event decoupling the lifetimes.
     pub fn to_static(&self) -> Event<'static> {
         match *self {
