@@ -4,31 +4,94 @@
 /// handling within a string (a quote, a backslash or a control character).
 ///
 /// This processes a word at a time and falls back to a byte-wise scan for the
-/// tail of the input.
+/// tail of the input.  This is used by the parser where strings are typically
+/// short, so this does not use SIMD which has a higher latency.
 #[inline]
 pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
-    type Chunk = u64;
-    const STEP: usize = std::mem::size_of::<Chunk>();
-
     if pos >= input.len() || ESCAPE[usize::from(input[pos])] {
         return pos;
     }
     pos += 1;
 
-    while pos + STEP <= input.len() {
-        let mut bytes = [0u8; STEP];
-        bytes.copy_from_slice(&input[pos..pos + STEP]);
-        let masked = escape_mask(Chunk::from_le_bytes(bytes));
+    while pos + 8 <= input.len() {
+        let masked = escape_mask(load_u64(input, pos));
         if masked != 0 {
             return pos + masked.trailing_zeros() as usize / 8;
         }
-        pos += STEP;
+        pos += 8;
     }
 
     while pos < input.len() && !ESCAPE[usize::from(input[pos])] {
         pos += 1;
     }
     pos
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+#[inline(always)]
+fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    use std::arch::aarch64::*;
+    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
+    // SAFETY: neon is available and the block is 16 bytes long
+    let nibbles = unsafe {
+        let chars = vld1q_u8(block.as_ptr());
+        let ctrl = vcltq_u8(chars, vdupq_n_u8(0x20));
+        let quote = vceqq_u8(chars, vdupq_n_u8(b'"'));
+        let backslash = vceqq_u8(chars, vdupq_n_u8(b'\\'));
+        let flagged = vorrq_u8(ctrl, vorrq_u8(quote, backslash));
+        // narrow every byte into a nibble of a 64 bit mask
+        let narrowed = vshrn_n_u16::<4>(vreinterpretq_u16_u8(flagged));
+        vget_lane_u64::<0>(vreinterpret_u64_u8(narrowed))
+    };
+    if nibbles != 0 {
+        Some(nibbles.trailing_zeros() as usize / 4)
+    } else {
+        None
+    }
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+#[inline(always)]
+fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    use std::arch::x86_64::*;
+    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
+    // SAFETY: sse2 is available and the block is 16 bytes long
+    let mask = unsafe {
+        let chars = _mm_loadu_si128(block.as_ptr().cast::<__m128i>());
+        // unsigned `chars <= 0x1f` is `min(chars, 0x1f) == chars`
+        let ctrl = _mm_cmpeq_epi8(_mm_min_epu8(chars, _mm_set1_epi8(0x1f)), chars);
+        let quote = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'"' as i8));
+        let backslash = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'\\' as i8));
+        _mm_movemask_epi8(_mm_or_si128(ctrl, _mm_or_si128(quote, backslash))) as u32
+    };
+    if mask != 0 {
+        Some(mask.trailing_zeros() as usize)
+    } else {
+        None
+    }
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(not(any(
+    all(target_arch = "aarch64", target_feature = "neon", not(miri)),
+    all(target_arch = "x86_64", target_feature = "sse2", not(miri))
+)))]
+#[inline(always)]
+fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    let masked = escape_mask(load_u64(input, pos));
+    if masked != 0 {
+        return Some(masked.trailing_zeros() as usize / 8);
+    }
+    let masked = escape_mask(load_u64(input, pos + 8));
+    if masked != 0 {
+        return Some(8 + masked.trailing_zeros() as usize / 8);
+    }
+    None
 }
 
 const ONE_BYTES: u64 = u64::MAX / 255;
@@ -93,20 +156,32 @@ pub fn find_escape(input: &[u8]) -> usize {
         };
     }
 
-    let mut pos = 0;
-    while pos + 8 <= len {
-        let masked = escape_mask(load_u64(input, pos));
+    if len < 16 {
+        let masked = escape_mask(load_u64(input, 0));
         if masked != 0 {
-            return pos + masked.trailing_zeros() as usize / 8;
+            return masked.trailing_zeros() as usize / 8;
         }
-        pos += 8;
-    }
-    if pos < len {
-        // the bytes before `pos` do not need escaping, so the lowest
-        // flagged byte of the last word is at or after `pos`.
+        // the first 8 bytes do not need escaping, so the lowest flagged
+        // byte of the overlapping last word is exact.
         let masked = escape_mask(load_u64(input, len - 8));
         if masked != 0 {
             return len - 8 + masked.trailing_zeros() as usize / 8;
+        }
+        return len;
+    }
+
+    let mut pos = 0;
+    while pos + 16 <= len {
+        if let Some(offset) = block_escape(input, pos) {
+            return pos + offset;
+        }
+        pos += 16;
+    }
+    if pos < len {
+        // the bytes before `pos` do not need escaping, so the first flagged
+        // byte of the overlapping last block is at or after `pos`.
+        if let Some(offset) = block_escape(input, len - 16) {
+            return len - 16 + offset;
         }
     }
     len
@@ -152,14 +227,14 @@ fn test_find_escape() {
     let alphabet: &[u8] = b"a\"\\\x00\x1f\x20\x7f\x80\xff\xe3";
     let mut state = 0x2545f4914f6cdd1du64;
     let rounds = if cfg!(miri) { 2 } else { 500 };
-    for len in 0..40 {
+    for len in 0..80 {
         for _ in 0..rounds {
             let input: Vec<u8> = (0..len)
                 .map(|_| {
                     state ^= state << 13;
                     state ^= state >> 7;
                     state ^= state << 17;
-                    if state.is_multiple_of(8) {
+                    if state.is_multiple_of(16) {
                         alphabet[(state >> 8) as usize % alphabet.len()]
                     } else {
                         b'x'
@@ -183,7 +258,7 @@ fn test_skip_to_escape() {
     let alphabet: &[u8] = b"a\"\\\x00\x1f\x20\x7f\x80\xff\xe3";
     let mut state = 0x2545f4914f6cdd1du64;
     let rounds = if cfg!(miri) { 2 } else { 200 };
-    for len in 0..40 {
+    for len in 0..80 {
         for _ in 0..rounds {
             let input: Vec<u8> = (0..len)
                 .map(|_| {
