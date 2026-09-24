@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::mem::ManuallyDrop;
+use std::marker::PhantomData;
 
 use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
@@ -16,70 +16,60 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// is returned, indicating the end of the event stream.
 pub struct SerializeDriver<'a> {
     state: SerializerState<'static>,
-    state_stack: Vec<DriverState>,
-    serializable_stack: ManuallyDrop<Vec<SerializeHandle<'static>>>,
-    emitter_stack: ManuallyDrop<Vec<Emitter>>,
-    next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
+    // Frames refer to data borrowed from the serializables of the frames
+    // below them, which is why the lifetimes are erased to `'static`.
+    stack: Vec<Frame>,
+    _marker: PhantomData<&'a dyn Serialize>,
 }
 
 static STRUCT_KEY_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
 
-enum DriverState {
-    SeqEmitterAdvance,
-    MapEmitterNextKey,
-    MapEmitterNextValue,
-    StructEmitterAdvance,
-    Serialize,
-    PopEmitter,
-    FinishSerialize,
+/// A single value that is currently being serialized.
+struct Frame {
+    // `phase` must be declared (and thus dropped) before `serializable` as
+    // the emitters borrow from the serializable.
+    phase: Phase,
+    serializable: SerializeHandle<'static>,
 }
 
-enum Emitter {
+enum Phase {
+    /// The value needs to be serialized.
+    Pending,
+    /// The value was fully emitted, `finish` needs to be called.
+    Finish,
     Seq(Box<dyn SeqEmitter>),
-    Map(Box<dyn MapEmitter>),
+    Map(Box<dyn MapEmitter>, bool),
     Struct(Box<dyn StructEmitter>),
 }
 
 impl<'a> Drop for SerializeDriver<'a> {
     fn drop(&mut self) {
-        self.next_event.take();
-        while let Some(_emitter) = self.emitter_stack.pop() {
-            // drop in inverse order
-        }
-        while let Some(_emitter) = self.serializable_stack.pop() {
-            // drop in inverse order
-        }
-        unsafe {
-            ManuallyDrop::drop(&mut self.serializable_stack);
-            ManuallyDrop::drop(&mut self.emitter_stack);
-        }
+        // inner frames can borrow from outer frames, drop in inverse order.
+        while let Some(_frame) = self.stack.pop() {}
     }
 }
 
 const STACK_CAPACITY: usize = 128;
+
+type NextEvent<'a> = Option<(Event<'a>, &'a dyn Descriptor)>;
 
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
         let serializable =
             unsafe { extend_lifetime!(SerializeHandle::Borrowed(serializable), SerializeHandle) };
+        let mut stack = Vec::with_capacity(STACK_CAPACITY);
+        stack.push(Frame {
+            phase: Phase::Pending,
+            serializable,
+        });
         SerializeDriver {
             state: SerializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
             },
-            emitter_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
-            serializable_stack: ManuallyDrop::new({
-                let mut vec = Vec::with_capacity(STACK_CAPACITY);
-                vec.push(serializable);
-                vec
-            }),
-            state_stack: {
-                let mut vec = Vec::with_capacity(STACK_CAPACITY);
-                vec.push(DriverState::Serialize);
-                vec
-            },
-            next_event: None,
+            stack,
+            _marker: PhantomData,
         }
     }
 
@@ -94,156 +84,107 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// The driver will panic if the data fed from the serializer is malformed.
     #[allow(clippy::should_implement_trait)]
+    #[inline]
     pub fn next(&mut self) -> Result<Option<(Event, &dyn Descriptor, &SerializerState)>, Error> {
-        self.advance()?;
         Ok(self
-            .next_event
-            .take()
+            .advance()?
             .map(|(event, descriptor)| (event, descriptor, &self.state)))
     }
 
-    fn advance(&mut self) -> Result<(), Error> {
-        macro_rules! top_emitter {
-            ($ty:ident) => {
-                match self.emitter_stack.last_mut() {
-                    Some(Emitter::$ty(emitter)) => emitter,
-                    _ => unreachable!(),
-                }
-            };
-        }
-
-        while let Some(state) = self.state_stack.last_mut() {
-            match state {
-                DriverState::SeqEmitterAdvance => {
-                    let emitter = top_emitter!(Seq);
-                    match unsafe {
-                        extend_lifetime!(emitter.next(&self.state)?, Option<SerializeHandle>)
-                    } {
-                        Some(item_serializable) => {
-                            // continue iteration
-                            *state = DriverState::SeqEmitterAdvance;
-                            // and serialize the current item
-                            self.serializable_stack.push(item_serializable);
-                            self.state_stack.push(DriverState::Serialize);
-                        }
-                        None => {
-                            *state = DriverState::PopEmitter;
-                        }
-                    }
-                }
-                DriverState::MapEmitterNextKey => {
-                    let emitter = top_emitter!(Map);
-                    match unsafe {
-                        extend_lifetime!(emitter.next_key(&self.state)?, Option<SerializeHandle>)
-                    } {
-                        Some(key_serializable) => {
-                            // continue with value
-                            *state = DriverState::MapEmitterNextValue;
-                            // and serialize the current key
-                            self.serializable_stack.push(key_serializable);
-                            self.state_stack.push(DriverState::Serialize);
-                        }
-                        None => {
-                            *state = DriverState::PopEmitter;
-                        }
-                    }
-                }
-                DriverState::MapEmitterNextValue => {
-                    let emitter = top_emitter!(Map);
-                    let value_serializable = unsafe {
-                        extend_lifetime!(emitter.next_value(&self.state)?, SerializeHandle)
-                    };
-                    // continue with key again
-                    *state = DriverState::MapEmitterNextKey;
-                    // and serialize the current value
-                    self.serializable_stack.push(value_serializable);
-                    self.state_stack.push(DriverState::Serialize);
-                }
-                DriverState::StructEmitterAdvance => {
-                    let emitter = top_emitter!(Struct);
-                    match unsafe {
-                        extend_lifetime!(
-                            emitter.next(&self.state)?,
-                            Option<(Cow<'_, str>, SerializeHandle)>
-                        )
-                    } {
-                        Some((key, value_serializable)) => {
-                            // the key is emitted directly as event, the value
-                            // is serialized on the next iteration.
-                            self.serializable_stack.push(value_serializable);
-                            self.state_stack.push(DriverState::Serialize);
-                            self.next_event =
-                                Some((Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR));
-                            return Ok(());
-                        }
-                        None => {
-                            *state = DriverState::PopEmitter;
-                        }
-                    }
-                }
-                DriverState::Serialize => {
-                    let serializable = self.serializable_stack.last().unwrap();
-                    match unsafe { extend_lifetime!(serializable.serialize(&self.state)?, Chunk) } {
+    /// Advances the driver.
+    ///
+    /// The returned event is bound to `'static` but it actually borrows from
+    /// the frames on the stack.  It's only valid until the next call.
+    fn advance(&mut self) -> Result<NextEvent<'static>, Error> {
+        while let Some(frame) = self.stack.last_mut() {
+            // The events produced borrow from the frames on the stack.  They
+            // stay alive until the next call to `advance` as frames are only
+            // popped at the start of the loop.
+            let frame = unsafe { std::mem::transmute::<&mut Frame, &'static mut Frame>(frame) };
+            match frame.phase {
+                Phase::Pending => {
+                    let serializable = &*frame.serializable;
+                    let descriptor = serializable.descriptor();
+                    let chunk = serializable.serialize(&self.state)?;
+                    let chunk = unsafe { std::mem::transmute::<Chunk<'_>, Chunk<'static>>(chunk) };
+                    let event = match chunk {
                         Chunk::Atom(atom) => {
-                            self.next_event = Some((Event::Atom(atom), unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            }));
-                            *state = DriverState::FinishSerialize;
-                            return Ok(());
+                            frame.phase = Phase::Finish;
+                            return Ok(Some((Event::Atom(atom), descriptor)));
                         }
                         Chunk::Struct(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::MapStart, descriptor));
-                            self.emitter_stack.push(Emitter::Struct(emitter));
-                            *state = DriverState::StructEmitterAdvance;
-                            self.state.descriptor_stack.push(descriptor);
-                            return Ok(());
+                            frame.phase = Phase::Struct(emitter);
+                            Event::MapStart
                         }
                         Chunk::Map(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::MapStart, descriptor));
-                            self.emitter_stack.push(Emitter::Map(emitter));
-                            *state = DriverState::MapEmitterNextKey;
-                            self.state.descriptor_stack.push(descriptor);
-                            return Ok(());
+                            frame.phase = Phase::Map(emitter, false);
+                            Event::MapStart
                         }
                         Chunk::Seq(emitter) => {
-                            let descriptor = unsafe {
-                                extend_lifetime!(serializable.descriptor(), &dyn Descriptor)
-                            };
-                            self.next_event = Some((Event::SeqStart, descriptor));
-                            self.emitter_stack.push(Emitter::Seq(emitter));
-                            *state = DriverState::SeqEmitterAdvance;
-                            self.state.descriptor_stack.push(descriptor);
-                            return Ok(());
+                            frame.phase = Phase::Seq(emitter);
+                            Event::SeqStart
                         }
+                    };
+                    self.state.descriptor_stack.push(descriptor);
+                    return Ok(Some((event, descriptor)));
+                }
+                Phase::Finish => {
+                    let frame = self.stack.pop().unwrap();
+                    frame.serializable.finish(&self.state)?;
+                    continue;
+                }
+                Phase::Seq(ref mut emitter) => {
+                    if let Some(item) = emitter.next(&self.state)? {
+                        self.push(item);
+                        continue;
                     }
                 }
-                DriverState::PopEmitter => {
-                    let descriptor = self.state.descriptor_stack.pop().unwrap();
-                    *state = DriverState::FinishSerialize;
-                    self.next_event = Some((
-                        match self.emitter_stack.pop().unwrap() {
-                            Emitter::Seq(_) => Event::SeqEnd,
-                            Emitter::Map(_) | Emitter::Struct(_) => Event::MapEnd,
-                        },
-                        descriptor,
-                    ));
-                    return Ok(());
+                Phase::Map(ref mut emitter, ref mut is_value) => {
+                    if *is_value {
+                        *is_value = false;
+                        let value = emitter.next_value(&self.state)?;
+                        self.push(value);
+                        continue;
+                    } else if let Some(key) = emitter.next_key(&self.state)? {
+                        *is_value = true;
+                        self.push(key);
+                        continue;
+                    }
                 }
-                DriverState::FinishSerialize => {
-                    self.state_stack.pop();
-                    let serializable = self.serializable_stack.pop().unwrap();
-                    serializable.finish(&self.state)?;
+                Phase::Struct(ref mut emitter) => {
+                    if let Some((key, value)) = emitter.next(&self.state)? {
+                        // the key is emitted directly as event, the value
+                        // is serialized on the next iteration.
+                        let key =
+                            unsafe { std::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key) };
+                        self.push(value);
+                        return Ok(Some((Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR)));
+                    }
                 }
             }
+
+            // if we make it here, a container was exhausted.  The emitter is
+            // dropped and the serializable is finished on the next call.
+            let event = match frame.phase {
+                Phase::Seq(_) => Event::SeqEnd,
+                _ => Event::MapEnd,
+            };
+            frame.phase = Phase::Finish;
+            let descriptor = self.state.descriptor_stack.pop().unwrap();
+            return Ok(Some((event, descriptor)));
         }
 
-        Ok(())
+        Ok(None)
+    }
+
+    #[inline(always)]
+    fn push(&mut self, serializable: SerializeHandle<'_>) {
+        self.stack.push(Frame {
+            phase: Phase::Pending,
+            serializable: unsafe {
+                std::mem::transmute::<SerializeHandle<'_>, SerializeHandle<'static>>(serializable)
+            },
+        });
     }
 }
 
