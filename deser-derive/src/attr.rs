@@ -45,6 +45,7 @@ pub struct ContainerAttrs<'a> {
     rename_all: Option<RenameAll>,
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
+    tag: Option<String>,
 }
 
 pub fn get_meta_items(attr: &syn::Attribute) -> syn::Result<Vec<syn::NestedMeta>> {
@@ -100,6 +101,7 @@ impl<'a> ContainerAttrs<'a> {
             rename_all: None,
             default: None,
             skip_serializing_optionals: false,
+            tag: None,
         };
 
         for meta_item in input.attrs.iter().flat_map(get_meta_items).flatten() {
@@ -122,6 +124,18 @@ impl<'a> ContainerAttrs<'a> {
                             ));
                         }
                         rv.rename = Some(get_lit_str("rename", &nv.lit)?);
+                    }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("tag") => {
+                        if rv.tag.is_some() {
+                            return Err(syn::Error::new_spanned(meta, "duplicate tag attribute"));
+                        }
+                        if !matches!(input.data, syn::Data::Enum(_)) {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "tag is only supported on enums",
+                            ));
+                        }
+                        rv.tag = Some(get_lit_str("tag", &nv.lit)?);
                     }
                     syn::Meta::Path(path) if path.is_ident("default") => {
                         if rv.default.is_some() {
@@ -219,6 +233,10 @@ impl<'a> ContainerAttrs<'a> {
 
     pub fn skip_serializing_optionals(&self) -> bool {
         self.skip_serializing_optionals
+    }
+
+    pub fn tag(&self) -> Option<&str> {
+        self.tag.as_deref()
     }
 
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
@@ -377,6 +395,14 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn aliases(&self) -> &[String] {
         &self.aliases
+    }
+
+    /// Returns the name of the field ignoring container level renames.
+    pub fn plain_name(&self) -> Cow<'_, str> {
+        self.rename
+            .as_deref()
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| self.field.ident.as_ref().unwrap().to_string().into())
     }
 
     pub fn default(&self) -> Option<&TypeDefault> {

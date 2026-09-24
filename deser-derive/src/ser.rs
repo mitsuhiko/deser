@@ -209,6 +209,9 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     let ident = &input.ident;
 
     let container_attrs = ContainerAttrs::of(input)?;
+    if let Some(tag) = container_attrs.tag() {
+        return derive_tagged_enum(input, enumeration, &container_attrs, tag);
+    }
     let var_idents = enumeration
         .variants
         .iter()
@@ -244,6 +247,156 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                             }
                         )*
                     })
+                }
+            }
+        };
+    })
+}
+
+/// Derives serialization for internally tagged enums.
+///
+/// The variants are serialized as structs with the tag as first field.
+fn derive_tagged_enum(
+    input: &syn::DeriveInput,
+    enumeration: &syn::DataEnum,
+    container_attrs: &ContainerAttrs,
+    tag: &str,
+) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let type_name = container_attrs.container_name();
+    let mut arms = Vec::new();
+
+    for variant in &enumeration.variants {
+        let attrs = EnumVariantAttrs::of(variant)?;
+        let var_ident = &variant.ident;
+        let name = attrs.name(container_attrs).to_string();
+        let tag_item = quote! {
+            0 => ::deser::__derive::Some((
+                ::deser::__derive::Cow::Borrowed(#tag),
+                ::deser::ser::SerializeHandle::to(&#name),
+            )),
+        };
+
+        match &variant.fields {
+            syn::Fields::Named(fields) => {
+                let mut bindings = Vec::new();
+                let mut field_arms = Vec::new();
+                for (idx, field) in fields.named.iter().enumerate() {
+                    let field_attrs = FieldAttrs::of(field)?;
+                    if field_attrs.flatten() {
+                        return Err(syn::Error::new_spanned(
+                            field,
+                            "flatten is not supported in tagged enum variants",
+                        ));
+                    }
+                    let binding = &field.ident;
+                    let index = idx + 1;
+                    let field_name = field_attrs.plain_name().to_string();
+                    let field_skip = field_attrs.skip_serializing_if().map(|path| {
+                        quote! {
+                            if #path(#binding) {
+                                continue;
+                            }
+                        }
+                    });
+                    let optional_skip = if container_attrs.skip_serializing_optionals() {
+                        Some(quote! {
+                            if ::deser::ser::Serialize::is_optional(#binding) {
+                                continue;
+                            }
+                        })
+                    } else {
+                        None
+                    };
+                    bindings.push(binding);
+                    field_arms.push(quote! {
+                        #index => {
+                            #field_skip
+                            #optional_skip
+                            ::deser::__derive::Some((
+                                ::deser::__derive::Cow::Borrowed(#field_name),
+                                ::deser::ser::SerializeHandle::to(#binding),
+                            ))
+                        }
+                    });
+                }
+                arms.push(quote! {
+                    #ident::#var_ident { #(ref #bindings,)* } => match __index {
+                        #tag_item
+                        #(#field_arms)*
+                        _ => ::deser::__derive::None,
+                    },
+                });
+            }
+            syn::Fields::Unit => {
+                arms.push(quote! {
+                    #ident::#var_ident => match __index {
+                        #tag_item
+                        _ => ::deser::__derive::None,
+                    },
+                });
+            }
+            syn::Fields::Unnamed(_) => {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "tagged enums only support unit and struct variants",
+                ))
+            }
+        }
+    }
+
+    Ok(quote! {
+        const _: () = {
+            struct __Descriptor;
+
+            impl ::deser::Descriptor for __Descriptor {
+                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
+                    ::deser::__derive::Some(#type_name)
+                }
+            }
+
+            struct __TaggedEmitter<'__a> {
+                data: &'__a #ident,
+                index: usize,
+            }
+
+            #[automatically_derived]
+            impl ::deser::Serialize for #ident {
+                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                    &__Descriptor
+                }
+
+                fn serialize(
+                    &self,
+                    __state: &::deser::ser::SerializerState,
+                ) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
+                    ::deser::__derive::Ok(::deser::ser::Chunk::Struct(::deser::__derive::Box::new(
+                        __TaggedEmitter {
+                            data: self,
+                            index: 0,
+                        },
+                    )))
+                }
+            }
+
+            impl<'__a> ::deser::ser::StructEmitter for __TaggedEmitter<'__a> {
+                fn next(
+                    &mut self,
+                    __state: &::deser::ser::SerializerState,
+                ) -> ::deser::__derive::Result<
+                    ::deser::__derive::Option<(
+                        ::deser::__derive::StrCow<'_>,
+                        ::deser::ser::SerializeHandle<'_>,
+                    )>,
+                > {
+                    #[allow(clippy::never_loop)]
+                    loop {
+                        let __index = self.index;
+                        self.index += 1;
+                        return ::deser::__derive::Ok(match *self.data {
+                            #(#arms)*
+                        });
+                    }
                 }
             }
         };

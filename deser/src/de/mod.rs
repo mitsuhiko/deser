@@ -204,6 +204,8 @@ mod ignore;
 mod impls;
 mod owned;
 mod recording;
+#[cfg(feature = "derive")]
+pub(crate) mod tagged;
 
 pub use self::driver::DeserializeDriver;
 pub use self::owned::OwnedSink;

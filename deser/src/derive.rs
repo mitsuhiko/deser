@@ -62,6 +62,26 @@
 //!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
 //!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
+//! * `#[deser(tag = "...")]`: makes the enum internally tagged.  The enum is
+//!   represented as a map with the variant name in the given field and the
+//!   fields of the variant next to it.  Unit variants and variants with
+//!   named fields are supported.  The tag does not need to come first: the
+//!   fields before it are recorded and replayed once the tag is known (see
+//!   [`Recording`](crate::de::Recording)).  Format specific information such as
+//!   map key handling, extension values, source locations and paths is
+//!   retained.
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "type", rename_all = "snake_case")]
+//! pub enum Shape {
+//!     Circle { radius: f64 },
+//!     Rect { width: f64, height: f64 },
+//!     Empty,
+//! }
+//! ```
 //!
 //! ## Struct Field Attributes
 //!

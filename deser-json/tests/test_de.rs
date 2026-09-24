@@ -295,3 +295,42 @@ fn test_wide_integers() {
         values
     );
 }
+
+#[test]
+fn test_internally_tagged_buffering() {
+    use std::collections::HashMap;
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    #[deser(tag = "type")]
+    enum Message {
+        Stats {
+            // integer keys only work because the buffered keys are replayed
+            // as map keys.
+            counts: HashMap<u32, u32>,
+            // extension values are retained when buffered
+            total: u128,
+            label: Option<String>,
+        },
+    }
+
+    let msg: Message = from_str(
+        r#"{
+            "counts": {"1": 10, "2": 20},
+            "total": 340282366920938463463374607431768211455,
+            "label": null,
+            "type": "Stats"
+        }"#,
+    )
+    .unwrap();
+    let mut counts = HashMap::new();
+    counts.insert(1, 10);
+    counts.insert(2, 20);
+    assert_eq!(
+        msg,
+        Message::Stats {
+            counts,
+            total: u128::MAX,
+            label: None,
+        }
+    );
+}

@@ -474,3 +474,52 @@ fn test_panics() {
     }));
     assert!(rv.is_err());
 }
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[deser(tag = "type")]
+enum Tagged {
+    A { inner: Inner, list: Vec<Option<Box<Inner>>> },
+    B,
+}
+
+#[test]
+fn test_tagged_drop_and_errors_at_every_point() {
+    let value = Tagged::A {
+        inner: Inner {
+            name: "x".into(),
+            tags: vec!["a".into(), "b".into()],
+        },
+        list: vec![
+            None,
+            Some(Box::new(Inner {
+                name: "y".into(),
+                tags: vec![],
+            })),
+        ],
+    };
+    let mut events = Vec::new();
+    {
+        let mut driver = SerializeDriver::new(&value);
+        while let Some((event, _, _)) = driver.next().unwrap() {
+            events.push(event.to_static());
+        }
+    }
+    // move the tag to the end so that everything is buffered
+    let tag = events.drain(1..3).collect::<Vec<_>>();
+    let end = events.pop().unwrap();
+    events.extend(tag);
+    events.push(end);
+
+    assert_eq!(emit_partial::<Tagged>(&events).unwrap(), value);
+    for cut in 0..events.len() {
+        assert!(emit_partial::<Tagged>(&events[..cut]).is_none());
+    }
+    for idx in 0..events.len() {
+        let mut events = events.clone();
+        events[idx] = match events[idx] {
+            Event::Atom(Atom::Str(_)) => Event::Atom(Atom::Bool(true)),
+            _ => Event::Atom(Atom::Str("unexpected".into())),
+        };
+        let _ = catch_unwind(AssertUnwindSafe(|| emit_partial::<Tagged>(&events)));
+    }
+}
