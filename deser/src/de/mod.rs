@@ -297,6 +297,11 @@ impl<'a> SinkHandle<'a> {
     }
 }
 
+#[cold]
+fn is_null_ext(ext: &crate::ext::ExtValue) -> bool {
+    matches!(ext.fallback(), Atom::Null)
+}
+
 // The methods on the handle are inherent so that they can be used without
 // having the `Sink` trait in scope.  The `Sink` implementation delegates to
 // them.
@@ -304,8 +309,15 @@ impl<'a> SinkHandle<'a> {
     /// Forwards to [`Sink::atom`].
     #[inline]
     pub fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        if let Atom::Null = atom {
-            if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
+        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
+            let is_null = match atom {
+                Atom::Null => true,
+                // an extension value that falls back to null (for instance a
+                // null with additional information attached) is a null too.
+                Atom::Ext(ref ext) => is_null_ext(ext),
+                _ => false,
+            };
+            if is_null {
                 *self = SinkHandle::null();
                 return Ok(());
             }

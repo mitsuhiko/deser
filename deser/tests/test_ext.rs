@@ -152,3 +152,36 @@ fn test_integer_range_checks() {
     );
     assert_eq!(deserialize::<i8>(vec![(-128i64).into()]).unwrap(), -128);
 }
+
+/// An extension value that represents a null with additional information.
+#[derive(Debug, Clone, PartialEq)]
+struct AnnotatedNull(&'static str);
+
+impl Extension for AnnotatedNull {
+    fn name(&self) -> &str {
+        "annotated null"
+    }
+
+    fn fallback(&self) -> Atom<'_> {
+        Atom::Null
+    }
+}
+
+#[test]
+fn test_optional_null_extension() {
+    let value = AnnotatedNull("missing");
+    let null = || Event::Atom(Atom::Ext(ExtValue::borrowed(&value)));
+    assert_eq!(deserialize::<Option<u32>>(vec![null()]).unwrap(), None);
+    assert_eq!(
+        deserialize::<Vec<Option<String>>>(vec![
+            Event::SeqStart,
+            null(),
+            "x".into(),
+            Event::SeqEnd
+        ])
+        .unwrap(),
+        vec![None, Some("x".to_string())]
+    );
+    // non optional types still reject it
+    assert!(deserialize::<u32>(vec![null()]).is_err());
+}
