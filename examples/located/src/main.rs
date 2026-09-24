@@ -26,6 +26,8 @@
 //!   location from the deserializer state (out-of-band).
 //! * [`Either`]: an untagged enum that has to buffer its input and replays it
 //!   into its variants.
+use std::fmt;
+
 use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind, Event};
@@ -161,11 +163,23 @@ pub fn from_json_with_locations<T: Deserialize>(json: &str) -> Result<T, Error> 
 ///
 /// This information is only available if the input was annotated, otherwise
 /// it's `None`.
-#[derive(Debug)]
 pub struct Located<T> {
     pub value: T,
     pub path: Option<String>,
     pub span: Option<Span>,
+}
+
+/// Renders as the value followed by the location, e.g. `8080 (port @ 4:13-4:17)`.
+impl<T: fmt::Debug> fmt::Debug for Located<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.value, f)?;
+        match (&self.path, &self.span) {
+            (Some(path), Some(span)) => write!(f, " ({} @ {:?})", path, span),
+            (Some(path), None) => write!(f, " ({})", path),
+            (None, Some(span)) => write!(f, " (@ {:?})", span),
+            (None, None) => Ok(()),
+        }
+    }
 }
 
 impl<T: Deserialize> Deserialize for Located<T> {
