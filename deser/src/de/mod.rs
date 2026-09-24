@@ -205,10 +205,12 @@ mod ignore;
 mod impls;
 mod owned;
 mod recording;
+mod sinkbox;
 
 pub use self::driver::DeserializeDriver;
 pub use self::owned::OwnedSink;
 pub use self::recording::Recording;
+use self::sinkbox::SinkBox;
 use crate::extensions::Extensions;
 
 __make_slot_wrapper!((pub), SlotWrapper);
@@ -230,13 +232,13 @@ pub struct SinkHandle<'a>(HandleInner<'a>);
 
 enum HandleInner<'a> {
     Borrowed(&'a mut dyn Sink),
-    Owned(Box<dyn Sink + 'a>),
+    Owned(SinkBox<'a>),
     Null(ignore::Ignore),
     // The optional variants are used to implement `Option<T>` without an
     // extra allocation: a null atom is not forwarded but turns the handle
     // into a null handle so that `finish` is not forwarded either.
     OptionalBorrowed(&'a mut dyn Sink),
-    OptionalOwned(Box<dyn Sink + 'a>),
+    OptionalOwned(SinkBox<'a>),
 }
 
 impl<'a> SinkHandle<'a> {
@@ -247,7 +249,7 @@ impl<'a> SinkHandle<'a> {
 
     /// Create an owned handle to a heap allocated [`Sink`].
     pub fn boxed<S: Sink + 'a>(val: S) -> SinkHandle<'a> {
-        SinkHandle(HandleInner::Owned(Box::new(val)))
+        SinkHandle(HandleInner::Owned(SinkBox::new(val)))
     }
 
     /// Creates a sink handle that drops all values.
@@ -298,7 +300,7 @@ impl<'a> SinkHandle<'a> {
     fn sink(&self) -> &(dyn Sink + 'a) {
         match self.0 {
             HandleInner::Borrowed(ref sink) | HandleInner::OptionalBorrowed(ref sink) => &**sink,
-            HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => &**sink,
+            HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => sink.get(),
             HandleInner::Null(ref sink) => sink,
         }
     }
@@ -310,7 +312,7 @@ impl<'a> SinkHandle<'a> {
                 &mut **sink
             }
             HandleInner::Owned(ref mut sink) | HandleInner::OptionalOwned(ref mut sink) => {
-                &mut **sink
+                sink.get_mut()
             }
             HandleInner::Null(ref mut sink) => sink,
         }
