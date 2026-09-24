@@ -1,3 +1,4 @@
+use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
@@ -109,6 +110,7 @@ impl Serializer {
                         self.write_i64(val);
                         self.write_char('"');
                     }
+                    Atom::Ext(ext) => self.write_ext_key(&ext)?,
                     _ => unsupported!("JSON does not support this value for map keys"),
                 }
                 self.write_char(':');
@@ -135,20 +137,8 @@ impl Serializer {
                 Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
                 Atom::U64(val) => self.write_u64(val),
                 Atom::I64(val) => self.write_i64(val),
-                Atom::F64(val) => {
-                    if val.is_finite() {
-                        #[cfg(feature = "speedups")]
-                        {
-                            self.write_str(ryu::Buffer::new().format_finite(val))
-                        }
-                        #[cfg(not(feature = "speedups"))]
-                        {
-                            self.write_str(val.to_string().as_str())
-                        }
-                    } else {
-                        self.write_str("null")
-                    }
-                }
+                Atom::F64(val) => self.write_f64(val),
+                Atom::Ext(ext) => self.write_ext_value(&ext)?,
                 _ => unsupported!("unknown atom"),
             }
         }
@@ -162,6 +152,74 @@ impl Serializer {
 
     fn write_char(&mut self, c: char) {
         self.out.push(c);
+    }
+
+    fn write_f64(&mut self, val: f64) {
+        if val.is_finite() {
+            #[cfg(feature = "speedups")]
+            {
+                self.write_str(ryu::Buffer::new().format_finite(val))
+            }
+            #[cfg(not(feature = "speedups"))]
+            {
+                self.write_str(val.to_string().as_str())
+            }
+        } else {
+            self.write_str("null")
+        }
+    }
+
+    /// Writes an extension value as map key.
+    ///
+    /// Extension values that JSON does not natively support are written in
+    /// their fallback representation.
+    #[cold]
+    fn write_ext_key(&mut self, ext: &ExtValue) -> Result<(), Error> {
+        match ext.fallback() {
+            Atom::Str(val) => self.write_escaped_str(&val),
+            Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
+            Atom::U64(val) => {
+                self.write_char('"');
+                self.write_u64(val);
+                self.write_char('"');
+            }
+            Atom::I64(val) => {
+                self.write_char('"');
+                self.write_i64(val);
+                self.write_char('"');
+            }
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "JSON does not support this value for map keys",
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    /// Writes an extension value.
+    ///
+    /// Extension values that JSON does not natively support are written in
+    /// their fallback representation.
+    #[cold]
+    fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
+        match ext.fallback() {
+            Atom::Null => self.write_str("null"),
+            Atom::Bool(val) => self.write_str(if val { "true" } else { "false" }),
+            Atom::Str(val) => self.write_escaped_str(&val),
+            Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
+            Atom::U64(val) => self.write_u64(val),
+            Atom::I64(val) => self.write_i64(val),
+            Atom::F64(val) => self.write_f64(val),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "JSON does not support this value",
+                ))
+            }
+        }
+        Ok(())
     }
 
     fn write_u64(&mut self, val: u64) {

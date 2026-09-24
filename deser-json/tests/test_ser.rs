@@ -114,3 +114,10 @@ fn test_nested_containers() {
         r#"[{"a":{"x":[1],"y":[]},"b":{},"c":{"x":[1],"y":[]}}]"#
     );
 }
+
+#[test]
+fn test_extension_fallback() {
+    // until JSON knows about wide integers natively they use the fallback
+    assert_eq!(to_string(&42u128).unwrap(), "42");
+    assert_eq!(to_string(&-42i128).unwrap(), "-42");
+}

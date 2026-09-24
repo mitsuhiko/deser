@@ -69,6 +69,7 @@ fn dump<'a, 'f>(
             Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::Ext(ref v)) => fmt::Debug::fmt(v, f)?,
             Event::Atom(..) => f.debug_struct("?").finish()?,
             Event::MapStart => {
                 if let Some(ref name) = first.1 {
@@ -139,5 +140,13 @@ fn test_debug_format() {
     assert_eq!(
         ToDebug::new(&m).to_string(),
         "BTreeMap {false: [], true: [[b\"x\", b\"yyy\"], [b\"zzzz\\0\\x01\"]]}"
+    );
+}
+
+#[test]
+fn test_debug_format_ext() {
+    assert_eq!(
+        ToDebug::new(&vec![u128::MAX, 1]).to_string(),
+        format!("[{}, 1]", u128::MAX)
     );
 }

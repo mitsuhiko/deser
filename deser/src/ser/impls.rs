@@ -5,6 +5,7 @@ use std::hash::BuildHasher;
 use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
+use crate::ext::ExtValue;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState};
 
 impl Serialize for bool {
@@ -91,6 +92,27 @@ serialize_int!(isize, I64);
 serialize_int!(usize, U64);
 serialize_int!(f32, F64);
 serialize_int!(f64, F64);
+
+macro_rules! serialize_ext_int {
+    ($ty:ty) => {
+        impl Serialize for $ty {
+            fn descriptor(&self) -> &dyn Descriptor {
+                static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
+                    name: stringify!($ty),
+                    precision: std::mem::size_of::<$ty>() * 8,
+                };
+                &DESCRIPTOR
+            }
+
+            fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+                Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+            }
+        }
+    };
+}
+
+serialize_ext_int!(u128);
+serialize_ext_int!(i128);
 
 impl Serialize for String {
     fn descriptor(&self) -> &dyn Descriptor {

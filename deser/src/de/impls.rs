@@ -84,40 +84,32 @@ macro_rules! int_sink {
                 &DESCRIPTOR
             }
 
+            #[allow(clippy::useless_conversion)]
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-                match atom {
-                    Atom::U64(value) => {
-                        let truncated = value as $ty;
-                        if truncated as u64 == value {
-                            **self = Some(truncated);
-                            Ok(())
-                        } else {
-                            Err(Error::new(
-                                ErrorKind::OutOfRange,
-                                "value out of range for type",
-                            ))
-                        }
+                let value = match atom {
+                    Atom::U64(value) => <$ty>::try_from(value).ok(),
+                    Atom::I64(value) => <$ty>::try_from(value).ok(),
+                    Atom::Ext(ref ext) if ext.is::<u128>() => {
+                        <$ty>::try_from(*ext.downcast_ref::<u128>().unwrap()).ok()
                     }
-                    Atom::I64(value) => {
-                        let truncated = value as $ty;
-                        if truncated as i64 == value {
-                            **self = Some(truncated);
-                            Ok(())
-                        } else {
-                            Err(Error::new(
-                                ErrorKind::OutOfRange,
-                                "value out of range for type",
-                            ))
-                        }
+                    Atom::Ext(ref ext) if ext.is::<i128>() => {
+                        <$ty>::try_from(*ext.downcast_ref::<i128>().unwrap()).ok()
                     }
                     Atom::Str(ref value) if state.is_map_key() => match value.parse::<$ty>() {
-                        Ok(value) => {
-                            **self = Some(value);
-                            Ok(())
-                        }
-                        Err(_) => Err(atom.unexpected_error(&self.expecting())),
+                        Ok(value) => Some(value),
+                        Err(_) => return Err(atom.unexpected_error(&self.expecting())),
                     },
-                    other => self.unexpected_atom(other, state),
+                    other => return self.unexpected_atom(other, state),
+                };
+                match value {
+                    Some(value) => {
+                        **self = Some(value);
+                        Ok(())
+                    }
+                    None => Err(Error::new(
+                        ErrorKind::OutOfRange,
+                        "value out of range for type",
+                    )),
                 }
             }
         }
@@ -154,6 +146,10 @@ int_sink!(isize);
 deserialize!(isize);
 int_sink!(usize);
 deserialize!(usize);
+int_sink!(u128);
+deserialize!(u128);
+int_sink!(i128);
+deserialize!(i128);
 
 impl Sink for SlotWrapper<char> {
     fn descriptor(&self) -> &dyn Descriptor {
@@ -205,6 +201,14 @@ macro_rules! float_sink {
                     }
                     Atom::F64(value) => {
                         **self = Some(value as $ty);
+                        Ok(())
+                    }
+                    Atom::Ext(ref ext) if ext.is::<u128>() => {
+                        **self = Some(*ext.downcast_ref::<u128>().unwrap() as $ty);
+                        Ok(())
+                    }
+                    Atom::Ext(ref ext) if ext.is::<i128>() => {
+                        **self = Some(*ext.downcast_ref::<i128>().unwrap() as $ty);
                         Ok(())
                     }
                     other => self.unexpected_atom(other, state),

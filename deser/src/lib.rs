@@ -45,6 +45,7 @@ mod event;
 
 pub mod de;
 mod error;
+pub mod ext;
 pub mod ser;
 
 mod descriptors;

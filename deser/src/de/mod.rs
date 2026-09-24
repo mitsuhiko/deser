@@ -520,13 +520,25 @@ pub trait Sink {
     /// Receives an [`Atom`].
     ///
     /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).
+    /// This is particularly important for [`Atom::Ext`] as the default
+    /// implementation of `unexpected_atom` will retry with the fallback atom
+    /// of the extension value.
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         self.unexpected_atom(atom, state)
     }
 
     /// Implements a default fallback handling for atoms.
+    ///
+    /// For [`Atom::Ext`] values the atom is lowered into the core data model
+    /// with [`fallback`](crate::ext::ExtValue::fallback) and passed to
+    /// [`atom`](Self::atom) again.  For all other atoms an error is returned.
     fn unexpected_atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        let _ = state;
+        if let Atom::Ext(ref ext) = atom {
+            let fallback = ext.fallback();
+            if !matches!(fallback, Atom::Ext(_)) {
+                return self.atom(fallback, state);
+            }
+        }
         Err(atom.unexpected_error(&self.expecting()))
     }
 

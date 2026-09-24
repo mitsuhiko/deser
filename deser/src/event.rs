@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use crate::error::{Error, ErrorKind};
+use crate::ext::ExtValue;
 
 /// An atom is a primitive value for serialization and deserialization.
 ///
@@ -12,6 +13,9 @@ use crate::error::{Error, ErrorKind};
 /// in the future.  Deser tries to build around this restriction for instance
 /// through APIs like [`unexpected_atom`](crate::de::Sink::unexpected_atom) so that
 /// one always have something to call.
+///
+/// Values which are not part of the core data model are represented as
+/// [`Atom::Ext`].  For more information see [`ext`](crate::ext).
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Atom<'a> {
@@ -23,6 +27,10 @@ pub enum Atom<'a> {
     U64(u64),
     I64(i64),
     F64(f64),
+    /// A value that extends the data model.
+    ///
+    /// See [`ext`](crate::ext) for more information.
+    Ext(ExtValue<'a>),
 }
 
 impl<'a> Atom<'a> {
@@ -37,6 +45,7 @@ impl<'a> Atom<'a> {
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
             Atom::F64(v) => Atom::F64(v),
+            Atom::Ext(ref v) => Atom::Ext(v.to_static()),
         }
     }
 
@@ -51,6 +60,7 @@ impl<'a> Atom<'a> {
             Atom::U64(_) => "unsigned integer",
             Atom::I64(_) => "signed integer",
             Atom::F64(_) => "float",
+            Atom::Ext(ref v) => v.name(),
         }
     }
 
@@ -94,6 +104,18 @@ impl_from!(usize, U64);
 impl_from!(isize, I64);
 impl_from!(bool, Bool);
 impl_from!(char, Char);
+
+impl From<u128> for Event<'static> {
+    fn from(value: u128) -> Self {
+        Event::Atom(Atom::Ext(ExtValue::owned(value)))
+    }
+}
+
+impl From<i128> for Event<'static> {
+    fn from(value: i128) -> Self {
+        Event::Atom(Atom::Ext(ExtValue::owned(value)))
+    }
+}
 
 impl From<()> for Event<'static> {
     fn from(_: ()) -> Event<'static> {
