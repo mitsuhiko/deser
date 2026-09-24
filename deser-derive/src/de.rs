@@ -397,19 +397,11 @@ pub fn derive_enum(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
 ) -> syn::Result<TokenStream> {
-    if input.generics.lt_token.is_some() || input.generics.where_clause.is_some() {
-        return Err(syn::Error::new(
-            Span::call_site(),
-            "Only basic enums are supported (no generics)",
-        ));
-    }
-
-    let ident = &input.ident;
-
     let container_attrs = ContainerAttrs::of(input)?;
-    if let Some(tag) = container_attrs.tag() {
-        return derive_tagged_enum(input, enumeration, &container_attrs, tag);
+    if crate::enums::is_data_enum(input, &container_attrs, enumeration) {
+        return crate::enums::derive_deserialize(input, enumeration, &container_attrs);
     }
+    let ident = &input.ident;
     let var_idents = enumeration
         .variants
         .iter()
@@ -464,6 +456,24 @@ pub fn derive_enum(
         ));
     }
 
+    let fallback = match attrs.iter().find(|x| x.other()) {
+        Some(other) => {
+            let var_ident = &other.variant().ident;
+            quote! { #ident::#var_ident }
+        }
+        None => quote! {
+            return ::deser::__derive::Err(
+                ::deser::Error::new(::deser::ErrorKind::Unexpected, "unexpected value for enum")
+            )
+        },
+    };
+    if attrs.iter().filter(|x| x.other()).count() > 1 {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "only one variant can be marked as other",
+        ));
+    }
+
     Ok(quote! {
         const _: () = {
             #[repr(transparent)]
@@ -498,130 +508,10 @@ pub fn derive_enum(
                     };
                     let value = match s {
                         #( #matcher => #ident::#var_idents, )*
-                        _ => return ::deser::__derive::Err(
-                            ::deser::Error::new(::deser::ErrorKind::Unexpected, "unexpected value for enum")
-                        )
+                        _ => #fallback
                     };
                     self.slot = ::deser::__derive::Some(value);
                     ::deser::__derive::Ok(())
-                }
-            }
-        };
-    })
-}
-
-/// Derives deserialization for internally tagged enums.
-///
-/// Every variant is deserialized through a hidden helper struct (which uses
-/// the regular struct derive) and the buffering is handled by
-/// `InternallyTaggedSink`.
-fn derive_tagged_enum(
-    input: &syn::DeriveInput,
-    enumeration: &syn::DataEnum,
-    container_attrs: &ContainerAttrs,
-    tag: &str,
-) -> syn::Result<TokenStream> {
-    let ident = &input.ident;
-    let type_name = container_attrs.container_name();
-    let mut helpers = Vec::new();
-    let mut arms = Vec::new();
-    let mut seen_names = HashSet::new();
-
-    for variant in &enumeration.variants {
-        let attrs = EnumVariantAttrs::of(variant)?;
-        let var_ident = &variant.ident;
-        let helper = syn::Ident::new(&format!("__Variant{}", var_ident), Span::call_site());
-        let helper_name = var_ident.to_string();
-
-        let mut pattern = Vec::new();
-        for name in std::iter::once(attrs.name(container_attrs).to_string())
-            .chain(attrs.aliases().iter().cloned())
-        {
-            if !seen_names.insert(name.clone()) {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    format!("variant name '{}' used more than once", name),
-                ));
-            }
-            pattern.push(name);
-        }
-
-        let (fields, convert) = match &variant.fields {
-            syn::Fields::Named(fields) => {
-                let mut defs = Vec::new();
-                let mut names = Vec::new();
-                for field in &fields.named {
-                    // validate the attributes early for better errors
-                    FieldAttrs::of(field)?;
-                    let deser_attrs = field.attrs.iter().filter(|x| x.path.is_ident("deser"));
-                    let name = &field.ident;
-                    let ty = &field.ty;
-                    defs.push(quote! { #(#deser_attrs)* #name: #ty });
-                    names.push(name);
-                }
-                (
-                    quote! { #(#defs,)* },
-                    quote! { |__v: #helper| #ident::#var_ident { #(#names: __v.#names,)* } },
-                )
-            }
-            syn::Fields::Unit => (quote! {}, quote! { |_: #helper| #ident::#var_ident }),
-            syn::Fields::Unnamed(_) => {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    "tagged enums only support unit and struct variants",
-                ))
-            }
-        };
-
-        helpers.push(quote! {
-            #[derive(::deser::Deserialize)]
-            #[deser(rename = #helper_name)]
-            struct #helper {
-                #fields
-            }
-        });
-        arms.push(quote! {
-            #(#pattern)|* => ::deser::__derive::Some(
-                ::deser::__derive::Variant::<#helper, #ident>::boxed(#convert)
-            ),
-        });
-    }
-
-    Ok(quote! {
-        const _: () = {
-            #(#helpers)*
-
-            struct __Descriptor;
-
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
-                }
-            }
-
-            #[allow(clippy::type_complexity)]
-            fn __lookup(
-                __tag: &::deser::__derive::str,
-            ) -> ::deser::__derive::Option<
-                ::deser::__derive::Box<dyn ::deser::__derive::VariantBuilder<#ident>>,
-            > {
-                match __tag {
-                    #(#arms)*
-                    _ => ::deser::__derive::None,
-                }
-            }
-
-            #[automatically_derived]
-            impl ::deser::Deserialize for #ident {
-                fn deserialize_into(
-                    __slot: &mut ::deser::__derive::Option<Self>,
-                ) -> ::deser::de::SinkHandle<'_> {
-                    ::deser::__derive::InternallyTaggedSink::handle(
-                        __slot,
-                        #tag,
-                        &__Descriptor,
-                        __lookup,
-                    )
                 }
             }
         };

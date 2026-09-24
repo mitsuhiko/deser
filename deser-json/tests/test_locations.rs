@@ -75,3 +75,33 @@ fn test_spans_through_buffering() {
     assert_eq!(span(headers.span), "3:14-3:24");
     assert_eq!(span(headers.value[1].span), "3:20-3:23");
 }
+
+#[derive(Deserialize, Debug)]
+#[deser(untagged)]
+enum NumberOrText {
+    Number(Spanned<u32>),
+    Text(Spanned<String>),
+}
+
+#[derive(Deserialize, Debug)]
+#[deser(tag = "t", content = "c")]
+enum Adjacent {
+    Value(Spanned<u32>),
+}
+
+#[test]
+fn test_spans_through_enum_buffering() {
+    let input = "[\n  \"x\",\n  {\"c\": 42, \"t\": \"Value\"}\n]";
+    let (text, adjacent): (NumberOrText, Adjacent) = deser_json::Deserializer::new(input)
+        .track_locations(true)
+        .deserialize()
+        .unwrap();
+    let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
+    match text {
+        NumberOrText::Text(text) => assert_eq!(span(text.span), "2:3-2:6"),
+        NumberOrText::Number(number) => panic!("unexpected number {}", number.value),
+    }
+    let Adjacent::Value(value) = adjacent;
+    assert_eq!(value.value, 42);
+    assert_eq!(span(value.span), "3:9-3:11");
+}

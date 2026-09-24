@@ -3,6 +3,7 @@ extern crate proc_macro;
 mod attr;
 mod bound;
 mod de;
+mod enums;
 mod ser;
 
 use proc_macro::TokenStream;

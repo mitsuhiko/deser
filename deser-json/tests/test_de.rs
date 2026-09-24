@@ -334,3 +334,50 @@ fn test_internally_tagged_buffering() {
         }
     );
 }
+
+#[test]
+fn test_enum_representations() {
+    use std::collections::BTreeMap;
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    #[deser(tag = "t", content = "c")]
+    enum Adjacent {
+        Counts(BTreeMap<u32, u32>),
+    }
+
+    // content is buffered as it comes before the tag
+    let value: Adjacent = from_str(r#"{"c": {"1": 2}, "t": "Counts"}"#).unwrap();
+    let mut counts = BTreeMap::new();
+    counts.insert(1, 2);
+    assert_eq!(value, Adjacent::Counts(counts));
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    #[deser(untagged)]
+    enum Value {
+        Big(u128),
+        Text(String),
+        List(Vec<Value>),
+    }
+
+    let value: Value = from_str(r#"[340282366920938463463374607431768211455, "x", []]"#).unwrap();
+    assert_eq!(
+        value,
+        Value::List(vec![
+            Value::Big(u128::MAX),
+            Value::Text("x".into()),
+            Value::List(vec![])
+        ])
+    );
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    enum External {
+        Point(i32, i32),
+        Name { first: String },
+    }
+    let value: Vec<External> =
+        from_str(r#"[{"Point": [1, -2]}, {"Name": {"first": "x"}}]"#).unwrap();
+    assert_eq!(
+        value,
+        vec![External::Point(1, -2), External::Name { first: "x".into() }]
+    );
+}

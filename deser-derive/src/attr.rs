@@ -46,6 +46,8 @@ pub struct ContainerAttrs<'a> {
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
     tag: Option<String>,
+    content: Option<String>,
+    untagged: bool,
 }
 
 pub fn get_meta_items(attr: &syn::Attribute) -> syn::Result<Vec<syn::NestedMeta>> {
@@ -102,6 +104,8 @@ impl<'a> ContainerAttrs<'a> {
             default: None,
             skip_serializing_optionals: false,
             tag: None,
+            content: None,
+            untagged: false,
         };
 
         for meta_item in input.attrs.iter().flat_map(get_meta_items).flatten() {
@@ -137,6 +141,30 @@ impl<'a> ContainerAttrs<'a> {
                         }
                         rv.tag = Some(get_lit_str("tag", &nv.lit)?);
                     }
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("content") => {
+                        if rv.content.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "duplicate content attribute",
+                            ));
+                        }
+                        rv.content = Some(get_lit_str("content", &nv.lit)?);
+                    }
+                    syn::Meta::Path(path) if path.is_ident("untagged") => {
+                        if rv.untagged {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "duplicate untagged attribute",
+                            ));
+                        }
+                        if !matches!(input.data, syn::Data::Enum(_)) {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "untagged is only supported on enums",
+                            ));
+                        }
+                        rv.untagged = true;
+                    }
                     syn::Meta::Path(path) if path.is_ident("default") => {
                         if rv.default.is_some() {
                             return Err(syn::Error::new_spanned(
@@ -171,6 +199,19 @@ impl<'a> ContainerAttrs<'a> {
             } else {
                 return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
             }
+        }
+
+        if rv.content.is_some() && rv.tag.is_none() {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "content requires a tag attribute",
+            ));
+        }
+        if rv.untagged && rv.tag.is_some() {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "untagged cannot be combined with tag",
+            ));
         }
 
         Ok(rv)
@@ -237,6 +278,14 @@ impl<'a> ContainerAttrs<'a> {
 
     pub fn tag(&self) -> Option<&str> {
         self.tag.as_deref()
+    }
+
+    pub fn content(&self) -> Option<&str> {
+        self.content.as_deref()
+    }
+
+    pub fn untagged(&self) -> bool {
+        self.untagged
     }
 
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
@@ -422,6 +471,7 @@ pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     rename: Option<String>,
     aliases: Vec<String>,
+    other: bool,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -430,6 +480,7 @@ impl<'a> EnumVariantAttrs<'a> {
             variant,
             rename: None,
             aliases: Vec::new(),
+            other: false,
         };
 
         for meta_item in variant.attrs.iter().flat_map(get_meta_items).flatten() {
@@ -447,6 +498,18 @@ impl<'a> EnumVariantAttrs<'a> {
                     syn::Meta::NameValue(nv) if nv.path.is_ident("alias") => {
                         rv.aliases.push(get_lit_str("alias", &nv.lit)?);
                     }
+                    syn::Meta::Path(path) if path.is_ident("other") => {
+                        if rv.other {
+                            return Err(syn::Error::new_spanned(meta, "duplicate other attribute"));
+                        }
+                        if !matches!(variant.fields, syn::Fields::Unit) {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "other is only supported on unit variants",
+                            ));
+                        }
+                        rv.other = true;
+                    }
                     _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
                 }
             } else {
@@ -455,6 +518,10 @@ impl<'a> EnumVariantAttrs<'a> {
         }
 
         Ok(rv)
+    }
+
+    pub fn other(&self) -> bool {
+        self.other
     }
 
     pub fn variant(&self) -> &syn::Variant {

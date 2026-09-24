@@ -478,7 +478,10 @@ fn test_panics() {
 #[derive(Deserialize, Serialize, Debug, PartialEq)]
 #[deser(tag = "type")]
 enum Tagged {
-    A { inner: Inner, list: Vec<Option<Box<Inner>>> },
+    A {
+        inner: Inner,
+        list: Vec<Option<Box<Inner>>>,
+    },
     B,
 }
 
@@ -521,5 +524,73 @@ fn test_tagged_drop_and_errors_at_every_point() {
             _ => Event::Atom(Atom::Str("unexpected".into())),
         };
         let _ = catch_unwind(AssertUnwindSafe(|| emit_partial::<Tagged>(&events)));
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+enum AllExternal {
+    Tuple(String, Vec<Inner>),
+    Struct { inner: Box<Inner> },
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[deser(tag = "t", content = "c")]
+enum AllAdjacent {
+    External(AllExternal),
+    Untagged(Vec<AllUntagged>),
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[deser(untagged)]
+enum AllUntagged {
+    Number(u32),
+    Inner(Inner),
+    Tagged(Tagged),
+}
+
+#[test]
+fn test_enum_representations_drop_and_errors_at_every_point() {
+    let value = AllAdjacent::Untagged(vec![
+        AllUntagged::Number(1),
+        AllUntagged::Inner(Inner {
+            name: "x".into(),
+            tags: vec!["a".into()],
+        }),
+        AllUntagged::Tagged(Tagged::B),
+    ]);
+    let other = AllAdjacent::External(AllExternal::Tuple(
+        "x".into(),
+        vec![Inner {
+            name: "y".into(),
+            tags: vec![],
+        }],
+    ));
+
+    for value in [value, other] {
+        let mut events = Vec::new();
+        {
+            let mut driver = SerializeDriver::new(&value);
+            while let Some((event, _, _)) = driver.next().unwrap() {
+                events.push(event.to_static());
+            }
+        }
+        // move the tag to the end so that the content is buffered
+        let tag = events.drain(1..3).collect::<Vec<_>>();
+        let end = events.pop().unwrap();
+        events.extend(tag);
+        events.push(end);
+
+        assert_eq!(emit_partial::<AllAdjacent>(&events).unwrap(), value);
+        for cut in 0..events.len() {
+            assert!(emit_partial::<AllAdjacent>(&events[..cut]).is_none());
+        }
+        for idx in 0..events.len() {
+            let mut events = events.clone();
+            events[idx] = match events[idx] {
+                Event::Atom(Atom::Str(_)) => Event::Atom(Atom::Bool(true)),
+                _ => Event::Atom(Atom::Str("unexpected".into())),
+            };
+            let _ = catch_unwind(AssertUnwindSafe(|| emit_partial::<AllAdjacent>(&events)));
+        }
     }
 }

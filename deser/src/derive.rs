@@ -56,20 +56,29 @@
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
 //!   a field is optional.  At the moment only `None` and `()` are considered optional.
 //!
-//! ## Enum Attributes
+//! ## Enums
 //!
-//! * `#[deser(rename_all = "...")]`: renames all variants at once to a
-//!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
-//!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
-//!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
-//! * `#[deser(tag = "...")]`: makes the enum internally tagged.  The enum is
-//!   represented as a map with the variant name in the given field and the
-//!   fields of the variant next to it.  Unit variants and variants with
-//!   named fields are supported.  The tag does not need to come first: the
-//!   fields before it are recorded and replayed once the tag is known (see
-//!   [`Recording`](crate::de::Recording)).  Format specific information such as
-//!   map key handling, extension values, source locations and paths is
-//!   retained.
+//! Enums can have unit variants, newtype variants (`A(T)`), tuple variants
+//! (`A(T, U)`) and struct variants (`A { x: T }`).  The content of a unit
+//! variant is null, of a newtype variant the inner value, of a tuple variant a
+//! sequence and of a struct variant a map.  How the variant is identified is
+//! controlled by the representation, which follows serde:
+//!
+//! * externally tagged (the default): unit variants are strings (`"A"`), all
+//!   other variants are maps with a single key: `{"A": content}`.
+//! * internally tagged (`#[deser(tag = "type")]`): `{"type": "A", ...fields}`.
+//!   Supports unit, struct and newtype variants (the inner value must be a
+//!   struct or map).
+//! * adjacently tagged (`#[deser(tag = "t", content = "c")]`):
+//!   `{"t": "A", "c": content}`.
+//! * untagged (`#[deser(untagged)]`): just the content.  The variants are
+//!   tried in order and the first one that accepts the value wins.
+//!
+//! The tag does not need to come first in the tagged representations and
+//! untagged enums need to look at the value multiple times.  In these cases
+//! values are recorded and replayed (see [`Recording`](crate::de::Recording)).
+//! Format specific information such as map key handling, extension values,
+//! source locations and paths is retained.
 //!
 //! ```
 //! use deser::{Deserialize, Serialize};
@@ -81,7 +90,29 @@
 //!     Rect { width: f64, height: f64 },
 //!     Empty,
 //! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(untagged)]
+//! pub enum NumberOrText<T> {
+//!     Number(T),
+//!     Text(String),
+//! }
 //! ```
+//!
+//! ## Enum Attributes
+//!
+//! * `#[deser(rename = "...")]`: renames the type name hint for this enum.
+//! * `#[deser(rename_all = "...")]`: renames all variants at once to a
+//!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
+//!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
+//!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
+//! * `#[deser(tag = "...")]`: makes the enum internally tagged with the given
+//!   tag field.
+//! * `#[deser(tag = "...", content = "...")]`: makes the enum adjacently
+//!   tagged with the given tag and content fields.
+//! * `#[deser(untagged)]`: makes the enum untagged.
+//! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
+//!   set in struct variants when serializing.
 //!
 //! ## Struct Field Attributes
 //!
@@ -105,6 +136,11 @@
 //! * `#[deser(rename = "...")]`: renames the enum variant.
 //! * `#[deser(alias = "...")]`: provides an alias for the variant name for deserialization.  This is ignored
 //!   for serialization.
+//! * `#[deser(other)]`: marks a unit variant as catch-all for unknown variant
+//!   names during deserialization (not supported for untagged enums).
+//!
+//! The fields of struct variants support the same attributes as struct fields,
+//! except for `flatten` which is only supported for deserialization.
 
 // these exist as explicit aliases only
 
