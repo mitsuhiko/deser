@@ -49,3 +49,29 @@ fn test_no_tracking() {
     assert!(doc.nested.span.is_none());
     assert_eq!(doc.list.value[1].value, 23);
 }
+
+#[derive(Deserialize, Debug)]
+#[deser(tag = "type")]
+enum Backend {
+    Http {
+        url: Spanned<String>,
+        headers: Spanned<Vec<Spanned<String>>>,
+    },
+}
+
+#[test]
+fn test_spans_through_buffering() {
+    // the tag comes last, so all fields are buffered and replayed
+    let input =
+        "{\n  \"url\": \"http://x\",\n  \"headers\": [\"a\", \"b\"],\n  \"type\": \"Http\"\n}";
+    let backend: Backend = deser_json::Deserializer::new(input)
+        .track_locations(true)
+        .deserialize()
+        .unwrap();
+    let Backend::Http { url, headers } = backend;
+    let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
+    assert_eq!(url.value, "http://x");
+    assert_eq!(span(url.span), "2:10-2:20");
+    assert_eq!(span(headers.span), "3:14-3:24");
+    assert_eq!(span(headers.value[1].span), "3:20-3:23");
+}

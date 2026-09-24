@@ -45,12 +45,11 @@
 //!
 //! # Buffering
 //!
-//! The span is out-of-band information, it's only available while an event
-//! is processed.  If a value is internally buffered and replayed later (as
-//! untagged enums have to do) the span is no longer available.  To carry
-//! locations through buffering they need to be attached to the values
-//! themselves with an extension value.  See the `located` example in the
-//! deser repository for how to do that.
+//! The span is out-of-band information in the deserializer state.  The
+//! locations are registered as replayable state, so values that are
+//! internally buffered with a [`Recording`](deser::de::Recording) (as
+//! internally tagged enums do) retain their locations when they are
+//! replayed.
 use std::fmt;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -183,7 +182,7 @@ impl SourceMap {
 /// Formats install a [`SourceMap`] and publish the byte offsets of the event
 /// they emit next.  Consumers retrieve the resolved span of the current
 /// event with [`current_span`](Self::current_span).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
     current: Option<(usize, usize)>,
@@ -191,7 +190,12 @@ pub struct Locations {
 
 impl Locations {
     /// Installs the source map.  Called by formats once.
+    ///
+    /// This also marks the locations as replayable so that values which are
+    /// internally buffered (for instance for internally tagged enums) retain
+    /// their locations.
     pub fn set_source_map(state: &DeserializerState, source_map: Arc<SourceMap>) {
+        state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
     }
 

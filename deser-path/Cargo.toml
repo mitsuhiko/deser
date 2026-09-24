@@ -14,4 +14,5 @@ documentation = "https://docs.rs/deser-path"
 deser = { version = "0.8.0", path = "../deser", default-features = false }
 
 [dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
 deser-json = { path = "../deser-json" }

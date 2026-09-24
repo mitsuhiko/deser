@@ -60,6 +60,7 @@ impl<'a> Sink for PathSink<'a> {
 
     fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
+        state.set_replayable::<Path>();
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
         self.entered_container = true;
         self.container = Container::Map(Rc::default());
@@ -68,6 +69,7 @@ impl<'a> Sink for PathSink<'a> {
 
     fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
+        state.set_replayable::<Path>();
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
         self.entered_container = true;
         self.container = Container::Seq(0);

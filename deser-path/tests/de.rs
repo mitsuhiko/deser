@@ -84,3 +84,26 @@ fn test_nested_paths() {
     assert_eq!(map["a"][1]["z"].0, r#"[Key("a"), Index(1), Key("z")]"#);
     assert_eq!(map["b"][0]["w"].0, r#"[Key("b"), Index(0), Key("w")]"#);
 }
+
+#[test]
+fn test_paths_through_buffering() {
+    #[derive(deser::Deserialize, Debug)]
+    #[deser(tag = "type")]
+    enum Tagged {
+        Item { values: Vec<RecordPath> },
+    }
+
+    let mut out = None::<BTreeMap<String, Tagged>>;
+    {
+        let sink = PathSink::wrap_ref(Deserialize::deserialize_into(&mut out));
+        let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
+        deser_json::Deserializer::new(r#"{"x": {"values": [1, 2], "type": "Item"}}"#)
+            .drive(&mut driver)
+            .unwrap();
+    }
+
+    let map = out.unwrap();
+    let Tagged::Item { values } = &map["x"];
+    assert_eq!(values[0].0, r#"[Key("x"), Key("values"), Index(0)]"#);
+    assert_eq!(values[1].0, r#"[Key("x"), Key("values"), Index(1)]"#);
+}
