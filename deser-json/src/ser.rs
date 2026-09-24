@@ -1,6 +1,6 @@
 use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
 use crate::scan::skip_to_escape;
 
@@ -47,7 +47,7 @@ impl Serializer {
             }};
         }
 
-        while let Some((event, _, _)) = driver.next()? {
+        while let Some((event, descriptor, _)) = driver.next()? {
             let atom = match event {
                 Event::Atom(atom) => atom,
                 Event::MapStart | Event::SeqStart if is_key => {
@@ -137,7 +137,7 @@ impl Serializer {
                 Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
                 Atom::U64(val) => self.write_u64(val),
                 Atom::I64(val) => self.write_i64(val),
-                Atom::F64(val) => self.write_f64(val),
+                Atom::F64(val) => self.write_float(val, descriptor),
                 Atom::Ext(ext) => self.write_ext_value(&ext)?,
                 _ => unsupported!("unknown atom"),
             }
@@ -152,6 +152,34 @@ impl Serializer {
 
     fn write_char(&mut self, c: char) {
         self.out.push(c);
+    }
+
+    /// Writes a float atom.
+    ///
+    /// Floats are widened to f64 in the data model, the descriptor tells us
+    /// the original precision.
+    #[inline(never)]
+    fn write_float(&mut self, val: f64, descriptor: &dyn Descriptor) {
+        if descriptor.precision() == Some(32) {
+            self.write_f32(val as f32);
+        } else {
+            self.write_f64(val);
+        }
+    }
+
+    fn write_f32(&mut self, val: f32) {
+        if val.is_finite() {
+            #[cfg(feature = "speedups")]
+            {
+                self.write_str(ryu::Buffer::new().format_finite(val))
+            }
+            #[cfg(not(feature = "speedups"))]
+            {
+                self.write_str(val.to_string().as_str())
+            }
+        } else {
+            self.write_str("null")
+        }
     }
 
     fn write_f64(&mut self, val: f64) {

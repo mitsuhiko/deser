@@ -5,7 +5,7 @@ use std::rc::Rc;
 use deser::ser::{
     Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState, StructEmitter,
 };
-use deser::{Atom, Error};
+use deser::{Atom, Descriptor, Error};
 
 use crate::{Path, PathSegment};
 
@@ -41,6 +41,14 @@ impl<'a> Serialize for PathSerializable<'a> {
 
     fn finish(&self, state: &SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)
+    }
+
+    fn is_optional(&self) -> bool {
+        self.serializable.is_optional()
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        self.serializable.descriptor()
     }
 }
 
@@ -147,6 +155,14 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
         path.segments.pop();
         Ok(())
     }
+
+    fn is_optional(&self) -> bool {
+        self.serializable.is_optional()
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        self.serializable.descriptor()
+    }
 }
 
 struct SegmentCollectingSerializable<'a> {
@@ -171,5 +187,13 @@ impl<'a> Serialize for SegmentCollectingSerializable<'a> {
 
     fn finish(&self, state: &SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)
+    }
+
+    fn is_optional(&self) -> bool {
+        self.serializable.is_optional()
+    }
+
+    fn descriptor(&self) -> &dyn Descriptor {
+        self.serializable.descriptor()
     }
 }

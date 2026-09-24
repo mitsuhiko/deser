@@ -157,3 +157,27 @@ fn test_extension_fallback() {
 
     assert_eq!(to_string(&vec![Timestamp(-1)]).unwrap(), "[-1]");
 }
+
+#[test]
+fn test_float_precision() {
+    assert_eq!(to_string(&0.1f32).unwrap(), "0.1");
+    assert_eq!(to_string(&0.1f64).unwrap(), "0.1");
+    assert_eq!(to_string(&Some(0.1f32)).unwrap(), "0.1");
+    assert_eq!(to_string(&vec![0.087f32]).unwrap(), "[0.087]");
+    assert_eq!(to_string(&Box::new(0.5f32)).unwrap(), "0.5");
+    assert_eq!(to_string(&f32::NAN).unwrap(), "null");
+
+    #[derive(Serialize)]
+    struct Metadata {
+        completed_in: f32,
+        optional: Option<f32>,
+    }
+    assert_eq!(
+        to_string(&Metadata {
+            completed_in: 0.087,
+            optional: Some(1.1),
+        })
+        .unwrap(),
+        r#"{"completed_in":0.087,"optional":1.1}"#
+    );
+}

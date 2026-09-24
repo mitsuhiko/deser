@@ -94,3 +94,30 @@ fn test_set() {
         vec![Event::SeqStart, "bar".into(), "foo".into(), Event::SeqEnd]
     );
 }
+
+#[test]
+fn test_descriptor_forwarding() {
+    fn top_descriptor_name(s: &dyn Serialize) -> Option<String> {
+        let mut driver = SerializeDriver::new(s);
+        driver
+            .next()
+            .unwrap()
+            .and_then(|(_, descriptor, _)| descriptor.name().map(|x| x.to_string()))
+    }
+
+    assert_eq!(top_descriptor_name(&42u32).as_deref(), Some("u32"));
+    assert_eq!(top_descriptor_name(&&42u32).as_deref(), Some("u32"));
+    assert_eq!(
+        top_descriptor_name(&Box::new(42u32)).as_deref(),
+        Some("u32")
+    );
+    assert_eq!(top_descriptor_name(&Some(42u32)).as_deref(), Some("u32"));
+    assert_eq!(
+        top_descriptor_name(&None::<u32>).as_deref(),
+        Some("optional")
+    );
+
+    assert!(Serialize::is_optional(&&None::<u32>));
+    assert!(Serialize::is_optional(&Box::new(None::<u32>)));
+    assert!(!Serialize::is_optional(&Box::new(Some(1u32))));
+}

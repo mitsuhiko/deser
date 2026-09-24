@@ -332,7 +332,10 @@ where
 {
     fn descriptor(&self) -> &dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
-        &DESCRIPTOR
+        match self {
+            Some(value) => value.descriptor(),
+            None => &DESCRIPTOR,
+        }
     }
 
     fn is_optional(&self) -> bool {
@@ -343,6 +346,13 @@ where
         match self {
             Some(value) => value.serialize(state),
             None => Ok(Chunk::Atom(Atom::Null)),
+        }
+    }
+
+    fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+        match self {
+            Some(value) => value.finish(state),
+            None => Ok(()),
         }
     }
 }
@@ -413,20 +423,28 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
     }
 }
 
-impl<'a, T: Serialize> Serialize for &'a T {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
-        Serialize::serialize(*self, state)
-    }
+macro_rules! forward_serialize {
+    ($($ty:ty),*) => {
+        $(
+            impl<'a, T: Serialize + ?Sized> Serialize for $ty {
+                fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+                    Serialize::serialize(&**self, state)
+                }
+
+                fn finish(&self, state: &SerializerState) -> Result<(), Error> {
+                    Serialize::finish(&**self, state)
+                }
+
+                fn is_optional(&self) -> bool {
+                    Serialize::is_optional(&**self)
+                }
+
+                fn descriptor(&self) -> &dyn Descriptor {
+                    Serialize::descriptor(&**self)
+                }
+            }
+        )*
+    };
 }
 
-impl<'a, T: Serialize> Serialize for &'a mut T {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
-        Serialize::serialize(*self, state)
-    }
-}
-
-impl<T: Serialize> Serialize for Box<T> {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
-        Serialize::serialize(&**self, state)
-    }
-}
+forward_serialize!(&'a T, &'a mut T, Box<T>);
