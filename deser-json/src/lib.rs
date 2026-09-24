@@ -13,6 +13,7 @@
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case this also uses `ryu` and `itoa`
 //! crates are used for number formatting.
+mod buf;
 mod de;
 mod scan;
 mod ser;

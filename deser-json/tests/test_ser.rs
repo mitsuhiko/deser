@@ -94,6 +94,36 @@ fn test_string_escapes() {
 }
 
 #[test]
+fn test_key_escapes() {
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("plain", 1);
+    map.insert("a \"quoted\" key", 2);
+    map.insert("\n", 3);
+    map.insert("日本語", 4);
+    assert_eq!(
+        to_string(&map).unwrap(),
+        r#"{"\n":3,"a \"quoted\" key":2,"plain":1,"日本語":4}"#
+    );
+}
+
+#[test]
+fn test_string_lengths() {
+    // strings of all lengths around the copy thresholds, with and without
+    // escapes at the end.
+    for len in 0..70 {
+        let s: String = (0..len).map(|x| (b'a' + (x % 26) as u8) as char).collect();
+        assert_eq!(to_string(&s).unwrap(), format!("\"{}\"", s));
+        let escaped = format!("{}\n", s);
+        assert_eq!(to_string(&escaped).unwrap(), format!("\"{}\\n\"", s));
+        let values = vec![s.clone(), escaped.clone(), s.clone()];
+        assert_eq!(
+            to_string(&values).unwrap(),
+            format!("[\"{}\",\"{}\\n\",\"{}\"]", s, s, s)
+        );
+    }
+}
+
+#[test]
 fn test_nested_containers() {
     use std::collections::BTreeMap;
 

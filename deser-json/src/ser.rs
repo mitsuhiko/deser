@@ -2,11 +2,12 @@ use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
+use crate::buf::Buffer;
 use crate::scan::skip_to_escape;
 
 /// Serializes a serializable to JSON.
 pub struct Serializer {
-    out: String,
+    out: Buffer,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -26,7 +27,7 @@ impl Serializer {
     /// Creates a new serializer that writes into the given writer.
     pub fn new() -> Serializer {
         Serializer {
-            out: String::with_capacity(128),
+            out: Buffer::with_capacity(128),
         }
     }
 
@@ -92,6 +93,13 @@ impl Serializer {
             };
 
             if is_key {
+                if let Atom::Str(ref val) = atom {
+                    // fast path for the common case of string keys
+                    self.write_key(val, first);
+                    first = false;
+                    is_key = false;
+                    continue;
+                }
                 if !first {
                     self.write_char(',');
                 }
@@ -143,15 +151,42 @@ impl Serializer {
             }
         }
 
-        Ok(self.out)
+        Ok(self.out.into_string())
     }
 
+    #[inline(always)]
     fn write_str(&mut self, s: &str) {
         self.out.push_str(s);
     }
 
+    #[inline(always)]
     fn write_char(&mut self, c: char) {
-        self.out.push(c);
+        debug_assert!(c.is_ascii());
+        self.out.push(c as u8);
+    }
+
+    /// Writes a map key including the separator and the colon.
+    #[inline]
+    fn write_key(&mut self, key: &str, first: bool) {
+        if skip_to_escape(key.as_bytes(), 0) != key.len() {
+            if !first {
+                self.write_char(',');
+            }
+            self.write_escaped_str_slow(key);
+            self.write_char(':');
+            return;
+        }
+        self.out.reserve(key.len() + 4);
+        // SAFETY: the capacity was reserved above
+        unsafe {
+            if !first {
+                self.out.push_unchecked(b',');
+            }
+            self.out.push_unchecked(b'"');
+            self.out.push_str_unchecked(key);
+            self.out.push_unchecked(b'"');
+            self.out.push_unchecked(b':');
+        }
     }
 
     /// Writes a float atom.
@@ -297,7 +332,22 @@ impl Serializer {
         }
     }
 
+    #[inline]
     fn write_escaped_str(&mut self, value: &str) {
+        if skip_to_escape(value.as_bytes(), 0) != value.len() {
+            return self.write_escaped_str_slow(value);
+        }
+        self.out.reserve(value.len() + 2);
+        // SAFETY: the capacity was reserved above
+        unsafe {
+            self.out.push_unchecked(b'"');
+            self.out.push_str_unchecked(value);
+            self.out.push_unchecked(b'"');
+        }
+    }
+
+    #[inline(never)]
+    fn write_escaped_str_slow(&mut self, value: &str) {
         self.write_char('"');
 
         let bytes = value.as_bytes();
