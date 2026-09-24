@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::ExtValue;
 use crate::ser::{
-    Begin, Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState,
+    Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState,
 };
 
 impl Serialize for bool {
@@ -171,7 +171,14 @@ impl<T> Serialize for Vec<T>
 where
     T: Serialize,
 {
-    __begin_without_finish!();
+    #[inline]
+    fn __private_begin(&self, _state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+        let descriptor = self.descriptor();
+        Ok(match T::__private_slice_as_bytes(&self[..]) {
+            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
+            None => Begin::indexed_seq(self, descriptor),
+        })
+    }
 
     fn descriptor(&self) -> &'static dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
@@ -196,7 +203,14 @@ impl<T> Serialize for &[T]
 where
     T: Serialize,
 {
-    __begin_without_finish!();
+    #[inline]
+    fn __private_begin(&self, _state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+        let descriptor = self.descriptor();
+        Ok(match T::__private_slice_as_bytes(&self[..]) {
+            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
+            None => Begin::indexed_seq(self, descriptor),
+        })
+    }
 
     fn descriptor(&self) -> &'static dyn Descriptor {
         static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "slice" };
@@ -216,6 +230,25 @@ where
         }
     }
 }
+
+macro_rules! indexed_slice {
+    ($ty:ty $(, $param:ident)*) => {
+        impl<T: Serialize $(, const $param: usize)*> IndexedSeq for $ty {
+            #[inline]
+            fn element(
+                &self,
+                index: usize,
+                _state: &mut SerializerState,
+            ) -> Result<Option<SerializeHandle<'_>>, Error> {
+                Ok(self.get(index).map(SerializeHandle::to))
+            }
+        }
+    };
+}
+
+indexed_slice!(Vec<T>);
+indexed_slice!(&[T]);
+indexed_slice!([T; N], N);
 
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
@@ -404,11 +437,11 @@ where
     fn __private_begin(&self, state: &mut SerializerState) -> Result<Begin<'_>, Error> {
         match self {
             Some(value) => value.__private_begin(state),
-            None => Ok(Begin {
-                chunk: Chunk::Atom(Atom::Null),
-                descriptor: self.descriptor(),
-                needs_finish: false,
-            }),
+            None => Ok(Begin::chunk(
+                Chunk::Atom(Atom::Null),
+                self.descriptor(),
+                false,
+            )),
         }
     }
 }
@@ -417,7 +450,10 @@ macro_rules! serialize_for_tuple {
     () => ();
     ($($name:ident,)+) => (
         impl<$($name: Serialize),*> Serialize for ($($name,)*) {
-            __begin_without_finish!();
+            #[inline]
+            fn __private_begin(&self, _state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+                Ok(Begin::indexed_seq(self, self.descriptor()))
+            }
 
             fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
@@ -456,6 +492,22 @@ macro_rules! serialize_for_tuple {
                 })))
             }
         }
+        impl<$($name: Serialize),*> IndexedSeq for ($($name,)*) {
+            #[allow(non_snake_case)]
+            fn element(&self, index: usize, _state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+                let ($(ref $name,)*) = self;
+                let mut __counter = 0;
+                $(
+                    if index == __counter {
+                        return Ok(Some(SerializeHandle::to($name)));
+                    }
+                    __counter += 1;
+                )*
+                let _ = __counter;
+                Ok(None)
+            }
+        }
+
         serialize_for_tuple_peel!($($name,)*);
     )
 }
@@ -467,7 +519,14 @@ macro_rules! serialize_for_tuple_peel {
 serialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 
 impl<T: Serialize, const N: usize> Serialize for [T; N] {
-    __begin_without_finish!();
+    #[inline]
+    fn __private_begin(&self, _state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+        let descriptor = self.descriptor();
+        Ok(match T::__private_slice_as_bytes(&self[..]) {
+            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
+            None => Begin::indexed_seq(self, descriptor),
+        })
+    }
 
     fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };

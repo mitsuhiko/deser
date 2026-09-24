@@ -5,7 +5,9 @@ use std::ptr::NonNull;
 use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
 use crate::extensions::Extensions;
-use crate::ser::{Begin, Chunk, SerializerState};
+use crate::ser::{
+    Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, SerializerState, StructField,
+};
 use crate::{Atom, Descriptor, Event, Serialize};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
@@ -48,6 +50,10 @@ enum Emitter {
     /// A map emitter, the flag is `true` if a value is expected next.
     Map(Box<dyn MapEmitter>, bool),
     Struct(Box<dyn StructEmitter>),
+    /// A sequence with the index of the next element.
+    IndexedSeq(&'static dyn IndexedSeq, usize),
+    /// A struct with the index of the next field.
+    IndexedStruct(&'static dyn IndexedStruct, usize),
 }
 
 /// A serializable held by the driver.
@@ -204,6 +210,29 @@ impl<'a> SerializeDriver<'a> {
                         }
                         None => None,
                     },
+                    Emitter::IndexedSeq(seq, index) => {
+                        let rv = seq.element(*index, &mut self.state)?;
+                        *index += 1;
+                        rv
+                    }
+                    Emitter::IndexedStruct(fields, index) => loop {
+                        let field = fields.field(*index, &mut self.state)?;
+                        *index += 1;
+                        match field {
+                            StructField::Field(key, value) => {
+                                // SAFETY: the value and key borrow from the
+                                // serializable of the frame.
+                                self.next_value = Some(unsafe { Held::new(value) });
+                                let key = Cow::Borrowed(key);
+                                return Ok(Some((
+                                    Event::Atom(Atom::Str(key)),
+                                    &STRUCT_KEY_DESCRIPTOR,
+                                )));
+                            }
+                            StructField::Skip => continue,
+                            StructField::End => break None,
+                        }
+                    },
                 };
                 match next {
                     // SAFETY: the value borrows from the emitter on the top
@@ -225,7 +254,7 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         } = self.stack.pop().unwrap();
         let event = match emitter {
-            Emitter::Seq(_) => Event::SeqEnd,
+            Emitter::Seq(_) | Emitter::IndexedSeq(..) => Event::SeqEnd,
             _ => Event::MapEnd,
         };
         // the emitter borrows from the serializable, drop it first.
@@ -242,18 +271,22 @@ impl<'a> SerializeDriver<'a> {
         // pointer to it.
         let serializable = unsafe { value.get() };
         let Begin {
-            chunk,
+            kind,
             descriptor,
             needs_finish,
         } = serializable.__private_begin(&mut self.state)?;
-        let (emitter, event) = match chunk {
-            Chunk::Atom(atom) => {
+        let (emitter, event) = match kind {
+            BeginKind::Chunk(Chunk::Atom(atom)) => {
                 self.needs_finish = Some((value, needs_finish));
                 return Ok(Some((Event::Atom(atom), descriptor)));
             }
-            Chunk::Struct(emitter) => (Emitter::Struct(emitter), Event::MapStart),
-            Chunk::Map(emitter) => (Emitter::Map(emitter, false), Event::MapStart),
-            Chunk::Seq(emitter) => (Emitter::Seq(emitter), Event::SeqStart),
+            BeginKind::Chunk(Chunk::Struct(emitter)) => (Emitter::Struct(emitter), Event::MapStart),
+            BeginKind::Chunk(Chunk::Map(emitter)) => {
+                (Emitter::Map(emitter, false), Event::MapStart)
+            }
+            BeginKind::Chunk(Chunk::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart),
+            BeginKind::Struct(fields) => (Emitter::IndexedStruct(fields, 0), Event::MapStart),
+            BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart),
         };
         self.stack.push(Frame {
             emitter,

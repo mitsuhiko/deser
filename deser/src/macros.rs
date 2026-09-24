@@ -76,11 +76,11 @@ macro_rules! __begin_without_finish {
             state: &mut $crate::ser::SerializerState,
         ) -> ::core::result::Result<$crate::ser::Begin<'_>, $crate::Error> {
             let descriptor = $crate::ser::Serialize::descriptor(self);
-            ::core::result::Result::Ok($crate::ser::Begin {
-                chunk: $crate::ser::Serialize::serialize(self, state)?,
+            ::core::result::Result::Ok($crate::ser::Begin::chunk(
+                $crate::ser::Serialize::serialize(self, state)?,
                 descriptor,
-                needs_finish: false,
-            })
+                false,
+            ))
         }
     };
 }

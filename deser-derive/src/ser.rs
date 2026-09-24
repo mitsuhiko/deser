@@ -31,6 +31,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
 
+    if !attrs.iter().any(|x| x.flatten()) {
+        return derive_indexed_struct(input, &container_attrs, &attrs);
+    }
+
     let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
         Some(quote! {
             nested_emitter: ::deser::__derive::Option<::deser::__derive::Box<dyn ::deser::ser::StructEmitter + '__a>>,
@@ -198,6 +202,104 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             };
         })
+}
+
+/// Derives a struct without flattened fields.
+///
+/// Such structs provide their fields by index which lets the driver
+/// serialize them without allocating an emitter.
+fn derive_indexed_struct(
+    input: &syn::DeriveInput,
+    container_attrs: &ContainerAttrs,
+    attrs: &[FieldAttrs],
+) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+    let type_name = container_attrs.container_name();
+
+    let field_arms = attrs
+        .iter()
+        .enumerate()
+        .map(|(index, attrs)| {
+            let name = &attrs.field().ident;
+            let fieldstr = attrs.name(container_attrs);
+            let field_skip = attrs.skip_serializing_if().map(|path| {
+                quote! {
+                    if #path(&self.#name) {
+                        return ::deser::__derive::Ok(::deser::ser::StructField::Skip);
+                    }
+                }
+            });
+            let optional_skip = if container_attrs.skip_serializing_optionals() {
+                Some(quote! {
+                    if ::deser::ser::Serialize::is_optional(&self.#name) {
+                        return ::deser::__derive::Ok(::deser::ser::StructField::Skip);
+                    }
+                })
+            } else {
+                None
+            };
+            quote! {
+                #index => {
+                    #field_skip
+                    #optional_skip
+                    ::deser::ser::StructField::Field(
+                        #fieldstr,
+                        ::deser::ser::SerializeHandle::to(&self.#name),
+                    )
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let bound = syn::parse_quote!(::deser::Serialize);
+    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+
+    Ok(quote! {
+        const _: () = {
+            #[automatically_derived]
+            impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+                    &__Descriptor
+                }
+
+                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
+                    ::deser::__derive::Ok(::deser::ser::Chunk::Struct(::deser::__derive::Box::new(
+                        ::deser::ser::IndexedStructEmitter::new(self)
+                    )))
+                }
+
+                #[inline]
+                fn __private_begin(&self, __state: &mut ::deser::ser::SerializerState)
+                    -> ::deser::__derive::Result<::deser::ser::Begin<'_>>
+                {
+                    ::deser::__derive::Ok(::deser::ser::Begin::indexed_struct(self, &__Descriptor))
+                }
+            }
+
+            #[automatically_derived]
+            impl #impl_generics ::deser::ser::IndexedStruct for #ident #ty_generics #bounded_where_clause {
+                fn field(&self, __index: usize, __state: &mut ::deser::ser::SerializerState)
+                    -> ::deser::__derive::Result<::deser::ser::StructField<'_>>
+                {
+                    ::deser::__derive::Ok(match __index {
+                        #(
+                            #field_arms
+                        )*
+                        _ => ::deser::ser::StructField::End,
+                    })
+                }
+            }
+
+            struct __Descriptor;
+
+            impl ::deser::Descriptor for __Descriptor {
+                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
+                    ::deser::__derive::Some(#type_name)
+                }
+            }
+        };
+    })
 }
 
 fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Result<TokenStream> {

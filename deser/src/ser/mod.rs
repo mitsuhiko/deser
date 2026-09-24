@@ -237,9 +237,126 @@ impl SerializerState {
 /// The result of [`Serialize::__private_begin`].
 #[doc(hidden)]
 pub struct Begin<'a> {
-    pub chunk: Chunk<'a>,
-    pub descriptor: &'static dyn Descriptor,
-    pub needs_finish: bool,
+    pub(crate) kind: BeginKind<'a>,
+    pub(crate) descriptor: &'static dyn Descriptor,
+    pub(crate) needs_finish: bool,
+}
+
+pub(crate) enum BeginKind<'a> {
+    Chunk(Chunk<'a>),
+    Struct(&'a dyn IndexedStruct),
+    Seq(&'a dyn IndexedSeq),
+}
+
+impl<'a> Begin<'a> {
+    /// Begins a value with a chunk.
+    #[inline]
+    pub fn chunk(
+        chunk: Chunk<'a>,
+        descriptor: &'static dyn Descriptor,
+        needs_finish: bool,
+    ) -> Begin<'a> {
+        Begin {
+            kind: BeginKind::Chunk(chunk),
+            descriptor,
+            needs_finish,
+        }
+    }
+
+    /// Begins a struct which provides its fields by index.
+    ///
+    /// This is equivalent to a [`Chunk::Struct`] but does not require an
+    /// emitter to be allocated.  `finish` is not invoked.
+    #[inline]
+    pub fn indexed_struct(
+        value: &'a dyn IndexedStruct,
+        descriptor: &'static dyn Descriptor,
+    ) -> Begin<'a> {
+        Begin {
+            kind: BeginKind::Struct(value),
+            descriptor,
+            needs_finish: false,
+        }
+    }
+
+    /// Begins a sequence which provides its elements by index.
+    ///
+    /// This is equivalent to a [`Chunk::Seq`] but does not require an
+    /// emitter to be allocated.  `finish` is not invoked.
+    #[inline]
+    pub fn indexed_seq(
+        value: &'a dyn IndexedSeq,
+        descriptor: &'static dyn Descriptor,
+    ) -> Begin<'a> {
+        Begin {
+            kind: BeginKind::Seq(value),
+            descriptor,
+            needs_finish: false,
+        }
+    }
+}
+
+/// A field of an [`IndexedStruct`].
+#[doc(hidden)]
+pub enum StructField<'a> {
+    /// A field with key and value.
+    Field(&'a str, SerializeHandle<'a>),
+    /// The field is skipped.
+    Skip,
+    /// There are no more fields.
+    End,
+}
+
+/// A struct which provides its fields by index.
+///
+/// The fields are requested with increasing indexes starting at zero until
+/// [`StructField::End`] is returned.
+#[doc(hidden)]
+pub trait IndexedStruct {
+    fn field(&self, index: usize, state: &mut SerializerState) -> Result<StructField<'_>, Error>;
+}
+
+/// A struct emitter for an [`IndexedStruct`].
+#[doc(hidden)]
+pub struct IndexedStructEmitter<'a> {
+    fields: &'a dyn IndexedStruct,
+    index: usize,
+}
+
+impl<'a> IndexedStructEmitter<'a> {
+    pub fn new(fields: &'a dyn IndexedStruct) -> IndexedStructEmitter<'a> {
+        IndexedStructEmitter { fields, index: 0 }
+    }
+}
+
+impl<'a> StructEmitter for IndexedStructEmitter<'a> {
+    fn next(
+        &mut self,
+        state: &mut SerializerState,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
+        loop {
+            let field = self.fields.field(self.index, state)?;
+            self.index += 1;
+            match field {
+                StructField::Field(key, value) => return Ok(Some((Cow::Borrowed(key), value))),
+                StructField::Skip => continue,
+                StructField::End => return Ok(None),
+            }
+        }
+    }
+}
+
+/// A sequence which provides its elements by index.
+///
+/// The elements are requested with increasing indexes starting at zero
+/// until `None` is returned.
+#[doc(hidden)]
+pub trait IndexedSeq {
+    fn element(
+        &self,
+        index: usize,
+        state: &mut SerializerState,
+    ) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
 
 /// A struct emitter.
@@ -336,11 +453,7 @@ pub trait Serialize {
     #[inline]
     fn __private_begin(&self, state: &mut SerializerState) -> Result<Begin<'_>, Error> {
         let descriptor = self.descriptor();
-        Ok(Begin {
-            chunk: self.serialize(state)?,
-            descriptor,
-            needs_finish: true,
-        })
+        Ok(Begin::chunk(self.serialize(state)?, descriptor, true))
     }
 
     /// Hidden internal trait method to allow specializations of bytes.
