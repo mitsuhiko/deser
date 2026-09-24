@@ -20,10 +20,14 @@ All notable changes to deser are documented here.
 - `Option<T>` now also treats extension values that fall back to null as
   null.
 - Added `deser_json::Deserializer::drive` to deserialize into custom sinks.
-- Added `deser-location` which provides source locations.  Formats publish
-  byte offsets of events into the deserializer state and `Spanned<T>` picks
-  them up.  `deser-json` supports this with the `locations` feature and
-  `Deserializer::track_locations`.
+- Added `DeserializeDriver::set_input_range` and
+  `DeserializerState::input_range` which let formats publish the byte range
+  of every event.  Recordings retain the ranges.  `deser-json` always
+  publishes them.
+- Added `deser-location` which resolves input ranges into lines and columns
+  through a `SourceMap` and provides `Spanned<T>`.  `deser-json` installs the
+  source map with the `locations` feature and `Deserializer::track_locations`.
+- Improved the performance of `deser_path::PathSink`.
 - Improved the performance of deserializer state extensions.
 - Added `deser::de::Recording` to record values and replay them into sinks
   later.  Extensions in the deserializer state can be marked as replayable
