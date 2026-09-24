@@ -205,3 +205,34 @@ fn test_strings() {
     assert!(from_str::<String>("\"control \x01 character\"").is_err());
     assert!(from_str::<String>("\"unterminated string").is_err());
 }
+
+#[test]
+fn test_syntax_errors() {
+    use std::collections::BTreeMap;
+
+    for json in [
+        "[1,]", "[,1]", "]", "[1 2]", "[1]]", "[1] x", "", "[", "[1", "[1,", "[}",
+    ] {
+        assert!(from_str::<Vec<u32>>(json).is_err(), "accepted {:?}", json);
+    }
+    for json in [
+        r#"{"a":1,}"#,
+        r#"{"a" 1}"#,
+        r#"{1: 2}"#,
+        r#"{"a":"#,
+        r#"{"a"}"#,
+        r#"{,"a":1}"#,
+        r#"{"a":1"b":2}"#,
+        r#"{"a":1]"#,
+    ] {
+        assert!(
+            from_str::<BTreeMap<String, u32>>(json).is_err(),
+            "accepted {:?}",
+            json
+        );
+    }
+
+    let map: BTreeMap<String, Vec<u32>> = from_str(r#" { "a" : [ ] , "b" : [ 1 , 2 ] } "#).unwrap();
+    assert_eq!(map["a"], Vec::<u32>::new());
+    assert_eq!(map["b"], vec![1, 2]);
+}

@@ -35,9 +35,11 @@ pub struct Deserializer<'a> {
     buffer: Vec<u8>,
 }
 
-enum ContainerState {
-    Map { first: bool, key_pos: bool },
-    Seq { first: bool },
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Container {
+    Top,
+    Seq,
+    Map,
 }
 
 impl<'a> Deserializer<'a> {
@@ -62,46 +64,43 @@ impl<'a> Deserializer<'a> {
     }
 
     fn deserialize_into(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
-        let mut token = self.next_token()?;
-        let mut stack = vec![];
+        // the state of the current container is held in locals, the outer
+        // containers are saved on the stack.
+        let mut stack = Vec::new();
+        let mut container = Container::Top;
+        let mut first = true;
 
         loop {
-            // try to exit containers first
+            let mut token = self.next_token()?;
+
             match token {
-                Token::MapEnd => {
-                    if !matches!(stack.pop(), Some(ContainerState::Map { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected end of map"));
+                Token::MapEnd | Token::SeqEnd => {
+                    let (expected, event) = match token {
+                        Token::MapEnd => (Container::Map, Event::MapEnd),
+                        _ => (Container::Seq, Event::SeqEnd),
+                    };
+                    if container != expected {
+                        return Err(Error::new(
+                            ErrorKind::Unexpected,
+                            if expected == Container::Map {
+                                "unexpected end of map"
+                            } else {
+                                "unexpected end of seq"
+                            },
+                        ));
                     }
-                    driver.emit(Event::MapEnd)?;
-                }
-                Token::SeqEnd => {
-                    if !matches!(stack.pop(), Some(ContainerState::Seq { .. })) {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected end of seq"));
-                    }
-                    driver.emit(Event::SeqEnd)?;
+                    driver.emit(event)?;
+                    container = stack.pop().unwrap_or(Container::Top);
                 }
                 _ => {
-                    // do we need a comma?
-                    if let Some(
-                        ContainerState::Seq { first: false }
-                        | ContainerState::Map {
-                            first: false,
-                            key_pos: true,
-                        },
-                    ) = stack.last_mut()
-                    {
+                    if !first {
                         if !matches!(token, Token::Comma) {
                             return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
                         }
                         token = self.next_token()?;
                     }
 
-                    // handle keys
-                    if let Some(ContainerState::Map {
-                        first,
-                        key_pos: key_pos @ true,
-                    }) = stack.last_mut()
-                    {
+                    if container == Container::Map {
                         match token {
                             Token::Str(val) => driver.emit(Event::from(val))?,
                             _ => return Err(Error::new(ErrorKind::Unexpected, "expected map key")),
@@ -111,9 +110,6 @@ impl<'a> Deserializer<'a> {
                             _ => return Err(Error::new(ErrorKind::Unexpected, "expected colon")),
                         }
                         token = self.next_token()?;
-                        *first = false;
-                        *key_pos = false;
-                        continue;
                     }
 
                     match token {
@@ -123,19 +119,17 @@ impl<'a> Deserializer<'a> {
                         Token::I64(val) => driver.emit(Event::from(val))?,
                         Token::U64(val) => driver.emit(Event::from(val))?,
                         Token::F64(val) => driver.emit(Event::from(val))?,
-                        Token::MapStart => {
-                            stack.push(ContainerState::Map {
-                                first: true,
-                                key_pos: true,
-                            });
-                            driver.emit(Event::MapStart)?;
-                            token = self.next_token()?;
-                            continue;
-                        }
-                        Token::SeqStart => {
-                            stack.push(ContainerState::Seq { first: true });
-                            driver.emit(Event::SeqStart)?;
-                            token = self.next_token()?;
+                        Token::MapStart | Token::SeqStart => {
+                            stack.push(container);
+                            first = true;
+                            if let Token::MapStart = token {
+                                container = Container::Map;
+                                driver.emit(Event::MapStart)?;
+                            } else {
+                                container = Container::Seq;
+                                driver.emit(Event::SeqStart)?;
+                            }
+                            // containers can close immediately
                             continue;
                         }
                         Token::Comma => {
@@ -144,29 +138,22 @@ impl<'a> Deserializer<'a> {
                         Token::Colon => {
                             return Err(Error::new(ErrorKind::Unexpected, "unexpected colon"));
                         }
-                        Token::SeqEnd | Token::MapEnd => unreachable!(),
+                        Token::SeqEnd | Token::MapEnd => {
+                            return Err(Error::new(ErrorKind::Unexpected, "expected a value"));
+                        }
                     }
                 }
             }
 
-            match stack.last_mut() {
-                None => {
-                    return if self.parse_whitespace().is_some() {
-                        Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
-                    } else {
-                        Ok(())
-                    }
-                }
-                Some(ContainerState::Map { first, key_pos }) => {
-                    token = self.next_token()?;
-                    *key_pos = true;
-                    *first = false;
-                }
-                Some(ContainerState::Seq { first }) => {
-                    token = self.next_token()?;
-                    *first = false;
-                }
+            // a value was completed
+            if container == Container::Top {
+                return if self.parse_whitespace().is_some() {
+                    Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
+                } else {
+                    Ok(())
+                };
             }
+            first = false;
         }
     }
 
