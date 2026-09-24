@@ -54,6 +54,9 @@ pub mod ser;
 mod descriptors;
 mod extensions;
 
+#[cfg(doctest)]
+mod soundness;
+
 pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
 pub use self::event::{Atom, Event};

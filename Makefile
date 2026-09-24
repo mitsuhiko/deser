@@ -3,8 +3,13 @@ all: test
 test:
 	@cargo test
 
+MIRI_CRATES := deser deser-json deser-path deser-debug
+
 miri-test:
-	cd deser; MIRIFLAGS="-Zmiri-tag-raw-pointers -Zmiri-strict-provenance" cargo +nightly miri test --all-features
+	@for crate in $(MIRI_CRATES); do \
+		(cd $$crate && MIRIFLAGS="-Zmiri-strict-provenance" cargo +nightly miri test --all-features) || exit 1; \
+		(cd $$crate && MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-tree-borrows" cargo +nightly miri test --all-features) || exit 1; \
+	done
 
 check:
 	@cargo check --all-features
