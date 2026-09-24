@@ -612,7 +612,6 @@ pub trait Deserialize: Sized {
     /// implementation does.  Types with stateless sinks override this so that
     /// atoms can be deserialized without dynamic dispatch.
     #[doc(hidden)]
-    #[inline]
     fn __private_atom_into(
         out: &mut Option<Self>,
         atom: Atom,
@@ -667,8 +666,11 @@ pub fn atom_into<T: Deserialize>(
 }
 
 /// Deserializes an atom into a sink handle.
+///
+/// This is intentionally not inlined as it's used by the default
+/// implementations of the sink methods which exist for every sink.
 #[doc(hidden)]
-#[inline]
+#[inline(never)]
 pub fn atom_into_handle(
     mut sink: SinkHandle<'_>,
     atom: Atom,
@@ -765,11 +767,8 @@ pub trait Sink {
     /// but the behavior must be the same as with the default implementation.
     /// Sinks that override [`next_key`](Self::next_key) to wrap the returned
     /// sink should not override this method.
-    #[inline]
     fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
-        let mut sink = self.next_key(state)?;
-        sink.atom(atom, state)?;
-        sink.finish(state)
+        atom_into_handle(self.next_key(state)?, atom, state)
     }
 
     /// Receives an atom as the next value in a map or sequence.
@@ -778,11 +777,8 @@ pub trait Sink {
     /// then [`atom`](Self::atom) and [`finish`](Self::finish) on the returned
     /// sink, which is exactly what the default implementation does.  See
     /// [`key_atom`](Self::key_atom) for more information.
-    #[inline]
     fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
-        let mut sink = self.next_value(state)?;
-        sink.atom(atom, state)?;
-        sink.finish(state)
+        atom_into_handle(self.next_value(state)?, atom, state)
     }
 
     /// Returns a value sink for a specific struct field.
