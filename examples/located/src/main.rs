@@ -1,6 +1,7 @@
 //! This example shows how to pass information through deser that is not part
-//! of its data model: every value is annotated with the path where it was
-//! found in the input, and types can pick up that path.
+//! of its data model: every value is annotated with the path and the source
+//! location (line and column) where it was found in the input, and types can
+//! pick up that information.
 //!
 //! This is similar to what `serde_spanned` or `serde_path_to_error` do for
 //! serde.  The interesting part is that this keeps working when a value is
@@ -9,21 +10,26 @@
 //!
 //! The pieces are:
 //!
+//! * The JSON deserializer publishes the location of every event into the
+//!   deserializer state (`deser_location::Locations`) and
+//!   `deser_path::PathSink` maintains the path there.  This information is
+//!   out-of-band: it's only available while an event is processed.
 //! * [`LocatedAtom`]: an extension value that carries a primitive value
-//!   together with its path.  Its fallback is the plain value, so types that
-//!   do not know about it continue to work.
+//!   together with its path and location.  Its fallback is the plain value,
+//!   so types that do not know about it continue to work.
 //! * [`Annotator`]: a sink wrapper which sits between the format and the
-//!   target type.  It turns every primitive value into a [`LocatedAtom`].
-//!   The paths are tracked by `deser_path::PathSink`.
-//! * [`Located`]: a type that picks up the path from the extension value
-//!   (in-band).
-//! * [`StatePath`]: for comparison, a type that reads the path from the
-//!   deserializer state (out-of-band).
+//!   target type.  It turns every primitive value into a [`LocatedAtom`]
+//!   which moves the out-of-band information in-band.
+//! * [`Located`]: a type that picks up path and location from the extension
+//!   value (in-band).
+//! * `deser_location::Spanned`: for comparison, a type that reads the
+//!   location from the deserializer state (out-of-band).
 //! * [`Either`]: an untagged enum that has to buffer its input and replays it
 //!   into its variants.
 use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind, Event};
+use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathSegment, PathSink};
 
 /// Formats a path as `servers[1].host`.
@@ -44,12 +50,13 @@ fn format_path(path: &Path) -> String {
     rv
 }
 
-/// A primitive value annotated with the path where it was found.
+/// A primitive value annotated with the path and location where it was found.
 ///
 /// This is the value that is passed through the data model as extension.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocatedAtom {
     path: String,
+    span: Option<Span>,
     value: Atom<'static>,
 }
 
@@ -64,9 +71,11 @@ impl Extension for LocatedAtom {
     }
 }
 
-/// Wraps a sink and annotates all primitive values with their path.
+/// Wraps a sink and annotates all primitive values with their path and
+/// location.
 ///
-/// This needs to be wrapped by a `PathSink` which maintains the path.
+/// This needs to be wrapped by a `PathSink` which maintains the path and the
+/// format needs to publish locations.
 pub struct Annotator<'a> {
     sink: SinkHandle<'a>,
 }
@@ -87,6 +96,7 @@ impl<'a> Sink for Annotator<'a> {
         }
         let located = LocatedAtom {
             path: format_path(&state.get::<Path>()),
+            span: Locations::current_span(state),
             value: atom.to_static(),
         };
         self.sink
@@ -133,26 +143,29 @@ impl<'a> Sink for Annotator<'a> {
     }
 }
 
-/// Deserializes JSON and annotates all values with their location.
+/// Deserializes JSON and annotates all values with their path and location.
 pub fn from_json_with_locations<T: Deserialize>(json: &str) -> Result<T, Error> {
     let mut out = None;
     {
         let sink = Annotator::wrap(T::deserialize_into(&mut out));
         let sink = PathSink::wrap_ref(SinkHandle::boxed(sink));
         let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
-        deser_json::Deserializer::new(json).drive(&mut driver)?;
+        deser_json::Deserializer::new(json)
+            .track_locations(true)
+            .drive(&mut driver)?;
     }
     out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
 }
 
-/// A value together with the path where it was found (in-band).
+/// A value together with the path and location where it was found (in-band).
 ///
-/// The path is only available if the input was annotated, otherwise it's
-/// `None`.
+/// This information is only available if the input was annotated, otherwise
+/// it's `None`.
 #[derive(Debug)]
 pub struct Located<T> {
     pub value: T,
     pub path: Option<String>,
+    pub span: Option<Span>,
 }
 
 impl<T: Deserialize> Deserialize for Located<T> {
@@ -161,6 +174,7 @@ impl<T: Deserialize> Deserialize for Located<T> {
             out,
             sink: OwnedSink::deserialize(),
             path: None,
+            span: None,
         })
     }
 }
@@ -169,6 +183,7 @@ struct LocatedSink<'a, T> {
     out: &'a mut Option<Located<T>>,
     sink: OwnedSink<T>,
     path: Option<String>,
+    span: Option<Span>,
 }
 
 impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
@@ -177,6 +192,7 @@ impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
             Atom::Ext(ref ext) if ext.is::<LocatedAtom>() => {
                 let located = ext.downcast_ref::<LocatedAtom>().unwrap();
                 self.path = Some(located.path.clone());
+                self.span = located.span;
                 self.sink.borrow_mut().atom(located.value.clone(), state)
             }
             other => self.sink.borrow_mut().atom(other, state),
@@ -201,55 +217,11 @@ impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.sink.borrow_mut().finish(state)?;
+        let span = self.span;
         *self.out = self.sink.take().map(|value| Located {
             value,
             path: self.path.take(),
-        });
-        Ok(())
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.sink.borrow().descriptor()
-    }
-}
-
-/// A value together with the path from the deserializer state (out-of-band).
-///
-/// This is what one would do without extensions: look at the state of the
-/// deserializer while the value is deserialized.
-#[derive(Debug)]
-pub struct StatePath<T> {
-    pub value: T,
-    pub path: String,
-}
-
-impl<T: Deserialize> Deserialize for StatePath<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        SinkHandle::boxed(StatePathSink {
-            out,
-            sink: OwnedSink::deserialize(),
-            path: String::new(),
-        })
-    }
-}
-
-struct StatePathSink<'a, T> {
-    out: &'a mut Option<StatePath<T>>,
-    sink: OwnedSink<T>,
-    path: String,
-}
-
-impl<'a, T: Deserialize> Sink for StatePathSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
-        self.path = format_path(&state.get::<Path>());
-        self.sink.borrow_mut().atom(atom, state)
-    }
-
-    fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
-        *self.out = self.sink.take().map(|value| StatePath {
-            value,
-            path: std::mem::take(&mut self.path),
+            span,
         });
         Ok(())
     }
@@ -384,14 +356,15 @@ pub struct Config {
     pub port: Located<u16>,
     // plain types do not know about locations and get the fallback
     pub debug: bool,
-    // the out-of-band path from the state works as long as nothing is
+    // the out-of-band location from the state works as long as nothing is
     // buffered
-    pub workers: StatePath<u32>,
-    // untagged values are buffered, the in-band location survives this
+    pub workers: Spanned<u32>,
+    // untagged values are buffered, the in-band information survives this
     pub timeout: Either<Located<u64>, Located<String>>,
-    // the out-of-band path from the state does not survive buffering
-    pub retries: Either<StatePath<u64>, StatePath<String>>,
-    pub servers: Vec<Server>,
+    // the out-of-band location from the state does not survive buffering
+    pub retries: Either<Spanned<u64>, Spanned<String>>,
+    // out-of-band spans also work for maps and sequences
+    pub servers: Vec<Spanned<Server>>,
 }
 
 #[derive(Debug, Deserialize)]
