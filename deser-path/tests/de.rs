@@ -49,3 +49,38 @@ fn test_path() {
     assert_eq!(map["foo"], MyBool(true));
     assert_eq!(map["bar"], MyBool(false));
 }
+
+#[derive(Debug)]
+struct RecordPath(String);
+
+impl Deserialize for RecordPath {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+        SlotWrapper::make_handle(out)
+    }
+}
+
+impl Sink for SlotWrapper<RecordPath> {
+    fn atom(&mut self, _atom: Atom, state: &DeserializerState) -> Result<(), Error> {
+        let path = state.get::<Path>();
+        **self = Some(RecordPath(format!("{:?}", path.segments())));
+        Ok(())
+    }
+}
+
+#[test]
+fn test_nested_paths() {
+    let mut out = None::<BTreeMap<String, Vec<BTreeMap<String, RecordPath>>>>;
+    {
+        let sink = PathSink::wrap_ref(Deserialize::deserialize_into(&mut out));
+        let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
+        deser_json::Deserializer::new(r#"{"a": [{"x": 1, "y": 2}, {"z": 3}], "b": [{"w": 4}]}"#)
+            .drive(&mut driver)
+            .unwrap();
+    }
+
+    let map = out.unwrap();
+    assert_eq!(map["a"][0]["x"].0, r#"[Key("a"), Index(0), Key("x")]"#);
+    assert_eq!(map["a"][0]["y"].0, r#"[Key("a"), Index(0), Key("y")]"#);
+    assert_eq!(map["a"][1]["z"].0, r#"[Key("a"), Index(1), Key("z")]"#);
+    assert_eq!(map["b"][0]["w"].0, r#"[Key("b"), Index(0), Key("w")]"#);
+}

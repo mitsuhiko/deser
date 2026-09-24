@@ -18,6 +18,7 @@ pub struct PathSink<'a> {
     sink: SinkHandle<'a>,
     container: Container,
     set_segment: Option<PathSegment>,
+    entered_container: bool,
 }
 
 impl<'a> PathSink<'a> {
@@ -32,6 +33,7 @@ impl<'a> PathSink<'a> {
             sink,
             container: Container::None,
             set_segment: None,
+            entered_container: false,
         }
     }
 
@@ -59,6 +61,7 @@ impl<'a> Sink for PathSink<'a> {
     fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        self.entered_container = true;
         self.container = Container::Map(Rc::default());
         self.sink.map(state)
     }
@@ -66,6 +69,7 @@ impl<'a> Sink for PathSink<'a> {
     fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.set_segment(state);
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
+        self.entered_container = true;
         self.container = Container::Seq(0);
         self.sink.seq(state)
     }
@@ -79,6 +83,7 @@ impl<'a> Sink for PathSink<'a> {
                     _ => unreachable!(),
                 },
                 set_segment: None,
+                entered_container: false,
             })
         })
     }
@@ -98,12 +103,19 @@ impl<'a> Sink for PathSink<'a> {
                 sink,
                 container: Container::None,
                 set_segment,
+                entered_container: false,
             })
         })
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.finish(state)
+        let rv = self.sink.finish(state);
+        // leave the container this sink entered
+        if self.entered_container {
+            self.entered_container = false;
+            state.get_mut::<Path>().segments.pop();
+        }
+        rv
     }
 
     fn descriptor(&self) -> &'static dyn Descriptor {
