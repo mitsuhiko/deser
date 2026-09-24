@@ -75,6 +75,16 @@ fn main() {
                 deser_json::from_str::<Twitter>(&j).unwrap();
             }
         }
+        "de-serde" => {
+            for _ in 0..iterations {
+                serde_json::from_str::<Twitter>(&j).unwrap();
+            }
+        }
+        "ser-serde" => {
+            for _ in 0..iterations {
+                serde_json::to_string(&s).unwrap();
+            }
+        }
         "ser" => {
             for _ in 0..iterations {
                 deser_json::to_string(&s).unwrap();
