@@ -277,13 +277,24 @@ fn count_chars(bytes: &[u8]) -> usize {
 /// it covers everything from the opening to the closing token.  The span is
 /// `None` if the format does not provide locations.
 ///
-/// When serialized, only the value is serialized.
-#[derive(Debug, Clone, PartialEq)]
+/// When serialized, only the value is serialized.  The debug representation
+/// is the value followed by its span, e.g. `42 (@ 3:5-3:7)`.
+#[derive(Clone, PartialEq)]
 pub struct Spanned<T> {
     /// The value.
     pub value: T,
     /// The location of the value in the input.
     pub span: Option<Span>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.value, f)?;
+        match self.span {
+            Some(span) => write!(f, " (@ {:?})", span),
+            None => Ok(()),
+        }
+    }
 }
 
 impl<T> Spanned<T> {
@@ -439,6 +450,20 @@ fn test_source_map() {
     assert_eq!(pos(9), "4:1");
     assert_eq!(pos(100), "4:2");
     assert_eq!(format!("{:?}", source_map.span(3, 7)), "2:1-2:4");
+}
+
+#[test]
+fn test_debug() {
+    let span = SourceMap::new("[1, 23]").span(4, 6);
+    assert_eq!(
+        format!("{:?}", Spanned::new(23, Some(span))),
+        "23 (@ 1:5-1:7)"
+    );
+    assert_eq!(format!("{:?}", Spanned::new("x", None)), "\"x\"");
+    assert_eq!(
+        format!("{:#?}", Spanned::new(vec![1], Some(span))),
+        "[\n    1,\n] (@ 1:5-1:7)"
+    );
 }
 
 #[test]
