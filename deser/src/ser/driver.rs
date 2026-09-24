@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
 
+use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
 use crate::extensions::Extensions;
 use crate::ser::{Chunk, SerializerState};
-use crate::{Descriptor, Event, Serialize};
+use crate::{Atom, Descriptor, Event, Serialize};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -17,28 +17,12 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 pub struct SerializeDriver<'a> {
     state: SerializerState<'static>,
     state_stack: Vec<DriverState>,
-    serializable_stack: ManuallyDrop<Vec<SerializableOnStack>>,
+    serializable_stack: ManuallyDrop<Vec<SerializeHandle<'static>>>,
     emitter_stack: ManuallyDrop<Vec<Emitter>>,
     next_event: Option<(Event<'a>, &'a dyn Descriptor)>,
 }
 
-// We like to hold on to Cow<'_, str> in addition to a SerializeHandle
-// so we can get away without an extra boxed allocation.
-enum SerializableOnStack {
-    Handle(SerializeHandle<'static>),
-    StrCow(Cow<'static, str>),
-}
-
-impl Deref for SerializableOnStack {
-    type Target = dyn Serialize;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            SerializableOnStack::Handle(handle) => &**handle,
-            SerializableOnStack::StrCow(cow) => &*cow,
-        }
-    }
-}
+static STRUCT_KEY_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
 
 enum DriverState {
     SeqEmitterAdvance,
@@ -87,7 +71,7 @@ impl<'a> SerializeDriver<'a> {
             emitter_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             serializable_stack: ManuallyDrop::new({
                 let mut vec = Vec::with_capacity(STACK_CAPACITY);
-                vec.push(SerializableOnStack::Handle(serializable));
+                vec.push(serializable);
                 vec
             }),
             state_stack: {
@@ -139,8 +123,7 @@ impl<'a> SerializeDriver<'a> {
                             // continue iteration
                             *state = DriverState::SeqEmitterAdvance;
                             // and serialize the current item
-                            self.serializable_stack
-                                .push(SerializableOnStack::Handle(item_serializable));
+                            self.serializable_stack.push(item_serializable);
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -157,8 +140,7 @@ impl<'a> SerializeDriver<'a> {
                             // continue with value
                             *state = DriverState::MapEmitterNextValue;
                             // and serialize the current key
-                            self.serializable_stack
-                                .push(SerializableOnStack::Handle(key_serializable));
+                            self.serializable_stack.push(key_serializable);
                             self.state_stack.push(DriverState::Serialize);
                         }
                         None => {
@@ -174,8 +156,7 @@ impl<'a> SerializeDriver<'a> {
                     // continue with key again
                     *state = DriverState::MapEmitterNextKey;
                     // and serialize the current value
-                    self.serializable_stack
-                        .push(SerializableOnStack::Handle(value_serializable));
+                    self.serializable_stack.push(value_serializable);
                     self.state_stack.push(DriverState::Serialize);
                 }
                 DriverState::StructEmitterAdvance => {
@@ -187,13 +168,13 @@ impl<'a> SerializeDriver<'a> {
                         )
                     } {
                         Some((key, value_serializable)) => {
-                            // and serialize key and value
-                            self.serializable_stack
-                                .push(SerializableOnStack::Handle(value_serializable));
+                            // the key is emitted directly as event, the value
+                            // is serialized on the next iteration.
+                            self.serializable_stack.push(value_serializable);
                             self.state_stack.push(DriverState::Serialize);
-                            self.serializable_stack
-                                .push(SerializableOnStack::StrCow(key));
-                            self.state_stack.push(DriverState::Serialize);
+                            self.next_event =
+                                Some((Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR));
+                            return Ok(());
                         }
                         None => {
                             *state = DriverState::PopEmitter;
