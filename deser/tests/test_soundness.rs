@@ -594,3 +594,85 @@ fn test_enum_representations_drop_and_errors_at_every_point() {
         }
     }
 }
+
+/// Collects the events of a serializable with `drive`, optionally starting
+/// with `next` for the first `skip` events and aborting after `abort` events.
+fn drive_events(
+    value: &dyn Serialize,
+    skip: usize,
+    abort: Option<usize>,
+) -> Result<Vec<Event<'static>>, Error> {
+    let mut events = Vec::new();
+    let mut driver = SerializeDriver::new(value);
+    for _ in 0..skip {
+        match driver.next()? {
+            Some((event, _, _)) => events.push(event.to_static()),
+            None => return Ok(events),
+        }
+    }
+    driver.drive(|event, _, _| {
+        if Some(events.len()) == abort {
+            return Err(Error::new(deser::ErrorKind::Unexpected, "aborted"));
+        }
+        events.push(event.to_static());
+        Ok(())
+    })?;
+    Ok(events)
+}
+
+#[test]
+fn test_drive() {
+    let mut value = HashMap::new();
+    value.insert("k".to_string(), vec!["v".to_string()]);
+    let value = Outer {
+        inner: Some(Inner {
+            name: "a".into(),
+            tags: vec!["x".into(), "y".into()],
+        }),
+        boxed: Box::new(Inner {
+            name: "b".into(),
+            tags: vec!["z".into()],
+        }),
+        array: ["1".into(), "2".into(), "3".into()],
+        map: value,
+        flat: Inner {
+            name: "c".into(),
+            tags: vec![],
+        },
+    };
+    let tagged = Tagged::A {
+        inner: Inner {
+            name: "x".into(),
+            tags: vec!["a".into()],
+        },
+        list: vec![None, Some(Box::new(Inner::default()))],
+    };
+    let nested = Nested(if cfg!(miri) { 20 } else { 100 });
+    let values: [&dyn Serialize; 3] = [&value, &tagged, &nested];
+
+    for value in values {
+        let mut expected = Vec::new();
+        {
+            let mut driver = SerializeDriver::new(value);
+            while let Some((event, _, _)) = driver.next().unwrap() {
+                expected.push(event.to_static());
+            }
+        }
+        let step = if cfg!(miri) { 7 } else { 1 };
+        for skip in (0..=expected.len()).step_by(step) {
+            // drive produces the same events, even after next was used
+            assert_eq!(drive_events(value, skip, None).unwrap(), expected);
+        }
+        for abort in (0..expected.len()).step_by(step) {
+            // errors from the callback abort and leave the driver droppable
+            assert!(drive_events(value, 0, Some(abort)).is_err());
+        }
+    }
+
+    // deep nesting beyond the preallocated stack
+    let node = nested_node(depth());
+    let events = drive_events(&node, 3, None).unwrap();
+    let rv: Node = emit_partial(&events).unwrap();
+    drop_node(rv);
+    drop_node(node);
+}
