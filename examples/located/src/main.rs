@@ -24,7 +24,10 @@
 //!   [`Located`] picks the information up from the extension value.
 //!
 //! [`Either`] is a hand written untagged enum on top of
-//! `Recording::capture`, [`Backend`] is a derived internally tagged enum.
+//! `Recording::capture`.  [`Backend`], [`Action`], [`Hook`] and [`Limit`] are
+//! derived enums in the different representations (internally tagged,
+//! externally tagged, adjacently tagged and untagged) which buffer where
+//! needed.
 use std::fmt;
 
 use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Recording, Sink, SinkHandle};
@@ -287,6 +290,37 @@ pub enum Backend {
     },
 }
 
+/// An externally tagged enum (the default) with the different variant kinds.
+#[derive(Debug, Deserialize)]
+#[deser(rename_all = "snake_case")]
+pub enum Action {
+    Restart { delay: Located<u32> },
+    Notify(Located<String>),
+    Scale(Located<u32>, Spanned<u32>),
+    Noop,
+}
+
+/// An adjacently tagged enum.  If the content comes before the tag, it's
+/// buffered until the tag is known.
+#[derive(Debug, Deserialize)]
+#[deser(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum Hook {
+    Command(Vec<Located<String>>),
+    Url(Spanned<String>),
+}
+
+/// An untagged enum.  The value is buffered and replayed into the variants
+/// until one accepts it.
+#[derive(Debug, Deserialize)]
+#[deser(untagged)]
+pub enum Limit {
+    Exact(Located<u64>),
+    Range {
+        min: Located<u64>,
+        max: Spanned<u64>,
+    },
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub name: Located<String>,
@@ -304,6 +338,10 @@ pub struct Config {
     pub retries: Either<Spanned<u64>, Spanned<String>>,
     // the tag comes last, so the fields are buffered
     pub backend: Backend,
+    // the other enum representations
+    pub actions: Vec<Action>,
+    pub hooks: Vec<Hook>,
+    pub limits: Vec<Limit>,
     // out-of-band spans also work for maps and sequences
     pub servers: Vec<Spanned<Server>>,
 }
@@ -328,6 +366,20 @@ const INPUT: &str = r#"
         "timeout": 30,
         "type": "http"
     },
+    "actions": [
+        {"restart": {"delay": 5}},
+        {"notify": "ops@example.com"},
+        {"scale": [2, 10]},
+        "noop"
+    ],
+    "hooks": [
+        {"data": ["systemctl", "reload"], "kind": "command"},
+        {"kind": "url", "data": "https://hooks.example.com/"}
+    ],
+    "limits": [
+        100,
+        {"max": 20, "min": 10}
+    ],
     "servers": [
         {"host": "a.example.com", "weight": 2, "backup": false},
         {"host": "b.example.com", "weight": null, "backup": null}
