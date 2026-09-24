@@ -48,9 +48,11 @@ enum Container {
 
 impl<'a> Deserializer<'a> {
     /// Creates a new deserializer.
-    pub fn new(input: &'a [u8]) -> Deserializer<'a> {
+    pub fn new(input: &'a str) -> Deserializer<'a> {
         Deserializer {
-            input,
+            // the parser works on bytes but relies on the input being valid
+            // UTF-8 when it hands out string slices.
+            input: input.as_bytes(),
             pos: 0,
             buffer: Vec::new(),
         }
@@ -194,8 +196,10 @@ impl<'a> Deserializer<'a> {
 
     fn parse_str(&mut self) -> Result<&str, Error> {
         fn result(bytes: &[u8]) -> &str {
-            // The input is assumed to be valid UTF-8 and the \u-escapes are
-            // checked along the way, so don't need to check here.
+            // SAFETY: the input is valid UTF-8 as it comes from a `&str`.  The
+            // borrowed slices start and end at ASCII characters (quotes and
+            // backslashes) so they are valid UTF-8 too.  The \u-escapes are
+            // validated when they are decoded into the buffer.
             unsafe { str::from_utf8_unchecked(bytes) }
         }
 
@@ -735,5 +739,5 @@ fn emit_big_int(driver: &mut DeserializeDriver, text: &str) -> Result<(), Error>
 
 /// Deserializes JSON from the given string.
 pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
-    Deserializer::new(s.as_bytes()).deserialize()
+    Deserializer::new(s).deserialize()
 }
