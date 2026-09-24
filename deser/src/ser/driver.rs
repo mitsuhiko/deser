@@ -78,7 +78,7 @@ impl<'a> SerializeDriver<'a> {
     }
 
     /// Returns a borrowed reference to the current serializer state.
-    pub fn state(&self) -> &SerializerState {
+    pub fn state(&self) -> &SerializerState<'_> {
         &self.state
     }
 
@@ -89,7 +89,9 @@ impl<'a> SerializeDriver<'a> {
     /// The driver will panic if the data fed from the serializer is malformed.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn next(&mut self) -> Result<Option<(Event, &dyn Descriptor, &SerializerState)>, Error> {
+    pub fn next(
+        &mut self,
+    ) -> Result<Option<(Event<'_>, &dyn Descriptor, &SerializerState<'_>)>, Error> {
         Ok(self
             .advance()?
             .map(|(event, descriptor)| (event, descriptor, &self.state)))

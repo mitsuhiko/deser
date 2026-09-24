@@ -62,7 +62,7 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 /// struct AtomWrapper<T>(T);
 ///
 /// impl<T: Deserialize> Deserialize for AtomWrapper<T> {
-///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
 ///         SinkHandle::boxed(WrapperSink {
 ///             out,
 ///             sink: OwnedSink::deserialize(),

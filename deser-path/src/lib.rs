@@ -4,13 +4,13 @@
 //!
 //! ```rust
 //! use deser_path::{Path, PathSerializable};
-//! use deser::ser::{Serialize, SerializerState, Chunk};
-//! use deser::{Atom, Error};
+//! use deser::ser::{Serialize, SerializeDriver, SerializerState, Chunk};
+//! use deser::Error;
 //!
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.
 //!         let path = state.get::<Path>();
@@ -21,7 +21,12 @@
 //!
 //! let serializable = vec![MyInt(42), MyInt(23)];
 //! let path_serializable = PathSerializable::wrap(&serializable);
+//!
 //! // now serialize path_serializable instead
+//! let mut driver = SerializeDriver::new(&path_serializable);
+//! while driver.next().unwrap().is_some() {
+//!     // ...
+//! }
 //! ```
 mod de;
 mod ser;

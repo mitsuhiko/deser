@@ -96,7 +96,7 @@
 //! }
 //!
 //! impl Deserialize for MyBool {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
 //!         // Since we're using the SlotWrapper abstraction we can directly
 //!         // make a handle here by using the `make_handle` utility.
 //!         SlotWrapper::make_handle(out)
@@ -120,7 +120,7 @@
 //! }
 //!
 //! impl Deserialize for Flag {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
 //!         SinkHandle::boxed(FlagSink {
 //!             out,
 //!             key: None,
@@ -144,14 +144,14 @@
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+//!     fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+//!     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
 //!         let key = self.key.take().unwrap();
 //!         // since we implement a sink for a struct, move the actual logic for
 //!         // matching into `value_for_key` so that our deserializer can support
@@ -161,7 +161,7 @@
 //!     }
 //!
 //!     fn value_for_key(&mut self, key: &str, _state: &DeserializerState)
-//!         -> Result<Option<SinkHandle>, Error>
+//!         -> Result<Option<SinkHandle<'_>>, Error>
 //!     {
 //!         Ok(Some(match key {
 //!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field),
@@ -332,13 +332,13 @@ impl<'a> SinkHandle<'a> {
 
     /// Forwards to [`Sink::next_key`].
     #[inline]
-    pub fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    pub fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.sink_mut().next_key(state)
     }
 
     /// Forwards to [`Sink::next_value`].
     #[inline]
-    pub fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    pub fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         self.sink_mut().next_value(state)
     }
 
@@ -347,7 +347,7 @@ impl<'a> SinkHandle<'a> {
         &mut self,
         key: &str,
         state: &DeserializerState,
-    ) -> Result<Option<SinkHandle>, Error> {
+    ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.sink_mut().value_for_key(key, state)
     }
 
@@ -389,12 +389,12 @@ impl<'a> Sink for SinkHandle<'a> {
     }
 
     #[inline]
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         SinkHandle::next_key(self, state)
     }
 
     #[inline]
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         SinkHandle::next_value(self, state)
     }
 
@@ -402,7 +402,7 @@ impl<'a> Sink for SinkHandle<'a> {
         &mut self,
         key: &str,
         state: &DeserializerState,
-    ) -> Result<Option<SinkHandle>, Error> {
+    ) -> Result<Option<SinkHandle<'_>>, Error> {
         SinkHandle::value_for_key(self, key, state)
     }
 
@@ -473,7 +473,7 @@ pub trait Deserialize: Sized {
     /// to return a [`SlotWrapper`].  Custom types will most likely just return
     /// that.  An alternative method is to "wrap" the deserializable in a custom
     /// sink.
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle;
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_>;
 
     /// Provides the initial value for a slot when deserializing structures.
     ///
@@ -585,13 +585,13 @@ pub trait Sink {
     }
 
     /// Returns a sink for the next key in a map.
-    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
 
     /// Returns a sink for the next value in a map or sequence.
-    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
@@ -606,7 +606,7 @@ pub trait Sink {
         &mut self,
         key: &str,
         state: &DeserializerState,
-    ) -> Result<Option<SinkHandle>, Error> {
+    ) -> Result<Option<SinkHandle<'_>>, Error> {
         let _ = key;
         let _ = state;
         Ok(None)

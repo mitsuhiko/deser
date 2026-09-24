@@ -16,10 +16,10 @@
 //! # fn do_it() -> Result<(), deser::Error> {
 //! let serializable = vec!["foo", "bar", "baz"];
 //! let mut driver = SerializeDriver::new(&serializable);
-//! while let Some((event, descriptor, state)) = driver.next()? {
+//! while let Some((_event, _descriptor, _state)) = driver.next()? {
 //!     // serialize each event for the target format such as JSON
 //! }
-//! # Ok(()) }; do_it().unwrap();
+//! # Ok(()) } do_it().unwrap();
 //! ```
 //!
 //! This type of interface also permits the serialization of almost unlimited depth.
@@ -54,7 +54,7 @@
 //!         &MyIntDescriptor
 //!     }
 //!
-//!     fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
 //!         // one can also just do `self.0.serialize(state)`
 //!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
 //!     }
@@ -78,7 +78,7 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
 //!         Ok(Chunk::Struct(Box::new(UserEmitter {
 //!             user: self,
 //!             index: 0,
@@ -93,7 +93,7 @@
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
 //!     fn next(&mut self, _state: &SerializerState)
-//!         -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error>
+//!         -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>
 //!     {
 //!         let index = self.index;
 //!         self.index += 1;
@@ -237,7 +237,7 @@ pub trait StructEmitter {
     fn next(
         &mut self,
         state: &SerializerState,
-    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error>;
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>;
 }
 
 /// A map emitter.
@@ -247,7 +247,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error>;
+    fn next_key(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
 
     /// Produces the next value in the map.
     ///
@@ -255,13 +255,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle, Error>;
+    fn next_value(&mut self, state: &SerializerState) -> Result<SerializeHandle<'_>, Error>;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle>, Error>;
+    fn next(&mut self, state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.
@@ -276,7 +276,7 @@ pub trait SeqEmitter {
 ///   which can be further processed to walk the embedded compound value.
 pub trait Serialize {
     /// Serializes this serializable.
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error>;
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error>;
 
     /// Invoked after the serialization finished.
     ///

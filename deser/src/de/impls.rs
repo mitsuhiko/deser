@@ -13,7 +13,7 @@ make_slot_wrapper!(SlotWrapper);
 macro_rules! deserialize {
     ($ty:ty) => {
         impl Deserialize for $ty {
-            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
                 SlotWrapper::make_handle(out)
             }
         }
@@ -119,7 +119,7 @@ macro_rules! int_sink {
 int_sink!(u8);
 
 impl Deserialize for u8 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         SlotWrapper::make_handle(out)
     }
 
@@ -233,7 +233,7 @@ float_sink!(f64);
 deserialize!(f64);
 
 impl<T: Deserialize> Deserialize for Vec<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct VecSink<'a, T> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
@@ -281,7 +281,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
@@ -309,7 +309,7 @@ where
     K: Ord + Deserialize,
     V: Deserialize,
 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct MapSink<'a, K: 'a, V: 'a> {
             slot: &'a mut Option<BTreeMap<K, V>>,
             map: BTreeMap<K, V>,
@@ -342,12 +342,12 @@ where
                 Ok(())
             }
 
-            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
@@ -373,7 +373,7 @@ where
     V: Deserialize,
     H: BuildHasher + Default,
 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct MapSink<'a, K: 'a, V: 'a, H> {
             slot: &'a mut Option<HashMap<K, V, H>>,
             map: HashMap<K, V, H>,
@@ -409,12 +409,12 @@ where
                 Ok(())
             }
 
-            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.key))
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 Ok(Deserialize::deserialize_into(&mut self.value))
             }
 
@@ -435,7 +435,7 @@ where
 }
 
 impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct BTreeSetSink<'a, T> {
             slot: &'a mut Option<BTreeSet<T>>,
             set: BTreeSet<T>,
@@ -460,7 +460,7 @@ impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
@@ -485,7 +485,7 @@ where
     T: Deserialize + Hash + Eq,
     H: BuildHasher + Default,
 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct HashSetSink<'a, T, H> {
             slot: &'a mut Option<HashSet<T, H>>,
             set: HashSet<T, H>,
@@ -519,7 +519,7 @@ where
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 Ok(Deserialize::deserialize_into(&mut self.element))
             }
@@ -543,7 +543,7 @@ impl<T> Deserialize for Option<T>
 where
     T: Deserialize,
 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         *out = Some(None);
         Deserialize::deserialize_into(out.as_mut().unwrap()).ignore_null()
     }
@@ -557,7 +557,7 @@ macro_rules! deserialize_for_tuple {
     () => ();
     ($($name:ident,)+) => (
         impl<$($name: Deserialize),*> Deserialize for ($($name,)*) {
-            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
                 #![allow(non_snake_case)]
 
                 struct TupleSink<'a, $($name,)*> {
@@ -578,7 +578,7 @@ macro_rules! deserialize_for_tuple {
                         Ok(())
                     }
 
-                    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+                    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -622,7 +622,7 @@ macro_rules! deserialize_for_tuple_peel {
 deserialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 
 impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         // Invariant: if `buffer` is `Some`, the first `index` elements of it
         // are initialized.  Once the buffer was moved into the slot, `buffer`
         // is `None`.
@@ -688,7 +688,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
                 if self.index >= N {
                     Err(Error::new(
@@ -739,7 +739,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
 }
 
 impl<T: Deserialize> Deserialize for Box<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         struct BoxSink<'a, T> {
             out: &'a mut Option<Box<T>>,
             sink: OwnedSink<T>,
@@ -758,11 +758,11 @@ impl<T: Deserialize> Deserialize for Box<T> {
                 self.sink.borrow_mut().seq(state)
             }
 
-            fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.sink.borrow_mut().next_key(state)
             }
 
-            fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle, Error> {
+            fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
                 self.sink.borrow_mut().next_value(state)
             }
 
@@ -770,7 +770,7 @@ impl<T: Deserialize> Deserialize for Box<T> {
                 &mut self,
                 key: &str,
                 state: &DeserializerState,
-            ) -> Result<Option<SinkHandle>, Error> {
+            ) -> Result<Option<SinkHandle<'_>>, Error> {
                 self.sink.borrow_mut().value_for_key(key, state)
             }
 

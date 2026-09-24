@@ -1,4 +1,4 @@
-//! This library takes a [`Serialize`](deser::ser::Serialize) and
+//! This library takes a [`Serialize`] and
 //! formats it with [`std::fmt`] to debug representation.
 use std::fmt;
 use std::sync::atomic::{self, AtomicUsize};
@@ -35,9 +35,9 @@ impl ToDebug {
     }
 }
 
-fn dump<'a, 'f>(
+fn dump<'a>(
     tokens: &'a [(Event<'a>, Option<String>)],
-    f: &'f mut fmt::Formatter<'_>,
+    f: &mut fmt::Formatter<'_>,
 ) -> Result<&'a [(Event<'a>, Option<String>)], fmt::Error> {
     if let Some((first, mut rest)) = tokens.split_first() {
         match first.0 {
@@ -78,7 +78,7 @@ fn dump<'a, 'f>(
                 let mut map = f.debug_map();
                 let mut is_key = true;
                 loop {
-                    if rest.get(0).map_or(false, |x| matches!(x.0, Event::MapEnd)) {
+                    if rest.first().is_some_and(|x| matches!(x.0, Event::MapEnd)) {
                         rest = &rest[1..];
                         break;
                     }
@@ -102,7 +102,7 @@ fn dump<'a, 'f>(
                 }
                 let mut list = f.debug_list();
                 loop {
-                    if rest.get(0).map_or(false, |x| matches!(x.0, Event::SeqEnd)) {
+                    if rest.first().is_some_and(|x| matches!(x.0, Event::SeqEnd)) {
                         rest = &rest[1..];
                         break;
                     }

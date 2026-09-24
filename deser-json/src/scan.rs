@@ -88,7 +88,7 @@ fn test_skip_to_escape() {
                     state ^= state >> 7;
                     state ^= state << 17;
                     // bias towards plain bytes
-                    if state % 4 == 0 {
+                    if state.is_multiple_of(4) {
                         alphabet[(state >> 8) as usize % alphabet.len()]
                     } else {
                         b'x'

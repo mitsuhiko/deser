@@ -282,7 +282,7 @@ impl<'a> Deserializer<'a> {
 
                         let n2 = self.decode_hex_escape()?;
 
-                        if n2 < 0xDC00 || n2 > 0xDFFF {
+                        if !(0xDC00..=0xDFFF).contains(&n2) {
                             return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
                         }
 
@@ -376,7 +376,7 @@ impl<'a> Deserializer<'a> {
         Ok(())
     }
 
-    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Token, Error> {
+    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Token<'_>, Error> {
         match first_digit {
             b'0' => match self.peek_or_nul() {
                 b'0'..=b'9' => Err(Error::new(
@@ -397,7 +397,7 @@ impl<'a> Deserializer<'a> {
                             // We need to be careful with overflow. If we can, try to keep the
                             // number as a `u64` until we grow too large. At that point, switch to
                             // parsing the value as a `f64`.
-                            if overflow!(res * 10 + digit, u64::max_value()) {
+                            if overflow!(res * 10 + digit, u64::MAX) {
                                 return self.parse_overflowing_integer(nonnegative, res);
                             }
 
@@ -489,7 +489,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Token, Error> {
+    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Token<'_>, Error> {
         match self.peek_or_nul() {
             b'.' => self
                 .parse_decimal(nonnegative, significand, 0)
@@ -528,7 +528,7 @@ impl<'a> Deserializer<'a> {
             let digit = u64::from(c - b'0');
             at_least_one_digit = true;
 
-            if overflow!(significand * 10 + digit, u64::max_value()) {
+            if overflow!(significand * 10 + digit, u64::MAX) {
                 // The next multiply/add would overflow, so just ignore all
                 // further digits.
                 while let b'0'..=b'9' = self.peek_or_nul() {
@@ -585,7 +585,7 @@ impl<'a> Deserializer<'a> {
             self.bump();
             let digit = i32::from(c - b'0');
 
-            if overflow!(exp * 10 + digit, i32::max_value()) {
+            if overflow!(exp * 10 + digit, i32::MAX) {
                 return self.parse_exponent_overflow(nonnegative, significand, positive_exp);
             }
 
@@ -622,7 +622,7 @@ impl<'a> Deserializer<'a> {
         Ok(if nonnegative { 0.0 } else { -0.0 })
     }
 
-    fn next_token(&mut self) -> Result<Token, Error> {
+    fn next_token(&mut self) -> Result<Token<'_>, Error> {
         let peek = match self.parse_whitespace() {
             Some(b) => b,
             None => return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
@@ -661,7 +661,7 @@ impl<'a> Deserializer<'a> {
 fn f64_from_parts(nonnegative: bool, significand: u64, mut exponent: i32) -> Result<f64, Error> {
     let mut f = significand as f64;
     loop {
-        match POW10.get(exponent.abs() as usize) {
+        match POW10.get(exponent.unsigned_abs() as usize) {
             Some(&pow) => {
                 if exponent >= 0 {
                     f *= pow;

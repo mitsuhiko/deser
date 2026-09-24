@@ -58,7 +58,7 @@ impl<'a> DeserializeDriver<'a> {
     }
 
     /// Returns a borrowed reference to the current deserializer state.
-    pub fn state(&self) -> &DeserializerState {
+    pub fn state(&self) -> &DeserializerState<'_> {
         &self.state
     }
 

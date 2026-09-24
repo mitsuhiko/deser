@@ -45,7 +45,7 @@
 //! }
 //!
 //! impl Serialize for Timestamp {
-//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+//!     fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
 //!         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
 //!     }
 //! }
