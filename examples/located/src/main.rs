@@ -99,7 +99,7 @@ impl<'a> Sink for Annotator<'a> {
             return self.sink.atom(atom, state);
         }
         let located = LocatedAtom {
-            path: format_path(&state.get::<Path>()),
+            path: state.get::<Path>().map(format_path).unwrap_or_default(),
             span: Locations::current_span(state),
             value: atom.to_static(),
         };

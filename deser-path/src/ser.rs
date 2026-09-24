@@ -138,7 +138,7 @@ struct SegmentPushingSerializable<'a> {
 impl<'a> Serialize for SegmentPushingSerializable<'a> {
     fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         {
-            let mut path = state.get_mut::<Path>();
+            let path = state.get_mut::<Path>();
             path.segments.push(self.segment.take().unwrap());
         }
         match self.serializable.serialize(state)? {
@@ -154,7 +154,7 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
 
     fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)?;
-        let mut path = state.get_mut::<Path>();
+        let path = state.get_mut::<Path>();
         path.segments.pop();
         Ok(())
     }

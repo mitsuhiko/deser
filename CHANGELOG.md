@@ -8,6 +8,11 @@ All notable changes to deser are documented here.
   `&mut DeserializerState` and `&mut SerializerState` to all methods of
   `Sink`, `Serialize` and the emitters.  Added
   `DeserializeDriver::state_mut` for formats.
+- State extensions no longer use a `RefCell`.  `get_mut` now takes the state
+  mutably and returns a `&mut T`, `get` returns an `Option<&T>` which is
+  `None` if the value was never set.  `set_replayable` takes the state
+  mutably.  Conflicting borrows of extension values are now compile time
+  instead of runtime errors.
 - Fixed multiple soundness issues:
   - `DeserializeDriver::from_sink` now ties the sink to the driver's lifetime.
   - The deserialize driver now drops child sinks before it uses or drops

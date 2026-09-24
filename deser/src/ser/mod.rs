@@ -106,7 +106,6 @@
 //! }
 //! ```
 use std::borrow::Cow;
-use std::cell::{Ref, RefMut};
 use std::fmt;
 use std::ops::Deref;
 
@@ -206,12 +205,18 @@ impl<'a> fmt::Debug for SerializerState<'a> {
 
 impl<'a> SerializerState<'a> {
     /// Returns an extension value.
-    pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
+    ///
+    /// Returns `None` if the value was never set.
+    #[inline]
+    pub fn get<T: fmt::Debug + 'static>(&self) -> Option<&T> {
         self.extensions.get()
     }
 
     /// Returns a mutable extension value.
-    pub fn get_mut<T: Default + fmt::Debug + 'static>(&self) -> RefMut<'_, T> {
+    ///
+    /// If the value was never set, it's initialized with the default value.
+    #[inline]
+    pub fn get_mut<T: Default + fmt::Debug + 'static>(&mut self) -> &mut T {
         self.extensions.get_mut()
     }
 

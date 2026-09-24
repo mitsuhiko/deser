@@ -149,7 +149,7 @@ impl Recording {
     pub fn replay(&self, sink: SinkHandle<'_>, state: &mut DeserializerState) -> Result<(), Error> {
         let live = state.extensions().snapshot();
         let rv = self.replay_events(sink, state);
-        state.extensions().restore(&live);
+        state.extensions_mut().restore(&live);
         rv
     }
 
@@ -160,7 +160,7 @@ impl Recording {
     ) -> Result<(), Error> {
         let mut driver = DeserializeDriver::nested(state, sink.shorten(), self.is_map_key);
         for (event, snapshot) in self.events.iter() {
-            driver.state_mut().extensions().restore(snapshot);
+            driver.state_mut().extensions_mut().restore(snapshot);
             driver.emit(event.as_borrowed())?;
         }
         Ok(())

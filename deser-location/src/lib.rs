@@ -239,12 +239,12 @@ impl Locations {
 
     /// Returns the source map if the format provides one.
     pub fn source_map(state: &DeserializerState) -> Option<Arc<SourceMap>> {
-        state.get::<Locations>().source_map.clone()
+        state.get::<Locations>()?.source_map.clone()
     }
 
     /// Returns the span of the current event if the format provides it.
     pub fn current_span(state: &DeserializerState) -> Option<Span> {
-        let locations = state.get::<Locations>();
+        let locations = state.get::<Locations>()?;
         match (&locations.source_map, locations.current) {
             (Some(source_map), Some((start, end))) => Some(source_map.span(start, end)),
             _ => None,

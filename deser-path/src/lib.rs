@@ -13,7 +13,7 @@
 //!     fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.
-//!         println!("{:?}", state.get::<Path>().segments());
+//!         println!("{:?}", state.get::<Path>().map(Path::segments));
 //!         self.0.serialize(state)
 //!     }
 //! }

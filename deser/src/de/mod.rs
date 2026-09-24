@@ -192,7 +192,6 @@
 //! on the spot" to temporarily deserialize into.  For more information see
 //! [`OwnedSink`].
 use std::borrow::Cow;
-use std::cell::{Ref, RefMut};
 use std::fmt;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
@@ -468,11 +467,11 @@ pub struct DeserializerState<'a> {
 /// an outer driver (for instance when replaying recordings).
 enum StateExtensions<'a> {
     Owned(Extensions),
-    Borrowed(&'a Extensions),
+    Borrowed(&'a mut Extensions),
 }
 
 impl<'a> DeserializerState<'a> {
-    pub(crate) fn new(extensions: Option<&'a Extensions>) -> DeserializerState<'a> {
+    pub(crate) fn new(extensions: Option<&'a mut Extensions>) -> DeserializerState<'a> {
         DeserializerState {
             extensions: match extensions {
                 Some(extensions) => StateExtensions::Borrowed(extensions),
@@ -487,18 +486,32 @@ impl<'a> DeserializerState<'a> {
     pub(crate) fn extensions(&self) -> &Extensions {
         match self.extensions {
             StateExtensions::Owned(ref extensions) => extensions,
-            StateExtensions::Borrowed(extensions) => extensions,
+            StateExtensions::Borrowed(ref extensions) => extensions,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn extensions_mut(&mut self) -> &mut Extensions {
+        match self.extensions {
+            StateExtensions::Owned(ref mut extensions) => extensions,
+            StateExtensions::Borrowed(ref mut extensions) => extensions,
         }
     }
 
     /// Returns an extension value.
-    pub fn get<T: Default + fmt::Debug + 'static>(&self) -> Ref<'_, T> {
+    ///
+    /// Returns `None` if the value was never set.
+    #[inline]
+    pub fn get<T: fmt::Debug + 'static>(&self) -> Option<&T> {
         self.extensions().get()
     }
 
     /// Returns a mutable extension value.
-    pub fn get_mut<T: Default + fmt::Debug + 'static>(&self) -> RefMut<'_, T> {
-        self.extensions().get_mut()
+    ///
+    /// If the value was never set, it's initialized with the default value.
+    #[inline]
+    pub fn get_mut<T: Default + fmt::Debug + 'static>(&mut self) -> &mut T {
+        self.extensions_mut().get_mut()
     }
 
     /// Marks an extension type as replayable.
@@ -508,8 +521,8 @@ impl<'a> DeserializerState<'a> {
     /// are captured for every event and restored when the event is replayed.
     /// This is used for information that formats or wrappers put into the
     /// state for the current event, such as source locations or paths.
-    pub fn set_replayable<T: Clone + Default + fmt::Debug + 'static>(&self) {
-        self.extensions().set_replayable::<T>();
+    pub fn set_replayable<T: Clone + Default + fmt::Debug + 'static>(&mut self) {
+        self.extensions_mut().set_replayable::<T>();
     }
 
     /// Returns the current recursion depth.

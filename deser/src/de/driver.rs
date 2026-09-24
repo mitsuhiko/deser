@@ -56,7 +56,7 @@ impl<'a> DeserializeDriver<'a> {
         sink: SinkHandle<'a>,
         is_map_key: bool,
     ) -> DeserializeDriver<'a> {
-        let mut state = DeserializerState::new(Some(parent.extensions()));
+        let mut state = DeserializerState::new(Some(parent.extensions_mut()));
         state.is_map_key = is_map_key;
         DeserializeDriver::with_state(state, sink)
     }

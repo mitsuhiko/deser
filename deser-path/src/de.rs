@@ -51,8 +51,7 @@ impl<'a> PathSink<'a> {
 ///
 /// This reuses the allocation of the previous key if possible.
 fn set_key(state: &mut DeserializerState, atom: &Atom) {
-    let mut path = state.get_mut::<Path>();
-    let segment = match path.segments.last_mut() {
+    let segment = match state.get_mut::<Path>().segments.last_mut() {
         Some(segment) => segment,
         None => return,
     };
@@ -70,7 +69,6 @@ fn set_key(state: &mut DeserializerState, atom: &Atom) {
             // extension values (like annotated keys) use their fallback
             let fallback = ext.fallback();
             if !matches!(fallback, Atom::Ext(_)) {
-                drop(path);
                 set_key(state, &fallback);
             }
         }

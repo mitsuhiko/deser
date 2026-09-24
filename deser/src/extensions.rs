@@ -1,5 +1,4 @@
 use std::any::{type_name, Any, TypeId};
-use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::hash::{BuildHasherDefault, Hash, Hasher};
@@ -82,77 +81,58 @@ fn clone_value<T: Clone + Debug + 'static>(value: &dyn DebugAny) -> Box<dyn Debu
 
 #[derive(Default, Debug)]
 pub struct Extensions {
-    map: RefCell<HashMap<TypeKey, Box<dyn DebugAny>, BuildHasherDefault<TypeIdHasher>>>,
-    replayable: RefCell<Vec<(TypeKey, CloneFn)>>,
+    map: HashMap<TypeKey, Box<dyn DebugAny>, BuildHasherDefault<TypeIdHasher>>,
+    replayable: Vec<(TypeKey, CloneFn)>,
 }
 
 impl Extensions {
-    pub fn get<T: Default + Debug + 'static>(&self) -> Ref<'_, T> {
-        match Ref::filter_map(self.map.borrow(), |m| {
-            m.get(&TypeKey::of::<T>())
-                .and_then(|b| (**b).as_any().downcast_ref())
-        }) {
-            Ok(rv) => rv,
-            Err(map) => {
-                drop(map);
-                self.insert_default::<T>();
-                self.get()
-            }
-        }
-    }
-
-    pub fn get_mut<T: Default + Debug + 'static>(&self) -> RefMut<'_, T> {
-        RefMut::map(self.map.borrow_mut(), |m| {
-            m.entry(TypeKey::of::<T>())
-                .or_insert_with(|| Box::new(T::default()))
-                .as_mut()
-                .as_any_mut()
-                .downcast_mut()
-                .unwrap()
-        })
-    }
-
-    #[cold]
-    fn insert_default<T: Default + Debug + 'static>(&self) {
+    #[inline]
+    pub fn get<T: Debug + 'static>(&self) -> Option<&T> {
         self.map
-            .borrow_mut()
-            .insert(TypeKey::of::<T>(), Box::new(T::default()));
+            .get(&TypeKey::of::<T>())
+            .and_then(|b| (**b).as_any().downcast_ref())
+    }
+
+    #[inline]
+    pub fn get_mut<T: Default + Debug + 'static>(&mut self) -> &mut T {
+        self.map
+            .entry(TypeKey::of::<T>())
+            .or_insert_with(|| Box::new(T::default()))
+            .as_mut()
+            .as_any_mut()
+            .downcast_mut()
+            .unwrap()
     }
 
     /// Marks an extension type as replayable.
-    pub fn set_replayable<T: Clone + Debug + 'static>(&self) {
+    pub fn set_replayable<T: Clone + Debug + 'static>(&mut self) {
         let key = TypeKey::of::<T>();
-        let mut replayable = self.replayable.borrow_mut();
-        if !replayable.iter().any(|(k, _)| *k == key) {
-            replayable.push((key, clone_value::<T>));
+        if !self.replayable.iter().any(|(k, _)| *k == key) {
+            self.replayable.push((key, clone_value::<T>));
         }
     }
 
     /// Captures the current values of all replayable extensions.
     pub fn snapshot(&self) -> Snapshot {
-        let replayable = self.replayable.borrow();
-        if replayable.is_empty() {
+        if self.replayable.is_empty() {
             return Snapshot(Vec::new());
         }
-        let map = self.map.borrow();
         Snapshot(
-            replayable
+            self.replayable
                 .iter()
                 .filter_map(|&(key, clone)| {
-                    map.get(&key).map(|value| (key, clone(&**value), clone))
+                    self.map
+                        .get(&key)
+                        .map(|value| (key, clone(&**value), clone))
                 })
                 .collect(),
         )
     }
 
     /// Restores the values from a snapshot.
-    pub fn restore(&self, snapshot: &Snapshot) {
-        if snapshot.0.is_empty() {
-            return;
-        }
-        let mut map = self.map.borrow_mut();
+    pub fn restore(&mut self, snapshot: &Snapshot) {
         for (key, value, clone) in snapshot.0.iter() {
-            map.insert(*key, clone(&**value));
+            self.map.insert(*key, clone(&**value));
         }
     }
 }

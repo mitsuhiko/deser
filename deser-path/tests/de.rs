@@ -19,7 +19,7 @@ impl Sink for SlotWrapper<MyBool> {
     fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
-                let path = state.get::<Path>();
+                let path = state.get::<Path>().unwrap();
                 assert_eq!(path.segments().len(), 1);
                 **self = Some(MyBool(value));
                 Ok(())
@@ -61,7 +61,7 @@ impl Deserialize for RecordPath {
 
 impl Sink for SlotWrapper<RecordPath> {
     fn atom(&mut self, _atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
-        let path = state.get::<Path>();
+        let path = state.get::<Path>().unwrap();
         **self = Some(RecordPath(format!("{:?}", path.segments())));
         Ok(())
     }
