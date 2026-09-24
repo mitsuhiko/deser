@@ -81,10 +81,11 @@ more details.
 
 ## Known Limitations
 
-The current design of this system is very allocation heavy.  This is the consequence
-of a certain level of flexibility paired with the dynamic dispatch nature.  For instance
-for JSON parsing, Serde is more than 3 times faster than Deser and for deserialization
-2.5 times.
+The current design of this system relies on dynamic dispatch and heap allocated
+sinks and emitters for every compound value.  This is the consequence of a certain
+level of flexibility and the desire to not use the call stack for recursion.  For
+JSON, Serde is currently about 1.4 times faster than Deser for deserialization and
+1.75 times faster for serialization.
 
 ## Crates
 

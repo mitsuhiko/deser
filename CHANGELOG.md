@@ -10,6 +10,13 @@ All notable changes to deser are documented here.
 - Fixed `HashMap` deserialization.
 - Fixed deriving `Deserialize` for generic structs and newtypes.
 - Fixed JSON serialization of `char` which emitted the code point.
+- Fixed a panic in the JSON parser on trailing commas in arrays.
+- `SinkHandle` is now an opaque type which implements `Sink`.  It is created
+  with `SinkHandle::to`, `SinkHandle::boxed` and `SinkHandle::null`.
+- Improved deserialization performance by about 40% and serialization performance
+  by about 45%.  Derived struct keys no longer allocate, `Option<T>` no longer
+  allocates a wrapper sink, errors are boxed and the JSON parser and serializer
+  scan strings and whitespace a word at a time.
 - Added `DeserializerState::is_map_key`.  Integer sinks now accept
   stringified integers in map key position which enables integer keyed
   maps in JSON in both directions.
