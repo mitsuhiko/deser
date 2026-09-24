@@ -129,9 +129,7 @@ impl<'a> DeserializeDriver<'a> {
                     current_sink.seq(&self.state)?;
                     Layer::Seq
                 };
-                self.state
-                    .descriptor_stack
-                    .push(current_sink.descriptor());
+                self.state.descriptor_stack.push(current_sink.descriptor());
                 self.sink_stack
                     .push((self.current_sink.take().unwrap(), layer));
             }

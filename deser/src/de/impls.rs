@@ -714,7 +714,11 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                     // SAFETY: all `N` elements are initialized and ownership
                     // is transferred as the buffer was taken out of the sink.
                     // `MaybeUninit<T>` has the same layout as `T`.
-                    let array = unsafe { (&buffer as *const [MaybeUninit<T>; N]).cast::<[T; N]>().read() };
+                    let array = unsafe {
+                        (&buffer as *const [MaybeUninit<T>; N])
+                            .cast::<[T; N]>()
+                            .read()
+                    };
                     *self.slot = Some(array);
                     Ok(())
                 } else {

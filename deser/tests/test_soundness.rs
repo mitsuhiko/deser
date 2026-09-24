@@ -103,31 +103,20 @@ fn test_errors_at_every_point() {
 
 #[test]
 fn test_arrays() {
-    let array: [String; 2] = emit_partial(&[
-        Event::SeqStart,
-        "a".into(),
-        "b".into(),
-        Event::SeqEnd,
-    ])
-    .unwrap();
+    let array: [String; 2] =
+        emit_partial(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd]).unwrap();
     assert_eq!(array, ["a", "b"]);
 
     // not enough elements
-    assert!(emit_partial::<[String; 3]>(&[
-        Event::SeqStart,
-        "a".into(),
-        "b".into(),
-        Event::SeqEnd,
-    ])
+    assert!(emit_partial::<[String; 3]>(
+        &[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,]
+    )
     .is_none());
 
     // too many elements
-    assert!(emit_partial::<[String; 1]>(&[
-        Event::SeqStart,
-        "a".into(),
-        "b".into(),
-        Event::SeqEnd,
-    ])
+    assert!(emit_partial::<[String; 1]>(
+        &[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,]
+    )
     .is_none());
 
     // bytes
@@ -169,7 +158,9 @@ fn test_array_sink_misuse() {
         sink.seq(state).unwrap();
         for idx in 0..4 {
             match sink.next_value(state) {
-                Ok(mut value) => value.atom(Atom::Str(idx.to_string().into()), state).unwrap(),
+                Ok(mut value) => value
+                    .atom(Atom::Str(idx.to_string().into()), state)
+                    .unwrap(),
                 Err(_) => break,
             }
         }
@@ -202,7 +193,7 @@ impl Deserialize for LyingBytes {
 #[test]
 fn test_lying_bytes() {
     let bytes = Event::Atom(Atom::Bytes(vec![1u8; 64].into()));
-    assert!(emit_partial::<Vec<LyingBytes>>(&[bytes.clone()]).is_none());
+    assert!(emit_partial::<Vec<LyingBytes>>(std::slice::from_ref(&bytes)).is_none());
     assert!(emit_partial::<[LyingBytes; 64]>(&[bytes]).is_none());
 }
 
@@ -344,7 +335,7 @@ fn nested_node(depth: usize) -> Node {
 fn drop_node(node: Node) {
     let mut stack = vec![node];
     while let Some(mut node) = stack.pop() {
-        stack.extend(node.children.drain(..));
+        stack.append(&mut node.children);
         if let Some(boxed) = node.boxed.take() {
             stack.push(*boxed);
         }
