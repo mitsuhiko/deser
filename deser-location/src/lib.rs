@@ -18,11 +18,11 @@
 //!
 //! # Implementing Location Support in Formats
 //!
-//! Formats install a [`SourceMap`] once and then publish the byte offsets of
-//! every event before emitting it into the
-//! [`DeserializeDriver`](deser::de::DeserializeDriver).  Publishing offsets
-//! is cheap, lines and columns are only computed when a consumer asks for
-//! them:
+//! Formats install a [`SourceMap`] once and publish the byte range of every
+//! event with
+//! [`DeserializeDriver::set_input_range`](deser::de::DeserializeDriver::set_input_range)
+//! before emitting it.  Publishing ranges is cheap, lines and columns are
+//! only computed when a consumer asks for them:
 //!
 //! ```
 //! use std::sync::Arc;
@@ -35,7 +35,7 @@
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
 //!     Locations::set_source_map(driver.state(), Arc::new(SourceMap::new(input)));
-//!     Locations::set_current(driver.state(), 0, 4);
+//!     driver.set_input_range(0, 4);
 //!     driver.emit(Event::from(true)).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
@@ -45,12 +45,12 @@
 //!
 //! # Buffering
 //!
-//! The span is out-of-band information in the deserializer state.  The
-//! locations are registered as replayable state, so values that are
-//! internally buffered with a [`Recording`](deser::de::Recording) (as
-//! internally tagged enums do) retain their locations when they are
-//! replayed.
+//! The span is out-of-band information in the deserializer state.  Values
+//! that are internally buffered with a [`Recording`](deser::de::Recording) (as
+//! some enum representations do) retain their input ranges and thus their
+//! locations when they are replayed.
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
@@ -121,6 +121,9 @@ impl fmt::Display for Span {
 pub struct SourceMap {
     source: Arc<str>,
     line_starts: OnceLock<Vec<usize>>,
+    // the line index (0-based) of the last lookup.  Lookups tend to be
+    // monotonic so this avoids most binary searches.
+    last_line: AtomicUsize,
 }
 
 impl fmt::Debug for SourceMap {
@@ -137,6 +140,7 @@ impl SourceMap {
         SourceMap {
             source: source.into(),
             line_starts: OnceLock::new(),
+            last_line: AtomicUsize::new(0),
         }
     }
 
@@ -153,56 +157,75 @@ impl SourceMap {
         })
     }
 
+    /// Returns the index (0-based) of the line containing the offset.
+    fn line_index(&self, offset: usize) -> usize {
+        let line_starts = self.line_starts();
+        let contains = |idx: usize| {
+            line_starts[idx] <= offset
+                && offset < line_starts.get(idx + 1).copied().unwrap_or(usize::MAX)
+        };
+        let hint = self.last_line.load(Ordering::Relaxed);
+        let idx = if hint < line_starts.len() && contains(hint) {
+            hint
+        } else if hint + 1 < line_starts.len() && contains(hint + 1) {
+            hint + 1
+        } else {
+            line_starts.partition_point(|&start| start <= offset) - 1
+        };
+        self.last_line.store(idx, Ordering::Relaxed);
+        idx
+    }
+
     /// Resolves a byte offset into a position.
     ///
     /// Offsets beyond the end of the source are clamped.
     pub fn position(&self, offset: usize) -> Position {
         let offset = offset.min(self.source.len());
-        let line_starts = self.line_starts();
-        let line = line_starts.partition_point(|&start| start <= offset);
-        let line_start = line_starts[line - 1];
+        let idx = self.line_index(offset);
+        let line_start = self.line_starts()[idx];
         Position {
             offset,
-            line,
+            line: idx + 1,
             column: 1 + count_chars(&self.source.as_bytes()[line_start..offset]),
         }
     }
 
     /// Resolves a range of byte offsets into a span.
     pub fn span(&self, start: usize, end: usize) -> Span {
-        Span {
-            start: self.position(start),
-            end: self.position(end),
-        }
+        let start = self.position(start);
+        let end = end.min(self.source.len()).max(start.offset);
+        // most spans are on a single line, resolve the end relative to the
+        // start in that case.
+        let bytes = &self.source.as_bytes()[start.offset..end];
+        let end = if bytes.contains(&b'\n') {
+            self.position(end)
+        } else {
+            Position {
+                offset: end,
+                line: start.line,
+                column: start.column + count_chars(bytes),
+            }
+        };
+        Span { start, end }
     }
 }
 
 /// Location information in the [`DeserializerState`].
 ///
-/// Formats install a [`SourceMap`] and publish the byte offsets of the event
-/// they emit next.  Consumers retrieve the resolved span of the current
-/// event with [`current_span`](Self::current_span).
+/// Formats publish the byte range of every event with
+/// [`DeserializeDriver::set_input_range`](deser::de::DeserializeDriver::set_input_range)
+/// and install a [`SourceMap`] to resolve these into lines and columns.
+/// Consumers retrieve the resolved span of the current event with
+/// [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
-    current: Option<(usize, usize)>,
 }
 
 impl Locations {
     /// Installs the source map.  Called by formats once.
-    ///
-    /// This also marks the locations as replayable so that values which are
-    /// internally buffered (for instance for internally tagged enums) retain
-    /// their locations.
     pub fn set_source_map(state: &DeserializerState, source_map: Arc<SourceMap>) {
-        state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
-    }
-
-    /// Sets the byte offsets of the current event.  Called by formats for
-    /// every event.
-    pub fn set_current(state: &DeserializerState, start: usize, end: usize) {
-        state.get_mut::<Locations>().current = Some((start, end));
     }
 
     /// Returns the source map if the format provides one.
@@ -212,11 +235,10 @@ impl Locations {
 
     /// Returns the span of the current event if the format provides it.
     pub fn current_span(state: &DeserializerState) -> Option<Span> {
+        let range = state.input_range()?;
         let locations = state.get::<Locations>();
-        match (&locations.source_map, locations.current) {
-            (Some(source_map), Some((start, end))) => Some(source_map.span(start, end)),
-            _ => None,
-        }
+        let source_map = locations.source_map.as_ref()?;
+        Some(source_map.span(range.start, range.end))
     }
 }
 
@@ -317,44 +339,54 @@ impl<T: Deserialize> Deserialize for Spanned<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         SinkHandle::boxed(SpannedSink {
             out,
-            sink: OwnedSink::deserialize(),
+            slot: None,
+            compound: None,
             span: None,
-            is_container: false,
         })
     }
 }
 
 struct SpannedSink<'a, T> {
     out: &'a mut Option<Spanned<T>>,
-    sink: OwnedSink<T>,
+    // primitive values are deserialized directly into this slot, maps and
+    // sequences need a sink that lives across calls
+    slot: Option<T>,
+    compound: Option<OwnedSink<T>>,
     span: Option<Span>,
-    is_container: bool,
+}
+
+impl<'a, T: Deserialize> SpannedSink<'a, T> {
+    fn compound(&mut self) -> &mut dyn Sink {
+        self.compound
+            .get_or_insert_with(OwnedSink::deserialize)
+            .borrow_mut()
+    }
 }
 
 impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
     fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
-        self.sink.borrow_mut().atom(atom, state)
+        let mut sink = T::deserialize_into(&mut self.slot);
+        sink.atom(atom, state)?;
+        sink.finish(state)
     }
 
     fn map(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
-        self.is_container = true;
-        self.sink.borrow_mut().map(state)
+        self.compound().map(state)
     }
 
     fn seq(&mut self, state: &DeserializerState) -> Result<(), Error> {
         self.span = Locations::current_span(state);
-        self.is_container = true;
-        self.sink.borrow_mut().seq(state)
+        self.compound().seq(state)
     }
 
     fn next_key(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        self.sink.borrow_mut().next_key(state)
+        self.compound().next_key(state)
     }
 
     fn next_value(&mut self, state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        self.sink.borrow_mut().next_value(state)
+        self.compound().next_value(state)
     }
 
     fn value_for_key(
@@ -362,31 +394,37 @@ impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
         key: &str,
         state: &DeserializerState,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
-        self.sink.borrow_mut().value_for_key(key, state)
+        self.compound().value_for_key(key, state)
     }
 
     fn finish(&mut self, state: &DeserializerState) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
-        // containers are finished on their closing token, extend the span
-        if self.is_container {
-            if let (Some(start), Some(end)) = (self.span, Locations::current_span(state)) {
-                self.span = Some(Span {
-                    start: start.start,
-                    end: end.end,
-                });
+        let value = match self.compound {
+            Some(ref mut compound) => {
+                compound.borrow_mut().finish(state)?;
+                // containers are finished on their closing token, extend the
+                // span to it
+                if let (Some(start), Some(end)) = (self.span, Locations::current_span(state)) {
+                    self.span = Some(Span {
+                        start: start.start,
+                        end: end.end,
+                    });
+                }
+                compound.take()
             }
-        }
+            None => self.slot.take(),
+        };
         let span = self.span;
-        *self.out = self.sink.take().map(|value| Spanned { value, span });
+        *self.out = value.map(|value| Spanned { value, span });
         Ok(())
     }
 
     fn descriptor(&self) -> &'static dyn Descriptor {
-        self.sink.borrow().descriptor()
-    }
-
-    fn expecting(&self) -> std::borrow::Cow<'_, str> {
-        self.sink.borrow().expecting()
+        if let Some(ref compound) = self.compound {
+            return compound.borrow().descriptor();
+        }
+        let mut slot = None;
+        let descriptor = T::deserialize_into(&mut slot).descriptor();
+        descriptor
     }
 }
 
