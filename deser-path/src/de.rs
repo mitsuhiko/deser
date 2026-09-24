@@ -106,7 +106,7 @@ impl<'a> Sink for PathSink<'a> {
         self.sink.finish(state)
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         self.sink.descriptor()
     }
 

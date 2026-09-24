@@ -73,7 +73,7 @@ struct UserSink<'a> {
 }
 
 impl<'a> Sink for UserSink<'a> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         &UserDescriptor
     }
 

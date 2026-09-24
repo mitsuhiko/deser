@@ -21,7 +21,7 @@ macro_rules! deserialize {
 }
 
 impl Sink for SlotWrapper<()> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
         &DESCRIPTOR
     }
@@ -39,7 +39,7 @@ impl Sink for SlotWrapper<()> {
 deserialize!(());
 
 impl Sink for SlotWrapper<bool> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
         &DESCRIPTOR
     }
@@ -57,7 +57,7 @@ impl Sink for SlotWrapper<bool> {
 deserialize!(bool);
 
 impl Sink for SlotWrapper<String> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
         &DESCRIPTOR
     }
@@ -77,7 +77,7 @@ deserialize!(String);
 macro_rules! int_sink {
     ($ty:ty) => {
         impl Sink for SlotWrapper<$ty> {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
                     name: stringify!($ty),
                 };
@@ -152,7 +152,7 @@ int_sink!(i128);
 deserialize!(i128);
 
 impl Sink for SlotWrapper<char> {
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
         &DESCRIPTOR
     }
@@ -182,7 +182,7 @@ deserialize!(char);
 macro_rules! float_sink {
     ($ty:ty) => {
         impl Sink for SlotWrapper<$ty> {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
                     name: stringify!($ty),
                 };
@@ -242,7 +242,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
         }
 
         impl<'a, T: Deserialize> Sink for VecSink<'a, T> {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
                 static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
                 if unsafe { T::__private_is_bytes() } {
@@ -326,7 +326,7 @@ where
             K: Ord + Deserialize,
             V: Deserialize,
         {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
                 &DESCRIPTOR
             }
@@ -392,7 +392,7 @@ where
             V: Deserialize,
             H: BuildHasher + Default,
         {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: UnorderedNamedDescriptor =
                     UnorderedNamedDescriptor { name: "HashMap" };
                 &DESCRIPTOR
@@ -444,7 +444,7 @@ impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
         }
 
         impl<'a, T: Deserialize + Ord> Sink for BTreeSetSink<'a, T> {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
                 &DESCRIPTOR
             }
@@ -502,7 +502,7 @@ where
             T: Hash + Eq + Deserialize,
             H: BuildHasher + Default,
         {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: UnorderedNamedDescriptor =
                     UnorderedNamedDescriptor { name: "HashSet" };
                 &DESCRIPTOR
@@ -562,7 +562,7 @@ macro_rules! deserialize_for_tuple {
                 }
 
                 impl<'a, $($name: Deserialize,)*> Sink for TupleSink<'a, $($name,)*> {
-                    fn descriptor(&self) -> &dyn Descriptor {
+                    fn descriptor(&self) -> &'static dyn Descriptor {
                         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
                         &DESCRIPTOR
                     }
@@ -649,7 +649,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
         }
 
         impl<'a, T: Deserialize + 'a, const N: usize> Sink for ArraySink<'a, T, N> {
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
                 &DESCRIPTOR
             }
@@ -778,7 +778,7 @@ impl<T: Deserialize> Deserialize for Box<T> {
                 Ok(())
             }
 
-            fn descriptor(&self) -> &dyn Descriptor {
+            fn descriptor(&self) -> &'static dyn Descriptor {
                 self.sink.borrow().descriptor()
             }
 

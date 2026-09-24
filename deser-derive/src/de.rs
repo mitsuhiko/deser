@@ -321,7 +321,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             #[automatically_derived]
             impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
                     &__Descriptor
                 }
 
@@ -600,7 +600,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     Ok(())
                 }
 
-                fn descriptor(&self) -> &dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
                     self.sink.borrow().descriptor()
                 }
 

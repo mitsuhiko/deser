@@ -358,7 +358,7 @@ impl<'a> SinkHandle<'a> {
     }
 
     /// Forwards to [`Sink::descriptor`].
-    pub fn descriptor(&self) -> &dyn Descriptor {
+    pub fn descriptor(&self) -> &'static dyn Descriptor {
         self.sink().descriptor()
     }
 
@@ -411,7 +411,7 @@ impl<'a> Sink for SinkHandle<'a> {
         SinkHandle::finish(self, state)
     }
 
-    fn descriptor(&self) -> &dyn Descriptor {
+    fn descriptor(&self) -> &'static dyn Descriptor {
         SinkHandle::descriptor(self)
     }
 
@@ -603,7 +603,10 @@ pub trait Sink {
     }
 
     /// Returns a descriptor for this type.
-    fn descriptor(&self) -> &dyn Descriptor {
+    ///
+    /// Descriptors of sinks have to be `'static` as the deserializer state
+    /// holds on to them while the sink is in use.
+    fn descriptor(&self) -> &'static dyn Descriptor {
         &NullDescriptor
     }
 
