@@ -1,7 +1,4 @@
-use std::mem::ManuallyDrop;
-
 use crate::de::{Deserialize, DeserializerState, SinkHandle};
-use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Event;
 use crate::extensions::Extensions;
@@ -14,8 +11,13 @@ use crate::extensions::Extensions;
 /// hides the unsafety internally.
 pub struct DeserializeDriver<'a> {
     state: DeserializerState<'a>,
+    // The sinks borrow from each other: every sink on the stack (and the
+    // current sink) can borrow from the sink below it.  The lifetimes are
+    // erased to `'static` and it's the driver's responsibility to never
+    // use a sink while one of the sinks it lent out is still alive and to
+    // drop them in inverse order.
     current_sink: Option<SinkHandle<'static>>,
-    sink_stack: ManuallyDrop<Vec<(SinkHandle<'static>, Layer)>>,
+    sink_stack: Vec<(SinkHandle<'static>, Layer)>,
 }
 
 const STACK_CAPACITY: usize = 128;
@@ -25,6 +27,16 @@ enum Layer {
     Seq,
 }
 
+/// Erases the lifetime of a sink handle.
+///
+/// # Safety
+///
+/// The caller must ensure that the handle is dropped before the data it
+/// borrows from.
+unsafe fn erase_lifetime(handle: SinkHandle<'_>) -> SinkHandle<'static> {
+    std::mem::transmute::<SinkHandle<'_>, SinkHandle<'static>>(handle)
+}
+
 impl<'a> DeserializeDriver<'a> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> DeserializeDriver<'a> {
@@ -32,15 +44,16 @@ impl<'a> DeserializeDriver<'a> {
     }
 
     /// Creates a new deserializer driver from a sink.
-    pub fn from_sink(sink: SinkHandle) -> DeserializeDriver<'a> {
+    pub fn from_sink(sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
         DeserializeDriver {
             state: DeserializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
                 is_map_key: false,
             },
-            sink_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
-            current_sink: Some(unsafe { extend_lifetime!(sink, SinkHandle<'_>) }),
+            sink_stack: Vec::with_capacity(STACK_CAPACITY),
+            // SAFETY: the driver cannot outlive 'a
+            current_sink: Some(unsafe { erase_lifetime(sink) }),
         }
     }
 
@@ -60,7 +73,16 @@ impl<'a> DeserializeDriver<'a> {
     }
 
     fn update_current_sink(&mut self) -> Result<(), Error> {
-        match self.sink_stack.last_mut() {
+        if self.sink_stack.is_empty() {
+            return Ok(());
+        }
+
+        // The current sink was handed out by the sink on the top of the
+        // stack and might borrow from it.  It has to be dropped before the
+        // parent sink is used again.
+        self.current_sink = None;
+
+        let next_sink = match self.sink_stack.last_mut() {
             Some((map_sink, Layer::Map(ref mut is_key))) => {
                 let next_sink = if *is_key {
                     map_sink.next_key(&self.state)?
@@ -69,16 +91,18 @@ impl<'a> DeserializeDriver<'a> {
                 };
                 self.state.is_map_key = *is_key;
                 *is_key = !*is_key;
-                self.current_sink = Some(unsafe { extend_lifetime!(next_sink, SinkHandle<'_>) });
+                next_sink
             }
             Some((seq_sink, Layer::Seq)) => {
                 self.state.is_map_key = false;
-                self.current_sink = Some(unsafe {
-                    extend_lifetime!(seq_sink.next_value(&self.state)?, SinkHandle<'_>)
-                });
+                seq_sink.next_value(&self.state)?
             }
-            None => {}
-        }
+            None => unreachable!(),
+        };
+
+        // SAFETY: the sink borrows from the sink on the top of the stack.  It
+        // is dropped before that sink is used again or dropped.
+        self.current_sink = Some(unsafe { erase_lifetime(next_sink) });
         Ok(())
     }
 
@@ -96,44 +120,36 @@ impl<'a> DeserializeDriver<'a> {
                 current_sink.atom(atom, &self.state)?;
                 current_sink.finish(&self.state)?;
             }
-            Event::MapStart => {
+            Event::MapStart | Event::SeqStart => {
                 let current_sink = current_sink!();
-                current_sink.map(&self.state)?;
-                let descriptor = current_sink.descriptor();
+                let layer = if let Event::MapStart = event {
+                    current_sink.map(&self.state)?;
+                    Layer::Map(true)
+                } else {
+                    current_sink.seq(&self.state)?;
+                    Layer::Seq
+                };
                 self.state
                     .descriptor_stack
-                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
+                    .push(current_sink.descriptor());
                 self.sink_stack
-                    .push((self.current_sink.take().unwrap(), Layer::Map(true)));
-                return Ok(());
+                    .push((self.current_sink.take().unwrap(), layer));
             }
-            Event::MapEnd => match self.sink_stack.pop() {
-                Some((mut map_sink, Layer::Map(_))) => {
-                    map_sink.finish(&self.state)?;
-                    self.state.descriptor_stack.pop();
-                    self.current_sink = Some(map_sink);
+            Event::MapEnd | Event::SeqEnd => {
+                let is_map = matches!(event, Event::MapEnd);
+                match self.sink_stack.last() {
+                    Some((_, Layer::Map(_))) if is_map => {}
+                    Some((_, Layer::Seq)) if !is_map => {}
+                    _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
                 }
-                _ => panic!("not inside a MapSink"),
-            },
-            Event::SeqStart => {
-                let current_sink = current_sink!();
-                current_sink.seq(&self.state)?;
-                let descriptor = current_sink.descriptor();
-                self.state
-                    .descriptor_stack
-                    .push(unsafe { extend_lifetime!(descriptor, &dyn Descriptor) });
-                self.sink_stack
-                    .push((self.current_sink.take().unwrap(), Layer::Seq));
-                return Ok(());
+                // the last value sink borrows from the container sink, drop
+                // it before finishing the container.
+                self.current_sink = None;
+                let (mut sink, _) = self.sink_stack.pop().unwrap();
+                self.state.descriptor_stack.pop();
+                sink.finish(&self.state)?;
+                self.current_sink = Some(sink);
             }
-            Event::SeqEnd => match self.sink_stack.pop() {
-                Some((mut seq_sink, Layer::Seq)) => {
-                    seq_sink.finish(&self.state)?;
-                    self.state.descriptor_stack.pop();
-                    self.current_sink = Some(seq_sink);
-                }
-                _ => panic!("not inside a SeqSink"),
-            },
         }
 
         Ok(())
@@ -142,12 +158,9 @@ impl<'a> DeserializeDriver<'a> {
 
 impl<'a> Drop for DeserializeDriver<'a> {
     fn drop(&mut self) {
-        unsafe {
-            while let Some(_item) = self.sink_stack.pop() {
-                // drop in inverse order
-            }
-            ManuallyDrop::drop(&mut self.sink_stack);
-        }
+        // sinks borrow from the sinks below them, drop them in inverse order
+        self.current_sink = None;
+        while let Some(_item) = self.sink_stack.pop() {}
     }
 }
 
