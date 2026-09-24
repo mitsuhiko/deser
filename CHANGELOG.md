@@ -29,8 +29,11 @@ All notable changes to deser are documented here.
   later.  Extensions in the deserializer state can be marked as replayable
   with `DeserializerState::set_replayable`, recordings capture and restore
   them per event.  `deser-location` and `deser-path` register their state.
-- Added support for internally tagged enums (`#[deser(tag = "...")]`) with
-  unit and struct variants to the derive.
+- Added support for enums with data to the derive: newtype, tuple and struct
+  variants in all representations known from serde (externally tagged,
+  internally tagged with `#[deser(tag = "...")]`, adjacently tagged with
+  `#[deser(tag = "...", content = "...")]` and `#[deser(untagged)]`), catch-all
+  variants with `#[deser(other)]` and generic enums.
 - Added `SinkHandle::shorten` and `Atom::as_borrowed` / `Event::as_borrowed`.
 - Fixed `deser_path::PathSink` not removing path segments when leaving
   containers.
