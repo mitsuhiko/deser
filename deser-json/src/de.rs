@@ -63,13 +63,17 @@ impl<'a> Deserializer<'a> {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
-            self.deserialize_into(&mut driver)?;
+            self.drive(&mut driver)?;
         }
         out.take()
             .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
     }
 
-    fn deserialize_into(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    /// Parses the input and feeds the events into the given driver.
+    ///
+    /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink)
+    /// or to wrap the sink of a value, for instance to track the path.
+    pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
         // the state of the current container is held in locals, the outer
         // containers are saved on the stack.
         let mut stack = Vec::new();
