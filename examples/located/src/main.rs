@@ -21,8 +21,6 @@
 //!   deserializer state (out-of-band).
 //! * [`Either`]: an untagged enum that has to buffer its input and replays it
 //!   into its variants.
-use std::fmt;
-
 use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind, Event};
@@ -382,68 +380,25 @@ impl<'a> Sink for Recorder<'a> {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    name: Located<String>,
-    port: Located<u16>,
+    pub name: Located<String>,
+    pub port: Located<u16>,
     // plain types do not know about locations and get the fallback
-    debug: bool,
+    pub debug: bool,
     // the out-of-band path from the state works as long as nothing is
     // buffered
-    workers: StatePath<u32>,
+    pub workers: StatePath<u32>,
     // untagged values are buffered, the in-band location survives this
-    timeout: Either<Located<u64>, Located<String>>,
+    pub timeout: Either<Located<u64>, Located<String>>,
     // the out-of-band path from the state does not survive buffering
-    retries: Either<StatePath<u64>, StatePath<String>>,
-    servers: Vec<Server>,
+    pub retries: Either<StatePath<u64>, StatePath<String>>,
+    pub servers: Vec<Server>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Server {
-    host: Located<String>,
-    weight: Option<Located<u32>>,
-    backup: Option<bool>,
-}
-
-impl<T: fmt::Debug> fmt::Display for Located<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.path {
-            Some(ref path) => write!(f, "{:?} (at {})", self.value, path),
-            None => write!(f, "{:?} (at unknown location)", self.value),
-        }
-    }
-}
-
-impl<T: fmt::Debug> fmt::Display for StatePath<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} (at {:?})", self.value, self.path)
-    }
-}
-
-impl<A: fmt::Display, B: fmt::Display> fmt::Display for Either<A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Either::Left(value) => fmt::Display::fmt(value, f),
-            Either::Right(value) => fmt::Display::fmt(value, f),
-        }
-    }
-}
-
-impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "name:    {}", self.name)?;
-        writeln!(f, "port:    {}", self.port)?;
-        writeln!(f, "debug:   {:?}", self.debug)?;
-        writeln!(f, "workers: {}", self.workers)?;
-        writeln!(f, "timeout: {}", self.timeout)?;
-        writeln!(f, "retries: {}", self.retries)?;
-        for server in &self.servers {
-            write!(f, "server:  {}", server.host)?;
-            if let Some(ref weight) = server.weight {
-                write!(f, ", weight {}", weight)?;
-            }
-            writeln!(f, ", backup {:?}", server.backup)?;
-        }
-        Ok(())
-    }
+    pub host: Located<String>,
+    pub weight: Option<Located<u32>>,
+    pub backup: Option<bool>,
 }
 
 const INPUT: &str = r#"
@@ -464,9 +419,10 @@ const INPUT: &str = r#"
 fn main() {
     println!("with locations:");
     let config: Config = from_json_with_locations(INPUT).unwrap();
-    println!("{}", config);
+    println!("{:#?}", config);
 
+    println!();
     println!("plain JSON:");
     let config: Config = deser_json::from_str(INPUT).unwrap();
-    println!("{}", config);
+    println!("{:#?}", config);
 }
