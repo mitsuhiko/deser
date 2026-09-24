@@ -7,9 +7,8 @@
 /// tail of the input.
 #[inline]
 pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
-    type Chunk = usize;
+    type Chunk = u64;
     const STEP: usize = std::mem::size_of::<Chunk>();
-    const ONE_BYTES: Chunk = Chunk::MAX / 255;
 
     if pos >= input.len() || ESCAPE[usize::from(input[pos])] {
         return pos;
@@ -19,15 +18,7 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     while pos + STEP <= input.len() {
         let mut bytes = [0u8; STEP];
         bytes.copy_from_slice(&input[pos..pos + STEP]);
-        let chars = Chunk::from_le_bytes(bytes);
-        // the classic "has zero byte" trick applied to control characters,
-        // quotes and backslashes.  The lowest flagged byte is always exact.
-        let contains_ctrl = chars.wrapping_sub(ONE_BYTES * 0x20) & !chars;
-        let chars_quote = chars ^ (ONE_BYTES * Chunk::from(b'"'));
-        let contains_quote = chars_quote.wrapping_sub(ONE_BYTES) & !chars_quote;
-        let chars_backslash = chars ^ (ONE_BYTES * Chunk::from(b'\\'));
-        let contains_backslash = chars_backslash.wrapping_sub(ONE_BYTES) & !chars_backslash;
-        let masked = (contains_ctrl | contains_quote | contains_backslash) & (ONE_BYTES << 7);
+        let masked = escape_mask(Chunk::from_le_bytes(bytes));
         if masked != 0 {
             return pos + masked.trailing_zeros() as usize / 8;
         }
@@ -38,6 +29,87 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
         pos += 1;
     }
     pos
+}
+
+const ONE_BYTES: u64 = u64::MAX / 255;
+const SPACES: u64 = ONE_BYTES * 0x20;
+
+/// Flags the bytes in a word (in little endian order) which need escaping.
+///
+/// This is the classic "has zero byte" trick applied to control characters,
+/// quotes and backslashes.  Only the lowest flagged byte is exact, bytes
+/// above it might be flagged falsely.
+#[inline(always)]
+fn escape_mask(chars: u64) -> u64 {
+    let contains_ctrl = chars.wrapping_sub(ONE_BYTES * 0x20) & !chars;
+    let chars_quote = chars ^ (ONE_BYTES * u64::from(b'"'));
+    let contains_quote = chars_quote.wrapping_sub(ONE_BYTES) & !chars_quote;
+    let chars_backslash = chars ^ (ONE_BYTES * u64::from(b'\\'));
+    let contains_backslash = chars_backslash.wrapping_sub(ONE_BYTES) & !chars_backslash;
+    (contains_ctrl | contains_quote | contains_backslash) & (ONE_BYTES << 7)
+}
+
+#[inline(always)]
+fn load_u64(input: &[u8], pos: usize) -> u64 {
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&input[pos..pos + 8]);
+    u64::from_le_bytes(bytes)
+}
+
+#[inline(always)]
+fn load_u32(input: &[u8], pos: usize) -> u64 {
+    let mut bytes = [0u8; 4];
+    bytes.copy_from_slice(&input[pos..pos + 4]);
+    u64::from(u32::from_le_bytes(bytes))
+}
+
+/// Returns the index of the first byte in `input` which needs special
+/// handling within a string or the length of the input if there is none.
+///
+/// This is optimized for short inputs.  Inputs shorter than a word are
+/// loaded into a single word with overlapping loads and the tail of longer
+/// inputs is handled with an overlapping load of the last word.
+#[inline]
+pub fn find_escape(input: &[u8]) -> usize {
+    let len = input.len();
+    if len < 8 {
+        let word = if len >= 4 {
+            load_u32(input, 0) | (load_u32(input, len - 4) << ((len - 4) * 8))
+        } else if len > 0 {
+            u64::from(input[0])
+                | (u64::from(input[len / 2]) << ((len / 2) * 8))
+                | (u64::from(input[len - 1]) << ((len - 1) * 8))
+        } else {
+            0
+        };
+        // the bytes after the input are filled with spaces which do not
+        // need escaping.
+        let padding = u64::MAX << (len * 8);
+        let masked = escape_mask((word & !padding) | (SPACES & padding));
+        return if masked != 0 {
+            masked.trailing_zeros() as usize / 8
+        } else {
+            len
+        };
+    }
+
+    let mut pos = 0;
+    while pos + 8 <= len {
+        let masked = escape_mask(load_u64(input, pos));
+        if masked != 0 {
+            return pos + masked.trailing_zeros() as usize / 8;
+        }
+        pos += 8;
+    }
+    if pos < len {
+        // the bytes before `pos` do not need escaping, so the lowest
+        // flagged byte of the last word is at or after `pos`.
+        let masked = escape_mask(load_u64(input, len - 8));
+        if masked != 0 {
+            return len - 8 + masked.trailing_zeros() as usize / 8;
+        }
+    }
+    len
 }
 
 const CT: bool = true; // control character \x00..=\x1F
@@ -67,6 +139,37 @@ static ESCAPE: [bool; 256] = [
      O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O, // E
      O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O, // F
 ];
+
+#[test]
+fn test_find_escape() {
+    fn naive(input: &[u8]) -> usize {
+        input
+            .iter()
+            .position(|&c| ESCAPE[usize::from(c)])
+            .unwrap_or(input.len())
+    }
+
+    let alphabet: &[u8] = b"a\"\\\x00\x1f\x20\x7f\x80\xff\xe3";
+    let mut state = 0x2545f4914f6cdd1du64;
+    let rounds = if cfg!(miri) { 2 } else { 500 };
+    for len in 0..40 {
+        for _ in 0..rounds {
+            let input: Vec<u8> = (0..len)
+                .map(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    if state.is_multiple_of(8) {
+                        alphabet[(state >> 8) as usize % alphabet.len()]
+                    } else {
+                        b'x'
+                    }
+                })
+                .collect();
+            assert_eq!(find_escape(&input), naive(&input), "{:?}", input);
+        }
+    }
+}
 
 #[test]
 fn test_skip_to_escape() {

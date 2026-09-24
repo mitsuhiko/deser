@@ -6,7 +6,7 @@ use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
-use crate::scan::skip_to_escape;
+use crate::scan::{find_escape, skip_to_escape};
 
 /// Serializes a serializable to JSON.
 pub struct Serializer {
@@ -231,7 +231,7 @@ impl Serializer {
     /// Writes a map key including the separator and the colon.
     #[inline]
     fn write_key(&mut self, key: &str, first: bool) {
-        if skip_to_escape(key.as_bytes(), 0) != key.len() {
+        if find_escape(key.as_bytes()) != key.len() {
             if !first {
                 self.write_char(',');
             }
@@ -397,7 +397,7 @@ impl Serializer {
 
     #[inline]
     fn write_escaped_str(&mut self, value: &str) {
-        if skip_to_escape(value.as_bytes(), 0) != value.len() {
+        if find_escape(value.as_bytes()) != value.len() {
             return self.write_escaped_str_slow(value);
         }
         self.out.reserve(value.len() + 2);
