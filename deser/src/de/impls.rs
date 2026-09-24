@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::hash::Hash;
@@ -85,7 +86,10 @@ impl Sink for SlotWrapper<String> {
     fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         match atom {
             Atom::Str(value) => {
-                **self = Some(value.into_owned());
+                **self = Some(match value {
+                    Cow::Borrowed(value) => copy_str(value),
+                    Cow::Owned(value) => value,
+                });
                 Ok(())
             }
             other => self.unexpected_atom(other, state),
@@ -93,6 +97,45 @@ impl Sink for SlotWrapper<String> {
     }
 }
 deserialize!(String);
+
+/// Copies a string into a new allocation.
+///
+/// Most strings are short, these are copied inline rather than by calling
+/// into `memcpy`.
+#[inline(always)]
+fn copy_str(value: &str) -> String {
+    let len = value.len();
+    if len > 16 {
+        return value.to_owned();
+    }
+    let mut rv = Vec::<u8>::with_capacity(len);
+    let src = value.as_ptr();
+    let dst = rv.as_mut_ptr();
+    // SAFETY: both regions are valid for `len` bytes and do not overlap.
+    // The copies of the head and tail overlap within the regions if the
+    // length is not a power of two.
+    unsafe {
+        use std::ptr::{read_unaligned as read, write_unaligned as write};
+        if len >= 8 {
+            let a = read(src.cast::<u64>());
+            let b = read(src.add(len - 8).cast::<u64>());
+            write(dst.cast::<u64>(), a);
+            write(dst.add(len - 8).cast::<u64>(), b);
+        } else if len >= 4 {
+            let a = read(src.cast::<u32>());
+            let b = read(src.add(len - 4).cast::<u32>());
+            write(dst.cast::<u32>(), a);
+            write(dst.add(len - 4).cast::<u32>(), b);
+        } else if len > 0 {
+            *dst = *src;
+            *dst.add(len / 2) = *src.add(len / 2);
+            *dst.add(len - 1) = *src.add(len - 1);
+        }
+        rv.set_len(len);
+        // the bytes were copied from a string
+        String::from_utf8_unchecked(rv)
+    }
+}
 
 macro_rules! int_sink {
     ($ty:ty) => {

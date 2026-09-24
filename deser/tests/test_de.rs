@@ -206,3 +206,16 @@ fn test_set() {
     set.insert("bar".into());
     assert_eq!(x, set);
 }
+
+#[test]
+fn test_string_lengths() {
+    for len in 0..40 {
+        for base in ["abcdefghij", "äöü日本"] {
+            let s: String = base.chars().cycle().take(len).collect();
+            let borrowed: String = deserialize(vec![Event::from(s.as_str())]);
+            assert_eq!(borrowed, s);
+            let owned: String = deserialize(vec![Event::from(s.clone())]);
+            assert_eq!(owned, s);
+        }
+    }
+}
