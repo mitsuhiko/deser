@@ -234,6 +234,14 @@ impl SerializerState {
     }
 }
 
+/// The result of [`Serialize::__private_begin`].
+#[doc(hidden)]
+pub struct Begin<'a> {
+    pub chunk: Chunk<'a>,
+    pub descriptor: &'static dyn Descriptor,
+    pub needs_finish: bool,
+}
+
 /// A struct emitter.
 ///
 /// A struct emitter is a simplified version of a [`MapEmitter`] which produces struct
@@ -314,6 +322,25 @@ pub trait Serialize {
     /// them while the value is serialized.
     fn descriptor(&self) -> &'static dyn Descriptor {
         &NullDescriptor
+    }
+
+    /// Begins the serialization of this value.
+    ///
+    /// Returns the [`descriptor`](Self::descriptor), the result of
+    /// [`serialize`](Self::serialize) and a flag that indicates if
+    /// [`finish`](Self::finish) needs to be invoked.  The default
+    /// implementation calls both methods (in this order) and always requests
+    /// `finish` to be invoked.  Types which do not override `finish` can
+    /// implement this so that the driver needs a single call per value.
+    #[doc(hidden)]
+    #[inline]
+    fn __private_begin(&self, state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+        let descriptor = self.descriptor();
+        Ok(Begin {
+            chunk: self.serialize(state)?,
+            descriptor,
+            needs_finish: true,
+        })
     }
 
     /// Hidden internal trait method to allow specializations of bytes.

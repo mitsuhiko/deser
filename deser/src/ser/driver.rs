@@ -5,7 +5,7 @@ use std::ptr::NonNull;
 use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
 use crate::extensions::Extensions;
-use crate::ser::{Chunk, SerializerState};
+use crate::ser::{Begin, Chunk, SerializerState};
 use crate::{Atom, Descriptor, Event, Serialize};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
@@ -24,8 +24,10 @@ pub struct SerializeDriver<'a> {
     // A value that was produced by an emitter (or the root value) that still
     // needs to be serialized.
     next_value: Option<Held>,
-    // A value that was fully emitted and on which `finish` needs to be called.
-    needs_finish: Option<Held>,
+    // A value that was fully emitted.  It's held until the next call as the
+    // last event can borrow from it.  If the flag is set, `finish` needs to
+    // be called on it.
+    needs_finish: Option<(Held, bool)>,
     stack: Vec<Frame>,
     _marker: PhantomData<&'a dyn Serialize>,
 }
@@ -38,6 +40,7 @@ struct Frame {
     // the emitters borrow from the serializable.
     emitter: Emitter,
     serializable: Held,
+    needs_finish: bool,
 }
 
 enum Emitter {
@@ -160,7 +163,7 @@ impl<'a> SerializeDriver<'a> {
     /// the values and frames held by the driver.  It's only valid until the
     /// next call.
     fn advance(&mut self) -> Result<NextEvent<'static>, Error> {
-        if let Some(held) = self.needs_finish.take() {
+        if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;
         }
@@ -219,6 +222,7 @@ impl<'a> SerializeDriver<'a> {
         let Frame {
             emitter,
             serializable,
+            needs_finish,
         } = self.stack.pop().unwrap();
         let event = match emitter {
             Emitter::Seq(_) => Event::SeqEnd,
@@ -226,7 +230,7 @@ impl<'a> SerializeDriver<'a> {
         };
         // the emitter borrows from the serializable, drop it first.
         drop(emitter);
-        self.needs_finish = Some(serializable);
+        self.needs_finish = Some((serializable, needs_finish));
         (event, self.state.descriptor_stack.pop().unwrap())
     }
 
@@ -237,11 +241,14 @@ impl<'a> SerializeDriver<'a> {
         // emitters derived from it are dropped.  Moving `value` only moves a
         // pointer to it.
         let serializable = unsafe { value.get() };
-        let descriptor = serializable.descriptor();
-        let chunk = serializable.serialize(&mut self.state)?;
+        let Begin {
+            chunk,
+            descriptor,
+            needs_finish,
+        } = serializable.__private_begin(&mut self.state)?;
         let (emitter, event) = match chunk {
             Chunk::Atom(atom) => {
-                self.needs_finish = Some(value);
+                self.needs_finish = Some((value, needs_finish));
                 return Ok(Some((Event::Atom(atom), descriptor)));
             }
             Chunk::Struct(emitter) => (Emitter::Struct(emitter), Event::MapStart),
@@ -251,6 +258,7 @@ impl<'a> SerializeDriver<'a> {
         self.stack.push(Frame {
             emitter,
             serializable: value,
+            needs_finish,
         });
         self.state.descriptor_stack.push(descriptor);
         Ok(Some((event, descriptor)))

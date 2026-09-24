@@ -64,3 +64,23 @@ macro_rules! __make_slot_wrapper {
         }
     };
 }
+
+/// Implements `__private_begin` for types which do not implement `finish`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __begin_without_finish {
+    () => {
+        #[inline]
+        fn __private_begin(
+            &self,
+            state: &mut $crate::ser::SerializerState,
+        ) -> ::core::result::Result<$crate::ser::Begin<'_>, $crate::Error> {
+            let descriptor = $crate::ser::Serialize::descriptor(self);
+            ::core::result::Result::Ok($crate::ser::Begin {
+                chunk: $crate::ser::Serialize::serialize(self, state)?,
+                descriptor,
+                needs_finish: false,
+            })
+        }
+    };
+}

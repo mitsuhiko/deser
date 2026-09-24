@@ -148,54 +148,56 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     Ok(quote! {
-        const _: () = {
-            #[automatically_derived]
-            impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
-                    &__Descriptor
+            const _: () = {
+                #[automatically_derived]
+                impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                    fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+                        &__Descriptor
+                    }
+    ::deser::__begin_without_finish!();
+
+                    fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
+                        ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
+                            data: self,
+                            index: 0,
+                            #temp_emitter_init
+                        })))
+                    }
                 }
-                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
-                    ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
-                        data: self,
-                        index: 0,
-                        #temp_emitter_init
-                    })))
+
+                struct __StructEmitter #wrapper_impl_generics #where_clause {
+                    data: &'__a #ident #ty_generics,
+                    index: usize,
+                    #temp_emitter
                 }
-            }
 
-            struct __StructEmitter #wrapper_impl_generics #where_clause {
-                data: &'__a #ident #ty_generics,
-                index: usize,
-                #temp_emitter
-            }
+                struct __Descriptor;
 
-            struct __Descriptor;
-
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
+                impl ::deser::Descriptor for __Descriptor {
+                    fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
+                        ::deser::__derive::Some(#type_name)
+                    }
                 }
-            }
 
-            #[automatically_derived]
-            impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                fn next(&mut self, __state: &mut ::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::__derive::Option<(::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>)>>
-                {
-                    #[allow(clippy::never_loop)]
-                    loop {
-                        let __index = self.index;
-                        match __index {
-                            #(
-                                #state_handler
-                            )*
-                            _ => return ::deser::__derive::Ok(::deser::__derive::None),
+                #[automatically_derived]
+                impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
+                    fn next(&mut self, __state: &mut ::deser::ser::SerializerState)
+                        -> ::deser::__derive::Result<::deser::__derive::Option<(::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>)>>
+                    {
+                        #[allow(clippy::never_loop)]
+                        loop {
+                            let __index = self.index;
+                            match __index {
+                                #(
+                                    #state_handler
+                                )*
+                                _ => return ::deser::__derive::Ok(::deser::__derive::None),
+                            }
                         }
                     }
                 }
-            }
-        };
-    })
+            };
+        })
 }
 
 fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Result<TokenStream> {
@@ -226,23 +228,25 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .collect::<Vec<_>>();
 
     Ok(quote! {
-        const _: () = {
-            #[automatically_derived]
-            impl ::deser::Serialize for #ident {
-                fn serialize(&self, __state: &mut ::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::ser::Chunk<'_>>
-                {
-                    ::deser::__derive::Ok(match *self {
-                        #(
-                            #ident::#var_idents => {
-                                ::deser::ser::Chunk::Atom(::deser::Atom::Str(::deser::__derive::Cow::Borrowed(#names)))
-                            }
-                        )*
-                    })
+            const _: () = {
+                #[automatically_derived]
+                impl ::deser::Serialize for #ident {
+    ::deser::__begin_without_finish!();
+
+                    fn serialize(&self, __state: &mut ::deser::ser::SerializerState)
+                        -> ::deser::__derive::Result<::deser::ser::Chunk<'_>>
+                    {
+                        ::deser::__derive::Ok(match *self {
+                            #(
+                                #ident::#var_idents => {
+                                    ::deser::ser::Chunk::Atom(::deser::Atom::Str(::deser::__derive::Cow::Borrowed(#names)))
+                                }
+                            )*
+                        })
+                    }
                 }
-            }
-        };
-    })
+            };
+        })
 }
 
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
@@ -274,6 +278,12 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 }
                 fn is_optional(&self) -> bool {
                     ::deser::ser::Serialize::is_optional(&self.0)
+                }
+                #[inline]
+                fn __private_begin(&self, __state: &mut ::deser::ser::SerializerState)
+                    -> ::deser::__derive::Result<::deser::ser::Begin<'_>>
+                {
+                    ::deser::ser::Serialize::__private_begin(&self.0, __state)
                 }
             }
         };
