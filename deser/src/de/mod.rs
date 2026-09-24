@@ -490,14 +490,32 @@ pub trait Deserialize: Sized {
 
     /// Returns `true` if this deserialize is `u8`.
     ///
-    /// # Safety
-    ///
-    /// This method is unsafe as it must only ever return `Some` here if `Self` is `u8`.
-    /// Returning this true for any other type will cause undefined behavior due to how
-    /// the arrays are implemented.
+    /// This is used to specialize the handling of bytes for vectors and
+    /// arrays of `u8`.
     #[doc(hidden)]
-    unsafe fn __private_is_bytes() -> bool {
+    fn __private_is_bytes() -> bool {
         false
+    }
+
+    /// Converts bytes into a vector of `Self`.
+    ///
+    /// This is only implemented for `u8` and used to specialize the
+    /// deserialization of `Vec<u8>` from bytes.
+    #[doc(hidden)]
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {
+        let _ = bytes;
+        None
+    }
+
+    /// Converts bytes into an array of `Self`.
+    ///
+    /// This is only implemented for `u8` and used to specialize the
+    /// deserialization of `[u8; N]` from bytes.  Returns `None` if the
+    /// type is not `u8` or the length does not match.
+    #[doc(hidden)]
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
+        let _ = bytes;
+        None
     }
 }
 

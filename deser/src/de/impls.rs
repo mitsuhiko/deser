@@ -123,8 +123,16 @@ impl Deserialize for u8 {
         SlotWrapper::make_handle(out)
     }
 
-    unsafe fn __private_is_bytes() -> bool {
+    fn __private_is_bytes() -> bool {
         true
+    }
+
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<u8>> {
+        Some(bytes)
+    }
+
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[u8; N]> {
+        bytes.try_into().ok()
     }
 }
 
@@ -245,7 +253,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
             fn descriptor(&self) -> &'static dyn Descriptor {
                 static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
                 static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-                if unsafe { T::__private_is_bytes() } {
+                if T::__private_is_bytes() {
                     &BYTES_DESCRIPTOR
                 } else {
                     &SLICE_DESCRIPTOR
@@ -254,16 +262,15 @@ impl<T: Deserialize> Deserialize for Vec<T> {
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
-                    Atom::Bytes(value) => unsafe {
-                        if T::__private_is_bytes() {
-                            *self.slot = Some(std::mem::transmute(value.into_owned()));
+                    Atom::Bytes(value) => match T::__private_vec_from_bytes(value.into_owned()) {
+                        Some(vec) => {
+                            *self.slot = Some(vec);
                             Ok(())
-                        } else {
-                            Err(Error::new(
-                                ErrorKind::Unexpected,
-                                format!("unexpected bytes, expected {}", self.expecting()),
-                            ))
                         }
+                        None => Err(Error::new(
+                            ErrorKind::Unexpected,
+                            format!("unexpected bytes, expected {}", self.expecting()),
+                        )),
                     },
                     other => self.unexpected_atom(other, state),
                 }
@@ -616,6 +623,9 @@ deserialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 
 impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        // Invariant: if `buffer` is `Some`, the first `index` elements of it
+        // are initialized.  Once the buffer was moved into the slot, `buffer`
+        // is `None`.
         struct ArraySink<'a, T, const N: usize> {
             slot: &'a mut Option<[T; N]>,
             buffer: Option<[MaybeUninit<T>; N]>,
@@ -625,9 +635,11 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
         }
 
         impl<'a, T, const N: usize> ArraySink<'a, T, N> {
-            unsafe fn flush(&mut self) {
+            fn flush(&mut self) {
                 if let Some(element) = self.element.take() {
-                    let buffer = self.buffer.as_mut().unwrap();
+                    // indexing panics if the sink is misused and too many
+                    // elements are pushed or the buffer is already gone.
+                    let buffer = self.buffer.as_mut().expect("array already finished");
                     buffer[self.index].write(element);
                     self.index += 1;
                 }
@@ -636,13 +648,10 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
 
         impl<'a, T, const N: usize> Drop for ArraySink<'a, T, N> {
             fn drop(&mut self) {
-                if std::mem::needs_drop::<T>() {
-                    if let Some(arr) = &mut self.buffer {
-                        for elem in &mut arr[0..self.index] {
-                            unsafe {
-                                std::ptr::drop_in_place(elem.as_mut_ptr());
-                            }
-                        }
+                if let Some(ref mut buffer) = self.buffer {
+                    for elem in &mut buffer[..self.index] {
+                        // SAFETY: the first `index` elements are initialized
+                        unsafe { elem.assume_init_drop() };
                     }
                 }
             }
@@ -656,32 +665,20 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
 
             fn atom(&mut self, atom: Atom, state: &DeserializerState) -> Result<(), Error> {
                 match atom {
-                    Atom::Bytes(value) => {
-                        if unsafe { T::__private_is_bytes() } {
-                            if value.len() == N {
-                                *self.slot = Some(unsafe {
-                                    let mut rv = MaybeUninit::<[T; N]>::uninit();
-                                    std::ptr::copy_nonoverlapping(
-                                        value.as_ptr() as *const T,
-                                        rv.as_mut_ptr() as *mut T,
-                                        N,
-                                    );
-                                    rv.assume_init()
-                                });
-                                Ok(())
-                            } else {
-                                Err(Error::new(
-                                    ErrorKind::WrongLength,
-                                    "byte array of wrong length",
-                                ))
-                            }
-                        } else {
-                            Err(Error::new(
-                                ErrorKind::Unexpected,
-                                format!("unexpected bytes, expected {}", self.expecting()),
-                            ))
+                    Atom::Bytes(value) => match T::__private_array_from_bytes::<N>(&value) {
+                        Some(array) => {
+                            *self.slot = Some(array);
+                            Ok(())
                         }
-                    }
+                        None if T::__private_is_bytes() => Err(Error::new(
+                            ErrorKind::WrongLength,
+                            "byte array of wrong length",
+                        )),
+                        None => Err(Error::new(
+                            ErrorKind::Unexpected,
+                            format!("unexpected bytes, expected {}", self.expecting()),
+                        )),
+                    },
                     other => self.unexpected_atom(other, state),
                 }
             }
@@ -692,9 +689,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
 
             fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
-                unsafe {
-                    self.flush();
-                }
+                self.flush();
                 if self.index >= N {
                     Err(Error::new(
                         ErrorKind::WrongLength,
@@ -709,18 +704,20 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                 if !self.is_seq {
                     return Ok(());
                 }
-                unsafe {
-                    self.flush();
-                }
+                self.flush();
                 if self.index != N {
                     Err(Error::new(
                         ErrorKind::WrongLength,
                         "not enough elements in array",
                     ))
+                } else if let Some(buffer) = self.buffer.take() {
+                    // SAFETY: all `N` elements are initialized and ownership
+                    // is transferred as the buffer was taken out of the sink.
+                    // `MaybeUninit<T>` has the same layout as `T`.
+                    let array = unsafe { (&buffer as *const [MaybeUninit<T>; N]).cast::<[T; N]>().read() };
+                    *self.slot = Some(array);
+                    Ok(())
                 } else {
-                    *self.slot = Some(unsafe {
-                        self.buffer.take().unwrap().as_ptr().cast::<[T; N]>().read()
-                    });
                     Ok(())
                 }
             }
@@ -728,6 +725,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
 
         SinkHandle::boxed(ArraySink {
             slot: out,
+            // SAFETY: an array of `MaybeUninit` does not require initialization
             buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
             element: None,
             index: 0,
