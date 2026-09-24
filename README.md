@@ -87,10 +87,12 @@ more details.
 ## Known Limitations
 
 The current design of this system relies on dynamic dispatch and heap allocated
-sinks and emitters for every compound value.  This is the consequence of a certain
-level of flexibility and the desire to not use the call stack for recursion.  For
-JSON, Serde is currently about 1.4 times faster than Deser for deserialization and
-1.9 times faster for serialization.
+sinks and emitters for many compound values.  This is the consequence of a
+certain level of flexibility and the desire to not use the call stack for
+recursion.  Deser works around most of this overhead (for instance derived
+structs and vectors serialize without allocations, and sinks are allocated
+from a per thread cache) and for JSON it is roughly on par with Serde in the
+included benchmark.
 
 ## Crates
 

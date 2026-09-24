@@ -765,8 +765,8 @@ pub trait Sink {
     /// uses this for keys that are atoms which is the overwhelmingly common
     /// case.  Sinks can override this to avoid creating a sink for the key,
     /// but the behavior must be the same as with the default implementation.
-    /// Sinks that override [`next_key`](Self::next_key) to wrap the returned
-    /// sink should not override this method.
+    /// In particular, sinks that override [`next_key`](Self::next_key) must
+    /// either not override this method or apply the same logic.
     fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
         atom_into_handle(self.next_key(state)?, atom, state)
     }

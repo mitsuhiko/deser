@@ -4,6 +4,20 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Improved performance substantially.  Deserializing and serializing JSON is
+  now on par with `serde_json` in the included benchmark (previously about
+  1.5 and 1.9 times slower):
+  - Added `Sink::key_atom` and `Sink::value_atom` which receive atoms in
+    containers without creating intermediate sinks.  The default
+    implementations use `next_key` and `next_value`.
+  - Added `SerializeDriver::drive` which invokes a callback for every event
+    and is faster than calling `next` repeatedly.
+  - Derived structs, vectors, slices, arrays and tuples serialize without
+    allocating emitters and most values need a single dynamic call.
+  - Boxed sinks reuse memory through a per thread cache.
+  - State extensions are looked up without hashing.
+  - `deser-json` parses with a direct state machine and writes output
+    through a buffer optimized for small writes.
 - The deserializer and serializer states are now passed as
   `&mut DeserializerState` and `&mut SerializerState` to all methods of
   `Sink`, `Serialize` and the emitters.  Added
