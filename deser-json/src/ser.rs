@@ -1,6 +1,8 @@
 use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
+use crate::scan::skip_to_escape;
+
 /// Serializes a serializable to JSON.
 pub struct Serializer {
     out: String,
@@ -20,7 +22,9 @@ impl Default for Serializer {
 impl Serializer {
     /// Creates a new serializer that writes into the given writer.
     pub fn new() -> Serializer {
-        Serializer { out: String::new() }
+        Serializer {
+            out: String::with_capacity(128),
+        }
     }
 
     /// Serializes the given value.
@@ -176,17 +180,17 @@ impl Serializer {
         let bytes = value.as_bytes();
         let mut start = 0;
 
-        for (i, &byte) in bytes.iter().enumerate() {
-            let escape = ESCAPE[byte as usize];
-            if escape == 0 {
-                continue;
+        loop {
+            let next = skip_to_escape(bytes, start);
+            if start < next {
+                self.write_str(&value[start..next]);
+            }
+            if next == bytes.len() {
+                break;
             }
 
-            if start < i {
-                self.write_str(&value[start..i]);
-            }
-
-            match escape {
+            let byte = bytes[next];
+            match ESCAPE[byte as usize] {
                 self::BB => self.write_str("\\b"),
                 self::TT => self.write_str("\\t"),
                 self::NN => self.write_str("\\n"),
@@ -203,11 +207,7 @@ impl Serializer {
                 _ => unreachable!(),
             }
 
-            start = i + 1;
-        }
-
-        if start != bytes.len() {
-            self.write_str(&value[start..]);
+            start = next + 1;
         }
 
         self.write_char('"');

@@ -13,6 +13,7 @@
 //! the `speedups` feature can be enabled in which case this also uses `ryu` and `itoa`
 //! crates are used for number formatting.
 mod de;
+mod scan;
 mod ser;
 
 pub use self::de::{from_str, Deserializer};

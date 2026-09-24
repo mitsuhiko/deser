@@ -77,3 +77,18 @@ fn test_generics() {
     );
     assert_eq!(to_string(&Newtype(42u32)).unwrap(), "42");
 }
+
+#[test]
+fn test_string_escapes() {
+    assert_eq!(to_string(&"").unwrap(), r#""""#);
+    assert_eq!(to_string(&"plain").unwrap(), r#""plain""#);
+    assert_eq!(
+        to_string(&"a \"quoted\" \\ string\nwith\tcontrol \x01 chars").unwrap(),
+        r#""a \"quoted\" \\ string\nwith\tcontrol \u0001 chars""#
+    );
+    assert_eq!(to_string(&"\"").unwrap(), r#""\"""#);
+    assert_eq!(
+        to_string(&"日本語のテキスト\u{1f600}").unwrap(),
+        "\"日本語のテキスト\u{1f600}\""
+    );
+}
