@@ -89,7 +89,12 @@ pub mod __derive {
     pub type Result<T> = std::result::Result<T, super::Error>;
     pub type StrCow<'a> = Cow<'a, str>;
 
-    pub use crate::de::tagged::{InternallyTaggedSink, Variant, VariantBuilder};
+    pub use crate::de::enums::{
+        untagged_handle, AdjacentlyTaggedSink, ExternallyTaggedSink, IgnoredVariant,
+        InternallyTaggedSink, Variant, VariantBuilder,
+    };
+    pub use crate::ser::enums::{FieldsSer, SeqSer, TaggedNewtype};
+    pub use std::vec::Vec;
 
     pub fn new_missing_field_error(name: &str) -> super::Error {
         super::Error::new(

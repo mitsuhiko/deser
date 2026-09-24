@@ -116,6 +116,8 @@ use crate::extensions::Extensions;
 
 mod chunk;
 mod driver;
+#[cfg(feature = "derive")]
+pub(crate) mod enums;
 mod impls;
 
 pub use self::chunk::Chunk;
