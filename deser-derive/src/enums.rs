@@ -72,25 +72,57 @@ fn used_type_params<'a>(
     generics: &'a syn::Generics,
     types: &[&syn::Type],
 ) -> Vec<&'a syn::TypeParam> {
-    fn collect(stream: TokenStream, out: &mut HashSet<String>) {
-        for token in stream {
-            match token {
-                proc_macro2::TokenTree::Ident(ident) => {
-                    out.insert(ident.to_string());
-                }
-                proc_macro2::TokenTree::Group(group) => collect(group.stream(), out),
-                _ => {}
-            }
-        }
-    }
     let mut idents = HashSet::new();
     for ty in types {
-        collect(quote! { #ty }, &mut idents);
+        collect_idents(quote! { #ty }, &mut idents);
     }
     generics
         .type_params()
         .filter(|param| idents.contains(&param.ident.to_string()))
         .collect()
+}
+
+/// Returns the where clause predicates of the generics which only refer to
+/// the given type parameters.
+fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> TokenStream {
+    let where_clause = match generics.where_clause {
+        Some(ref where_clause) => where_clause,
+        None => return TokenStream::new(),
+    };
+    let allowed = params
+        .iter()
+        .map(|x| x.ident.to_string())
+        .collect::<HashSet<_>>();
+    let predicates = where_clause
+        .predicates
+        .iter()
+        .filter(|predicate| {
+            let mut idents = HashSet::new();
+            collect_idents(quote! { #predicate }, &mut idents);
+            generics
+                .type_params()
+                .map(|x| x.ident.to_string())
+                .filter(|x| idents.contains(x))
+                .all(|x| allowed.contains(&x))
+        })
+        .collect::<Vec<_>>();
+    if predicates.is_empty() {
+        TokenStream::new()
+    } else {
+        quote! { where #(#predicates),* }
+    }
+}
+
+fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
+    for token in stream {
+        match token {
+            proc_macro2::TokenTree::Ident(ident) => {
+                out.insert(ident.to_string());
+            }
+            proc_macro2::TokenTree::Group(group) => collect_idents(group.stream(), out),
+            _ => {}
+        }
+    }
 }
 
 fn check_generics(generics: &syn::Generics) -> syn::Result<()> {
@@ -284,15 +316,23 @@ pub fn derive_deserialize(
                     .collect(),
                 _ => Vec::new(),
             };
+            // the helper needs the same bounds on its parameters as the enum,
+            // plus `'static` as the enum's deserialize impl requires it.
             let helper_decl = if helper_params.is_empty() {
                 quote! { #helper }
             } else {
-                quote! { #helper<#(#helper_params),*> }
+                let params = helper_params.iter().map(|param| {
+                    let ident = &param.ident;
+                    let bounds = param.bounds.iter();
+                    quote! { #ident: 'static #(+ #bounds)* }
+                });
+                quote! { #helper<#(#params),*> }
             };
+            let helper_where = helper_where_clause(&input.generics, &helper_params);
             helpers.push(quote! {
                 #[derive(::deser::Deserialize)]
                 #[deser(rename = #helper_name)]
-                struct #helper_decl {
+                struct #helper_decl #helper_where {
                     #(#fields)*
                 }
             });

@@ -603,3 +603,52 @@ fn test_generics() {
         ],
     );
 }
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(untagged)]
+enum Tree<T> {
+    Leaf(T),
+    // the helper struct for this variant needs `T: 'static` to be able to
+    // deserialize the nested enum
+    Node { children: Vec<Box<Tree<T>>> },
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "t")]
+enum Bounded<T, U>
+where
+    T: Clone + PartialEq,
+    U: Default,
+{
+    // the where clause is carried over to the helper struct
+    Only { value: T },
+    Other { value: U },
+}
+
+#[test]
+fn test_generic_helper_bounds() {
+    check(
+        Tree::Node {
+            children: vec![Box::new(Tree::Leaf(1u32))],
+        },
+        vec![
+            Event::MapStart,
+            "children".into(),
+            Event::SeqStart,
+            1u64.into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ],
+    );
+    check(
+        Bounded::<u32, u32>::Only { value: 1 },
+        vec![
+            Event::MapStart,
+            "t".into(),
+            "Only".into(),
+            "value".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+}
