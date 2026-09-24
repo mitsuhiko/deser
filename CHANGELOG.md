@@ -6,6 +6,13 @@ All notable changes to deser are documented here.
 
 - Made `derive` a default feature.
 - Removed number serialization support in JSON serializer.
+- Fixed `Option<T>` silently dropping structs, vectors, maps and boxes.
+- Fixed `HashMap` deserialization.
+- Fixed deriving `Deserialize` for generic structs and newtypes.
+- Fixed JSON serialization of `char` which emitted the code point.
+- Added `DeserializerState::is_map_key`.  Integer sinks now accept
+  stringified integers in map key position which enables integer keyed
+  maps in JSON in both directions.
 
 ## 0.8.0
 
