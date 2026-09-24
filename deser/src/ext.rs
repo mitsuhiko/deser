@@ -58,7 +58,7 @@ use crate::event::Atom;
 /// A type that can be passed through deser as an extension to the data model.
 ///
 /// See the [module level documentation](self) for more information.
-pub trait Extension: Any + fmt::Debug + Clone + PartialEq {
+pub trait Extension: Any + fmt::Debug + Clone + PartialEq + Send + Sync {
     /// Returns the human readable name of the extension type.
     ///
     /// This is used for error messages.
@@ -72,7 +72,7 @@ pub trait Extension: Any + fmt::Debug + Clone + PartialEq {
 }
 
 /// The object safe version of [`Extension`].
-trait DynExtension: fmt::Debug {
+trait DynExtension: fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
     fn fallback(&self) -> Atom<'_>;
     fn clone_box(&self) -> Box<dyn DynExtension>;
@@ -208,6 +208,15 @@ impl Extension for i128 {
             Atom::Str(self.to_string().into())
         }
     }
+}
+
+#[test]
+fn test_auto_traits() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<ExtValue<'static>>();
+    assert_send_sync::<Atom<'static>>();
+    assert_send_sync::<crate::Event<'static>>();
+    assert_send_sync::<crate::Error>();
 }
 
 #[test]
