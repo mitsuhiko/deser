@@ -38,6 +38,7 @@ pub struct Deserializer<'a> {
     pos: usize,
     buffer: Vec<u8>,
     // the offset where the last token started
+    #[cfg(feature = "locations")]
     token_start: usize,
     #[cfg(feature = "locations")]
     source: &'a str,
@@ -61,6 +62,7 @@ impl<'a> Deserializer<'a> {
             input: input.as_bytes(),
             pos: 0,
             buffer: Vec::new(),
+            #[cfg(feature = "locations")]
             token_start: 0,
             #[cfg(feature = "locations")]
             source: input,
@@ -71,16 +73,25 @@ impl<'a> Deserializer<'a> {
 
     /// Enables or disables location tracking.
     ///
-    /// The byte range of every event is always published into the driver
-    /// (see [`DeserializerState::input_range`](deser::de::DeserializerState::input_range)).
-    /// When location tracking is enabled additionally a source map is
-    /// installed which allows resolving these into lines and columns with
+    /// When enabled the byte offsets of every event and a source map are
+    /// published into the deserializer state as
     /// [`Locations`](deser_location::Locations).  Types like
     /// [`Spanned`](deser_location::Spanned) can then pick them up.
     #[cfg(feature = "locations")]
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
         self
+    }
+
+    /// Publishes the offsets of the token that was parsed last.
+    #[inline(always)]
+    fn publish_span<const LOCATIONS: bool>(&mut self, driver: &DeserializeDriver) {
+        #[cfg(feature = "locations")]
+        if LOCATIONS {
+            deser_location::Locations::set_current(driver.state(), self.token_start, self.pos);
+        }
+        #[cfg(not(feature = "locations"))]
+        let _ = driver;
     }
 
     /// Deserializes the value.
@@ -103,25 +114,29 @@ impl<'a> Deserializer<'a> {
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
         #[cfg(feature = "locations")]
-        if self.track_locations {
+        let rv = if self.track_locations {
             deser_location::Locations::set_source_map(
                 driver.state(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.source)),
             );
-        }
-        let rv = self.drive_impl(driver, &mut buffer);
+            self.drive_impl::<true>(driver, &mut buffer)
+        } else {
+            self.drive_impl::<false>(driver, &mut buffer)
+        };
+        #[cfg(not(feature = "locations"))]
+        let rv = self.drive_impl::<false>(driver, &mut buffer);
         self.buffer = buffer;
         rv
     }
 
-    fn drive_impl(
+    fn drive_impl<const LOCATIONS: bool>(
         &mut self,
         driver: &mut DeserializeDriver,
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
         macro_rules! emit {
             ($emit:expr) => {{
-                driver.set_input_range(self.token_start, self.pos);
+                self.publish_span::<LOCATIONS>(driver);
                 $emit?
             }};
         }
@@ -688,7 +703,10 @@ impl<'a> Deserializer<'a> {
             Some(b) => b,
             None => return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
         };
-        self.token_start = self.pos;
+        #[cfg(feature = "locations")]
+        {
+            self.token_start = self.pos;
+        }
         self.bump();
         match peek {
             b'"' => self.parse_str(buffer).map(Token::Str),

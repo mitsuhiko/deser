@@ -18,11 +18,10 @@
 //!
 //! # Implementing Location Support in Formats
 //!
-//! Formats install a [`SourceMap`] once and publish the byte range of every
-//! event with
-//! [`DeserializeDriver::set_input_range`](deser::de::DeserializeDriver::set_input_range)
-//! before emitting it.  Publishing ranges is cheap, lines and columns are
-//! only computed when a consumer asks for them:
+//! Formats install a [`SourceMap`] once and then publish the byte offsets of
+//! every event with [`Locations::set_current`] before emitting it into the
+//! [`DeserializeDriver`](deser::de::DeserializeDriver).  Lines and columns
+//! are only computed when a consumer asks for them:
 //!
 //! ```
 //! use std::sync::Arc;
@@ -35,7 +34,7 @@
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
 //!     Locations::set_source_map(driver.state(), Arc::new(SourceMap::new(input)));
-//!     driver.set_input_range(0, 4);
+//!     Locations::set_current(driver.state(), 0, 4);
 //!     driver.emit(Event::from(true)).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
@@ -45,10 +44,10 @@
 //!
 //! # Buffering
 //!
-//! The span is out-of-band information in the deserializer state.  Values
-//! that are internally buffered with a [`Recording`](deser::de::Recording) (as
-//! some enum representations do) retain their input ranges and thus their
-//! locations when they are replayed.
+//! The span is out-of-band information in the deserializer state.  The
+//! locations are registered as replayable state, so values that are
+//! internally buffered with a [`Recording`](deser::de::Recording) (as some
+//! enum representations do) retain their locations when they are replayed.
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -212,20 +211,30 @@ impl SourceMap {
 
 /// Location information in the [`DeserializerState`].
 ///
-/// Formats publish the byte range of every event with
-/// [`DeserializeDriver::set_input_range`](deser::de::DeserializeDriver::set_input_range)
-/// and install a [`SourceMap`] to resolve these into lines and columns.
-/// Consumers retrieve the resolved span of the current event with
-/// [`current_span`](Self::current_span).
+/// Formats install a [`SourceMap`] and publish the byte offsets of the event
+/// they emit next.  Consumers retrieve the resolved span of the current
+/// event with [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
+    current: Option<(usize, usize)>,
 }
 
 impl Locations {
     /// Installs the source map.  Called by formats once.
+    ///
+    /// This also marks the locations as replayable so that values which are
+    /// internally buffered (for instance for internally tagged enums) retain
+    /// their locations.
     pub fn set_source_map(state: &DeserializerState, source_map: Arc<SourceMap>) {
+        state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
+    }
+
+    /// Sets the byte offsets of the current event.  Called by formats for
+    /// every event.
+    pub fn set_current(state: &DeserializerState, start: usize, end: usize) {
+        state.get_mut::<Locations>().current = Some((start, end));
     }
 
     /// Returns the source map if the format provides one.
@@ -235,10 +244,11 @@ impl Locations {
 
     /// Returns the span of the current event if the format provides it.
     pub fn current_span(state: &DeserializerState) -> Option<Span> {
-        let range = state.input_range()?;
         let locations = state.get::<Locations>();
-        let source_map = locations.source_map.as_ref()?;
-        Some(source_map.span(range.start, range.end))
+        match (&locations.source_map, locations.current) {
+            (Some(source_map), Some((start, end))) => Some(source_map.span(start, end)),
+            _ => None,
+        }
     }
 }
 

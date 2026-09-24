@@ -43,15 +43,8 @@ use crate::extensions::Snapshot;
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Recording {
-    events: Vec<RecordedEvent>,
+    events: Vec<(Event<'static>, Snapshot)>,
     is_map_key: bool,
-}
-
-#[derive(Debug, Clone)]
-struct RecordedEvent {
-    event: Event<'static>,
-    input_range: Option<(usize, usize)>,
-    snapshot: Snapshot,
 }
 
 impl Recording {
@@ -136,7 +129,7 @@ impl Recording {
 
     /// Returns the recorded events.
     pub fn events(&self) -> impl Iterator<Item = &Event<'static>> {
-        self.events.iter().map(|recorded| &recorded.event)
+        self.events.iter().map(|(event, _)| event)
     }
 
     /// Returns the value if the recording is a single string.
@@ -144,10 +137,7 @@ impl Recording {
     /// This is useful to look at recorded map keys.
     pub fn as_str(&self) -> Option<&str> {
         match self.events.as_slice() {
-            [RecordedEvent {
-                event: Event::Atom(Atom::Str(value)),
-                ..
-            }] => Some(value),
+            [(Event::Atom(Atom::Str(value)), _)] => Some(value),
             _ => None,
         }
     }
@@ -165,10 +155,9 @@ impl Recording {
 
     fn replay_events(&self, sink: SinkHandle<'_>, state: &DeserializerState) -> Result<(), Error> {
         let mut driver = DeserializeDriver::nested(state, sink.shorten(), self.is_map_key);
-        for recorded in self.events.iter() {
-            driver.state().extensions().restore(&recorded.snapshot);
-            driver.restore_input_range(recorded.input_range);
-            driver.emit(recorded.event.as_borrowed())?;
+        for (event, snapshot) in self.events.iter() {
+            driver.state().extensions().restore(snapshot);
+            driver.emit(event.as_borrowed())?;
         }
         Ok(())
     }
@@ -183,11 +172,9 @@ fn record(
     if is_root && recording.events.is_empty() {
         recording.is_map_key = state.is_map_key();
     }
-    recording.events.push(RecordedEvent {
-        event,
-        input_range: state.input_range,
-        snapshot: state.extensions().snapshot(),
-    });
+    recording
+        .events
+        .push((event, state.extensions().snapshot()));
 }
 
 type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &DeserializerState) -> Result<(), Error> + 'a>;

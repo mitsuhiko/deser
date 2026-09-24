@@ -70,20 +70,6 @@ impl<'a> DeserializeDriver<'a> {
         }
     }
 
-    /// Sets the byte range in the input of the event that is emitted next.
-    ///
-    /// Formats that know where in the input an event comes from can set this
-    /// before emitting the event.  Sinks can retrieve it with
-    /// [`DeserializerState::input_range`].
-    #[inline]
-    pub fn set_input_range(&mut self, start: usize, end: usize) {
-        self.state.input_range = Some((start, end));
-    }
-
-    pub(crate) fn restore_input_range(&mut self, input_range: Option<(usize, usize)>) {
-        self.state.input_range = input_range;
-    }
-
     /// Returns a borrowed reference to the current deserializer state.
     pub fn state(&self) -> &DeserializerState<'_> {
         &self.state

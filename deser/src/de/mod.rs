@@ -458,7 +458,6 @@ pub struct DeserializerState<'a> {
     extensions: StateExtensions<'a>,
     descriptor_stack: Vec<&'a dyn Descriptor>,
     is_map_key: bool,
-    input_range: Option<(usize, usize)>,
 }
 
 /// The extensions of a state are either owned or borrowed from the state of
@@ -477,7 +476,6 @@ impl<'a> DeserializerState<'a> {
             },
             descriptor_stack: Vec::with_capacity(128),
             is_map_key: false,
-            input_range: None,
         }
     }
 
@@ -530,16 +528,6 @@ impl<'a> DeserializerState<'a> {
     /// `"42"` as a number when in key position.
     pub fn is_map_key(&self) -> bool {
         self.is_map_key
-    }
-
-    /// Returns the byte range in the input of the current event.
-    ///
-    /// This is only available if the format provides it (see
-    /// [`DeserializeDriver::set_input_range`]).  The byte range can be
-    /// resolved into lines and columns for instance with the
-    /// `deser-location` crate.
-    pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
-        self.input_range.map(|(start, end)| start..end)
     }
 }
 
