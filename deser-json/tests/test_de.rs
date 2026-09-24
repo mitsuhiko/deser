@@ -236,3 +236,62 @@ fn test_syntax_errors() {
     assert_eq!(map["a"], Vec::<u32>::new());
     assert_eq!(map["b"], vec![1, 2]);
 }
+
+#[test]
+fn test_wide_integers() {
+    use std::collections::BTreeMap;
+
+    assert_eq!(from_str::<u128>(&u128::MAX.to_string()).unwrap(), u128::MAX);
+    assert_eq!(from_str::<i128>(&i128::MIN.to_string()).unwrap(), i128::MIN);
+    assert_eq!(
+        from_str::<u128>("18446744073709551616").unwrap(),
+        1u128 << 64
+    );
+    // just below i64::MIN
+    assert_eq!(
+        from_str::<i128>("-9223372036854775809").unwrap(),
+        i64::MIN as i128 - 1
+    );
+    assert_eq!(
+        from_str::<i128>("-18446744073709551616").unwrap(),
+        -(1i128 << 64)
+    );
+    assert_eq!(from_str::<u128>("42").unwrap(), 42);
+    assert_eq!(from_str::<i128>("-42").unwrap(), -42);
+
+    // wide integers still work for floats
+    assert_eq!(
+        from_str::<f64>("18446744073709551616").unwrap(),
+        18446744073709551616.0
+    );
+    assert_eq!(
+        from_str::<f64>("-9223372036854775809").unwrap(),
+        -9223372036854775809.0
+    );
+    // and floats stay floats
+    assert_eq!(
+        from_str::<f64>("18446744073709551616.5").unwrap(),
+        18446744073709551616.5
+    );
+    assert_eq!(
+        from_str::<f64>("18446744073709551616e2").unwrap(),
+        1844674407370955161600.0
+    );
+    // too large for 128 bits
+    let huge = format!("{}0", u128::MAX);
+    assert_eq!(from_str::<f64>(&huge).unwrap(), u128::MAX as f64 * 10.0);
+    assert!(from_str::<u128>(&huge).is_err());
+
+    // out of range for narrower types
+    assert!(from_str::<u64>("18446744073709551616").is_err());
+
+    let map: BTreeMap<u128, bool> = from_str(&format!(r#"{{"{}": true}}"#, u128::MAX)).unwrap();
+    assert_eq!(map[&u128::MAX], true);
+
+    // roundtrip
+    let values = vec![u128::MAX, 0, 1 << 100];
+    assert_eq!(
+        from_str::<Vec<u128>>(&deser_json::to_string(&values).unwrap()).unwrap(),
+        values
+    );
+}

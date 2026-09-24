@@ -1,6 +1,7 @@
 use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver};
+use deser::ext::ExtValue;
 use deser::Atom;
 use deser::Event;
 use deser::{Error, ErrorKind};
@@ -12,6 +13,9 @@ enum Token<'a> {
     Bool(bool),
     Str(&'a str),
     I64(i64),
+    /// An integer that does not fit into 64 bits but into 128 bits.  This
+    /// holds the (validated) textual representation.
+    BigInt(&'a str),
     U64(u64),
     F64(f64),
     SeqStart,
@@ -119,6 +123,7 @@ impl<'a> Deserializer<'a> {
                         Token::I64(val) => driver.emit(Event::from(val))?,
                         Token::U64(val) => driver.emit(Event::from(val))?,
                         Token::F64(val) => driver.emit(Event::from(val))?,
+                        Token::BigInt(val) => emit_big_int(driver, val)?,
                         Token::MapStart | Token::SeqStart => {
                             stack.push(container);
                             first = true;
@@ -389,13 +394,7 @@ impl<'a> Deserializer<'a> {
                             // number as a `u64` until we grow too large. At that point, switch to
                             // parsing the value as a `f64`.
                             if overflow!(res * 10 + digit, u64::max_value()) {
-                                return self
-                                    .parse_long_integer(
-                                        nonnegative,
-                                        res,
-                                        1, // res * 10^1
-                                    )
-                                    .map(Token::F64);
+                                return self.parse_overflowing_integer(nonnegative, res);
                             }
 
                             res = res * 10 + digit;
@@ -408,6 +407,55 @@ impl<'a> Deserializer<'a> {
             }
             _ => Err(Error::new(ErrorKind::Unexpected, "invalid integer")),
         }
+    }
+
+    /// Returns the text of the number that was just parsed.
+    ///
+    /// This only works for integers as it scans backwards for digits.
+    fn number_text(&self, nonnegative: bool) -> &'a str {
+        let input = self.input;
+        let mut start = self.pos;
+        while start > 0 && input[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        if !nonnegative {
+            start -= 1;
+        }
+        // the input is valid utf-8 as it was created from a string
+        str::from_utf8(&input[start..self.pos]).unwrap()
+    }
+
+    /// Continues parsing an integer which no longer fits into 64 bits.
+    ///
+    /// If the number turns out to be an integer that fits into 128 bits it's
+    /// passed on as big integer.  Otherwise it's parsed as float.
+    #[cold]
+    fn parse_overflowing_integer(
+        &mut self,
+        nonnegative: bool,
+        significand: u64,
+    ) -> Result<Token<'a>, Error> {
+        let digits_start = self.pos - 1;
+        let float = self.parse_long_integer(
+            nonnegative,
+            significand,
+            1, // significand * 10^1
+        )?;
+        let is_integer = self.input[digits_start..self.pos]
+            .iter()
+            .all(|c| c.is_ascii_digit());
+        if is_integer {
+            let text = self.number_text(nonnegative);
+            let fits = if nonnegative {
+                text.parse::<u128>().is_ok()
+            } else {
+                text.parse::<i128>().is_ok()
+            };
+            if fits {
+                return Ok(Token::BigInt(text));
+            }
+        }
+        Ok(Token::F64(float))
     }
 
     fn parse_long_integer(
@@ -451,9 +499,9 @@ impl<'a> Deserializer<'a> {
                 } else {
                     let neg = (significand as i64).wrapping_neg();
 
-                    // Convert into a float if we underflow.
+                    // Values below i64::MIN are passed on as 128 bit integers.
                     if neg > 0 {
-                        Token::F64(-(significand as f64))
+                        Token::BigInt(self.number_text(false))
                     } else {
                         Token::I64(neg)
                     }
@@ -671,6 +719,19 @@ static POW10: [f64; 309] = [
     1e290, 1e291, 1e292, 1e293, 1e294, 1e295, 1e296, 1e297, 1e298, 1e299, //
     1e300, 1e301, 1e302, 1e303, 1e304, 1e305, 1e306, 1e307, 1e308,
 ];
+
+/// Emits an integer that does not fit into 64 bits as extension value.
+#[cold]
+fn emit_big_int(driver: &mut DeserializeDriver, text: &str) -> Result<(), Error> {
+    // the tokenizer already validated that the value fits
+    if text.starts_with('-') {
+        let value: i128 = text.parse().unwrap();
+        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
+    } else {
+        let value: u128 = text.parse().unwrap();
+        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
+    }
+}
 
 /// Deserializes JSON from the given string.
 pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {

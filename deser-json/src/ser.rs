@@ -175,6 +175,12 @@ impl Serializer {
     /// their fallback representation.
     #[cold]
     fn write_ext_key(&mut self, ext: &ExtValue) -> Result<(), Error> {
+        if ext.is::<u128>() || ext.is::<i128>() {
+            self.write_char('"');
+            self.write_ext_value(ext)?;
+            self.write_char('"');
+            return Ok(());
+        }
         match ext.fallback() {
             Atom::Str(val) => self.write_escaped_str(&val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
@@ -204,6 +210,15 @@ impl Serializer {
     /// their fallback representation.
     #[cold]
     fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
+        // JSON numbers have arbitrary precision, so wide integers can be
+        // written natively.
+        if let Some(&val) = ext.downcast_ref::<u128>() {
+            self.write_int(val);
+            return Ok(());
+        } else if let Some(&val) = ext.downcast_ref::<i128>() {
+            self.write_int(val);
+            return Ok(());
+        }
         match ext.fallback() {
             Atom::Null => self.write_str("null"),
             Atom::Bool(val) => self.write_str(if val { "true" } else { "false" }),
@@ -220,6 +235,16 @@ impl Serializer {
             }
         }
         Ok(())
+    }
+
+    #[cfg(feature = "speedups")]
+    fn write_int<I: itoa::Integer>(&mut self, val: I) {
+        self.write_str(itoa::Buffer::new().format(val))
+    }
+
+    #[cfg(not(feature = "speedups"))]
+    fn write_int<I: std::fmt::Display>(&mut self, val: I) {
+        self.write_str(&val.to_string())
     }
 
     fn write_u64(&mut self, val: u64) {

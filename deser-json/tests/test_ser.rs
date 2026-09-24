@@ -116,8 +116,44 @@ fn test_nested_containers() {
 }
 
 #[test]
-fn test_extension_fallback() {
-    // until JSON knows about wide integers natively they use the fallback
+fn test_wide_integers() {
     assert_eq!(to_string(&42u128).unwrap(), "42");
     assert_eq!(to_string(&-42i128).unwrap(), "-42");
+    assert_eq!(to_string(&u128::MAX).unwrap(), u128::MAX.to_string());
+    assert_eq!(to_string(&i128::MIN).unwrap(), i128::MIN.to_string());
+
+    let mut map = std::collections::BTreeMap::new();
+    map.insert(u128::MAX, 1u32);
+    assert_eq!(
+        to_string(&map).unwrap(),
+        format!(r#"{{"{}":1}}"#, u128::MAX)
+    );
+}
+
+#[test]
+fn test_extension_fallback() {
+    use deser::ext::{ExtValue, Extension};
+    use deser::ser::{Chunk, SerializerState};
+    use deser::{Atom, Error};
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Timestamp(i64);
+
+    impl Extension for Timestamp {
+        fn name(&self) -> &str {
+            "timestamp"
+        }
+
+        fn fallback(&self) -> Atom<'_> {
+            Atom::I64(self.0)
+        }
+    }
+
+    impl Serialize for Timestamp {
+        fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+        }
+    }
+
+    assert_eq!(to_string(&vec![Timestamp(-1)]).unwrap(), "[-1]");
 }
