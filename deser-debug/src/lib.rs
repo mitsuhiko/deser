@@ -8,7 +8,7 @@ use deser::{Atom, Event};
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {
-    events: Vec<(Event<'static>, Option<String>)>,
+    events: Vec<(Event<'static>, Option<&'static str>)>,
 }
 
 impl fmt::Display for ToDebug {
@@ -27,18 +27,22 @@ impl ToDebug {
     /// Creates a new [`ToDebug`] object from a serializable value.
     pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut events = Vec::new();
-        let mut driver = SerializeDriver::new(value);
-        while let Some((event, descriptor, _)) = driver.next().unwrap() {
-            events.push((event.to_static(), descriptor.name().map(|x| x.to_string())));
-        }
+        SerializeDriver::new(value)
+            .drive(|event, descriptor, _| {
+                events.push((event.to_static(), descriptor.name()));
+                Ok(())
+            })
+            .unwrap();
         ToDebug { events }
     }
 }
 
+type Token<'a> = (Event<'a>, Option<&'static str>);
+
 fn dump<'a>(
-    tokens: &'a [(Event<'a>, Option<String>)],
+    tokens: &'a [Token<'a>],
     f: &mut fmt::Formatter<'_>,
-) -> Result<&'a [(Event<'a>, Option<String>)], fmt::Error> {
+) -> Result<&'a [Token<'a>], fmt::Error> {
     if let Some((first, mut rest)) = tokens.split_first() {
         match first.0 {
             Event::Atom(Atom::Null) => fmt::Debug::fmt(&(), f)?,
@@ -72,7 +76,7 @@ fn dump<'a>(
             Event::Atom(Atom::Ext(ref v)) => fmt::Debug::fmt(v, f)?,
             Event::Atom(..) => f.debug_struct("?").finish()?,
             Event::MapStart => {
-                if let Some(ref name) = first.1 {
+                if let Some(name) = first.1 {
                     write!(f, "{} ", name)?;
                 }
                 let mut map = f.debug_map();
@@ -95,7 +99,7 @@ fn dump<'a>(
             }
             Event::MapEnd => unreachable!(),
             Event::SeqStart => {
-                if let Some(ref name) = first.1 {
+                if let Some(name) = first.1 {
                     if name != "Vec" && name != "slice" {
                         write!(f, "{} ", name)?;
                     }
@@ -120,7 +124,7 @@ fn dump<'a>(
     }
 }
 
-struct Helper<'a>(&'a [(Event<'a>, Option<String>)], AtomicUsize);
+struct Helper<'a>(&'a [Token<'a>], AtomicUsize);
 
 impl<'a> fmt::Debug for Helper<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
