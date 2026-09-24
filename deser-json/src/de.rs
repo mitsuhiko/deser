@@ -8,22 +8,13 @@ use deser::{Error, ErrorKind};
 
 use crate::scan::skip_to_escape;
 
-enum Token<'a> {
-    Null,
-    Bool(bool),
-    Str(&'a str),
+enum Number<'a> {
     I64(i64),
     /// An integer that does not fit into 64 bits but into 128 bits.  This
     /// holds the (validated) textual representation.
     BigInt(&'a str),
     U64(u64),
     F64(f64),
-    SeqStart,
-    SeqEnd,
-    MapStart,
-    MapEnd,
-    Comma,
-    Colon,
 }
 
 macro_rules! overflow {
@@ -141,97 +132,160 @@ impl<'a> Deserializer<'a> {
             }};
         }
 
-        // the state of the current container is held in locals, the outer
+        // the state of the current container is held in a local, the outer
         // containers are saved on the stack.
         let mut stack = Vec::new();
         let mut container = Container::Top;
-        let mut first = true;
 
-        loop {
-            let mut token = self.next_token(buffer)?;
-
-            match token {
-                Token::MapEnd | Token::SeqEnd => {
-                    let (expected, event) = match token {
-                        Token::MapEnd => (Container::Map, Event::MapEnd),
-                        _ => (Container::Seq, Event::SeqEnd),
+        'value: loop {
+            let byte = self.next_token_byte()?;
+            match byte {
+                b'"' => {
+                    let val = self.parse_str(buffer)?;
+                    emit!(driver.emit(Event::from(val)))
+                }
+                b'0'..=b'9' => {
+                    let number = self.parse_integer(true, byte)?;
+                    emit!(emit_number(driver, number))
+                }
+                b'-' => {
+                    let first_digit = self.next_or_nul();
+                    let number = self.parse_integer(false, first_digit)?;
+                    emit!(emit_number(driver, number))
+                }
+                b'n' => {
+                    self.parse_ident(b"ull")?;
+                    emit!(driver.emit(Event::Atom(Atom::Null)))
+                }
+                b't' => {
+                    self.parse_ident(b"rue")?;
+                    emit!(driver.emit(Event::from(true)))
+                }
+                b'f' => {
+                    self.parse_ident(b"alse")?;
+                    emit!(driver.emit(Event::from(false)))
+                }
+                b'{' | b'[' => {
+                    stack.push(container);
+                    let close = if byte == b'{' {
+                        container = Container::Map;
+                        emit!(driver.emit(Event::MapStart));
+                        b'}'
+                    } else {
+                        container = Container::Seq;
+                        emit!(driver.emit(Event::SeqStart));
+                        b']'
                     };
-                    if container != expected {
+                    // containers can close immediately, otherwise the first
+                    // value follows.
+                    if self.parse_whitespace() != Some(close) {
+                        if container == Container::Map {
+                            self.parse_key::<LOCATIONS>(driver, buffer)?;
+                        }
+                        continue 'value;
+                    }
+                    self.next_token_byte()?;
+                    emit!(driver.emit(if close == b'}' {
+                        Event::MapEnd
+                    } else {
+                        Event::SeqEnd
+                    }));
+                    container = stack.pop().unwrap_or(Container::Top);
+                }
+                b',' => return Err(Error::new(ErrorKind::Unexpected, "unexpected comma")),
+                b':' => return Err(Error::new(ErrorKind::Unexpected, "unexpected colon")),
+                b']' | b'}' => return Err(Error::new(ErrorKind::Unexpected, "expected a value")),
+                _ => return Err(Error::new(ErrorKind::Unexpected, "unexpected character")),
+            }
+
+            // a value was completed, either the container ends or the next
+            // value follows.
+            loop {
+                let close = match container {
+                    Container::Top => {
+                        return if self.parse_whitespace().is_some() {
+                            Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
+                        } else {
+                            Ok(())
+                        };
+                    }
+                    Container::Map => b'}',
+                    Container::Seq => b']',
+                };
+                match self.parse_whitespace() {
+                    Some(b',') => {
+                        self.bump();
+                        if container == Container::Map {
+                            self.parse_key::<LOCATIONS>(driver, buffer)?;
+                        }
+                        continue 'value;
+                    }
+                    Some(byte) if byte == close => {
+                        self.next_token_byte()?;
+                        emit!(driver.emit(if close == b'}' {
+                            Event::MapEnd
+                        } else {
+                            Event::SeqEnd
+                        }));
+                        container = stack.pop().unwrap_or(Container::Top);
+                    }
+                    Some(b']' | b'}') => {
                         return Err(Error::new(
                             ErrorKind::Unexpected,
-                            if expected == Container::Map {
-                                "unexpected end of map"
-                            } else {
+                            if container == Container::Map {
                                 "unexpected end of seq"
+                            } else {
+                                "unexpected end of map"
                             },
                         ));
                     }
-                    emit!(driver.emit(event));
-                    container = stack.pop().unwrap_or(Container::Top);
-                }
-                _ => {
-                    if !first {
-                        if !matches!(token, Token::Comma) {
-                            return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
-                        }
-                        token = self.next_token(buffer)?;
+                    Some(_) => {
+                        return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
                     }
-
-                    if container == Container::Map {
-                        match token {
-                            Token::Str(val) => emit!(driver.emit(Event::from(val))),
-                            _ => return Err(Error::new(ErrorKind::Unexpected, "expected map key")),
-                        }
-                        match self.next_token(buffer)? {
-                            Token::Colon => {}
-                            _ => return Err(Error::new(ErrorKind::Unexpected, "expected colon")),
-                        }
-                        token = self.next_token(buffer)?;
-                    }
-
-                    match token {
-                        Token::Null => emit!(driver.emit(Event::Atom(Atom::Null))),
-                        Token::Bool(val) => emit!(driver.emit(Event::from(val))),
-                        Token::Str(val) => emit!(driver.emit(Event::from(val))),
-                        Token::I64(val) => emit!(driver.emit(Event::from(val))),
-                        Token::U64(val) => emit!(driver.emit(Event::from(val))),
-                        Token::F64(val) => emit!(driver.emit(Event::from(val))),
-                        Token::BigInt(val) => emit!(emit_big_int(driver, val)),
-                        Token::MapStart | Token::SeqStart => {
-                            stack.push(container);
-                            first = true;
-                            if let Token::MapStart = token {
-                                container = Container::Map;
-                                emit!(driver.emit(Event::MapStart));
-                            } else {
-                                container = Container::Seq;
-                                emit!(driver.emit(Event::SeqStart));
-                            }
-                            // containers can close immediately
-                            continue;
-                        }
-                        Token::Comma => {
-                            return Err(Error::new(ErrorKind::Unexpected, "unexpected comma"));
-                        }
-                        Token::Colon => {
-                            return Err(Error::new(ErrorKind::Unexpected, "unexpected colon"));
-                        }
-                        Token::SeqEnd | Token::MapEnd => {
-                            return Err(Error::new(ErrorKind::Unexpected, "expected a value"));
-                        }
+                    None => {
+                        return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file"));
                     }
                 }
             }
+        }
+    }
 
-            // a value was completed
-            if container == Container::Top {
-                return if self.parse_whitespace().is_some() {
-                    Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
-                } else {
-                    Ok(())
-                };
+    /// Parses a map key and the colon after it.
+    #[inline]
+    fn parse_key<const LOCATIONS: bool>(
+        &mut self,
+        driver: &mut DeserializeDriver,
+        buffer: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        if self.next_token_byte()? != b'"' {
+            return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
+        }
+        let key = self.parse_str(buffer)?;
+        self.publish_span::<LOCATIONS>(driver);
+        driver.emit(Event::from(key))?;
+        match self.parse_whitespace() {
+            Some(b':') => {
+                self.bump();
+                Ok(())
             }
-            first = false;
+            Some(_) => Err(Error::new(ErrorKind::Unexpected, "expected colon")),
+            None => Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
+        }
+    }
+
+    /// Skips whitespace and consumes the first byte of the next token.
+    #[inline]
+    fn next_token_byte(&mut self) -> Result<u8, Error> {
+        match self.parse_whitespace() {
+            Some(byte) => {
+                #[cfg(feature = "locations")]
+                {
+                    self.token_start = self.pos;
+                }
+                self.bump();
+                Ok(byte)
+            }
+            None => Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
         }
     }
 
@@ -449,7 +503,7 @@ impl<'a> Deserializer<'a> {
         Ok(())
     }
 
-    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Token<'a>, Error> {
+    fn parse_integer(&mut self, nonnegative: bool, first_digit: u8) -> Result<Number<'a>, Error> {
         match first_digit {
             b'0' => match self.peek_or_nul() {
                 b'0'..=b'9' => Err(Error::new(
@@ -511,7 +565,7 @@ impl<'a> Deserializer<'a> {
         &mut self,
         nonnegative: bool,
         significand: u64,
-    ) -> Result<Token<'a>, Error> {
+    ) -> Result<Number<'a>, Error> {
         let digits_start = self.pos - 1;
         let float = self.parse_long_integer(
             nonnegative,
@@ -529,10 +583,10 @@ impl<'a> Deserializer<'a> {
                 text.parse::<i128>().is_ok()
             };
             if fits {
-                return Ok(Token::BigInt(text));
+                return Ok(Number::BigInt(text));
             }
         }
-        Ok(Token::F64(float))
+        Ok(Number::F64(float))
     }
 
     fn parse_long_integer(
@@ -562,25 +616,25 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Token<'a>, Error> {
+    fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Number<'a>, Error> {
         match self.peek_or_nul() {
             b'.' => self
                 .parse_decimal(nonnegative, significand, 0)
-                .map(Token::F64),
+                .map(Number::F64),
             b'e' | b'E' => self
                 .parse_exponent(nonnegative, significand, 0)
-                .map(Token::F64),
+                .map(Number::F64),
             _ => {
                 Ok(if nonnegative {
-                    Token::U64(significand)
+                    Number::U64(significand)
                 } else {
                     let neg = (significand as i64).wrapping_neg();
 
                     // Values below i64::MIN are passed on as 128 bit integers.
                     if neg > 0 {
-                        Token::BigInt(self.number_text(false))
+                        Number::BigInt(self.number_text(false))
                     } else {
-                        Token::I64(neg)
+                        Number::I64(neg)
                     }
                 })
             }
@@ -694,48 +748,6 @@ impl<'a> Deserializer<'a> {
         }
         Ok(if nonnegative { 0.0 } else { -0.0 })
     }
-
-    fn next_token<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<Token<'b>, Error>
-    where
-        'a: 'b,
-    {
-        let peek = match self.parse_whitespace() {
-            Some(b) => b,
-            None => return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of file")),
-        };
-        #[cfg(feature = "locations")]
-        {
-            self.token_start = self.pos;
-        }
-        self.bump();
-        match peek {
-            b'"' => self.parse_str(buffer).map(Token::Str),
-            digit @ b'0'..=b'9' => self.parse_integer(true, digit),
-            b'-' => {
-                let first_digit = self.next_or_nul();
-                self.parse_integer(false, first_digit)
-            }
-            b'{' => Ok(Token::MapStart),
-            b'[' => Ok(Token::SeqStart),
-            b'}' => Ok(Token::MapEnd),
-            b']' => Ok(Token::SeqEnd),
-            b',' => Ok(Token::Comma),
-            b':' => Ok(Token::Colon),
-            b'n' => {
-                self.parse_ident(b"ull")?;
-                Ok(Token::Null)
-            }
-            b't' => {
-                self.parse_ident(b"rue")?;
-                Ok(Token::Bool(true))
-            }
-            b'f' => {
-                self.parse_ident(b"alse")?;
-                Ok(Token::Bool(false))
-            }
-            _ => Err(Error::new(ErrorKind::Unexpected, "unexpected character")),
-        }
-    }
 }
 
 fn f64_from_parts(nonnegative: bool, significand: u64, mut exponent: i32) -> Result<f64, Error> {
@@ -803,6 +815,17 @@ static POW10: [f64; 309] = [
     1e290, 1e291, 1e292, 1e293, 1e294, 1e295, 1e296, 1e297, 1e298, 1e299, //
     1e300, 1e301, 1e302, 1e303, 1e304, 1e305, 1e306, 1e307, 1e308,
 ];
+
+/// Emits a number.
+#[inline]
+fn emit_number(driver: &mut DeserializeDriver, number: Number) -> Result<(), Error> {
+    match number {
+        Number::U64(val) => driver.emit(Event::from(val)),
+        Number::I64(val) => driver.emit(Event::from(val)),
+        Number::F64(val) => driver.emit(Event::from(val)),
+        Number::BigInt(val) => emit_big_int(driver, val),
+    }
+}
 
 /// Emits an integer that does not fit into 64 bits as extension value.
 #[cold]
