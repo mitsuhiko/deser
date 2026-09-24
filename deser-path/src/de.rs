@@ -39,6 +39,16 @@ impl<'a> PathSink<'a> {
         }
     }
 
+    /// Moves the path to the next index in sequences.
+    fn advance_index(&mut self, state: &mut DeserializerState) {
+        if let Container::Seq(ref mut index) = self.container {
+            if let Some(segment) = state.get_mut::<Path>().segments.last_mut() {
+                *segment = PathSegment::Index(*index);
+            }
+            *index += 1;
+        }
+    }
+
     fn enter_container(&mut self, state: &mut DeserializerState, container: Container) {
         state.set_replayable::<Path>();
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
@@ -100,14 +110,25 @@ impl<'a> Sink for PathSink<'a> {
     }
 
     fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
-        if let Container::Seq(ref mut index) = self.container {
-            if let Some(segment) = state.get_mut::<Path>().segments.last_mut() {
-                *segment = PathSegment::Index(*index);
-            }
-            *index += 1;
-        }
+        self.advance_index(state);
         let sink = self.sink.next_value(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, false)))
+    }
+
+    fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        // this is what `next_key` followed by `atom` and `finish` on the
+        // returned path sink does, without allocating the path sink.
+        let mut sink = self.sink.next_key(state)?;
+        set_key(state, &atom);
+        sink.atom(atom, state)?;
+        sink.finish(state)
+    }
+
+    fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+        // this is what `next_value` followed by `atom` and `finish` on the
+        // returned path sink does, without allocating the path sink.
+        self.advance_index(state);
+        self.sink.value_atom(atom, state)
     }
 
     fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
@@ -115,7 +136,7 @@ impl<'a> Sink for PathSink<'a> {
         // leave the container this sink entered
         if self.entered_container {
             self.entered_container = false;
-            state.get_mut::<Path>().segments.pop();
+            state.get_mut::<Path>().pop();
         }
         rv
     }

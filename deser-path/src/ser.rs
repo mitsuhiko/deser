@@ -65,10 +65,10 @@ impl<'a> StructEmitter for PathStructEmitter<'a> {
             Some(result) => result,
             None => return Ok(None),
         };
-        let new_segment = PathSegment::Key(key.to_string());
+        // the key is only copied into the path when the value is serialized
         let value_serializable = SegmentPushingSerializable {
             serializable: value,
-            segment: RefCell::new(Some(new_segment)),
+            segment: RefCell::new(Some(PendingSegment::Key(key.clone()))),
         };
         Ok(Some((key, SerializeHandle::boxed(value_serializable))))
     }
@@ -102,7 +102,7 @@ impl<'a> MapEmitter for PathMapEmitter<'a> {
             .unwrap_or(PathSegment::Unknown);
         let value_serializable = SegmentPushingSerializable {
             serializable: self.emitter.next_value(state)?,
-            segment: RefCell::new(Some(new_segment)),
+            segment: RefCell::new(Some(PendingSegment::Segment(new_segment))),
         };
         Ok(SerializeHandle::boxed(value_serializable))
     }
@@ -124,22 +124,31 @@ impl<'a> SeqEmitter for PathSeqEmitter<'a> {
         let new_segment = PathSegment::Index(index);
         let item_serializable = SegmentPushingSerializable {
             serializable: value,
-            segment: RefCell::new(Some(new_segment)),
+            segment: RefCell::new(Some(PendingSegment::Segment(new_segment))),
         };
         Ok(Some(SerializeHandle::boxed(item_serializable)))
     }
 }
 
+/// A segment that is pushed once the value is serialized.
+enum PendingSegment<'a> {
+    Key(Cow<'a, str>),
+    Segment(PathSegment),
+}
+
 struct SegmentPushingSerializable<'a> {
     serializable: SerializeHandle<'a>,
-    segment: RefCell<Option<PathSegment>>,
+    segment: RefCell<Option<PendingSegment<'a>>>,
 }
 
 impl<'a> Serialize for SegmentPushingSerializable<'a> {
     fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
         {
             let path = state.get_mut::<Path>();
-            path.segments.push(self.segment.take().unwrap());
+            match self.segment.take().unwrap() {
+                PendingSegment::Key(key) => path.push_key(&key),
+                PendingSegment::Segment(segment) => path.segments.push(segment),
+            }
         }
         match self.serializable.serialize(state)? {
             Chunk::Struct(emitter) => Ok(Chunk::Struct(Box::new(PathStructEmitter { emitter }))),
@@ -154,8 +163,7 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
 
     fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
         self.serializable.finish(state)?;
-        let path = state.get_mut::<Path>();
-        path.segments.pop();
+        state.get_mut::<Path>().pop();
         Ok(())
     }
 

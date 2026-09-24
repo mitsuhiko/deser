@@ -51,14 +51,53 @@ pub enum PathSegment {
 /// This type is stored in the state and can be retrieved at any point.  By
 /// inspecting the [`segments`](Self::segments) a serializer can figure out
 /// where it's invoked from.
-#[derive(Debug, Default, Clone)]
+#[derive(Default)]
 pub struct Path {
     pub(crate) segments: Vec<PathSegment>,
+    // buffers of popped keys that are reused for new keys
+    spare_keys: Vec<String>,
 }
+
+/// The maximum number of key buffers retained for reuse.
+const MAX_SPARE_KEYS: usize = 32;
 
 impl Path {
     /// Returns the segments.
     pub fn segments(&self) -> &[PathSegment] {
         &self.segments
+    }
+
+    /// Pushes a key segment, reusing a previously popped key buffer.
+    pub(crate) fn push_key(&mut self, key: &str) {
+        let mut buf = self.spare_keys.pop().unwrap_or_default();
+        buf.clear();
+        buf.push_str(key);
+        self.segments.push(PathSegment::Key(buf));
+    }
+
+    /// Pops a segment and retains the buffer of keys.
+    pub(crate) fn pop(&mut self) {
+        if let Some(PathSegment::Key(buf)) = self.segments.pop() {
+            if self.spare_keys.len() < MAX_SPARE_KEYS {
+                self.spare_keys.push(buf);
+            }
+        }
+    }
+}
+
+impl Clone for Path {
+    fn clone(&self) -> Path {
+        Path {
+            segments: self.segments.clone(),
+            spare_keys: Vec::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Path")
+            .field("segments", &self.segments)
+            .finish()
     }
 }
