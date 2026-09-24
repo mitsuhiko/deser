@@ -119,7 +119,7 @@ fn test_array_dropping_on_error() {
     make_slot_wrapper!(SlotWrapper);
 
     impl Deserialize for X {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
             SlotWrapper::make_handle(out)
         }
     }

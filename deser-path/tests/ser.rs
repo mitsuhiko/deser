@@ -7,7 +7,7 @@ use deser_path::{Path, PathSerializable};
 struct MyBool(bool);
 
 impl Serialize for MyBool {
-    fn serialize(&self, state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, state: &SerializerState) -> Result<Chunk<'_>, Error> {
         let path = state.get::<Path>();
         assert_eq!(path.segments().len(), 2);
         Ok(Chunk::Atom(Atom::Bool(self.0)))

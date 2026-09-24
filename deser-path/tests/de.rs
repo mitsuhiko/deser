@@ -10,7 +10,7 @@ struct MyBool(bool);
 deser::make_slot_wrapper!(SlotWrapper);
 
 impl Deserialize for MyBool {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         SlotWrapper::make_handle(out)
     }
 }

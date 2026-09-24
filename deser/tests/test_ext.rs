@@ -38,7 +38,7 @@ impl Extension for Timestamp {
 }
 
 impl Serialize for Timestamp {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
     }
 }
@@ -62,7 +62,7 @@ impl Sink for SlotWrapper<Timestamp> {
 }
 
 impl Deserialize for Timestamp {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
         SlotWrapper::make_handle(out)
     }
 }

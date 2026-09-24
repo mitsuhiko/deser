@@ -286,7 +286,7 @@ fn test_wide_integers() {
     assert!(from_str::<u64>("18446744073709551616").is_err());
 
     let map: BTreeMap<u128, bool> = from_str(&format!(r#"{{"{}": true}}"#, u128::MAX)).unwrap();
-    assert_eq!(map[&u128::MAX], true);
+    assert!(map[&u128::MAX]);
 
     // roundtrip
     let values = vec![u128::MAX, 0, 1 << 100];

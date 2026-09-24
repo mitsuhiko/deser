@@ -5,7 +5,7 @@ use std::collections::{btree_map, BTreeMap};
 struct Flags(BTreeMap<u64, bool>);
 
 impl Serialize for Flags {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Map(Box::new(FlagsMapEmitter {
             iter: self.0.iter(),
             value: None,
@@ -19,7 +19,7 @@ pub struct FlagsMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for FlagsMapEmitter<'a> {
-    fn next_key(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle>, Error> {
+    fn next_key(&mut self, _state: &SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
             Some(SerializeHandle::boxed(key.to_string()))
@@ -28,7 +28,7 @@ impl<'a> MapEmitter for FlagsMapEmitter<'a> {
         })
     }
 
-    fn next_value(&mut self, _state: &SerializerState) -> Result<SerializeHandle, Error> {
+    fn next_value(&mut self, _state: &SerializerState) -> Result<SerializeHandle<'_>, Error> {
         Ok(SerializeHandle::to(self.value.unwrap()))
     }
 }

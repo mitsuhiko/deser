@@ -181,7 +181,7 @@ fn test_array_sink_misuse() {
 struct LyingBytes(#[allow(dead_code)] String);
 
 impl Deserialize for LyingBytes {
-    fn deserialize_into(_out: &mut Option<Self>) -> SinkHandle {
+    fn deserialize_into(_out: &mut Option<Self>) -> SinkHandle<'_> {
         SinkHandle::null()
     }
 
@@ -227,7 +227,7 @@ impl Sink for Parent {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
+    fn next_value(&mut self, _state: &DeserializerState) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::boxed(CommitOnDrop {
             slot: &mut self.slot,
             value: None,
@@ -380,7 +380,7 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(BufferEmitter {
             depth: self.0,
             index: 0,
@@ -394,7 +394,7 @@ impl<'a> StructEmitter for BufferEmitter<'a> {
     fn next(
         &mut self,
         _state: &SerializerState,
-    ) -> Result<Option<(Cow<'_, str>, SerializeHandle)>, Error> {
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
         self.buffer = format!("key-{}-{}", self.depth, index);
@@ -431,7 +431,7 @@ fn test_borrowed_keys_across_reallocation() {
 struct Panicking;
 
 impl Serialize for Panicking {
-    fn serialize(&self, _state: &SerializerState) -> Result<Chunk, Error> {
+    fn serialize(&self, _state: &SerializerState) -> Result<Chunk<'_>, Error> {
         panic!("serialize panicked");
     }
 }
