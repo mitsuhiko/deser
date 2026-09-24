@@ -210,9 +210,14 @@ impl<'a> Deserializer<'a> {
         self.buffer.clear();
 
         loop {
-            while self.pos < self.input.len() && !ESCAPE[usize::from(self.input[self.pos])] {
-                self.pos += 1;
+            // scan with a local index so that the position is not written
+            // back to memory for every byte.
+            let input = self.input;
+            let mut pos = self.pos;
+            while pos < input.len() && !ESCAPE[usize::from(input[pos])] {
+                pos += 1;
             }
+            self.pos = pos;
             if self.pos == self.input.len() {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
@@ -338,17 +343,20 @@ impl<'a> Deserializer<'a> {
         Ok(n)
     }
 
+    #[inline]
     fn parse_whitespace(&mut self) -> Option<u8> {
-        loop {
-            match self.peek() {
-                Some(b' ') | Some(b'\n') | Some(b'\t') | Some(b'\r') => {
-                    self.bump();
-                }
-                other => {
-                    return other;
-                }
+        let input = self.input;
+        let mut pos = self.pos;
+        while pos < input.len() {
+            let c = input[pos];
+            if c != b' ' && c != b'\n' && c != b'\t' && c != b'\r' {
+                self.pos = pos;
+                return Some(c);
             }
+            pos += 1;
         }
+        self.pos = pos;
+        None
     }
 
     fn parse_ident(&mut self, ident: &[u8]) -> Result<(), Error> {
