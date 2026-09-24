@@ -4,6 +4,19 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Fixed multiple soundness issues:
+  - `DeserializeDriver::from_sink` now ties the sink to the driver's lifetime.
+  - The deserialize driver now drops child sinks before it uses or drops
+    their parent sinks.
+  - `Sink::descriptor` now returns a `&'static dyn Descriptor` as the
+    deserializer state holds on to descriptors while sinks are in use.
+  - `OwnedSink::borrow` and `OwnedSink::borrow_mut` now return `&dyn Sink` and
+    `&mut dyn Sink`.  `OwnedSink::take` drops the sink, after which it ignores
+    all values.
+  - The byte specialization for `Vec<u8>` and `[u8; N]` no longer relies on
+    an unsafe hook on `Deserialize`.
+  - `deser_json::Deserializer::new` now takes a `&str`.
+- Extension types now need to be `Send` and `Sync`.
 - Added an extensible data model.  `Atom::Ext` carries values implementing
   the new `deser::ext::Extension` trait which provide a fallback into the
   core data model for consumers that do not understand them.

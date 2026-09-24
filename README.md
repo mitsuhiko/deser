@@ -107,9 +107,13 @@ modelled after `miniserde`.
 
 ## Safety
 
-Deser (currently) uses excessive amounts of unsafe code internally.  It is not vetted and
-it is likely completely wrong.  If this design turns out to be useful there will be need
-to be a re-design of the internals.
+Deser needs unsafe code internally, primarily to erase lifetimes in the drivers
+which keep the chain of borrowed sinks and emitters on the heap rather than the
+call stack.  The unsafe code is documented, has a dedicated test suite that
+exercises it (partial drops, errors, panics, deep nesting) and the test suites of
+all crates are run under [miri](https://github.com/rust-lang/miri) with both
+stacked and tree borrows (`make miri-test`).  This does not guarantee soundness
+but if you find a soundness issue, please report it.
 
 ## License and Links
 
