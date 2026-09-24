@@ -233,6 +233,7 @@ impl Locations {
 
     /// Sets the byte offsets of the current event.  Called by formats for
     /// every event.
+    #[inline]
     pub fn set_current(state: &mut DeserializerState, start: usize, end: usize) {
         state.get_mut::<Locations>().current = Some((start, end));
     }
