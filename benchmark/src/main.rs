@@ -9,25 +9,142 @@ fn input_struct() -> Twitter {
     deser_json::from_str(&j).unwrap()
 }
 
-fn main() {
-    let j = input_json();
-    for _ in 0..100 {
-        deser_json::from_str::<Twitter>(&j).unwrap();
+fn timeit<F: FnMut()>(name: &str, iterations: usize, mut f: F) {
+    // warmup
+    for _ in 0..iterations / 10 + 1 {
+        f();
+    }
+    let mut best = f64::MAX;
+    for _ in 0..10 {
+        let start = std::time::Instant::now();
+        for _ in 0..iterations / 10 + 1 {
+            f();
+        }
+        let per_iter = start.elapsed().as_secs_f64() / (iterations / 10 + 1) as f64;
+        best = best.min(per_iter);
+    }
+    println!("{:<20} {:>10.1} us", name, best * 1e6);
+}
+
+#[cfg(feature = "count-allocs")]
+mod counting {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    pub static ALLOCS: AtomicUsize = AtomicUsize::new(0);
+
+    pub struct Counting;
+
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            ALLOCS.fetch_add(1, Ordering::Relaxed);
+            System.alloc(layout)
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            System.dealloc(ptr, layout)
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            ALLOCS.fetch_add(1, Ordering::Relaxed);
+            System.realloc(ptr, layout, new_size)
+        }
     }
 
-    let s = input_struct();
-    for _ in 0..100 {
-        deser_json::to_string(&s).unwrap();
+    #[global_allocator]
+    static GLOBAL: Counting = Counting;
+
+    pub fn count<F: FnOnce()>(name: &str, f: F) {
+        let before = ALLOCS.load(Ordering::Relaxed);
+        f();
+        println!("{:<20} {:>10} allocs", name, ALLOCS.load(Ordering::Relaxed) - before);
     }
 }
 
-#[derive(Serialize, Deserialize)]
+fn main() {
+    let mode = std::env::args().nth(1).unwrap_or_default();
+    let iterations: usize = std::env::args()
+        .nth(2)
+        .and_then(|x| x.parse().ok())
+        .unwrap_or(100);
+
+    let j = input_json();
+    let s = input_struct();
+    match mode.as_str() {
+        // plain loops for profiling
+        "de" => {
+            for _ in 0..iterations {
+                deser_json::from_str::<Twitter>(&j).unwrap();
+            }
+        }
+        "ser" => {
+            for _ in 0..iterations {
+                deser_json::to_string(&s).unwrap();
+            }
+        }
+        "ignore" => {
+            for _ in 0..iterations {
+                deser_json::from_str::<Ignore>(&j).unwrap();
+            }
+        }
+        #[cfg(feature = "count-allocs")]
+        "allocs" => {
+            counting::count("de deser", || {
+                std::hint::black_box(deser_json::from_str::<Twitter>(&j).unwrap());
+            });
+            counting::count("de serde", || {
+                std::hint::black_box(serde_json::from_str::<Twitter>(&j).unwrap());
+            });
+            counting::count("ignore deser", || {
+                std::hint::black_box(deser_json::from_str::<Ignore>(&j).unwrap());
+            });
+            counting::count("ser deser", || {
+                std::hint::black_box(deser_json::to_string(&s).unwrap());
+            });
+            counting::count("ser serde", || {
+                std::hint::black_box(serde_json::to_string(&s).unwrap());
+            });
+        }
+        // timings
+        _ => {
+            let n = iterations.max(1000);
+            timeit("de deser", n, || {
+                std::hint::black_box(deser_json::from_str::<Twitter>(&j).unwrap());
+            });
+            timeit("de serde", n, || {
+                std::hint::black_box(serde_json::from_str::<Twitter>(&j).unwrap());
+            });
+            timeit("ignore deser", n, || {
+                std::hint::black_box(deser_json::from_str::<Ignore>(&j).unwrap());
+            });
+            timeit("ignore serde", n, || {
+                std::hint::black_box(serde_json::from_str::<serde::de::IgnoredAny>(&j).unwrap());
+            });
+            timeit("ser deser", n, || {
+                std::hint::black_box(deser_json::to_string(&s).unwrap());
+            });
+            timeit("ser serde", n, || {
+                std::hint::black_box(serde_json::to_string(&s).unwrap());
+            });
+        }
+    }
+}
+
+/// Accepts and ignores any value.
+struct Ignore;
+
+impl deser::Deserialize for Ignore {
+    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_> {
+        *out = Some(Ignore);
+        deser::de::SinkHandle::null()
+    }
+}
+
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Twitter {
     statuses: Vec<Status>,
     search_metadata: SearchMetadata,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Status {
     metadata: Metadata,
     created_at: String,
@@ -56,13 +173,13 @@ struct Status {
     lang: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Metadata {
     result_type: String,
     iso_language_code: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct User {
     id: u32,
     id_str: String,
@@ -106,18 +223,18 @@ struct User {
     notifications: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct UserEntities {
     url: Option<UserUrl>,
     description: UserEntitiesDescription,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct UserUrl {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Url {
     url: String,
     expanded_url: String,
@@ -125,12 +242,12 @@ struct Url {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct UserEntitiesDescription {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct StatusEntities {
     hashtags: Vec<Hashtag>,
     symbols: Vec<()>,
@@ -139,13 +256,13 @@ struct StatusEntities {
     media: Option<Vec<Media>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Hashtag {
     text: String,
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct UserMention {
     screen_name: String,
     name: String,
@@ -154,7 +271,7 @@ struct UserMention {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Media {
     id: u64,
     id_str: String,
@@ -165,13 +282,14 @@ struct Media {
     display_url: String,
     expanded_url: String,
     #[deser(rename = "type")]
+    #[serde(rename = "type")]
     media_type: String,
     sizes: Sizes,
     source_status_id: Option<u64>,
     source_status_id_str: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Sizes {
     medium: Size,
     small: Size,
@@ -179,7 +297,7 @@ struct Sizes {
     large: Size,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct Size {
     w: u16,
     h: u16,
@@ -188,7 +306,7 @@ struct Size {
 
 type Indices = (u8, u8);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 struct SearchMetadata {
     completed_in: f32,
     max_id: u64,

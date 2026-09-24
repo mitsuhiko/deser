@@ -7,6 +7,9 @@ edition = "2021"
 
 [workspace]
 
+[features]
+count-allocs = []
+
 [dependencies]
 deser = { path = "../deser", features = ["derive"] }
 deser-json = { path = "../deser-json", features = ["speedups"] }
