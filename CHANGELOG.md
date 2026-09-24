@@ -4,6 +4,16 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added an extensible data model.  `Atom::Ext` carries values implementing
+  the new `deser::ext::Extension` trait which provide a fallback into the
+  core data model for consumers that do not understand them.
+- Added support for `u128` and `i128` via extension atoms.  `deser-json`
+  serializes and parses them natively.
+- Descriptors, `finish` and `is_optional` are now forwarded through `Option`,
+  references and boxes.  `Box<dyn Serialize>` is now serializable.
+- `deser-json` now serializes `f32` values with `f32` precision.
+- Fixed integer range checks which accepted `u64::MAX` as `-1` for `i64`
+  and `-1` as `u64::MAX` for `u64`.
 - Made `derive` a default feature.
 - Removed number serialization support in JSON serializer.
 - Fixed `Option<T>` silently dropping structs, vectors, maps and boxes.
@@ -13,8 +23,7 @@ All notable changes to deser are documented here.
 - Fixed a panic in the JSON parser on trailing commas in arrays.
 - `SinkHandle` is now an opaque type which implements `Sink`.  It is created
   with `SinkHandle::to`, `SinkHandle::boxed` and `SinkHandle::null`.
-- Improved deserialization performance by about 40% and serialization performance
-  by about 45%.  Derived struct keys no longer allocate, `Option<T>` no longer
+- Reduced the time spent on deserialization and serialization by about 40%.  Derived struct keys no longer allocate, `Option<T>` no longer
   allocates a wrapper sink, errors are boxed and the JSON parser and serializer
   scan strings and whitespace a word at a time.
 - Added `DeserializerState::is_map_key`.  Integer sinks now accept

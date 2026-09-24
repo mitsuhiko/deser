@@ -59,6 +59,13 @@ To see some practical examples of this have a look at the
 * **Native Flattening Support:** deser's serialization and deserialization support
   has native support for flattening of structs.  This means no internal buffering
   is required for `#[deser(flatten)]`.
+* **Extensible Data Model:** the data model can be extended with types that are
+  not native to the serialization interface through extension atoms.  Every
+  extension value carries a fallback into the core data model.  Serializers
+  and deserializers that understand an extension handle it natively (for
+  instance `deser-json` supports 128 bit integers this way), everybody else
+  transparently gets the fallback.  This avoids in-band signalling.  (See
+  [ext](https://docs.rs/deser/latest/deser/ext/) for more information)
 * **Stateful Processing:** deser compensates the simplified data model with providing
   a space to hold meta information.  Out of the box it provides information
   about the types that are being serialized.  The additional space can be used
@@ -71,21 +78,13 @@ shortcomings.  For more information there is a document about [Serde
 Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) with
 more details.
 
-## Future Plans
-
-* **Extensible Data Model:** deser wants to make it possible to extend the data
-  model with types that are not native to the serialization interface.  For
-  instance if a data format wants to support arbitrarily sized integers this
-  should be possible without falling back to in-band
-  signalling.
-
 ## Known Limitations
 
 The current design of this system relies on dynamic dispatch and heap allocated
 sinks and emitters for every compound value.  This is the consequence of a certain
 level of flexibility and the desire to not use the call stack for recursion.  For
 JSON, Serde is currently about 1.4 times faster than Deser for deserialization and
-1.75 times faster for serialization.
+1.9 times faster for serialization.
 
 ## Crates
 

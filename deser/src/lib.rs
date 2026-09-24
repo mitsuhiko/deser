@@ -34,6 +34,9 @@ pub struct Account {
 //! * [`deser-json`](https://docs.rs/deser-json): implements JSON serialization and
 //!   deserialization.
 //!
+//! The data model can be extended with types that are not native to it.  For
+//! more information see [`ext`].
+//!
 //! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more

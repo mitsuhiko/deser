@@ -97,7 +97,12 @@ data format is very hard to extend.  There has only been one extension to the
 data format in serde 1.0 and that was the addition of `i128` and `u128` as
 adding new values is a semver hazard.
 
-This is currently unresolved in deser but it's a space that requires exploration.
+Deser addresses this by keeping the core data model small and allowing it to be
+extended with arbitrary types through extension atoms.  Every extension value
+carries a fallback into the core data model so that serializers and
+deserializers which do not know about an extension can still process it.  This
+is also how `u128` and `i128` are supported, without having to extend the core
+data model.
 
 ## Mandatory Buffering
 
