@@ -110,6 +110,13 @@ macro_rules! int_sink {
                             ))
                         }
                     }
+                    Atom::Str(ref value) if state.is_map_key() => match value.parse::<$ty>() {
+                        Ok(value) => {
+                            **self = Some(value);
+                            Ok(())
+                        }
+                        Err(_) => Err(atom.unexpected_error(&self.expecting())),
+                    },
                     other => self.unexpected_atom(other, state),
                 }
             }

@@ -37,6 +37,7 @@ impl<'a> DeserializeDriver<'a> {
             state: DeserializerState {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
+                is_map_key: false,
             },
             sink_stack: ManuallyDrop::new(Vec::with_capacity(STACK_CAPACITY)),
             current_sink: Some(unsafe { extend_lifetime!(sink, SinkHandle<'_>) }),
@@ -66,10 +67,12 @@ impl<'a> DeserializeDriver<'a> {
                 } else {
                     map_sink.next_value(&self.state)?
                 };
+                self.state.is_map_key = *is_key;
                 *is_key = !*is_key;
                 self.current_sink = Some(unsafe { extend_lifetime!(next_sink, SinkHandle<'_>) });
             }
             Some((seq_sink, Layer::Seq)) => {
+                self.state.is_map_key = false;
                 self.current_sink = Some(unsafe {
                     extend_lifetime!(seq_sink.next_value(&self.state)?, SinkHandle<'_>)
                 });

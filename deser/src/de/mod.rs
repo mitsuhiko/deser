@@ -280,6 +280,7 @@ impl<'a> SinkHandle<'a> {
 pub struct DeserializerState<'a> {
     extensions: Extensions,
     descriptor_stack: Vec<&'a dyn Descriptor>,
+    is_map_key: bool,
 }
 
 impl<'a> DeserializerState<'a> {
@@ -303,6 +304,16 @@ impl<'a> DeserializerState<'a> {
     /// This descriptor always points to a container as the descriptor.
     pub fn top_descriptor(&self) -> Option<&dyn Descriptor> {
         self.descriptor_stack.last().copied()
+    }
+
+    /// Returns `true` if the value currently being deserialized is a map key.
+    ///
+    /// Many formats (such as JSON) can only represent string keys.  Sinks can
+    /// use this to accept a stringified representation of their value when
+    /// it's used as a key.  For instance the integer sinks will parse
+    /// `"42"` as a number when in key position.
+    pub fn is_map_key(&self) -> bool {
+        self.is_map_key
     }
 }
 

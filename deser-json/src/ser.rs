@@ -77,7 +77,17 @@ impl Serializer {
                     match event {
                         Event::Atom(Atom::Str(val)) => self.write_escaped_str(&val),
                         Event::Atom(Atom::Char(c)) => {
-                            self.write_escaped_str(&(c as u32).to_string())
+                            self.write_escaped_str(c.encode_utf8(&mut [0u8; 4]))
+                        }
+                        Event::Atom(Atom::U64(val)) => {
+                            self.write_char('"');
+                            self.write_u64(val);
+                            self.write_char('"');
+                        }
+                        Event::Atom(Atom::I64(val)) => {
+                            self.write_char('"');
+                            self.write_i64(val);
+                            self.write_char('"');
                         }
                         _ => unsupported!("JSON does not support this value for map keys"),
                     }
@@ -93,27 +103,9 @@ impl Serializer {
                     Atom::Bool(false) => self.write_str("false"),
                     Atom::Str(val) => self.write_escaped_str(&val),
                     Atom::Bytes(_val) => unsupported!("JSON doesn't support bytes"),
-                    Atom::Char(c) => self.write_escaped_str(&(c as u32).to_string()),
-                    Atom::U64(val) => {
-                        #[cfg(feature = "speedups")]
-                        {
-                            self.write_str(itoa::Buffer::new().format(val))
-                        }
-                        #[cfg(not(feature = "speedups"))]
-                        {
-                            self.write_str(&val.to_string())
-                        }
-                    }
-                    Atom::I64(val) => {
-                        #[cfg(feature = "speedups")]
-                        {
-                            self.write_str(itoa::Buffer::new().format(val))
-                        }
-                        #[cfg(not(feature = "speedups"))]
-                        {
-                            self.write_str(&val.to_string())
-                        }
-                    }
+                    Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
+                    Atom::U64(val) => self.write_u64(val),
+                    Atom::I64(val) => self.write_i64(val),
                     Atom::F64(val) => {
                         if val.is_finite() {
                             #[cfg(feature = "speedups")]
@@ -154,6 +146,28 @@ impl Serializer {
 
     fn write_char(&mut self, c: char) {
         self.out.push(c);
+    }
+
+    fn write_u64(&mut self, val: u64) {
+        #[cfg(feature = "speedups")]
+        {
+            self.write_str(itoa::Buffer::new().format(val))
+        }
+        #[cfg(not(feature = "speedups"))]
+        {
+            self.write_str(&val.to_string())
+        }
+    }
+
+    fn write_i64(&mut self, val: i64) {
+        #[cfg(feature = "speedups")]
+        {
+            self.write_str(itoa::Buffer::new().format(val))
+        }
+        #[cfg(not(feature = "speedups"))]
+        {
+            self.write_str(&val.to_string())
+        }
     }
 
     fn write_escaped_str(&mut self, value: &str) {

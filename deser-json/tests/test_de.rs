@@ -135,3 +135,28 @@ fn test_generics() {
     let n: Newtype<u32> = from_str(r#"42"#).unwrap();
     assert_eq!(n, Newtype(42));
 }
+
+#[test]
+fn test_numeric_keys() {
+    use std::collections::{BTreeMap, HashMap};
+
+    let map: HashMap<u32, u32> = from_str(r#"{"42": 23}"#).unwrap();
+    assert_eq!(map[&42], 23);
+
+    let map: BTreeMap<i64, bool> = from_str(r#"{"-1": true, "2": false}"#).unwrap();
+    assert_eq!(
+        map.into_iter().collect::<Vec<_>>(),
+        vec![(-1, true), (2, false)]
+    );
+
+    // strings are only coerced in key position
+    assert!(from_str::<u32>(r#""42""#).is_err());
+    assert!(from_str::<Vec<u32>>(r#"["42"]"#).is_err());
+    assert!(from_str::<HashMap<u32, u32>>(r#"{"x": 1}"#).is_err());
+}
+
+#[test]
+fn test_char() {
+    let c: char = from_str(r#""x""#).unwrap();
+    assert_eq!(c, 'x');
+}
