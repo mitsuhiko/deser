@@ -94,6 +94,9 @@ JSON, Serde is currently about 1.4 times faster than Deser for deserialization a
   JSON implementation for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
+* [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a
+  crate that provides source locations (line and column) for formats that
+  support them
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats
   a serializable to the `std::fmt` debug format
 

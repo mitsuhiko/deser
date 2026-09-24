@@ -20,6 +20,11 @@ All notable changes to deser are documented here.
 - `Option<T>` now also treats extension values that fall back to null as
   null.
 - Added `deser_json::Deserializer::drive` to deserialize into custom sinks.
+- Added `deser-location` which provides source locations.  Formats publish
+  byte offsets of events into the deserializer state and `Spanned<T>` picks
+  them up.  `deser-json` supports this with the `locations` feature and
+  `Deserializer::track_locations`.
+- Improved the performance of deserializer state extensions.
 - Fixed `deser_path::PathSink` not removing path segments when leaving
   containers.
 - Added an extensible data model.  `Atom::Ext` carries values implementing
