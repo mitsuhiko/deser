@@ -122,7 +122,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(::deser::Serialize);
+    let bound = syn::parse_quote!(::deser::Deserialize);
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     let field_stage1_default = attrs
@@ -462,7 +462,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(::deser::Serialize);
+    let bound = syn::parse_quote!(::deser::Deserialize);
     let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
 
     Ok(quote! {
@@ -470,7 +470,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         const #dummy: () = {
             struct __Sink #wrapper_impl_generics #where_clause {
                 slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
-                sink: ::deser::de::OwnedSink<#field_type #ty_generics>,
+                sink: ::deser::de::OwnedSink<#field_type>,
             }
 
             #[automatically_derived]

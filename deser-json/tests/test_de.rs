@@ -64,10 +64,9 @@ fn test_optional_compounds() {
         null: Option<Inner>,
     }
 
-    let outer: Outer = from_str(
-        r#"{"inner": {"a": 1}, "list": [1, 2], "boxed": {"a": 2}, "null": null}"#,
-    )
-    .unwrap();
+    let outer: Outer =
+        from_str(r#"{"inner": {"a": 1}, "list": [1, 2], "boxed": {"a": 2}, "null": null}"#)
+            .unwrap();
     assert_eq!(
         outer,
         Outer {
@@ -102,4 +101,37 @@ fn test_flatten_optional() {
             attrs: Some(Attrs { is_admin: true }),
         }
     );
+}
+
+#[test]
+fn test_maps() {
+    use std::collections::{BTreeMap, HashMap};
+
+    let map: HashMap<String, u32> = from_str(r#"{"a": 1, "b": 2}"#).unwrap();
+    assert_eq!(map.len(), 2);
+    assert_eq!(map["a"], 1);
+    assert_eq!(map["b"], 2);
+
+    let map: BTreeMap<String, u32> = from_str(r#"{"a": 1, "b": 2}"#).unwrap();
+    assert_eq!(
+        map.into_iter().collect::<Vec<_>>(),
+        vec![("a".into(), 1), ("b".into(), 2)]
+    );
+}
+
+#[test]
+fn test_generics() {
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct Wrapper<T> {
+        value: T,
+    }
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct Newtype<T>(T);
+
+    let w: Wrapper<Vec<u32>> = from_str(r#"{"value": [1, 2]}"#).unwrap();
+    assert_eq!(w, Wrapper { value: vec![1, 2] });
+
+    let n: Newtype<u32> = from_str(r#"42"#).unwrap();
+    assert_eq!(n, Newtype(42));
 }

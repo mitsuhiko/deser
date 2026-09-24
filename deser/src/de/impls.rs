@@ -316,8 +316,7 @@ where
             V: Deserialize,
         {
             fn descriptor(&self) -> &dyn Descriptor {
-                static DESCRIPTOR: UnorderedNamedDescriptor =
-                    UnorderedNamedDescriptor { name: "map" };
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
                 &DESCRIPTOR
             }
 
@@ -384,8 +383,12 @@ where
         {
             fn descriptor(&self) -> &dyn Descriptor {
                 static DESCRIPTOR: UnorderedNamedDescriptor =
-                    UnorderedNamedDescriptor { name: "map" };
+                    UnorderedNamedDescriptor { name: "HashMap" };
                 &DESCRIPTOR
+            }
+
+            fn map(&mut self, _state: &DeserializerState) -> Result<(), Error> {
+                Ok(())
             }
 
             fn next_key(&mut self, _state: &DeserializerState) -> Result<SinkHandle, Error> {
@@ -431,8 +434,7 @@ impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
 
         impl<'a, T: Deserialize + Ord> Sink for BTreeSetSink<'a, T> {
             fn descriptor(&self) -> &dyn Descriptor {
-                static DESCRIPTOR: UnorderedNamedDescriptor =
-                    UnorderedNamedDescriptor { name: "BTreeSet" };
+                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
                 &DESCRIPTOR
             }
 
