@@ -17,6 +17,11 @@ All notable changes to deser are documented here.
   #[deser(default = 8080)]
   #[deser(default = "localhost")]
   ```
+- Added `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
+  `#[deser(deserialize_bound(...))]` to replace the bounds the derive
+  infers for type parameters.
+- Added `#[deser(crate = path)]` to use the derive when deser is renamed or
+  re-exported.
 - Moved `deser-derive` to `syn` 3.  This requires Rust 1.71 or later.
 - Added `deser_json::from_slice` and `Deserializer::from_slice` which parse
   JSON from bytes and validate the strings as UTF-8 while parsing.

@@ -37,7 +37,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
         Some(quote! {
-            nested_emitter: ::deser::__derive::Option<::deser::__derive::Box<dyn ::deser::ser::StructEmitter + '__a>>,
+            nested_emitter: __deser::__derive::Option<__deser::__derive::Box<dyn __deser::ser::StructEmitter + '__a>>,
             nested_emitter_exhausted: bool,
         })
     } else {
@@ -45,7 +45,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     };
     let temp_emitter_init = if attrs.iter().any(|x| x.flatten()) {
         Some(quote! {
-            nested_emitter: ::deser::__derive::None,
+            nested_emitter: __deser::__derive::None,
             nested_emitter_exhausted: true,
         })
     } else {
@@ -80,10 +80,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #index => {
                         self.index = __index + 1;
                         #field_skip
-                        let __handle = ::deser::ser::SerializeHandle::to(&self.data.#name);
+                        let __handle = __deser::ser::SerializeHandle::to(&self.data.#name);
                         #optional_skip
-                        return ::deser::__derive::Ok(::deser::__derive::Some((
-                            ::deser::__derive::Cow::Borrowed(#fieldstr),
+                        return __deser::__derive::Ok(__deser::__derive::Some((
+                            __deser::__derive::Cow::Borrowed(#fieldstr),
                             __handle,
                         )));
                     }
@@ -103,22 +103,22 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #index => {
                         #field_skip
                         if self.nested_emitter_exhausted {
-                            self.nested_emitter = match ::deser::ser::Serialize::serialize(&self.data.#name, __state)? {
-                                ::deser::ser::Chunk::Struct(__inner) => {
+                            self.nested_emitter = match __deser::ser::Serialize::serialize(&self.data.#name, __state)? {
+                                __deser::ser::Chunk::Struct(__inner) => {
                                     Some(__inner)
                                 }
-                                _ => return ::deser::__derive::Err(::deser::Error::new(
-                                    ::deser::ErrorKind::Unexpected,
+                                _ => return __deser::__derive::Err(__deser::Error::new(
+                                    __deser::ErrorKind::Unexpected,
                                     "unable to flatten on struct into struct"
                                 ))
                             };
                             self.nested_emitter_exhausted = false;
                         }
                         match self.nested_emitter.as_mut().unwrap().next(__state)? {
-                            ::deser::__derive::None => {
+                            __deser::__derive::None => {
                                 self.index += 1;
                                 self.nested_emitter_exhausted = true;
-                                ::deser::ser::Serialize::finish(&self.data.#name, __state)?;
+                                __deser::ser::Serialize::finish(&self.data.#name, __state)?;
                                 continue;
                             }
                             // we need this transmute here because of limitations in the borrow
@@ -127,12 +127,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             // makes it into Rust this can go.
                             //
                             // This can be validated with `-Zpolonius`
-                            ::deser::__derive::Some((__key, __handle)) => {
+                            __deser::__derive::Some((__key, __handle)) => {
                                 #optional_skip
-                                return ::deser::__derive::Ok(::deser::__derive::Some(unsafe {
+                                return __deser::__derive::Ok(__deser::__derive::Some(unsafe {
                                     ::std::mem::transmute::<
-                                        (::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>),
-                                        (::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>),
+                                        (__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>),
+                                        (__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>),
                                     >((
                                         __key,
                                         __handle
@@ -148,20 +148,21 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(::deser::Serialize);
-    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+    let bound = syn::parse_quote!(__deser::Serialize);
+    let bounded_where_clause =
+        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
 
     Ok(quote! {
             const _: () = {
                 #[automatically_derived]
-                impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                    fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+                impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                    fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                         &__Descriptor
                     }
-    ::deser::__begin_without_finish!();
+    __deser::__begin_without_finish!();
 
-                    fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
-                        ::deser::__derive::Ok(::deser::ser::Chunk::Struct(Box::new(__StructEmitter {
+                    fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                        __deser::__derive::Ok(__deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                             data: self,
                             index: 0,
                             #temp_emitter_init
@@ -177,16 +178,16 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
                 struct __Descriptor;
 
-                impl ::deser::Descriptor for __Descriptor {
-                    fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                        ::deser::__derive::Some(#type_name)
+                impl __deser::Descriptor for __Descriptor {
+                    fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
+                        __deser::__derive::Some(#type_name)
                     }
                 }
 
                 #[automatically_derived]
-                impl #wrapper_impl_generics ::deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                    fn next(&mut self, __state: &mut ::deser::ser::SerializerState)
-                        -> ::deser::__derive::Result<::deser::__derive::Option<(::deser::__derive::StrCow<'_>, ::deser::ser::SerializeHandle<'_>)>>
+                impl #wrapper_impl_generics __deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
+                    fn next(&mut self, __state: &mut __deser::ser::SerializerState)
+                        -> __deser::__derive::Result<__deser::__derive::Option<(__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>)>>
                     {
                         #[allow(clippy::never_loop)]
                         loop {
@@ -195,7 +196,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                                 #(
                                     #state_handler
                                 )*
-                                _ => return ::deser::__derive::Ok(::deser::__derive::None),
+                                _ => return __deser::__derive::Ok(__deser::__derive::None),
                             }
                         }
                     }
@@ -226,14 +227,14 @@ fn derive_indexed_struct(
             let field_skip = attrs.skip_serializing_if().map(|path| {
                 quote! {
                     if #path(&self.#name) {
-                        return ::deser::__derive::Ok(::deser::ser::StructField::Skip);
+                        return __deser::__derive::Ok(__deser::ser::StructField::Skip);
                     }
                 }
             });
             let optional_skip = if container_attrs.skip_serializing_optionals() {
                 Some(quote! {
-                    if ::deser::ser::Serialize::is_optional(&self.#name) {
-                        return ::deser::__derive::Ok(::deser::ser::StructField::Skip);
+                    if __deser::ser::Serialize::is_optional(&self.#name) {
+                        return __deser::__derive::Ok(__deser::ser::StructField::Skip);
                     }
                 })
             } else {
@@ -243,59 +244,60 @@ fn derive_indexed_struct(
                 #index => {
                     #field_skip
                     #optional_skip
-                    ::deser::ser::StructField::Field(
+                    __deser::ser::StructField::Field(
                         #fieldstr,
-                        ::deser::ser::SerializeHandle::to(&self.#name),
+                        __deser::ser::SerializeHandle::to(&self.#name),
                     )
                 }
             }
         })
         .collect::<Vec<_>>();
 
-    let bound = syn::parse_quote!(::deser::Serialize);
-    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+    let bound = syn::parse_quote!(__deser::Serialize);
+    let bounded_where_clause =
+        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
 
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     &__Descriptor
                 }
 
-                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
-                    ::deser::__derive::Ok(::deser::ser::Chunk::Struct(::deser::__derive::Box::new(
-                        ::deser::ser::IndexedStructEmitter::new(self)
+                fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
+                        __deser::ser::IndexedStructEmitter::new(self)
                     )))
                 }
 
                 #[inline]
-                fn __private_begin(&self, __state: &mut ::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::ser::Begin<'_>>
+                fn __private_begin(&self, __state: &mut __deser::ser::SerializerState)
+                    -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
-                    ::deser::__derive::Ok(::deser::ser::Begin::indexed_struct(self, &__Descriptor))
+                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, &__Descriptor))
                 }
             }
 
             #[automatically_derived]
-            impl #impl_generics ::deser::ser::IndexedStruct for #ident #ty_generics #bounded_where_clause {
-                fn field(&self, __index: usize, __state: &mut ::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::ser::StructField<'_>>
+            impl #impl_generics __deser::ser::IndexedStruct for #ident #ty_generics #bounded_where_clause {
+                fn field(&self, __index: usize, __state: &mut __deser::ser::SerializerState)
+                    -> __deser::__derive::Result<__deser::ser::StructField<'_>>
                 {
-                    ::deser::__derive::Ok(match __index {
+                    __deser::__derive::Ok(match __index {
                         #(
                             #field_arms
                         )*
-                        _ => ::deser::ser::StructField::End,
+                        _ => __deser::ser::StructField::End,
                     })
                 }
             }
 
             struct __Descriptor;
 
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
+            impl __deser::Descriptor for __Descriptor {
+                fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
+                    __deser::__derive::Some(#type_name)
                 }
             }
         };
@@ -332,16 +334,16 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     Ok(quote! {
             const _: () = {
                 #[automatically_derived]
-                impl ::deser::Serialize for #ident {
-    ::deser::__begin_without_finish!();
+                impl __deser::Serialize for #ident {
+    __deser::__begin_without_finish!();
 
-                    fn serialize(&self, __state: &mut ::deser::ser::SerializerState)
-                        -> ::deser::__derive::Result<::deser::ser::Chunk<'_>>
+                    fn serialize(&self, __state: &mut __deser::ser::SerializerState)
+                        -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
                     {
-                        ::deser::__derive::Ok(match *self {
+                        __deser::__derive::Ok(match *self {
                             #(
                                 #ident::#var_idents => {
-                                    ::deser::ser::Chunk::Atom(::deser::Atom::Str(::deser::__derive::Cow::Borrowed(#names)))
+                                    __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#names)))
                                 }
                             )*
                         })
@@ -362,30 +364,31 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
 
     ensure_no_field_attrs(field)?;
 
-    let bound = syn::parse_quote!(::deser::Serialize);
-    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+    let bound = syn::parse_quote!(__deser::Serialize);
+    let bounded_where_clause =
+        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
 
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics ::deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     self.0.descriptor()
                 }
-                fn serialize(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
-                    ::deser::ser::Serialize::serialize(&self.0, __state)
+                fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    __deser::ser::Serialize::serialize(&self.0, __state)
                 }
-                fn finish(&self, __state: &mut ::deser::ser::SerializerState) -> ::deser::__derive::Result<()> {
-                    ::deser::ser::Serialize::finish(&self.0, __state)
+                fn finish(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<()> {
+                    __deser::ser::Serialize::finish(&self.0, __state)
                 }
                 fn is_optional(&self) -> bool {
-                    ::deser::ser::Serialize::is_optional(&self.0)
+                    __deser::ser::Serialize::is_optional(&self.0)
                 }
                 #[inline]
-                fn __private_begin(&self, __state: &mut ::deser::ser::SerializerState)
-                    -> ::deser::__derive::Result<::deser::ser::Begin<'_>>
+                fn __private_begin(&self, __state: &mut __deser::ser::SerializerState)
+                    -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
-                    ::deser::ser::Serialize::__private_begin(&self.0, __state)
+                    __deser::ser::Serialize::__private_begin(&self.0, __state)
                 }
             }
         };

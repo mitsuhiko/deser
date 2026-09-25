@@ -82,20 +82,18 @@ fn used_type_params<'a>(
         .collect()
 }
 
-/// Returns the where clause predicates of the generics which only refer to
-/// the given type parameters.
-fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> TokenStream {
-    let where_clause = match generics.where_clause {
-        Some(ref where_clause) => where_clause,
-        None => return TokenStream::new(),
-    };
+/// Returns the predicates which only refer to the given type parameters.
+fn filter_predicates<'a>(
+    generics: &syn::Generics,
+    predicates: impl IntoIterator<Item = &'a syn::WherePredicate>,
+    params: &[&syn::TypeParam],
+) -> Vec<&'a syn::WherePredicate> {
     let allowed = params
         .iter()
         .map(|x| x.ident.to_string())
         .collect::<HashSet<_>>();
-    let predicates = where_clause
-        .predicates
-        .iter()
+    predicates
+        .into_iter()
         .filter(|predicate| {
             let mut idents = HashSet::new();
             collect_idents(quote! { #predicate }, &mut idents);
@@ -105,7 +103,17 @@ fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> 
                 .filter(|x| idents.contains(x))
                 .all(|x| allowed.contains(&x))
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+/// Returns the where clause predicates of the generics which only refer to
+/// the given type parameters.
+fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> TokenStream {
+    let where_clause = match generics.where_clause {
+        Some(ref where_clause) => where_clause,
+        None => return TokenStream::new(),
+    };
+    let predicates = filter_predicates(generics, &where_clause.predicates, params);
     if predicates.is_empty() {
         TokenStream::new()
     } else {
@@ -250,9 +258,9 @@ fn descriptor(container_attrs: &ContainerAttrs) -> TokenStream {
     quote! {
         struct __Descriptor;
 
-        impl ::deser::Descriptor for __Descriptor {
-            fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                ::deser::__derive::Some(#type_name)
+        impl __deser::Descriptor for __Descriptor {
+            fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
+                __deser::__derive::Some(#type_name)
             }
         }
     }
@@ -269,8 +277,21 @@ pub fn derive_deserialize(
     let variants = collect_variants(enumeration, container_attrs)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let turbofish = ty_generics.as_turbofish();
-    let where_clause =
-        where_clause_with_bound(&input.generics, quote!(::deser::Deserialize + 'static));
+    let mut where_clause = where_clause_with_bound(
+        &input.generics,
+        quote!(__deser::Deserialize + 'static),
+        container_attrs.deserialize_bound(),
+    );
+    // the deserializer boxes variant builders so the type parameters must
+    // be 'static even with custom bounds.
+    if container_attrs.deserialize_bound().is_some() {
+        for param in input.generics.type_params() {
+            let param = &param.ident;
+            where_clause
+                .predicates
+                .push(syn::parse_quote!(#param: 'static));
+        }
+    }
     let enum_ty = quote! { #ident #ty_generics };
 
     let mut helpers = Vec::new();
@@ -329,9 +350,20 @@ pub fn derive_deserialize(
                 quote! { #helper<#(#params),*> }
             };
             let helper_where = helper_where_clause(&input.generics, &helper_params);
+            // the helper is derived with the same crate path and the custom
+            // bounds that apply to its parameters.
+            let helper_crate = container_attrs
+                .crate_path()
+                .map(|path| quote! { #[deser(crate = #path)] });
+            let helper_bound = container_attrs.deserialize_bound().map(|bound| {
+                let predicates = filter_predicates(&input.generics, bound, &helper_params);
+                quote! { #[deser(deserialize_bound(#(#predicates),*))] }
+            });
             helpers.push(quote! {
-                #[derive(::deser::Deserialize)]
+                #[derive(__deser::Deserialize)]
                 #[deser(rename = #helper_name)]
+                #helper_crate
+                #helper_bound
                 struct #helper_decl #helper_where {
                     #(#fields)*
                 }
@@ -339,30 +371,30 @@ pub fn derive_deserialize(
         }
 
         let builder = if info.other {
-            quote! { ::deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #ident::#var_ident) }
+            quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #ident::#var_ident) }
         } else {
             match info.kind {
                 Kind::Struct(fields) => {
                     let names = fields.named.iter().map(|x| &x.ident).collect::<Vec<_>>();
                     quote! {
-                        ::deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(
+                        __deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(
                             |__v: #helper_ty| #ident::#var_ident { #(#names: __v.#names,)* }
                         )
                     }
                 }
                 Kind::Unit if needs_helper => quote! {
-                    ::deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(|_: #helper_ty| #ident::#var_ident)
+                    __deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(|_: #helper_ty| #ident::#var_ident)
                 },
                 Kind::Unit => quote! {
-                    ::deser::__derive::Variant::<(), #enum_ty>::boxed(|_: ()| #ident::#var_ident)
+                    __deser::__derive::Variant::<(), #enum_ty>::boxed(|_: ()| #ident::#var_ident)
                 },
                 Kind::Newtype(ty) => quote! {
-                    ::deser::__derive::Variant::<#ty, #enum_ty>::boxed(#ident::#var_ident)
+                    __deser::__derive::Variant::<#ty, #enum_ty>::boxed(#ident::#var_ident)
                 },
                 Kind::Tuple(ref types) => {
                     let bindings = info.bindings();
                     quote! {
-                        ::deser::__derive::Variant::<(#(#types,)*), #enum_ty>::boxed(
+                        __deser::__derive::Variant::<(#(#types,)*), #enum_ty>::boxed(
                             |(#(#bindings,)*): (#(#types,)*)| #ident::#var_ident(#(#bindings),*)
                         )
                     }
@@ -377,20 +409,20 @@ pub fn derive_deserialize(
         .iter()
         .zip(builders.iter())
         .find(|(info, _)| info.other)
-        .map(|(_, builder)| quote! { ::deser::__derive::Some(#builder) })
-        .unwrap_or_else(|| quote! { ::deser::__derive::None });
+        .map(|(_, builder)| quote! { __deser::__derive::Some(#builder) })
+        .unwrap_or_else(|| quote! { __deser::__derive::None });
 
     let lookup = {
         let arms = variants.iter().zip(builders.iter()).map(|(info, builder)| {
             let names = &info.names;
-            quote! { #(#names)|* => ::deser::__derive::Some(#builder), }
+            quote! { #(#names)|* => __deser::__derive::Some(#builder), }
         });
         quote! {
-            #[allow(clippy::type_complexity)]
+            #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
             fn __lookup #impl_generics (
-                __tag: &::deser::__derive::str,
-            ) -> ::deser::__derive::Option<
-                ::deser::__derive::Box<dyn ::deser::__derive::VariantBuilder<#enum_ty>>,
+                __tag: &__deser::__derive::str,
+            ) -> __deser::__derive::Option<
+                __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>,
             > #where_clause {
                 match __tag {
                     #(#arms)*
@@ -408,23 +440,24 @@ pub fn derive_deserialize(
                 .map(|info| {
                     let names = &info.names;
                     let var_ident = info.ident;
-                    quote! { #(#names)|* => ::deser::__derive::Some(#ident::#var_ident), }
+                    quote! { #(#names)|* => __deser::__derive::Some(#ident::#var_ident), }
                 });
             let unit_other = variants
                 .iter()
                 .find(|info| info.other)
                 .map(|info| {
                     let var_ident = info.ident;
-                    quote! { ::deser::__derive::Some(#ident::#var_ident) }
+                    quote! { __deser::__derive::Some(#ident::#var_ident) }
                 })
-                .unwrap_or_else(|| quote! { ::deser::__derive::None });
+                .unwrap_or_else(|| quote! { __deser::__derive::None });
             (
                 quote! {
                     #lookup
 
+                    #[allow(clippy::multiple_bound_locations)]
                     fn __unit #impl_generics (
-                        __name: &::deser::__derive::str,
-                    ) -> ::deser::__derive::Option<#enum_ty> #where_clause {
+                        __name: &__deser::__derive::str,
+                    ) -> __deser::__derive::Option<#enum_ty> #where_clause {
                         match __name {
                             #(#unit_arms)*
                             _ => #unit_other,
@@ -432,7 +465,7 @@ pub fn derive_deserialize(
                     }
                 },
                 quote! {
-                    ::deser::__derive::ExternallyTaggedSink::handle(
+                    __deser::__derive::ExternallyTaggedSink::handle(
                         __slot,
                         &__Descriptor,
                         __lookup #turbofish,
@@ -444,7 +477,7 @@ pub fn derive_deserialize(
         Repr::Internal { tag } => (
             lookup,
             quote! {
-                ::deser::__derive::InternallyTaggedSink::handle(
+                __deser::__derive::InternallyTaggedSink::handle(
                     __slot,
                     #tag,
                     &__Descriptor,
@@ -455,7 +488,7 @@ pub fn derive_deserialize(
         Repr::Adjacent { tag, content } => (
             lookup,
             quote! {
-                ::deser::__derive::AdjacentlyTaggedSink::handle(
+                __deser::__derive::AdjacentlyTaggedSink::handle(
                     __slot,
                     #tag,
                     #content,
@@ -468,20 +501,20 @@ pub fn derive_deserialize(
             let indexes = 0..builders.len();
             (
                 quote! {
-                    #[allow(clippy::type_complexity)]
+                    #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                     fn __candidate #impl_generics (
                         __index: usize,
-                    ) -> ::deser::__derive::Option<
-                        ::deser::__derive::Box<dyn ::deser::__derive::VariantBuilder<#enum_ty>>,
+                    ) -> __deser::__derive::Option<
+                        __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>,
                     > #where_clause {
                         match __index {
-                            #(#indexes => ::deser::__derive::Some(#builders),)*
-                            _ => ::deser::__derive::None,
+                            #(#indexes => __deser::__derive::Some(#builders),)*
+                            _ => __deser::__derive::None,
                         }
                     }
                 },
                 quote! {
-                    ::deser::__derive::untagged_handle(__slot, &__Descriptor, __candidate #turbofish)
+                    __deser::__derive::untagged_handle(__slot, &__Descriptor, __candidate #turbofish)
                 },
             )
         }
@@ -496,10 +529,10 @@ pub fn derive_deserialize(
             #support
 
             #[automatically_derived]
-            impl #impl_generics ::deser::Deserialize for #ident #ty_generics #where_clause {
+            impl #impl_generics __deser::Deserialize for #ident #ty_generics #where_clause {
                 fn deserialize_into(
-                    __slot: &mut ::deser::__derive::Option<Self>,
-                ) -> ::deser::de::SinkHandle<'_> {
+                    __slot: &mut __deser::__derive::Option<Self>,
+                ) -> __deser::de::SinkHandle<'_> {
                     #handle
                 }
             }
@@ -519,7 +552,7 @@ fn fields_ser(
     };
     let tag_push = tag.map(|(tag, name)| {
         quote! {
-            __fields.push((#tag, ::deser::ser::SerializeHandle::to(&#name)));
+            __fields.push((#tag, __deser::ser::SerializeHandle::to(&#name)));
         }
     });
     let mut pushes = Vec::new();
@@ -537,10 +570,10 @@ fn fields_ser(
             conditions.push(quote! { #path(#binding) });
         }
         if container_attrs.skip_serializing_optionals() {
-            conditions.push(quote! { ::deser::ser::Serialize::is_optional(#binding) });
+            conditions.push(quote! { __deser::ser::Serialize::is_optional(#binding) });
         }
         let push = quote! {
-            __fields.push((#name, ::deser::ser::SerializeHandle::to(#binding)));
+            __fields.push((#name, __deser::ser::SerializeHandle::to(#binding)));
         };
         pushes.push(if conditions.is_empty() {
             push
@@ -554,10 +587,10 @@ fn fields_ser(
     }
     Ok(quote! {
         {
-            let mut __fields = ::deser::__derive::Vec::new();
+            let mut __fields = __deser::__derive::Vec::new();
             #tag_push
             #(#pushes)*
-            ::deser::__derive::FieldsSer(__fields)
+            __deser::__derive::FieldsSer(__fields)
         }
     })
 }
@@ -569,18 +602,18 @@ fn content_handle(
 ) -> syn::Result<TokenStream> {
     let bindings = info.bindings();
     Ok(match info.kind {
-        Kind::Unit => quote! { ::deser::ser::SerializeHandle::to(&()) },
-        Kind::Newtype(_) => quote! { ::deser::ser::SerializeHandle::to(__f0) },
+        Kind::Unit => quote! { __deser::ser::SerializeHandle::to(&()) },
+        Kind::Newtype(_) => quote! { __deser::ser::SerializeHandle::to(__f0) },
         Kind::Tuple(_) => quote! {
-            ::deser::ser::SerializeHandle::boxed(::deser::__derive::SeqSer(
-                ::deser::__derive::Vec::from([
-                    #(::deser::ser::SerializeHandle::to(#bindings)),*
+            __deser::ser::SerializeHandle::boxed(__deser::__derive::SeqSer(
+                __deser::__derive::Vec::from([
+                    #(__deser::ser::SerializeHandle::to(#bindings)),*
                 ])
             ))
         },
         Kind::Struct(_) => {
             let fields = fields_ser(info, container_attrs, None)?;
-            quote! { ::deser::ser::SerializeHandle::boxed(#fields) }
+            quote! { __deser::ser::SerializeHandle::boxed(#fields) }
         }
     })
 }
@@ -595,7 +628,11 @@ pub fn derive_serialize(
     let repr = repr(container_attrs);
     let variants = collect_variants(enumeration, container_attrs)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-    let where_clause = where_clause_with_bound(&input.generics, quote!(::deser::Serialize));
+    let where_clause = where_clause_with_bound(
+        &input.generics,
+        quote!(__deser::Serialize),
+        container_attrs.serialize_bound(),
+    );
 
     let mut arms = Vec::new();
     for info in &variants {
@@ -612,23 +649,23 @@ pub fn derive_serialize(
         };
 
         let tag_entry = |tag: &str| {
-            quote! { (#tag, ::deser::ser::SerializeHandle::to(&#name)) }
+            quote! { (#tag, __deser::ser::SerializeHandle::to(&#name)) }
         };
         let chunk = match (repr, &info.kind) {
             (Repr::External, Kind::Unit) => quote! {
-                ::deser::ser::Chunk::Atom(::deser::Atom::Str(::deser::__derive::Cow::Borrowed(#name)))
+                __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name)))
             },
             (Repr::External, _) => {
                 let content = content_handle(info, container_attrs)?;
                 quote! {
-                    ::deser::__derive::FieldsSer(::deser::__derive::Vec::from([(#name, #content)]))
+                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
                         .into_chunk()
                 }
             }
             (Repr::Internal { tag }, Kind::Unit) => {
                 let tag_entry = tag_entry(tag);
                 quote! {
-                    ::deser::__derive::FieldsSer(::deser::__derive::Vec::from([#tag_entry]))
+                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([#tag_entry]))
                         .into_chunk()
                 }
             }
@@ -637,13 +674,13 @@ pub fn derive_serialize(
                 quote! { #fields.into_chunk() }
             }
             (Repr::Internal { tag }, Kind::Newtype(_)) => quote! {
-                ::deser::__derive::TaggedNewtype::new(#tag, #name, __f0).into_chunk()
+                __deser::__derive::TaggedNewtype::new(#tag, #name, __f0).into_chunk()
             },
             (Repr::Internal { .. }, Kind::Tuple(_)) => unreachable!(),
             (Repr::Adjacent { tag, .. }, Kind::Unit) => {
                 let tag_entry = tag_entry(tag);
                 quote! {
-                    ::deser::__derive::FieldsSer(::deser::__derive::Vec::from([#tag_entry]))
+                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([#tag_entry]))
                         .into_chunk()
                 }
             }
@@ -651,7 +688,7 @@ pub fn derive_serialize(
                 let tag_entry = tag_entry(tag);
                 let content_handle = content_handle(info, container_attrs)?;
                 quote! {
-                    ::deser::__derive::FieldsSer(::deser::__derive::Vec::from([
+                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([
                         #tag_entry,
                         (#content, #content_handle),
                     ]))
@@ -659,14 +696,14 @@ pub fn derive_serialize(
                 }
             }
             (Repr::Untagged, Kind::Unit) => {
-                quote! { ::deser::ser::Chunk::Atom(::deser::Atom::Null) }
+                quote! { __deser::ser::Chunk::Atom(__deser::Atom::Null) }
             }
             (Repr::Untagged, Kind::Newtype(_)) => quote! {
-                ::deser::ser::Serialize::serialize(__f0, __state)?
+                __deser::ser::Serialize::serialize(__f0, __state)?
             },
             (Repr::Untagged, Kind::Tuple(_)) => quote! {
-                ::deser::__derive::SeqSer(::deser::__derive::Vec::from([
-                    #(::deser::ser::SerializeHandle::to(#bindings)),*
+                __deser::__derive::SeqSer(__deser::__derive::Vec::from([
+                    #(__deser::ser::SerializeHandle::to(#bindings)),*
                 ]))
                 .into_chunk()
             },
@@ -685,16 +722,16 @@ pub fn derive_serialize(
             #descriptor
 
             #[automatically_derived]
-            impl #impl_generics ::deser::Serialize for #ident #ty_generics #where_clause {
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     &__Descriptor
                 }
 
                 fn serialize(
                     &self,
-                    __state: &mut ::deser::ser::SerializerState,
-                ) -> ::deser::__derive::Result<::deser::ser::Chunk<'_>> {
-                    ::deser::__derive::Ok(match *self {
+                    __state: &mut __deser::ser::SerializerState,
+                ) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    __deser::__derive::Ok(match *self {
                         #(#arms)*
                     })
                 }

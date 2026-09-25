@@ -33,13 +33,25 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
     }
 }
 
-pub fn where_clause_with_bound(generics: &syn::Generics, bound: TokenStream) -> syn::WhereClause {
-    let new_predicates = generics
-        .type_params()
-        .map::<syn::WherePredicate, _>(|param| {
-            let param = &param.ident;
-            syn::parse_quote!(#param : #bound)
-        });
+/// Returns the where clause of the generics with added bounds.
+///
+/// If `custom` is `None` every type parameter gets the given bound.
+/// Otherwise the custom predicates are added instead.
+pub fn where_clause_with_bound(
+    generics: &syn::Generics,
+    bound: TokenStream,
+    custom: Option<&[syn::WherePredicate]>,
+) -> syn::WhereClause {
+    let new_predicates: Vec<syn::WherePredicate> = match custom {
+        Some(custom) => custom.to_vec(),
+        None => generics
+            .type_params()
+            .map(|param| {
+                let param = &param.ident;
+                syn::parse_quote!(#param : #bound)
+            })
+            .collect(),
+    };
 
     let mut generics = generics.clone();
     generics

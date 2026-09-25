@@ -8,6 +8,7 @@ members = [
   "deser-location",
   "deser-path",
   "deser-yaml",
+  "examples/crate-path",
   "examples/derive",
   "examples/enums",
   "examples/json",

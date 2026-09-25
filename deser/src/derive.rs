@@ -57,6 +57,9 @@
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
 //!   a field is optional.  At the moment only `None` and `()` are considered optional.
+//! * `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
+//!   `#[deser(deserialize_bound(...))]`: see [bounds](#bounds).
+//! * `#[deser(crate = path)]`: see [crate path](#crate-path).
 //!
 //! ## Enums
 //!
@@ -115,6 +118,9 @@
 //! * `#[deser(untagged)]`: makes the enum untagged.
 //! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
 //!   set in struct variants when serializing.
+//! * `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
+//!   `#[deser(deserialize_bound(...))]`: see [bounds](#bounds).
+//! * `#[deser(crate = path)]`: see [crate path](#crate-path).
 //!
 //! ## Struct Field Attributes
 //!
@@ -147,6 +153,55 @@
 //!
 //! The fields of struct variants support the same attributes as struct fields,
 //! except for `flatten` which is only supported for deserialization.
+//!
+//! ## Bounds
+//!
+//! By default the derive requires every type parameter to implement the
+//! derived trait (`T: Serialize` or `T: Deserialize`, for enums also
+//! `T: 'static` when deserializing).  This is wrong when a type parameter
+//! is not serialized itself, for instance when only an associated type is.
+//! The bounds can be replaced with a list of where predicates:
+//!
+//! * `#[deser(bound(...))]` replaces the bounds for both derives.
+//! * `#[deser(serialize_bound(...))]` and `#[deser(deserialize_bound(...))]`
+//!   replace them for one derive and take precedence over `bound`.
+//!
+//! The predicates are added to the where clause of the type.  `bound()`
+//! removes the inferred bounds entirely.  As with other attributes, `Self`
+//! is not supported.
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! pub trait Kind {
+//!     type Value;
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(
+//!     serialize_bound(K::Value: Serialize),
+//!     deserialize_bound(K::Value: Deserialize),
+//! )]
+//! pub struct Holder<K: Kind> {
+//!     value: K::Value,
+//! }
+//! ```
+//!
+//! ## Crate Path
+//!
+//! The generated code refers to the deser crate as `deser`.  If it is
+//! available under a different name, because it was renamed in `Cargo.toml`
+//! or is re-exported by another crate, the path can be set with
+//! `#[deser(crate = path)]`:
+//!
+//! ```
+//! # mod framework { pub mod serialization { pub use deser::*; } }
+//! #[derive(framework::serialization::Serialize)]
+//! #[deser(crate = framework::serialization)]
+//! pub struct User {
+//!     name: String,
+//! }
+//! ```
 //!
 //! ## Default Expressions
 //!

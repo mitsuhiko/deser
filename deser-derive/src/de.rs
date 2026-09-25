@@ -50,11 +50,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             let ty = &f.field().ty;
             if f.flatten() {
                 quote! {
-                    ::deser::de::OwnedSink<#ty>
+                    __deser::de::OwnedSink<#ty>
                 }
             } else {
                 quote! {
-                    ::deser::__derive::Option<#ty>
+                    __deser::__derive::Option<#ty>
                 }
             }
         })
@@ -64,15 +64,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .map(|f| {
             if f.flatten() {
                 quote! {
-                    ::deser::de::OwnedSink::deserialize()
+                    __deser::de::OwnedSink::deserialize()
                 }
             } else if f.default().is_some() {
                 quote! {
-                    ::deser::__derive::None
+                    __deser::__derive::None
                 }
             } else {
                 quote! {
-                    ::deser::de::Deserialize::__private_initial_value()
+                    __deser::de::Deserialize::__private_initial_value()
                 }
             }
         })
@@ -111,13 +111,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 #rv => __Key::Field(#index),
             });
             key_dispatch.push(quote! {
-                __Key::Field(#index) => ::deser::Deserialize::deserialize_into(&mut self.#fieldname),
+                __Key::Field(#index) => __deser::Deserialize::deserialize_into(&mut self.#fieldname),
             });
             key_atom_dispatch.push(quote! {
-                __Key::Field(#index) => ::deser::__derive::atom_into(&mut self.#fieldname, __atom, __state),
+                __Key::Field(#index) => __deser::__derive::atom_into(&mut self.#fieldname, __atom, __state),
             });
             Some(quote! {
-                #rv => return ::deser::__derive::Ok(::deser::__derive::Some(::deser::Deserialize::deserialize_into(&mut self.#fieldname))),
+                #rv => return __deser::__derive::Ok(__deser::__derive::Some(__deser::Deserialize::deserialize_into(&mut self.#fieldname))),
             })
         })
         .collect::<Vec<_>>();
@@ -131,14 +131,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(::deser::Deserialize);
-    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+    let bound = syn::parse_quote!(__deser::Deserialize);
+    let bounded_where_clause =
+        where_clause_with_bound(&input.generics, bound, container_attrs.deserialize_bound());
 
     let field_stage1_default = attrs
         .iter()
         .map(|attrs| match attrs.default() {
             Some(TypeDefault::Implicit) => {
-                quote! { take().unwrap_or_else(::deser::__derive::Default::default) }
+                quote! { take().unwrap_or_else(__deser::__derive::Default::default) }
             }
             Some(TypeDefault::Explicit(expr)) => {
                 quote! { take().unwrap_or_else(|| #expr) }
@@ -160,8 +161,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 );
                 quote! {
                     match #name {
-                        ::deser::__derive::Some(val) => val,
-                        ::deser::__derive::None => return ::deser::__derive::Err(::deser::Error::new(::deser::ErrorKind::Unexpected, #error))
+                        __deser::__derive::Some(val) => val,
+                        __deser::__derive::None => return __deser::__derive::Err(__deser::Error::new(__deser::ErrorKind::Unexpected, #error))
                     }
                 }
             } else if container_attrs.default().is_some() {
@@ -170,8 +171,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 let str_name = attrs.name(&container_attrs);
                 quote! {
                     match #name {
-                        ::deser::__derive::Some(val) => val,
-                        ::deser::__derive::None => return ::deser::__derive::Err(::deser::__derive::new_missing_field_error(#str_name))
+                        __deser::__derive::Some(val) => val,
+                        __deser::__derive::None => return __deser::__derive::Err(__deser::__derive::new_missing_field_error(#str_name))
                     }
                 }
             }
@@ -209,7 +210,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 need_container_default.into_iter().unzip();
             let type_default = match container_attrs.default().unwrap() {
                 TypeDefault::Implicit => quote! {
-                    <#ident as ::deser::__derive::Default>::default()
+                    <#ident as __deser::__derive::Default>::default()
                 },
                 TypeDefault::Explicit(expr) => expr.clone(),
             };
@@ -238,7 +239,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     // looked up on the flattened sinks.
     let has_flatten = !flatten_fields.is_empty();
     let other_key_variant = if has_flatten {
-        Some(quote! { Other(::deser::__derive::String), })
+        Some(quote! { Other(__deser::__derive::String), })
     } else {
         None
     };
@@ -250,8 +251,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let other_key_dispatch = if has_flatten {
         Some(quote! {
             __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
-                ::deser::__derive::Some(__sink) => __sink,
-                ::deser::__derive::None => ::deser::de::SinkHandle::null(),
+                __deser::__derive::Some(__sink) => __sink,
+                __deser::__derive::None => __deser::de::SinkHandle::null(),
             },
         })
     } else {
@@ -260,8 +261,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let other_key_atom_dispatch = if has_flatten {
         Some(quote! {
             __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
-                ::deser::__derive::Some(__sink) => ::deser::__derive::atom_into_handle(__sink, __atom, __state),
-                ::deser::__derive::None => ::deser::__derive::Ok(()),
+                __deser::__derive::Some(__sink) => __deser::__derive::atom_into_handle(__sink, __atom, __state),
+                __deser::__derive::None => __deser::__derive::Ok(()),
             },
         })
     } else {
@@ -280,33 +281,33 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 key: __Key,
             }
 
-            impl ::deser::de::Sink for __KeySink {
+            impl __deser::de::Sink for __KeySink {
                 fn atom(
                     &mut self,
-                    __atom: ::deser::Atom,
-                    __state: &mut ::deser::de::DeserializerState,
-                ) -> ::deser::__derive::Result<()> {
+                    __atom: __deser::Atom,
+                    __state: &mut __deser::de::DeserializerState,
+                ) -> __deser::__derive::Result<()> {
                     match __atom {
-                        ::deser::Atom::Str(__other) => {
-                            self.key = match &__other as &::deser::__derive::str {
+                        __deser::Atom::Str(__other) => {
+                            self.key = match &__other as &__deser::__derive::str {
                                 #(
                                     #key_matcher
                                 )*
                                 _ => #other_key_match,
                             };
-                            ::deser::__derive::Ok(())
+                            __deser::__derive::Ok(())
                         }
                         __other => self.unexpected_atom(__other, __state),
                     }
                 }
 
-                fn expecting(&self) -> ::deser::__derive::StrCow<'_> {
-                    ::deser::__derive::StrCow::Borrowed("string")
+                fn expecting(&self) -> __deser::__derive::StrCow<'_> {
+                    __deser::__derive::StrCow::Borrowed("string")
                 }
             }
 
             struct __Sink #wrapper_impl_generics #where_clause {
-                slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
+                slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
                 key: __KeySink,
                 #(
                     #sink_fieldname: #sink_fieldty,
@@ -314,11 +315,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
 
             #[automatically_derived]
-            impl #impl_generics ::deser::Deserialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics __deser::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
-                    __slot: &mut ::deser::__derive::Option<Self>,
-                ) -> ::deser::de::SinkHandle<'_> {
-                    ::deser::de::SinkHandle::boxed(__Sink {
+                    __slot: &mut __deser::__derive::Option<Self>,
+                ) -> __deser::de::SinkHandle<'_> {
+                    __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         key: __KeySink { key: __Key::Unknown },
                         #(
@@ -329,59 +330,59 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
 
             #[automatically_derived]
-            impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+            impl #wrapper_impl_generics __deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
+                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     &__Descriptor
                 }
 
-                fn map(&mut self, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+                fn map(&mut self, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
-                    ::deser::__derive::Ok(())
+                    __deser::__derive::Ok(())
                 }
 
-                fn next_key(&mut self, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
+                fn next_key(&mut self, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
                 {
                     self.key.key = __Key::Unknown;
-                    ::deser::__derive::Ok(::deser::de::SinkHandle::to(&mut self.key))
+                    __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
                 }
 
-                fn next_value(&mut self, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
+                fn next_value(&mut self, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
                 {
-                    ::deser::__derive::Ok(match ::deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                    __deser::__derive::Ok(match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
                         #(
                             #key_dispatch
                         )*
                         #other_key_dispatch
                         #[allow(unreachable_patterns)]
-                        __Key::Unknown | __Key::Field(_) => ::deser::de::SinkHandle::null(),
+                        __Key::Unknown | __Key::Field(_) => __deser::de::SinkHandle::null(),
                     })
                 }
 
-                fn key_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+                fn key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
                     self.key.key = __Key::Unknown;
-                    ::deser::de::Sink::atom(&mut self.key, __atom, __state)
+                    __deser::de::Sink::atom(&mut self.key, __atom, __state)
                 }
 
-                fn value_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+                fn value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
-                    match ::deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                    match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
                         #(
                             #key_atom_dispatch
                         )*
                         #other_key_atom_dispatch
                         #[allow(unreachable_patterns)]
-                        __Key::Unknown | __Key::Field(_) => ::deser::__derive::Ok(()),
+                        __Key::Unknown | __Key::Field(_) => __deser::__derive::Ok(()),
                     }
                 }
 
-                fn value_for_key(&mut self, __key: &str, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle<'_>>>
+                fn value_for_key(&mut self, __key: &str, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_>>>
                 {
                     match __key {
                         #(
@@ -389,16 +390,16 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         )*
                         __other => {
                             #(
-                                if let ::deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other, __state)? {
-                                    return ::deser::__derive::Ok(::deser::__derive::Some(__sink));
+                                if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other, __state)? {
+                                    return __deser::__derive::Ok(__deser::__derive::Some(__sink));
                                 }
                             )*
                         }
                     }
-                    ::deser::__derive::Ok(::deser::__derive::None)
+                    __deser::__derive::Ok(__deser::__derive::None)
                 }
 
-                fn finish(&mut self, __state: &mut ::deser::de::DeserializerState) -> ::deser::__derive::Result<()> {
+                fn finish(&mut self, __state: &mut __deser::de::DeserializerState) -> __deser::__derive::Result<()> {
                     #![allow(unused_mut)]
                     #(
                         self.#flatten_fields.borrow_mut().finish(__state)?;
@@ -407,20 +408,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
                     )*
                     #stage2_default
-                    *self.slot = ::deser::__derive::Some(#ident {
+                    *self.slot = __deser::__derive::Some(#ident {
                         #(
                             #fieldname: #field_take,
                         )*
                     });
-                    ::deser::__derive::Ok(())
+                    __deser::__derive::Ok(())
                 }
             }
 
             struct __Descriptor;
 
-            impl ::deser::Descriptor for __Descriptor {
-                fn name(&self) -> ::deser::__derive::Option<&::deser::__derive::str> {
-                    ::deser::__derive::Some(#type_name)
+            impl __deser::Descriptor for __Descriptor {
+                fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
+                    __deser::__derive::Some(#type_name)
                 }
             }
         };
@@ -496,8 +497,8 @@ pub fn derive_enum(
             quote! { #ident::#var_ident }
         }
         None => quote! {
-            return ::deser::__derive::Err(
-                ::deser::Error::new(::deser::ErrorKind::Unexpected, "unexpected value for enum")
+            return __deser::__derive::Err(
+                __deser::Error::new(__deser::ErrorKind::Unexpected, "unexpected value for enum")
             )
         },
     };
@@ -512,18 +513,18 @@ pub fn derive_enum(
         const _: () = {
             #[repr(transparent)]
             struct __SlotWrapper {
-                slot: ::deser::__derive::Option<#ident>,
+                slot: __deser::__derive::Option<#ident>,
             }
 
             #[automatically_derived]
-            impl ::deser::de::Deserialize for #ident {
+            impl __deser::de::Deserialize for #ident {
                 fn deserialize_into(
-                    __slot: &mut ::deser::__derive::Option<Self>
-                ) -> ::deser::de::SinkHandle<'_> {
-                    ::deser::de::SinkHandle::to(unsafe {
+                    __slot: &mut __deser::__derive::Option<Self>
+                ) -> __deser::de::SinkHandle<'_> {
+                    __deser::de::SinkHandle::to(unsafe {
                         &mut *{
                             __slot
-                            as *mut ::deser::__derive::Option<Self>
+                            as *mut __deser::__derive::Option<Self>
                             as *mut __SlotWrapper
                         }
                     })
@@ -531,38 +532,38 @@ pub fn derive_enum(
 
                 #[inline]
                 fn __private_atom_into(
-                    __slot: &mut ::deser::__derive::Option<Self>,
-                    __atom: ::deser::Atom,
-                    __state: &mut ::deser::de::DeserializerState,
-                ) -> ::deser::__derive::Result<()> {
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom,
+                    __state: &mut __deser::de::DeserializerState,
+                ) -> __deser::__derive::Result<()> {
                     let __sink = unsafe {
                         &mut *{
                             __slot
-                            as *mut ::deser::__derive::Option<Self>
+                            as *mut __deser::__derive::Option<Self>
                             as *mut __SlotWrapper
                         }
                     };
-                    ::deser::de::Sink::atom(__sink, __atom, __state)?;
-                    ::deser::de::Sink::finish(__sink, __state)
+                    __deser::de::Sink::atom(__sink, __atom, __state)?;
+                    __deser::de::Sink::finish(__sink, __state)
                 }
             }
 
-            impl ::deser::de::Sink for __SlotWrapper {
+            impl __deser::de::Sink for __SlotWrapper {
                 fn atom(
                     &mut self,
-                    __atom: ::deser::Atom,
-                    __state: &mut ::deser::de::DeserializerState
-                ) -> ::deser::__derive::Result<()> {
+                    __atom: __deser::Atom,
+                    __state: &mut __deser::de::DeserializerState
+                ) -> __deser::__derive::Result<()> {
                     let s = match __atom {
-                        ::deser::Atom::Str(ref s) => &s as &::deser::__derive::str,
+                        __deser::Atom::Str(ref s) => &s as &__deser::__derive::str,
                         __other => return self.unexpected_atom(__other, __state),
                     };
                     let value = match s {
                         #( #matcher => #ident::#var_idents, )*
                         _ => #fallback
                     };
-                    self.slot = ::deser::__derive::Some(value);
-                    ::deser::__derive::Ok(())
+                    self.slot = __deser::__derive::Some(value);
+                    __deser::__derive::Ok(())
                 }
             }
         };
@@ -584,75 +585,76 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(::deser::Deserialize);
-    let bounded_where_clause = where_clause_with_bound(&input.generics, bound);
+    let bound = syn::parse_quote!(__deser::Deserialize);
+    let bounded_where_clause =
+        where_clause_with_bound(&input.generics, bound, container_attrs.deserialize_bound());
 
     Ok(quote! {
         const _: () = {
             struct __Sink #wrapper_impl_generics #where_clause {
-                slot: &'__a mut ::deser::__derive::Option<#ident #ty_generics>,
-                sink: ::deser::de::OwnedSink<#field_type>,
+                slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
+                sink: __deser::de::OwnedSink<#field_type>,
             }
 
             #[automatically_derived]
-            impl #impl_generics ::deser::de::Deserialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics __deser::de::Deserialize for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
-                    __slot: &mut ::deser::__derive::Option<Self>
-                ) -> ::deser::de::SinkHandle<'_> {
-                    ::deser::de::SinkHandle::boxed(__Sink {
+                    __slot: &mut __deser::__derive::Option<Self>
+                ) -> __deser::de::SinkHandle<'_> {
+                    __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
-                        sink: ::deser::de::OwnedSink::deserialize(),
+                        sink: __deser::de::OwnedSink::deserialize(),
                     })
                 }
 
                 #[inline]
                 fn __private_atom_into(
-                    __slot: &mut ::deser::__derive::Option<Self>,
-                    __atom: ::deser::Atom,
-                    __state: &mut ::deser::de::DeserializerState,
-                ) -> ::deser::__derive::Result<()> {
-                    let mut __inner = ::deser::__derive::None;
-                    <#field_type as ::deser::de::Deserialize>::__private_atom_into(&mut __inner, __atom, __state)?;
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom,
+                    __state: &mut __deser::de::DeserializerState,
+                ) -> __deser::__derive::Result<()> {
+                    let mut __inner = __deser::__derive::None;
+                    <#field_type as __deser::de::Deserialize>::__private_atom_into(&mut __inner, __atom, __state)?;
                     *__slot = __inner.map(#ident);
-                    ::deser::__derive::Ok(())
+                    __deser::__derive::Ok(())
                 }
             }
 
-            impl #wrapper_impl_generics ::deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+            impl #wrapper_impl_generics __deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
+                fn atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
                     self.sink.borrow_mut().atom(__atom, __state)
                 }
 
-                fn map(&mut self, __state: &mut ::deser::de::DeserializerState) -> ::deser::__derive::Result<()> {
+                fn map(&mut self, __state: &mut __deser::de::DeserializerState) -> __deser::__derive::Result<()> {
                     self.sink.borrow_mut().map(__state)
                 }
 
-                fn seq(&mut self, __state: &mut ::deser::de::DeserializerState) -> ::deser::__derive::Result<()>  {
+                fn seq(&mut self, __state: &mut __deser::de::DeserializerState) -> __deser::__derive::Result<()>  {
                     self.sink.borrow_mut().seq(__state)
                 }
 
-                fn next_key(&mut self, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
+                fn next_key(&mut self, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
                 {
                     self.sink.borrow_mut().next_key(__state)
                 }
 
-                fn next_value(&mut self, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<::deser::de::SinkHandle<'_>>
+                fn next_value(&mut self, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
                 {
                     self.sink.borrow_mut().next_value(__state)
                 }
 
-                fn key_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+                fn key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
                     self.sink.borrow_mut().key_atom(__atom, __state)
                 }
 
-                fn value_atom(&mut self, __atom: ::deser::Atom, __state: &mut ::deser::de::DeserializerState)
-                    -> ::deser::__derive::Result<()>
+                fn value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::de::DeserializerState)
+                    -> __deser::__derive::Result<()>
                 {
                     self.sink.borrow_mut().value_atom(__atom, __state)
                 }
@@ -660,22 +662,22 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 fn value_for_key(
                     &mut self,
                     __key: &str,
-                    __state: &mut ::deser::de::DeserializerState,
-                ) -> ::deser::__derive::Result<::deser::__derive::Option<::deser::de::SinkHandle<'_>>> {
+                    __state: &mut __deser::de::DeserializerState,
+                ) -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_>>> {
                     self.sink.borrow_mut().value_for_key(__key, __state)
                 }
 
-                fn finish(&mut self, __state: &mut ::deser::de::DeserializerState) -> ::deser::__derive::Result<()> {
+                fn finish(&mut self, __state: &mut __deser::de::DeserializerState) -> __deser::__derive::Result<()> {
                     self.sink.borrow_mut().finish(__state)?;
                     *self.slot = self.sink.take().map(#ident);
                     Ok(())
                 }
 
-                fn descriptor(&self) -> &'static dyn ::deser::Descriptor {
+                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     self.sink.borrow().descriptor()
                 }
 
-                fn expecting(&self) -> ::deser::__derive::StrCow<'_> {
+                fn expecting(&self) -> __deser::__derive::StrCow<'_> {
                     self.sink.borrow().expecting()
                 }
             }

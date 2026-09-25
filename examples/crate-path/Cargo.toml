@@ -1,0 +1,10 @@
+[package]
+name = "crate-path"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# deser under a different name, so `::deser` does not exist in this crate
+serialization = { package = "deser", path = "../../deser" }
+deser-json = { path = "../../deser-json" }

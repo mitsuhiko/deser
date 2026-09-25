@@ -33,6 +33,46 @@
 /// }
 /// ```
 ///
+/// `Self` is not supported in bounds.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(bound(Self: Clone))]
+/// struct Test<T> {
+///     field: T,
+/// }
+/// ```
+///
+/// Bounds are lists in parentheses.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(bound = T: deser::Serialize)]
+/// struct Test<T> {
+///     field: T,
+/// }
+/// ```
+///
+/// Custom bounds replace the inferred bounds.
+///
+/// ```compile_fail,E0277
+/// #[derive(deser::Serialize)]
+/// #[deser(bound())]
+/// struct Test<T> {
+///     field: T,
+/// }
+/// ```
+///
+/// The crate path must exist.
+///
+/// ```compile_fail,E0432
+/// #[derive(deser::Serialize)]
+/// #[deser(crate = does_not_exist)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
 /// Closures are not supported in default expressions.
 ///
 /// ```compile_fail

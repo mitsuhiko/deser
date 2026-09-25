@@ -49,6 +49,10 @@ pub struct ContainerAttrs<'a> {
     tag: Option<String>,
     content: Option<String>,
     untagged: bool,
+    crate_path: Option<syn::Path>,
+    bound: Option<Vec<syn::WherePredicate>>,
+    serialize_bound: Option<Vec<syn::WherePredicate>>,
+    deserialize_bound: Option<Vec<syn::WherePredicate>>,
 }
 
 /// Invokes `logic` for every item in all `#[deser(...)]` attributes.
@@ -143,6 +147,21 @@ fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
     Ok(path)
 }
 
+/// Parses `bound(T: Trait, U: Other)` into where predicates.
+fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<Vec<syn::WherePredicate>> {
+    if !meta.input.peek(syn::token::Paren) {
+        return Err(meta.error("expected a list of where predicates: `bound(T: Trait)`"));
+    }
+    let content;
+    syn::parenthesized!(content in meta.input);
+    let predicates =
+        syn::punctuated::Punctuated::<syn::WherePredicate, syn::Token![,]>::parse_terminated(
+            &content,
+        )?;
+    reject_self(predicates.to_token_stream())?;
+    Ok(predicates.into_iter().collect())
+}
+
 /// Parses `default` or `default = expr`.
 ///
 /// String literals are converted with `Into` so that they can be used as
@@ -162,7 +181,7 @@ fn parse_default(meta: &ParseNestedMeta) -> syn::Result<TypeDefault> {
         syn::Expr::Lit(syn::ExprLit {
             lit: syn::Lit::Str(ref lit),
             ..
-        }) => quote! { ::deser::__derive::Into::into(#lit) },
+        }) => quote! { __deser::__derive::Into::into(#lit) },
         expr => expr.into_token_stream(),
     }))
 }
@@ -178,6 +197,10 @@ impl<'a> ContainerAttrs<'a> {
             tag: None,
             content: None,
             untagged: false,
+            crate_path: None,
+            bound: None,
+            serialize_bound: None,
+            deserialize_bound: None,
         };
         let is_enum = matches!(input.data, syn::Data::Enum(_));
 
@@ -215,6 +238,25 @@ impl<'a> ContainerAttrs<'a> {
             }
             "skip_serializing_optionals" => {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)
+            }
+            "crate" => {
+                let value = meta
+                    .value()?
+                    .parse()
+                    .map_err(|err| syn::Error::new(err.span(), "expected a path to the crate"))?;
+                set_once(meta, name, &mut rv.crate_path, value)
+            }
+            "bound" => {
+                let value = parse_bound(meta)?;
+                set_once(meta, name, &mut rv.bound, value)
+            }
+            "serialize_bound" => {
+                let value = parse_bound(meta)?;
+                set_once(meta, name, &mut rv.serialize_bound, value)
+            }
+            "deserialize_bound" => {
+                let value = parse_bound(meta)?;
+                set_once(meta, name, &mut rv.deserialize_bound, value)
             }
             _ => Err(meta.error("unsupported attribute")),
         })?;
@@ -304,6 +346,31 @@ impl<'a> ContainerAttrs<'a> {
 
     pub fn untagged(&self) -> bool {
         self.untagged
+    }
+
+    /// Returns the path to the deser crate if it was overridden.
+    pub fn crate_path(&self) -> Option<&syn::Path> {
+        self.crate_path.as_ref()
+    }
+
+    /// Returns the custom where predicates for the `Serialize` impl.
+    ///
+    /// If this returns `Some` the predicates replace the inferred bounds.
+    pub fn serialize_bound(&self) -> Option<&[syn::WherePredicate]> {
+        self.serialize_bound
+            .as_ref()
+            .or(self.bound.as_ref())
+            .map(|x| &x[..])
+    }
+
+    /// Returns the custom where predicates for the `Deserialize` impl.
+    ///
+    /// If this returns `Some` the predicates replace the inferred bounds.
+    pub fn deserialize_bound(&self) -> Option<&[syn::WherePredicate]> {
+        self.deserialize_bound
+            .as_ref()
+            .or(self.bound.as_ref())
+            .map(|x| &x[..])
     }
 
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
