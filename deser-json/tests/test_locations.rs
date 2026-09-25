@@ -1,4 +1,3 @@
-#![cfg(feature = "locations")]
 use deser::Deserialize;
 use deser_location::Spanned;
 

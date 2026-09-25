@@ -1,5 +1,6 @@
 //! The state shared between data formats and the types they process.
 use std::fmt;
+use std::sync::Arc;
 
 use crate::descriptors::Descriptor;
 use crate::extensions::Extensions;
@@ -43,6 +44,7 @@ pub struct State {
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
+    source: Option<Arc<str>>,
 }
 
 impl State {
@@ -53,6 +55,7 @@ impl State {
             descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
             is_map_key: false,
             input_range: NO_RANGE,
+            source: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl State {
                 descriptor_stack: Vec::new(),
                 is_map_key: false,
                 input_range: NO_RANGE,
+                source: None,
             },
         )
     }
@@ -211,8 +215,8 @@ impl State {
     ///
     /// This is only available if the format provides it (see
     /// [`DeserializeDriver::emit_at`](crate::de::DeserializeDriver::emit_at)).
-    /// The range can be resolved into lines and columns for instance with the
-    /// `deser-location` crate.
+    /// The range refers to the [`source`](Self::source) and can be resolved
+    /// into lines and columns for instance with the `deser-location` crate.
     #[inline]
     pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
         let (start, end) = self.input_range;
@@ -221,6 +225,25 @@ impl State {
         } else {
             Some(start..end)
         }
+    }
+
+    /// Returns the source the input ranges refer to.
+    ///
+    /// Input ranges are cheap to publish, but resolving them into lines and
+    /// columns requires the source.  As this requires a copy of the input,
+    /// formats only provide it when asked to (for instance with their
+    /// `track_locations` option).
+    #[inline]
+    pub fn source(&self) -> Option<&Arc<str>> {
+        self.source.as_ref()
+    }
+
+    /// Sets the source the input ranges refer to.
+    ///
+    /// See [`source`](Self::source).  Formats call this before emitting the
+    /// first event.
+    pub fn set_source<S: Into<Arc<str>>>(&mut self, source: S) {
+        self.source = Some(source.into());
     }
 }
 
@@ -261,6 +284,10 @@ impl fmt::Debug for State {
             .field("stack", &Stack(&self.descriptor_stack))
             .field("is_map_key", &self.is_map_key)
             .field("input_range", &self.input_range())
+            .field(
+                "source_len",
+                &self.source.as_ref().map(|source| source.len()),
+            )
             .finish()
     }
 }

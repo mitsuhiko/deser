@@ -6,6 +6,6 @@ publish = false
 
 [dependencies]
 deser = { path = "../../deser" }
-deser-json = { path = "../../deser-json", features = ["locations"] }
+deser-json = { path = "../../deser-json" }
 deser-location = { path = "../../deser-location" }
 deser-path = { path = "../../deser-path" }

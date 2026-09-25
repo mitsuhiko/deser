@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use deser::de::{Deserialize, DeserializeDriver};
 use deser::{Atom, Error, ErrorKind, Event};
@@ -35,7 +36,6 @@ const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
 /// "billion laughs" attack) the number of events produced by aliases is
 /// limited, see [`alias_limit`](Self::alias_limit).
 pub struct Deserializer<'a> {
-    #[cfg_attr(not(feature = "locations"), allow(dead_code))]
     input: &'a str,
     parser: Parser<'a>,
     peeked: Option<YamlEvent<'a>>,
@@ -50,8 +50,9 @@ pub struct Deserializer<'a> {
     merge_keys: bool,
     /// The input contains `<<`.  Otherwise there cannot be merge keys.
     has_merge_marker: bool,
-    #[cfg(feature = "locations")]
     track_locations: bool,
+    /// The input as source for location tracking, shared by all documents.
+    source: Option<Arc<str>>,
     doc: Document<'a>,
 }
 
@@ -344,8 +345,8 @@ impl<'a> Deserializer<'a> {
             alias_limit: DEFAULT_ALIAS_LIMIT,
             merge_keys: true,
             has_merge_marker: input.contains("<<"),
-            #[cfg(feature = "locations")]
             track_locations: false,
+            source: None,
             doc: Document::default(),
         }
     }
@@ -446,12 +447,13 @@ impl<'a> Deserializer<'a> {
     ///
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
-    /// enabled additionally a source map is installed as
-    /// [`Locations`](deser_location::Locations) which resolves the ranges
-    /// into lines and columns.  Types like
-    /// [`Spanned`](deser_location::Spanned) can then pick them up.  Values
-    /// produced by aliases report the location of the anchored node.
-    #[cfg(feature = "locations")]
+    /// enabled additionally the input is set as source (see
+    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// ranges into lines and columns, for instance with the `Spanned` type
+    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
+    /// the input.
+    ///
+    /// Values produced by aliases report the location of the anchored node.
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
         self
@@ -552,12 +554,9 @@ impl<'a> Deserializer<'a> {
         };
         self.doc.reset(version);
 
-        #[cfg(feature = "locations")]
         if self.track_locations {
-            deser_location::Locations::set_source_map(
-                driver.state_mut(),
-                std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
-            );
+            let source = self.source.get_or_insert_with(|| self.input.into());
+            driver.state_mut().set_source(source.clone());
         }
         let rv = self.drive_document(driver);
 

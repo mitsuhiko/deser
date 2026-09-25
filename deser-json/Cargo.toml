@@ -12,14 +12,13 @@ documentation = "https://docs.rs/deser-json"
 
 [features]
 speedups = ["itoa", "ryu", "simdutf8"]
-locations = ["deser-location"]
 
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
 itoa = { version = "1.0.1", optional = true }
 ryu = { version = "1.0.9", optional = true }
 simdutf8 = { version = "0.1.5", optional = true }
-deser-location = { version = "0.8.0", path = "../deser-location", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-location = { version = "0.8.0", path = "../deser-location" }

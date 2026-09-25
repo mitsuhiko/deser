@@ -30,7 +30,6 @@ pub struct Deserializer<'a> {
     buffer: Vec<u8>,
     // `true` if the input is a byte slice which needs to be validated
     validate_utf8: bool,
-    #[cfg(feature = "locations")]
     track_locations: bool,
 }
 
@@ -51,7 +50,6 @@ impl<'a> Deserializer<'a> {
             validate_utf8: false,
             pos: 0,
             buffer: Vec::new(),
-            #[cfg(feature = "locations")]
             track_locations: false,
         }
     }
@@ -73,18 +71,17 @@ impl<'a> Deserializer<'a> {
     ///
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
-    /// enabled additionally a source map is installed as
-    /// [`Locations`](deser_location::Locations) which resolves the ranges
-    /// into lines and columns.  Types like
-    /// [`Spanned`](deser_location::Spanned) can then pick them up.
-    #[cfg(feature = "locations")]
+    /// enabled additionally the input is set as source (see
+    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// ranges into lines and columns, for instance with the `Spanned` type
+    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
+    /// the input.
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
         self
     }
 
-    /// Returns the input as string for the source map.
-    #[cfg(feature = "locations")]
+    /// Returns the input as string for the source.
     fn source(&self) -> std::borrow::Cow<'a, str> {
         if self.validate_utf8 {
             // invalid UTF-8 fails the parsing when reached, the offsets of
@@ -115,12 +112,9 @@ impl<'a> Deserializer<'a> {
         // the scratch buffer for strings is moved out of the deserializer
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
-        #[cfg(feature = "locations")]
         if self.track_locations {
-            deser_location::Locations::set_source_map(
-                driver.state_mut(),
-                std::sync::Arc::new(deser_location::SourceMap::new(self.source())),
-            );
+            let source = self.source();
+            driver.state_mut().set_source(source);
         }
         let rv = self.drive_impl(driver, &mut buffer);
         self.buffer = buffer;

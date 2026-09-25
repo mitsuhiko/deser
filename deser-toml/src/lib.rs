@@ -80,8 +80,6 @@
 //! # Features
 //!
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
-//! * `locations`: enables [`Deserializer::track_locations`] which publishes
-//!   source locations through [`deser_location`](https://docs.rs/deser-location).
 mod datetime;
 mod de;
 mod document;

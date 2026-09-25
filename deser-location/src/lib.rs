@@ -1,10 +1,12 @@
 //! This crate provides source locations (line and column) for deser.
 //!
 //! Formats publish the byte range in the input of every event they emit
-//! into the [`State`] (see [`State::input_range`]).  This crate resolves
-//! these ranges into lines and columns with a [`SourceMap`] that is
-//! installed as [`Locations`] and types can pick them up while they are
-//! deserialized.  The simplest way to do that is the [`Spanned`] wrapper:
+//! into the [`State`] (see [`State::input_range`]) and, if location tracking
+//! is requested, the source these ranges refer to (see [`State::source`]).
+//! This crate resolves the ranges into lines and columns with a
+//! [`SourceMap`] (see [`Locations`]) and types can pick them up while they
+//! are deserialized.  The simplest way to do that is the [`Spanned`]
+//! wrapper:
 //!
 //! ```
 //! # use deser::Deserialize;
@@ -18,22 +20,23 @@
 //!
 //! # Implementing Location Support in Formats
 //!
-//! Formats emit every event together with its byte range with
+//! Formats do not depend on this crate.  They emit every event together
+//! with its byte range with
 //! [`DeserializeDriver::emit_at`](deser::de::DeserializeDriver::emit_at)
-//! and install a [`SourceMap`] once if locations are requested.  Lines and
-//! columns are only computed when a consumer asks for them:
+//! and set the source with [`State::set_source`] if locations are
+//! requested.  The source map is built when a consumer asks for a location
+//! for the first time:
 //!
 //! ```
-//! use std::sync::Arc;
 //! use deser::de::DeserializeDriver;
 //! use deser::Event;
-//! use deser_location::{Locations, SourceMap, Spanned};
+//! use deser_location::Spanned;
 //!
 //! let input = "true";
 //! let mut out = None::<Spanned<bool>>;
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
-//!     Locations::set_source_map(driver.state_mut(), Arc::new(SourceMap::new(input)));
+//!     driver.state_mut().set_source(input);
 //!     driver.emit_at(Event::from(true), 0, 4).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
@@ -211,30 +214,43 @@ impl SourceMap {
 
 /// Location information in the [`State`].
 ///
-/// Formats install a [`SourceMap`] which resolves the input ranges of the
-/// events (see [`State::input_range`]).  Consumers retrieve the resolved
-/// span of the current event with [`current_span`](Self::current_span).
+/// This resolves the input ranges of the events (see
+/// [`State::input_range`]) into lines and columns with a [`SourceMap`] of the
+/// source (see [`State::source`]).  The source map is built on first use and
+/// cached in the state.  Consumers retrieve the resolved span of the current
+/// event with [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
 }
 
 impl Locations {
-    /// Installs the source map.  Called by formats once.
-    pub fn set_source_map(state: &mut State, source_map: Arc<SourceMap>) {
-        state.get_mut::<Locations>().source_map = Some(source_map);
-    }
-
-    /// Returns the source map if the format provides one.
-    pub fn source_map(state: &State) -> Option<Arc<SourceMap>> {
-        state.get::<Locations>()?.source_map.clone()
+    /// Returns the source map for the source in the state.
+    ///
+    /// Returns `None` if the format does not provide the source.
+    pub fn source_map(state: &mut State) -> Option<Arc<SourceMap>> {
+        Locations::cached_source_map(state).cloned()
     }
 
     /// Returns the span of the current event if the format provides it.
-    pub fn current_span(state: &State) -> Option<Span> {
+    pub fn current_span(state: &mut State) -> Option<Span> {
         let range = state.input_range()?;
-        let source_map = state.get::<Locations>()?.source_map.as_ref()?;
+        let source_map = Locations::cached_source_map(state)?;
         Some(source_map.span(range.start, range.end))
+    }
+
+    fn cached_source_map(state: &mut State) -> Option<&Arc<SourceMap>> {
+        let source = state.source()?;
+        let is_cached = matches!(
+            state.get::<Locations>(),
+            Some(Locations { source_map: Some(source_map) })
+                if Arc::ptr_eq(&source_map.source, source)
+        );
+        if !is_cached {
+            let source_map = SourceMap::new(source.clone());
+            state.get_mut::<Locations>().source_map = Some(Arc::new(source_map));
+        }
+        state.get::<Locations>()?.source_map.as_ref()
     }
 }
 

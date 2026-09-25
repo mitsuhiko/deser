@@ -21,7 +21,6 @@ pub struct Deserializer<'a> {
     input: &'a str,
     /// An error that is reported instead of parsing (invalid UTF-8).
     error: Option<Error>,
-    #[cfg(feature = "locations")]
     track_locations: bool,
 }
 
@@ -31,7 +30,6 @@ impl<'a> Deserializer<'a> {
         Deserializer {
             input,
             error: None,
-            #[cfg(feature = "locations")]
             track_locations: false,
         }
     }
@@ -54,16 +52,16 @@ impl<'a> Deserializer<'a> {
     ///
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
-    /// enabled additionally a source map is installed as
-    /// [`Locations`](deser_location::Locations) which resolves the ranges
-    /// into lines and columns.  Types like
-    /// [`Spanned`](deser_location::Spanned) can then pick them up.
+    /// enabled additionally the input is set as source (see
+    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// ranges into lines and columns, for instance with the `Spanned` type
+    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
+    /// the input.
     ///
     /// Tables report the location of the header that defines them (the
     /// whole document for the root table), tables created by dotted keys
     /// report the location of the key.  Arrays of tables report the
     /// location of their first header.
-    #[cfg(feature = "locations")]
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
         self
@@ -90,12 +88,8 @@ impl<'a> Deserializer<'a> {
         }
         let doc = parse(self.input)?;
 
-        #[cfg(feature = "locations")]
         if self.track_locations {
-            deser_location::Locations::set_source_map(
-                driver.state_mut(),
-                std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
-            );
+            driver.state_mut().set_source(self.input);
         }
         emit(&doc, driver)
     }

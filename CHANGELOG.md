@@ -49,11 +49,16 @@ All notable changes to deser are documented here.
 - Added input ranges to the `State`: formats emit events together with their
   byte range in the input with `DeserializeDriver::emit_at` and sinks read it
   with `State::input_range`.  Recordings capture the range of every event.
-  `deser-location` resolves spans from the input range, formats no longer
-  publish offsets through it and `Locations::set_current` was removed.
-  `deser-json`, `deser-toml` and `deser-yaml` always publish input ranges,
-  which has no measurable overhead, and their `track_locations` only
-  installs the source map.
+  The source the ranges refer to is available as `State::source` if the
+  format provides it.  `deser-json`, `deser-toml` and `deser-yaml` always
+  publish input ranges, which has no measurable overhead, and
+  `track_locations` sets the source.  The formats no longer depend on
+  `deser-location` and their `locations` features were removed.
+- `deser-location` resolves spans from the input range and builds its
+  source map from `State::source` on first use.  `Locations::set_current`
+  and `Locations::set_source_map` were removed and
+  `Locations::current_span` and `Locations::source_map` now take
+  `&mut State`.
 - Added adapters in `deser::adapters` which serialize and deserialize values
   on behalf of other types through the `SerializeAs` and `DeserializeAs`
   traits.  The derive selects them with `#[deser(as = Adapter)]` on fields
