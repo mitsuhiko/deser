@@ -444,9 +444,11 @@ impl<'a> Deserializer<'a> {
 
     /// Enables or disables location tracking.
     ///
-    /// When enabled the byte offsets of every event and a source map are
-    /// published into the deserializer state as
-    /// [`Locations`](deser_location::Locations).  Types like
+    /// The byte range of every event is always published into the state
+    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// enabled additionally a source map is installed as
+    /// [`Locations`](deser_location::Locations) which resolves the ranges
+    /// into lines and columns.  Types like
     /// [`Spanned`](deser_location::Spanned) can then pick them up.  Values
     /// produced by aliases report the location of the anchored node.
     #[cfg(feature = "locations")]
@@ -551,20 +553,13 @@ impl<'a> Deserializer<'a> {
         self.doc.reset(version);
 
         #[cfg(feature = "locations")]
-        let rv = if self.track_locations {
+        if self.track_locations {
             deser_location::Locations::set_source_map(
                 driver.state_mut(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
             );
-            let rv = self.drive_document::<true>(driver);
-            // the span is attached to every event, detach the last one
-            driver.state_mut().clear_event_data();
-            rv
-        } else {
-            self.drive_document::<false>(driver)
-        };
-        #[cfg(not(feature = "locations"))]
-        let rv = self.drive_document::<false>(driver);
+        }
+        let rv = self.drive_document(driver);
 
         if rv.is_err() && !self.failed {
             // skip the rest of the document so that the next one can be read
@@ -614,10 +609,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn drive_document<const LOCATIONS: bool>(
-        &mut self,
-        driver: &mut DeserializeDriver,
-    ) -> Result<(), Error> {
+    fn drive_document(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
         // nodes that are emitted before the next event from the parser
         let mut pending: Vec<Pending<'a>> = Vec::new();
         // the number of nodes produced by aliases and merges
@@ -685,7 +677,7 @@ impl<'a> Deserializer<'a> {
                     end,
                 } => {
                     let version = self.doc.version;
-                    emit_scalar::<LOCATIONS>(driver, tag, style, value, version, start, end)?;
+                    emit_scalar(driver, tag, style, value, version, start, end)?;
                 }
                 Node::Start {
                     tag,
@@ -710,14 +702,13 @@ impl<'a> Deserializer<'a> {
                     } else {
                         Event::SeqStart
                     };
-                    publish_location::<LOCATIONS>(driver, start.offset, end);
                     match tag {
                         Some(tag) => match is_collection_tag(&tag, is_map) {
-                            Ok(true) => driver.emit(event)?,
-                            Ok(false) => emit_tagged(driver, &tag, event)?,
+                            Ok(true) => driver.emit_at(event, start.offset, end)?,
+                            Ok(false) => emit_tagged(driver, &tag, event, start.offset, end)?,
                             Err(msg) => return Err(error_at(start, msg)),
                         },
-                        None => driver.emit(event)?,
+                        None => driver.emit_at(event, start.offset, end)?,
                     }
                 }
                 Node::End { is_map, start, end } => {
@@ -739,8 +730,8 @@ impl<'a> Deserializer<'a> {
                         frames.pop();
                     }
                     depth -= 1;
-                    publish_location::<LOCATIONS>(driver, start.offset, end);
-                    driver.emit(if is_map { Event::MapEnd } else { Event::SeqEnd })?;
+                    let event = if is_map { Event::MapEnd } else { Event::SeqEnd };
+                    driver.emit_at(event, start.offset, end)?;
                 }
                 Node::Alias { range } => pending.push(Pending::Range(range.0, range.1)),
             }
@@ -910,22 +901,8 @@ impl<'a> Deserializer<'a> {
     }
 }
 
-#[inline(always)]
-fn publish_location<const LOCATIONS: bool>(
-    driver: &mut DeserializeDriver,
-    start: usize,
-    end: usize,
-) {
-    #[cfg(feature = "locations")]
-    if LOCATIONS {
-        deser_location::Locations::set_current(driver.state_mut(), start, end);
-    }
-    #[cfg(not(feature = "locations"))]
-    let _ = (driver, start, end);
-}
-
 #[inline]
-fn emit_scalar<const LOCATIONS: bool>(
+fn emit_scalar(
     driver: &mut DeserializeDriver,
     tag: Option<Cow<'_, str>>,
     style: ScalarStyle,
@@ -934,21 +911,21 @@ fn emit_scalar<const LOCATIONS: bool>(
     start: Mark,
     end: usize,
 ) -> Result<(), Error> {
-    publish_location::<LOCATIONS>(driver, start.offset, end);
+    let offset = start.offset;
     let tag = match tag {
         None if style == ScalarStyle::Plain => {
-            return driver.emit(resolve_plain(value, version));
+            return driver.emit_at(resolve_plain(value, version), offset, end);
         }
-        None => return driver.emit(Atom::Str(value)),
+        None => return driver.emit_at(Atom::Str(value), offset, end),
         Some(tag) => tag,
     };
     match classify_tag(&tag) {
-        ScalarTag::Str => driver.emit(Atom::Str(value)),
+        ScalarTag::Str => driver.emit_at(Atom::Str(value), offset, end),
         ScalarTag::Standard(name) => match resolve_standard(name, value, version) {
-            Ok(atom) => driver.emit(atom),
+            Ok(atom) => driver.emit_at(atom, offset, end),
             Err(msg) => Err(error_at(start, msg)),
         },
-        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value)),
+        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value), offset, end),
     }
 }
 
@@ -958,10 +935,14 @@ fn emit_tagged<'e, E: Into<Event<'e>>>(
     driver: &mut DeserializeDriver,
     tag: &str,
     event: E,
+    start: usize,
+    end: usize,
 ) -> Result<(), Error> {
-    driver.emit_with(event, |state| {
-        state.event_mut::<CurrentTag>().0 = Some(tag.to_string());
-    })
+    // this is `emit_with` together with the input range
+    driver.state_mut().event_mut::<CurrentTag>().0 = Some(tag.to_string());
+    let rv = driver.emit_at(event, start, end);
+    driver.state_mut().clear_event_data();
+    rv
 }
 
 fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {

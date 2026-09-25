@@ -12,11 +12,12 @@
 //! There are two ways to carry such information and both survive buffering:
 //!
 //! * Out-of-band in the deserializer state.  The JSON deserializer publishes
-//!   the location of every event (`deser_location::Locations`) and
-//!   `deser_path::PathSink` maintains the path there.  Both are registered
-//!   as replayable state, so a `deser::de::Recording` captures them for
-//!   every recorded event and restores them on replay.
-//!   `deser_location::Spanned` reads the location from the state.
+//!   the input range of every event there (`State::input_range`) which
+//!   `deser_location::Locations` resolves into lines and columns, and
+//!   `deser_path::PathSink` maintains the path there as replayable state.
+//!   A `deser::de::Recording` captures both for every recorded event and
+//!   restores them on replay.  `deser_location::Spanned` reads the location
+//!   from the state.
 //! * In-band as extension values.  [`Annotator`] is a sink wrapper which
 //!   turns every primitive value into a [`LocatedAtom`] extension value
 //!   carrying the value, its path and its location.  Its fallback is the

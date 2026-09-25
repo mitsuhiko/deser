@@ -52,9 +52,11 @@ impl<'a> Deserializer<'a> {
 
     /// Enables or disables location tracking.
     ///
-    /// When enabled the byte offsets of every event and a source map are
-    /// published into the deserializer state as
-    /// [`Locations`](deser_location::Locations).  Types like
+    /// The byte range of every event is always published into the state
+    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// enabled additionally a source map is installed as
+    /// [`Locations`](deser_location::Locations) which resolves the ranges
+    /// into lines and columns.  Types like
     /// [`Spanned`](deser_location::Spanned) can then pick them up.
     ///
     /// Tables report the location of the header that defines them (the
@@ -89,30 +91,24 @@ impl<'a> Deserializer<'a> {
         let doc = parse(self.input)?;
 
         #[cfg(feature = "locations")]
-        {
-            if self.track_locations {
-                deser_location::Locations::set_source_map(
-                    driver.state_mut(),
-                    std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
-                );
-                let rv = emit::<true>(&doc, driver);
-                // the span is attached to every event, detach the last one
-                driver.state_mut().clear_event_data();
-                return rv;
-            }
+        if self.track_locations {
+            deser_location::Locations::set_source_map(
+                driver.state_mut(),
+                std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
+            );
         }
-        emit::<false>(&doc, driver)
+        emit(&doc, driver)
     }
 }
 
+/// Emits an event with the byte range of its span.
 #[inline(always)]
-fn publish_span<const LOCATIONS: bool>(driver: &mut DeserializeDriver, span: Span) {
-    #[cfg(feature = "locations")]
-    if LOCATIONS {
-        deser_location::Locations::set_current(driver.state_mut(), span.start, span.end);
-    }
-    #[cfg(not(feature = "locations"))]
-    let _ = (driver, span);
+fn emit_at<'e, E: Into<Event<'e>>>(
+    driver: &mut DeserializeDriver,
+    event: E,
+    span: Span,
+) -> Result<(), Error> {
+    driver.emit_at(event, span.start, span.end)
 }
 
 /// A container whose events are emitted, with the index of the next child.
@@ -122,13 +118,9 @@ enum Frame {
 }
 
 /// Emits the events of a document.
-fn emit<const LOCATIONS: bool>(
-    doc: &Document,
-    driver: &mut DeserializeDriver,
-) -> Result<(), Error> {
+fn emit(doc: &Document, driver: &mut DeserializeDriver) -> Result<(), Error> {
     let mut stack = vec![Frame::Table(ROOT, 0)];
-    publish_span::<LOCATIONS>(driver, doc.tables[ROOT].span);
-    driver.emit(Event::MapStart)?;
+    emit_at(driver, Event::MapStart, doc.tables[ROOT].span)?;
 
     while let Some(frame) = stack.last_mut() {
         let item: &Item = match *frame {
@@ -137,14 +129,12 @@ fn emit<const LOCATIONS: bool>(
                 match table.entries.get(*index) {
                     Some(entry) => {
                         *index += 1;
-                        publish_span::<LOCATIONS>(driver, entry.key_span);
-                        driver.emit(Event::Atom(Atom::Str(Cow::Borrowed(&entry.key))))?;
+                        emit_at(driver, Atom::Str(Cow::Borrowed(&entry.key)), entry.key_span)?;
                         &entry.item
                     }
                     None => {
                         stack.pop();
-                        publish_span::<LOCATIONS>(driver, table.span);
-                        driver.emit(Event::MapEnd)?;
+                        emit_at(driver, Event::MapEnd, table.span)?;
                         continue;
                     }
                 }
@@ -158,8 +148,7 @@ fn emit<const LOCATIONS: bool>(
                     }
                     None => {
                         stack.pop();
-                        publish_span::<LOCATIONS>(driver, array.span);
-                        driver.emit(Event::SeqEnd)?;
+                        emit_at(driver, Event::SeqEnd, array.span)?;
                         continue;
                     }
                 }
@@ -168,18 +157,15 @@ fn emit<const LOCATIONS: bool>(
 
         match item.value {
             Value::Table(id) => {
-                publish_span::<LOCATIONS>(driver, doc.tables[id].span);
-                driver.emit(Event::MapStart)?;
+                emit_at(driver, Event::MapStart, doc.tables[id].span)?;
                 stack.push(Frame::Table(id, 0));
             }
             Value::Array(id) => {
-                publish_span::<LOCATIONS>(driver, doc.arrays[id].span);
-                driver.emit(Event::SeqStart)?;
+                emit_at(driver, Event::SeqStart, doc.arrays[id].span)?;
                 stack.push(Frame::Array(id, 0));
             }
             ref scalar => {
-                publish_span::<LOCATIONS>(driver, item.span);
-                driver.emit(Event::Atom(match *scalar {
+                let atom = match *scalar {
                     Value::Str(ref value) => Atom::Str(Cow::Borrowed(value)),
                     Value::Int(value) if value >= 0 => Atom::U64(value as u64),
                     Value::Int(value) => Atom::I64(value),
@@ -188,7 +174,8 @@ fn emit<const LOCATIONS: bool>(
                     Value::Bool(value) => Atom::Bool(value),
                     Value::Datetime(ref value) => Atom::Ext(ExtValue::borrowed(value)),
                     Value::Table(_) | Value::Array(_) => unreachable!(),
-                }))?;
+                };
+                emit_at(driver, atom, item.span)?;
             }
         }
     }

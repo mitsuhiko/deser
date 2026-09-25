@@ -1,10 +1,10 @@
 //! This crate provides source locations (line and column) for deser.
 //!
-//! The location information is exchanged through the
-//! [`State`]: formats that support locations publish the
-//! location of every event they emit into [`Locations`] and types can pick
-//! it up while they are deserialized.  The simplest way to do that is the
-//! [`Spanned`] wrapper:
+//! Formats publish the byte range in the input of every event they emit
+//! into the [`State`] (see [`State::input_range`]).  This crate resolves
+//! these ranges into lines and columns with a [`SourceMap`] that is
+//! installed as [`Locations`] and types can pick them up while they are
+//! deserialized.  The simplest way to do that is the [`Spanned`] wrapper:
 //!
 //! ```
 //! # use deser::Deserialize;
@@ -18,10 +18,10 @@
 //!
 //! # Implementing Location Support in Formats
 //!
-//! Formats install a [`SourceMap`] once and then publish the byte offsets of
-//! every event with [`Locations::set_current`] before emitting it into the
-//! [`DeserializeDriver`](deser::de::DeserializeDriver).  Lines and columns
-//! are only computed when a consumer asks for them:
+//! Formats emit every event together with its byte range with
+//! [`DeserializeDriver::emit_at`](deser::de::DeserializeDriver::emit_at)
+//! and install a [`SourceMap`] once if locations are requested.  Lines and
+//! columns are only computed when a consumer asks for them:
 //!
 //! ```
 //! use std::sync::Arc;
@@ -34,8 +34,7 @@
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
 //!     Locations::set_source_map(driver.state_mut(), Arc::new(SourceMap::new(input)));
-//!     Locations::set_current(driver.state_mut(), 0, 4);
-//!     driver.emit(Event::from(true)).unwrap();
+//!     driver.emit_at(Event::from(true), 0, 4).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
 //! assert_eq!((span.start.line, span.start.column), (1, 1));
@@ -44,11 +43,10 @@
 //!
 //! # Buffering
 //!
-//! The span of an event is attached to the event in the state (see
-//! [`State::event`]).  Values that are internally buffered with a
+//! Values that are internally buffered with a
 //! [`Recording`](deser::de::Recording) (as some enum representations do)
 //! retain their locations when they are replayed as recordings capture the
-//! data of every event.
+//! input range of every event.
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -213,9 +211,9 @@ impl SourceMap {
 
 /// Location information in the [`State`].
 ///
-/// Formats install a [`SourceMap`] and attach the byte offsets to every
-/// event they emit.  Consumers retrieve the resolved span of the current
-/// event with [`current_span`](Self::current_span).
+/// Formats install a [`SourceMap`] which resolves the input ranges of the
+/// events (see [`State::input_range`]).  Consumers retrieve the resolved
+/// span of the current event with [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
@@ -225,18 +223,6 @@ impl Locations {
     /// Installs the source map.  Called by formats once.
     pub fn set_source_map(state: &mut State, source_map: Arc<SourceMap>) {
         state.get_mut::<Locations>().source_map = Some(source_map);
-    }
-
-    /// Sets the byte offsets of the event that is emitted next.  Called by
-    /// formats for every event.
-    ///
-    /// The offsets are attached as event data (see [`State::event`]).  As
-    /// every event gets new offsets they do not need to be detached between
-    /// events, formats detach them with [`State::clear_event_data`] once they
-    /// are done.
-    #[inline]
-    pub fn set_current(state: &mut State, start: usize, end: usize) {
-        state.set_input_range(Some(start..end));
     }
 
     /// Returns the source map if the format provides one.

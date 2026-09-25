@@ -28,7 +28,10 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// * Event data ([`event`](Self::event) and [`event_mut`](Self::event_mut))
 ///   is attached to a single event and detached by the drivers after the
 ///   event was delivered.  It is used for information about an individual
-///   value, such as its source location or a tag.
+///   value, such as a tag.
+///
+/// Additionally formats can publish the byte range in the input of every
+/// event (see [`input_range`](Self::input_range)).
 ///
 /// Extension values have to be [`Send`] so that the state is [`Send`] too.
 /// This means that the state never prevents an ongoing serialization or
@@ -167,9 +170,9 @@ impl State {
     /// Detaches all data from the current event.
     ///
     /// The drivers call this after the events that carry data.  Formats
-    /// which attach data for every event they emit (such as source
-    /// locations) do not need to detach it between events as it's replaced,
-    /// but they should detach it once they are done.
+    /// which attach data for every event they emit do not need to detach it
+    /// between events as it's replaced, but they should detach it once they
+    /// are done.
     #[inline(always)]
     pub fn clear_event_data(&mut self) {
         self.extensions.clear_event_data();
@@ -218,12 +221,6 @@ impl State {
         } else {
             Some(start..end)
         }
-    }
-
-    /// Sets the byte range in the input of the current event.
-    #[inline]
-    pub fn set_input_range(&mut self, range: Option<std::ops::Range<usize>>) {
-        self.input_range = range.map_or(NO_RANGE, |range| (range.start, range.end));
     }
 }
 

@@ -71,9 +71,11 @@ impl<'a> Deserializer<'a> {
 
     /// Enables or disables location tracking.
     ///
-    /// When enabled the byte offsets of every event and a source map are
-    /// published into the deserializer state as
-    /// [`Locations`](deser_location::Locations).  Types like
+    /// The byte range of every event is always published into the state
+    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// enabled additionally a source map is installed as
+    /// [`Locations`](deser_location::Locations) which resolves the ranges
+    /// into lines and columns.  Types like
     /// [`Spanned`](deser_location::Spanned) can then pick them up.
     #[cfg(feature = "locations")]
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
