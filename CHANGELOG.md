@@ -6,6 +6,8 @@ All notable changes to deser are documented here.
 
 - Added `deser_json::from_slice` and `Deserializer::from_slice` which parse
   JSON from bytes and validate the strings as UTF-8 while parsing.
+- The `speedups` feature of `deser-json` and `deser-cbor` validates UTF-8
+  with `simdutf8`.
 - Added `deser-cbor` which implements CBOR (RFC 8949).  It reads all
   well-formed CBOR (including indefinite length items), writes the preferred
   serialization, optionally with deterministic map ordering, maps bignums

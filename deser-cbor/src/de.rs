@@ -443,7 +443,7 @@ impl<'a> Deserializer<'a> {
             return Err(eof_error(input.len()));
         }
         let bytes = &input[self.pos..self.pos + len as usize];
-        if head.major == MAJOR_TEXT && !is_ascii(bytes) && str::from_utf8(bytes).is_err() {
+        if head.major == MAJOR_TEXT && !is_ascii(bytes) && !is_utf8(bytes) {
             return Err(syntax_error(self.pos, "invalid UTF-8 in text string"));
         }
         self.pos += len as usize;
@@ -522,6 +522,19 @@ fn is_ascii(bytes: &[u8]) -> bool {
         (bytes[0] | bytes[len / 2] | bytes[len - 1]) < 0x80
     } else {
         true
+    }
+}
+
+/// Checks if the bytes are valid UTF-8.
+#[inline]
+fn is_utf8(bytes: &[u8]) -> bool {
+    #[cfg(feature = "simdutf8")]
+    {
+        simdutf8::basic::from_utf8(bytes).is_ok()
+    }
+    #[cfg(not(feature = "simdutf8"))]
+    {
+        str::from_utf8(bytes).is_ok()
     }
 }
 

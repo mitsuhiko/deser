@@ -22,7 +22,8 @@
 //!
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
-//! used for number formatting.
+//! used for number formatting and `simdutf8` is used to validate UTF-8 when parsing
+//! byte slices.
 mod buf;
 mod de;
 mod scan;

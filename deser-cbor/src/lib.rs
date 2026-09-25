@@ -34,6 +34,10 @@
 //! strings, arrays and maps.  Map keys can be of any type.  Integers that
 //! do not fit into 64 bits are passed on as `u128` / `i128` extension atoms.
 //!
+//! # Features
+//!
+//! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
+//!
 //! # Tags
 //!
 //! Tags are not part of the data model.  Unknown tags are transparent: a

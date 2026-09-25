@@ -210,7 +210,14 @@ pub fn is_ascii(bytes: &[u8]) -> bool {
 /// Checks if the bytes are valid UTF-8.
 #[inline]
 pub fn validate_utf8_slice(bytes: &[u8]) -> bool {
-    std::str::from_utf8(bytes).is_ok()
+    #[cfg(feature = "simdutf8")]
+    {
+        simdutf8::basic::from_utf8(bytes).is_ok()
+    }
+    #[cfg(not(feature = "simdutf8"))]
+    {
+        std::str::from_utf8(bytes).is_ok()
+    }
 }
 
 const CT: bool = true; // control character \x00..=\x1F

@@ -10,8 +10,12 @@ readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-cbor"
 
+[features]
+speedups = ["simdutf8"]
+
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
+simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
