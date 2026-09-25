@@ -1,0 +1,10 @@
+[package]
+name = "json-numbers"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["jiff"] }
+deser-json = { path = "../../deser-json" }
+jiff = "0.2.14"

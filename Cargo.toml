@@ -13,6 +13,7 @@ members = [
   "examples/derive",
   "examples/enums",
   "examples/json",
+  "examples/json-numbers",
   "examples/located",
   "examples/manual-struct",
 ]
