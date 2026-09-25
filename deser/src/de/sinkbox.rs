@@ -220,14 +220,15 @@ impl<'a> Drop for SinkBox<'a> {
 
 #[test]
 fn test_sink_box() {
-    use crate::de::{DeserializerState, SinkHandle};
+    use crate::de::SinkHandle;
+    use crate::State;
     use crate::{Atom, Error};
     use std::rc::Rc;
 
     struct Tracked<const N: usize>(#[allow(dead_code)] Rc<()>, [u8; N]);
 
     impl<const N: usize> Sink for Tracked<N> {
-        fn atom(&mut self, _atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+        fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
             Ok(())
         }
     }

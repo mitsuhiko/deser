@@ -4,6 +4,22 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Merged `DeserializerState` and `SerializerState` into a single
+  `deser::State` without a lifetime parameter.  `is_map_key` and
+  `set_replayable` are available in both directions and the serialize driver
+  now sets `is_map_key` while map and struct keys are serialized.
+- `SerializeDriver::drive` and `SerializeDriver::next` now hand out
+  `&mut State` so that formats can consume information from the state.
+  `deser_cbor::push_tag` now takes `&mut State`.
+- Extension values in the state now need to be `Send` and `Descriptor`
+  requires `Sync`.  This makes `State` `Send`.
+- Replayed recordings now continue on the state of the ongoing
+  deserialization.  `State::depth` and `State::top_descriptor` report the
+  same values for buffered values (for instance in internally tagged enums)
+  as for values that are not buffered, and maps and sequences remain the
+  current container while their sink is finished.
+- Improved the performance of serializing CBOR tags.
+
 - Changed `#[deser(default = ...)]` to take an expression instead of a
   function name in a string, and `#[deser(skip_serializing_if = ...)]` to
   take a path instead of a string.  String literals given as defaults are

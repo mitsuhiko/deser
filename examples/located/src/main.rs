@@ -30,8 +30,9 @@
 //! needed.
 use std::fmt;
 
-use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Recording, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, OwnedSink, Recording, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
+use deser::State;
 use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind};
 use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathSegment, PathSink};
@@ -91,7 +92,7 @@ impl<'a> Annotator<'a> {
 }
 
 impl<'a> Sink for Annotator<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         // map keys are not annotated and values that already are extension
         // values are passed through as is as fallbacks cannot be extension
         // values themselves.
@@ -107,21 +108,21 @@ impl<'a> Sink for Annotator<'a> {
             .atom(Atom::Ext(ExtValue::borrowed(&located)), state)
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::boxed(Annotator::wrap(
             self.sink.next_key(state)?,
         )))
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::boxed(Annotator::wrap(
             self.sink.next_value(state)?,
         )))
@@ -130,7 +131,7 @@ impl<'a> Sink for Annotator<'a> {
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &mut DeserializerState,
+        state: &mut State,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         Ok(self
             .sink
@@ -138,7 +139,7 @@ impl<'a> Sink for Annotator<'a> {
             .map(|sink| SinkHandle::boxed(Annotator::wrap(sink))))
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.finish(state)
     }
 
@@ -203,7 +204,7 @@ struct LocatedSink<'a, T> {
 }
 
 impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<LocatedAtom>() => {
                 let located = ext.downcast_ref::<LocatedAtom>().unwrap();
@@ -215,23 +216,23 @@ impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
         }
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.sink.borrow_mut().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.sink.borrow_mut().next_value(state)
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().finish(state)?;
         let span = self.span;
         *self.out = self.sink.take().map(|value| Located {

@@ -73,7 +73,7 @@ macro_rules! __begin_without_finish {
         #[inline]
         fn __private_begin(
             &self,
-            state: &mut $crate::ser::SerializerState,
+            state: &mut $crate::State,
         ) -> ::core::result::Result<$crate::ser::Begin<'_>, $crate::Error> {
             let descriptor = $crate::ser::Serialize::descriptor(self);
             ::core::result::Result::Ok($crate::ser::Begin::chunk(

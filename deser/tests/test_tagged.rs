@@ -321,3 +321,70 @@ fn test_recording() {
         assert_eq!(out.unwrap()["a"], Vec::<u32>::new());
     }
 }
+
+/// Captures the state that its sink observes.
+#[derive(Debug, PartialEq)]
+struct Probe {
+    depth: usize,
+    parent: Option<String>,
+}
+
+deser::make_slot_wrapper!(ProbeSlot);
+
+impl deser::de::Sink for ProbeSlot<Probe> {
+    fn atom(&mut self, _atom: deser::Atom, state: &mut deser::State) -> Result<(), Error> {
+        **self = Some(Probe {
+            depth: state.depth(),
+            parent: state
+                .top_descriptor()
+                .and_then(|d| d.name())
+                .map(String::from),
+        });
+        Ok(())
+    }
+}
+
+impl Deserialize for Probe {
+    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_> {
+        ProbeSlot::make_handle(out)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[deser(tag = "type")]
+enum Probed {
+    Variant { value: Probe },
+}
+
+#[test]
+fn test_replay_keeps_state() {
+    // the tag comes first, the value is not buffered
+    let direct: Vec<Probed> = deserialize(vec![
+        Event::SeqStart,
+        Event::MapStart,
+        "type".into(),
+        "Variant".into(),
+        "value".into(),
+        1u64.into(),
+        Event::MapEnd,
+        Event::SeqEnd,
+    ])
+    .unwrap();
+    // the tag comes last, the value is recorded and replayed
+    let replayed: Vec<Probed> = deserialize(vec![
+        Event::SeqStart,
+        Event::MapStart,
+        "value".into(),
+        1u64.into(),
+        "type".into(),
+        "Variant".into(),
+        Event::MapEnd,
+        Event::SeqEnd,
+    ])
+    .unwrap();
+
+    let Probed::Variant { value: direct } = &direct[0];
+    let Probed::Variant { value: replayed } = &replayed[0];
+    assert_eq!(direct.depth, 2);
+    assert_eq!(replayed, direct);
+}

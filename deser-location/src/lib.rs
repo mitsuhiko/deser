@@ -1,7 +1,7 @@
 //! This crate provides source locations (line and column) for deser.
 //!
 //! The location information is exchanged through the
-//! [`DeserializerState`]: formats that support locations publish the
+//! [`State`]: formats that support locations publish the
 //! location of every event they emit into [`Locations`] and types can pick
 //! it up while they are deserialized.  The simplest way to do that is the
 //! [`Spanned`] wrapper:
@@ -53,8 +53,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use deser::de::{Deserialize, DeserializerState, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, Serialize, SerializerState};
+use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser::ser::{Chunk, Serialize};
+use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// A position in the input.
@@ -209,7 +210,7 @@ impl SourceMap {
     }
 }
 
-/// Location information in the [`DeserializerState`].
+/// Location information in the [`State`].
 ///
 /// Formats install a [`SourceMap`] and publish the byte offsets of the event
 /// they emit next.  Consumers retrieve the resolved span of the current
@@ -226,7 +227,7 @@ impl Locations {
     /// This also marks the locations as replayable so that values which are
     /// internally buffered (for instance for internally tagged enums) retain
     /// their locations.
-    pub fn set_source_map(state: &mut DeserializerState, source_map: Arc<SourceMap>) {
+    pub fn set_source_map(state: &mut State, source_map: Arc<SourceMap>) {
         state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
     }
@@ -234,17 +235,17 @@ impl Locations {
     /// Sets the byte offsets of the current event.  Called by formats for
     /// every event.
     #[inline]
-    pub fn set_current(state: &mut DeserializerState, start: usize, end: usize) {
+    pub fn set_current(state: &mut State, start: usize, end: usize) {
         state.get_mut::<Locations>().current = Some((start, end));
     }
 
     /// Returns the source map if the format provides one.
-    pub fn source_map(state: &DeserializerState) -> Option<Arc<SourceMap>> {
+    pub fn source_map(state: &State) -> Option<Arc<SourceMap>> {
         state.get::<Locations>()?.source_map.clone()
     }
 
     /// Returns the span of the current event if the format provides it.
-    pub fn current_span(state: &DeserializerState) -> Option<Span> {
+    pub fn current_span(state: &State) -> Option<Span> {
         let locations = state.get::<Locations>()?;
         match (&locations.source_map, locations.current) {
             (Some(source_map), Some((start, end))) => Some(source_map.span(start, end)),
@@ -375,40 +376,40 @@ impl<'a, T: Deserialize> SpannedSink<'a, T> {
 }
 
 impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         let mut sink = T::deserialize_into(&mut self.slot);
         sink.atom(atom, state)?;
         sink.finish(state)
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         self.compound().map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         self.compound().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_value(state)
     }
 
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &mut DeserializerState,
+        state: &mut State,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.compound().value_for_key(key, state)
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
                 compound.borrow_mut().finish(state)?;
@@ -440,11 +441,11 @@ impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
 }
 
 impl<T: Serialize> Serialize for Spanned<T> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.value.serialize(state)
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.value.finish(state)
     }
 

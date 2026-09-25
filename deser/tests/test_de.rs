@@ -125,11 +125,7 @@ fn test_array_dropping_on_error() {
     }
 
     impl Sink for SlotWrapper<X> {
-        fn atom(
-            &mut self,
-            _atom: Atom,
-            _state: &mut deser::de::DeserializerState,
-        ) -> Result<(), deser::Error> {
+        fn atom(&mut self, _atom: Atom, _state: &mut deser::State) -> Result<(), deser::Error> {
             **self = Some(X);
             Ok(())
         }

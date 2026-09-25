@@ -88,10 +88,10 @@ impl<'a> Atom<'a> {
     /// [`Sink`](crate::de::Sink) uses this method as follows:
     ///
     /// ```
-    /// # use deser::{Atom, Error, de::{DeserializerState, Sink}};
+    /// # use deser::{Atom, Error, State, de::Sink};
     /// # struct MySink;
     /// impl Sink for MySink {
-    ///     fn atom(&mut self, atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+    ///     fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
     ///         Err(atom.unexpected_error(&self.expecting()))
     ///     }
     /// }

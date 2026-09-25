@@ -24,11 +24,11 @@ impl Debug for TypeKey {
     }
 }
 
-trait DebugAny: Any + Debug {
+trait DebugAny: Any + Debug + Send {
     fn as_any(&self) -> &dyn Any;
 }
 
-impl<T: Any + Debug + 'static> DebugAny for T {
+impl<T: Any + Debug + Send + 'static> DebugAny for T {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -36,7 +36,7 @@ impl<T: Any + Debug + 'static> DebugAny for T {
 
 type CloneFn = fn(&dyn DebugAny) -> Box<dyn DebugAny>;
 
-fn clone_value<T: Clone + Debug + 'static>(value: &dyn DebugAny) -> Box<dyn DebugAny> {
+fn clone_value<T: Clone + Debug + Send + 'static>(value: &dyn DebugAny) -> Box<dyn DebugAny> {
     Box::new(value.as_any().downcast_ref::<T>().unwrap().clone())
 }
 
@@ -67,7 +67,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get<T: Debug + 'static>(&self) -> Option<&T> {
+    pub fn get<T: Debug + Send + 'static>(&self) -> Option<&T> {
         let index = self.position(TypeId::of::<T>())?;
         let value: &dyn DebugAny = &*self.entries[index].1;
         // SAFETY: values are always stored with the key of their type
@@ -75,7 +75,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get_mut<T: Default + Debug + 'static>(&mut self) -> &mut T {
+    pub fn get_mut<T: Default + Debug + Send + 'static>(&mut self) -> &mut T {
         let index = match self.position(TypeId::of::<T>()) {
             Some(index) => index,
             None => self.insert_default::<T>(),
@@ -86,14 +86,14 @@ impl Extensions {
     }
 
     #[cold]
-    fn insert_default<T: Default + Debug + 'static>(&mut self) -> usize {
+    fn insert_default<T: Default + Debug + Send + 'static>(&mut self) -> usize {
         self.entries
             .push((TypeKey::of::<T>(), Box::new(T::default())));
         self.entries.len() - 1
     }
 
     /// Marks an extension type as replayable.
-    pub fn set_replayable<T: Clone + Debug + 'static>(&mut self) {
+    pub fn set_replayable<T: Clone + Debug + Send + 'static>(&mut self) {
         let key = TypeKey::of::<T>();
         if !self.replayable.iter().any(|(k, _)| *k == key) {
             self.replayable.push((key, clone_value::<T>));

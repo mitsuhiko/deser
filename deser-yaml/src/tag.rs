@@ -6,7 +6,7 @@
 //! other tags are exchanged out of band through the deserializer state:
 //!
 //! * When deserializing, the tag of a node is published into the
-//!   [`DeserializerState`] for the first event of the node (the atom or the
+//!   [`State`] for the first event of the node (the atom or the
 //!   start of the map or sequence).  Types can pick it up with [`take_tag`].
 //!   Types which do not care about tags never see them, which means that
 //!   unknown tags are transparent: the value of `!color red` is the string
@@ -18,8 +18,9 @@
 //! directives are expanded.
 use std::fmt;
 
-use deser::de::{Deserialize, DeserializerState, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, Serialize, SerializerState};
+use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser::ser::{Chunk, Serialize};
+use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// The tag of the current event in the deserializer state.
@@ -33,13 +34,13 @@ pub(crate) struct CurrentTag(pub(crate) Option<String>);
 /// (or only a standard tag) or the data format does not support tags.
 ///
 /// ```
-/// use deser::de::DeserializerState;
+/// use deser::State;
 ///
-/// fn tag(state: &mut DeserializerState) -> Option<String> {
+/// fn tag(state: &mut State) -> Option<String> {
 ///     deser_yaml::take_tag(state)
 /// }
 /// ```
-pub fn take_tag(state: &mut DeserializerState) -> Option<String> {
+pub fn take_tag(state: &mut State) -> Option<String> {
     match state.get::<CurrentTag>() {
         Some(tag) if tag.0.is_some() => state.get_mut::<CurrentTag>().0.take(),
         _ => None,
@@ -102,11 +103,11 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 }
 
 impl<T: Serialize> Serialize for Tagged<T> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.value.serialize(state)
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.value.finish(state)
     }
 
@@ -148,40 +149,40 @@ impl<'a, T: Deserialize> TaggedSink<'a, T> {
 }
 
 impl<'a, T: Deserialize> Sink for TaggedSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         let mut sink = T::deserialize_into(&mut self.slot);
         sink.atom(atom, state)?;
         sink.finish(state)
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         self.compound().map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         self.compound().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_value(state)
     }
 
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &mut DeserializerState,
+        state: &mut State,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.compound().value_for_key(key, state)
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
                 compound.borrow_mut().finish(state)?;

@@ -404,25 +404,26 @@ fn test_from_slice() {
 fn test_borrowed_strings() {
     use std::borrow::Cow;
 
-    use deser::de::{DeserializeDriver, DeserializerState, Sink, SinkHandle};
+    use deser::de::{DeserializeDriver, Sink, SinkHandle};
+    use deser::State;
     use deser::{Atom, Error};
 
     // records whether strings are borrowed from the input
     struct Borrowed(Vec<bool>);
 
     impl Sink for Borrowed {
-        fn atom(&mut self, atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+        fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
             if let Atom::Str(s) = atom {
                 self.0.push(matches!(s, Cow::Borrowed(_)));
             }
             Ok(())
         }
 
-        fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
             Ok(SinkHandle::to(self))
         }
     }

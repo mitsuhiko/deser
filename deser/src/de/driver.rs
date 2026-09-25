@@ -1,6 +1,9 @@
-use crate::de::{Deserialize, DeserializerState, SinkHandle};
+use std::marker::PhantomData;
+
+use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, Event};
+use crate::State;
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
@@ -9,7 +12,7 @@ use crate::event::{Atom, Event};
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
 pub struct DeserializeDriver<'a> {
-    state: DeserializerState<'a>,
+    state: State,
     // The sinks borrow from each other: every sink on the stack can borrow
     // from the sink below it.  The lifetimes are erased to `'static` and
     // it's the driver's responsibility to never use a sink while one of the
@@ -19,6 +22,8 @@ pub struct DeserializeDriver<'a> {
     // is open.
     root: Option<SinkHandle<'static>>,
     sink_stack: Vec<(SinkHandle<'static>, Layer)>,
+    // the sinks borrow for 'a
+    _marker: PhantomData<&'a mut ()>,
 }
 
 const STACK_CAPACITY: usize = 128;
@@ -48,34 +53,47 @@ impl<'a> DeserializeDriver<'a> {
 
     /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
-        DeserializeDriver::with_state(DeserializerState::new(None), sink)
+        DeserializeDriver::with_state(State::new(), sink)
     }
 
-    /// Creates a driver that shares the extensions of another state.
+    /// Runs a nested driver within an ongoing deserialization.
     ///
-    /// This is used to replay recorded events within an ongoing
-    /// deserialization.
-    pub(crate) fn nested(
-        parent: &'a mut DeserializerState<'_>,
-        sink: SinkHandle<'a>,
+    /// The nested driver continues on the state of the ongoing
+    /// deserialization: the extensions are shared and the containers opened
+    /// by the nested driver are placed on top of the ones that are currently
+    /// open.  This is used to replay recorded events so that replayed values
+    /// observe the same state as values that were not buffered.
+    pub(crate) fn nested<R>(
+        state: &mut State,
+        sink: SinkHandle<'_>,
         is_map_key: bool,
-    ) -> DeserializeDriver<'a> {
-        let mut state = DeserializerState::new(Some(parent.extensions_mut()));
-        state.is_map_key = is_map_key;
-        DeserializeDriver::with_state(state, sink)
+        f: impl FnOnce(&mut DeserializeDriver<'_>) -> R,
+    ) -> R {
+        let depth = state.descriptor_stack.len();
+        let outer_is_map_key = state.is_map_key;
+        let mut driver = DeserializeDriver::with_state(state.take(), sink);
+        driver.state.is_map_key = is_map_key;
+        let rv = f(&mut driver);
+        *state = driver.state.take();
+        drop(driver);
+        // a failed replay can leave containers open
+        state.descriptor_stack.truncate(depth);
+        state.is_map_key = outer_is_map_key;
+        rv
     }
 
-    fn with_state(state: DeserializerState<'a>, sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
+    fn with_state(state: State, sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
         DeserializeDriver {
             state,
             sink_stack: Vec::with_capacity(STACK_CAPACITY),
             // SAFETY: the driver cannot outlive 'a
             root: Some(unsafe { erase_lifetime(sink) }),
+            _marker: PhantomData,
         }
     }
 
     /// Returns a borrowed reference to the current deserializer state.
-    pub fn state(&self) -> &DeserializerState<'a> {
+    pub fn state(&self) -> &State {
         &self.state
     }
 
@@ -83,7 +101,7 @@ impl<'a> DeserializeDriver<'a> {
     ///
     /// Formats use this to publish information for the event they emit
     /// next into the state.
-    pub fn state_mut(&mut self) -> &mut DeserializerState<'a> {
+    pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
@@ -171,8 +189,11 @@ impl<'a> DeserializeDriver<'a> {
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
         }
         let (mut sink, _) = self.sink_stack.pop().unwrap();
-        self.state.descriptor_stack.pop();
+        // the container remains the current one while it's finished as sinks
+        // can still produce values within it (for instance by replaying
+        // recorded values).
         let rv = sink.finish(&mut self.state);
+        self.state.descriptor_stack.pop();
         if self.sink_stack.is_empty() {
             // the root sink is retained until the driver is dropped
             self.root = Some(sink);

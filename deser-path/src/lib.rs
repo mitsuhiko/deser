@@ -1,16 +1,17 @@
-//! This crate provides a wrapper type that observes the serialization to communicate
-//! the current path of the serialization into the [`SerializerState`](deser::ser::SerializerState)
-//! and [`DeserializerState`](deser::de::DeserializerState).
+//! This crate provides wrapper types that observe the serialization and
+//! deserialization to communicate the current path into the
+//! [`State`](deser::State).
 //!
 //! ```rust
 //! use deser_path::{Path, PathSerializable};
-//! use deser::ser::{Serialize, SerializeDriver, SerializerState, Chunk};
+//! use deser::ser::{Serialize, SerializeDriver, Chunk};
+//! use deser::State;
 //! use deser::Error;
 //!
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
 //!         // for as long as we're wrapped with the `PathSerializable` we can at
 //!         // any point request the current path from the state.
 //!         println!("{:?}", state.get::<Path>().map(Path::segments));
@@ -56,6 +57,9 @@ pub struct Path {
     pub(crate) segments: Vec<PathSegment>,
     // buffers of popped keys that are reused for new keys
     spare_keys: Vec<String>,
+    // during serialization the segment of the map key that was serialized
+    // last, it becomes the segment of the value that follows.
+    pub(crate) pending_key: Option<PathSegment>,
 }
 
 /// The maximum number of key buffers retained for reuse.
@@ -90,6 +94,7 @@ impl Clone for Path {
         Path {
             segments: self.segments.clone(),
             spare_keys: Vec::new(),
+            pending_key: None,
         }
     }
 }

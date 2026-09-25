@@ -1,9 +1,10 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use deser::de::{Deserialize, DeserializerState, Sink, SinkHandle};
+use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::ExtValue;
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState};
+use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser::State;
 use deser::{Atom, Error};
 use deser_cbor::Simple;
 
@@ -118,7 +119,7 @@ macro_rules! map {
 }
 
 impl Serialize for Value {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(match *self {
             Value::Null => Atom::Null,
             Value::Bool(value) => Atom::Bool(value),
@@ -145,7 +146,7 @@ impl Serialize for Value {
 struct ArrayEmitter<'a>(std::slice::Iter<'a, Value>);
 
 impl<'a> SeqEmitter for ArrayEmitter<'a> {
-    fn next(&mut self, _state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.0.next().map(SerializeHandle::to))
     }
 }
@@ -153,17 +154,14 @@ impl<'a> SeqEmitter for ArrayEmitter<'a> {
 struct MapEntryEmitter<'a>(std::slice::Iter<'a, (Value, Value)>, Option<&'a Value>);
 
 impl<'a> MapEmitter for MapEntryEmitter<'a> {
-    fn next_key(
-        &mut self,
-        _state: &mut SerializerState,
-    ) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.0.next().map(|(key, value)| {
             self.1 = Some(value);
             SerializeHandle::to(key)
         }))
     }
 
-    fn next_value(&mut self, _state: &mut SerializerState) -> Result<SerializeHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
         Ok(SerializeHandle::to(self.1.unwrap()))
     }
 }
@@ -194,7 +192,7 @@ struct ValueSink<'a> {
 }
 
 impl<'a> ValueSink<'a> {
-    fn take_tags(&mut self, state: &mut DeserializerState) {
+    fn take_tags(&mut self, state: &mut State) {
         self.tags = std::iter::from_fn(|| deser_cbor::take_tag(state)).collect();
     }
 
@@ -219,7 +217,7 @@ impl<'a> ValueSink<'a> {
 }
 
 impl<'a> Sink for ValueSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.take_tags(state);
         let value = match atom {
             Atom::Null => Value::Null,
@@ -241,31 +239,31 @@ impl<'a> Sink for ValueSink<'a> {
         Ok(())
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.take_tags(state);
         self.compound = Some(Compound::Map(Vec::new()));
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.take_tags(state);
         self.compound = Some(Compound::Array(Vec::new()));
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.flush();
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         if let Some(Compound::Array(_)) = self.compound {
             self.flush();
         }
         Ok(Deserialize::deserialize_into(&mut self.value))
     }
 
-    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         self.flush();
         match self.compound.take() {
             Some(Compound::Array(items)) => self.set(Value::Array(items)),

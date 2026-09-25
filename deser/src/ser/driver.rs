@@ -4,11 +4,8 @@ use std::ptr::NonNull;
 
 use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
-use crate::extensions::Extensions;
-use crate::ser::{
-    Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, SerializerState, StructField,
-};
-use crate::{Atom, Descriptor, Event, Serialize};
+use crate::ser::{Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, StructField};
+use crate::{Atom, Descriptor, Event, Serialize, State};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -18,7 +15,7 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// stream.  As a user one has to call [`next`](Self::next) until `None`
 /// is returned, indicating the end of the event stream.
 pub struct SerializeDriver<'a> {
-    state: SerializerState,
+    state: State,
     // Values and frames refer to data borrowed from the serializables and
     // emitters of the frames below them, which is why the lifetimes are
     // erased.  `next_value` and `needs_finish` borrow from the top frame.
@@ -130,10 +127,7 @@ impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
         SerializeDriver {
-            state: SerializerState {
-                extensions: Extensions::default(),
-                descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
-            },
+            state: State::new(),
             // SAFETY: the driver cannot outlive 'a
             next_value: Some(unsafe { Held::new(SerializeHandle::Borrowed(serializable)) }),
             needs_finish: None,
@@ -143,7 +137,7 @@ impl<'a> SerializeDriver<'a> {
     }
 
     /// Returns a borrowed reference to the current serializer state.
-    pub fn state(&self) -> &SerializerState {
+    pub fn state(&self) -> &State {
         &self.state
     }
 
@@ -151,7 +145,7 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// This can be used to place extension values into the state which the
     /// serializable values can then pick up.
-    pub fn state_mut(&mut self) -> &mut SerializerState {
+    pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
@@ -164,10 +158,13 @@ impl<'a> SerializeDriver<'a> {
     #[inline]
     pub fn next(
         &mut self,
-    ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &SerializerState)>, Error> {
+    ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &mut State)>, Error> {
+        // The event borrows from the values held by the driver but never
+        // from the state (serializables cannot return chunks borrowing from
+        // it), which is why the state can be handed out mutably.
         Ok(self
             .advance()?
-            .map(|(event, descriptor)| (event, descriptor, &self.state)))
+            .map(|(event, descriptor)| (event, descriptor, &mut self.state)))
     }
 
     /// Drives the serialization to the end and invokes a callback for every
@@ -193,7 +190,7 @@ impl<'a> SerializeDriver<'a> {
     #[inline]
     pub fn drive<F>(&mut self, mut f: F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &SerializerState) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
         // `next` might have been used before.
         if let Some((held, true)) = self.needs_finish.take() {
@@ -201,7 +198,7 @@ impl<'a> SerializeDriver<'a> {
             unsafe { held.get() }.finish(&mut self.state)?;
         }
         if let Some(value) = self.next_value.take() {
-            self.drive_value(value, &mut f)?;
+            self.drive_value(value, false, &mut f)?;
         }
 
         while let Some(frame) = self.stack.last_mut() {
@@ -214,12 +211,13 @@ impl<'a> SerializeDriver<'a> {
                     *index += 1;
                     match field {
                         StructField::Field(key, value) => {
+                            self.state.is_map_key = true;
                             f(
                                 Event::Atom(Atom::Str(Cow::Borrowed(key))),
                                 &STRUCT_KEY_DESCRIPTOR,
-                                &self.state,
+                                &mut self.state,
                             )?;
-                            value
+                            (value, false)
                         }
                         StructField::Skip => continue,
                         StructField::End => {
@@ -232,7 +230,7 @@ impl<'a> SerializeDriver<'a> {
                     let element = seq.element(*index, &mut self.state)?;
                     *index += 1;
                     match element {
-                        Some(value) => value,
+                        Some(value) => (value, false),
                         None => {
                             self.drive_end(&mut f)?;
                             continue;
@@ -241,12 +239,13 @@ impl<'a> SerializeDriver<'a> {
                 }
                 Emitter::Struct(emitter) => match emitter.next(&mut self.state)? {
                     Some((key, value)) => {
+                        self.state.is_map_key = true;
                         f(
                             Event::Atom(Atom::Str(key)),
                             &STRUCT_KEY_DESCRIPTOR,
-                            &self.state,
+                            &mut self.state,
                         )?;
-                        value
+                        (value, false)
                     }
                     None => {
                         self.drive_end(&mut f)?;
@@ -254,7 +253,7 @@ impl<'a> SerializeDriver<'a> {
                     }
                 },
                 Emitter::Seq(emitter) => match emitter.next(&mut self.state)? {
-                    Some(value) => value,
+                    Some(value) => (value, false),
                     None => {
                         self.drive_end(&mut f)?;
                         continue;
@@ -263,12 +262,12 @@ impl<'a> SerializeDriver<'a> {
                 Emitter::Map(emitter, is_value) => {
                     if *is_value {
                         *is_value = false;
-                        emitter.next_value(&mut self.state)?
+                        (emitter.next_value(&mut self.state)?, false)
                     } else {
                         match emitter.next_key(&mut self.state)? {
                             Some(key) => {
                                 *is_value = true;
-                                key
+                                (key, true)
                             }
                             None => {
                                 self.drive_end(&mut f)?;
@@ -280,7 +279,7 @@ impl<'a> SerializeDriver<'a> {
             };
             // SAFETY: the value borrows from the emitter on the top of the
             // stack.
-            self.drive_value(unsafe { Held::new(value) }, &mut f)?;
+            self.drive_value(unsafe { Held::new(value.0) }, value.1, &mut f)?;
         }
 
         Ok(())
@@ -288,13 +287,14 @@ impl<'a> SerializeDriver<'a> {
 
     /// Serializes a value and emits its first event.
     #[inline(always)]
-    fn drive_value<F>(&mut self, value: Held, f: &mut F) -> Result<(), Error>
+    fn drive_value<F>(&mut self, value: Held, is_key: bool, f: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &SerializerState) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
         // SAFETY: the value is held until the event and the emitters derived
         // from it are dropped.
         let serializable = unsafe { value.get() };
+        self.state.is_map_key = is_key;
         let Begin {
             kind,
             descriptor,
@@ -302,7 +302,7 @@ impl<'a> SerializeDriver<'a> {
         } = serializable.__private_begin(&mut self.state)?;
         let (emitter, event) = match kind {
             BeginKind::Chunk(Chunk::Atom(atom)) => {
-                f(Event::Atom(atom), descriptor, &self.state)?;
+                f(Event::Atom(atom), descriptor, &mut self.state)?;
                 if needs_finish {
                     serializable.finish(&mut self.state)?;
                 }
@@ -322,17 +322,17 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         });
         self.state.descriptor_stack.push(descriptor);
-        f(event, descriptor, &self.state)
+        f(event, descriptor, &mut self.state)
     }
 
     /// Ends the container on the top of the stack and emits the end event.
     #[inline]
     fn drive_end<F>(&mut self, f: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &SerializerState) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
         let (event, descriptor) = self.end_container();
-        f(event, descriptor, &self.state)?;
+        f(event, descriptor, &mut self.state)?;
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;
@@ -351,6 +351,7 @@ impl<'a> SerializeDriver<'a> {
             unsafe { held.get() }.finish(&mut self.state)?;
         }
 
+        let mut is_key = false;
         let value = match self.next_value.take() {
             Some(value) => value,
             None => {
@@ -370,6 +371,7 @@ impl<'a> SerializeDriver<'a> {
                         } else {
                             let key = emitter.next_key(&mut self.state)?;
                             *is_value = key.is_some();
+                            is_key = true;
                             key
                         }
                     }
@@ -383,6 +385,7 @@ impl<'a> SerializeDriver<'a> {
                             let key = unsafe {
                                 std::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
                             };
+                            self.state.is_map_key = true;
                             return Ok(Some((Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR)));
                         }
                         None => None,
@@ -401,6 +404,7 @@ impl<'a> SerializeDriver<'a> {
                                 // serializable of the frame.
                                 self.next_value = Some(unsafe { Held::new(value) });
                                 let key = Cow::Borrowed(key);
+                                self.state.is_map_key = true;
                                 return Ok(Some((
                                     Event::Atom(Atom::Str(key)),
                                     &STRUCT_KEY_DESCRIPTOR,
@@ -420,7 +424,7 @@ impl<'a> SerializeDriver<'a> {
             }
         };
 
-        self.serialize_value(value)
+        self.serialize_value(value, is_key)
     }
 
     /// Ends the container on the top of the stack.
@@ -442,11 +446,12 @@ impl<'a> SerializeDriver<'a> {
 
     /// Serializes a value and returns its first event.
     #[inline]
-    fn serialize_value(&mut self, value: Held) -> Result<NextEvent<'static>, Error> {
+    fn serialize_value(&mut self, value: Held, is_key: bool) -> Result<NextEvent<'static>, Error> {
         // SAFETY: the value is held by the driver until the event and the
         // emitters derived from it are dropped.  Moving `value` only moves a
         // pointer to it.
         let serializable = unsafe { value.get() };
+        self.state.is_map_key = is_key;
         let Begin {
             kind,
             descriptor,
@@ -541,7 +546,7 @@ fn test_state_mut() {
     struct Name(&'static str);
 
     impl Serialize for Name {
-        fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+        fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
             Ok(Chunk::Atom(Atom::Str(
                 if state.get::<Uppercase>().is_some_and(|x| x.0) {
                     self.0.to_uppercase().into()

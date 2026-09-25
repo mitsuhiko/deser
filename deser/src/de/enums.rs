@@ -6,9 +6,10 @@
 //! variant through a [`VariantBuilder`].
 use std::mem::take;
 
-use crate::de::{Deserialize, DeserializerState, OwnedSink, Recording, Sink, SinkHandle};
+use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
 use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
+use crate::State;
 
 /// Builds the value of an enum variant.
 pub trait VariantBuilder<E> {
@@ -123,7 +124,7 @@ impl<'a, E: 'static> ExternallyTaggedSink<'a, E> {
 }
 
 impl<'a, E: 'static> Sink for ExternallyTaggedSink<'a, E> {
-    fn atom(&mut self, atom: crate::Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: crate::Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             crate::Atom::Str(ref name) => match (self.unit)(name) {
                 Some(value) => {
@@ -136,11 +137,11 @@ impl<'a, E: 'static> Sink for ExternallyTaggedSink<'a, E> {
         }
     }
 
-    fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         if self.key.is_some() || self.variant.is_some() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -150,13 +151,13 @@ impl<'a, E: 'static> Sink for ExternallyTaggedSink<'a, E> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         let key = self.key.take().unwrap_or_default();
         let variant = (self.lookup)(&key).ok_or_else(|| unknown_variant(&key, self.descriptor))?;
         Ok(SinkHandle::to(self.variant.insert(variant).sink()))
     }
 
-    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         if self.out.is_some() {
             // unit variant from a string
             return Ok(());
@@ -220,7 +221,7 @@ impl<'a, E: 'static> AdjacentlyTaggedSink<'a, E> {
         })
     }
 
-    fn ensure_variant(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn ensure_variant(&mut self, state: &mut State) -> Result<(), Error> {
         if self.variant.is_some() {
             return Ok(());
         }
@@ -243,16 +244,16 @@ impl<'a, E: 'static> AdjacentlyTaggedSink<'a, E> {
 }
 
 impl<'a, E: 'static> Sink for AdjacentlyTaggedSink<'a, E> {
-    fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.ensure_variant(state)?;
         Ok(self.key.recorder())
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         let key = take(&mut self.key);
         if key.as_str() == Some(self.tag) {
             if self.tag_value.is_some() {
@@ -273,7 +274,7 @@ impl<'a, E: 'static> Sink for AdjacentlyTaggedSink<'a, E> {
         }
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.ensure_variant(state)?;
         let variant = self.variant.as_mut().ok_or_else(|| {
             Error::new(
@@ -369,7 +370,7 @@ impl<'a, E: 'static> InternallyTaggedSink<'a, E> {
 
     /// Creates the variant once the tag is known and replays the pairs
     /// recorded so far into it.
-    fn ensure_variant(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn ensure_variant(&mut self, state: &mut State) -> Result<(), Error> {
         if self.variant.is_some() {
             return Ok(());
         }
@@ -390,11 +391,11 @@ impl<'a, E: 'static> InternallyTaggedSink<'a, E> {
 }
 
 impl<'a, E: 'static> Sink for InternallyTaggedSink<'a, E> {
-    fn map(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.ensure_variant(state)?;
         if let Some(variant) = &mut self.variant {
             return variant.sink().next_key(state);
@@ -402,7 +403,7 @@ impl<'a, E: 'static> Sink for InternallyTaggedSink<'a, E> {
         Ok(self.key.recorder())
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         if let Some(variant) = &mut self.variant {
             return variant.sink().next_value(state);
         }
@@ -420,7 +421,7 @@ impl<'a, E: 'static> Sink for InternallyTaggedSink<'a, E> {
         Ok(self.pending.last_mut().unwrap().1.recorder())
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.ensure_variant(state)?;
         let variant = self.variant.as_mut().ok_or_else(|| {
             Error::new(

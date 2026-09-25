@@ -1,10 +1,9 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::mem::ManuallyDrop;
-use std::rc::Rc;
 
 use deser::ext::ExtValue;
-use deser::ser::{SerializeDriver, SerializerState};
+use deser::ser::SerializeDriver;
+use deser::State;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
@@ -59,7 +58,6 @@ struct Writer {
     stack: Vec<Frame>,
     // in canonical mode the offsets of the keys and values of the open maps
     offsets: Vec<usize>,
-    pending_tags: Rc<RefCell<Vec<u64>>>,
     // bytes to be inserted into the output at the end, see `patch_length`.
     insertions: Vec<Insertion>,
 }
@@ -74,14 +72,14 @@ struct Insertion {
 
 impl Writer {
     #[inline(always)]
-    fn event(&mut self, event: Event) -> Result<(), Error> {
+    fn event(&mut self, event: Event, state: &mut State) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => {
-                self.begin_item();
+                self.begin_item(state);
                 self.write_atom(atom)
             }
-            Event::MapStart => self.start(true),
-            Event::SeqStart => self.start(false),
+            Event::MapStart => self.start(true, state),
+            Event::SeqStart => self.start(false, state),
             Event::MapEnd | Event::SeqEnd => self.end(),
         }
     }
@@ -89,29 +87,31 @@ impl Writer {
     /// Accounts for a new item in the current container and writes the
     /// pending tags.
     #[inline(always)]
-    fn begin_item(&mut self) {
+    fn begin_item(&mut self, state: &mut State) {
         if let Some(ref mut frame) = self.frame {
             frame.items += 1;
             if self.canonical && frame.is_map {
                 self.offsets.push(self.out.len());
             }
         }
-        if !self.pending_tags.borrow().is_empty() {
-            self.write_pending_tags();
+        if state
+            .get::<PendingTags>()
+            .is_some_and(|tags| !tags.0.is_empty())
+        {
+            self.write_pending_tags(state);
         }
     }
 
     #[cold]
-    fn write_pending_tags(&mut self) {
-        let tags = std::mem::take(&mut *self.pending_tags.borrow_mut());
-        for tag in tags {
+    fn write_pending_tags(&mut self, state: &mut State) {
+        for tag in state.get_mut::<PendingTags>().0.drain(..) {
             self.write_head(MAJOR_TAG, tag);
         }
     }
 
     #[inline(never)]
-    fn start(&mut self, is_map: bool) -> Result<(), Error> {
-        self.begin_item();
+    fn start(&mut self, is_map: bool, state: &mut State) -> Result<(), Error> {
+        self.begin_item(state);
         let frame = Frame {
             header: self.out.len(),
             items: 0,
@@ -416,28 +416,22 @@ impl Serializer {
     /// Serializes the given value.
     pub fn serialize(self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
         let mut driver = SerializeDriver::new(value);
-        let pending_tags = install_pending_tags(driver.state_mut());
+        // tags are only collected if the extension exists
+        driver.state_mut().get_mut::<PendingTags>();
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,
             frame: None,
             stack: Vec::new(),
             offsets: Vec::new(),
-            pending_tags,
             insertions: Vec::new(),
         };
-        driver.drive(|event, _, _| writer.event(event))?;
+        driver.drive(|event, _, state| writer.event(event, state))?;
         if !writer.insertions.is_empty() {
             writer.apply_insertions();
         }
         Ok(writer.out)
     }
-}
-
-fn install_pending_tags(state: &mut SerializerState) -> Rc<RefCell<Vec<u64>>> {
-    let pending = state.get_mut::<PendingTags>();
-    pending.0.borrow_mut().clear();
-    pending.0.clone()
 }
 
 /// Serializes a value to CBOR.

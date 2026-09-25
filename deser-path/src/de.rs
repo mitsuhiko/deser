@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
-use deser::de::{DeserializerState, Sink, SinkHandle};
+use deser::de::{Sink, SinkHandle};
+use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 use crate::{Path, PathSegment};
@@ -40,7 +41,7 @@ impl<'a> PathSink<'a> {
     }
 
     /// Moves the path to the next index in sequences.
-    fn advance_index(&mut self, state: &mut DeserializerState) {
+    fn advance_index(&mut self, state: &mut State) {
         if let Container::Seq(ref mut index) = self.container {
             if let Some(segment) = state.get_mut::<Path>().segments.last_mut() {
                 *segment = PathSegment::Index(*index);
@@ -49,7 +50,7 @@ impl<'a> PathSink<'a> {
         }
     }
 
-    fn enter_container(&mut self, state: &mut DeserializerState, container: Container) {
+    fn enter_container(&mut self, state: &mut State, container: Container) {
         state.set_replayable::<Path>();
         state.get_mut::<Path>().segments.push(PathSegment::Unknown);
         self.entered_container = true;
@@ -60,7 +61,7 @@ impl<'a> PathSink<'a> {
 /// Sets the segment of the current container to a key.
 ///
 /// This reuses the allocation of the previous key if possible.
-fn set_key(state: &mut DeserializerState, atom: &Atom) {
+fn set_key(state: &mut State, atom: &Atom) {
     let segment = match state.get_mut::<Path>().segments.last_mut() {
         Some(segment) => segment,
         None => return,
@@ -87,35 +88,35 @@ fn set_key(state: &mut DeserializerState, atom: &Atom) {
 }
 
 impl<'a> Sink for PathSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.is_key {
             set_key(state, &atom);
         }
         self.sink.atom(atom, state)
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.enter_container(state, Container::Map);
         self.sink.map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.enter_container(state, Container::Seq(0));
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         let sink = self.sink.next_key(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, true)))
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.advance_index(state);
         let sink = self.sink.next_value(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, false)))
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         // this is what `next_key` followed by `atom` and `finish` on the
         // returned path sink does, without allocating the path sink.
         let mut sink = self.sink.next_key(state)?;
@@ -124,14 +125,14 @@ impl<'a> Sink for PathSink<'a> {
         sink.finish(state)
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         // this is what `next_value` followed by `atom` and `finish` on the
         // returned path sink does, without allocating the path sink.
         self.advance_index(state);
         self.sink.value_atom(atom, state)
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let rv = self.sink.finish(state);
         // leave the container this sink entered
         if self.entered_container {

@@ -1,6 +1,7 @@
-use deser::de::{DeserializeDriver, DeserializerState, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
-use deser::ser::{Chunk, SerializeDriver, SerializerState};
+use deser::ser::{Chunk, SerializeDriver};
+use deser::State;
 use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
@@ -38,7 +39,7 @@ impl Extension for Timestamp {
 }
 
 impl Serialize for Timestamp {
-    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
     }
 }
@@ -46,7 +47,7 @@ impl Serialize for Timestamp {
 make_slot_wrapper!(SlotWrapper);
 
 impl Sink for SlotWrapper<Timestamp> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<Timestamp>() => {
                 **self = ext.downcast_ref::<Timestamp>().cloned();

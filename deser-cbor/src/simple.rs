@@ -1,6 +1,7 @@
-use deser::de::{Deserialize, DeserializerState, Sink, SinkHandle};
+use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
-use deser::ser::{Chunk, Serialize, SerializerState};
+use deser::ser::{Chunk, Serialize};
+use deser::State;
 use deser::{Atom, Descriptor, Error, ErrorKind};
 
 /// A CBOR simple value.
@@ -55,7 +56,7 @@ impl Serialize for Simple {
         &SimpleDescriptor
     }
 
-    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
     }
 }
@@ -81,7 +82,7 @@ impl<'a> Sink for SimpleSink<'a> {
         &SimpleDescriptor
     }
 
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let simple = match atom {
             Atom::Ext(ref ext) if ext.is::<Simple>() => *ext.downcast_ref::<Simple>().unwrap(),
             Atom::Bool(false) => Simple(20),

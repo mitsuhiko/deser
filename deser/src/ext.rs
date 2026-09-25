@@ -30,7 +30,8 @@
 //!
 //! ```
 //! use deser::ext::{Extension, ExtValue};
-//! use deser::ser::{Chunk, Serialize, SerializerState};
+//! use deser::ser::{Chunk, Serialize};
+//! use deser::State;
 //! use deser::{Atom, Error};
 //!
 //! /// A timestamp in seconds, falls back to an integer.
@@ -48,7 +49,7 @@
 //! }
 //!
 //! impl Serialize for Timestamp {
-//!     fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
 //!         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
 //!     }
 //! }

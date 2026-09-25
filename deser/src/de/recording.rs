@@ -1,7 +1,8 @@
-use crate::de::{DeserializeDriver, DeserializerState, Sink, SinkHandle};
+use crate::de::{DeserializeDriver, Sink, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, Event};
 use crate::extensions::Snapshot;
+use crate::State;
 
 /// A recorded value that can be replayed into a sink later.
 ///
@@ -12,7 +13,7 @@ use crate::extensions::Snapshot;
 ///
 /// A recording captures the events of a value together with the values of
 /// all replayable extensions in the state (see
-/// [`DeserializerState::set_replayable`]) at the time of each event.  When
+/// [`State::set_replayable`]) at the time of each event.  When
 /// replaying, these values are restored for every event.  This means that
 /// information such as source locations or paths remains correct for replayed
 /// values.  Map keys are also replayed as map keys, so format specific key
@@ -46,6 +47,13 @@ pub struct Recording {
     events: Vec<(Event<'static>, Snapshot)>,
     is_map_key: bool,
 }
+
+// recordings are stored in sinks, they must not prevent them from moving
+// between threads.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<Recording>();
+};
 
 impl Recording {
     /// Creates an empty recording.
@@ -113,7 +121,7 @@ impl Recording {
     /// ```
     pub fn capture<'a, F>(then: F) -> SinkHandle<'a>
     where
-        F: FnOnce(Recording, &mut DeserializerState) -> Result<(), Error> + 'a,
+        F: FnOnce(Recording, &mut State) -> Result<(), Error> + 'a,
     {
         SinkHandle::boxed(CaptureSink {
             recording: Recording::new(),
@@ -146,33 +154,25 @@ impl Recording {
     ///
     /// The state is the state of the ongoing deserialization.  The replayable
     /// extensions in it are restored to their current values after replaying.
-    pub fn replay(&self, sink: SinkHandle<'_>, state: &mut DeserializerState) -> Result<(), Error> {
+    pub fn replay(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
         let live = state.extensions().snapshot();
         let rv = self.replay_events(sink, state);
         state.extensions_mut().restore(&live);
         rv
     }
 
-    fn replay_events(
-        &self,
-        sink: SinkHandle<'_>,
-        state: &mut DeserializerState,
-    ) -> Result<(), Error> {
-        let mut driver = DeserializeDriver::nested(state, sink.shorten(), self.is_map_key);
-        for (event, snapshot) in self.events.iter() {
-            driver.state_mut().extensions_mut().restore(snapshot);
-            driver.emit(event.as_borrowed())?;
-        }
-        Ok(())
+    fn replay_events(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
+        DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
+            for (event, snapshot) in self.events.iter() {
+                driver.state_mut().extensions_mut().restore(snapshot);
+                driver.emit(event.as_borrowed())?;
+            }
+            Ok(())
+        })
     }
 }
 
-fn record(
-    recording: &mut Recording,
-    is_root: bool,
-    event: Event<'static>,
-    state: &DeserializerState,
-) {
+fn record(recording: &mut Recording, is_root: bool, event: Event<'static>, state: &State) {
     if is_root && recording.events.is_empty() {
         recording.is_map_key = state.is_map_key();
     }
@@ -181,8 +181,7 @@ fn record(
         .push((event, state.extensions().snapshot()));
 }
 
-type CaptureCallback<'a> =
-    Box<dyn FnOnce(Recording, &mut DeserializerState) -> Result<(), Error> + 'a>;
+type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &mut State) -> Result<(), Error> + 'a>;
 
 /// Records a value into an owned recording and invokes a callback with it.
 struct CaptureSink<'a> {
@@ -202,7 +201,7 @@ impl<'a> CaptureSink<'a> {
 }
 
 impl<'a> Sink for CaptureSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         record(
             &mut self.recording,
             true,
@@ -212,27 +211,27 @@ impl<'a> Sink for CaptureSink<'a> {
         Ok(())
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         record(&mut self.recording, true, Event::MapStart, state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         record(&mut self.recording, true, Event::SeqStart, state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             record(&mut self.recording, true, end, state);
         }
@@ -251,7 +250,7 @@ struct Recorder<'a> {
 }
 
 impl<'a> Recorder<'a> {
-    fn record(&mut self, event: Event<'static>, state: &DeserializerState) {
+    fn record(&mut self, event: Event<'static>, state: &State) {
         record(self.recording, self.is_root, event, state);
     }
 
@@ -265,32 +264,32 @@ impl<'a> Recorder<'a> {
 }
 
 impl<'a> Sink for Recorder<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.record(Event::Atom(atom.to_static()), state);
         Ok(())
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.record(Event::MapStart, state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.record(Event::SeqStart, state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(self.child())
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             self.record(end, state);
         }

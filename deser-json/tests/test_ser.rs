@@ -163,7 +163,8 @@ fn test_wide_integers() {
 #[test]
 fn test_extension_fallback() {
     use deser::ext::{ExtValue, Extension};
-    use deser::ser::{Chunk, SerializerState};
+    use deser::ser::Chunk;
+    use deser::State;
     use deser::{Atom, Error};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -180,7 +181,7 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
             Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
         }
     }

@@ -1,7 +1,8 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use deser::de::{Deserialize, DeserializerState, Sink, SinkHandle};
+use deser::de::{Deserialize, Sink, SinkHandle};
+use deser::State;
 use deser::{Atom, Error};
 
 /// A dynamic YAML value.
@@ -151,7 +152,7 @@ impl<'a> ValueSink<'a> {
 }
 
 impl<'a> Sink for ValueSink<'a> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.tag = deser_yaml::take_tag(state);
         let value = match atom {
             Atom::Null => Value::Null,
@@ -172,31 +173,31 @@ impl<'a> Sink for ValueSink<'a> {
         Ok(())
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = deser_yaml::take_tag(state);
         self.compound = Some(Compound::Map(Vec::new()));
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = deser_yaml::take_tag(state);
         self.compound = Some(Compound::Seq(Vec::new()));
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.flush();
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         if let Some(Compound::Seq(_)) = self.compound {
             self.flush();
         }
         Ok(Deserialize::deserialize_into(&mut self.value))
     }
 
-    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         self.flush();
         match self.compound.take() {
             Some(Compound::Seq(items)) => self.set(Value::Seq(items)),

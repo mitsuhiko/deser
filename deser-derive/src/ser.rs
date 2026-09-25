@@ -161,7 +161,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
     __deser::__begin_without_finish!();
 
-                    fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                         __deser::__derive::Ok(__deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                             data: self,
                             index: 0,
@@ -186,7 +186,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
                 #[automatically_derived]
                 impl #wrapper_impl_generics __deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                    fn next(&mut self, __state: &mut __deser::ser::SerializerState)
+                    fn next(&mut self, __state: &mut __deser::State)
                         -> __deser::__derive::Result<__deser::__derive::Option<(__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>)>>
                     {
                         #[allow(clippy::never_loop)]
@@ -265,14 +265,14 @@ fn derive_indexed_struct(
                     &__Descriptor
                 }
 
-                fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
                         __deser::ser::IndexedStructEmitter::new(self)
                     )))
                 }
 
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::ser::SerializerState)
+                fn __private_begin(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
                     __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, &__Descriptor))
@@ -281,7 +281,7 @@ fn derive_indexed_struct(
 
             #[automatically_derived]
             impl #impl_generics __deser::ser::IndexedStruct for #ident #ty_generics #bounded_where_clause {
-                fn field(&self, __index: usize, __state: &mut __deser::ser::SerializerState)
+                fn field(&self, __index: usize, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::StructField<'_>>
                 {
                     __deser::__derive::Ok(match __index {
@@ -337,7 +337,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                 impl __deser::Serialize for #ident {
     __deser::__begin_without_finish!();
 
-                    fn serialize(&self, __state: &mut __deser::ser::SerializerState)
+                    fn serialize(&self, __state: &mut __deser::State)
                         -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
                     {
                         __deser::__derive::Ok(match *self {
@@ -375,17 +375,17 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     self.0.descriptor()
                 }
-                fn serialize(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::ser::Serialize::serialize(&self.0, __state)
                 }
-                fn finish(&self, __state: &mut __deser::ser::SerializerState) -> __deser::__derive::Result<()> {
+                fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
                     __deser::ser::Serialize::finish(&self.0, __state)
                 }
                 fn is_optional(&self) -> bool {
                     __deser::ser::Serialize::is_optional(&self.0)
                 }
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::ser::SerializerState)
+                fn __private_begin(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
                     __deser::ser::Serialize::__private_begin(&self.0, __state)

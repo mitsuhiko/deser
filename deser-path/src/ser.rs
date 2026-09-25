@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::rc::Rc;
 
-use deser::ser::{
-    Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializerState, StructEmitter,
-};
+use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
+use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 use crate::{Path, PathSegment};
@@ -27,19 +25,16 @@ impl<'a> PathSerializable<'a> {
 }
 
 impl<'a> Serialize for PathSerializable<'a> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         match self.serializable.serialize(state)? {
             Chunk::Struct(emitter) => Ok(Chunk::Struct(Box::new(PathStructEmitter { emitter }))),
-            Chunk::Map(emitter) => Ok(Chunk::Map(Box::new(PathMapEmitter {
-                emitter,
-                path_segment: Rc::default(),
-            }))),
+            Chunk::Map(emitter) => Ok(Chunk::Map(Box::new(PathMapEmitter { emitter }))),
             Chunk::Seq(emitter) => Ok(Chunk::Seq(Box::new(PathSeqEmitter { emitter, index: 0 }))),
             other => Ok(other),
         }
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.serializable.finish(state)
     }
 
@@ -59,7 +54,7 @@ struct PathStructEmitter<'a> {
 impl<'a> StructEmitter for PathStructEmitter<'a> {
     fn next(
         &mut self,
-        state: &mut SerializerState,
+        state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let (key, value) = match self.emitter.next(state)? {
             Some(result) => result,
@@ -76,28 +71,24 @@ impl<'a> StructEmitter for PathStructEmitter<'a> {
 
 struct PathMapEmitter<'a> {
     emitter: Box<dyn MapEmitter + 'a>,
-    path_segment: Rc<RefCell<Option<PathSegment>>>,
 }
 
 impl<'a> MapEmitter for PathMapEmitter<'a> {
-    fn next_key(
-        &mut self,
-        state: &mut SerializerState,
-    ) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        state.get_mut::<Path>().pending_key = None;
         let key_serializable = SegmentCollectingSerializable {
             serializable: match self.emitter.next_key(state)? {
                 Some(result) => result,
                 None => return Ok(None),
             },
-            segment: self.path_segment.clone(),
         };
         Ok(Some(SerializeHandle::boxed(key_serializable)))
     }
 
-    fn next_value(&mut self, state: &mut SerializerState) -> Result<SerializeHandle<'_>, Error> {
-        let new_segment = self
-            .path_segment
-            .borrow_mut()
+    fn next_value(&mut self, state: &mut State) -> Result<SerializeHandle<'_>, Error> {
+        let new_segment = state
+            .get_mut::<Path>()
+            .pending_key
             .take()
             .unwrap_or(PathSegment::Unknown);
         let value_serializable = SegmentPushingSerializable {
@@ -114,7 +105,7 @@ struct PathSeqEmitter<'a> {
 }
 
 impl<'a> SeqEmitter for PathSeqEmitter<'a> {
-    fn next(&mut self, state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         let index = self.index;
         self.index += 1;
         let value = match self.emitter.next(state)? {
@@ -142,7 +133,7 @@ struct SegmentPushingSerializable<'a> {
 }
 
 impl<'a> Serialize for SegmentPushingSerializable<'a> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         {
             let path = state.get_mut::<Path>();
             match self.segment.take().unwrap() {
@@ -152,16 +143,13 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
         }
         match self.serializable.serialize(state)? {
             Chunk::Struct(emitter) => Ok(Chunk::Struct(Box::new(PathStructEmitter { emitter }))),
-            Chunk::Map(emitter) => Ok(Chunk::Map(Box::new(PathMapEmitter {
-                emitter,
-                path_segment: Rc::default(),
-            }))),
+            Chunk::Map(emitter) => Ok(Chunk::Map(Box::new(PathMapEmitter { emitter }))),
             Chunk::Seq(emitter) => Ok(Chunk::Seq(Box::new(PathSeqEmitter { emitter, index: 0 }))),
             other => Ok(other),
         }
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.serializable.finish(state)?;
         state.get_mut::<Path>().pop();
         Ok(())
@@ -176,27 +164,27 @@ impl<'a> Serialize for SegmentPushingSerializable<'a> {
     }
 }
 
+/// Records the serialized key as pending key in the path.
 struct SegmentCollectingSerializable<'a> {
     serializable: SerializeHandle<'a>,
-    segment: Rc<RefCell<Option<PathSegment>>>,
 }
 
 impl<'a> Serialize for SegmentCollectingSerializable<'a> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         match self.serializable.serialize(state)? {
             Chunk::Atom(Atom::Str(key)) => {
-                *self.segment.borrow_mut() = Some(PathSegment::Key(key.to_string()));
+                state.get_mut::<Path>().pending_key = Some(PathSegment::Key(key.to_string()));
                 Ok(Chunk::Atom(Atom::Str(key)))
             }
             Chunk::Atom(Atom::U64(val)) => {
-                *self.segment.borrow_mut() = Some(PathSegment::Index(val as usize));
+                state.get_mut::<Path>().pending_key = Some(PathSegment::Index(val as usize));
                 Ok(Chunk::Atom(Atom::U64(val)))
             }
             other => Ok(other),
         }
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.serializable.finish(state)
     }
 

@@ -121,3 +121,47 @@ fn test_descriptor_forwarding() {
     assert!(Serialize::is_optional(&Box::new(None::<u32>)));
     assert!(!Serialize::is_optional(&Box::new(Some(1u32))));
 }
+
+#[test]
+fn test_is_map_key() {
+    #[derive(Serialize)]
+    struct Item {
+        id: u32,
+        tags: std::collections::BTreeMap<u32, (u32, u32)>,
+    }
+
+    let item = Item {
+        id: 1,
+        tags: [(2, (3, 4))].into_iter().collect(),
+    };
+    let expected = vec![
+        (Event::MapStart, false),
+        ("id".into(), true),
+        (1u64.into(), false),
+        ("tags".into(), true),
+        (Event::MapStart, false),
+        (2u64.into(), true),
+        (Event::SeqStart, false),
+        (3u64.into(), false),
+        (4u64.into(), false),
+        (Event::SeqEnd, false),
+        (Event::MapEnd, false),
+        (Event::MapEnd, false),
+    ];
+
+    let mut events = Vec::new();
+    let mut driver = SerializeDriver::new(&item);
+    while let Some((event, _, state)) = driver.next().unwrap() {
+        events.push((event.to_static(), state.is_map_key()));
+    }
+    assert_eq!(events, expected);
+
+    let mut events = Vec::new();
+    SerializeDriver::new(&item)
+        .drive(|event, _, state| {
+            events.push((event.to_static(), state.is_map_key()));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(events, expected);
+}

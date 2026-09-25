@@ -32,7 +32,8 @@
 //! serializers make better decisions.
 //!
 //! ```rust
-//! use deser::ser::{Serialize, SerializerState, Chunk};
+//! use deser::ser::{Serialize, Chunk};
+//! use deser::State;
 //! use deser::{Atom, Descriptor, Error};
 //!
 //! struct MyInt(u32);
@@ -54,7 +55,7 @@
 //!         &MyIntDescriptor
 //!     }
 //!
-//!     fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
 //!         // one can also just do `self.0.serialize(state)`
 //!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
 //!     }
@@ -69,7 +70,8 @@
 //!
 //! ```rust
 //! use std::borrow::Cow;
-//! use deser::ser::{Serialize, SerializerState, Chunk, StructEmitter, SerializeHandle};
+//! use deser::ser::{Serialize, Chunk, StructEmitter, SerializeHandle};
+//! use deser::State;
 //! use deser::Error;
 //!
 //! struct User {
@@ -78,7 +80,7 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+//!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
 //!         Ok(Chunk::Struct(Box::new(UserEmitter {
 //!             user: self,
 //!             index: 0,
@@ -92,7 +94,7 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self, _state: &mut SerializerState)
+//!     fn next(&mut self, _state: &mut State)
 //!         -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>
 //!     {
 //!         let index = self.index;
@@ -106,12 +108,11 @@
 //! }
 //! ```
 use std::borrow::Cow;
-use std::fmt;
 use std::ops::Deref;
 
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::extensions::Extensions;
+use crate::State;
 
 mod chunk;
 mod driver;
@@ -159,78 +160,6 @@ impl<'a> SerializeHandle<'a> {
     /// Create an owned handle to a heap allocated [`Serialize`].
     pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
-    }
-}
-
-/// The current state of the serializer.
-///
-/// During serializer the [`SerializerState`] acts as a communciation device between
-/// the serializable types as the serializer.
-pub struct SerializerState {
-    extensions: Extensions,
-    descriptor_stack: Vec<&'static dyn Descriptor>,
-}
-
-impl fmt::Debug for SerializerState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Stack<'a>(&'a [&'a dyn Descriptor]);
-        struct Entry<'a>(&'a dyn Descriptor);
-
-        impl<'a> fmt::Debug for Entry<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("Layer")
-                    .field("type_name", &self.0.name())
-                    .field("precision", &self.0.precision())
-                    .field("unordered", &self.0.unordered())
-                    .finish()
-            }
-        }
-
-        impl<'a> fmt::Debug for Stack<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let mut l = f.debug_list();
-                for item in self.0.iter() {
-                    l.entry(&Entry(*item));
-                }
-                l.finish()
-            }
-        }
-
-        f.debug_struct("SerializerState")
-            .field("extensions", &self.extensions)
-            .field("stack", &Stack(&self.descriptor_stack))
-            .finish()
-    }
-}
-
-impl SerializerState {
-    /// Returns an extension value.
-    ///
-    /// Returns `None` if the value was never set.
-    #[inline]
-    pub fn get<T: fmt::Debug + 'static>(&self) -> Option<&T> {
-        self.extensions.get()
-    }
-
-    /// Returns a mutable extension value.
-    ///
-    /// If the value was never set, it's initialized with the default value.
-    #[inline]
-    pub fn get_mut<T: Default + fmt::Debug + 'static>(&mut self) -> &mut T {
-        self.extensions.get_mut()
-    }
-
-    /// Returns the current recursion depth.
-    pub fn depth(&self) -> usize {
-        self.descriptor_stack.len()
-    }
-
-    /// Returns the topmost descriptor.
-    ///
-    /// This descriptor always points to a container as the descriptor of a value itself
-    /// will always be passed to the callback explicitly.
-    pub fn top_descriptor(&self) -> Option<&'static dyn Descriptor> {
-        self.descriptor_stack.last().copied()
     }
 }
 
@@ -313,7 +242,7 @@ pub enum StructField<'a> {
 /// [`StructField::End`] is returned.
 #[doc(hidden)]
 pub trait IndexedStruct {
-    fn field(&self, index: usize, state: &mut SerializerState) -> Result<StructField<'_>, Error>;
+    fn field(&self, index: usize, state: &mut State) -> Result<StructField<'_>, Error>;
 }
 
 /// A struct emitter for an [`IndexedStruct`].
@@ -332,7 +261,7 @@ impl<'a> IndexedStructEmitter<'a> {
 impl<'a> StructEmitter for IndexedStructEmitter<'a> {
     fn next(
         &mut self,
-        state: &mut SerializerState,
+        state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         loop {
             let field = self.fields.field(self.index, state)?;
@@ -355,7 +284,7 @@ pub trait IndexedSeq {
     fn element(
         &self,
         index: usize,
-        state: &mut SerializerState,
+        state: &mut State,
     ) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
 
@@ -368,7 +297,7 @@ pub trait StructEmitter {
     /// Produces the next field and value in the struct.
     fn next(
         &mut self,
-        state: &mut SerializerState,
+        state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>;
 }
 
@@ -379,10 +308,7 @@ pub trait MapEmitter {
     /// If this reached the end of the map `None` shall be returned.  The expectation
     /// is that this method changes an internal state in the emitter and the next
     /// call to [`next_value`](Self::next_value) returns the corresponding value.
-    fn next_key(
-        &mut self,
-        state: &mut SerializerState,
-    ) -> Result<Option<SerializeHandle<'_>>, Error>;
+    fn next_key(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error>;
 
     /// Produces the next value in the map.
     ///
@@ -390,13 +316,13 @@ pub trait MapEmitter {
     ///
     /// This method shall panic if the emitter is not able to produce a value because
     /// the emitter is in the wrong state.
-    fn next_value(&mut self, state: &mut SerializerState) -> Result<SerializeHandle<'_>, Error>;
+    fn next_value(&mut self, state: &mut State) -> Result<SerializeHandle<'_>, Error>;
 }
 
 /// A sequence emitter.
 pub trait SeqEmitter {
     /// Produces the next item in the sequence.
-    fn next(&mut self, state: &mut SerializerState) -> Result<Option<SerializeHandle<'_>>, Error>;
+    fn next(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
 
 /// A data structure that can be serialized into any data format supported by Deser.
@@ -411,13 +337,13 @@ pub trait SeqEmitter {
 ///   which can be further processed to walk the embedded compound value.
 pub trait Serialize {
     /// Serializes this serializable.
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error>;
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
 
     /// Invoked after the serialization finished.
     ///
     /// This is primarily useful to undo some state change in the serializer
     /// state at the end of the processing.
-    fn finish(&self, _state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
@@ -451,7 +377,7 @@ pub trait Serialize {
     /// implement this so that the driver needs a single call per value.
     #[doc(hidden)]
     #[inline]
-    fn __private_begin(&self, state: &mut SerializerState) -> Result<Begin<'_>, Error> {
+    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
         let descriptor = self.descriptor();
         Ok(Begin::chunk(self.serialize(state)?, descriptor, true))
     }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use deser::de::{Deserialize, DeserializeDriver, DeserializerState, Sink, SinkHandle};
+use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+use deser::State;
 use deser::{Atom, Error, Event};
 use deser_path::{Path, PathSink};
 
@@ -16,7 +17,7 @@ impl Deserialize for MyBool {
 }
 
 impl Sink for SlotWrapper<MyBool> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
                 let path = state.get::<Path>().unwrap();
@@ -60,7 +61,7 @@ impl Deserialize for RecordPath {
 }
 
 impl Sink for SlotWrapper<RecordPath> {
-    fn atom(&mut self, _atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
         let path = state.get::<Path>().unwrap();
         **self = Some(RecordPath(format!("{:?}", path.segments())));
         Ok(())

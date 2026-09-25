@@ -28,7 +28,11 @@ pub(crate) struct UnorderedNamedDescriptor {
 /// During serialization descriptors are generally created, for the deserialization
 /// system descriptors are only used when entering into a nested structure
 /// such as a map, struct or sequence.
-pub trait Descriptor {
+///
+/// Descriptors are `'static` and held by reference in the
+/// [`State`](crate::State) which is why they need to be [`Sync`].  This is
+/// the case for all descriptors which are `static` items.
+pub trait Descriptor: Sync {
     /// Returns a descriptive name for a type if such a name is available.
     fn name(&self) -> Option<&str> {
         None

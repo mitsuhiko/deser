@@ -1,28 +1,26 @@
 //! Support for CBOR tags.
 //!
 //! Tags are not part of the deser data model.  Instead they are exchanged
-//! out of band through the serializer and deserializer states:
+//! out of band through the [`State`]:
 //!
 //! * When deserializing, the tags in front of a data item are published into
-//!   the [`DeserializerState`] for the first event of the item (the atom or
-//!   the start of the map or sequence).  Types can pick them up with
+//!   the state for the first event of the item (the atom or the start of the
+//!   map or sequence).  Types can pick them up with
 //!   [`take_tag`].  Types which do not care about tags never see them, which
 //!   means that unknown tags are transparent.
-//! * When serializing, [`Tagged`] registers its tag in the
-//!   [`SerializerState`] and the serializer writes it in front of the next
-//!   data item.
+//! * When serializing, [`Tagged`] registers its tag in the state and the
+//!   serializer writes it in front of the next data item.
 //!
 //! The simplest way to work with tags is the [`Tagged`] wrapper.
 //!
 //! The bignum tags 2 and 3 are handled by the format itself: they are
 //! converted to and from integers.  Only bignums that do not fit into 128
 //! bits are passed on as tagged byte strings.
-use std::cell::RefCell;
 use std::fmt;
-use std::rc::Rc;
 
-use deser::de::{Deserialize, DeserializerState, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, Serialize, SerializerState};
+use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser::ser::{Chunk, Serialize};
+use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// The tags of the current event in the deserializer state.
@@ -33,10 +31,10 @@ pub(crate) struct CurrentTags(pub(crate) Vec<u64>);
 
 /// The tags that the serializer should write in front of the next item.
 ///
-/// The serializer shares the list with the state so that it does not have
-/// to look up the state for every event.
+/// The serializer installs this extension, tags are only collected if it
+/// exists.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct PendingTags(pub(crate) Rc<RefCell<Vec<u64>>>);
+pub(crate) struct PendingTags(pub(crate) Vec<u64>);
 
 /// Takes the outermost tag of the current data item from the state.
 ///
@@ -47,13 +45,13 @@ pub(crate) struct PendingTags(pub(crate) Rc<RefCell<Vec<u64>>>);
 /// not support tags.
 ///
 /// ```
-/// use deser::de::DeserializerState;
+/// use deser::State;
 ///
-/// fn all_tags(state: &mut DeserializerState) -> Vec<u64> {
+/// fn all_tags(state: &mut State) -> Vec<u64> {
 ///     std::iter::from_fn(|| deser_cbor::take_tag(state)).collect()
 /// }
 /// ```
-pub fn take_tag(state: &mut DeserializerState) -> Option<u64> {
+pub fn take_tag(state: &mut State) -> Option<u64> {
     match state.get::<CurrentTags>() {
         Some(tags) if !tags.0.is_empty() => Some(state.get_mut::<CurrentTags>().0.remove(0)),
         _ => None,
@@ -65,9 +63,9 @@ pub fn take_tag(state: &mut DeserializerState) -> Option<u64> {
 /// This is what [`Tagged`] uses internally.  It must be called from
 /// [`Serialize::serialize`] and applies to the value serialized from that
 /// call.  If the serializer does not support tags this does nothing.
-pub fn push_tag(state: &SerializerState, tag: u64) {
-    if let Some(pending) = state.get::<PendingTags>() {
-        pending.0.borrow_mut().push(tag);
+pub fn push_tag(state: &mut State, tag: u64) {
+    if state.get::<PendingTags>().is_some() {
+        state.get_mut::<PendingTags>().0.push(tag);
     }
 }
 
@@ -134,14 +132,14 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 }
 
 impl<T: Serialize> Serialize for Tagged<T> {
-    fn serialize(&self, state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         if let Some(tag) = self.tag {
             push_tag(state, tag);
         }
         self.value.serialize(state)
     }
 
-    fn finish(&self, state: &mut SerializerState) -> Result<(), Error> {
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
         self.value.finish(state)
     }
 
@@ -183,40 +181,40 @@ impl<'a, T: Deserialize> TaggedSink<'a, T> {
 }
 
 impl<'a, T: Deserialize> Sink for TaggedSink<'a, T> {
-    fn atom(&mut self, atom: Atom, state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         let mut sink = T::deserialize_into(&mut self.slot);
         sink.atom(atom, state)?;
         sink.finish(state)
     }
 
-    fn map(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         self.compound().map(state)
     }
 
-    fn seq(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
         self.compound().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
         self.compound().next_value(state)
     }
 
     fn value_for_key(
         &mut self,
         key: &str,
-        state: &mut DeserializerState,
+        state: &mut State,
     ) -> Result<Option<SinkHandle<'_>>, Error> {
         self.compound().value_for_key(key, state)
     }
 
-    fn finish(&mut self, state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
                 compound.borrow_mut().finish(state)?;

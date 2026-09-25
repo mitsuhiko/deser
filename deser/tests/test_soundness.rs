@@ -4,8 +4,9 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use deser::de::{DeserializeDriver, DeserializerState, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, SerializeDriver, SerializeHandle, SerializerState, StructEmitter};
+use deser::de::{DeserializeDriver, OwnedSink, Sink, SinkHandle};
+use deser::ser::{Chunk, SerializeDriver, SerializeHandle, StructEmitter};
+use deser::State;
 use deser::{Atom, Deserialize, Error, Event, Serialize};
 
 fn depth() -> usize {
@@ -214,7 +215,7 @@ impl<'a> Drop for CommitOnDrop<'a> {
 }
 
 impl<'a> Sink for CommitOnDrop<'a> {
-    fn atom(&mut self, atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
         if let Atom::U64(v) = atom {
             self.value = Some(v);
         }
@@ -223,18 +224,18 @@ impl<'a> Sink for CommitOnDrop<'a> {
 }
 
 impl Sink for Parent {
-    fn seq(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut DeserializerState) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
         Ok(SinkHandle::boxed(CommitOnDrop {
             slot: &mut self.slot,
             value: None,
         }))
     }
 
-    fn finish(&mut self, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         self.finished_with = Some(self.slot);
         Ok(())
     }
@@ -380,7 +381,7 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(BufferEmitter {
             depth: self.0,
             index: 0,
@@ -393,7 +394,7 @@ impl Serialize for Nested {
 impl<'a> StructEmitter for BufferEmitter<'a> {
     fn next(
         &mut self,
-        _state: &mut SerializerState,
+        _state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
@@ -431,7 +432,7 @@ fn test_borrowed_keys_across_reallocation() {
 struct Panicking;
 
 impl Serialize for Panicking {
-    fn serialize(&self, _state: &mut SerializerState) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         panic!("serialize panicked");
     }
 }
@@ -439,7 +440,7 @@ impl Serialize for Panicking {
 struct PanickingSink;
 
 impl Sink for PanickingSink {
-    fn atom(&mut self, _atom: Atom, _state: &mut DeserializerState) -> Result<(), Error> {
+    fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
         panic!("sink panicked");
     }
 }

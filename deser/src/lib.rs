@@ -55,6 +55,7 @@ pub mod ser;
 
 mod descriptors;
 mod extensions;
+mod state;
 
 #[cfg(doctest)]
 mod soundness;
@@ -65,6 +66,7 @@ mod derive_errors;
 pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
 pub use self::event::{Atom, Event};
+pub use self::state::State;
 
 // common re-exports
 
