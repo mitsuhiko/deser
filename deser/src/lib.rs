@@ -59,6 +59,9 @@ mod extensions;
 #[cfg(doctest)]
 mod soundness;
 
+#[cfg(all(doctest, feature = "derive"))]
+mod derive_errors;
+
 pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
 pub use self::event::{Atom, Event};
@@ -83,6 +86,7 @@ pub mod derive;
 pub mod __derive {
     pub use std::borrow::Cow;
     pub use std::boxed::Box;
+    pub use std::convert::Into;
     pub use std::default::Default;
     pub use std::mem::replace;
     pub use std::option::Option::{self, None, Some};

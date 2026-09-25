@@ -4,6 +4,20 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Changed `#[deser(default = ...)]` to take an expression instead of a
+  function name in a string, and `#[deser(skip_serializing_if = ...)]` to
+  take a path instead of a string.  String literals given as defaults are
+  converted with `Into`, and `Self` is not supported in either attribute:
+
+  ```rust
+  // before
+  #[deser(default = "default_port", skip_serializing_if = "Option::is_none")]
+  // after
+  #[deser(default = default_port(), skip_serializing_if = Option::is_none)]
+  #[deser(default = 8080)]
+  #[deser(default = "localhost")]
+  ```
+- Moved `deser-derive` to `syn` 3.  This requires Rust 1.71 or later.
 - Added `deser_json::from_slice` and `Deserializer::from_slice` which parse
   JSON from bytes and validate the strings as UTF-8 while parsing.
 - The `speedups` feature of `deser-json` and `deser-cbor` validates UTF-8

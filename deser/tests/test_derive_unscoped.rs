@@ -12,7 +12,7 @@ fn test_unscoped() {
     #[deser(skip_serializing_optionals)]
     pub struct Attrs {
         is_active: bool,
-        #[deser(skip_serializing_if = "is_false")]
+        #[deser(skip_serializing_if = is_false)]
         is_stuff: bool,
     }
 

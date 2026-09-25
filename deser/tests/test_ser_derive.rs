@@ -15,7 +15,7 @@ fn test_skip_serializing_if() {
     #[derive(Serialize)]
     struct Test {
         required: usize,
-        #[deser(skip_serializing_if = "Option::is_none")]
+        #[deser(skip_serializing_if = Option::is_none)]
         optional: Option<usize>,
     }
 
@@ -28,6 +28,49 @@ fn test_skip_serializing_if() {
             Event::MapStart,
             "required".into(),
             42u64.into(),
+            Event::MapEnd,
+        ]
+    );
+}
+
+#[test]
+fn test_skip_serializing_if_qualified_path() {
+    #[derive(Serialize)]
+    struct Test {
+        #[deser(skip_serializing_if = <[u8]>::is_empty)]
+        bytes: Vec<u8>,
+        #[deser(skip_serializing_if = String::is_empty)]
+        name: String,
+        #[deser(skip_serializing_if = Test::is_default_count)]
+        count: usize,
+    }
+
+    impl Test {
+        fn is_default_count(count: &usize) -> bool {
+            *count == 1
+        }
+    }
+
+    assert_eq!(
+        serialize(&Test {
+            bytes: Vec::new(),
+            name: String::new(),
+            count: 1,
+        }),
+        vec![Event::MapStart, Event::MapEnd]
+    );
+    assert_eq!(
+        serialize(&Test {
+            bytes: Vec::new(),
+            name: "x".into(),
+            count: 2,
+        }),
+        vec![
+            Event::MapStart,
+            "name".into(),
+            "x".into(),
+            "count".into(),
+            2u64.into(),
             Event::MapEnd,
         ]
     );
@@ -200,7 +243,7 @@ fn test_flatten_skip_serializing_if() {
     #[derive(Serialize)]
     struct Outer {
         required: bool,
-        #[deser(flatten, skip_serializing_if = "not_inner")]
+        #[deser(flatten, skip_serializing_if = not_inner)]
         inner: Inner,
     }
 

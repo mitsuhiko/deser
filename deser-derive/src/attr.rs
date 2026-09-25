@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use proc_macro2::{TokenStream, TokenTree};
+use quote::{quote, ToTokens};
 use syn::meta::ParseNestedMeta;
 
 #[derive(Copy, Clone)]
@@ -34,7 +36,8 @@ impl RenameAll {
 #[derive(Clone)]
 pub enum TypeDefault {
     Implicit,
-    Explicit(syn::ExprPath),
+    /// An expression that produces the default value.
+    Explicit(TokenStream),
 }
 
 pub struct ContainerAttrs<'a> {
@@ -109,18 +112,59 @@ fn parse_str(meta: &ParseNestedMeta) -> syn::Result<String> {
     Ok(parse_lit_str(meta)?.value())
 }
 
-/// Parses the value of `name = "path"` as a path.
-fn parse_str_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
-    parse_lit_str(meta)?.parse()
+/// Rejects `Self` in expressions and paths.
+///
+/// The generated code that evaluates the expressions lives in different impl
+/// blocks (sinks, emitters, helper structs for enum variants) so `Self` would
+/// not refer to the type the attribute is placed on.
+fn reject_self(tokens: TokenStream) -> syn::Result<()> {
+    for token in tokens {
+        match token {
+            TokenTree::Ident(ident) if ident == "Self" => {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "`Self` is not supported in deser attributes, use the type name",
+                ));
+            }
+            TokenTree::Group(group) => reject_self(group.stream())?,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
-/// Parses `default` or `default = "path"`.
+/// Parses the value of `name = path`.
+fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
+    let path: syn::ExprPath = meta
+        .value()?
+        .parse()
+        .map_err(|err| syn::Error::new(err.span(), "expected a path to a function"))?;
+    reject_self(path.to_token_stream())?;
+    Ok(path)
+}
+
+/// Parses `default` or `default = expr`.
+///
+/// String literals are converted with `Into` so that they can be used as
+/// defaults for `String` and friends.  All other expressions are used as is.
 fn parse_default(meta: &ParseNestedMeta) -> syn::Result<TypeDefault> {
-    if has_value(meta) {
-        Ok(TypeDefault::Explicit(parse_str_path(meta)?))
-    } else {
-        Ok(TypeDefault::Implicit)
+    if !has_value(meta) {
+        return Ok(TypeDefault::Implicit);
     }
+    let expr: syn::Expr = meta.value()?.parse().map_err(|err| {
+        syn::Error::new(
+            err.span(),
+            "expected an expression, complex defaults must go into a function",
+        )
+    })?;
+    reject_self(expr.to_token_stream())?;
+    Ok(TypeDefault::Explicit(match expr {
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(ref lit),
+            ..
+        }) => quote! { ::deser::__derive::Into::into(#lit) },
+        expr => expr.into_token_stream(),
+    }))
 }
 
 impl<'a> ContainerAttrs<'a> {
@@ -347,7 +391,7 @@ impl<'a> FieldAttrs<'a> {
             }
             "flatten" => set_flag(meta, name, &mut rv.flatten),
             "skip_serializing_if" => {
-                let value = parse_str_path(meta)?;
+                let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.skip_serializing_if, value)
             }
             _ => Err(meta.error("unsupported attribute")),

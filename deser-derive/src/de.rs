@@ -140,8 +140,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             Some(TypeDefault::Implicit) => {
                 quote! { take().unwrap_or_else(::deser::__derive::Default::default) }
             }
-            Some(TypeDefault::Explicit(path)) => {
-                quote! { take().unwrap_or_else(#path) }
+            Some(TypeDefault::Explicit(expr)) => {
+                quote! { take().unwrap_or_else(|| #expr) }
             }
             None => quote!(take()),
         })
@@ -211,7 +211,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 TypeDefault::Implicit => quote! {
                     <#ident as ::deser::__derive::Default>::default()
                 },
-                TypeDefault::Explicit(path) => quote! { #path() },
+                TypeDefault::Explicit(expr) => expr.clone(),
             };
             Some(quote! {
                 if [

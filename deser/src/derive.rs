@@ -50,7 +50,9 @@
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
 //! * `#[deser(default)]`: Instructs the deserializer to fill in all missing fields from [`Default`].
 //!   Default will be lazily invoked if any of the fields is not filled in.
-//! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
+//! * `#[deser(default = expr)]`: like `default` but fills in from the given
+//!   expression instead, for instance `#[deser(default = Config::new())]`.
+//!   See [default expressions](#default-expressions).
 //! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
@@ -120,9 +122,13 @@
 //!
 //! * `#[deser(rename = "...")]`: renames the field.
 //! * `#[deser(default)]`: fills in the field default value from [`Default`].
-//! * `#[deser(default = "...")]`: like `default` but fills in from a function with the given name instead.
-//! * `#[deser(skip_serializing_if = "...")]`: invokes the provided callback with the value to check
-//!   if it should be skipped during serialization.
+//! * `#[deser(default = expr)]`: like `default` but fills in from the given
+//!   expression instead, for instance `#[deser(default = 42)]`.  See
+//!   [default expressions](#default-expressions).
+//! * `#[deser(skip_serializing_if = path)]`: invokes the function at the given
+//!   path with a reference to the value to check if it should be skipped
+//!   during serialization, for instance
+//!   `#[deser(skip_serializing_if = Option::is_none)]`.
 //! * `#[deser(alias = "...")]`: provides an alias for the field name for deserialization.  This is ignored
 //!   for serialization.
 //! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the
@@ -141,6 +147,40 @@
 //!
 //! The fields of struct variants support the same attributes as struct fields,
 //! except for `flatten` which is only supported for deserialization.
+//!
+//! ## Default Expressions
+//!
+//! `default = expr` takes an expression which is evaluated every time a
+//! default is needed, and only then.  On a field it has to produce a value of
+//! the field's type, on a container a value of the container type.
+//!
+//! * String literals are converted with [`Into`], so `default = "localhost"`
+//!   works for `String` fields and all other types that implement
+//!   `From<&str>`.
+//! * Functions need to be called: `default = make_default()`, not
+//!   `default = make_default`.
+//! * Closures and blocks are not supported, move such logic into a function.
+//! * `Self` is not supported in default expressions and `skip_serializing_if`
+//!   paths as the generated code does not live in an `impl` block of the
+//!   type.  Use the name of the type instead.
+//!
+//! ```
+//! use deser::Deserialize;
+//!
+//! fn default_tags() -> Vec<String> {
+//!     vec!["default".into()]
+//! }
+//!
+//! #[derive(Deserialize)]
+//! pub struct Config {
+//!     #[deser(default = "localhost")]
+//!     host: String,
+//!     #[deser(default = 8080)]
+//!     port: u16,
+//!     #[deser(default = default_tags())]
+//!     tags: Vec<String>,
+//! }
+//! ```
 
 // these exist as explicit aliases only
 

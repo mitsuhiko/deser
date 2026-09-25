@@ -223,13 +223,41 @@ enum WithOptionals {
     Item {
         name: String,
         comment: Option<String>,
-        #[deser(skip_serializing_if = "is_zero")]
+        #[deser(skip_serializing_if = is_zero)]
         count: u32,
     },
 }
 
 fn is_zero(value: &u32) -> bool {
     *value == 0
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+#[deser(tag = "kind")]
+enum WithDefaults {
+    Server {
+        #[deser(default = "localhost")]
+        host: String,
+        #[deser(default = 8000 + 80)]
+        port: u16,
+    },
+}
+
+#[test]
+fn test_variant_expression_defaults() {
+    assert_eq!(
+        deserialize::<WithDefaults>(vec![
+            Event::MapStart,
+            "kind".into(),
+            "Server".into(),
+            Event::MapEnd,
+        ])
+        .unwrap(),
+        WithDefaults::Server {
+            host: "localhost".into(),
+            port: 8080,
+        }
+    );
 }
 
 #[test]

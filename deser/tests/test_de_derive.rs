@@ -87,7 +87,7 @@ fn test_option_defaults() {
 
     #[derive(Deserialize)]
     pub struct MyOtherContainer {
-        #[deser(default = "other_default")]
+        #[deser(default = other_default())]
         val: Option<String>,
     }
 
@@ -176,7 +176,7 @@ fn test_container_explicit_defaults() {
     }
 
     #[derive(Deserialize)]
-    #[deser(default = "default_it")]
+    #[deser(default = default_it())]
     pub struct MyContainer {
         field1: usize,
         field2: usize,
@@ -199,15 +199,151 @@ fn test_field_explicit_default() {
 
     #[derive(Deserialize)]
     pub struct MyContainer {
-        #[deser(default = "default_field_1")]
+        #[deser(default = default_field_1())]
         field1: usize,
-        #[deser(default = "default_field_2")]
+        #[deser(default = default_field_2())]
         field2: usize,
     }
 
     let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
     assert_eq!(s.field1, 1);
     assert_eq!(s.field2, 2);
+}
+
+#[test]
+fn test_field_expression_defaults() {
+    use std::collections::BTreeMap;
+
+    fn make_tags(n: usize) -> Vec<String> {
+        (0..n).map(|x| x.to_string()).collect()
+    }
+
+    const PORT: u16 = 8080;
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    pub struct Name(String);
+
+    impl From<&str> for Name {
+        fn from(value: &str) -> Name {
+            Name(value.to_uppercase())
+        }
+    }
+
+    #[derive(Deserialize)]
+    pub struct MyContainer {
+        #[deser(default = 42)]
+        int: u16,
+        #[deser(default = -1.5)]
+        float: f64,
+        #[deser(default = PORT + 1)]
+        port: u16,
+        #[deser(default = "localhost")]
+        string: String,
+        #[deser(default = "name")]
+        name: Name,
+        #[deser(default = Some("x".to_string()))]
+        opt: Option<String>,
+        #[deser(default = Vec::new())]
+        vec: Vec<u32>,
+        #[deser(default = BTreeMap::<String, u32>::new())]
+        map: BTreeMap<String, u32>,
+        #[deser(default = make_tags(2))]
+        tags: Vec<String>,
+        #[deser(default = <bool as Default>::default())]
+        flag: bool,
+    }
+
+    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert_eq!(s.int, 42);
+    assert_eq!(s.float, -1.5);
+    assert_eq!(s.port, 8081);
+    assert_eq!(s.string, "localhost");
+    assert_eq!(s.name, Name("NAME".into()));
+    assert_eq!(s.opt.as_deref(), Some("x"));
+    assert!(s.vec.is_empty());
+    assert!(s.map.is_empty());
+    assert_eq!(s.tags, vec!["0".to_string(), "1".to_string()]);
+    assert!(!s.flag);
+
+    // defaults are only used for missing values
+    let s: MyContainer = deserialize(vec![
+        Event::MapStart,
+        "int".into(),
+        1u64.into(),
+        "string".into(),
+        "remote".into(),
+        Event::MapEnd,
+    ]);
+    assert_eq!(s.int, 1);
+    assert_eq!(s.string, "remote");
+}
+
+#[test]
+fn test_defaults_are_lazy() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn counted() -> usize {
+        CALLS.fetch_add(1, Ordering::SeqCst)
+    }
+
+    #[derive(Deserialize)]
+    pub struct MyContainer {
+        #[deser(default = counted())]
+        field: usize,
+    }
+
+    let s: MyContainer = deserialize(vec![
+        Event::MapStart,
+        "field".into(),
+        42u64.into(),
+        Event::MapEnd,
+    ]);
+    assert_eq!(s.field, 42);
+    assert_eq!(CALLS.load(Ordering::SeqCst), 0);
+    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert_eq!(s.field, 0);
+    assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_container_expression_default() {
+    #[derive(Deserialize)]
+    #[deser(default = MyContainer::make("x"))]
+    pub struct MyContainer {
+        name: String,
+        #[deser(default = 7)]
+        field: usize,
+    }
+
+    impl MyContainer {
+        fn make(name: &str) -> MyContainer {
+            MyContainer {
+                name: name.into(),
+                field: 1,
+            }
+        }
+    }
+
+    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert_eq!(s.name, "x");
+    assert_eq!(s.field, 7);
+}
+
+#[test]
+fn test_generic_expression_default() {
+    #[derive(Deserialize)]
+    pub struct MyContainer<T> {
+        #[deser(default = Vec::new())]
+        items: Vec<T>,
+        #[deser(default = "n/a")]
+        name: String,
+    }
+
+    let s: MyContainer<u32> = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    assert!(s.items.is_empty());
+    assert_eq!(s.name, "n/a");
 }
 
 #[test]
