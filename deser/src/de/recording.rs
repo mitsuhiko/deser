@@ -66,8 +66,15 @@ use crate::State;
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Recording {
-    events: Vec<(Event<'static>, Snapshot)>,
+    events: Vec<RecordedEvent>,
     is_map_key: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RecordedEvent {
+    event: Event<'static>,
+    input_range: (usize, usize),
+    snapshot: Snapshot,
 }
 
 // recordings are stored in sinks, they must not prevent them from moving
@@ -167,7 +174,7 @@ impl Recording {
 
     /// Returns the recorded events.
     pub fn events(&self) -> impl Iterator<Item = &Event<'static>> {
-        self.events.iter().map(|(event, _)| event)
+        self.events.iter().map(|recorded| &recorded.event)
     }
 
     /// Returns the value if the recording is a single string.
@@ -175,7 +182,10 @@ impl Recording {
     /// This is useful to look at recorded map keys.
     pub fn as_str(&self) -> Option<&str> {
         match self.events.as_slice() {
-            [(Event::Atom(Atom::Str(value)), _)] => Some(value),
+            [RecordedEvent {
+                event: Event::Atom(Atom::Str(value)),
+                ..
+            }] => Some(value),
             _ => None,
         }
     }
@@ -186,16 +196,19 @@ impl Recording {
     /// extensions in it are restored to their current values after replaying.
     pub fn replay(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
         let live = state.extensions().snapshot();
+        let live_range = state.input_range;
         let rv = self.replay_events(sink, state);
         state.extensions_mut().restore(&live);
+        state.input_range = live_range;
         rv
     }
 
     fn replay_events(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
         DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
-            for (event, snapshot) in self.events.iter() {
-                driver.emit_with(event.as_borrowed(), |state| {
-                    state.extensions_mut().restore(snapshot)
+            for recorded in self.events.iter() {
+                driver.emit_with(recorded.event.as_borrowed(), |state| {
+                    state.input_range = recorded.input_range;
+                    state.extensions_mut().restore(&recorded.snapshot)
                 })?;
             }
             Ok(())
@@ -207,9 +220,11 @@ fn record(recording: &mut Recording, is_root: bool, event: Event<'static>, state
     if is_root && recording.events.is_empty() {
         recording.is_map_key = state.is_map_key();
     }
-    recording
-        .events
-        .push((event, state.extensions().snapshot()));
+    recording.events.push(RecordedEvent {
+        event,
+        input_range: state.input_range,
+        snapshot: state.extensions().snapshot(),
+    });
 }
 
 type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &mut State) -> Result<(), Error> + 'a>;
@@ -339,7 +354,7 @@ impl PartialEq for Recording {
                 .events
                 .iter()
                 .zip(other.events.iter())
-                .all(|(a, b)| a.0 == b.0)
+                .all(|(a, b)| a.event == b.event)
     }
 }
 
@@ -352,13 +367,11 @@ impl Deserialize for Recording {
     }
 }
 
-type RecordedEvent = (Event<'static>, Snapshot);
-
 /// Returns the number of events of the value the events start with.
 fn value_len(events: &[RecordedEvent]) -> usize {
     let mut depth = 0usize;
-    for (index, (event, _)) in events.iter().enumerate() {
-        match event {
+    for (index, recorded) in events.iter().enumerate() {
+        match recorded.event {
             Event::MapStart | Event::SeqStart => depth += 1,
             Event::MapEnd | Event::SeqEnd => depth = depth.saturating_sub(1),
             Event::Atom(_) => {}
@@ -377,7 +390,7 @@ impl<'a> RecordedValue<'a> {
     fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, Error> {
         let events = self.0;
         let (first, snapshot) = match events.first() {
-            Some(first) => first,
+            Some(first) => (&first.event, &first.snapshot),
             None => {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
@@ -452,6 +465,12 @@ impl Serialize for Recording {
     }
 
     fn is_optional(&self) -> bool {
-        matches!(self.events.as_slice(), [(Event::Atom(Atom::Null), _)])
+        matches!(
+            self.events.as_slice(),
+            [RecordedEvent {
+                event: Event::Atom(Atom::Null),
+                ..
+            }]
+        )
     }
 }

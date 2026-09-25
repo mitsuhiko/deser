@@ -6,6 +6,9 @@ use crate::extensions::Extensions;
 
 const STACK_CAPACITY: usize = 128;
 
+/// The input range of events without one.
+pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
+
 /// Gives access to the state of an ongoing serialization or deserialization.
 ///
 /// The state acts as a communication channel between the data format and
@@ -34,6 +37,9 @@ pub struct State {
     extensions: Extensions,
     pub(crate) descriptor_stack: Vec<&'static dyn Descriptor>,
     pub(crate) is_map_key: bool,
+    // the byte range of the current event, `NO_RANGE` if there is none.
+    // This is not an option so that it can be cleared with a single store.
+    pub(crate) input_range: (usize, usize),
 }
 
 impl State {
@@ -43,6 +49,7 @@ impl State {
             extensions: Extensions::default(),
             descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
             is_map_key: false,
+            input_range: NO_RANGE,
         }
     }
 
@@ -54,6 +61,7 @@ impl State {
                 extensions: Extensions::default(),
                 descriptor_stack: Vec::new(),
                 is_map_key: false,
+                input_range: NO_RANGE,
             },
         )
     }
@@ -195,6 +203,28 @@ impl State {
     pub fn is_map_key(&self) -> bool {
         self.is_map_key
     }
+
+    /// Returns the byte range in the input of the current event.
+    ///
+    /// This is only available if the format provides it (see
+    /// [`DeserializeDriver::emit_at`](crate::de::DeserializeDriver::emit_at)).
+    /// The range can be resolved into lines and columns for instance with the
+    /// `deser-location` crate.
+    #[inline]
+    pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
+        let (start, end) = self.input_range;
+        if start == NO_RANGE.0 {
+            None
+        } else {
+            Some(start..end)
+        }
+    }
+
+    /// Sets the byte range in the input of the current event.
+    #[inline]
+    pub fn set_input_range(&mut self, range: Option<std::ops::Range<usize>>) {
+        self.input_range = range.map_or(NO_RANGE, |range| (range.start, range.end));
+    }
 }
 
 // the state must never prevent an ongoing serialization or deserialization
@@ -233,6 +263,7 @@ impl fmt::Debug for State {
             .field("extensions", &self.extensions)
             .field("stack", &Stack(&self.descriptor_stack))
             .field("is_map_key", &self.is_map_key)
+            .field("input_range", &self.input_range())
             .finish()
     }
 }

@@ -28,9 +28,6 @@ pub struct Deserializer<'a> {
     input: &'a [u8],
     pos: usize,
     buffer: Vec<u8>,
-    // the offset where the last token started
-    #[cfg(feature = "locations")]
-    token_start: usize,
     // `true` if the input is a byte slice which needs to be validated
     validate_utf8: bool,
     #[cfg(feature = "locations")]
@@ -54,8 +51,6 @@ impl<'a> Deserializer<'a> {
             validate_utf8: false,
             pos: 0,
             buffer: Vec::new(),
-            #[cfg(feature = "locations")]
-            token_start: 0,
             #[cfg(feature = "locations")]
             track_locations: false,
         }
@@ -99,17 +94,6 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    /// Publishes the offsets of the token that was parsed last.
-    #[inline(always)]
-    fn publish_span<const LOCATIONS: bool>(&mut self, driver: &mut DeserializeDriver) {
-        #[cfg(feature = "locations")]
-        if LOCATIONS {
-            deser_location::Locations::set_current(driver.state_mut(), self.token_start, self.pos);
-        }
-        #[cfg(not(feature = "locations"))]
-        let _ = driver;
-    }
-
     /// Deserializes the value.
     pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
         let mut out = None;
@@ -130,34 +114,29 @@ impl<'a> Deserializer<'a> {
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
         #[cfg(feature = "locations")]
-        let rv = if self.track_locations {
+        if self.track_locations {
             deser_location::Locations::set_source_map(
                 driver.state_mut(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.source())),
             );
-            let rv = self.drive_impl::<true>(driver, &mut buffer);
-            // the span is attached to every event, detach the last one
-            driver.state_mut().clear_event_data();
-            rv
-        } else {
-            self.drive_impl::<false>(driver, &mut buffer)
-        };
-        #[cfg(not(feature = "locations"))]
-        let rv = self.drive_impl::<false>(driver, &mut buffer);
+        }
+        let rv = self.drive_impl(driver, &mut buffer);
         self.buffer = buffer;
         rv
     }
 
-    fn drive_impl<const LOCATIONS: bool>(
+    fn drive_impl(
         &mut self,
         driver: &mut DeserializeDriver,
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
+        // tokens start with the byte consumed by `next_token_byte`.  The
+        // start is derived from the position rather than stored as this
+        // keeps the tokenizer fast.
         macro_rules! emit {
-            ($emit:expr) => {{
-                self.publish_span::<LOCATIONS>(driver);
-                $emit?
-            }};
+            ($start:expr, $event:expr) => {
+                driver.emit_at($event, $start, self.pos)?
+            };
         }
 
         // the state of the current container is held in a local, the outer
@@ -167,57 +146,61 @@ impl<'a> Deserializer<'a> {
 
         'value: loop {
             let byte = self.next_token_byte()?;
+            let start = self.pos - 1;
             match byte {
                 b'"' => {
                     let val = self.parse_str(buffer)?;
-                    emit!(driver.emit(Event::from(val)))
+                    emit!(start, Event::from(val))
                 }
                 b'0'..=b'9' => {
                     let number = self.parse_integer(true, byte)?;
-                    emit!(emit_number(driver, number))
+                    emit_number(driver, number, start, self.pos)?
                 }
                 b'-' => {
                     let first_digit = self.next_or_nul();
                     let number = self.parse_integer(false, first_digit)?;
-                    emit!(emit_number(driver, number))
+                    emit_number(driver, number, start, self.pos)?
                 }
                 b'n' => {
                     self.parse_ident(b"ull")?;
-                    emit!(driver.emit(Event::Atom(Atom::Null)))
+                    emit!(start, Event::Atom(Atom::Null))
                 }
                 b't' => {
                     self.parse_ident(b"rue")?;
-                    emit!(driver.emit(Event::from(true)))
+                    emit!(start, Event::from(true))
                 }
                 b'f' => {
                     self.parse_ident(b"alse")?;
-                    emit!(driver.emit(Event::from(false)))
+                    emit!(start, Event::from(false))
                 }
                 b'{' | b'[' => {
                     stack.push(container);
                     let close = if byte == b'{' {
                         container = Container::Map;
-                        emit!(driver.emit(Event::MapStart));
+                        emit!(start, Event::MapStart);
                         b'}'
                     } else {
                         container = Container::Seq;
-                        emit!(driver.emit(Event::SeqStart));
+                        emit!(start, Event::SeqStart);
                         b']'
                     };
                     // containers can close immediately, otherwise the first
                     // value follows.
                     if self.parse_whitespace() != Some(close) {
                         if container == Container::Map {
-                            self.parse_key::<LOCATIONS>(driver, buffer)?;
+                            self.parse_key(driver, buffer)?;
                         }
                         continue 'value;
                     }
                     self.next_token_byte()?;
-                    emit!(driver.emit(if close == b'}' {
-                        Event::MapEnd
-                    } else {
-                        Event::SeqEnd
-                    }));
+                    emit!(
+                        self.pos - 1,
+                        if close == b'}' {
+                            Event::MapEnd
+                        } else {
+                            Event::SeqEnd
+                        }
+                    );
                     container = stack.pop().unwrap_or(Container::Top);
                 }
                 b',' => return Err(Error::new(ErrorKind::Unexpected, "unexpected comma")),
@@ -244,17 +227,20 @@ impl<'a> Deserializer<'a> {
                     Some(b',') => {
                         self.bump();
                         if container == Container::Map {
-                            self.parse_key::<LOCATIONS>(driver, buffer)?;
+                            self.parse_key(driver, buffer)?;
                         }
                         continue 'value;
                     }
                     Some(byte) if byte == close => {
                         self.next_token_byte()?;
-                        emit!(driver.emit(if close == b'}' {
-                            Event::MapEnd
-                        } else {
-                            Event::SeqEnd
-                        }));
+                        emit!(
+                            self.pos - 1,
+                            if close == b'}' {
+                                Event::MapEnd
+                            } else {
+                                Event::SeqEnd
+                            }
+                        );
                         container = stack.pop().unwrap_or(Container::Top);
                     }
                     Some(b']' | b'}') => {
@@ -280,7 +266,7 @@ impl<'a> Deserializer<'a> {
 
     /// Parses a map key and the colon after it.
     #[inline]
-    fn parse_key<const LOCATIONS: bool>(
+    fn parse_key(
         &mut self,
         driver: &mut DeserializeDriver,
         buffer: &mut Vec<u8>,
@@ -288,9 +274,9 @@ impl<'a> Deserializer<'a> {
         if self.next_token_byte()? != b'"' {
             return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
         }
+        let start = self.pos - 1;
         let key = self.parse_str(buffer)?;
-        self.publish_span::<LOCATIONS>(driver);
-        driver.emit(Event::from(key))?;
+        driver.emit_at(Event::from(key), start, self.pos)?;
         match self.parse_whitespace() {
             Some(b':') => {
                 self.bump();
@@ -306,10 +292,6 @@ impl<'a> Deserializer<'a> {
     fn next_token_byte(&mut self) -> Result<u8, Error> {
         match self.parse_whitespace() {
             Some(byte) => {
-                #[cfg(feature = "locations")]
-                {
-                    self.token_start = self.pos;
-                }
                 self.bump();
                 Ok(byte)
             }
@@ -857,25 +839,35 @@ static POW10: [f64; 309] = [
 
 /// Emits a number.
 #[inline]
-fn emit_number(driver: &mut DeserializeDriver, number: Number) -> Result<(), Error> {
+fn emit_number(
+    driver: &mut DeserializeDriver,
+    number: Number,
+    start: usize,
+    end: usize,
+) -> Result<(), Error> {
     match number {
-        Number::U64(val) => driver.emit(Event::from(val)),
-        Number::I64(val) => driver.emit(Event::from(val)),
-        Number::F64(val) => driver.emit(Event::from(val)),
-        Number::BigInt(val) => emit_big_int(driver, val),
+        Number::U64(val) => driver.emit_at(Event::from(val), start, end),
+        Number::I64(val) => driver.emit_at(Event::from(val), start, end),
+        Number::F64(val) => driver.emit_at(Event::from(val), start, end),
+        Number::BigInt(val) => emit_big_int(driver, val, start, end),
     }
 }
 
 /// Emits an integer that does not fit into 64 bits as extension value.
 #[cold]
-fn emit_big_int(driver: &mut DeserializeDriver, text: &str) -> Result<(), Error> {
+fn emit_big_int(
+    driver: &mut DeserializeDriver,
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Result<(), Error> {
     // the tokenizer already validated that the value fits
     if text.starts_with('-') {
         let value: i128 = text.parse().unwrap();
-        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
+        driver.emit_at(Atom::Ext(ExtValue::borrowed(&value)), start, end)
     } else {
         let value: u128 = text.parse().unwrap();
-        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
+        driver.emit_at(Atom::Ext(ExtValue::borrowed(&value)), start, end)
     }
 }
 

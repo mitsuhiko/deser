@@ -221,10 +221,6 @@ pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
 }
 
-/// The byte offsets of the current event, attached as event data.
-#[derive(Debug, Default, Clone, Copy)]
-struct EventOffsets(usize, usize);
-
 impl Locations {
     /// Installs the source map.  Called by formats once.
     pub fn set_source_map(state: &mut State, source_map: Arc<SourceMap>) {
@@ -240,7 +236,7 @@ impl Locations {
     /// are done.
     #[inline]
     pub fn set_current(state: &mut State, start: usize, end: usize) {
-        *state.event_mut::<EventOffsets>() = EventOffsets(start, end);
+        state.set_input_range(Some(start..end));
     }
 
     /// Returns the source map if the format provides one.
@@ -250,9 +246,9 @@ impl Locations {
 
     /// Returns the span of the current event if the format provides it.
     pub fn current_span(state: &State) -> Option<Span> {
-        let EventOffsets(start, end) = *state.event::<EventOffsets>()?;
+        let range = state.input_range()?;
         let source_map = state.get::<Locations>()?.source_map.as_ref()?;
-        Some(source_map.span(start, end))
+        Some(source_map.span(range.start, range.end))
     }
 }
 

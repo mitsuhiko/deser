@@ -158,6 +158,24 @@ impl<'a> DeserializeDriver<'a> {
         rv
     }
 
+    /// Emits an event together with its byte range in the input.
+    ///
+    /// Sinks retrieve the range with
+    /// [`State::input_range`](crate::State::input_range).  The range is only
+    /// attached to this event.
+    #[inline]
+    pub fn emit_at<'e, E: Into<Event<'e>>>(
+        &mut self,
+        event: E,
+        start: usize,
+        end: usize,
+    ) -> Result<(), Error> {
+        self.state.input_range = (start, end);
+        let rv = self.emit(event);
+        self.state.input_range.0 = crate::state::NO_RANGE.0;
+        rv
+    }
+
     fn emit_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
             Some((sink, Layer::Map(ref mut is_key))) => {
