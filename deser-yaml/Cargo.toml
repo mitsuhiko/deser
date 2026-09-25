@@ -1,0 +1,23 @@
+[package]
+name = "deser-yaml"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition = "2021"
+description = "YAML support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "yaml"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-yaml"
+# the vendored conformance test data is only needed for development
+exclude = ["tests/data"]
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+
+[[test]]
+name = "yaml_test_suite"
+harness = false
