@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::ext::ExtValue;
+use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser::ser::SerializeDriver;
 use deser::State;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
@@ -319,26 +319,42 @@ impl Writer {
     #[cold]
     fn write_ext(&mut self, ext: &ExtValue) -> Result<(), Error> {
         if let Some(&val) = ext.downcast_ref::<u128>() {
-            match u64::try_from(val) {
-                Ok(val) => self.write_head(MAJOR_UNSIGNED, val),
-                Err(_) => self.write_bignum(2, val),
-            }
+            self.write_u128(val);
         } else if let Some(&val) = ext.downcast_ref::<i128>() {
-            if let Ok(val) = i64::try_from(val) {
-                self.write_i64(val);
-            } else if val >= 0 {
-                match u64::try_from(val) {
-                    Ok(val) => self.write_head(MAJOR_UNSIGNED, val),
-                    Err(_) => self.write_bignum(2, val as u128),
-                }
-            } else {
-                // -1 - val without overflows
-                let magnitude = !val as u128;
-                match u64::try_from(magnitude) {
-                    Ok(magnitude) => self.write_head(MAJOR_NEGATIVE, magnitude),
-                    Err(_) => self.write_bignum(3, magnitude),
-                }
+            self.write_i128(val);
+        } else if let Some(val) = ext.downcast_ref::<BigInt>() {
+            self.write_bigint(val);
+        } else if let Some(val) = ext.downcast_ref::<Datetime>() {
+            if val.offset.is_some() {
+                // standard date/time string
+                self.write_head(MAJOR_TAG, 0);
+            } else if val.date.is_some() && val.time.is_none() {
+                // full-date string (RFC 8943)
+                self.write_head(MAJOR_TAG, 1004);
             }
+            self.write_str(&val.to_string());
+        } else if let Some(val) = ext.downcast_ref::<Timestamp>() {
+            if val.nanosecond == 0 {
+                self.write_head(MAJOR_TAG, 1);
+                self.write_i64(val.seconds);
+            } else if let Some(datetime) = val.to_datetime() {
+                // date/time strings retain the precision
+                self.write_head(MAJOR_TAG, 0);
+                self.write_str(&datetime.to_string());
+            } else {
+                self.write_head(MAJOR_TAG, 1);
+                self.write_f64(val.as_secs_f64());
+            }
+        } else if let Some(val) = ext.downcast_ref::<Uuid>() {
+            self.write_head(MAJOR_TAG, 37);
+            self.write_bytes(&val.0);
+        } else if let Some(val) = ext.downcast_ref::<Decimal>() {
+            // decimal fraction: [exponent, mantissa]
+            let (mantissa, exponent) = val.to_parts();
+            self.write_head(MAJOR_TAG, 4);
+            self.write_head(MAJOR_ARRAY, 2);
+            self.write_i64(exponent);
+            self.write_bigint(&mantissa);
         } else if let Some(&simple) = ext.downcast_ref::<Simple>() {
             let value = simple.value();
             if value < 24 {
@@ -358,6 +374,53 @@ impl Writer {
             }
         }
         Ok(())
+    }
+
+    fn write_u128(&mut self, val: u128) {
+        match u64::try_from(val) {
+            Ok(val) => self.write_head(MAJOR_UNSIGNED, val),
+            Err(_) => self.write_bignum(2, val),
+        }
+    }
+
+    fn write_i128(&mut self, val: i128) {
+        if let Ok(val) = i64::try_from(val) {
+            self.write_i64(val);
+        } else if val >= 0 {
+            self.write_u128(val as u128);
+        } else {
+            // -1 - val without overflows
+            let magnitude = !val as u128;
+            match u64::try_from(magnitude) {
+                Ok(magnitude) => self.write_head(MAJOR_NEGATIVE, magnitude),
+                Err(_) => self.write_bignum(3, magnitude),
+            }
+        }
+    }
+
+    /// Writes an integer of any size in the shortest form.
+    fn write_bigint(&mut self, val: &BigInt) {
+        if let Some(val) = val.to_i128() {
+            self.write_i128(val);
+        } else if let Some(val) = val.to_u128() {
+            self.write_u128(val);
+        } else if val.is_negative() {
+            // negative bignums hold -1 - n
+            let mut magnitude = val.significant_magnitude().to_vec();
+            for byte in magnitude.iter_mut().rev() {
+                let (value, overflow) = byte.overflowing_sub(1);
+                *byte = value;
+                if !overflow {
+                    break;
+                }
+            }
+            let skip = magnitude.iter().take_while(|&&x| x == 0).count();
+            self.write_head(MAJOR_TAG, 3);
+            self.write_bytes(&magnitude[skip..]);
+        } else {
+            self.write_head(MAJOR_TAG, 2);
+            self.write_bytes(val.significant_magnitude());
+        }
     }
 
     /// Writes a bignum (tag 2 or 3) with the minimal number of bytes.

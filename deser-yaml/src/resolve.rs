@@ -6,7 +6,7 @@
 //! strings unless they have an explicit tag.
 use std::borrow::Cow;
 
-use deser::ext::ExtValue;
+use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
 use deser::Atom;
 
 /// The YAML version that determines how plain scalars are resolved.
@@ -47,9 +47,10 @@ pub fn classify_tag(tag: &str) -> ScalarTag<'_> {
         return ScalarTag::Str;
     }
     match tag.strip_prefix(TAG_PREFIX) {
-        Some(name @ ("str" | "int" | "float" | "bool" | "null" | "binary" | "seq" | "map")) => {
-            ScalarTag::Standard(name)
-        }
+        Some(
+            name @ ("str" | "int" | "float" | "bool" | "null" | "binary" | "timestamp" | "seq"
+            | "map"),
+        ) => ScalarTag::Standard(name),
         _ => ScalarTag::Custom,
     }
 }
@@ -118,7 +119,164 @@ pub fn resolve_standard<'x>(
         "binary" => decode_base64(s)
             .map(|bytes| Atom::Bytes(Cow::Owned(bytes)))
             .ok_or("invalid !!binary value"),
+        "timestamp" => parse_timestamp(s)
+            .map(|value| Atom::Ext(ExtValue::owned(value)))
+            .ok_or("invalid !!timestamp value"),
         _ => Err("tag does not apply to scalars"),
+    }
+}
+
+/// Parses a YAML timestamp (<https://yaml.org/type/timestamp.html>).
+///
+/// Dates without time are local dates, timestamps without time zone are in
+/// UTC.
+pub fn parse_timestamp(s: &str) -> Option<Datetime> {
+    let bytes = s.as_bytes();
+    let mut pos = 0;
+    // reads between `min` and `max` digits
+    let number = |pos: &mut usize, min: usize, max: usize| -> Option<u32> {
+        let len = bytes[*pos..]
+            .iter()
+            .take(max)
+            .take_while(|x| x.is_ascii_digit())
+            .count();
+        if len < min {
+            return None;
+        }
+        let rv = s[*pos..*pos + len].parse().ok()?;
+        *pos += len;
+        Some(rv)
+    };
+
+    let year = number(&mut pos, 4, 4)? as u16;
+    let date_only = bytes.len() == 10;
+    let expect =
+        |pos: &mut usize, c: u8| -> Option<()> { (bytes.get(*pos) == Some(&c)).then(|| *pos += 1) };
+    expect(&mut pos, b'-')?;
+    let (min, max) = if date_only { (2, 2) } else { (1, 2) };
+    let month = number(&mut pos, min, max)? as u8;
+    expect(&mut pos, b'-')?;
+    let day = number(&mut pos, min, max)? as u8;
+    let date = Date { year, month, day };
+    if !date.is_valid() {
+        return None;
+    }
+    if date_only {
+        return Some(Datetime::from(date));
+    }
+
+    match bytes.get(pos)? {
+        b'T' | b't' => pos += 1,
+        b' ' | b'\t' => {
+            while let Some(b' ' | b'\t') = bytes.get(pos) {
+                pos += 1;
+            }
+        }
+        _ => return None,
+    }
+    let hour = number(&mut pos, 1, 2)? as u8;
+    expect(&mut pos, b':')?;
+    let minute = number(&mut pos, 2, 2)? as u8;
+    expect(&mut pos, b':')?;
+    let second = number(&mut pos, 2, 2)? as u8;
+    let mut nanosecond = 0;
+    if bytes.get(pos) == Some(&b'.') {
+        pos += 1;
+        let start = pos;
+        while bytes.get(pos).is_some_and(u8::is_ascii_digit) {
+            pos += 1;
+        }
+        // digits beyond nanoseconds are truncated
+        let digits = &s[start..pos.min(start + 9)];
+        if !digits.is_empty() {
+            nanosecond = digits.parse::<u32>().ok()? * 10u32.pow(9 - digits.len() as u32);
+        }
+    }
+    let time = Time {
+        hour,
+        minute,
+        second,
+        nanosecond,
+    };
+    if !time.is_valid() {
+        return None;
+    }
+
+    while let Some(b' ' | b'\t') = bytes.get(pos) {
+        pos += 1;
+    }
+    let offset = match bytes.get(pos) {
+        // timestamps without time zone are in UTC
+        None => Offset::Z,
+        Some(b'Z') => {
+            pos += 1;
+            Offset::Z
+        }
+        Some(&sign @ (b'+' | b'-')) => {
+            pos += 1;
+            let hours = number(&mut pos, 1, 2)?;
+            let minutes = if bytes.get(pos) == Some(&b':') {
+                pos += 1;
+                number(&mut pos, 2, 2)?
+            } else {
+                0
+            };
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let minutes = (hours * 60 + minutes) as i16;
+            Offset::Custom {
+                minutes: if sign == b'-' { -minutes } else { minutes },
+            }
+        }
+        _ => return None,
+    };
+    if pos != bytes.len() {
+        return None;
+    }
+    Some(Datetime {
+        date: Some(date),
+        time: Some(time),
+        offset: Some(offset),
+    })
+}
+
+#[test]
+fn test_parse_timestamp() {
+    let ts = |s: &str| parse_timestamp(s).map(|x| x.to_string());
+    assert_eq!(ts("2002-12-14").as_deref(), Some("2002-12-14"));
+    assert_eq!(
+        ts("2001-12-14t21:59:43.10-05:00").as_deref(),
+        Some("2001-12-14T21:59:43.1-05:00")
+    );
+    assert_eq!(
+        ts("2001-12-14 21:59:43.10 -5").as_deref(),
+        Some("2001-12-14T21:59:43.1-05:00")
+    );
+    assert_eq!(
+        ts("2001-12-15 2:59:43.10").as_deref(),
+        Some("2001-12-15T02:59:43.1Z")
+    );
+    assert_eq!(
+        ts("2001-12-15T02:59:43.1Z").as_deref(),
+        Some("2001-12-15T02:59:43.1Z")
+    );
+    assert_eq!(
+        ts("2001-1-5 02:59:43").as_deref(),
+        Some("2001-01-05T02:59:43Z")
+    );
+    for invalid in [
+        "",
+        "2002-12-1",
+        "2002-13-14",
+        "2002-12-14 ",
+        "2002-12-14T25:00:00",
+        "2002-12-14T02:59",
+        "2002-12-14T02:59:43X",
+        "2002-12-14T02:59:43+24",
+        "02002-12-14",
+    ] {
+        assert!(parse_timestamp(invalid).is_none(), "{}", invalid);
     }
 }
 

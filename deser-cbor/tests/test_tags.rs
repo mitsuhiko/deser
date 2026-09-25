@@ -17,8 +17,12 @@ fn tagged_roundtrip() {
         ser(&datetime),
         "c074323031332d30332d32315432303a30343a30305a"
     );
+    // valid date/time strings are handled by the format (see
+    // test_well_known.rs), invalid ones are passed on as tagged strings
     let back: Tagged<String> = de("c074323031332d30332d32315432303a30343a30305a").unwrap();
-    assert_eq!(back, datetime);
+    assert_eq!(back, Tagged::untagged(String::from("2013-03-21T20:04:00Z")));
+    let back: Tagged<String> = de("c06178").unwrap();
+    assert_eq!(back, Tagged::new(0, String::from("x")));
 
     // Tag 1: epoch based date/time.
     assert_eq!(ser(&Tagged::new(1, 1363896240u64)), "c11a514b67b0");

@@ -20,6 +20,13 @@
 //! assert!(deser_json::from_slice::<String>(b"\"\xff\"").is_err());
 //! ```
 //!
+//! Integers that do not fit into 64 bits as well as the well-known
+//! [`BigInt`](deser::ext::BigInt) and [`Decimal`](deser::ext::Decimal) types
+//! are written as JSON numbers.  Other well-known types (such as date-times
+//! and UUIDs) are written as strings.  When parsing, numbers with a fraction
+//! or an exponent are parsed as `f64`, so to read decimals exactly they
+//! have to be given as strings.
+//!
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
 //! used for number formatting and `simdutf8` is used to validate UTF-8 when parsing

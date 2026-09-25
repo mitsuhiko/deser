@@ -2,7 +2,8 @@
 //!
 //! Tags are not part of the deser data model.  Standard tags that determine
 //! the type of a value (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
-//! `!!binary`, `!!seq` and `!!map`) are handled by the format itself.  All
+//! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) are handled by the format
+//! itself.  All
 //! other tags are exchanged out of band through the deserializer state:
 //!
 //! * When deserializing, the tag of a node is published into the

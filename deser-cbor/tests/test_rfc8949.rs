@@ -83,7 +83,11 @@ fn vectors() -> Vec<Vector> {
         // 0xf7 (undefined) is tested separately: it decodes as null.
         v(
             "c074323031332d30332d32315432303a30343a30305a",
-            Value::tag(0, Value::from("2013-03-21T20:04:00Z")),
+            Value::ext(
+                "2013-03-21T20:04:00Z"
+                    .parse::<deser::ext::Datetime>()
+                    .unwrap(),
+            ),
             true,
         ),
         v(

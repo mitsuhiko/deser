@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::ext::ExtValue;
+use deser::ext::{BigInt, Decimal, ExtValue};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
@@ -336,13 +336,20 @@ impl Serializer {
     /// their fallback representation.
     #[cold]
     fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
-        // JSON numbers have arbitrary precision, so wide integers can be
-        // written natively.
+        // JSON numbers have arbitrary precision, so wide integers and
+        // decimals can be written natively.
         if let Some(&val) = ext.downcast_ref::<u128>() {
             self.write_int(val);
             return Ok(());
         } else if let Some(&val) = ext.downcast_ref::<i128>() {
             self.write_int(val);
+            return Ok(());
+        } else if let Some(val) = ext.downcast_ref::<BigInt>() {
+            self.write_str(&val.to_string());
+            return Ok(());
+        } else if let Some(val) = ext.downcast_ref::<Decimal>() {
+            // decimals use the syntax of JSON numbers
+            self.write_str(val.as_str());
             return Ok(());
         }
         match ext.fallback() {

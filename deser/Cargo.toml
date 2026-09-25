@@ -19,3 +19,14 @@ derive = ["deser-derive"]
 
 [dependencies]
 deser-derive = { version = "0.8.0", path = "../deser-derive", optional = true }
+# types of these crates serialize as well-known extension types
+bigdecimal = { version = "0.4", optional = true, default-features = false, features = ["std"] }
+chrono = { version = "0.4.38", optional = true, default-features = false }
+jiff = { version = "0.2.14", optional = true, default-features = false, features = ["std"] }
+num-bigint = { version = "0.4", optional = true, default-features = false, features = ["std"] }
+rust_decimal = { version = "1.33", optional = true, default-features = false, features = ["std"] }
+time = { version = "0.3.40", optional = true, default-features = false }
+uuid = { version = "1", optional = true, default-features = false }
+
+[dev-dependencies]
+time = { version = "0.3.40", default-features = false, features = ["macros"] }

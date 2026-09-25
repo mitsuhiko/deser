@@ -161,6 +161,58 @@ fn test_wide_integers() {
 }
 
 #[test]
+fn test_well_known_types() {
+    use deser::ext::{BigInt, Datetime, Decimal, Duration, Timestamp, Uuid};
+    use std::collections::BTreeMap;
+
+    // decimals and big integers are written as numbers
+    let decimal: Decimal = "-12.50".parse().unwrap();
+    assert_eq!(to_string(&decimal).unwrap(), "-12.50");
+    let big: BigInt = "123456789012345678901234567890123456789012"
+        .parse()
+        .unwrap();
+    assert_eq!(
+        to_string(&big).unwrap(),
+        "123456789012345678901234567890123456789012"
+    );
+    let mut map = BTreeMap::new();
+    map.insert(big.clone(), decimal.clone());
+    assert_eq!(
+        to_string(&map).unwrap(),
+        r#"{"123456789012345678901234567890123456789012":-12.50}"#
+    );
+    // numbers are parsed as floats, strings retain the exact value
+    let value: Decimal = deser_json::from_str("-12.50").unwrap();
+    assert_eq!(value.as_str(), "-12.5");
+    let value: Decimal = deser_json::from_str("\"-12.50\"").unwrap();
+    assert_eq!(value, decimal);
+    let value: BigInt =
+        deser_json::from_str("\"123456789012345678901234567890123456789012\"").unwrap();
+    assert_eq!(value, big);
+
+    // the others are written as strings
+    let datetime: Datetime = "1979-05-27T07:32:00Z".parse().unwrap();
+    assert_eq!(to_string(&datetime).unwrap(), r#""1979-05-27T07:32:00Z""#);
+    let timestamp = Timestamp {
+        seconds: 0,
+        nanosecond: 0,
+    };
+    assert_eq!(to_string(&timestamp).unwrap(), r#""1970-01-01T00:00:00Z""#);
+    let duration = Duration {
+        seconds: 90,
+        nanosecond: 0,
+    };
+    assert_eq!(to_string(&duration).unwrap(), r#""PT1M30S""#);
+    let uuid: Uuid = "67e55044-10b1-426f-9247-bb680e5fe0c8".parse().unwrap();
+    assert_eq!(
+        to_string(&uuid).unwrap(),
+        r#""67e55044-10b1-426f-9247-bb680e5fe0c8""#
+    );
+    let value: Uuid = deser_json::from_str(r#""67e55044-10b1-426f-9247-bb680e5fe0c8""#).unwrap();
+    assert_eq!(value, uuid);
+}
+
+#[test]
 fn test_extension_fallback() {
     use deser::ext::{ExtValue, Extension};
     use deser::ser::Chunk;

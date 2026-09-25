@@ -106,6 +106,28 @@ fn test_explicit_tags() {
 }
 
 #[test]
+fn test_timestamps() {
+    use deser::ext::{Datetime, Timestamp};
+
+    let value: Datetime = from_str("!!timestamp 2001-12-14 21:59:43.10 -5").unwrap();
+    assert_eq!(value.to_string(), "2001-12-14T21:59:43.1-05:00");
+    let value: Timestamp = from_str("!!timestamp 2001-12-15T02:59:43.1Z").unwrap();
+    assert_eq!(value.to_string(), "2001-12-15T02:59:43.1Z");
+    // timestamps without time zone are in UTC
+    let value: Datetime = from_str("!!timestamp 2001-12-15 2:59:43").unwrap();
+    assert_eq!(value.to_string(), "2001-12-15T02:59:43Z");
+    let value: Datetime = from_str("!!timestamp 2002-12-14").unwrap();
+    assert_eq!(value.to_string(), "2002-12-14");
+    // other consumers get strings
+    let value: String = from_str("!!timestamp 2001-12-14t21:59:43.10-05:00").unwrap();
+    assert_eq!(value, "2001-12-14T21:59:43.1-05:00");
+    // plain scalars are not timestamps
+    let value: String = from_str("2001-12-14").unwrap();
+    assert_eq!(value, "2001-12-14");
+    assert!(from_str::<Value>("!!timestamp yesterday").is_err());
+}
+
+#[test]
 fn test_custom_tags() {
     let value: Vec<Tagged<String>> = from_str("[!color red, blue, !!str green]").unwrap();
     assert_eq!(

@@ -4,6 +4,22 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added well-known extension types to `deser::ext`: `Datetime` (with
+  `Date`, `Time` and `Offset`), `Timestamp`, `Duration`, `Uuid`, `Decimal`
+  and `BigInt`.  They are dependency free representations of common types
+  that data formats can support natively, with string fallbacks for formats
+  that do not.  `std::time::SystemTime` and `std::time::Duration` now
+  implement `Serialize` and `Deserialize` through them, as do the types of
+  `jiff`, `chrono`, `time`, `uuid`, `rust_decimal`, `bigdecimal` and
+  `num-bigint` with the new features of the same names.
+- `deser-cbor` supports the well-known types: date/time strings (tag 0),
+  epoch based date/times (tag 1, read as tagged numbers), decimal fractions
+  (tag 4), UUIDs (tag 37) and full-date strings (tag 1004).  Valid date/time
+  strings, decimal fractions, UUIDs and full-dates are no longer passed on
+  as tagged values but as well-known types, and bignums that do not fit into
+  128 bits are passed on as `BigInt` instead of tagged byte strings.
+- `deser-json` writes `BigInt` and `Decimal` as numbers.
+- `deser-yaml` supports the `!!timestamp` tag (as `Datetime`).
 - Merged `DeserializerState` and `SerializerState` into a single
   `deser::State` without a lifetime parameter.  `is_map_key` and
   `set_replayable` are available in both directions and the serialize driver

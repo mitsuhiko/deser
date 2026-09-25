@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver};
-use deser::ext::ExtValue;
+use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
 use deser::{Atom, Error, ErrorKind, Event};
 
 use crate::float::f16_to_f64;
@@ -233,9 +233,15 @@ impl<'a> Deserializer<'a> {
         let mut start = self.pos;
         let mut head = self.read_head()?;
         while head.major == MAJOR_TAG {
-            if head.arg == 2 || head.arg == 3 {
-                self.parse_bignum(driver, buffer, head.arg == 3)?;
-                return Ok(None);
+            match head.arg {
+                2 | 3 => {
+                    self.parse_bignum(driver, buffer, head.arg == 3)?;
+                    return Ok(None);
+                }
+                0 | 4 | 37 | 1004 if self.parse_well_known(driver, buffer, head.arg)? => {
+                    return Ok(None);
+                }
+                _ => {}
             }
             self.tags.push(head.arg);
             start = self.pos;
@@ -338,10 +344,92 @@ impl<'a> Deserializer<'a> {
         rv
     }
 
+    /// Parses the content of a tag that maps onto a well-known type and
+    /// emits it.
+    ///
+    /// Returns `false` (without consuming anything) if the content does not
+    /// match the tag.  It's then emitted as a regular tagged item.
+    #[cold]
+    fn parse_well_known(
+        &mut self,
+        driver: &mut DeserializeDriver,
+        buffer: &mut Vec<u8>,
+        tag: u64,
+    ) -> Result<bool, Error> {
+        let start = self.pos;
+        match self.read_well_known(buffer, tag) {
+            Some(value) => {
+                self.emit(driver, Atom::Ext(value))?;
+                Ok(true)
+            }
+            None => {
+                self.pos = start;
+                Ok(false)
+            }
+        }
+    }
+
+    /// Reads the content of a tag that maps onto a well-known type.
+    fn read_well_known(&mut self, buffer: &mut Vec<u8>, tag: u64) -> Option<ExtValue<'static>> {
+        let head = self.read_head().ok()?;
+        match tag {
+            // date/time string (RFC 8949) and full-date string (RFC 8943)
+            0 | 1004 => {
+                if head.major != MAJOR_TEXT {
+                    return None;
+                }
+                let bytes = self.read_string(head, buffer).ok()?;
+                let value: Datetime = str::from_utf8(bytes).ok()?.parse().ok()?;
+                let matches = if tag == 0 {
+                    value.offset.is_some()
+                } else {
+                    value.date.is_some() && value.time.is_none()
+                };
+                matches.then(|| ExtValue::owned(value))
+            }
+            // decimal fraction
+            4 => {
+                if head.major != MAJOR_ARRAY || head.is_indefinite() || head.arg != 2 {
+                    return None;
+                }
+                let exponent = i64::try_from(self.read_integer(buffer)?.to_i128()?).ok()?;
+                let mantissa = self.read_integer(buffer)?;
+                Some(ExtValue::owned(Decimal::from_parts(&mantissa, exponent)))
+            }
+            // UUID
+            37 => {
+                if head.major != MAJOR_BYTES {
+                    return None;
+                }
+                let bytes = self.read_string(head, buffer).ok()?;
+                Some(ExtValue::owned(Uuid(bytes.try_into().ok()?)))
+            }
+            _ => None,
+        }
+    }
+
+    /// Reads an integer or a bignum.
+    fn read_integer(&mut self, buffer: &mut Vec<u8>) -> Option<BigInt> {
+        let head = self.read_head().ok()?;
+        match head.major {
+            MAJOR_UNSIGNED => Some(BigInt::from(head.arg)),
+            MAJOR_NEGATIVE => Some(BigInt::from(-1 - i128::from(head.arg))),
+            MAJOR_TAG if head.arg == 2 || head.arg == 3 => {
+                let bytes_head = self.read_head().ok()?;
+                if bytes_head.major != MAJOR_BYTES {
+                    return None;
+                }
+                let bytes = self.read_string(bytes_head, buffer).ok()?.to_vec();
+                Some(bignum(head.arg == 3, bytes))
+            }
+            _ => None,
+        }
+    }
+
     /// Parses the content of a bignum (tag 2 or 3) and emits it.
     ///
     /// Bignums that fit into 128 bits are emitted as integers, larger ones
-    /// are emitted as tagged byte strings.
+    /// are emitted as [`BigInt`].
     #[cold]
     fn parse_bignum(
         &mut self,
@@ -361,8 +449,8 @@ impl<'a> Deserializer<'a> {
         let skip = bytes.iter().take_while(|&&b| b == 0).count();
         let significant = &bytes[skip..];
         if significant.len() > 16 {
-            self.tags.push(if negative { 3 } else { 2 });
-            return self.emit(driver, Atom::Bytes(Cow::Borrowed(bytes)));
+            let value = bignum(negative, significant.to_vec());
+            return self.emit(driver, Atom::Ext(ExtValue::owned(value)));
         }
         let mut buf = [0u8; 16];
         buf[16 - significant.len()..].copy_from_slice(significant);
@@ -378,8 +466,8 @@ impl<'a> Deserializer<'a> {
             let value = -1 - value as i128;
             self.emit(driver, Atom::Ext(ExtValue::borrowed(&value)))
         } else {
-            self.tags.push(3);
-            self.emit(driver, Atom::Bytes(Cow::Borrowed(bytes)))
+            let value = bignum(true, significant.to_vec());
+            self.emit(driver, Atom::Ext(ExtValue::owned(value)))
         }
     }
 
@@ -471,6 +559,31 @@ impl<'a> Deserializer<'a> {
             }
             buffer.extend_from_slice(self.read_body(chunk)?);
         }
+    }
+}
+
+/// Converts the content of a bignum into a [`BigInt`].
+///
+/// Negative bignums (tag 3) hold `-1 - n`.
+fn bignum(negative: bool, mut magnitude: Vec<u8>) -> BigInt {
+    if negative {
+        // add one to the magnitude
+        let mut carry = true;
+        for byte in magnitude.iter_mut().rev() {
+            let (value, overflow) = byte.overflowing_add(1);
+            *byte = value;
+            if !overflow {
+                carry = false;
+                break;
+            }
+        }
+        if carry {
+            magnitude.insert(0, 1);
+        }
+    }
+    BigInt {
+        negative,
+        magnitude,
     }
 }
 

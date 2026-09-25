@@ -21,10 +21,58 @@
 //! This avoids in-band signalling: the value keeps its identity for everybody
 //! who understands it, and degrades gracefully for everybody else.
 //!
-//! Deser itself uses this for `u128` and `i128`.  For a more complete
-//! example which annotates every value with its path and shows how that
-//! information survives internal buffering, see the
+//! Deser itself uses this for `u128` and `i128` and a set of well-known
+//! types (see below).  For a more complete example which annotates every
+//! value with its path and shows how that information survives internal
+//! buffering, see the
 //! [`located` example](https://github.com/mitsuhiko/deser/tree/main/examples/located).
+//!
+//! # Well-Known Types
+//!
+//! Some types are common enough that many data formats support them
+//! natively, but they are not part of the core data model.  For these deser
+//! provides well-known extension types.  They are simple dependency free
+//! representations that formats can understand and that the types of other
+//! crates convert into:
+//!
+//! | Type          | Represents                           | Fallback                     |
+//! |---------------|--------------------------------------|------------------------------|
+//! | [`Datetime`]  | dates, times and date-times          | RFC 3339 string              |
+//! | [`Timestamp`] | instants in time                     | RFC 3339 string in UTC       |
+//! | [`Duration`]  | exact lengths of time                | ISO 8601 duration string     |
+//! | [`Uuid`]      | UUIDs                                | hyphenated string            |
+//! | [`Decimal`]   | exact decimal numbers                | decimal string               |
+//! | [`BigInt`]    | integers that do not fit 128 bits    | decimal string               |
+//!
+//! All well-known types implement [`Serialize`](crate::Serialize) and
+//! [`Deserialize`](crate::Deserialize).  When deserialized they accept
+//! their own extension value, the fallback and other representations where
+//! that makes sense (for instance 16 bytes for a [`Uuid`] or an integer for
+//! a [`Timestamp`]).
+//!
+//! Types of the standard library and of other crates are serialized as
+//! well-known types:
+//!
+//! * [`std::time::SystemTime`] as [`Timestamp`] and
+//!   [`std::time::Duration`] as [`Duration`].
+//! * `jiff` (feature `jiff`): `Timestamp` as [`Timestamp`], `Zoned`,
+//!   `civil::DateTime`, `civil::Date` and `civil::Time` as [`Datetime`],
+//!   `SignedDuration` as [`Duration`].
+//! * `chrono` (feature `chrono`): `DateTime<Utc>` as [`Timestamp`],
+//!   `DateTime<FixedOffset>`, `NaiveDateTime`, `NaiveDate` and `NaiveTime`
+//!   as [`Datetime`], `TimeDelta` as [`Duration`].
+//! * `time` (feature `time`): `UtcDateTime` as [`Timestamp`],
+//!   `OffsetDateTime`, `PrimitiveDateTime`, `Date` and `Time` as
+//!   [`Datetime`], `Duration` as [`Duration`].
+//! * `uuid` (feature `uuid`): `Uuid` as [`Uuid`].
+//! * `rust_decimal` (feature `rust_decimal`): `Decimal` as [`Decimal`].
+//! * `bigdecimal` (feature `bigdecimal`): `BigDecimal` as [`Decimal`].
+//! * `num-bigint` (feature `num-bigint`): `BigInt` and `BigUint` as
+//!   integers, using [`BigInt`] for values that do not fit into 128 bits.
+//!
+//! Types that map onto [`Datetime`] require the matching kind of date-time
+//! when deserialized: a `jiff::civil::Date` can only be deserialized from a
+//! local date.
 //!
 //! # Example
 //!
@@ -58,6 +106,20 @@ use std::any::Any;
 use std::fmt;
 
 use crate::event::Atom;
+
+mod bigint;
+mod bridges;
+mod datetime;
+mod decimal;
+mod duration;
+pub(crate) mod known;
+mod uuid;
+
+pub use self::bigint::BigInt;
+pub use self::datetime::{Date, Datetime, Offset, Time, Timestamp};
+pub use self::decimal::Decimal;
+pub use self::duration::Duration;
+pub use self::uuid::Uuid;
 
 /// A type that can be passed through deser as an extension to the data model.
 ///

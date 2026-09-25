@@ -6,6 +6,7 @@ mod common;
 use std::collections::HashMap;
 
 use common::{de, hex, Value};
+use deser::ext::BigInt;
 use deser::{Deserialize, ErrorKind};
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -338,7 +339,7 @@ fn bignum_errors() {
     let msg = de::<u128>(&format!("c251{}", "01".repeat(17)))
         .unwrap_err()
         .to_string();
-    assert!(msg.contains("bytes"), "{}", msg); // 17 bytes
+    assert!(msg.contains("expected u128"), "{}", msg); // 17 bytes
     assert!(de::<i128>(&format!("c351{}", "01".repeat(17))).is_err());
     // A negative bignum magnitude beyond i128.
     assert!(de::<i128>(&format!("c350{}", "80".to_string() + &"00".repeat(15))).is_err());
@@ -350,14 +351,19 @@ fn bignum_errors() {
 }
 
 #[test]
-fn bignums_collapse_or_stay_tagged() {
+fn bignums_collapse_or_become_big_integers() {
     // In range: plain integers.
     assert_eq!(de::<Value>("c24101").unwrap(), Value::from(1u64));
     assert_eq!(de::<Value>("c34101").unwrap(), Value::from(-2i64));
+    // Beyond 128 bits: big integers.
     let magnitude = "80".to_string() + &"00".repeat(15);
     assert_eq!(
         de::<Value>(&format!("c350{}", magnitude)).unwrap(),
-        Value::tag(3, Value::bytes(&magnitude))
+        Value::ext(
+            "-170141183460469231731687303715884105729"
+                .parse::<BigInt>()
+                .unwrap()
+        )
     );
 
     // Leading zeros in bignums are tolerated everywhere.
@@ -373,15 +379,22 @@ fn bignums_collapse_or_stay_tagged() {
     );
 
     // A bignum wider than 128 bits cannot collapse into an integer, so it
-    // stays a tagged byte string (and round-trips).
+    // becomes a big integer (and round-trips).
     let payload = format!("01{}", "00".repeat(16));
     let wide = format!("c251{}", payload);
     let value = de::<Value>(&wide).unwrap();
-    assert_eq!(value, Value::tag(2, Value::bytes(&payload)));
+    assert_eq!(
+        value,
+        Value::ext(BigInt {
+            negative: false,
+            magnitude: hex(&payload)
+        })
+    );
     assert_eq!(common::ser(&value), wide);
-    let tagged = de::<deser_cbor::Tagged<Vec<u8>>>(&wide).unwrap();
-    assert_eq!(tagged.tag, Some(2));
-    assert_eq!(tagged.value.len(), 17);
+    assert_eq!(
+        de::<String>(&wide).unwrap(),
+        "340282366920938463463374607431768211456"
+    );
 
     // A nested bignum still collapses inside the outer tag.
     assert_eq!(

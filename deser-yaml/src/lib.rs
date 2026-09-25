@@ -34,13 +34,18 @@
 //! | floats                                | `F64`                                   |
 //! | other scalars                         | `Str`                                   |
 //! | `!!binary`                            | `Bytes`                                 |
+//! | `!!timestamp`                         | [`Datetime`](deser::ext::Datetime)      |
 //! | mappings and sequences                | maps and sequences                      |
 //!
 //! Which plain (unquoted) scalars are null, booleans or numbers depends on
 //! the YAML version, see [`Version`].  Quoted scalars are always strings.
 //! The standard tags (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
-//! `!!binary`, `!!seq` and `!!map`) determine the type of a value, all other
-//! tags are passed on out of band (see [`tag`]).  Map keys can be of any
+//! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) determine the type of a
+//! value, all other tags are passed on out of band (see [`tag`]).
+//! Timestamps are only recognized with an explicit `!!timestamp` tag.  They
+//! are passed on as the well-known [`Datetime`](deser::ext::Datetime) type
+//! (a date or an offset date-time, timestamps without time zone are in UTC)
+//! which falls back to a string.  Map keys can be of any
 //! type.
 //!
 //! Aliases are expanded: every alias produces the events of the node it

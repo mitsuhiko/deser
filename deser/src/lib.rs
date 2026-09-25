@@ -47,6 +47,10 @@ pub struct Account {
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
 //!   information see [`derive`](crate::derive).  This feature is enabled by default.
+//! * `jiff`, `chrono`, `time`, `uuid`, `rust_decimal`, `bigdecimal` and `num-bigint`
+//!   implement [`Serialize`] and [`Deserialize`] for the types of these crates.  They
+//!   are serialized as [well-known types](crate::ext#well-known-types) which data
+//!   formats can support natively.
 
 #[macro_use]
 mod macros;

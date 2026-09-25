@@ -18,11 +18,23 @@
 //! | `Bool`                  | `false` / `true`                                  |
 //! | `U64`, `I64`            | unsigned and negative integers                    |
 //! | `u128`, `i128`          | integers or bignums (tags 2 and 3)                |
+//! | [`BigInt`]              | bignums (tags 2 and 3)                            |
+//! | [`Datetime`]            | date/time (tag 0), full-date (tag 1004) or text   |
+//! | [`Timestamp`]           | epoch date/time (tag 1) or date/time (tag 0)      |
+//! | [`Uuid`]                | UUIDs (tag 37)                                    |
+//! | [`Decimal`]             | decimal fractions (tag 4)                         |
 //! | `F64`                   | half, single or double precision floats           |
 //! | `Str`, `Char`           | text strings                                      |
 //! | `Bytes`                 | byte strings                                      |
 //! | maps and sequences      | maps and arrays                                   |
 //! | [`Simple`]              | unassigned simple values                          |
+//!
+//! Offset date-times are written with tag 0, local dates with tag 1004 and
+//! other date-times as plain text strings.  Timestamps are written with tag
+//! 1 unless they have a fraction of a second, then they are written as
+//! date/time string (tag 0) which retains the precision.  Other extension
+//! values (such as [`Duration`](deser::ext::Duration)) are written as their
+//! fallback.
 //!
 //! Serialization produces the preferred serialization of RFC 8949: the
 //! shortest form is used for integers and lengths, floats are written in the
@@ -32,7 +44,17 @@
 //!
 //! Deserialization accepts all well-formed CBOR including indefinite length
 //! strings, arrays and maps.  Map keys can be of any type.  Integers that
-//! do not fit into 64 bits are passed on as `u128` / `i128` extension atoms.
+//! do not fit into 64 bits are passed on as `u128` / `i128` extension atoms
+//! and larger ones as [`BigInt`].  The tags 0, 4, 37 and 1004 are turned
+//! into the well-known types [`Datetime`], [`Decimal`] and [`Uuid`] if their
+//! content is valid.  Epoch based date/times (tag 1) are passed on as tagged
+//! numbers, [`Timestamp`] accepts them.
+//!
+//! [`BigInt`]: deser::ext::BigInt
+//! [`Datetime`]: deser::ext::Datetime
+//! [`Timestamp`]: deser::ext::Timestamp
+//! [`Uuid`]: deser::ext::Uuid
+//! [`Decimal`]: deser::ext::Decimal
 //!
 //! # Features
 //!

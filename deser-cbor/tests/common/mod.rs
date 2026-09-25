@@ -52,6 +52,8 @@ pub enum Value {
     Map(Vec<(Value, Value)>),
     Tag(u64, Box<Value>),
     Simple(u8),
+    /// Other extension values (the well-known types).
+    Ext(ExtValue<'static>),
 }
 
 impl Value {
@@ -61,6 +63,10 @@ impl Value {
 
     pub fn bytes(s: &str) -> Value {
         Value::Bytes(hex(s))
+    }
+
+    pub fn ext<T: deser::ext::Extension>(value: T) -> Value {
+        Value::Ext(ExtValue::owned(value))
     }
 }
 
@@ -131,6 +137,7 @@ impl Serialize for Value {
             Value::Str(ref value) => Atom::Str(value.as_str().into()),
             Value::Bytes(ref value) => Atom::Bytes(value.as_slice().into()),
             Value::Simple(value) => Atom::Ext(ExtValue::owned(Simple::new(value).unwrap())),
+            Value::Ext(ref value) => Atom::Ext(value.as_borrowed()),
             Value::Array(ref items) => return Ok(Chunk::Seq(Box::new(ArrayEmitter(items.iter())))),
             Value::Map(ref items) => {
                 return Ok(Chunk::Map(Box::new(MapEntryEmitter(items.iter(), None))))
@@ -233,6 +240,7 @@ impl<'a> Sink for ValueSink<'a> {
             Atom::Ext(ref ext) if ext.is::<Simple>() => {
                 Value::Simple(ext.downcast_ref::<Simple>().unwrap().value())
             }
+            Atom::Ext(ref ext) => Value::Ext(ext.to_static()),
             other => return self.unexpected_atom(other, state),
         };
         self.set(value);
