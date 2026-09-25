@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use deser::de::{DeserializeDriver, OwnedSink, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle, StructEmitter};
 use deser::State;
 use deser::{Atom, Deserialize, Error, Event, Serialize};
@@ -20,7 +20,7 @@ fn depth() -> usize {
 
 /// Emits the given events and drops the driver afterwards, no matter if the
 /// events form a complete value.
-fn emit_partial<T: Deserialize>(events: &[Event]) -> Option<T> {
+fn emit_partial<T: DeserializeOwned>(events: &[Event]) -> Option<T> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -181,8 +181,8 @@ fn test_array_sink_misuse() {
 #[derive(Debug)]
 struct LyingBytes(#[allow(dead_code)] String);
 
-impl Deserialize for LyingBytes {
-    fn deserialize_into(_out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for LyingBytes {
+    fn deserialize_into(_out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::null()
     }
 
@@ -214,7 +214,7 @@ impl<'a> Drop for CommitOnDrop<'a> {
     }
 }
 
-impl<'a> Sink for CommitOnDrop<'a> {
+impl<'a, 'de> Sink<'de> for CommitOnDrop<'a> {
     fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
         if let Atom::U64(v) = atom {
             self.value = Some(v);
@@ -223,12 +223,12 @@ impl<'a> Sink for CommitOnDrop<'a> {
     }
 }
 
-impl Sink for Parent {
+impl<'de> Sink<'de> for Parent {
     fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(SinkHandle::boxed(CommitOnDrop {
             slot: &mut self.slot,
             value: None,
@@ -439,7 +439,7 @@ impl Serialize for Panicking {
 
 struct PanickingSink;
 
-impl Sink for PanickingSink {
+impl<'de> Sink<'de> for PanickingSink {
     fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
         panic!("sink panicked");
     }

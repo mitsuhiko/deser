@@ -35,6 +35,33 @@
 //! * Newtype structs
 //! * Basic enums
 //!
+//! # Borrowing
+//!
+//! Structs (and newtype structs) can borrow from the data they are
+//! deserialized from.  The derive implements `Deserialize<'de>` with `'de`
+//! outliving all lifetimes of the type.  References (`&str` and `&[u8]`)
+//! always borrow, `Cow` borrows with the
+//! [`Borrowed`](crate::adapters::Borrowed) adapter:
+//!
+//! ```
+//! use std::borrow::Cow;
+//! use deser::Deserialize;
+//! use deser::adapters::Borrowed;
+//!
+//! #[derive(Deserialize)]
+//! pub struct Message<'a> {
+//!     id: &'a str,
+//!     #[deser(as = Borrowed)]
+//!     text: Cow<'a, str>,
+//! }
+//! ```
+//!
+//! Data can only be borrowed if the data format passes it on borrowed.  If
+//! the data is not borrowed (for instance because a string had escape
+//! sequences) references fail to deserialize while `Cow` holds owned data.
+//! Enums with data cannot have lifetime parameters.  The lifetime `'de` is
+//! reserved for the derive.
+//!
 //! # Customization
 //!
 //! The automatically derived features can be customized via attributes:
@@ -258,7 +285,10 @@
 //!
 //! The predicates are added to the where clause of the type.  `bound()`
 //! removes the inferred bounds entirely.  As with other attributes, `Self`
-//! is not supported.
+//! is not supported.  In deserialize bounds the lifetime of the data is
+//! available as `'de`.  As `bound` also applies to `Serialize` where there
+//! is no such lifetime, use
+//! [`DeserializeOwned`](crate::de::DeserializeOwned) there.
 //!
 //! ```
 //! use deser::{Deserialize, Serialize};
@@ -270,7 +300,7 @@
 //! #[derive(Serialize, Deserialize)]
 //! #[deser(
 //!     serialize_bound(K::Value: Serialize),
-//!     deserialize_bound(K::Value: Deserialize),
+//!     deserialize_bound(K::Value: Deserialize<'de>),
 //! )]
 //! pub struct Holder<K: Kind> {
 //!     value: K::Value,

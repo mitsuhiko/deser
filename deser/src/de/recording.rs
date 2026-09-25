@@ -45,6 +45,12 @@ use crate::State;
 /// assert_eq!(out, Some(vec![1, 2]));
 /// ```
 ///
+/// Recordings are detached from the data they were recorded from: borrowed
+/// atoms are recorded as owned (see [`Atom::to_static`]).  This means that
+/// types which only accept borrowed data (like `&str`) cannot be
+/// deserialized from a replayed recording.  Types which can hold owned data
+/// (like `Cow<str>`) can.
+///
 /// # Raw Values
 ///
 /// Recordings implement [`Deserialize`] and [`Serialize`].  This makes them
@@ -94,7 +100,7 @@ impl Recording {
     /// Returns a sink that records a value into this recording.
     ///
     /// A previously recorded value is discarded.
-    pub fn recorder(&mut self) -> SinkHandle<'_> {
+    pub fn recorder<'de>(&mut self) -> SinkHandle<'_, 'de> {
         self.events.clear();
         self.is_map_key = false;
         SinkHandle::boxed(Recorder {
@@ -121,8 +127,8 @@ impl Recording {
     ///     String(String),
     /// }
     ///
-    /// impl Deserialize for NumberOrString {
-    ///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+    /// impl<'de> Deserialize<'de> for NumberOrString {
+    ///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
     ///         Recording::capture(move |recording, state| {
     ///             let mut number = None;
     ///             if recording.replay(u64::deserialize_into(&mut number), state).is_ok() {
@@ -149,7 +155,7 @@ impl Recording {
     /// };
     /// assert_eq!(values, [NumberOrString::Number(42), NumberOrString::String("x".into())]);
     /// ```
-    pub fn capture<'a, F>(then: F) -> SinkHandle<'a>
+    pub fn capture<'a, 'de, F>(then: F) -> SinkHandle<'a, 'de>
     where
         F: FnOnce(Recording, &mut State) -> Result<(), Error> + 'a,
     {
@@ -195,7 +201,7 @@ impl Recording {
     ///
     /// The state is the state of the ongoing deserialization.  The replayable
     /// extensions in it are restored to their current values after replaying.
-    pub fn replay(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
+    pub fn replay<'de>(&self, sink: SinkHandle<'_, 'de>, state: &mut State) -> Result<(), Error> {
         let live = state.extensions().snapshot();
         let live_range = state.input_range;
         let rv = self.replay_events(sink, state);
@@ -204,7 +210,11 @@ impl Recording {
         rv
     }
 
-    fn replay_events(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
+    fn replay_events<'de>(
+        &self,
+        sink: SinkHandle<'_, 'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
             for recorded in self.events.iter() {
                 driver.emit_with(recorded.event.as_borrowed(), |state| {
@@ -238,7 +248,7 @@ struct CaptureSink<'a> {
 }
 
 impl<'a> CaptureSink<'a> {
-    fn child(&mut self) -> SinkHandle<'_> {
+    fn child<'de>(&mut self) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(Recorder {
             recording: &mut self.recording,
             end: None,
@@ -247,7 +257,7 @@ impl<'a> CaptureSink<'a> {
     }
 }
 
-impl<'a> Sink for CaptureSink<'a> {
+impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         record(
             &mut self.recording,
@@ -270,11 +280,11 @@ impl<'a> Sink for CaptureSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(self.child())
     }
 
@@ -301,7 +311,7 @@ impl<'a> Recorder<'a> {
         record(self.recording, self.is_root, event, state);
     }
 
-    fn child(&mut self) -> SinkHandle<'_> {
+    fn child<'de>(&mut self) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(Recorder {
             recording: self.recording,
             end: None,
@@ -310,7 +320,7 @@ impl<'a> Recorder<'a> {
     }
 }
 
-impl<'a> Sink for Recorder<'a> {
+impl<'a, 'de> Sink<'de> for Recorder<'a> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.record(Event::Atom(atom.to_static()), state);
         Ok(())
@@ -328,11 +338,11 @@ impl<'a> Sink for Recorder<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(self.child())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(self.child())
     }
 
@@ -359,8 +369,8 @@ impl PartialEq for Recording {
     }
 }
 
-impl Deserialize for Recording {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Recording {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         Recording::capture(move |recording, _state| {
             *out = Some(recording);
             Ok(())

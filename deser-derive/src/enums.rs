@@ -441,13 +441,16 @@ pub fn derive_deserialize(
     check_generics(&input.generics)?;
     let repr = repr(container_attrs);
     let variants = collect_variants(enumeration, container_attrs)?;
-    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let de_generics = crate::bound::with_de_lifetime(&input.generics)?;
+    let (impl_generics, _, _) = de_generics.split_for_impl();
     let turbofish = ty_generics.as_turbofish();
     let mut where_clause = where_clause_for_fields(
         &input.generics,
-        quote!(__deser::Deserialize + 'static),
+        quote!(__deser::Deserialize<'de> + 'static),
         Some(quote!('static)),
         quote!(__deser::adapters::DeserializeAs),
+        Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &bound_fields(&variants),
     );
@@ -611,7 +614,7 @@ pub fn derive_deserialize(
 
     let descriptor = descriptor(container_attrs);
     let builder_ty = quote! {
-        __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>
+        __deser::__derive::BoxedVariant<'de, #enum_ty>
     };
 
     // makes a function for a special variant
@@ -631,7 +634,7 @@ pub fn derive_deserialize(
                 },
                 quote! {
                     __deser::__derive::Some(
-                        #fn_ident #turbofish as __deser::__derive::VariantMaker<#enum_ty>
+                        #fn_ident #turbofish as __deser::__derive::VariantMaker<'de, #enum_ty>
                     )
                 },
             ),
@@ -769,10 +772,10 @@ pub fn derive_deserialize(
             #support
 
             #[automatically_derived]
-            impl #impl_generics __deser::Deserialize for #ident #ty_generics #where_clause {
+            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>,
-                ) -> __deser::de::SinkHandle<'_> {
+                ) -> __deser::de::SinkHandle<'_, 'de> {
                     #handle
                 }
             }
@@ -871,6 +874,7 @@ pub fn derive_serialize(
         quote!(__deser::Serialize),
         None,
         quote!(__deser::adapters::SerializeAs),
+        None,
         container_attrs.serialize_bound(),
         &bound_fields(&variants),
     );

@@ -75,7 +75,7 @@
 //!
 //! struct MyBool(bool);
 //!
-//! impl Sink for SlotWrapper<MyBool> {
+//! impl<'de> Sink<'de> for SlotWrapper<MyBool> {
 //!     fn atom(
 //!         &mut self,
 //!         atom: Atom,
@@ -96,8 +96,8 @@
 //!     }
 //! }
 //!
-//! impl Deserialize for MyBool {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+//! impl<'de> Deserialize<'de> for MyBool {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
 //!         // Since we're using the SlotWrapper abstraction we can directly
 //!         // make a handle here by using the `make_handle` utility.
 //!         SlotWrapper::make_handle(out)
@@ -121,8 +121,8 @@
 //!     name: String,
 //! }
 //!
-//! impl Deserialize for Flag {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+//! impl<'de> Deserialize<'de> for Flag {
+//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
 //!         SinkHandle::boxed(FlagSink {
 //!             out,
 //!             key: None,
@@ -139,21 +139,21 @@
 //!     name_field: Option<String>,
 //! }
 //!     
-//! impl<'a> Sink for FlagSink<'a> {
+//! impl<'a, 'de> Sink<'de> for FlagSink<'a> {
 //!     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
 //!         // the default implementation returns an error, so we need to
 //!         // override it to remove this error.
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+//!     fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key))
 //!     }
 //!     
-//!     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+//!     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
 //!         let key = self.key.take().unwrap();
 //!         // since we implement a sink for a struct, move the actual logic for
 //!         // matching into `value_for_key` so that our deserializer can support
@@ -163,7 +163,7 @@
 //!     }
 //!
 //!     fn value_for_key(&mut self, key: &str, _state: &mut State)
-//!         -> Result<Option<SinkHandle<'_>>, Error>
+//!         -> Result<Option<SinkHandle<'_, 'de>>, Error>
 //!     {
 //!         Ok(Some(match key {
 //!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field),
@@ -230,27 +230,27 @@ __make_slot_wrapper!((pub), SlotWrapper);
 ///
 /// The equivalent for serialization is the
 /// [`SerializeHandle`](crate::ser::SerializeHandle).
-pub struct SinkHandle<'a>(HandleInner<'a>);
+pub struct SinkHandle<'a, 'de: 'a>(HandleInner<'a, 'de>);
 
-enum HandleInner<'a> {
-    Borrowed(&'a mut dyn Sink),
-    Owned(SinkBox<'a>),
+enum HandleInner<'a, 'de> {
+    Borrowed(&'a mut dyn Sink<'de>),
+    Owned(SinkBox<'a, 'de>),
     Null(ignore::Ignore),
     // The optional variants are used to implement `Option<T>` without an
     // extra allocation: a null atom is not forwarded but turns the handle
     // into a null handle so that `finish` is not forwarded either.
-    OptionalBorrowed(&'a mut dyn Sink),
-    OptionalOwned(SinkBox<'a>),
+    OptionalBorrowed(&'a mut dyn Sink<'de>),
+    OptionalOwned(SinkBox<'a, 'de>),
 }
 
-impl<'a> SinkHandle<'a> {
+impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Create a borrowed handle to a [`Sink`].
-    pub fn to(val: &'a mut dyn Sink) -> SinkHandle<'a> {
+    pub fn to(val: &'a mut dyn Sink<'de>) -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Borrowed(val))
     }
 
     /// Create an owned handle to a heap allocated [`Sink`].
-    pub fn boxed<S: Sink + 'a>(val: S) -> SinkHandle<'a> {
+    pub fn boxed<S: Sink<'de> + 'a>(val: S) -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Owned(SinkBox::new(val)))
     }
 
@@ -260,7 +260,7 @@ impl<'a> SinkHandle<'a> {
     /// wants to be collected.  For instance it can be tricky to provide a
     /// mutable reference to a sink from a function that doesn't have a way
     /// to put a slot somewhere.
-    pub fn null() -> SinkHandle<'a> {
+    pub fn null() -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Null(ignore::Ignore))
     }
 
@@ -268,7 +268,7 @@ impl<'a> SinkHandle<'a> {
     ///
     /// Handles are invariant over their lifetime, this performs the
     /// conversion explicitly.
-    pub fn shorten<'b>(self) -> SinkHandle<'b>
+    pub fn shorten<'b>(self) -> SinkHandle<'b, 'de>
     where
         'a: 'b,
     {
@@ -301,13 +301,13 @@ impl<'a> SinkHandle<'a> {
     /// use deser::de::{Deserialize, SinkHandle};
     ///
     /// /// Deserializes like an `Option<T>`.
-    /// fn deserialize_optional<T: Deserialize>(
+    /// fn deserialize_optional<'de, T: Deserialize<'de>>(
     ///     out: &mut Option<Option<T>>,
-    /// ) -> SinkHandle<'_> {
+    /// ) -> SinkHandle<'_, 'de> {
     ///     T::deserialize_into(out.insert(None)).ignore_null()
     /// }
     /// ```
-    pub fn ignore_null(self) -> SinkHandle<'a> {
+    pub fn ignore_null(self) -> SinkHandle<'a, 'de> {
         SinkHandle(match self.0 {
             HandleInner::Borrowed(sink) => HandleInner::OptionalBorrowed(sink),
             HandleInner::Owned(sink) => HandleInner::OptionalOwned(sink),
@@ -315,8 +315,22 @@ impl<'a> SinkHandle<'a> {
         })
     }
 
+    /// Returns `true` if the handle ignores the atom because it's null.
+    ///
+    /// In that case the handle turned into a null handle.
     #[inline(always)]
-    fn sink(&self) -> &(dyn Sink + 'a) {
+    fn skip_null(&mut self, atom: &Atom) -> bool {
+        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
+            if is_null_atom(atom) {
+                *self = SinkHandle::null();
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline(always)]
+    fn sink(&self) -> &(dyn Sink<'de> + 'a) {
         match self.0 {
             HandleInner::Borrowed(ref sink) | HandleInner::OptionalBorrowed(ref sink) => &**sink,
             HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => sink.get(),
@@ -325,7 +339,7 @@ impl<'a> SinkHandle<'a> {
     }
 
     #[inline(always)]
-    fn sink_mut(&mut self) -> &mut (dyn Sink + 'a) {
+    fn sink_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
         match self.0 {
             HandleInner::Borrowed(ref mut sink) | HandleInner::OptionalBorrowed(ref mut sink) => {
                 &mut **sink
@@ -358,17 +372,23 @@ pub(crate) fn is_null_atom(atom: &Atom) -> bool {
 // The methods on the handle are inherent so that they can be used without
 // having the `Sink` trait in scope.  The `Sink` implementation delegates to
 // them.
-impl<'a> SinkHandle<'a> {
+impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Forwards to [`Sink::atom`].
     #[inline]
     pub fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
-            if is_null_atom(&atom) {
-                *self = SinkHandle::null();
-                return Ok(());
-            }
+        if self.skip_null(&atom) {
+            return Ok(());
         }
         self.sink_mut().atom(atom, state)
+    }
+
+    /// Forwards to [`Sink::borrowed_atom`].
+    #[inline]
+    pub fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        if self.skip_null(&atom) {
+            return Ok(());
+        }
+        self.sink_mut().borrowed_atom(atom, state)
     }
 
     /// Forwards to [`Sink::unexpected_atom`].
@@ -390,13 +410,13 @@ impl<'a> SinkHandle<'a> {
 
     /// Forwards to [`Sink::next_key`].
     #[inline]
-    pub fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    pub fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.sink_mut().next_key(state)
     }
 
     /// Forwards to [`Sink::next_value`].
     #[inline]
-    pub fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    pub fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.sink_mut().next_value(state)
     }
 
@@ -412,12 +432,24 @@ impl<'a> SinkHandle<'a> {
         self.sink_mut().value_atom(atom, state)
     }
 
+    /// Forwards to [`Sink::borrowed_key_atom`].
+    #[inline]
+    pub fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.sink_mut().borrowed_key_atom(atom, state)
+    }
+
+    /// Forwards to [`Sink::borrowed_value_atom`].
+    #[inline]
+    pub fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.sink_mut().borrowed_value_atom(atom, state)
+    }
+
     /// Forwards to [`Sink::value_for_key`].
     pub fn value_for_key(
         &mut self,
         key: &str,
         state: &mut State,
-    ) -> Result<Option<SinkHandle<'_>>, Error> {
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         self.sink_mut().value_for_key(key, state)
     }
 
@@ -438,10 +470,15 @@ impl<'a> SinkHandle<'a> {
     }
 }
 
-impl<'a> Sink for SinkHandle<'a> {
+impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     #[inline]
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         SinkHandle::atom(self, atom, state)
+    }
+
+    #[inline]
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        SinkHandle::borrowed_atom(self, atom, state)
     }
 
     fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -459,12 +496,12 @@ impl<'a> Sink for SinkHandle<'a> {
     }
 
     #[inline]
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         SinkHandle::next_key(self, state)
     }
 
     #[inline]
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         SinkHandle::next_value(self, state)
     }
 
@@ -478,11 +515,21 @@ impl<'a> Sink for SinkHandle<'a> {
         SinkHandle::value_atom(self, atom, state)
     }
 
+    #[inline]
+    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        SinkHandle::borrowed_key_atom(self, atom, state)
+    }
+
+    #[inline]
+    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        SinkHandle::borrowed_value_atom(self, atom, state)
+    }
+
     fn value_for_key(
         &mut self,
         key: &str,
         state: &mut State,
-    ) -> Result<Option<SinkHandle<'_>>, Error> {
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         SinkHandle::value_for_key(self, key, state)
     }
 
@@ -505,14 +552,32 @@ impl<'a> Sink for SinkHandle<'a> {
 /// A type is deserializable if it can deserialize into a [`Sink`].  The
 /// actual deserialization logic itself is implemented by the returned
 /// [`Sink`].
-pub trait Deserialize: Sized {
+///
+/// The lifetime `'de` is the lifetime of the data that is deserialized.
+/// Types that borrow from it (like `&'de str`) only implement
+/// `Deserialize<'de>` for that lifetime, types that do not borrow implement
+/// it for all lifetimes (see [`DeserializeOwned`]):
+///
+/// ```
+/// use deser::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct User<'a> {
+///     name: &'a str,
+///     id: u64,
+/// }
+/// ```
+///
+/// Data can only be borrowed if the data format passes it on borrowed (see
+/// [`Sink::borrowed_atom`]).
+pub trait Deserialize<'de>: Sized {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// There are two typical implementations for this method: the common one is
     /// to return a [`SlotWrapper`].  Custom types will most likely just return
     /// that.  An alternative method is to "wrap" the deserializable in a custom
     /// sink.
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_>;
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de>;
 
     /// Provides the value of a missing struct field.
     ///
@@ -543,6 +608,19 @@ pub trait Deserialize: Sized {
         state: &mut State,
     ) -> Result<(), Error> {
         atom_into_handle(Self::deserialize_into(out), atom, state)
+    }
+
+    /// Deserializes a borrowed atom into the slot.
+    ///
+    /// This is like [`__private_atom_into`](Self::__private_atom_into) but
+    /// for [`borrowed_atom`](Sink::borrowed_atom).
+    #[doc(hidden)]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        borrowed_atom_into_handle(Self::deserialize_into(out), atom, state)
     }
 
     /// Returns `true` if this deserialize is `u8`.
@@ -576,18 +654,42 @@ pub trait Deserialize: Sized {
     }
 }
 
+/// A type that can be deserialized without borrowing.
+///
+/// This is implemented for all types that implement [`Deserialize`] for all
+/// lifetimes, which means that they do not borrow from the data they are
+/// deserialized from.  It's useful as a bound where the data does not
+/// outlive the deserialization (for instance when reading from a stream).
+pub trait DeserializeOwned: for<'de> Deserialize<'de> {}
+
+impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
+
 /// Deserializes an atom into a slot.
 ///
 /// This is equivalent to what the default implementation of
 /// [`Sink::value_atom`] does with the sink of the slot.
 #[doc(hidden)]
 #[inline]
-pub fn atom_into<T: Deserialize>(
+pub fn atom_into<'de, T: Deserialize<'de>>(
     slot: &mut Option<T>,
     atom: Atom,
     state: &mut State,
 ) -> Result<(), Error> {
     T::__private_atom_into(slot, atom, state)
+}
+
+/// Deserializes a borrowed atom into a slot.
+///
+/// This is equivalent to what the default implementation of
+/// [`Sink::borrowed_value_atom`] does with the sink of the slot.
+#[doc(hidden)]
+#[inline]
+pub fn borrowed_atom_into<'de, T: Deserialize<'de>>(
+    slot: &mut Option<T>,
+    atom: Atom<'de>,
+    state: &mut State,
+) -> Result<(), Error> {
+    T::__private_borrowed_atom_into(slot, atom, state)
 }
 
 /// Deserializes an atom into a sink handle.
@@ -597,11 +699,23 @@ pub fn atom_into<T: Deserialize>(
 #[doc(hidden)]
 #[inline(never)]
 pub fn atom_into_handle(
-    mut sink: SinkHandle<'_>,
+    mut sink: SinkHandle<'_, '_>,
     atom: Atom,
     state: &mut State,
 ) -> Result<(), Error> {
     sink.atom(atom, state)?;
+    sink.finish(state)
+}
+
+/// Deserializes a borrowed atom into a sink handle.
+#[doc(hidden)]
+#[inline(never)]
+pub fn borrowed_atom_into_handle<'de>(
+    mut sink: SinkHandle<'_, 'de>,
+    atom: Atom<'de>,
+    state: &mut State,
+) -> Result<(), Error> {
+    sink.borrowed_atom(atom, state)?;
     sink.finish(state)
 }
 
@@ -620,7 +734,15 @@ fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {
 /// invoke one receiver method for a total of zero or one times.
 ///
 /// The sink then places the received value in the slot connected to the sink.
-pub trait Sink {
+///
+/// # Borrowed Data
+///
+/// Atoms are passed to [`atom`](Self::atom) with a lifetime that only lasts
+/// for the call.  Formats pass atoms which borrow from the data that is
+/// deserialized (which lives for `'de`) to [`borrowed_atom`](Self::borrowed_atom)
+/// instead.  By default this forwards to [`atom`](Self::atom), only sinks of
+/// types which want to borrow (like `&'de str`) need to implement it.
+pub trait Sink<'de> {
     /// Receives an [`Atom`].
     ///
     /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).
@@ -631,6 +753,13 @@ pub trait Sink {
         self.unexpected_atom(atom, state)
     }
 
+    /// Receives an [`Atom`] that borrows from the data being deserialized.
+    ///
+    /// The default implementation forwards to [`atom`](Self::atom).
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.atom(atom, state)
+    }
+
     /// Implements a default fallback handling for atoms.
     ///
     /// For [`Atom::Ext`] values the atom is lowered into the core data model
@@ -639,6 +768,10 @@ pub trait Sink {
     fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if let Atom::Ext(ref ext) = atom {
             let fallback = ext.fallback();
+            debug_assert!(
+                !matches!(fallback, Atom::Ext(_)),
+                "the fallback of an extension value must not be an extension value"
+            );
             if !matches!(fallback, Atom::Ext(_)) {
                 return self.atom(fallback, state);
             }
@@ -671,13 +804,13 @@ pub trait Sink {
     }
 
     /// Returns a sink for the next key in a map.
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
 
     /// Returns a sink for the next value in a map or sequence.
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let _ = state;
         Ok(SinkHandle::null())
     }
@@ -706,6 +839,22 @@ pub trait Sink {
         atom_into_handle(self.next_value(state)?, atom, state)
     }
 
+    /// Receives a borrowed atom as the next key in a map.
+    ///
+    /// Like [`key_atom`](Self::key_atom) but the atom is passed to
+    /// [`borrowed_atom`](Self::borrowed_atom).
+    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        borrowed_atom_into_handle(self.next_key(state)?, atom, state)
+    }
+
+    /// Receives a borrowed atom as the next value in a map or sequence.
+    ///
+    /// Like [`value_atom`](Self::value_atom) but the atom is passed to
+    /// [`borrowed_atom`](Self::borrowed_atom).
+    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        borrowed_atom_into_handle(self.next_value(state)?, atom, state)
+    }
+
     /// Returns a value sink for a specific struct field.
     ///
     /// This is a special method that is supposed to be implemented by structs
@@ -716,7 +865,7 @@ pub trait Sink {
         &mut self,
         key: &str,
         state: &mut State,
-    ) -> Result<Option<SinkHandle<'_>>, Error> {
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         let _ = key;
         let _ = state;
         Ok(None)

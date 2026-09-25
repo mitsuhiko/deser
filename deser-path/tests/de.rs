@@ -10,13 +10,13 @@ struct MyBool(bool);
 
 deser::make_slot_wrapper!(SlotWrapper);
 
-impl Deserialize for MyBool {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for MyBool {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
 
-impl Sink for SlotWrapper<MyBool> {
+impl<'de> Sink<'de> for SlotWrapper<MyBool> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
@@ -54,13 +54,13 @@ fn test_path() {
 #[derive(Debug)]
 struct RecordPath(String);
 
-impl Deserialize for RecordPath {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for RecordPath {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
 
-impl Sink for SlotWrapper<RecordPath> {
+impl<'de> Sink<'de> for SlotWrapper<RecordPath> {
     fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
         let path = state.get::<Path>().unwrap();
         **self = Some(RecordPath(format!("{:?}", path.segments())));

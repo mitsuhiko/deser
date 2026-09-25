@@ -48,6 +48,9 @@ To see some practical examples of this have a look at the
 * **Native Bytes Support:** deser has built-in specialization for serializing
   bytes and byte vectors.  A `Vec<u8>` is serialized as bytes and does not need
   special handling for text-only formats such as JSON.
+* **Borrowing:** types can borrow strings and bytes from the data they are
+  deserialized from (for instance `&str` fields), formats pass on slices of
+  their input without copying them.
 * **Unlimited Recursion:** the real world is nasty and incoming data might be
   badly nested.  Deser does not exhaust the call stack no matter how deep your
   data is.  It accomplishes this by an alternative trait design to serde where

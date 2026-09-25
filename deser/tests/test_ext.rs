@@ -1,4 +1,4 @@
-use deser::de::{DeserializeDriver, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, SerializeDriver};
 use deser::State;
@@ -13,7 +13,7 @@ fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     events
 }
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> Result<T, Error> {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -46,7 +46,7 @@ impl Serialize for Timestamp {
 
 make_slot_wrapper!(SlotWrapper);
 
-impl Sink for SlotWrapper<Timestamp> {
+impl<'de> Sink<'de> for SlotWrapper<Timestamp> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<Timestamp>() => {
@@ -62,8 +62,8 @@ impl Sink for SlotWrapper<Timestamp> {
     }
 }
 
-impl Deserialize for Timestamp {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SlotWrapper::make_handle(out)
     }
 }

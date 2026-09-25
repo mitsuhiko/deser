@@ -55,8 +55,8 @@ impl<'a> StructEmitter for UserEmitter<'a> {
     }
 }
 
-impl Deserialize for User {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for User {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(UserSink {
             out,
             key: None,
@@ -73,7 +73,7 @@ struct UserSink<'a> {
     email_address: Option<String>,
 }
 
-impl<'a> Sink for UserSink<'a> {
+impl<'a, 'de> Sink<'de> for UserSink<'a> {
     fn descriptor(&self) -> &'static dyn Descriptor {
         &UserDescriptor
     }
@@ -82,11 +82,11 @@ impl<'a> Sink for UserSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         match self.key.take().as_deref() {
             Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
             Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),

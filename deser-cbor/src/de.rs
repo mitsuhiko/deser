@@ -119,7 +119,7 @@ impl<'a> Deserializer<'a> {
     /// This does not check if there is more data after the item.  Use
     /// [`end`](Self::end) for this or [`from_slice`] which does it
     /// automatically.
-    pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
@@ -139,7 +139,7 @@ impl<'a> Deserializer<'a> {
     /// let items = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(items, [1, 2, 3]);
     /// ```
-    pub fn iter<T: Deserialize>(&mut self) -> Iter<'_, 'a, T> {
+    pub fn iter<T: Deserialize<'a>>(&mut self) -> Iter<'_, 'a, T> {
         Iter {
             de: self,
             failed: false,
@@ -151,7 +151,11 @@ impl<'a> Deserializer<'a> {
     ///
     /// This is useful to deserialize into a custom
     /// [`Sink`](deser::de::Sink) or to wrap the sink of a value.
-    pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    ///
+    /// Definite length strings and byte strings are passed on borrowed from
+    /// the input (see
+    /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         // the scratch buffer is moved out of the deserializer so that
         // strings borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
@@ -162,7 +166,7 @@ impl<'a> Deserializer<'a> {
 
     fn drive_impl(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
         // the current container is held in a local, the outer containers are
@@ -226,7 +230,7 @@ impl<'a> Deserializer<'a> {
     #[inline]
     fn parse_item(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
         depth: usize,
     ) -> Result<Option<Frame>, Error> {
@@ -258,6 +262,17 @@ impl<'a> Deserializer<'a> {
                     let value = -1 - i128::from(head.arg);
                     self.emit(driver, Atom::Ext(ExtValue::borrowed(&value)))?
                 }
+            }
+            // definite length strings are slices of the input
+            MAJOR_BYTES if !head.is_indefinite() => {
+                let bytes = self.read_body(head)?;
+                self.emit_borrowed(driver, Event::Atom(Atom::Bytes(Cow::Borrowed(bytes))))?
+            }
+            MAJOR_TEXT if !head.is_indefinite() => {
+                let bytes = self.read_body(head)?;
+                // SAFETY: text is validated as UTF-8 when read
+                let text = unsafe { str::from_utf8_unchecked(bytes) };
+                self.emit_borrowed(driver, Event::Atom(Atom::Str(Cow::Borrowed(text))))?
             }
             MAJOR_BYTES => {
                 let bytes = self.read_string(head, buffer)?;
@@ -323,7 +338,7 @@ impl<'a> Deserializer<'a> {
     #[inline(always)]
     fn emit<'e, E: Into<Event<'e>>>(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         event: E,
     ) -> Result<(), Error> {
         if self.tags.is_empty() {
@@ -334,7 +349,11 @@ impl<'a> Deserializer<'a> {
     }
 
     #[cold]
-    fn emit_tagged(&mut self, driver: &mut DeserializeDriver, event: Event) -> Result<(), Error> {
+    fn emit_tagged(
+        &mut self,
+        driver: &mut DeserializeDriver<'_, 'a>,
+        event: Event,
+    ) -> Result<(), Error> {
         let tags = &mut self.tags;
         let rv = driver.emit_with(event, |state| {
             // swapping retains the memory of both vectors
@@ -342,6 +361,25 @@ impl<'a> Deserializer<'a> {
         });
         self.tags.clear();
         rv
+    }
+
+    /// Emits a borrowed event with the pending tags.
+    #[inline(always)]
+    fn emit_borrowed(
+        &mut self,
+        driver: &mut DeserializeDriver<'_, 'a>,
+        event: Event<'a>,
+    ) -> Result<(), Error> {
+        if self.tags.is_empty() {
+            driver.emit_borrowed(event)
+        } else {
+            let tags = &mut self.tags;
+            let rv = driver.emit_borrowed_with(event, |state| {
+                std::mem::swap(&mut state.event_mut::<CurrentTags>().0, tags);
+            });
+            self.tags.clear();
+            rv
+        }
     }
 
     /// Parses the content of a tag that maps onto a well-known type and
@@ -352,7 +390,7 @@ impl<'a> Deserializer<'a> {
     #[cold]
     fn parse_well_known(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
         tag: u64,
     ) -> Result<bool, Error> {
@@ -433,7 +471,7 @@ impl<'a> Deserializer<'a> {
     #[cold]
     fn parse_bignum(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
         negative: bool,
     ) -> Result<(), Error> {
@@ -590,13 +628,13 @@ fn bignum(negative: bool, mut magnitude: Vec<u8>) -> BigInt {
 /// An iterator over the data items of a CBOR sequence.
 ///
 /// See [`Deserializer::iter`].
-pub struct Iter<'de, 'a, T> {
-    de: &'de mut Deserializer<'a>,
+pub struct Iter<'b, 'a, T> {
+    de: &'b mut Deserializer<'a>,
     failed: bool,
     _marker: PhantomData<fn() -> T>,
 }
 
-impl<'de, 'a, T: Deserialize> Iterator for Iter<'de, 'a, T> {
+impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
     type Item = Result<T, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -680,7 +718,7 @@ fn eof_error(offset: usize) -> Error {
 /// Deserializes a value from CBOR.
 ///
 /// The input must contain exactly one data item.
-pub fn from_slice<T: Deserialize>(input: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T: Deserialize<'de>>(input: &'de [u8]) -> Result<T, Error> {
     let mut de = Deserializer::new(input);
     let rv = de.deserialize()?;
     de.end()?;

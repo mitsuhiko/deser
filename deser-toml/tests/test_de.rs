@@ -834,3 +834,24 @@ fn test_large_tables() {
     let err = from_str::<Value>(&format!("{}k500 = 1", input)).unwrap_err();
     assert!(err.to_string().contains("'k500' is already defined"));
 }
+
+#[test]
+fn test_borrowing() {
+    #[derive(Deserialize, Debug)]
+    struct Doc<'a> {
+        name: &'a str,
+        literal: &'a str,
+        table: BTreeMap<&'a str, &'a str>,
+    }
+
+    let input = "name = \"demo\"\nliteral = 'C:\\path'\n[table]\nkey = \"value\"\n";
+    let doc: Doc = from_str(input).unwrap();
+    assert_eq!(doc.name, "demo");
+    assert_eq!(doc.literal, "C:\\path");
+    assert_eq!(doc.table["key"], "value");
+    assert!(input.as_bytes().as_ptr_range().contains(&doc.name.as_ptr()));
+
+    // strings with escapes cannot be borrowed
+    let err = from_str::<BTreeMap<String, &str>>("a = \"\\n\"").unwrap_err();
+    assert!(err.to_string().contains("expected a borrowed string"));
+}

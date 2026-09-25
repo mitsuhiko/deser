@@ -1,4 +1,4 @@
-use deser::de::{DeserializeDriver, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize, SerializeDriver};
 use deser::{make_slot_wrapper, Atom, Deserialize, Error, Event, State};
 
@@ -12,21 +12,21 @@ struct Probe(Option<u32>);
 
 make_slot_wrapper!(ProbeSlot);
 
-impl Sink for ProbeSlot<Probe> {
+impl<'de> Sink<'de> for ProbeSlot<Probe> {
     fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
         **self = Some(Probe(state.event::<Marker>().map(|marker| marker.0)));
         Ok(())
     }
 }
 
-impl Deserialize for Probe {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Probe {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         ProbeSlot::make_handle(out)
     }
 }
 
 /// Emits events, attaching a marker to the events where one is given.
-fn deserialize<T: Deserialize>(events: Vec<(Event<'_>, Option<u32>)>) -> T {
+fn deserialize<T: DeserializeOwned>(events: Vec<(Event<'_>, Option<u32>)>) -> T {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);

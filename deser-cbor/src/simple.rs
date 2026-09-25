@@ -69,15 +69,15 @@ impl Descriptor for SimpleDescriptor {
     }
 }
 
-impl Deserialize for Simple {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Simple {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(SimpleSink(out))
     }
 }
 
 struct SimpleSink<'a>(&'a mut Option<Simple>);
 
-impl<'a> Sink for SimpleSink<'a> {
+impl<'a, 'de> Sink<'de> for SimpleSink<'a> {
     fn descriptor(&self) -> &'static dyn Descriptor {
         &SimpleDescriptor
     }

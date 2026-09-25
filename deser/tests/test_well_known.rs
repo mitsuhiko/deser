@@ -1,13 +1,13 @@
 use std::fmt::Debug;
 
-use deser::de::DeserializeDriver;
+use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ext::{
     BigInt, Date, Datetime, Decimal, Duration, ExtValue, Offset, Time, Timestamp, Uuid,
 };
 use deser::ser::SerializeDriver;
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
-fn deserialize<'a, T: Deserialize, E: Into<Event<'a>>>(event: E) -> Result<T, Error> {
+fn deserialize<'a, 'de, T: Deserialize<'de>, E: Into<Event<'a>>>(event: E) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -27,7 +27,7 @@ fn serialize(value: &dyn Serialize) -> Atom<'static> {
 
 /// Serializes the value, checks the fallback and deserializes it from both
 /// the extension value and the fallback.
-fn roundtrip<T: Serialize + Deserialize + PartialEq + Debug>(value: T, fallback: &str) {
+fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, fallback: &str) {
     let atom = serialize(&value);
     let Atom::Ext(ref ext) = atom else {
         panic!("expected extension value, got {:?}", atom);

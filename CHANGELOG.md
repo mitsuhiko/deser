@@ -4,6 +4,29 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- `Deserialize`, `Sink`, `SinkHandle`, `DeserializeDriver`, `OwnedSink` and
+  `DeserializeAs` have a lifetime `'de` for the data that is deserialized.
+  Types can borrow from it: `&str` and `&[u8]` borrow, `Cow<str>` and
+  `Cow<[u8]>` borrow with the new `Borrowed` adapter and the derive supports
+  structs with lifetimes.  `DeserializeOwned` is implemented for types which
+  do not borrow.
+  - Formats emit borrowed data with `DeserializeDriver::emit_borrowed` (and
+    `emit_borrowed_with` / `emit_borrowed_at`), sinks receive it in
+    `Sink::borrowed_atom` (and `borrowed_key_atom` / `borrowed_value_atom`)
+    which default to the regular methods.  Data emitted with `emit` is only
+    valid for the call and cannot be borrowed.
+  - `deser-json`, `deser-cbor`, `deser-yaml` and `deser-toml` pass on strings
+    (and CBOR byte strings) that are slices of the input borrowed.  Their
+    `from_str` / `from_slice` functions and `Deserializer::deserialize` tie
+    `'de` to the input.
+  - To migrate, `impl Deserialize for T` becomes
+    `impl<'de> Deserialize<'de> for T` and `impl Sink for S` becomes
+    `impl<'de> Sink<'de> for S`, `SinkHandle<'_>` becomes
+    `SinkHandle<'_, 'de>`.  Bounds of `#[deser(bound(...))]` which also apply
+    to `Serialize` use `DeserializeOwned`, `deserialize_bound` can use
+    `Deserialize<'de>`.
+  - Recordings are detached from the data, so buffered values (for instance
+    in internally tagged or untagged enums) cannot be borrowed.
 - Extension values can borrow data: extensions implement the new
   `BorrowedExtension` trait on a `'static` key type which defines the type
   of the values for a lifetime.  They are created with

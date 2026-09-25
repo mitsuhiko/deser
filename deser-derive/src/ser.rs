@@ -43,6 +43,7 @@ fn struct_where_clause(
         quote!(__deser::Serialize),
         None,
         quote!(__deser::adapters::SerializeAs),
+        None,
         container_attrs.serialize_bound(),
         &attrs
             .iter()
@@ -447,6 +448,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         quote!(__deser::Serialize),
         None,
         quote!(__deser::adapters::SerializeAs),
+        None,
         container_attrs.serialize_bound(),
         &[BoundField {
             ty: field_type,

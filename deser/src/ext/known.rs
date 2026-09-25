@@ -70,7 +70,7 @@ pub(crate) fn out_of_range(msg: impl Into<Cow<'static, str>>) -> Error {
 /// Deserializes a well-known type.
 pub(crate) struct KnownSink<'a, T>(pub(crate) &'a mut Option<T>);
 
-impl<'a, T: WellKnown> Sink for KnownSink<'a, T> {
+impl<'a, 'de, T: WellKnown> Sink<'de> for KnownSink<'a, T> {
     fn descriptor(&self) -> &'static dyn Descriptor {
         T::descriptor()
     }
@@ -93,7 +93,7 @@ impl<'a, T: WellKnown> Sink for KnownSink<'a, T> {
 /// Deserializes a type bridged onto a well-known type.
 pub(crate) struct BridgeSink<'a, T>(pub(crate) &'a mut Option<T>);
 
-impl<'a, T: Bridge> Sink for BridgeSink<'a, T> {
+impl<'a, 'de, T: Bridge> Sink<'de> for BridgeSink<'a, T> {
     fn descriptor(&self) -> &'static dyn Descriptor {
         <T::Known as WellKnown>::descriptor()
     }
@@ -134,8 +134,8 @@ macro_rules! impl_well_known {
             }
         }
 
-        impl $crate::de::Deserialize for $ty {
-            fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_> {
+        impl<'de> $crate::de::Deserialize<'de> for $ty {
+            fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_, 'de> {
                 $crate::de::SinkHandle::boxed($crate::ext::known::KnownSink(out))
             }
         }
@@ -160,8 +160,8 @@ macro_rules! impl_bridge {
                 }
             }
 
-            impl $crate::de::Deserialize for $ty {
-                fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_> {
+            impl<'de> $crate::de::Deserialize<'de> for $ty {
+                fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_, 'de> {
                     $crate::de::SinkHandle::boxed($crate::ext::known::BridgeSink(out))
                 }
             }

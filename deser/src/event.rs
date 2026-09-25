@@ -90,7 +90,7 @@ impl<'a> Atom<'a> {
     /// ```
     /// # use deser::{Atom, Error, State, de::Sink};
     /// # struct MySink;
-    /// impl Sink for MySink {
+    /// impl<'de> Sink<'de> for MySink {
     ///     fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
     ///         Err(atom.unexpected_error(&self.expecting()))
     ///     }

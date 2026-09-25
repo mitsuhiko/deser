@@ -63,8 +63,8 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 ///
 /// struct AtomWrapper<T>(T);
 ///
-/// impl<T: Deserialize> Deserialize for AtomWrapper<T> {
-///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+/// impl<'de, T: Deserialize<'de>> Deserialize<'de> for AtomWrapper<T> {
+///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
 ///         SinkHandle::boxed(WrapperSink {
 ///             out,
 ///             sink: OwnedSink::deserialize(),
@@ -72,12 +72,12 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 ///     }
 /// }
 ///
-/// struct WrapperSink<'a, T> {
+/// struct WrapperSink<'a, 'de, T> {
 ///     out: &'a mut Option<AtomWrapper<T>>,
-///     sink: OwnedSink<T>,
+///     sink: OwnedSink<'de, T>,
 /// }
 ///
-/// impl<'a, T: Deserialize> Sink for WrapperSink<'a, T> {
+/// impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for WrapperSink<'a, 'de, T> {
 ///     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
 ///         self.sink.borrow_mut().atom(atom, state)
 ///     }
@@ -88,35 +88,36 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
 ///     }
 /// }
 /// ```
-pub struct OwnedSink<T> {
+pub struct OwnedSink<'de, T> {
     // The sink borrows from the storage.  The sink is always dropped before
-    // the storage is accessed (in `take`) or dropped.
+    // the storage is accessed (in `take`) or dropped.  The lifetime of the
+    // borrow is erased (to `'de` as the handle cannot outlive that).
     storage: NonuniqueBox<Option<T>>,
-    sink: ManuallyDrop<SinkHandle<'static>>,
+    sink: ManuallyDrop<SinkHandle<'de, 'de>>,
 }
 
-impl<T: Deserialize> OwnedSink<T> {
+impl<'de, T: Deserialize<'de>> OwnedSink<'de, T> {
     /// Creates a new owned sink for a given type.
     ///
     /// This begins the deserialization with [`Deserialize::deserialize_into`]
     /// into a slot contained within the owned sink.  To extract the final
     /// value use [`take`](Self::take).
-    pub fn deserialize() -> OwnedSink<T> {
+    pub fn deserialize() -> OwnedSink<'de, T> {
         OwnedSink::with(T::deserialize_into)
     }
 }
 
-impl<T> OwnedSink<T> {
+impl<'de, T> OwnedSink<'de, T> {
     /// Creates a new owned sink that deserializes with an adapter.
     ///
     /// This is like [`deserialize`](Self::deserialize) but begins the
     /// deserialization with
     /// [`DeserializeAs::deserialize_into_as`] of the adapter `A`.
-    pub fn deserialize_as<A: DeserializeAs<T>>() -> OwnedSink<T> {
+    pub fn deserialize_as<A: DeserializeAs<'de, T>>() -> OwnedSink<'de, T> {
         OwnedSink::with(A::deserialize_into_as)
     }
 
-    fn with(make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x>) -> OwnedSink<T> {
+    fn with(make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>) -> OwnedSink<'de, T> {
         /// Creates a reference with an unbounded lifetime.
         unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
             &mut *ptr
@@ -127,7 +128,7 @@ impl<T> OwnedSink<T> {
         // dropped before the storage is accessed again or freed.
         let sink = unsafe {
             let slot = unbounded(storage.ptr.as_ptr());
-            std::mem::transmute::<SinkHandle<'_>, SinkHandle<'static>>(make(slot))
+            std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
         };
         OwnedSink {
             storage,
@@ -137,13 +138,13 @@ impl<T> OwnedSink<T> {
 
     /// Immutably borrows the sink.
     #[allow(clippy::should_implement_trait)]
-    pub fn borrow(&self) -> &(dyn Sink + '_) {
+    pub fn borrow(&self) -> &(dyn Sink<'de> + '_) {
         &*self.sink
     }
 
     /// Mutably borrows the sink.
     #[allow(clippy::should_implement_trait)]
-    pub fn borrow_mut(&mut self) -> &mut (dyn Sink + '_) {
+    pub fn borrow_mut(&mut self) -> &mut (dyn Sink<'de> + '_) {
         &mut *self.sink
     }
 
@@ -158,7 +159,7 @@ impl<T> OwnedSink<T> {
     }
 }
 
-impl<T> Drop for OwnedSink<T> {
+impl<'de, T> Drop for OwnedSink<'de, T> {
     fn drop(&mut self) {
         // SAFETY: the sink is never used again and dropped before the
         // storage it borrows from.

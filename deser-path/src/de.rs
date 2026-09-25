@@ -13,25 +13,25 @@ enum Container {
 }
 
 /// A path sink tracks the current path during deserialization.
-pub struct PathSink<'a> {
-    sink: SinkHandle<'a>,
+pub struct PathSink<'a, 'de> {
+    sink: SinkHandle<'a, 'de>,
     container: Container,
     is_key: bool,
     entered_container: bool,
 }
 
-impl<'a> PathSink<'a> {
+impl<'a, 'de> PathSink<'a, 'de> {
     /// Wraps a sink.
-    pub fn wrap(sink: &'a mut dyn Sink) -> PathSink<'a> {
+    pub fn wrap(sink: &'a mut dyn Sink<'de>) -> PathSink<'a, 'de> {
         PathSink::wrap_ref(SinkHandle::to(sink))
     }
 
     /// Wraps a sink ref.
-    pub fn wrap_ref(sink: SinkHandle<'a>) -> PathSink<'a> {
+    pub fn wrap_ref(sink: SinkHandle<'a, 'de>) -> PathSink<'a, 'de> {
         PathSink::new(sink, false)
     }
 
-    fn new(sink: SinkHandle<'a>, is_key: bool) -> PathSink<'a> {
+    fn new(sink: SinkHandle<'a, 'de>, is_key: bool) -> PathSink<'a, 'de> {
         PathSink {
             sink,
             container: Container::None,
@@ -87,12 +87,19 @@ fn set_key(state: &mut State, atom: &Atom) {
     }
 }
 
-impl<'a> Sink for PathSink<'a> {
+impl<'a, 'de> Sink<'de> for PathSink<'a, 'de> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.is_key {
             set_key(state, &atom);
         }
         self.sink.atom(atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        if self.is_key {
+            set_key(state, &atom);
+        }
+        self.sink.borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
@@ -105,12 +112,12 @@ impl<'a> Sink for PathSink<'a> {
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let sink = self.sink.next_key(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, true)))
     }
 
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.advance_index(state);
         let sink = self.sink.next_value(state)?;
         Ok(SinkHandle::boxed(PathSink::new(sink, false)))
@@ -130,6 +137,18 @@ impl<'a> Sink for PathSink<'a> {
         // returned path sink does, without allocating the path sink.
         self.advance_index(state);
         self.sink.value_atom(atom, state)
+    }
+
+    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        let mut sink = self.sink.next_key(state)?;
+        set_key(state, &atom);
+        sink.borrowed_atom(atom, state)?;
+        sink.finish(state)
+    }
+
+    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.advance_index(state);
+        self.sink.borrowed_value_atom(atom, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {

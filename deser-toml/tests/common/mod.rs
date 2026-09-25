@@ -203,8 +203,8 @@ macro_rules! table {
     };
 }
 
-impl Deserialize for Value {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(ValueSink {
             out,
             compound: None,
@@ -240,7 +240,7 @@ impl<'a> ValueSink<'a> {
     }
 }
 
-impl<'a> Sink for ValueSink<'a> {
+impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         *self.out = Some(match atom {
             Atom::Bool(value) => Value::Bool(value),
@@ -266,12 +266,12 @@ impl<'a> Sink for ValueSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(Compound::Array(_)) = self.compound {
             self.flush();
         }

@@ -433,7 +433,7 @@ fn test_borrowed_strings() {
     // records whether strings are borrowed from the input
     struct Borrowed(Vec<bool>);
 
-    impl Sink for Borrowed {
+    impl<'de> Sink<'de> for Borrowed {
         fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
             if let Atom::Str(s) = atom {
                 self.0.push(matches!(s, Cow::Borrowed(_)));
@@ -445,7 +445,7 @@ fn test_borrowed_strings() {
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             Ok(SinkHandle::to(self))
         }
     }
@@ -612,4 +612,26 @@ fn test_merge_key_errors() {
         err.to_string(),
         "Unexpected: aliases expand to too many events"
     );
+}
+
+#[test]
+fn test_borrowing() {
+    #[derive(Deserialize, Debug)]
+    struct Doc<'a> {
+        name: &'a str,
+        quoted: &'a str,
+        list: Vec<&'a str>,
+    }
+
+    let input = "name: demo\nquoted: 'text'\nlist: [a, b]\n";
+    let doc: Doc = from_str(input).unwrap();
+    assert_eq!(doc.name, "demo");
+    assert_eq!(doc.quoted, "text");
+    assert_eq!(doc.list, ["a", "b"]);
+    assert!(input.as_bytes().as_ptr_range().contains(&doc.name.as_ptr()));
+
+    // scalars that are unescaped or folded cannot be borrowed
+    let err = from_str::<&str>("\"a\\tb\"").unwrap_err();
+    assert!(err.to_string().contains("expected a borrowed string"));
+    assert_eq!(from_str::<String>("\"a\\tb\"").unwrap(), "a\tb");
 }

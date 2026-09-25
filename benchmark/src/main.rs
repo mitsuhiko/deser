@@ -141,8 +141,8 @@ fn main() {
 /// Accepts and ignores any value.
 struct Ignore;
 
-impl deser::Deserialize for Ignore {
-    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_> {
+impl<'de> deser::Deserialize<'de> for Ignore {
+    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_, 'de> {
         *out = Some(Ignore);
         deser::de::SinkHandle::null()
     }

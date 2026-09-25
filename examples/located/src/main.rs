@@ -82,17 +82,17 @@ impl Extension for LocatedAtom {
 ///
 /// This needs to be wrapped by a `PathSink` which maintains the path and the
 /// format needs to publish locations.
-pub struct Annotator<'a> {
-    sink: SinkHandle<'a>,
+pub struct Annotator<'a, 'de> {
+    sink: SinkHandle<'a, 'de>,
 }
 
-impl<'a> Annotator<'a> {
-    pub fn wrap(sink: SinkHandle<'a>) -> Annotator<'a> {
+impl<'a, 'de> Annotator<'a, 'de> {
+    pub fn wrap(sink: SinkHandle<'a, 'de>) -> Annotator<'a, 'de> {
         Annotator { sink }
     }
 }
 
-impl<'a> Sink for Annotator<'a> {
+impl<'a, 'de> Sink<'de> for Annotator<'a, 'de> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         // map keys are not annotated and values that already are extension
         // values are passed through as is as fallbacks cannot be extension
@@ -117,13 +117,13 @@ impl<'a> Sink for Annotator<'a> {
         self.sink.seq(state)
     }
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(SinkHandle::boxed(Annotator::wrap(
             self.sink.next_key(state)?,
         )))
     }
 
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(SinkHandle::boxed(Annotator::wrap(
             self.sink.next_value(state)?,
         )))
@@ -133,7 +133,7 @@ impl<'a> Sink for Annotator<'a> {
         &mut self,
         key: &str,
         state: &mut State,
-    ) -> Result<Option<SinkHandle<'_>>, Error> {
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         Ok(self
             .sink
             .value_for_key(key, state)?
@@ -150,7 +150,7 @@ impl<'a> Sink for Annotator<'a> {
 }
 
 /// Deserializes JSON and annotates all values with their path and location.
-pub fn from_json_with_locations<T: Deserialize>(json: &str) -> Result<T, Error> {
+pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
     let mut out = None;
     {
         let sink = Annotator::wrap(T::deserialize_into(&mut out));
@@ -186,8 +186,8 @@ impl<T: fmt::Debug> fmt::Debug for Located<T> {
     }
 }
 
-impl<T: Deserialize> Deserialize for Located<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Located<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(LocatedSink {
             out,
             sink: OwnedSink::deserialize(),
@@ -197,14 +197,14 @@ impl<T: Deserialize> Deserialize for Located<T> {
     }
 }
 
-struct LocatedSink<'a, T> {
+struct LocatedSink<'a, 'de, T> {
     out: &'a mut Option<Located<T>>,
-    sink: OwnedSink<T>,
+    sink: OwnedSink<'de, T>,
     path: Option<String>,
     span: Option<Span>,
 }
 
-impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
+impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for LocatedSink<'a, 'de, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<LocatedAtom>() => {
@@ -225,11 +225,11 @@ impl<'a, T: Deserialize> Sink for LocatedSink<'a, T> {
         self.sink.borrow_mut().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.sink.borrow_mut().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.sink.borrow_mut().next_value(state)
     }
 
@@ -259,8 +259,8 @@ pub enum Either<A, B> {
     Right(B),
 }
 
-impl<A: Deserialize, B: Deserialize> Deserialize for Either<A, B> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de, A: Deserialize<'de>, B: Deserialize<'de>> Deserialize<'de> for Either<A, B> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         Recording::capture(move |recording, state| {
             let mut left = None;
             if recording

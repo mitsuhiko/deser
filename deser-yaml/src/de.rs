@@ -496,7 +496,7 @@ impl<'a> Deserializer<'a> {
     /// If a document fails to deserialize (for instance because it does not
     /// match the type), the rest of the document is skipped and the next
     /// call continues with the next document.  Syntax errors end the stream.
-    pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
@@ -515,7 +515,7 @@ impl<'a> Deserializer<'a> {
     /// let docs = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(docs, [1, 2, 3]);
     /// ```
-    pub fn iter<T: Deserialize>(&mut self) -> Iter<'_, 'a, T> {
+    pub fn iter<T: Deserialize<'a>>(&mut self) -> Iter<'_, 'a, T> {
         Iter {
             de: self,
             failed: false,
@@ -527,7 +527,7 @@ impl<'a> Deserializer<'a> {
     ///
     /// This is useful to deserialize into a custom
     /// [`Sink`](deser::de::Sink) or to wrap the sink of a value.
-    pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(err) = self.pending_error.take() {
             return Err(err);
         }
@@ -608,7 +608,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn drive_document(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    fn drive_document(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         // nodes that are emitted before the next event from the parser
         let mut pending: Vec<Pending<'a>> = Vec::new();
         // the number of nodes produced by aliases and merges
@@ -901,11 +901,14 @@ impl<'a> Deserializer<'a> {
 }
 
 #[inline]
-fn emit_scalar(
-    driver: &mut DeserializeDriver,
+///
+/// Scalars are emitted borrowed as they are slices of the input unless they
+/// had to be unescaped or folded.
+fn emit_scalar<'a>(
+    driver: &mut DeserializeDriver<'_, 'a>,
     tag: Option<Cow<'_, str>>,
     style: ScalarStyle,
-    value: Cow<'_, str>,
+    value: Cow<'a, str>,
     version: Version,
     start: Mark,
     end: usize,
@@ -913,15 +916,15 @@ fn emit_scalar(
     let offset = start.offset;
     let tag = match tag {
         None if style == ScalarStyle::Plain => {
-            return driver.emit_at(resolve_plain(value, version), offset, end);
+            return driver.emit_borrowed_at(resolve_plain(value, version), offset, end);
         }
-        None => return driver.emit_at(Atom::Str(value), offset, end),
+        None => return driver.emit_borrowed_at(Atom::Str(value), offset, end),
         Some(tag) => tag,
     };
     match classify_tag(&tag) {
-        ScalarTag::Str => driver.emit_at(Atom::Str(value), offset, end),
+        ScalarTag::Str => driver.emit_borrowed_at(Atom::Str(value), offset, end),
         ScalarTag::Standard(name) => match resolve_standard(name, value, version) {
-            Ok(atom) => driver.emit_at(atom, offset, end),
+            Ok(atom) => driver.emit_borrowed_at(atom, offset, end),
             Err(msg) => Err(error_at(start, msg)),
         },
         ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value), offset, end),
@@ -930,8 +933,8 @@ fn emit_scalar(
 
 /// Emits an event with a tag attached to it.
 #[cold]
-fn emit_tagged<'e, E: Into<Event<'e>>>(
-    driver: &mut DeserializeDriver,
+fn emit_tagged<'a, E: Into<Event<'a>>>(
+    driver: &mut DeserializeDriver<'_, 'a>,
     tag: &str,
     event: E,
     start: usize,
@@ -939,7 +942,7 @@ fn emit_tagged<'e, E: Into<Event<'e>>>(
 ) -> Result<(), Error> {
     // this is `emit_with` together with the input range
     driver.state_mut().event_mut::<CurrentTag>().0 = Some(tag.to_string());
-    let rv = driver.emit_at(event, start, end);
+    let rv = driver.emit_borrowed_at(event, start, end);
     driver.state_mut().clear_event_data();
     rv
 }
@@ -963,13 +966,13 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
 /// An iterator over the documents of a YAML stream.
 ///
 /// See [`Deserializer::iter`].
-pub struct Iter<'de, 'a, T> {
-    de: &'de mut Deserializer<'a>,
+pub struct Iter<'b, 'a, T> {
+    de: &'b mut Deserializer<'a>,
     failed: bool,
     _marker: PhantomData<fn() -> T>,
 }
 
-impl<'de, 'a, T: Deserialize> Iterator for Iter<'de, 'a, T> {
+impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
     type Item = Result<T, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -986,18 +989,18 @@ impl<'de, 'a, T: Deserialize> Iterator for Iter<'de, 'a, T> {
 ///
 /// The input must contain at most one document.  An empty stream (no
 /// document at all, for instance an empty file) is deserialized as null.
-pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
+pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
     from_deserializer(Deserializer::new(s))
 }
 
 /// Deserializes a value from YAML in a byte slice.
 ///
 /// The input must be UTF-8.  Otherwise this works like [`from_str`].
-pub fn from_slice<T: Deserialize>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     from_deserializer(Deserializer::from_slice(bytes))
 }
 
-fn from_deserializer<T: Deserialize>(mut de: Deserializer) -> Result<T, Error> {
+fn from_deserializer<'de, T: Deserialize<'de>>(mut de: Deserializer<'de>) -> Result<T, Error> {
     if de.is_end() {
         let mut out = None;
         {

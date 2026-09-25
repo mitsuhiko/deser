@@ -17,6 +17,113 @@ use crate::event::Atom;
 use crate::ser::{Begin, Chunk, Serialize, SerializeHandle};
 use crate::State;
 
+/// Deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the data.
+///
+/// `Cow` is deserialized owned by default so that `Cow<'static, str>` can
+/// be deserialized from any data.  With this adapter the data is borrowed
+/// if the data format passes it on borrowed (see
+/// [`Sink::borrowed_atom`]).  Otherwise it's owned.  Serialization is not
+/// affected.
+///
+/// ```
+/// use std::borrow::Cow;
+/// use deser::{Deserialize, Serialize};
+/// use deser::adapters::Borrowed;
+///
+/// #[derive(Serialize, Deserialize)]
+/// pub struct Message<'a> {
+///     #[deser(as = Borrowed)]
+///     text: Cow<'a, str>,
+///     #[deser(as = Vec<Borrowed>)]
+///     tags: Vec<Cow<'a, str>>,
+/// }
+/// ```
+pub struct Borrowed;
+
+make_slot_wrapper!(BorrowedSlot);
+
+impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
+    fn descriptor(&self) -> &'static dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
+        &DESCRIPTOR
+    }
+
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Str(value) => {
+                **self = Some(Cow::Owned(value.into_owned()));
+                Ok(())
+            }
+            Atom::Char(value) => {
+                **self = Some(Cow::Owned(value.to_string()));
+                Ok(())
+            }
+            other => self.unexpected_atom(other, state),
+        }
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Str(value) => {
+                **self = Some(value);
+                Ok(())
+            }
+            other => self.atom(other, state),
+        }
+    }
+}
+
+impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
+    fn descriptor(&self) -> &'static dyn Descriptor {
+        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
+        &DESCRIPTOR
+    }
+
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Bytes(value) => {
+                **self = Some(Cow::Owned(value.into_owned()));
+                Ok(())
+            }
+            other => self.unexpected_atom(other, state),
+        }
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Bytes(value) => {
+                **self = Some(value);
+                Ok(())
+            }
+            other => self.atom(other, state),
+        }
+    }
+}
+
+impl<'de: 'a, 'a> DeserializeAs<'de, Cow<'a, str>> for Borrowed {
+    fn deserialize_into_as<'b>(out: &'b mut Option<Cow<'a, str>>) -> SinkHandle<'b, 'de> {
+        BorrowedSlot::make_handle(out)
+    }
+}
+
+impl<'de: 'a, 'a> DeserializeAs<'de, Cow<'a, [u8]>> for Borrowed {
+    fn deserialize_into_as<'b>(out: &'b mut Option<Cow<'a, [u8]>>) -> SinkHandle<'b, 'de> {
+        BorrowedSlot::make_handle(out)
+    }
+}
+
+impl<'a> SerializeAs<Cow<'a, str>> for Borrowed {
+    fn serialize_as<'b>(value: &'b Cow<'a, str>, _state: &mut State) -> Result<Chunk<'b>, Error> {
+        Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(value))))
+    }
+}
+
+impl<'a> SerializeAs<Cow<'a, [u8]>> for Borrowed {
+    fn serialize_as<'b>(value: &'b Cow<'a, [u8]>, _state: &mut State) -> Result<Chunk<'b>, Error> {
+        Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(value))))
+    }
+}
+
 /// Serializes with [`Display`] and deserializes with [`FromStr`].
 ///
 /// The value is represented as a string.  Only strings are accepted when
@@ -37,7 +144,7 @@ pub struct DisplayFromStr;
 
 make_slot_wrapper!(FromStrSlot);
 
-impl<T> Sink for FromStrSlot<T>
+impl<'de, T> Sink<'de> for FromStrSlot<T>
 where
     T: FromStr,
     T::Err: Display,
@@ -63,12 +170,12 @@ where
     }
 }
 
-impl<T> DeserializeAs<T> for DisplayFromStr
+impl<'de, T> DeserializeAs<'de, T> for DisplayFromStr
 where
     T: FromStr,
     T::Err: Display,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         FromStrSlot::make_handle(out)
     }
 
@@ -81,6 +188,16 @@ where
         let sink = FromStrSlot::wrap(out);
         sink.atom(atom, state)?;
         sink.finish(state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        // the value is parsed, it does not borrow
+        Self::__private_atom_into_as(out, atom, state)
     }
 }
 
@@ -136,11 +253,11 @@ impl<T: Display + ?Sized> SerializeAs<T> for DisplayFromStr {
 /// ```
 pub struct FromInto<U>(PhantomData<fn() -> U>);
 
-impl<T, U> DeserializeAs<T> for FromInto<U>
+impl<'de, T, U> DeserializeAs<'de, T> for FromInto<U>
 where
-    U: Deserialize + Into<T> + 'static,
+    U: Deserialize<'de> + Into<T> + 'static,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         MappedSink::handle(out, OwnedSink::<U>::deserialize(), |value| Ok(value.into()))
     }
 
@@ -156,6 +273,18 @@ where
     ) -> Result<(), Error> {
         let mut inner = None;
         U::__private_atom_into(&mut inner, atom, state)?;
+        *out = inner.map(Into::into);
+        Ok(())
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let mut inner = None;
+        U::__private_borrowed_atom_into(&mut inner, atom, state)?;
         *out = inner.map(Into::into);
         Ok(())
     }
@@ -215,13 +344,13 @@ fn conversion_error<E: Display>(err: E) -> Error {
     Error::new(ErrorKind::Unexpected, format!("invalid value: {}", err))
 }
 
-impl<T, U> DeserializeAs<T> for TryFromInto<U>
+impl<'de, T, U> DeserializeAs<'de, T> for TryFromInto<U>
 where
-    U: Deserialize + 'static,
+    U: Deserialize<'de> + 'static,
     T: TryFrom<U>,
     T::Error: Display,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         MappedSink::handle(out, OwnedSink::<U>::deserialize(), |value| {
             T::try_from(value).map_err(conversion_error)
         })
@@ -239,6 +368,21 @@ where
     ) -> Result<(), Error> {
         let mut inner = None;
         U::__private_atom_into(&mut inner, atom, state)?;
+        *out = match inner {
+            Some(value) => Some(T::try_from(value).map_err(conversion_error)?),
+            None => None,
+        };
+        Ok(())
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let mut inner = None;
+        U::__private_borrowed_atom_into(&mut inner, atom, state)?;
         *out = match inner {
             Some(value) => Some(T::try_from(value).map_err(conversion_error)?),
             None => None,
@@ -290,8 +434,8 @@ where
 /// ```
 pub struct DefaultOnError<A = Same>(PhantomData<fn() -> A>);
 
-impl<T: Default, A: DeserializeAs<T>> DeserializeAs<T> for DefaultOnError<A> {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_> {
+impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         Recording::capture(move |recording, state| {
             let mut value = None;
             let rv = recording.replay(A::deserialize_into_as(&mut value), state);
@@ -316,6 +460,25 @@ impl<T: Default, A: DeserializeAs<T>> DeserializeAs<T> for DefaultOnError<A> {
         let mut value = None;
         *out = Some(
             match (A::__private_atom_into_as(&mut value, atom, state), value) {
+                (Ok(()), Some(value)) => value,
+                _ => T::default(),
+            },
+        );
+        Ok(())
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let mut value = None;
+        *out = Some(
+            match (
+                A::__private_borrowed_atom_into_as(&mut value, atom, state),
+                value,
+            ) {
                 (Ok(()), Some(value)) => value,
                 _ => T::default(),
             },
@@ -351,7 +514,9 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
 ///
 /// Atoms are deserialized directly, compound values are recorded first.
 /// Errors are not reported, in that case the callback is not invoked.
-fn try_deserialize<'a, T: 'a, A: DeserializeAs<T>>(then: impl FnOnce(T) + 'a) -> SinkHandle<'a> {
+fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
+    then: impl FnOnce(T) + 'a,
+) -> SinkHandle<'a, 'de> {
     Recording::capture(move |recording, state| {
         let mut value = None;
         if recording
@@ -367,9 +532,21 @@ fn try_deserialize<'a, T: 'a, A: DeserializeAs<T>>(then: impl FnOnce(T) + 'a) ->
 }
 
 /// Deserializes an atom and returns the value unless it failed.
-fn try_atom<T, A: DeserializeAs<T>>(atom: Atom, state: &mut State) -> Option<T> {
+fn try_atom<'de, T, A: DeserializeAs<'de, T>>(atom: Atom, state: &mut State) -> Option<T> {
     let mut value = None;
     match A::__private_atom_into_as(&mut value, atom, state) {
+        Ok(()) => value,
+        Err(_) => None,
+    }
+}
+
+/// Deserializes a borrowed atom and returns the value unless it failed.
+fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
+    atom: Atom<'de>,
+    state: &mut State,
+) -> Option<T> {
+    let mut value = None;
+    match A::__private_borrowed_atom_into_as(&mut value, atom, state) {
         Ok(()) => value,
         Err(_) => None,
     }
@@ -401,15 +578,15 @@ fn try_atom<T, A: DeserializeAs<T>>(atom: Atom, state: &mut State) -> Option<T> 
 /// ```
 pub struct VecSkipError<A = Same>(PhantomData<fn() -> A>);
 
-impl<T, A: DeserializeAs<T>> DeserializeAs<Vec<T>> for VecSkipError<A> {
-    fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_> {
+impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipError<A> {
+    fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_, 'de> {
         struct SkipSink<'a, T, A> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
             _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, T, A: DeserializeAs<T>> Sink for SkipSink<'a, T, A> {
+        impl<'a, 'de, T, A: DeserializeAs<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
             fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
                 &DESCRIPTOR
@@ -419,13 +596,24 @@ impl<T, A: DeserializeAs<T>> DeserializeAs<Vec<T>> for VecSkipError<A> {
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
                 let vec = &mut self.vec;
                 Ok(try_deserialize::<T, A>(move |value| vec.push(value)))
             }
 
             fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 if let Some(value) = try_atom::<T, A>(atom, state) {
+                    self.vec.push(value);
+                }
+                Ok(())
+            }
+
+            fn borrowed_value_atom(
+                &mut self,
+                atom: Atom<'de>,
+                state: &mut State,
+            ) -> Result<(), Error> {
+                if let Some(value) = try_borrowed_atom::<T, A>(atom, state) {
                     self.vec.push(value);
                 }
                 Ok(())
@@ -488,13 +676,13 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 /// ```
 pub struct MapSkipError<KA = Same, VA = Same>(PhantomData<fn() -> (KA, VA)>);
 
-fn skip_map_sink<'a, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a>
+fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: 'a,
     V: 'a,
-    KA: DeserializeAs<K>,
-    VA: DeserializeAs<V>,
+    KA: DeserializeAs<'de, K>,
+    VA: DeserializeAs<'de, V>,
 {
     #[allow(clippy::type_complexity)]
     struct SkipMapSink<'a, M, K, V, KA, VA> {
@@ -505,17 +693,17 @@ where
         _marker: PhantomData<fn() -> (V, KA, VA)>,
     }
 
-    impl<'a, M, K, V, KA, VA> Sink for SkipMapSink<'a, M, K, V, KA, VA>
+    impl<'a, 'de, M, K, V, KA, VA> Sink<'de> for SkipMapSink<'a, M, K, V, KA, VA>
     where
         M: MapTarget<K, V>,
-        KA: DeserializeAs<K>,
-        VA: DeserializeAs<V>,
+        KA: DeserializeAs<'de, K>,
+        VA: DeserializeAs<'de, V>,
     {
         fn map(&mut self, _state: &mut State) -> Result<(), Error> {
             Ok(())
         }
 
-        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             self.key = None;
             let key = &mut self.key;
             Ok(try_deserialize::<K, KA>(move |value| *key = Some(value)))
@@ -526,7 +714,12 @@ where
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+        fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+            self.key = try_borrowed_atom::<K, KA>(atom, state);
+            Ok(())
+        }
+
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             let key = match self.key.take() {
                 Some(key) => key,
                 None => return Ok(SinkHandle::null()),
@@ -540,6 +733,15 @@ where
         fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             if let Some(key) = self.key.take() {
                 if let Some(value) = try_atom::<V, VA>(atom, state) {
+                    self.map.insert_entry(key, value);
+                }
+            }
+            Ok(())
+        }
+
+        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+            if let Some(key) = self.key.take() {
+                if let Some(value) = try_borrowed_atom::<V, VA>(atom, state) {
                     self.map.insert_entry(key, value);
                 }
             }
@@ -560,25 +762,25 @@ where
     })
 }
 
-impl<K, V, KA, VA> DeserializeAs<BTreeMap<K, V>> for MapSkipError<KA, VA>
+impl<'de, K, V, KA, VA> DeserializeAs<'de, BTreeMap<K, V>> for MapSkipError<KA, VA>
 where
     K: Ord,
-    KA: DeserializeAs<K>,
-    VA: DeserializeAs<V>,
+    KA: DeserializeAs<'de, K>,
+    VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_, 'de> {
         skip_map_sink::<_, K, V, KA, VA>(out)
     }
 }
 
-impl<K, V, H, KA, VA> DeserializeAs<HashMap<K, V, H>> for MapSkipError<KA, VA>
+impl<'de, K, V, H, KA, VA> DeserializeAs<'de, HashMap<K, V, H>> for MapSkipError<KA, VA>
 where
     K: Hash + Eq,
     H: BuildHasher + Default,
-    KA: DeserializeAs<K>,
-    VA: DeserializeAs<V>,
+    KA: DeserializeAs<'de, K>,
+    VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_, 'de> {
         skip_map_sink::<_, K, V, KA, VA>(out)
     }
 }

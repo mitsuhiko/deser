@@ -235,4 +235,26 @@
 ///     B,
 /// }
 /// ```
+///
+/// The lifetime `'de` is reserved for the lifetime of `Deserialize`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test<'de> {
+///     field: &'de str,
+/// }
+/// ```
+///
+/// Types that borrow cannot be deserialized from data that does not
+/// outlive them.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test<'a> {
+///     field: &'a str,
+/// }
+///
+/// fn owned<T: deser::de::DeserializeOwned>() {}
+/// owned::<Test<'static>>();
+/// ```
 pub struct DeriveErrors;

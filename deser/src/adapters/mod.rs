@@ -48,6 +48,8 @@
 //!   deserialized.
 //! * [`VecSkipError`] and [`MapSkipError`]: skip elements and entries that
 //!   cannot be deserialized.
+//! * [`Borrowed`]: deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the
+//!   data if possible.
 //! * The standard containers: `Option<U>`, `Box<U>`, `Vec<U>`, `[U]`,
 //!   `[U; N]`, `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<U>`,
 //!   `HashSet<U>` and tuples.
@@ -75,7 +77,7 @@
 //!
 //! make_slot_wrapper!(HexSlot);
 //!
-//! impl Sink for HexSlot<Vec<u8>> {
+//! impl<'de> Sink<'de> for HexSlot<Vec<u8>> {
 //!     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
 //!         match atom {
 //!             Atom::Str(ref s) if s.len() % 2 == 0 => {
@@ -92,8 +94,8 @@
 //!     }
 //! }
 //!
-//! impl DeserializeAs<Vec<u8>> for Hex {
-//!     fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_> {
+//! impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
+//!     fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_, 'de> {
 //!         HexSlot::make_handle(out)
 //!     }
 //! }
@@ -116,7 +118,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use crate::de::{atom_into_handle, Deserialize, OwnedSink, SinkHandle};
+use crate::de::{atom_into_handle, borrowed_atom_into_handle, Deserialize, OwnedSink, SinkHandle};
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
@@ -127,18 +129,18 @@ mod ser_impls;
 mod stock;
 
 pub use self::stock::{
-    DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
+    Borrowed, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
 };
 
 /// Deserializes a value of type `T` on behalf of it.
 ///
 /// This is the equivalent of [`Deserialize`] for adapters.  See the
 /// [module documentation](self) for more information.
-pub trait DeserializeAs<T>: 'static {
+pub trait DeserializeAs<'de, T>: 'static {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// See [`Deserialize::deserialize_into`].
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_>;
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de>;
 
     /// Provides the value of a missing struct field.
     ///
@@ -154,6 +156,15 @@ pub trait DeserializeAs<T>: 'static {
         state: &mut State,
     ) -> Result<(), Error> {
         atom_into_handle(Self::deserialize_into_as(out), atom, state)
+    }
+
+    #[doc(hidden)]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        borrowed_atom_into_handle(Self::deserialize_into_as(out), atom, state)
     }
 
     #[doc(hidden)]
@@ -249,9 +260,9 @@ pub trait SerializeAs<T: ?Sized>: 'static {
 /// ```
 pub struct Same;
 
-impl<T: Deserialize> DeserializeAs<T> for Same {
+impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         T::deserialize_into(out)
     }
 
@@ -267,6 +278,15 @@ impl<T: Deserialize> DeserializeAs<T> for Same {
         state: &mut State,
     ) -> Result<(), Error> {
         T::__private_atom_into(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        T::__private_borrowed_atom_into(out, atom, state)
     }
 
     #[inline]
@@ -484,8 +504,8 @@ impl<T: Hash, A> Hash for As<T, A> {
     }
 }
 
-impl<T, A: DeserializeAs<T>> Deserialize for As<T, A> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de, T, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         crate::de::mapped::MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), |value| {
             Ok(As::new(value))
         })
@@ -503,6 +523,18 @@ impl<T, A: DeserializeAs<T>> Deserialize for As<T, A> {
     ) -> Result<(), Error> {
         let mut inner = None;
         A::__private_atom_into_as(&mut inner, atom, state)?;
+        *out = inner.map(As::new);
+        Ok(())
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let mut inner = None;
+        A::__private_borrowed_atom_into_as(&mut inner, atom, state)?;
         *out = inner.map(As::new);
         Ok(())
     }

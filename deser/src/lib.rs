@@ -99,6 +99,7 @@ pub mod __derive {
     pub use std::boxed::Box;
     pub use std::convert::Into;
     pub use std::default::Default;
+    pub use std::marker::PhantomData;
     pub use std::mem::replace;
     pub use std::option::Option::{self, None, Some};
     pub use std::result::Result::{Err, Ok};
@@ -107,14 +108,16 @@ pub mod __derive {
     pub type StrCow<'a> = Cow<'a, str>;
 
     pub use crate::de::enums::{
-        untagged_handle, AdjacentlyTaggedSink, ExternallyTaggedSink, IgnoredContent,
+        untagged_handle, AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent,
         IgnoredVariant, InternallyTaggedSink, OtherVariant, Variant, VariantBuilder, VariantMaker,
         Variants,
     };
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
     pub use std::vec::Vec;
 
-    pub use crate::de::{atom_into, atom_into_handle};
+    pub use crate::de::{
+        atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle,
+    };
 
     #[cold]
     pub fn new_missing_field_error(name: &str) -> super::Error {

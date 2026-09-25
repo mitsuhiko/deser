@@ -347,8 +347,8 @@ impl<T> Spanned<T> {
     }
 }
 
-impl<T: Deserialize> Deserialize for Spanned<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Spanned<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(SpannedSink {
             out,
             slot: None,
@@ -358,28 +358,35 @@ impl<T: Deserialize> Deserialize for Spanned<T> {
     }
 }
 
-struct SpannedSink<'a, T> {
+struct SpannedSink<'a, 'de, T> {
     out: &'a mut Option<Spanned<T>>,
     // primitive values are deserialized directly into this slot, maps and
     // sequences need a sink that lives across calls
     slot: Option<T>,
-    compound: Option<OwnedSink<T>>,
+    compound: Option<OwnedSink<'de, T>>,
     span: Option<Span>,
 }
 
-impl<'a, T: Deserialize> SpannedSink<'a, T> {
-    fn compound(&mut self) -> &mut dyn Sink {
+impl<'a, 'de, T: Deserialize<'de>> SpannedSink<'a, 'de, T> {
+    fn compound(&mut self) -> &mut dyn Sink<'de> {
         self.compound
             .get_or_insert_with(OwnedSink::deserialize)
             .borrow_mut()
     }
 }
 
-impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
+impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.span = Locations::current_span(state);
         let mut sink = T::deserialize_into(&mut self.slot);
         sink.atom(atom, state)?;
+        sink.finish(state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.span = Locations::current_span(state);
+        let mut sink = T::deserialize_into(&mut self.slot);
+        sink.borrowed_atom(atom, state)?;
         sink.finish(state)
     }
 
@@ -393,11 +400,11 @@ impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
         self.compound().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.compound().next_key(state)
     }
 
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.compound().next_value(state)
     }
 
@@ -405,7 +412,7 @@ impl<'a, T: Deserialize> Sink for SpannedSink<'a, T> {
         &mut self,
         key: &str,
         state: &mut State,
-    ) -> Result<Option<SinkHandle<'_>>, Error> {
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         self.compound().value_for_key(key, state)
     }
 

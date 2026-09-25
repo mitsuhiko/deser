@@ -44,7 +44,7 @@ macro_rules! __make_slot_wrapper {
             /// returns a [`SinkHandle`] to it.
             ///
             /// Equivalent to `SinkHandle::to(SlotWrapper::wrap(...))`.
-            pub fn make_handle(out: &mut Option<T>) -> $crate::de::SinkHandle<'_> where $name<T>: $crate::de::Sink {
+            pub fn make_handle<'de>(out: &mut Option<T>) -> $crate::de::SinkHandle<'_, 'de> where $name<T>: $crate::de::Sink<'de> {
                 $crate::de::SinkHandle::to(Self::wrap(out))
             }
         }

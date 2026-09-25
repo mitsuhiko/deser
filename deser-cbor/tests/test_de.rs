@@ -3,6 +3,7 @@
 //! Adapted from the cbor2 test suite.
 mod common;
 
+use deser::de::DeserializeOwned;
 use std::collections::HashMap;
 
 use common::{de, hex, Value};
@@ -17,7 +18,7 @@ pub enum Enum {
     Struct { x: u32 },
 }
 
-fn assert_syntax_error<T: Deserialize + std::fmt::Debug>(s: &str, offset: usize) {
+fn assert_syntax_error<T: DeserializeOwned + std::fmt::Debug>(s: &str, offset: usize) {
     let err = de::<T>(s).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Unexpected, "{}: {}", s, err);
     let msg = err.to_string();
@@ -29,7 +30,7 @@ fn assert_syntax_error<T: Deserialize + std::fmt::Debug>(s: &str, offset: usize)
     );
 }
 
-fn assert_eof<T: Deserialize + std::fmt::Debug>(s: &str) {
+fn assert_eof<T: DeserializeOwned + std::fmt::Debug>(s: &str) {
     let err = de::<T>(s).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile, "{}: {}", s, err);
 }
@@ -453,4 +454,30 @@ fn deserializer_can_continue_after_items() {
     assert!(de.deserialize::<u64>().is_err());
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::U64(3));
     assert!(de.is_end());
+}
+
+#[test]
+fn borrowing() {
+    #[derive(deser::Deserialize, Debug)]
+    struct Doc<'a> {
+        text: &'a str,
+        byte: &'a [u8],
+    }
+
+    // definite length strings and byte strings are slices of the input:
+    // {"text": "abcd", "byte": h'010203'}
+    let bytes = hex("a2 6474657874 6461626364 6462797465 43010203");
+    let doc: Doc = deser_cbor::from_slice(&bytes).unwrap();
+    assert_eq!(doc.text, "abcd");
+    assert_eq!(doc.byte, [1, 2, 3]);
+    assert!(bytes.as_ptr_range().contains(&doc.text.as_ptr()));
+    assert!(bytes.as_ptr_range().contains(&doc.byte.as_ptr()));
+
+    // indefinite length strings are assembled and cannot be borrowed
+    let err = deser_cbor::from_slice::<&str>(&hex("7f 6161 6162 ff")).unwrap_err();
+    assert!(err.to_string().contains("expected a borrowed string"));
+    assert_eq!(
+        deser_cbor::from_slice::<String>(&hex("7f 6161 6162 ff")).unwrap(),
+        "ab"
+    );
 }

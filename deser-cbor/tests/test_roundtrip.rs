@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use common::{de, hex, ser, Value};
+use deser::de::DeserializeOwned;
 use deser::{Deserialize, Serialize};
 
-fn roundtrip<T: Serialize + Deserialize + PartialEq + Debug>(value: T) {
+fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T) {
     let bytes = deser_cbor::to_vec(&value).unwrap();
     assert_eq!(deser_cbor::from_slice::<T>(&bytes).unwrap(), value);
     // the dynamic value writes the same bytes

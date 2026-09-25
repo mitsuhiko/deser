@@ -11,17 +11,18 @@ use crate::State;
 /// without using the runtime stack.  As rust lifetimes make what this type does
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
-pub struct DeserializeDriver<'a> {
+pub struct DeserializeDriver<'a, 'de: 'a> {
     state: State,
     // The sinks borrow from each other: every sink on the stack can borrow
-    // from the sink below it.  The lifetimes are erased to `'static` and
-    // it's the driver's responsibility to never use a sink while one of the
-    // sinks it lent out is still alive and to drop them in inverse order.
+    // from the sink below it.  The lifetimes of these borrows are erased
+    // (to `'de` as the handles cannot outlive that) and it's the driver's
+    // responsibility to never use a sink while one of the sinks it lent out
+    // is still alive and to drop them in inverse order.
     //
     // `root` holds the sink the driver was created with while no container
     // is open.
-    root: Option<SinkHandle<'static>>,
-    sink_stack: Vec<(SinkHandle<'static>, Layer)>,
+    root: Option<SinkHandle<'de, 'de>>,
+    sink_stack: Vec<(SinkHandle<'de, 'de>, Layer)>,
     // the sinks borrow for 'a
     _marker: PhantomData<&'a mut ()>,
 }
@@ -41,18 +42,18 @@ enum Layer {
 ///
 /// The caller must ensure that the handle is dropped before the data it
 /// borrows from.
-unsafe fn erase_lifetime(handle: SinkHandle<'_>) -> SinkHandle<'static> {
-    std::mem::transmute::<SinkHandle<'_>, SinkHandle<'static>>(handle)
+unsafe fn erase_lifetime<'de>(handle: SinkHandle<'_, 'de>) -> SinkHandle<'de, 'de> {
+    std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle)
 }
 
-impl<'a> DeserializeDriver<'a> {
+impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Creates a new deserializer driver.
-    pub fn new<T: Deserialize>(out: &'a mut Option<T>) -> DeserializeDriver<'a> {
+    pub fn new<T: Deserialize<'de>>(out: &'a mut Option<T>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver::from_sink(T::deserialize_into(out))
     }
 
     /// Creates a new deserializer driver from a sink.
-    pub fn from_sink(sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
+    pub fn from_sink(sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver::with_state(State::new(), sink)
     }
 
@@ -65,9 +66,9 @@ impl<'a> DeserializeDriver<'a> {
     /// observe the same state as values that were not buffered.
     pub(crate) fn nested<R>(
         state: &mut State,
-        sink: SinkHandle<'_>,
+        sink: SinkHandle<'_, 'de>,
         is_map_key: bool,
-        f: impl FnOnce(&mut DeserializeDriver<'_>) -> R,
+        f: impl FnOnce(&mut DeserializeDriver<'_, 'de>) -> R,
     ) -> R {
         let depth = state.descriptor_stack.len();
         let outer_is_map_key = state.is_map_key;
@@ -82,7 +83,7 @@ impl<'a> DeserializeDriver<'a> {
         rv
     }
 
-    fn with_state(state: State, sink: SinkHandle<'a>) -> DeserializeDriver<'a> {
+    fn with_state(state: State, sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver {
             state,
             sink_stack: Vec::with_capacity(STACK_CAPACITY),
@@ -126,6 +127,34 @@ impl<'a> DeserializeDriver<'a> {
         }
     }
 
+    /// Emits an event that borrows from the data being deserialized.
+    ///
+    /// This is like [`emit`](Self::emit) but atoms are passed to
+    /// [`Sink::borrowed_atom`](crate::de::Sink::borrowed_atom) which means
+    /// that types like `&str` can borrow them:
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    ///
+    /// let input = String::from("hello");
+    /// let mut out = None::<&str>;
+    /// {
+    ///     let mut driver = DeserializeDriver::new(&mut out);
+    ///     driver.emit_borrowed(input.as_str()).unwrap();
+    /// }
+    /// assert_eq!(out, Some("hello"));
+    /// ```
+    #[inline]
+    pub fn emit_borrowed<E: Into<Event<'de>>>(&mut self, event: E) -> Result<(), Error> {
+        match event.into() {
+            Event::Atom(atom) => self.emit_borrowed_atom(atom),
+            Event::MapStart => self.emit_start(true),
+            Event::SeqStart => self.emit_start(false),
+            Event::MapEnd => self.emit_end(true),
+            Event::SeqEnd => self.emit_end(false),
+        }
+    }
+
     /// Emits an event with data attached to it.
     ///
     /// The callback attaches the data to the state with
@@ -158,6 +187,22 @@ impl<'a> DeserializeDriver<'a> {
         rv
     }
 
+    /// Emits a borrowed event with data attached to it.
+    ///
+    /// This combines [`emit_borrowed`](Self::emit_borrowed) and
+    /// [`emit_with`](Self::emit_with).
+    #[inline]
+    pub fn emit_borrowed_with<E, F>(&mut self, event: E, attach: F) -> Result<(), Error>
+    where
+        E: Into<Event<'de>>,
+        F: FnOnce(&mut State),
+    {
+        attach(&mut self.state);
+        let rv = self.emit_borrowed(event);
+        self.state.clear_event_data();
+        rv
+    }
+
     /// Emits an event together with its byte range in the input.
     ///
     /// Sinks retrieve the range with
@@ -174,6 +219,47 @@ impl<'a> DeserializeDriver<'a> {
         let rv = self.emit(event);
         self.state.input_range.0 = crate::state::NO_RANGE.0;
         rv
+    }
+
+    /// Emits a borrowed event together with its byte range in the input.
+    ///
+    /// This combines [`emit_borrowed`](Self::emit_borrowed) and
+    /// [`emit_at`](Self::emit_at).
+    #[inline]
+    pub fn emit_borrowed_at<E: Into<Event<'de>>>(
+        &mut self,
+        event: E,
+        start: usize,
+        end: usize,
+    ) -> Result<(), Error> {
+        self.state.input_range = (start, end);
+        let rv = self.emit_borrowed(event);
+        self.state.input_range.0 = crate::state::NO_RANGE.0;
+        rv
+    }
+
+    fn emit_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
+        match self.sink_stack.last_mut() {
+            Some((sink, Layer::Map(ref mut is_key))) => {
+                let key = *is_key;
+                *is_key = !key;
+                self.state.is_map_key = key;
+                if key {
+                    sink.borrowed_key_atom(atom, &mut self.state)
+                } else {
+                    sink.borrowed_value_atom(atom, &mut self.state)
+                }
+            }
+            Some((sink, Layer::Seq)) => {
+                self.state.is_map_key = false;
+                sink.borrowed_value_atom(atom, &mut self.state)
+            }
+            None => {
+                let sink = self.root.as_mut().expect("no active sink");
+                sink.borrowed_atom(atom, &mut self.state)?;
+                sink.finish(&mut self.state)
+            }
+        }
     }
 
     fn emit_atom(&mut self, atom: Atom) -> Result<(), Error> {
@@ -256,7 +342,7 @@ impl<'a> DeserializeDriver<'a> {
     }
 }
 
-impl<'a> Drop for DeserializeDriver<'a> {
+impl<'a, 'de> Drop for DeserializeDriver<'a, 'de> {
     fn drop(&mut self) {
         // sinks borrow from the sinks below them, drop them in inverse order
         while let Some(_item) = self.sink_stack.pop() {}

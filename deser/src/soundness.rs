@@ -40,7 +40,7 @@
 ///     descriptor: MyDescriptor,
 /// }
 ///
-/// impl Sink for MySink {
+/// impl<'de> Sink<'de> for MySink {
 ///     fn descriptor(&self) -> &'static dyn Descriptor {
 ///         &self.descriptor
 ///     }

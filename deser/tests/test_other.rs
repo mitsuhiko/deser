@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use deser::adapters::DisplayFromStr;
-use deser::de::{DeserializeDriver, Recording};
+use deser::de::{DeserializeDriver, DeserializeOwned, Recording};
 use deser::ser::SerializeDriver;
 use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> Result<T, Error> {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -27,7 +27,7 @@ fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
 }
 
 /// Checks the serialized form and that it deserializes back.
-fn check<T: Serialize + Deserialize + PartialEq + Debug>(value: T, events: Vec<Event<'_>>) {
+fn check<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, events: Vec<Event<'_>>) {
     let serialized = serialize(&value);
     assert_eq!(
         serialized,

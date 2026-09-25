@@ -431,3 +431,36 @@ fn test_from_slice() {
     let x: String = from_str("\"\u{fc}\"").unwrap();
     assert_eq!(x, "\u{fc}");
 }
+
+#[test]
+fn test_borrowing() {
+    use deser::adapters::Borrowed;
+    use std::borrow::Cow;
+
+    #[derive(deser::Deserialize, Debug)]
+    struct Doc<'a> {
+        name: &'a str,
+        #[deser(as = Borrowed)]
+        text: Cow<'a, str>,
+        tags: Vec<&'a str>,
+    }
+
+    let json = r#"{"name": "demo", "text": "a \"quoted\" text", "tags": ["x", "y"]}"#;
+    let doc: Doc = deser_json::from_str(json).unwrap();
+    assert_eq!(doc.name, "demo");
+    // strings without escapes are slices of the input
+    let range = json.as_bytes().as_ptr_range();
+    assert!(range.contains(&doc.name.as_ptr()));
+    assert_eq!(doc.tags, ["x", "y"]);
+    // strings with escapes cannot be borrowed
+    assert!(matches!(doc.text, Cow::Owned(_)));
+    assert_eq!(doc.text, "a \"quoted\" text");
+
+    // keys and values from byte slices borrow too
+    let value: std::collections::BTreeMap<&str, &str> =
+        deser_json::from_slice(br#"{"a": "b"}"#).unwrap();
+    assert_eq!(value["a"], "b");
+
+    let err = deser_json::from_str::<&str>(r#""\n""#).unwrap_err();
+    assert!(err.to_string().contains("expected a borrowed string"));
+}

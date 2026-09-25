@@ -5,14 +5,14 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
 use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault, UnnamedFieldAttrs};
-use crate::bound::{where_clause_for_fields, with_lifetime_bound, BoundField};
+use crate::bound::{where_clause_for_fields, with_de_lifetime, with_lifetime_bound, BoundField};
 
 /// Returns an expression that creates a sink handle for a slot.
 fn deserialize_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         // spanned so that errors about unsupported types point to the adapter
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<#ty>>::deserialize_into_as(#slot)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot)
         },
         None => quote! { __deser::Deserialize::deserialize_into(#slot) },
     }
@@ -22,9 +22,23 @@ fn deserialize_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStre
 fn atom_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<#ty>>::__private_atom_into_as(#slot, __atom, __state)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_atom_into_as(#slot, __atom, __state)
         },
         None => quote! { __deser::__derive::atom_into(#slot, __atom, __state) },
+    }
+}
+
+/// Returns an expression that deserializes a borrowed atom into a slot.
+fn borrowed_atom_into(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    slot: TokenStream,
+) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_borrowed_atom_into_as(#slot, __atom, __state)
+        },
+        None => quote! { __deser::__derive::borrowed_atom_into(#slot, __atom, __state) },
     }
 }
 
@@ -45,7 +59,9 @@ pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStre
 
 fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+    let de_generics = with_de_lifetime(&input.generics)?;
+    let (impl_generics, _, _) = de_generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
@@ -76,7 +92,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             let ty = &f.field().ty;
             if f.flatten() {
                 quote! {
-                    __deser::de::OwnedSink<#ty>
+                    __deser::de::OwnedSink<'de, #ty>
                 }
             } else {
                 quote! {
@@ -99,7 +115,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             } else if let Some(adapter) = f.adapter() {
                 let ty = &f.field().ty;
                 quote! {
-                    <#adapter as __deser::adapters::DeserializeAs<#ty>>::initial_value_as()
+                    <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::initial_value_as()
                 }
             } else {
                 quote! {
@@ -114,6 +130,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut key_matcher = Vec::new();
     let mut key_dispatch = Vec::new();
     let mut key_atom_dispatch = Vec::new();
+    let mut key_borrowed_atom_dispatch = Vec::new();
     let matcher = attrs
         .iter()
         .zip(sink_fieldname.iter())
@@ -141,6 +158,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             let ty = &x.field().ty;
             let sink = deserialize_into(ty, x.adapter(), quote! { &mut self.#fieldname });
             let atom = atom_into(ty, x.adapter(), quote! { &mut self.#fieldname });
+            let borrowed_atom =
+                borrowed_atom_into(ty, x.adapter(), quote! { &mut self.#fieldname });
             key_matcher.push(quote! {
                 #rv => __Key::Field(#index),
             });
@@ -149,6 +168,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             });
             key_atom_dispatch.push(quote! {
                 __Key::Field(#index) => #atom,
+            });
+            key_borrowed_atom_dispatch.push(quote! {
+                __Key::Field(#index) => #borrowed_atom,
             });
             Some(quote! {
                 #rv => return __deser::__derive::Ok(__deser::__derive::Some(#sink)),
@@ -163,13 +185,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         ));
     }
 
-    let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
+    let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
     let bounded_where_clause = where_clause_for_fields(
         &input.generics,
-        quote!(__deser::Deserialize),
+        quote!(__deser::Deserialize<'de>),
         None,
         quote!(__deser::adapters::DeserializeAs),
+        Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &attrs
             .iter()
@@ -313,6 +336,16 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     } else {
         None
     };
+    let other_key_borrowed_atom_dispatch = if has_flatten {
+        Some(quote! {
+            __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
+                __deser::__derive::Some(__sink) => __deser::__derive::borrowed_atom_into_handle(__sink, __atom, __state),
+                __deser::__derive::None => __deser::__derive::Ok(()),
+            },
+        })
+    } else {
+        None
+    };
 
     Ok(quote! {
         const _: () = {
@@ -326,7 +359,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 key: __Key,
             }
 
-            impl __deser::de::Sink for __KeySink {
+            impl<'de> __deser::de::Sink<'de> for __KeySink {
                 fn atom(
                     &mut self,
                     __atom: __deser::Atom,
@@ -357,25 +390,27 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 #(
                     #sink_fieldname: #sink_fieldty,
                 )*
+                _marker: __deser::__derive::PhantomData<&'de ()>,
             }
 
             #[automatically_derived]
-            impl #impl_generics __deser::Deserialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>,
-                ) -> __deser::de::SinkHandle<'_> {
+                ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         key: __KeySink { key: __Key::Unknown },
                         #(
                             #sink_fieldname: #sink_defaults,
                         )*
+                        _marker: __deser::__derive::PhantomData,
                     })
                 }
             }
 
             #[automatically_derived]
-            impl #wrapper_impl_generics __deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
+            impl #wrapper_impl_generics __deser::de::Sink<'de> for __Sink #wrapper_ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &'static dyn __deser::Descriptor {
                     &__Descriptor
                 }
@@ -387,14 +422,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn next_key(&mut self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
                     self.key.key = __Key::Unknown;
                     __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
                 }
 
                 fn next_value(&mut self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
                     __deser::__derive::Ok(match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
                         #(
@@ -426,8 +461,29 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                 }
 
+                fn borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    // keys are only matched, they do not need to be borrowed
+                    self.key.key = __Key::Unknown;
+                    __deser::de::Sink::atom(&mut self.key, __atom, __state)
+                }
+
+                fn borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                        #(
+                            #key_borrowed_atom_dispatch
+                        )*
+                        #other_key_borrowed_atom_dispatch
+                        #[allow(unreachable_patterns)]
+                        __Key::Unknown | __Key::Field(_) => __deser::__derive::Ok(()),
+                    }
+                }
+
                 fn value_for_key(&mut self, __key: &str, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_>>>
+                    -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>>
                 {
                     match __key {
                         #(
@@ -585,10 +641,10 @@ pub fn derive_enum(
             }
 
             #[automatically_derived]
-            impl __deser::de::Deserialize for #ident {
+            impl<'de> __deser::de::Deserialize<'de> for #ident {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
-                ) -> __deser::de::SinkHandle<'_> {
+                ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::to(unsafe {
                         &mut *{
                             __slot
@@ -611,12 +667,21 @@ pub fn derive_enum(
                             as *mut __SlotWrapper
                         }
                     };
-                    __deser::de::Sink::atom(__sink, __atom, __state)?;
-                    __deser::de::Sink::finish(__sink, __state)
+                    __deser::de::Sink::<'de>::atom(__sink, __atom, __state)?;
+                    __deser::de::Sink::<'de>::finish(__sink, __state)
+                }
+
+                #[inline]
+                fn __private_borrowed_atom_into(
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom<'de>,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    Self::__private_atom_into(__slot, __atom, __state)
                 }
             }
 
-            impl __deser::de::Sink for __SlotWrapper {
+            impl<'de> __deser::de::Sink<'de> for __SlotWrapper {
                 fn atom(
                     &mut self,
                     __atom: __deser::Atom,
@@ -640,7 +705,9 @@ pub fn derive_enum(
 
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+    let de_generics = with_de_lifetime(&input.generics)?;
+    let (impl_generics, _, _) = de_generics.split_for_impl();
 
     // TODO: we want to report the type name here but the current descriptor
     // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
@@ -662,14 +729,16 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         None => quote! { __deser::de::OwnedSink::deserialize() },
     };
     let atom_into = atom_into(field_type, adapter, quote! { &mut __inner });
+    let borrowed_atom_into = borrowed_atom_into(field_type, adapter, quote! { &mut __inner });
 
-    let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
+    let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
     let bounded_where_clause = where_clause_for_fields(
         &input.generics,
-        quote!(__deser::Deserialize),
+        quote!(__deser::Deserialize<'de>),
         None,
         quote!(__deser::adapters::DeserializeAs),
+        Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &[BoundField {
             ty: field_type,
@@ -681,14 +750,14 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         const _: () = {
             struct __Sink #wrapper_impl_generics #where_clause {
                 slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
-                sink: __deser::de::OwnedSink<#field_type>,
+                sink: __deser::de::OwnedSink<'de, #field_type>,
             }
 
             #[automatically_derived]
-            impl #impl_generics __deser::de::Deserialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics __deser::de::Deserialize<'de> for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
-                ) -> __deser::de::SinkHandle<'_> {
+                ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         sink: #make_sink,
@@ -706,13 +775,31 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     *__slot = __inner.map(#ident);
                     __deser::__derive::Ok(())
                 }
+
+                #[inline]
+                fn __private_borrowed_atom_into(
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom<'de>,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    let mut __inner = __deser::__derive::None;
+                    #borrowed_atom_into?;
+                    *__slot = __inner.map(#ident);
+                    __deser::__derive::Ok(())
+                }
             }
 
-            impl #wrapper_impl_generics __deser::de::Sink for __Sink #wrapper_ty_generics #bounded_where_clause {
+            impl #wrapper_impl_generics __deser::de::Sink<'de> for __Sink #wrapper_ty_generics #bounded_where_clause {
                 fn atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
                     self.sink.borrow_mut().atom(__atom, __state)
+                }
+
+                fn borrowed_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().borrowed_atom(__atom, __state)
                 }
 
                 fn map(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
@@ -724,13 +811,13 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 }
 
                 fn next_key(&mut self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
                     self.sink.borrow_mut().next_key(__state)
                 }
 
                 fn next_value(&mut self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_>>
+                    -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
                     self.sink.borrow_mut().next_value(__state)
                 }
@@ -747,11 +834,23 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     self.sink.borrow_mut().value_atom(__atom, __state)
                 }
 
+                fn borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().borrowed_key_atom(__atom, __state)
+                }
+
+                fn borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().borrowed_value_atom(__atom, __state)
+                }
+
                 fn value_for_key(
                     &mut self,
                     __key: &str,
                     __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_>>> {
+                ) -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>> {
                     self.sink.borrow_mut().value_for_key(__key, __state)
                 }
 

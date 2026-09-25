@@ -68,7 +68,7 @@ enum Value<T> {
     Object { name: String, value: Box<Value<T>> },
 }
 
-fn show<T: Deserialize + Serialize + Debug>(title: &str, json: &str) {
+fn show<'de, T: Deserialize<'de> + Serialize + Debug>(title: &str, json: &'de str) {
     println!("== {}", title);
     println!("input:  {}", json);
     let value: T = deser_json::from_str(json).unwrap();

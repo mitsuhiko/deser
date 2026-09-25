@@ -1,8 +1,8 @@
-use deser::de::DeserializeDriver;
+use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
 use deser::{Deserialize, Event, Serialize};
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -41,7 +41,7 @@ fn test_directional_bounds() {
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     #[deser(
         serialize_bound(K::Value: Serialize),
-        deserialize_bound(K::Value: Deserialize)
+        deserialize_bound(K::Value: Deserialize<'de>)
     )]
     struct Holder<K: Kind> {
         value: K::Value,
@@ -61,7 +61,7 @@ fn test_directional_bounds() {
 #[test]
 fn test_shared_bound() {
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(bound(K::Value: Serialize + Deserialize))]
+    #[deser(bound(K::Value: Serialize + DeserializeOwned))]
     struct Holder<K: Kind> {
         value: K::Value,
     }
@@ -80,7 +80,7 @@ fn test_empty_bound() {
     #[deser(bound())]
     struct Holder<K: Kind>
     where
-        K::Value: Serialize + Deserialize,
+        K::Value: Serialize + DeserializeOwned,
     {
         value: K::Value,
     }
@@ -95,7 +95,7 @@ fn test_empty_bound() {
 #[test]
 fn test_newtype_bound() {
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(bound(K::Value: Serialize + Deserialize))]
+    #[deser(bound(K::Value: Serialize + DeserializeOwned))]
     struct Holder<K: Kind>(K::Value);
 
     let events = serialize(&Holder::<Text>("x".into()));
@@ -108,7 +108,7 @@ fn test_enum_bound() {
     // struct variants are deserialized through helper structs which only
     // get the bounds that refer to their type parameters.
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(tag = "type", bound(K::Value: Serialize + Deserialize, V: Serialize + Deserialize))]
+    #[deser(tag = "type", bound(K::Value: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned))]
     enum Message<K: Kind, V> {
         Text { value: K::Value },
         Other { other: V },
@@ -125,7 +125,7 @@ fn test_enum_bound() {
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(bound(K::Value: Serialize + Deserialize, V: Serialize + Deserialize))]
+    #[deser(bound(K::Value: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned))]
     enum External<K: Kind, V> {
         Text { value: K::Value },
         Tuple(K::Value, V),

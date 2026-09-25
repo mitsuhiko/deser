@@ -1,7 +1,7 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use deser::de::{Deserialize, Sink, SinkHandle};
+use deser::de::{Deserialize, DeserializeOwned, Sink, SinkHandle};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::State;
@@ -24,7 +24,7 @@ pub fn to_hex(bytes: &[u8]) -> String {
 }
 
 /// Deserializes from a hex string.
-pub fn de<T: Deserialize>(s: &str) -> Result<T, Error> {
+pub fn de<T: DeserializeOwned>(s: &str) -> Result<T, Error> {
     deser_cbor::from_slice(&hex(s))
 }
 
@@ -173,8 +173,8 @@ impl<'a> MapEmitter for MapEntryEmitter<'a> {
     }
 }
 
-impl Deserialize for Value {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(ValueSink {
             out,
             tags: Vec::new(),
@@ -223,7 +223,7 @@ impl<'a> ValueSink<'a> {
     }
 }
 
-impl<'a> Sink for ValueSink<'a> {
+impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.take_tags(state);
         let value = match atom {
@@ -259,12 +259,12 @@ impl<'a> Sink for ValueSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
         Ok(Deserialize::deserialize_into(&mut self.key))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(Compound::Array(_)) = self.compound {
             self.flush();
         }

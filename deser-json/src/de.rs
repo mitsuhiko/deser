@@ -8,6 +8,14 @@ use deser::{Error, ErrorKind};
 
 use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
 
+/// A parsed string.
+enum Str<'a, 'b> {
+    /// The string is a slice of the input.
+    Borrowed(&'a str),
+    /// The string was unescaped into the scratch buffer.
+    Scratch(&'b str),
+}
+
 enum Number<'a> {
     I64(i64),
     /// An integer that does not fit into 64 bits but into 128 bits.  This
@@ -94,7 +102,7 @@ impl<'a> Deserializer<'a> {
     }
 
     /// Deserializes the value.
-    pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
@@ -108,7 +116,10 @@ impl<'a> Deserializer<'a> {
     ///
     /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink)
     /// or to wrap the sink of a value, for instance to track the path.
-    pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    ///
+    /// Strings without escape sequences are passed on borrowed from the
+    /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         // the scratch buffer for strings is moved out of the deserializer
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
@@ -123,7 +134,7 @@ impl<'a> Deserializer<'a> {
 
     fn drive_impl(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
         // tokens start with the byte consumed by `next_token_byte`.  The
@@ -144,10 +155,10 @@ impl<'a> Deserializer<'a> {
             let byte = self.next_token_byte()?;
             let start = self.pos - 1;
             match byte {
-                b'"' => {
-                    let val = self.parse_str(buffer)?;
-                    emit!(start, Event::from(val))
-                }
+                b'"' => match self.parse_str(buffer)? {
+                    Str::Borrowed(val) => driver.emit_borrowed_at(val, start, self.pos)?,
+                    Str::Scratch(val) => emit!(start, Event::from(val)),
+                },
                 b'0'..=b'9' => {
                     let number = self.parse_integer(true, byte)?;
                     emit_number(driver, number, start, self.pos)?
@@ -264,15 +275,17 @@ impl<'a> Deserializer<'a> {
     #[inline]
     fn parse_key(
         &mut self,
-        driver: &mut DeserializeDriver,
+        driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
         if self.next_token_byte()? != b'"' {
             return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
         }
         let start = self.pos - 1;
-        let key = self.parse_str(buffer)?;
-        driver.emit_at(Event::from(key), start, self.pos)?;
+        match self.parse_str(buffer)? {
+            Str::Borrowed(key) => driver.emit_borrowed_at(key, start, self.pos)?,
+            Str::Scratch(key) => driver.emit_at(key, start, self.pos)?,
+        }
         match self.parse_whitespace() {
             Some(b':') => {
                 self.bump();
@@ -325,12 +338,9 @@ impl<'a> Deserializer<'a> {
         self.pos += 1;
     }
 
-    fn parse_str<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<&'b str, Error>
-    where
-        'a: 'b,
-    {
+    fn parse_str<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<Str<'a, 'b>, Error> {
         let validate_utf8 = self.validate_utf8;
-        let result = move |bytes: &'b [u8]| -> Result<&'b str, Error> {
+        fn result(validate_utf8: bool, bytes: &[u8]) -> Result<&str, Error> {
             // Strings in byte slices are validated here.  Bytes outside of
             // strings are only accepted if they are ASCII so this validates
             // the entire input.  The decoded escapes are valid UTF-8 and
@@ -346,7 +356,7 @@ impl<'a> Deserializer<'a> {
             // UTF-8 too.  The \u-escapes are validated when they are decoded
             // into the buffer.
             Ok(unsafe { str::from_utf8_unchecked(bytes) })
-        };
+        }
 
         // Index of the first byte not yet copied into the scratch space.
         let mut start = self.pos;
@@ -365,13 +375,14 @@ impl<'a> Deserializer<'a> {
                     if buffer.is_empty() {
                         // Fast path: return a slice of the raw JSON without any
                         // copying.
-                        let borrowed = &self.input[start..self.pos];
+                        let input = self.input;
+                        let borrowed = &input[start..self.pos];
                         self.pos += 1;
-                        return result(borrowed);
+                        return result(validate_utf8, borrowed).map(Str::Borrowed);
                     } else {
                         buffer.extend_from_slice(&self.input[start..self.pos]);
                         self.pos += 1;
-                        return result(buffer);
+                        return result(validate_utf8, buffer).map(Str::Scratch);
                     }
                 }
                 b'\\' => {
@@ -836,7 +847,7 @@ static POW10: [f64; 309] = [
 /// Emits a number.
 #[inline]
 fn emit_number(
-    driver: &mut DeserializeDriver,
+    driver: &mut DeserializeDriver<'_, '_>,
     number: Number,
     start: usize,
     end: usize,
@@ -852,7 +863,7 @@ fn emit_number(
 /// Emits an integer that does not fit into 64 bits as extension value.
 #[cold]
 fn emit_big_int(
-    driver: &mut DeserializeDriver,
+    driver: &mut DeserializeDriver<'_, '_>,
     text: &str,
     start: usize,
     end: usize,
@@ -868,7 +879,7 @@ fn emit_big_int(
 }
 
 /// Deserializes JSON from the given string.
-pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
+pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
     Deserializer::new(s).deserialize()
 }
 
@@ -876,6 +887,6 @@ pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
 ///
 /// The input must be UTF-8.  Rather than validating the input upfront, the
 /// strings are validated while parsing (see [`Deserializer::from_slice`]).
-pub fn from_slice<T: Deserialize>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     Deserializer::from_slice(bytes).deserialize()
 }

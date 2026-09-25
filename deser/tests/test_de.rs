@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
-use deser::de::{DeserializeDriver, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::{make_slot_wrapper, Atom, Deserialize, Event};
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -118,13 +118,13 @@ fn test_array_dropping_on_error() {
 
     make_slot_wrapper!(SlotWrapper);
 
-    impl Deserialize for X {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+    impl<'de> Deserialize<'de> for X {
+        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
             SlotWrapper::make_handle(out)
         }
     }
 
-    impl Sink for SlotWrapper<X> {
+    impl<'de> Sink<'de> for SlotWrapper<X> {
         fn atom(&mut self, _atom: Atom, _state: &mut deser::State) -> Result<(), deser::Error> {
             **self = Some(X);
             Ok(())

@@ -1,7 +1,7 @@
-use deser::de::DeserializeDriver;
+use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::{Deserialize, Event};
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> T {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);

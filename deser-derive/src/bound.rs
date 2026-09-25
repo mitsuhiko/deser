@@ -35,6 +35,37 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
     }
 }
 
+/// Adds the `'de` lifetime of `Deserialize` to the generics.
+///
+/// All lifetimes of the type are bounded by `'de` so that borrowed data can
+/// be deserialized into them.
+pub fn with_de_lifetime(generics: &syn::Generics) -> syn::Result<syn::Generics> {
+    if let Some(lifetime) = generics.lifetimes().find(|x| x.lifetime.ident == "de") {
+        return Err(syn::Error::new_spanned(
+            lifetime,
+            "cannot derive Deserialize for types with a lifetime named 'de, \
+             it's used by the derive",
+        ));
+    }
+    let bounds = generics
+        .lifetimes()
+        .map(|x| x.lifetime.clone())
+        .collect::<syn::punctuated::Punctuated<_, syn::Token![+]>>();
+    let def = syn::LifetimeParam {
+        attrs: Vec::new(),
+        lifetime: syn::Lifetime::new("'de", Span::call_site()),
+        colon_token: if bounds.is_empty() {
+            None
+        } else {
+            Some(Default::default())
+        },
+        bounds,
+    };
+    let mut rv = generics.clone();
+    rv.params.insert(0, syn::GenericParam::Lifetime(def));
+    Ok(rv)
+}
+
 /// Returns the where clause of the generics with added bounds.
 ///
 /// If `custom` is `None` every type parameter gets the given bound.
@@ -95,6 +126,7 @@ pub fn where_clause_for_fields(
     bound: TokenStream,
     adapter_only_bound: Option<TokenStream>,
     adapter_trait: TokenStream,
+    adapter_lifetime: Option<TokenStream>,
     custom: Option<&[syn::WherePredicate]>,
     fields: &[BoundField<'_>],
 ) -> syn::WhereClause {
@@ -139,7 +171,10 @@ pub fn where_clause_for_fields(
         let mut idents = HashSet::new();
         collect_idents(quote::quote! { #ty #adapter }, &mut idents);
         if idents.iter().any(|x| params.contains(x)) {
-            new_predicates.push(syn::parse_quote!(#adapter : #adapter_trait<#ty>));
+            new_predicates.push(match adapter_lifetime {
+                Some(ref lifetime) => syn::parse_quote!(#adapter : #adapter_trait<#lifetime, #ty>),
+                None => syn::parse_quote!(#adapter : #adapter_trait<#ty>),
+            });
         }
     }
 

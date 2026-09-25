@@ -157,15 +157,15 @@ unsafe fn free_block(block: NonNull<u8>, layout: Layout) {
 /// This behaves like a `Box<dyn Sink>` but uses the block cache of the
 /// current thread.  As it's based on a raw pointer, it can be moved while
 /// the sink is borrowed.
-pub(crate) struct SinkBox<'a> {
-    ptr: NonNull<dyn Sink + 'a>,
-    _marker: PhantomData<Box<dyn Sink + 'a>>,
+pub(crate) struct SinkBox<'a, 'de> {
+    ptr: NonNull<dyn Sink<'de> + 'a>,
+    _marker: PhantomData<Box<dyn Sink<'de> + 'a>>,
 }
 
-impl<'a> SinkBox<'a> {
+impl<'a, 'de> SinkBox<'a, 'de> {
     /// Moves a sink to the heap.
     #[inline]
-    pub fn new<S: Sink + 'a>(value: S) -> SinkBox<'a> {
+    pub fn new<S: Sink<'de> + 'a>(value: S) -> SinkBox<'a, 'de> {
         let layout = Layout::new::<S>();
         let raw: *mut S = if layout.size() == 0 {
             NonNull::<S>::dangling().as_ptr()
@@ -176,7 +176,7 @@ impl<'a> SinkBox<'a> {
         unsafe {
             raw.write(value);
             SinkBox {
-                ptr: NonNull::new_unchecked(raw as *mut (dyn Sink + 'a)),
+                ptr: NonNull::new_unchecked(raw as *mut (dyn Sink<'de> + 'a)),
                 _marker: PhantomData,
             }
         }
@@ -184,20 +184,20 @@ impl<'a> SinkBox<'a> {
 
     /// Returns a reference to the sink.
     #[inline(always)]
-    pub fn get(&self) -> &(dyn Sink + 'a) {
+    pub fn get(&self) -> &(dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_ref() }
     }
 
     /// Returns a mutable reference to the sink.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut (dyn Sink + 'a) {
+    pub fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_mut() }
     }
 }
 
-impl<'a> Drop for SinkBox<'a> {
+impl<'a, 'de> Drop for SinkBox<'a, 'de> {
     fn drop(&mut self) {
         // SAFETY: the sink is valid and was allocated with its own layout.
         unsafe {
@@ -227,20 +227,20 @@ fn test_sink_box() {
 
     struct Tracked<const N: usize>(#[allow(dead_code)] Rc<()>, [u8; N]);
 
-    impl<const N: usize> Sink for Tracked<N> {
+    impl<'de, const N: usize> Sink<'de> for Tracked<N> {
         fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
             Ok(())
         }
     }
 
     struct Zst;
-    impl Sink for Zst {}
+    impl Sink<'_> for Zst {}
 
     let rc = Rc::new(());
     let mut boxes = Vec::new();
     for _ in 0..3 {
         for _ in 0..40 {
-            boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 1])));
+            boxes.push(SinkBox::<'_, '_>::new(Tracked(rc.clone(), [0u8; 1])));
             boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 100])));
             boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 5000])));
             boxes.push(SinkBox::new(Zst));
@@ -256,11 +256,11 @@ fn test_sink_box() {
     }
 
     // boxes also work through handles and across threads
-    let handle = SinkHandle::boxed(Tracked(rc.clone(), [0u8; 10]));
+    let handle = SinkHandle::<'_, '_>::boxed(Tracked(rc.clone(), [0u8; 10]));
     drop(handle);
     std::thread::spawn(|| {
-        let _a = SinkBox::new(Zst);
-        let _b = SinkBox::new(Tracked(Rc::new(()), [0u8; 10]));
+        let _a = SinkBox::<'_, '_>::new(Zst);
+        let _b = SinkBox::<'_, '_>::new(Tracked(Rc::new(()), [0u8; 10]));
     })
     .join()
     .unwrap();

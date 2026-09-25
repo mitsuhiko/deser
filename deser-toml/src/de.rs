@@ -68,7 +68,7 @@ impl<'a> Deserializer<'a> {
     }
 
     /// Deserializes the document.
-    pub fn deserialize<T: Deserialize>(&mut self) -> Result<T, Error> {
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
@@ -81,8 +81,10 @@ impl<'a> Deserializer<'a> {
     /// Parses the input and feeds the events into the given driver.
     ///
     /// The whole document is parsed before the first event is emitted, so
-    /// syntax errors are reported before any value is deserialized.
-    pub fn drive(&mut self, driver: &mut DeserializeDriver) -> Result<(), Error> {
+    /// syntax errors are reported before any value is deserialized.  Keys
+    /// and strings without escape sequences are passed on borrowed from the
+    /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(err) = self.error.take() {
             return Err(err);
         }
@@ -98,11 +100,26 @@ impl<'a> Deserializer<'a> {
 /// Emits an event with the byte range of its span.
 #[inline(always)]
 fn emit_at<'e, E: Into<Event<'e>>>(
-    driver: &mut DeserializeDriver,
+    driver: &mut DeserializeDriver<'_, '_>,
     event: E,
     span: Span,
 ) -> Result<(), Error> {
     driver.emit_at(event, span.start, span.end)
+}
+
+/// Emits a string, borrowed if it's a slice of the input.
+// the `Cow` tells if the string is a slice of the input
+#[allow(clippy::ptr_arg)]
+#[inline(always)]
+fn emit_str<'a>(
+    driver: &mut DeserializeDriver<'_, 'a>,
+    value: &Cow<'a, str>,
+    span: Span,
+) -> Result<(), Error> {
+    match *value {
+        Cow::Borrowed(value) => driver.emit_borrowed_at(value, span.start, span.end),
+        Cow::Owned(ref value) => driver.emit_at(value.as_str(), span.start, span.end),
+    }
 }
 
 /// A container whose events are emitted, with the index of the next child.
@@ -112,7 +129,7 @@ enum Frame {
 }
 
 /// Emits the events of a document.
-fn emit(doc: &Document, driver: &mut DeserializeDriver) -> Result<(), Error> {
+fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
     let mut stack = vec![Frame::Table(ROOT, 0)];
     emit_at(driver, Event::MapStart, doc.tables[ROOT].span)?;
 
@@ -123,7 +140,7 @@ fn emit(doc: &Document, driver: &mut DeserializeDriver) -> Result<(), Error> {
                 match table.entries.get(*index) {
                     Some(entry) => {
                         *index += 1;
-                        emit_at(driver, Atom::Str(Cow::Borrowed(&entry.key)), entry.key_span)?;
+                        emit_str(driver, &entry.key, entry.key_span)?;
                         &entry.item
                     }
                     None => {
@@ -158,16 +175,16 @@ fn emit(doc: &Document, driver: &mut DeserializeDriver) -> Result<(), Error> {
                 emit_at(driver, Event::SeqStart, doc.arrays[id].span)?;
                 stack.push(Frame::Array(id, 0));
             }
+            Value::Str(ref value) => emit_str(driver, value, item.span)?,
             ref scalar => {
                 let atom = match *scalar {
-                    Value::Str(ref value) => Atom::Str(Cow::Borrowed(value)),
                     Value::Int(value) if value >= 0 => Atom::U64(value as u64),
                     Value::Int(value) => Atom::I64(value),
                     Value::UInt(value) => Atom::U64(value),
                     Value::Float(value) => Atom::F64(value),
                     Value::Bool(value) => Atom::Bool(value),
                     Value::Datetime(ref value) => Atom::Ext(ExtValue::borrowed(value)),
-                    Value::Table(_) | Value::Array(_) => unreachable!(),
+                    Value::Str(_) | Value::Table(_) | Value::Array(_) => unreachable!(),
                 };
                 emit_at(driver, atom, item.span)?;
             }
@@ -197,13 +214,13 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
 ///
 /// A TOML document is a table, so the value has to be deserializable from
 /// a map (such as a struct or a map type).
-pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
+pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
     Deserializer::new(s).deserialize()
 }
 
 /// Deserializes a value from TOML in a byte slice.
 ///
 /// The input must be UTF-8.  Otherwise this works like [`from_str`].
-pub fn from_slice<T: Deserialize>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     Deserializer::from_slice(bytes).deserialize()
 }

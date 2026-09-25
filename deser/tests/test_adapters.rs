@@ -7,11 +7,11 @@ use deser::adapters::{
     As, DefaultOnError, DeserializeAs, DisplayFromStr, FromInto, MapSkipError, SerializeAs,
     TryFromInto, VecSkipError,
 };
-use deser::de::{DeserializeDriver, Recording, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Recording, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle};
 use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
-fn deserialize<T: Deserialize>(events: Vec<Event<'_>>) -> Result<T, Error> {
+fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
@@ -44,7 +44,7 @@ fn serialize_drive(value: &dyn Serialize) -> Vec<Event<'static>> {
 
 /// Checks the serialized form (with both driver interfaces) and that it
 /// deserializes back.
-fn check<T: Serialize + Deserialize + PartialEq + Debug>(value: T, events: Vec<Event<'_>>) {
+fn check<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, events: Vec<Event<'_>>) {
     let expected = events.iter().map(|x| x.to_static()).collect::<Vec<_>>();
     assert_eq!(serialize(&value), expected);
     assert_eq!(serialize_drive(&value), expected);
@@ -481,7 +481,7 @@ impl SerializeAs<Vec<u8>> for Hex {
 
 make_slot_wrapper!(HexSlot);
 
-impl deser::de::Sink for HexSlot<Vec<u8>> {
+impl<'de> deser::de::Sink<'de> for HexSlot<Vec<u8>> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(ref s) if s.len() % 2 == 0 => {
@@ -498,8 +498,8 @@ impl deser::de::Sink for HexSlot<Vec<u8>> {
     }
 }
 
-impl DeserializeAs<Vec<u8>> for Hex {
-    fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_> {
+impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
+    fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_, 'de> {
         HexSlot::make_handle(out)
     }
 }
