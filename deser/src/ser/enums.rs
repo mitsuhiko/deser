@@ -4,8 +4,55 @@
 use std::borrow::Cow;
 
 use crate::error::{Error, ErrorKind};
-use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
+use crate::event::Atom;
+use crate::ser::driver::Held;
+use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
 use crate::State;
+
+/// Serializes a map with a single entry.
+///
+/// This is used for externally tagged variants with a tag that is not a
+/// static string.
+pub struct EntrySer<'a> {
+    key: SerializeHandle<'a>,
+    value: SerializeHandle<'a>,
+}
+
+impl<'a> EntrySer<'a> {
+    /// Creates a new entry.
+    pub fn new(key: SerializeHandle<'a>, value: SerializeHandle<'a>) -> EntrySer<'a> {
+        EntrySer { key, value }
+    }
+
+    /// Converts the entry into a chunk.
+    pub fn into_chunk(self) -> Chunk<'a> {
+        Chunk::Map(Box::new(EntryEmitter {
+            entry: self,
+            index: 0,
+        }))
+    }
+}
+
+struct EntryEmitter<'a> {
+    entry: EntrySer<'a>,
+    index: usize,
+}
+
+impl<'a> MapEmitter for EntryEmitter<'a> {
+    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        let index = self.index;
+        self.index += 1;
+        Ok(if index == 0 {
+            Some(SerializeHandle::Borrowed(&*self.entry.key))
+        } else {
+            None
+        })
+    }
+
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
+        Ok(SerializeHandle::Borrowed(&*self.entry.value))
+    }
+}
 
 /// Serializes a list of named fields as a struct.
 pub struct FieldsSer<'a>(pub Vec<(&'static str, SerializeHandle<'a>)>);
@@ -100,13 +147,15 @@ impl<'a> SeqEmitter for SeqValuesEmitter<'a> {
 /// has to serialize as a struct.
 pub struct TaggedNewtype<'a> {
     tag: &'static str,
-    name: &'static str,
+    name: SerializeHandle<'a>,
     inner: &'a dyn Serialize,
 }
 
 impl<'a> TaggedNewtype<'a> {
     /// Creates a new tagged newtype.
-    pub fn new(tag: &'static str, name: &'static str, inner: &'a dyn Serialize) -> Self {
+    ///
+    /// `name` is the value of the tag.
+    pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: &'a dyn Serialize) -> Self {
         TaggedNewtype { tag, name, inner }
     }
 
@@ -115,17 +164,42 @@ impl<'a> TaggedNewtype<'a> {
         Chunk::Struct(Box::new(TaggedNewtypeEmitter {
             value: self,
             emitter: None,
+            forwarded: Vec::new(),
             started: false,
             done: false,
         }))
     }
 }
 
+/// The content of a newtype variant of an internally tagged enum.
+enum TaggedContent<'a> {
+    Struct(Box<dyn StructEmitter + 'a>),
+    Map(Box<dyn MapEmitter + 'a>),
+}
+
 struct TaggedNewtypeEmitter<'a> {
     value: TaggedNewtype<'a>,
-    emitter: Option<Box<dyn StructEmitter + 'a>>,
+    // `emitter` must be declared (and thus dropped) before `forwarded` as it
+    // can borrow from the forwarded values.
+    emitter: Option<TaggedContent<'a>>,
+    // values the inner value forwarded to (see `Chunk::Forward`)
+    forwarded: Vec<Held>,
     started: bool,
     done: bool,
+}
+
+/// Returns the string of a map key.
+fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
+    let rv =
+        match key.serialize(state)? {
+            Chunk::Atom(Atom::Str(key)) => key.into_owned(),
+            _ => return Err(Error::new(
+                ErrorKind::UnsupportedType,
+                "newtype variants of internally tagged enums must contain maps with string keys",
+            )),
+        };
+    key.finish(state)?;
+    Ok(rv)
 }
 
 impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
@@ -137,27 +211,56 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             self.started = true;
             return Ok(Some((
                 Cow::Borrowed(self.value.tag),
-                SerializeHandle::to(&self.value.name),
+                SerializeHandle::Borrowed(&*self.value.name),
             )));
         }
         if self.done {
             return Ok(None);
         }
         if self.emitter.is_none() {
-            match self.value.inner.serialize(state)? {
-                Chunk::Struct(emitter) => self.emitter = Some(emitter),
-                _ => {
-                    return Err(Error::new(
+            let mut chunk = self.value.inner.serialize(state)?;
+            self.emitter = Some(loop {
+                match chunk {
+                    Chunk::Struct(emitter) => break TaggedContent::Struct(emitter),
+                    Chunk::Map(emitter) => break TaggedContent::Map(emitter),
+                    Chunk::Forward(handle) => {
+                        // SAFETY: the held value is dropped after the emitter
+                        // which borrows from it.
+                        let held = unsafe { Held::new(handle) };
+                        let value: &'a dyn Serialize = unsafe { held.get() };
+                        self.forwarded.push(held);
+                        chunk = value.serialize(state)?;
+                    }
+                    Chunk::Atom(_) | Chunk::Seq(_) => return Err(Error::new(
                         ErrorKind::UnsupportedType,
-                        "newtype variants of internally tagged enums must contain structs",
-                    ))
+                        "newtype variants of internally tagged enums must contain structs or maps",
+                    )),
+                }
+            });
+        }
+        let item = match self.emitter.as_mut().unwrap() {
+            TaggedContent::Struct(emitter) => emitter.next(state)?,
+            // map keys are converted into strings so that they can be
+            // emitted as struct fields.
+            TaggedContent::Map(emitter) => {
+                let key = match emitter.next_key(state)? {
+                    Some(key) => Some(map_key_string(&*key, state)?),
+                    None => None,
+                };
+                match key {
+                    Some(key) => Some((Cow::Owned(key), emitter.next_value(state)?)),
+                    None => None,
                 }
             }
-        }
-        match self.emitter.as_mut().unwrap().next(state)? {
+        };
+        match item {
             Some(item) => Ok(Some(item)),
             None => {
                 self.done = true;
+                for held in self.forwarded.iter().rev() {
+                    // SAFETY: the value is held by the emitter
+                    unsafe { held.get() }.finish(state)?;
+                }
                 self.value.inner.finish(state)?;
                 Ok(None)
             }

@@ -2,9 +2,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::mem::{take, MaybeUninit};
 
-use crate::de::{atom_into, is_null_atom, Deserialize, OwnedSink, Sink, SinkHandle};
+use crate::adapters::{DeserializeAs, Same};
+use crate::de::mapped::MappedSink;
+use crate::de::{is_null_atom, Deserialize, OwnedSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
@@ -296,16 +299,29 @@ deserialize!(f32);
 float_sink!(f64);
 deserialize!(f64);
 
+// The containers are implemented as adapters (see `crate::adapters`) that
+// are generic over the adapters of their elements.  The `Deserialize`
+// implementations use the containers with `Same` as element adapter which
+// compiles to the same code as a direct implementation.
+
 impl<T: Deserialize> Deserialize for Vec<T> {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct VecSink<'a, T> {
+        <Vec<Same> as DeserializeAs<Vec<T>>>::deserialize_into_as(out)
+    }
+}
+
+impl<T, A: DeserializeAs<T>> DeserializeAs<Vec<T>> for Vec<A> {
+    fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_> {
+        struct VecSink<'a, T, A> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
             element: Option<T>,
             is_seq: bool,
+            _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, T: 'a> VecSink<'a, T> {
+        impl<'a, T: 'a, A> VecSink<'a, T, A> {
             fn flush(&mut self) {
                 if let Some(element) = self.element.take() {
                     self.vec.push(element);
@@ -313,11 +329,11 @@ impl<T: Deserialize> Deserialize for Vec<T> {
             }
         }
 
-        impl<'a, T: Deserialize> Sink for VecSink<'a, T> {
+        impl<'a, T, A: DeserializeAs<T>> Sink for VecSink<'a, T, A> {
             fn descriptor(&self) -> &'static dyn Descriptor {
                 static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
                 static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-                if T::__private_is_bytes() {
+                if A::__private_is_bytes_as() {
                     &BYTES_DESCRIPTOR
                 } else {
                     &SLICE_DESCRIPTOR
@@ -326,16 +342,18 @@ impl<T: Deserialize> Deserialize for Vec<T> {
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 match atom {
-                    Atom::Bytes(value) => match T::__private_vec_from_bytes(value.into_owned()) {
-                        Some(vec) => {
-                            *self.slot = Some(vec);
-                            Ok(())
+                    Atom::Bytes(value) => {
+                        match A::__private_vec_from_bytes_as(value.into_owned()) {
+                            Some(vec) => {
+                                *self.slot = Some(vec);
+                                Ok(())
+                            }
+                            None => Err(Error::new(
+                                ErrorKind::Unexpected,
+                                format!("unexpected bytes, expected {}", self.expecting()),
+                            )),
                         }
-                        None => Err(Error::new(
-                            ErrorKind::Unexpected,
-                            format!("unexpected bytes, expected {}", self.expecting()),
-                        )),
-                    },
+                    }
                     other => self.unexpected_atom(other, state),
                 }
             }
@@ -347,12 +365,12 @@ impl<T: Deserialize> Deserialize for Vec<T> {
 
             fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
                 self.flush();
-                Ok(Deserialize::deserialize_into(&mut self.element))
+                Ok(A::deserialize_into_as(&mut self.element))
             }
 
             fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 self.flush();
-                atom_into(&mut self.element, atom, state)
+                A::__private_atom_into_as(&mut self.element, atom, state)
             }
 
             fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -364,13 +382,118 @@ impl<T: Deserialize> Deserialize for Vec<T> {
             }
         }
 
-        SinkHandle::boxed(VecSink {
+        SinkHandle::boxed(VecSink::<T, A> {
             slot: out,
             vec: Vec::new(),
             element: None,
             is_seq: false,
+            _marker: PhantomData,
         })
     }
+}
+
+/// Maps that can be deserialized.
+pub(crate) trait MapTarget<K, V>: Default {
+    const UNORDERED: bool;
+    fn insert_entry(&mut self, key: K, value: V);
+}
+
+impl<K: Ord, V> MapTarget<K, V> for BTreeMap<K, V> {
+    const UNORDERED: bool = false;
+
+    #[inline]
+    fn insert_entry(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
+impl<K: Hash + Eq, V, H: BuildHasher + Default> MapTarget<K, V> for HashMap<K, V, H> {
+    const UNORDERED: bool = true;
+
+    #[inline]
+    fn insert_entry(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
+/// Creates the sink for a map with key and value adapters.
+fn map_sink<'a, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a>
+where
+    M: MapTarget<K, V> + 'a,
+    K: 'a,
+    V: 'a,
+    KA: DeserializeAs<K>,
+    VA: DeserializeAs<V>,
+{
+    struct MapSink<'a, M, K, V, KA, VA> {
+        slot: &'a mut Option<M>,
+        map: M,
+        key: Option<K>,
+        value: Option<V>,
+        _marker: PhantomData<fn() -> (KA, VA)>,
+    }
+
+    impl<'a, M: MapTarget<K, V>, K, V, KA, VA> MapSink<'a, M, K, V, KA, VA> {
+        fn flush(&mut self) {
+            if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
+                self.map.insert_entry(key, value);
+            }
+        }
+    }
+
+    impl<'a, M, K, V, KA, VA> Sink for MapSink<'a, M, K, V, KA, VA>
+    where
+        M: MapTarget<K, V>,
+        KA: DeserializeAs<K>,
+        VA: DeserializeAs<V>,
+    {
+        fn descriptor(&self) -> &'static dyn Descriptor {
+            static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
+            static UNORDERED_DESCRIPTOR: UnorderedNamedDescriptor =
+                UnorderedNamedDescriptor { name: "HashMap" };
+            if M::UNORDERED {
+                &UNORDERED_DESCRIPTOR
+            } else {
+                &DESCRIPTOR
+            }
+        }
+
+        fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+            self.flush();
+            Ok(KA::deserialize_into_as(&mut self.key))
+        }
+
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+            Ok(VA::deserialize_into_as(&mut self.value))
+        }
+
+        fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            self.flush();
+            KA::__private_atom_into_as(&mut self.key, atom, state)
+        }
+
+        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            VA::__private_atom_into_as(&mut self.value, atom, state)
+        }
+
+        fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            self.flush();
+            *self.slot = Some(take(&mut self.map));
+            Ok(())
+        }
+    }
+
+    SinkHandle::boxed(MapSink::<M, K, V, KA, VA> {
+        slot: out,
+        map: M::default(),
+        key: None,
+        value: None,
+        _marker: PhantomData,
+    })
 }
 
 impl<K, V> Deserialize for BTreeMap<K, V>
@@ -378,70 +501,20 @@ where
     K: Ord + Deserialize,
     V: Deserialize,
 {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct MapSink<'a, K: 'a, V: 'a> {
-            slot: &'a mut Option<BTreeMap<K, V>>,
-            map: BTreeMap<K, V>,
-            key: Option<K>,
-            value: Option<V>,
-        }
+        map_sink::<_, K, V, Same, Same>(out)
+    }
+}
 
-        impl<'a, K, V> MapSink<'a, K, V>
-        where
-            K: Ord,
-        {
-            fn flush(&mut self) {
-                if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
-                    self.map.insert(key, value);
-                }
-            }
-        }
-
-        impl<'a, K, V> Sink for MapSink<'a, K, V>
-        where
-            K: Ord + Deserialize,
-            V: Deserialize,
-        {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
-                &DESCRIPTOR
-            }
-
-            fn map(&mut self, _state: &mut State) -> Result<(), Error> {
-                Ok(())
-            }
-
-            fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.flush();
-                Ok(Deserialize::deserialize_into(&mut self.key))
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                Ok(Deserialize::deserialize_into(&mut self.value))
-            }
-
-            fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.flush();
-                atom_into(&mut self.key, atom, state)
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                atom_into(&mut self.value, atom, state)
-            }
-
-            fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-                self.flush();
-                *self.slot = Some(take(&mut self.map));
-                Ok(())
-            }
-        }
-
-        SinkHandle::boxed(MapSink {
-            slot: out,
-            map: BTreeMap::new(),
-            key: None,
-            value: None,
-        })
+impl<K, V, KA, VA> DeserializeAs<BTreeMap<K, V>> for BTreeMap<KA, VA>
+where
+    K: Ord,
+    KA: DeserializeAs<K>,
+    VA: DeserializeAs<V>,
+{
+    fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_> {
+        map_sink::<_, K, V, KA, VA>(out)
     }
 }
 
@@ -451,124 +524,121 @@ where
     V: Deserialize,
     H: BuildHasher + Default,
 {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct MapSink<'a, K: 'a, V: 'a, H> {
-            slot: &'a mut Option<HashMap<K, V, H>>,
-            map: HashMap<K, V, H>,
-            key: Option<K>,
-            value: Option<V>,
-        }
-
-        impl<'a, K, V, H> MapSink<'a, K, V, H>
-        where
-            K: Hash + Eq,
-            H: BuildHasher,
-        {
-            fn flush(&mut self) {
-                if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
-                    self.map.insert(key, value);
-                }
-            }
-        }
-
-        impl<'a, K, V, H> Sink for MapSink<'a, K, V, H>
-        where
-            K: Hash + Eq + Deserialize,
-            V: Deserialize,
-            H: BuildHasher + Default,
-        {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: UnorderedNamedDescriptor =
-                    UnorderedNamedDescriptor { name: "HashMap" };
-                &DESCRIPTOR
-            }
-
-            fn map(&mut self, _state: &mut State) -> Result<(), Error> {
-                Ok(())
-            }
-
-            fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.flush();
-                Ok(Deserialize::deserialize_into(&mut self.key))
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                Ok(Deserialize::deserialize_into(&mut self.value))
-            }
-
-            fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.flush();
-                atom_into(&mut self.key, atom, state)
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                atom_into(&mut self.value, atom, state)
-            }
-
-            fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-                self.flush();
-                *self.slot = Some(take(&mut self.map));
-                Ok(())
-            }
-        }
-
-        SinkHandle::boxed(MapSink {
-            slot: out,
-            map: HashMap::default(),
-            key: None,
-            value: None,
-        })
+        map_sink::<_, K, V, Same, Same>(out)
     }
 }
 
-impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct BTreeSetSink<'a, T> {
-            slot: &'a mut Option<BTreeSet<T>>,
-            set: BTreeSet<T>,
-            element: Option<T>,
-        }
+impl<K, V, H, KA, VA> DeserializeAs<HashMap<K, V, H>> for HashMap<KA, VA>
+where
+    K: Hash + Eq,
+    H: BuildHasher + Default,
+    KA: DeserializeAs<K>,
+    VA: DeserializeAs<V>,
+{
+    fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_> {
+        map_sink::<_, K, V, KA, VA>(out)
+    }
+}
 
-        impl<'a, T: 'a + Ord> BTreeSetSink<'a, T> {
-            fn flush(&mut self) {
-                if let Some(element) = self.element.take() {
-                    self.set.insert(element);
-                }
+/// Sets that can be deserialized.
+trait SetTarget<T>: Default {
+    const UNORDERED: bool;
+    fn insert_element(&mut self, value: T);
+}
+
+impl<T: Ord> SetTarget<T> for BTreeSet<T> {
+    const UNORDERED: bool = false;
+
+    #[inline]
+    fn insert_element(&mut self, value: T) {
+        self.insert(value);
+    }
+}
+
+impl<T: Hash + Eq, H: BuildHasher + Default> SetTarget<T> for HashSet<T, H> {
+    const UNORDERED: bool = true;
+
+    #[inline]
+    fn insert_element(&mut self, value: T) {
+        self.insert(value);
+    }
+}
+
+/// Creates the sink for a set with an element adapter.
+fn set_sink<'a, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a>
+where
+    S: SetTarget<T> + 'a,
+    T: 'a,
+    A: DeserializeAs<T>,
+{
+    struct SetSink<'a, S, T, A> {
+        slot: &'a mut Option<S>,
+        set: S,
+        element: Option<T>,
+        _marker: PhantomData<fn() -> A>,
+    }
+
+    impl<'a, S: SetTarget<T>, T, A> SetSink<'a, S, T, A> {
+        fn flush(&mut self) {
+            if let Some(element) = self.element.take() {
+                self.set.insert_element(element);
             }
         }
+    }
 
-        impl<'a, T: Deserialize + Ord> Sink for BTreeSetSink<'a, T> {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
+    impl<'a, S: SetTarget<T>, T, A: DeserializeAs<T>> Sink for SetSink<'a, S, T, A> {
+        fn descriptor(&self) -> &'static dyn Descriptor {
+            static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
+            static UNORDERED_DESCRIPTOR: UnorderedNamedDescriptor =
+                UnorderedNamedDescriptor { name: "HashSet" };
+            if S::UNORDERED {
+                &UNORDERED_DESCRIPTOR
+            } else {
                 &DESCRIPTOR
             }
-
-            fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
-                Ok(())
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.flush();
-                Ok(Deserialize::deserialize_into(&mut self.element))
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.flush();
-                atom_into(&mut self.element, atom, state)
-            }
-
-            fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-                self.flush();
-                *self.slot = Some(take(&mut self.set));
-                Ok(())
-            }
         }
 
-        SinkHandle::boxed(BTreeSetSink {
-            slot: out,
-            set: BTreeSet::new(),
-            element: None,
-        })
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
+            self.flush();
+            Ok(A::deserialize_into_as(&mut self.element))
+        }
+
+        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            self.flush();
+            A::__private_atom_into_as(&mut self.element, atom, state)
+        }
+
+        fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            self.flush();
+            *self.slot = Some(take(&mut self.set));
+            Ok(())
+        }
+    }
+
+    SinkHandle::boxed(SetSink::<S, T, A> {
+        slot: out,
+        set: S::default(),
+        element: None,
+        _marker: PhantomData,
+    })
+}
+
+impl<T: Deserialize + Ord> Deserialize for BTreeSet<T> {
+    #[inline]
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+        set_sink::<_, T, Same>(out)
+    }
+}
+
+impl<T: Ord, A: DeserializeAs<T>> DeserializeAs<BTreeSet<T>> for BTreeSet<A> {
+    fn deserialize_into_as(out: &mut Option<BTreeSet<T>>) -> SinkHandle<'_> {
+        set_sink::<_, T, A>(out)
     }
 }
 
@@ -577,62 +647,20 @@ where
     T: Deserialize + Hash + Eq,
     H: BuildHasher + Default,
 {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct HashSetSink<'a, T, H> {
-            slot: &'a mut Option<HashSet<T, H>>,
-            set: HashSet<T, H>,
-            element: Option<T>,
-        }
+        set_sink::<_, T, Same>(out)
+    }
+}
 
-        impl<'a, T, H> HashSetSink<'a, T, H>
-        where
-            T: Hash + Eq,
-            H: BuildHasher,
-        {
-            fn flush(&mut self) {
-                if let Some(element) = self.element.take() {
-                    self.set.insert(element);
-                }
-            }
-        }
-
-        impl<'a, T, H> Sink for HashSetSink<'a, T, H>
-        where
-            T: Hash + Eq + Deserialize,
-            H: BuildHasher + Default,
-        {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: UnorderedNamedDescriptor =
-                    UnorderedNamedDescriptor { name: "HashSet" };
-                &DESCRIPTOR
-            }
-
-            fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
-                Ok(())
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.flush();
-                Ok(Deserialize::deserialize_into(&mut self.element))
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.flush();
-                atom_into(&mut self.element, atom, state)
-            }
-
-            fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-                self.flush();
-                *self.slot = Some(take(&mut self.set));
-                Ok(())
-            }
-        }
-
-        SinkHandle::boxed(HashSetSink {
-            slot: out,
-            set: HashSet::default(),
-            element: None,
-        })
+impl<T, H, A> DeserializeAs<HashSet<T, H>> for HashSet<A>
+where
+    T: Hash + Eq,
+    H: BuildHasher + Default,
+    A: DeserializeAs<T>,
+{
+    fn deserialize_into_as(out: &mut Option<HashSet<T, H>>) -> SinkHandle<'_> {
+        set_sink::<_, T, A>(out)
     }
 }
 
@@ -640,9 +668,9 @@ impl<T> Deserialize for Option<T>
 where
     T: Deserialize,
 {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        *out = Some(None);
-        Deserialize::deserialize_into(out.as_mut().unwrap()).ignore_null()
+        <Option<Same> as DeserializeAs<Option<T>>>::deserialize_into_as(out)
     }
 
     #[inline]
@@ -651,39 +679,73 @@ where
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
+        <Option<Same> as DeserializeAs<Option<T>>>::__private_atom_into_as(out, atom, state)
+    }
+
+    fn initial_value() -> Option<Self> {
+        Some(None)
+    }
+}
+
+impl<T, A: DeserializeAs<T>> DeserializeAs<Option<T>> for Option<A> {
+    #[inline]
+    fn deserialize_into_as(out: &mut Option<Option<T>>) -> SinkHandle<'_> {
+        A::deserialize_into_as(out.insert(None)).ignore_null()
+    }
+
+    #[inline]
+    fn __private_atom_into_as(
+        out: &mut Option<Option<T>>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         let inner = out.insert(None);
         if is_null_atom(&atom) {
             // the sink is created (and dropped without being used) so that
             // this behaves exactly like `deserialize_into`.  This matters
             // for nested options where the inner one becomes `Some(None)`.
-            drop(T::deserialize_into(inner));
+            drop(A::deserialize_into_as(inner));
             Ok(())
         } else {
-            T::__private_atom_into(inner, atom, state)
+            A::__private_atom_into_as(inner, atom, state)
         }
     }
 
-    fn __private_initial_value() -> Option<Self> {
+    fn initial_value_as() -> Option<Option<T>> {
         Some(None)
     }
 }
 
+macro_rules! same_adapter {
+    ($name:ident) => {
+        Same
+    };
+}
+
 macro_rules! deserialize_for_tuple {
     () => ();
-    ($($name:ident,)+) => (
+    ($(($name:ident, $adapter:ident),)+) => (
         impl<$($name: Deserialize),*> Deserialize for ($($name,)*) {
+            #[inline]
             fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+                <($(same_adapter!($name),)*) as DeserializeAs<($($name,)*)>>::deserialize_into_as(out)
+            }
+        }
+
+        impl<$($name,)* $($adapter: DeserializeAs<$name>),*> DeserializeAs<($($name,)*)> for ($($adapter,)*) {
+            fn deserialize_into_as(out: &mut Option<($($name,)*)>) -> SinkHandle<'_> {
                 #![allow(non_snake_case)]
 
-                struct TupleSink<'a, $($name,)*> {
+                struct TupleSink<'a, $($name,)* $($adapter,)*> {
                     slot: &'a mut Option<($($name,)*)>,
                     index: usize,
                     $(
                         $name: Option<$name>,
                     )*
+                    _marker: PhantomData<fn() -> ($($adapter,)*)>,
                 }
 
-                impl<'a, $($name: Deserialize,)*> Sink for TupleSink<'a, $($name,)*> {
+                impl<'a, $($name,)* $($adapter: DeserializeAs<$name>,)*> Sink for TupleSink<'a, $($name,)* $($adapter,)*> {
                     fn descriptor(&self) -> &'static dyn Descriptor {
                         static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
                         &DESCRIPTOR
@@ -699,7 +761,7 @@ macro_rules! deserialize_for_tuple {
                         let mut __counter = 0;
                         $(
                             if __index == __counter {
-                                return Ok(Deserialize::deserialize_into(&mut self.$name));
+                                return Ok($adapter::deserialize_into_as(&mut self.$name));
                             }
                             __counter += 1;
                         )*
@@ -712,7 +774,7 @@ macro_rules! deserialize_for_tuple {
                         let mut __counter = 0;
                         $(
                             if __index == __counter {
-                                return atom_into(&mut self.$name, atom, state);
+                                return $adapter::__private_atom_into_as(&mut self.$name, atom, state);
                             }
                             __counter += 1;
                         )*
@@ -729,40 +791,52 @@ macro_rules! deserialize_for_tuple {
                     }
                 }
 
-                SinkHandle::boxed(TupleSink {
+                SinkHandle::boxed(TupleSink::<$($name,)* $($adapter,)*> {
                     slot: out,
                     index: 0,
                     $(
                         $name: None,
                     )*
+                    _marker: PhantomData,
                 })
             }
         }
 
-        deserialize_for_tuple_peel!($($name,)*);
+        deserialize_for_tuple_peel!($(($name, $adapter),)*);
     )
 }
 
 macro_rules! deserialize_for_tuple_peel {
-    ($name:ident, $($other:ident,)*) => (deserialize_for_tuple!($($other,)*);)
+    ($first:tt, $($other:tt,)*) => (deserialize_for_tuple!($($other,)*);)
 }
 
-deserialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
+deserialize_for_tuple! {
+    (T1, A1), (T2, A2), (T3, A3), (T4, A4), (T5, A5), (T6, A6),
+    (T7, A7), (T8, A8), (T9, A9), (T10, A10), (T11, A11), (T12, A12),
+}
 
 impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+        <[Same; N] as DeserializeAs<[T; N]>>::deserialize_into_as(out)
+    }
+}
+
+impl<T, A: DeserializeAs<T>, const N: usize> DeserializeAs<[T; N]> for [A; N] {
+    fn deserialize_into_as(out: &mut Option<[T; N]>) -> SinkHandle<'_> {
         // Invariant: if `buffer` is `Some`, the first `index` elements of it
         // are initialized.  Once the buffer was moved into the slot, `buffer`
         // is `None`.
-        struct ArraySink<'a, T, const N: usize> {
+        struct ArraySink<'a, T, A, const N: usize> {
             slot: &'a mut Option<[T; N]>,
             buffer: Option<[MaybeUninit<T>; N]>,
             element: Option<T>,
             index: usize,
             is_seq: bool,
+            _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, T, const N: usize> ArraySink<'a, T, N> {
+        impl<'a, T, A, const N: usize> ArraySink<'a, T, A, N> {
             fn flush(&mut self) {
                 if let Some(element) = self.element.take() {
                     // indexing panics if the sink is misused and too many
@@ -774,7 +848,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
         }
 
-        impl<'a, T, const N: usize> Drop for ArraySink<'a, T, N> {
+        impl<'a, T, A, const N: usize> Drop for ArraySink<'a, T, A, N> {
             fn drop(&mut self) {
                 if let Some(ref mut buffer) = self.buffer {
                     for elem in &mut buffer[..self.index] {
@@ -785,7 +859,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
         }
 
-        impl<'a, T: Deserialize + 'a, const N: usize> Sink for ArraySink<'a, T, N> {
+        impl<'a, T: 'a, A: DeserializeAs<T>, const N: usize> Sink for ArraySink<'a, T, A, N> {
             fn descriptor(&self) -> &'static dyn Descriptor {
                 static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
                 &DESCRIPTOR
@@ -793,12 +867,12 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 match atom {
-                    Atom::Bytes(value) => match T::__private_array_from_bytes::<N>(&value) {
+                    Atom::Bytes(value) => match A::__private_array_from_bytes_as::<N>(&value) {
                         Some(array) => {
                             *self.slot = Some(array);
                             Ok(())
                         }
-                        None if T::__private_is_bytes() => Err(Error::new(
+                        None if A::__private_is_bytes_as() => Err(Error::new(
                             ErrorKind::WrongLength,
                             "byte array of wrong length",
                         )),
@@ -824,7 +898,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                         "too many elements in array",
                     ))
                 } else {
-                    Ok(Deserialize::deserialize_into(&mut self.element))
+                    Ok(A::deserialize_into_as(&mut self.element))
                 }
             }
 
@@ -836,7 +910,7 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
                         "too many elements in array",
                     ))
                 } else {
-                    atom_into(&mut self.element, atom, state)
+                    A::__private_atom_into_as(&mut self.element, atom, state)
                 }
             }
 
@@ -867,80 +941,22 @@ impl<T: Deserialize, const N: usize> Deserialize for [T; N] {
             }
         }
 
-        SinkHandle::boxed(ArraySink {
+        SinkHandle::boxed(ArraySink::<T, A, N> {
             slot: out,
             // SAFETY: an array of `MaybeUninit` does not require initialization
             buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
             element: None,
             index: 0,
             is_seq: false,
+            _marker: PhantomData,
         })
     }
 }
 
 impl<T: Deserialize> Deserialize for Box<T> {
+    #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
-        struct BoxSink<'a, T> {
-            out: &'a mut Option<Box<T>>,
-            sink: OwnedSink<T>,
-        }
-
-        impl<'a, T: Deserialize> Sink for BoxSink<'a, T> {
-            fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().atom(atom, state)
-            }
-
-            fn map(&mut self, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().map(state)
-            }
-
-            fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().seq(state)
-            }
-
-            fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.sink.borrow_mut().next_key(state)
-            }
-
-            fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_>, Error> {
-                self.sink.borrow_mut().next_value(state)
-            }
-
-            fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().key_atom(atom, state)
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().value_atom(atom, state)
-            }
-
-            fn value_for_key(
-                &mut self,
-                key: &str,
-                state: &mut State,
-            ) -> Result<Option<SinkHandle<'_>>, Error> {
-                self.sink.borrow_mut().value_for_key(key, state)
-            }
-
-            fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-                self.sink.borrow_mut().finish(state)?;
-                *self.out = self.sink.take().map(Box::new);
-                Ok(())
-            }
-
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                self.sink.borrow().descriptor()
-            }
-
-            fn expecting(&self) -> std::borrow::Cow<'_, str> {
-                self.sink.borrow().expecting()
-            }
-        }
-
-        SinkHandle::boxed(BoxSink {
-            out,
-            sink: OwnedSink::deserialize(),
-        })
+        <Box<Same> as DeserializeAs<Box<T>>>::deserialize_into_as(out)
     }
 
     #[inline]
@@ -949,8 +965,25 @@ impl<T: Deserialize> Deserialize for Box<T> {
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
+        <Box<Same> as DeserializeAs<Box<T>>>::__private_atom_into_as(out, atom, state)
+    }
+}
+
+impl<T, A: DeserializeAs<T>> DeserializeAs<Box<T>> for Box<A> {
+    fn deserialize_into_as(out: &mut Option<Box<T>>) -> SinkHandle<'_> {
+        MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), |value| {
+            Ok(Box::new(value))
+        })
+    }
+
+    #[inline]
+    fn __private_atom_into_as(
+        out: &mut Option<Box<T>>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         let mut inner = None;
-        T::__private_atom_into(&mut inner, atom, state)?;
+        A::__private_atom_into_as(&mut inner, atom, state)?;
         *out = inner.map(Box::new);
         Ok(())
     }

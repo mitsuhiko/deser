@@ -2,6 +2,7 @@ use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
+use crate::adapters::DeserializeAs;
 use crate::de::{Deserialize, Sink, SinkHandle};
 
 struct NonuniqueBox<T: ?Sized> {
@@ -101,6 +102,21 @@ impl<T: Deserialize> OwnedSink<T> {
     /// into a slot contained within the owned sink.  To extract the final
     /// value use [`take`](Self::take).
     pub fn deserialize() -> OwnedSink<T> {
+        OwnedSink::with(T::deserialize_into)
+    }
+}
+
+impl<T> OwnedSink<T> {
+    /// Creates a new owned sink that deserializes with an adapter.
+    ///
+    /// This is like [`deserialize`](Self::deserialize) but begins the
+    /// deserialization with
+    /// [`DeserializeAs::deserialize_into_as`] of the adapter `A`.
+    pub fn deserialize_as<A: DeserializeAs<T>>() -> OwnedSink<T> {
+        OwnedSink::with(A::deserialize_into_as)
+    }
+
+    fn with(make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x>) -> OwnedSink<T> {
         /// Creates a reference with an unbounded lifetime.
         unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
             &mut *ptr
@@ -111,7 +127,7 @@ impl<T: Deserialize> OwnedSink<T> {
         // dropped before the storage is accessed again or freed.
         let sink = unsafe {
             let slot = unbounded(storage.ptr.as_ptr());
-            std::mem::transmute::<SinkHandle<'_>, SinkHandle<'static>>(T::deserialize_into(slot))
+            std::mem::transmute::<SinkHandle<'_>, SinkHandle<'static>>(make(slot))
         };
         OwnedSink {
             storage,

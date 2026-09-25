@@ -1,8 +1,69 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 
-use crate::attr::{ensure_no_field_attrs, ContainerAttrs, EnumVariantAttrs, FieldAttrs};
-use crate::bound::{where_clause_with_bound, with_lifetime_bound};
+use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
+use crate::bound::{where_clause_for_fields, with_lifetime_bound, BoundField};
+
+/// Returns an expression that creates a serialize handle for a value.
+pub fn serialize_handle(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    value: TokenStream,
+) -> TokenStream {
+    match adapter {
+        // spanned so that errors about unsupported types point to the adapter
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            __deser::ser::SerializeHandle::to(
+                __deser::adapters::SerializeAsRef::<#adapter, #ty>::new(#value)
+            )
+        },
+        None => quote! { __deser::ser::SerializeHandle::to(#value) },
+    }
+}
+
+/// Returns an expression that checks if a value is optional.
+pub fn is_optional(ty: &syn::Type, adapter: Option<&syn::Type>, value: TokenStream) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::SerializeAs<#ty>>::is_optional_as(#value)
+        },
+        None => quote! { __deser::ser::Serialize::is_optional(#value) },
+    }
+}
+
+/// Returns the where clause for the fields of a struct.
+fn struct_where_clause(
+    input: &syn::DeriveInput,
+    container_attrs: &ContainerAttrs,
+    attrs: &[FieldAttrs],
+) -> syn::WhereClause {
+    where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Serialize),
+        None,
+        quote!(__deser::adapters::SerializeAs),
+        container_attrs.serialize_bound(),
+        &attrs
+            .iter()
+            .map(|x| BoundField {
+                ty: &x.field().ty,
+                adapter: x.adapter(),
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Rejects tag fields outside of enums.
+fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
+    match attrs.iter().find(|x| x.tag()) {
+        Some(attrs) => Err(syn::Error::new_spanned(
+            attrs.field(),
+            "tag fields are only supported in other variants of enums",
+        )),
+        None => Ok(()),
+    }
+}
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     match &input.data {
@@ -30,6 +91,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
+    reject_tag_fields(&attrs)?;
 
     if !attrs.iter().any(|x| x.flatten()) {
         return derive_indexed_struct(input, &container_attrs, &attrs);
@@ -76,11 +138,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 } else {
                     quote! {}
                 };
+                let handle =
+                    serialize_handle(&attrs.field().ty, attrs.adapter(), quote! { &self.data.#name });
                 quote! {
                     #index => {
                         self.index = __index + 1;
                         #field_skip
-                        let __handle = __deser::ser::SerializeHandle::to(&self.data.#name);
+                        let __handle = #handle;
                         #optional_skip
                         return __deser::__derive::Ok(__deser::__derive::Some((
                             __deser::__derive::Cow::Borrowed(#fieldstr),
@@ -148,9 +212,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(__deser::Serialize);
-    let bounded_where_clause =
-        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
+    let bounded_where_clause = struct_where_clause(input, &container_attrs, &attrs);
 
     Ok(quote! {
             const _: () = {
@@ -231,31 +293,32 @@ fn derive_indexed_struct(
                     }
                 }
             });
+            let ty = &attrs.field().ty;
             let optional_skip = if container_attrs.skip_serializing_optionals() {
+                let is_optional = is_optional(ty, attrs.adapter(), quote! { &self.#name });
                 Some(quote! {
-                    if __deser::ser::Serialize::is_optional(&self.#name) {
+                    if #is_optional {
                         return __deser::__derive::Ok(__deser::ser::StructField::Skip);
                     }
                 })
             } else {
                 None
             };
+            let handle = serialize_handle(ty, attrs.adapter(), quote! { &self.#name });
             quote! {
                 #index => {
                     #field_skip
                     #optional_skip
                     __deser::ser::StructField::Field(
                         #fieldstr,
-                        __deser::ser::SerializeHandle::to(&self.#name),
+                        #handle,
                     )
                 }
             }
         })
         .collect::<Vec<_>>();
 
-    let bound = syn::parse_quote!(__deser::Serialize);
-    let bounded_where_clause =
-        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
+    let bounded_where_clause = struct_where_clause(input, container_attrs, attrs);
 
     Ok(quote! {
         const _: () = {
@@ -362,33 +425,56 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let container_attrs = ContainerAttrs::of(input)?;
     let _type_name = container_attrs.container_name();
 
-    ensure_no_field_attrs(field)?;
+    let field_attrs = UnnamedFieldAttrs::of(field)?;
+    if field_attrs.tag() {
+        return Err(syn::Error::new_spanned(
+            field,
+            "tag fields are only supported in other variants of enums",
+        ));
+    }
+    let adapter = field_attrs.adapter();
+    let field_type = &field.ty;
+    // the value serializes through the adapter or the regular implementation
+    let value = match adapter {
+        Some(adapter) => quote! {
+            __deser::adapters::SerializeAsRef::<#adapter, #field_type>::new(&self.0)
+        },
+        None => quote! { &self.0 },
+    };
 
-    let bound = syn::parse_quote!(__deser::Serialize);
-    let bounded_where_clause =
-        where_clause_with_bound(&input.generics, bound, container_attrs.serialize_bound());
+    let bounded_where_clause = where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Serialize),
+        None,
+        quote!(__deser::adapters::SerializeAs),
+        container_attrs.serialize_bound(),
+        &[BoundField {
+            ty: field_type,
+            adapter,
+        }],
+    );
 
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    self.0.descriptor()
+                    __deser::ser::Serialize::descriptor(#value)
                 }
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::ser::Serialize::serialize(&self.0, __state)
+                    __deser::ser::Serialize::serialize(#value, __state)
                 }
                 fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                    __deser::ser::Serialize::finish(&self.0, __state)
+                    __deser::ser::Serialize::finish(#value, __state)
                 }
                 fn is_optional(&self) -> bool {
-                    __deser::ser::Serialize::is_optional(&self.0)
+                    __deser::ser::Serialize::is_optional(#value)
                 }
                 #[inline]
                 fn __private_begin(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
-                    __deser::ser::Serialize::__private_begin(&self.0, __state)
+                    __deser::ser::Serialize::__private_begin(#value, __state)
                 }
             }
         };

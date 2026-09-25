@@ -39,6 +39,10 @@ pub struct Account {
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
 //!
+//! How individual values are serialized and deserialized can be customized
+//! with adapters, which compose with containers.  For more information see
+//! [`adapters`].
+//!
 //! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
@@ -48,6 +52,7 @@ pub struct Account {
 mod macros;
 mod event;
 
+pub mod adapters;
 pub mod de;
 mod error;
 pub mod ext;
@@ -98,10 +103,11 @@ pub mod __derive {
     pub type StrCow<'a> = Cow<'a, str>;
 
     pub use crate::de::enums::{
-        untagged_handle, AdjacentlyTaggedSink, ExternallyTaggedSink, IgnoredVariant,
-        InternallyTaggedSink, Variant, VariantBuilder,
+        untagged_handle, AdjacentlyTaggedSink, ExternallyTaggedSink, IgnoredContent,
+        IgnoredVariant, InternallyTaggedSink, OtherVariant, Variant, VariantBuilder, VariantMaker,
+        Variants,
     };
-    pub use crate::ser::enums::{FieldsSer, SeqSer, TaggedNewtype};
+    pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
     pub use std::vec::Vec;
 
     pub use crate::de::{atom_into, atom_into_handle};

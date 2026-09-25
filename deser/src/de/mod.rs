@@ -203,7 +203,8 @@ mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
 mod ignore;
-mod impls;
+pub(crate) mod impls;
+pub(crate) mod mapped;
 mod owned;
 mod recording;
 mod sinkbox;
@@ -288,8 +289,25 @@ impl<'a> SinkHandle<'a> {
     /// Converts the handle into one that ignores null atoms.
     ///
     /// When a null atom is received the wrapped sink is not invoked (not even
-    /// [`finish`](Sink::finish)).  This is used to implement `Option<T>`.
-    pub(crate) fn ignore_null(self) -> SinkHandle<'a> {
+    /// [`finish`](Sink::finish)) and the handle turns into a null handle.  An
+    /// atom counts as null if it is [`Atom::Null`] or an extension value which
+    /// falls back to null.
+    ///
+    /// This is used to implement `Option<T>`: the slot is set to `Some(None)`
+    /// before the handle of the inner value is created and made to ignore
+    /// nulls.
+    ///
+    /// ```
+    /// use deser::de::{Deserialize, SinkHandle};
+    ///
+    /// /// Deserializes like an `Option<T>`.
+    /// fn deserialize_optional<T: Deserialize>(
+    ///     out: &mut Option<Option<T>>,
+    /// ) -> SinkHandle<'_> {
+    ///     T::deserialize_into(out.insert(None)).ignore_null()
+    /// }
+    /// ```
+    pub fn ignore_null(self) -> SinkHandle<'a> {
         SinkHandle(match self.0 {
             HandleInner::Borrowed(sink) => HandleInner::OptionalBorrowed(sink),
             HandleInner::Owned(sink) => HandleInner::OptionalOwned(sink),
@@ -496,16 +514,18 @@ pub trait Deserialize: Sized {
     /// sink.
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_>;
 
-    /// Provides the initial value for a slot when deserializing structures.
+    /// Provides the value of a missing struct field.
     ///
-    /// This is not used when a `#[deser(default)]` is used.  This should become
-    /// public API longer term but for now it's private as there are some unresolved
-    /// questions about how null vs missing fields in structs should be handled.
-    #[doc(hidden)]
-    fn __private_initial_value() -> Option<Self>
-    where
-        Self: Sized,
-    {
+    /// When a struct is deserialized the slots of its fields start out with
+    /// this value.  If a field does not appear in the data, the initial value
+    /// is used.  If it is `None` (the default) the field is required.
+    /// `Option<T>` returns `Some(None)` here which makes optional fields
+    /// default to `None` when they are missing.
+    ///
+    /// This only controls missing values.  How null values are handled is up
+    /// to the sink (see [`SinkHandle::ignore_null`]).  The initial value is not
+    /// used for fields with `#[deser(default)]`.
+    fn initial_value() -> Option<Self> {
         None
     }
 

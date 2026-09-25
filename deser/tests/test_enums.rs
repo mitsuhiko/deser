@@ -185,13 +185,18 @@ fn test_internally_tagged() {
         .unwrap(),
         Internal::Map(map.clone())
     );
-    // but they cannot be serialized as maps do not serialize as structs
-    let value = Internal::Map(map);
-    let mut driver = SerializeDriver::new(&value);
-    driver.next().unwrap();
-    driver.next().unwrap();
-    driver.next().unwrap();
-    assert!(driver.next().is_err());
+    // and serialized, the keys of the map must be strings
+    check(
+        Internal::Map(map),
+        vec![
+            Event::MapStart,
+            "type".into(),
+            "Map".into(),
+            "a".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
 
     // tag last
     assert_eq!(

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Span, TokenStream};
 
 pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Generics {
@@ -52,6 +54,94 @@ pub fn where_clause_with_bound(
             })
             .collect(),
     };
+
+    let mut generics = generics.clone();
+    generics
+        .make_where_clause()
+        .predicates
+        .extend(new_predicates);
+    generics.where_clause.unwrap()
+}
+
+/// Collects all identifiers in a token stream.
+pub fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
+    for token in stream {
+        match token {
+            proc_macro2::TokenTree::Ident(ident) => {
+                out.insert(ident.to_string());
+            }
+            proc_macro2::TokenTree::Group(group) => collect_idents(group.stream(), out),
+            _ => {}
+        }
+    }
+}
+
+/// A field for the purpose of bound inference.
+pub struct BoundField<'a> {
+    pub ty: &'a syn::Type,
+    pub adapter: Option<&'a syn::Type>,
+}
+
+/// Returns the where clause of the generics with bounds inferred from fields.
+///
+/// If `custom` is `Some` the custom predicates are used instead, otherwise
+/// every type parameter gets `bound` unless it only appears in fields with
+/// adapters.  Such parameters get `adapter_only_bound` if provided.  For
+/// fields with adapters that refer to type parameters a predicate that
+/// requires the adapter to implement `adapter_trait` for the field type is
+/// added.
+pub fn where_clause_for_fields(
+    generics: &syn::Generics,
+    bound: TokenStream,
+    adapter_only_bound: Option<TokenStream>,
+    adapter_trait: TokenStream,
+    custom: Option<&[syn::WherePredicate]>,
+    fields: &[BoundField<'_>],
+) -> syn::WhereClause {
+    if custom.is_some() || fields.iter().all(|x| x.adapter.is_none()) {
+        return where_clause_with_bound(generics, bound, custom);
+    }
+
+    let mut plain = HashSet::new();
+    let mut adapted = HashSet::new();
+    for field in fields {
+        let ty = field.ty;
+        match field.adapter {
+            Some(adapter) => {
+                collect_idents(quote::quote! { #ty #adapter }, &mut adapted);
+            }
+            None => collect_idents(quote::quote! { #ty }, &mut plain),
+        }
+    }
+
+    let params = generics
+        .type_params()
+        .map(|x| x.ident.to_string())
+        .collect::<HashSet<_>>();
+    let mut new_predicates: Vec<syn::WherePredicate> = Vec::new();
+    for param in generics.type_params() {
+        let name = param.ident.to_string();
+        let param = &param.ident;
+        if adapted.contains(&name) && !plain.contains(&name) {
+            if let Some(ref adapter_only_bound) = adapter_only_bound {
+                new_predicates.push(syn::parse_quote!(#param : #adapter_only_bound));
+            }
+        } else {
+            new_predicates.push(syn::parse_quote!(#param : #bound));
+        }
+    }
+    for field in fields {
+        let adapter = match field.adapter {
+            Some(adapter) => adapter,
+            None => continue,
+        };
+        let ty = field.ty;
+        let mut idents = HashSet::new();
+        collect_idents(quote::quote! { #ty #adapter }, &mut idents);
+        if idents.iter().any(|x| params.contains(x)) {
+            new_predicates.push(syn::parse_quote!(#adapter : #adapter_trait<#ty>));
+        }
+    }
 
     let mut generics = generics.clone();
     generics

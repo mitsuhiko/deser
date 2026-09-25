@@ -120,4 +120,119 @@
 ///     field: u32,
 /// }
 /// ```
+///
+/// Adapters cannot be combined with flatten.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Inner {
+///     field: u32,
+/// }
+///
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(flatten, as = deser::adapters::Same)]
+///     inner: Inner,
+/// }
+/// ```
+///
+/// `Self` is not supported in adapters.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(as = Vec<Self>)]
+///     field: Vec<u32>,
+/// }
+/// ```
+///
+/// Adapters must support the type of the field.
+///
+/// ```compile_fail,E0277
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(as = Vec<deser::adapters::DisplayFromStr>)]
+///     field: Option<u32>,
+/// }
+/// ```
+///
+/// Tag fields are only supported in other variants.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(tag)]
+///     field: String,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     A(#[deser(tag)] String),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(other)]
+///     A(#[deser(tag)] String, #[deser(tag)] String),
+/// }
+/// ```
+///
+/// Tag fields only support `as`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(other)]
+///     A {
+///         #[deser(tag, rename = "x")]
+///         tag: String,
+///     },
+/// }
+/// ```
+///
+/// Default variants are only supported for internally and adjacently
+/// tagged enums.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(default)]
+///     A(u32),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(default)]
+///     A,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "type")]
+/// enum Test {
+///     #[deser(default)]
+///     A,
+///     #[deser(default)]
+///     B,
+/// }
+/// ```
+///
+/// The positive case for the above.
+///
+/// ```
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "type")]
+/// enum Test {
+///     #[deser(default)]
+///     A,
+///     B,
+/// }
+/// ```
 pub struct DeriveErrors;

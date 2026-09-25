@@ -250,6 +250,13 @@ impl Extensions {
                 None => self.entries.push((*key, (fns.clone)(&**value))),
             }
         }
+        self.restore_event_data(snapshot);
+    }
+
+    /// Restores only the event data from a snapshot.
+    ///
+    /// The event data is replaced by the event data of the snapshot.
+    pub fn restore_event_data(&mut self, snapshot: &Snapshot) {
         self.clear_event_data();
         for (key, value, fns) in snapshot.events.iter() {
             match self.event_position(key.0) {

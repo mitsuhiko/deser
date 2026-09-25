@@ -54,6 +54,12 @@ enum Emitter {
     IndexedSeq(&'static dyn IndexedSeq, usize),
     /// A struct with the index of the next field.
     IndexedStruct(&'static dyn IndexedStruct, usize),
+    /// A value that forwarded to another value (see [`Chunk::Forward`]).
+    ///
+    /// The frame holds the value while the forwarded value (which can
+    /// borrow from it) is serialized.  It does not emit events and it's
+    /// removed once it's on the top of the stack again.
+    Forward,
 }
 
 /// A serializable held by the driver.
@@ -61,7 +67,7 @@ enum Emitter {
 /// This is like a [`SerializeHandle`] with an erased lifetime, but owned
 /// values are held by raw pointer so that the handle can be moved while
 /// events or emitters borrow from the value.
-struct Held {
+pub(crate) struct Held {
     ptr: NonNull<dyn Serialize>,
     owned: bool,
 }
@@ -73,7 +79,7 @@ impl Held {
     ///
     /// The held value must be dropped before the data the handle borrows.
     #[inline]
-    unsafe fn new(handle: SerializeHandle<'_>) -> Held {
+    pub(crate) unsafe fn new(handle: SerializeHandle<'_>) -> Held {
         let (ptr, owned) = match handle {
             SerializeHandle::Borrowed(value) => (NonNull::from(value), false),
             SerializeHandle::Owned(value) => (NonNull::new_unchecked(Box::into_raw(value)), true),
@@ -91,7 +97,7 @@ impl Held {
     /// The returned reference must not be used after the held value was
     /// dropped.
     #[inline(always)]
-    unsafe fn get<'x>(&self) -> &'x dyn Serialize {
+    pub(crate) unsafe fn get<'x>(&self) -> &'x dyn Serialize {
         &*self.ptr.as_ptr()
     }
 }
@@ -220,6 +226,10 @@ impl<'a> SerializeDriver<'a> {
             // frame stays on the stack until all of them are dropped.
             let emitter = unsafe { &mut *(&mut frame.emitter as *mut Emitter) };
             let value = match emitter {
+                Emitter::Forward => {
+                    self.finish_forward()?;
+                    continue;
+                }
                 Emitter::IndexedStruct(fields, index) => {
                     let field = fields.field(*index, &mut self.state)?;
                     *index += 1;
@@ -301,6 +311,53 @@ impl<'a> SerializeDriver<'a> {
         Ok(())
     }
 
+    /// Removes a forwarding frame from the top of the stack.
+    ///
+    /// This is invoked once the forwarded value was serialized.
+    #[cold]
+    fn finish_forward(&mut self) -> Result<(), Error> {
+        let Frame {
+            emitter,
+            serializable,
+            needs_finish,
+        } = self.stack.pop().unwrap();
+        debug_assert!(matches!(emitter, Emitter::Forward));
+        if needs_finish {
+            // SAFETY: the value is alive until the end of this block
+            unsafe { serializable.get() }.finish(&mut self.state)?;
+        }
+        Ok(())
+    }
+
+    /// Places a value that forwarded to another value on the stack.
+    ///
+    /// Returns the forwarded value.
+    #[cold]
+    fn push_forward(
+        &mut self,
+        value: Held,
+        needs_finish: bool,
+        forwarded: SerializeHandle<'_>,
+    ) -> Held {
+        self.stack.push(Frame {
+            emitter: Emitter::Forward,
+            serializable: value,
+            needs_finish,
+        });
+        // SAFETY: the forwarded value can borrow from the value which is
+        // held by the frame.  It's dropped before the frame.
+        unsafe { Held::new(forwarded) }
+    }
+
+    /// Serializes a forwarded value and emits its first event.
+    #[inline(never)]
+    fn drive_forwarded<F>(&mut self, value: Held, is_key: bool, f: &mut F) -> Result<(), Error>
+    where
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+    {
+        self.drive_value(value, is_key, f)
+    }
+
     /// Serializes a value and emits its first event.
     #[inline(always)]
     fn drive_value<F>(&mut self, value: Held, is_key: bool, f: &mut F) -> Result<(), Error>
@@ -332,6 +389,10 @@ impl<'a> SerializeDriver<'a> {
             BeginKind::Chunk(Chunk::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart),
             BeginKind::Struct(fields) => (Emitter::IndexedStruct(fields, 0), Event::MapStart),
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart),
+            BeginKind::Chunk(Chunk::Forward(forwarded)) => {
+                let forwarded = self.push_forward(value, needs_finish, forwarded);
+                return self.drive_forwarded(forwarded, is_key, f);
+            }
         };
         self.stack.push(Frame {
             emitter,
@@ -375,7 +436,7 @@ impl<'a> SerializeDriver<'a> {
         let mut is_key = false;
         let value = match self.next_value.take() {
             Some(value) => value,
-            None => {
+            None => loop {
                 let frame = match self.stack.last_mut() {
                     Some(frame) => frame,
                     None => return Ok(None),
@@ -384,6 +445,10 @@ impl<'a> SerializeDriver<'a> {
                 // frame stays on the stack until all of them are dropped.
                 let emitter = unsafe { &mut *(&mut frame.emitter as *mut Emitter) };
                 let next = match emitter {
+                    Emitter::Forward => {
+                        self.finish_forward()?;
+                        continue;
+                    }
                     Emitter::Seq(emitter) => emitter.next(&mut self.state)?,
                     Emitter::Map(emitter, is_value) => {
                         if *is_value {
@@ -439,10 +504,10 @@ impl<'a> SerializeDriver<'a> {
                 match next {
                     // SAFETY: the value borrows from the emitter on the top
                     // of the stack.
-                    Some(value) => unsafe { Held::new(value) },
+                    Some(value) => break unsafe { Held::new(value) },
                     None => return Ok(Some(self.end_container())),
                 }
-            }
+            },
         };
 
         self.serialize_value(value, is_key)
@@ -490,6 +555,10 @@ impl<'a> SerializeDriver<'a> {
             BeginKind::Chunk(Chunk::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart),
             BeginKind::Struct(fields) => (Emitter::IndexedStruct(fields, 0), Event::MapStart),
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart),
+            BeginKind::Chunk(Chunk::Forward(forwarded)) => {
+                let forwarded = self.push_forward(value, needs_finish, forwarded);
+                return self.serialize_forwarded(forwarded, is_key);
+            }
         };
         self.stack.push(Frame {
             emitter,
@@ -498,6 +567,16 @@ impl<'a> SerializeDriver<'a> {
         });
         self.state.descriptor_stack.push(descriptor);
         Ok(Some((event, descriptor)))
+    }
+
+    /// Serializes a forwarded value and returns its first event.
+    #[inline(never)]
+    fn serialize_forwarded(
+        &mut self,
+        value: Held,
+        is_key: bool,
+    ) -> Result<NextEvent<'static>, Error> {
+        self.serialize_value(value, is_key)
     }
 }
 

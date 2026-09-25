@@ -26,6 +26,37 @@ All notable changes to deser are documented here.
   detaches it after the event was delivered.  Recordings capture event data
   automatically.  Source locations and the CBOR and YAML tags are now event
   data, `Locations` is no longer replayable.
+- Added adapters in `deser::adapters` which serialize and deserialize values
+  on behalf of other types through the `SerializeAs` and `DeserializeAs`
+  traits.  The derive selects them with `#[deser(as = Adapter)]` on fields
+  (including newtype structs and enum variant fields) where `_` stands for
+  the type's own implementation.  Adapters compose with the standard
+  containers (`#[deser(as = Option<BTreeMap<_, Vec<DisplayFromStr>>>)]`),
+  handle missing fields themselves so optional adapters keep fields optional,
+  and type parameters only used in fields with adapters no longer need to
+  implement `Serialize` or `Deserialize`.  Provided are `Same`,
+  `DisplayFromStr`, `FromInto`, `TryFromInto`, `DefaultOnError`,
+  `VecSkipError` and `MapSkipError`, as well as the `As` wrapper to use
+  adapters outside of the derive.
+- Added `Chunk::Forward` to serialize another (possibly owned) value in
+  place of a value.
+- `Deserialize::initial_value` (previously the hidden
+  `__private_initial_value`) and `SinkHandle::ignore_null` are now public.
+  Added `OwnedSink::deserialize_as`.
+- `Recording` now implements `Deserialize`, `Serialize` and `PartialEq` so
+  that it can be used as a raw value.  Serializing a recording emits the
+  recorded events together with their event data.
+- `#[deser(other)]` is now supported on all variants.  A field marked with
+  `#[deser(tag)]` receives the unknown tag, which can be any value (not only
+  strings), and is used as tag when serializing.  The remaining fields are
+  the content of the variant.
+- Added `#[deser(default)]` for variants of internally and adjacently tagged
+  enums which is used if the tag is missing.
+- Variants with content of externally tagged enums that are represented by
+  their name alone now receive null as content instead of failing, and plain
+  enums with an `other` variant use it for values which are not strings.
+- Newtype variants of internally tagged enums can now serialize maps with
+  string keys and values that forward to maps or structs.
 
 - Changed `#[deser(default = ...)]` to take an expression instead of a
   function name in a string, and `#[deser(skip_serializing_if = ...)]` to

@@ -10,13 +10,17 @@
 //! The content of unit variants is null, of newtype variants the inner value,
 //! of tuple variants a sequence and of struct variants a map.  The heavy
 //! lifting is done by support code in `deser::__derive`.
+//!
+//! The variant marked with `#[deser(other)]` receives unknown tags.  It can
+//! have a field marked with `#[deser(tag)]` that receives the tag, the
+//! content of such a variant is made up of the remaining fields.
 use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs};
-use crate::bound::where_clause_with_bound;
+use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
+use crate::bound::{collect_idents, where_clause_for_fields, BoundField};
 
 #[derive(Copy, Clone)]
 enum Repr<'a> {
@@ -26,11 +30,74 @@ enum Repr<'a> {
     Untagged,
 }
 
-enum Kind<'a> {
+/// The shape of a variant in Rust.
+enum Shape {
     Unit,
-    Newtype(&'a syn::Type),
-    Tuple(Vec<&'a syn::Type>),
-    Struct(&'a syn::FieldsNamed),
+    Tuple,
+    Named,
+}
+
+/// The content of a variant (all fields except the tag field).
+enum Content {
+    Unit,
+    Newtype(usize),
+    Tuple(Vec<usize>),
+    Struct(Vec<usize>),
+}
+
+struct FieldInfo<'a> {
+    field: &'a syn::Field,
+    adapter: Option<syn::Type>,
+    tag: bool,
+    binding: syn::Ident,
+}
+
+impl<'a> FieldInfo<'a> {
+    fn ty(&self) -> &'a syn::Type {
+        &self.field.ty
+    }
+
+    /// Returns the type the field is deserialized as.
+    fn de_ty(&self) -> TokenStream {
+        let ty = self.ty();
+        match self.adapter {
+            Some(ref adapter) => quote! { __deser::adapters::As<#ty, #adapter> },
+            None => quote! { #ty },
+        }
+    }
+
+    /// Converts a value of the type returned by `de_ty` into the field value.
+    fn unwrap(&self, value: TokenStream) -> TokenStream {
+        if self.adapter.is_some() {
+            quote! { #value.into_inner() }
+        } else {
+            value
+        }
+    }
+
+    /// Returns a serialize handle for the bound field.
+    fn ser_handle(&self) -> TokenStream {
+        let binding = &self.binding;
+        crate::ser::serialize_handle(self.ty(), self.adapter.as_ref(), quote! { #binding })
+    }
+
+    /// Returns a reference to a serializable for the bound field.
+    fn ser_value(&self) -> TokenStream {
+        let binding = &self.binding;
+        let ty = self.ty();
+        match self.adapter {
+            Some(ref adapter) => quote! {
+                __deser::adapters::SerializeAsRef::<#adapter, #ty>::new(#binding)
+            },
+            None => quote! { #binding },
+        }
+    }
+
+    /// Returns an expression that checks if the bound field is optional.
+    fn is_optional(&self) -> TokenStream {
+        let binding = &self.binding;
+        crate::ser::is_optional(self.ty(), self.adapter.as_ref(), quote! { #binding })
+    }
 }
 
 struct VariantInfo<'a> {
@@ -38,7 +105,11 @@ struct VariantInfo<'a> {
     name: String,
     names: Vec<String>,
     other: bool,
-    kind: Kind<'a>,
+    default: bool,
+    shape: Shape,
+    fields: Vec<FieldInfo<'a>>,
+    tag_field: Option<usize>,
+    content: Content,
 }
 
 impl<'a> VariantInfo<'a> {
@@ -46,35 +117,57 @@ impl<'a> VariantInfo<'a> {
         syn::Ident::new(&format!("__Variant{}", self.ident), Span::call_site())
     }
 
-    fn bindings(&self) -> Vec<syn::Ident> {
-        match self.kind {
-            Kind::Unit => Vec::new(),
-            Kind::Newtype(_) => vec![syn::Ident::new("__f0", Span::call_site())],
-            Kind::Tuple(ref types) => (0..types.len())
-                .map(|idx| syn::Ident::new(&format!("__f{}", idx), Span::call_site()))
-                .collect(),
-            Kind::Struct(fields) => fields
-                .named
-                .iter()
-                .map(|field| {
-                    syn::Ident::new(
-                        &format!("__field_{}", field.ident.as_ref().unwrap()),
-                        Span::call_site(),
-                    )
-                })
-                .collect(),
+    /// Returns the pattern that binds all fields by reference.
+    fn pattern(&self, enum_ident: &syn::Ident) -> TokenStream {
+        let var_ident = self.ident;
+        let bindings = self.fields.iter().map(|x| &x.binding);
+        match self.shape {
+            Shape::Unit => quote! { #enum_ident::#var_ident },
+            Shape::Tuple => quote! { #enum_ident::#var_ident(#(ref #bindings),*) },
+            Shape::Named => {
+                let names = self.fields.iter().map(|x| &x.field.ident);
+                quote! { #enum_ident::#var_ident { #(#names: ref #bindings),* } }
+            }
         }
+    }
+
+    /// Constructs the variant from values for all fields.
+    fn construct(&self, enum_ident: &syn::Ident, values: &[TokenStream]) -> TokenStream {
+        let var_ident = self.ident;
+        match self.shape {
+            Shape::Unit => quote! { #enum_ident::#var_ident },
+            Shape::Tuple => quote! { #enum_ident::#var_ident(#(#values),*) },
+            Shape::Named => {
+                let names = self.fields.iter().map(|x| &x.field.ident);
+                quote! { #enum_ident::#var_ident { #(#names: #values),* } }
+            }
+        }
+    }
+
+    /// Returns the fields which make up the content.
+    fn content_fields(&self) -> Vec<&FieldInfo<'a>> {
+        match self.content {
+            Content::Unit => Vec::new(),
+            Content::Newtype(idx) => vec![&self.fields[idx]],
+            Content::Tuple(ref idxs) | Content::Struct(ref idxs) => {
+                idxs.iter().map(|&idx| &self.fields[idx]).collect()
+            }
+        }
+    }
+
+    fn tag_field(&self) -> Option<&FieldInfo<'a>> {
+        self.tag_field.map(|idx| &self.fields[idx])
     }
 }
 
 /// Returns the type parameters of the generics that appear in the types.
 fn used_type_params<'a>(
     generics: &'a syn::Generics,
-    types: &[&syn::Type],
+    types: &[TokenStream],
 ) -> Vec<&'a syn::TypeParam> {
     let mut idents = HashSet::new();
     for ty in types {
-        collect_idents(quote! { #ty }, &mut idents);
+        collect_idents(ty.clone(), &mut idents);
     }
     generics
         .type_params()
@@ -121,18 +214,6 @@ fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> 
     }
 }
 
-fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
-    for token in stream {
-        match token {
-            proc_macro2::TokenTree::Ident(ident) => {
-                out.insert(ident.to_string());
-            }
-            proc_macro2::TokenTree::Group(group) => collect_idents(group.stream(), out),
-            _ => {}
-        }
-    }
-}
-
 fn check_generics(generics: &syn::Generics) -> syn::Result<()> {
     if let Some(lifetime) = generics.lifetimes().next() {
         return Err(syn::Error::new_spanned(
@@ -176,6 +257,41 @@ fn repr<'a>(container_attrs: &'a ContainerAttrs) -> Repr<'a> {
     }
 }
 
+fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'_>>)> {
+    let mut fields = Vec::new();
+    let shape = match variant.fields {
+        syn::Fields::Unit => Shape::Unit,
+        syn::Fields::Unnamed(ref unnamed) => {
+            for (idx, field) in unnamed.unnamed.iter().enumerate() {
+                let attrs = UnnamedFieldAttrs::of(field)?;
+                fields.push(FieldInfo {
+                    field,
+                    adapter: attrs.adapter().cloned(),
+                    tag: attrs.tag(),
+                    binding: syn::Ident::new(&format!("__f{}", idx), Span::call_site()),
+                });
+            }
+            Shape::Tuple
+        }
+        syn::Fields::Named(ref named) => {
+            for field in named.named.iter() {
+                let attrs = FieldAttrs::of(field)?;
+                fields.push(FieldInfo {
+                    field,
+                    adapter: attrs.adapter().cloned(),
+                    tag: attrs.tag(),
+                    binding: syn::Ident::new(
+                        &format!("__field_{}", field.ident.as_ref().unwrap()),
+                        Span::call_site(),
+                    ),
+                });
+            }
+            Shape::Named
+        }
+    };
+    Ok((shape, fields))
+}
+
 fn collect_variants<'a>(
     enumeration: &'a syn::DataEnum,
     container_attrs: &ContainerAttrs,
@@ -183,6 +299,7 @@ fn collect_variants<'a>(
     let mut rv = Vec::new();
     let mut seen_names = HashSet::new();
     let mut seen_other = false;
+    let mut seen_default = false;
     let repr = repr(container_attrs);
 
     for variant in &enumeration.variants {
@@ -215,30 +332,63 @@ fn collect_variants<'a>(
             seen_other = true;
         }
 
-        let kind = match variant.fields {
-            syn::Fields::Unit => Kind::Unit,
-            syn::Fields::Unnamed(ref fields) if fields.unnamed.len() == 1 => {
-                Kind::Newtype(&fields.unnamed[0].ty)
+        if attrs.default() {
+            if seen_default {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "only one variant can be marked as default",
+                ));
             }
-            syn::Fields::Unnamed(ref fields) => {
-                if matches!(repr, Repr::Internal { .. }) {
-                    return Err(syn::Error::new_spanned(
-                        variant,
-                        "internally tagged enums do not support tuple variants",
-                    ));
-                }
-                Kind::Tuple(fields.unnamed.iter().map(|x| &x.ty).collect())
+            if !matches!(repr, Repr::Internal { .. } | Repr::Adjacent { .. }) {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "default variants are only supported for internally and adjacently tagged enums",
+                ));
             }
-            syn::Fields::Named(ref fields) => Kind::Struct(fields),
+            seen_default = true;
+        }
+
+        let (shape, fields) = collect_fields(variant)?;
+
+        let mut tag_field = None;
+        for (idx, field) in fields.iter().enumerate() {
+            if !field.tag {
+                continue;
+            }
+            if !attrs.other() {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    "tag fields are only supported in other variants",
+                ));
+            }
+            if tag_field.is_some() {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    "only one field can be marked as tag",
+                ));
+            }
+            tag_field = Some(idx);
+        }
+
+        let content_idxs = (0..fields.len())
+            .filter(|&idx| Some(idx) != tag_field)
+            .collect::<Vec<_>>();
+        let content = match shape {
+            Shape::Unit => Content::Unit,
+            Shape::Tuple => match content_idxs.len() {
+                0 => Content::Unit,
+                1 => Content::Newtype(content_idxs[0]),
+                _ => Content::Tuple(content_idxs),
+            },
+            Shape::Named if tag_field.is_some() && content_idxs.is_empty() => Content::Unit,
+            Shape::Named => Content::Struct(content_idxs),
         };
 
-        for field in variant.fields.iter() {
-            if !matches!(kind, Kind::Struct(_)) {
-                crate::attr::ensure_no_field_attrs(field)?;
-            } else {
-                // validate the attributes early for better errors
-                FieldAttrs::of(field)?;
-            }
+        if matches!(content, Content::Tuple(_)) && matches!(repr, Repr::Internal { .. }) {
+            return Err(syn::Error::new_spanned(
+                variant,
+                "internally tagged enums do not support tuple variants",
+            ));
         }
 
         rv.push(VariantInfo {
@@ -246,7 +396,11 @@ fn collect_variants<'a>(
             name,
             names,
             other: attrs.other(),
-            kind,
+            default: attrs.default(),
+            shape,
+            fields,
+            tag_field,
+            content,
         });
     }
 
@@ -266,6 +420,18 @@ fn descriptor(container_attrs: &ContainerAttrs) -> TokenStream {
     }
 }
 
+/// Returns the fields of all variants for the purpose of bound inference.
+fn bound_fields<'b>(variants: &'b [VariantInfo]) -> Vec<BoundField<'b>> {
+    variants
+        .iter()
+        .flat_map(|info| info.fields.iter())
+        .map(|field| BoundField {
+            ty: field.ty(),
+            adapter: field.adapter.as_ref(),
+        })
+        .collect()
+}
+
 pub fn derive_deserialize(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
@@ -277,10 +443,13 @@ pub fn derive_deserialize(
     let variants = collect_variants(enumeration, container_attrs)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let turbofish = ty_generics.as_turbofish();
-    let mut where_clause = where_clause_with_bound(
+    let mut where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Deserialize + 'static),
+        Some(quote!('static)),
+        quote!(__deser::adapters::DeserializeAs),
         container_attrs.deserialize_bound(),
+        &bound_fields(&variants),
     );
     // the deserializer boxes variant builders so the type parameters must
     // be 'static even with custom bounds.
@@ -299,20 +468,28 @@ pub fn derive_deserialize(
     for info in &variants {
         let var_ident = info.ident;
         let helper = info.helper();
+        let content_fields = info.content_fields();
 
         // struct variants (and unit variants of internally tagged enums which
         // are maps) are deserialized through a helper struct that uses the
         // regular struct derive.
-        let needs_helper = match info.kind {
-            Kind::Struct(_) => true,
-            Kind::Unit => matches!(repr, Repr::Internal { .. }) && !info.other,
+        let needs_helper = match info.content {
+            Content::Struct(_) => true,
+            Content::Unit => matches!(repr, Repr::Internal { .. }) && !info.other,
             _ => false,
         };
         // helper structs only take the type parameters they use
-        let helper_params = match info.kind {
-            Kind::Struct(fields) => used_type_params(
+        let helper_params = match info.content {
+            Content::Struct(_) => used_type_params(
                 &input.generics,
-                &fields.named.iter().map(|x| &x.ty).collect::<Vec<_>>(),
+                &content_fields
+                    .iter()
+                    .map(|x| {
+                        let ty = x.ty();
+                        let adapter = &x.adapter;
+                        quote! { #ty #adapter }
+                    })
+                    .collect::<Vec<_>>(),
             ),
             _ => Vec::new(),
         };
@@ -324,19 +501,19 @@ pub fn derive_deserialize(
         };
         if needs_helper {
             let helper_name = var_ident.to_string();
-            let fields = match info.kind {
-                Kind::Struct(fields) => fields
-                    .named
-                    .iter()
-                    .map(|field| {
-                        let deser_attrs = field.attrs.iter().filter(|x| x.path().is_ident("deser"));
-                        let name = &field.ident;
-                        let ty = &field.ty;
-                        quote! { #(#deser_attrs)* #name: #ty, }
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
+            let fields = content_fields
+                .iter()
+                .map(|field| {
+                    let deser_attrs = field
+                        .field
+                        .attrs
+                        .iter()
+                        .filter(|x| x.path().is_ident("deser"));
+                    let name = &field.field.ident;
+                    let ty = field.ty();
+                    quote! { #(#deser_attrs)* #name: #ty, }
+                })
+                .collect::<Vec<_>>();
             // the helper needs the same bounds on its parameters as the enum,
             // plus `'static` as the enum's deserialize impl requires it.
             let helper_decl = if helper_params.is_empty() {
@@ -370,34 +547,62 @@ pub fn derive_deserialize(
             });
         }
 
-        let builder = if info.other {
-            quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #ident::#var_ident) }
-        } else {
-            match info.kind {
-                Kind::Struct(fields) => {
-                    let names = fields.named.iter().map(|x| &x.ident).collect::<Vec<_>>();
-                    quote! {
-                        __deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(
-                            |__v: #helper_ty| #ident::#var_ident { #(#names: __v.#names,)* }
-                        )
-                    }
+        // the content is deserialized as a single value which is bound to a
+        // pattern that makes the values of the content fields available.
+        let mut values = vec![TokenStream::new(); info.fields.len()];
+        let (content_ty, content_pattern) = match info.content {
+            Content::Unit if needs_helper => (helper_ty.clone(), quote! { _ }),
+            Content::Unit if info.other => {
+                (quote! { __deser::__derive::IgnoredContent }, quote! { _ })
+            }
+            Content::Unit => (quote! { () }, quote! { _ }),
+            Content::Newtype(idx) => {
+                let field = &info.fields[idx];
+                values[idx] = field.unwrap(quote! { __content });
+                (field.de_ty(), quote! { __content })
+            }
+            Content::Tuple(ref idxs) => {
+                let mut types = Vec::new();
+                let mut bindings = Vec::new();
+                for &idx in idxs {
+                    let field = &info.fields[idx];
+                    let binding = &field.binding;
+                    values[idx] = field.unwrap(quote! { #binding });
+                    types.push(field.de_ty());
+                    bindings.push(binding);
                 }
-                Kind::Unit if needs_helper => quote! {
-                    __deser::__derive::Variant::<#helper_ty, #enum_ty>::boxed(|_: #helper_ty| #ident::#var_ident)
-                },
-                Kind::Unit => quote! {
-                    __deser::__derive::Variant::<(), #enum_ty>::boxed(|_: ()| #ident::#var_ident)
-                },
-                Kind::Newtype(ty) => quote! {
-                    __deser::__derive::Variant::<#ty, #enum_ty>::boxed(#ident::#var_ident)
-                },
-                Kind::Tuple(ref types) => {
-                    let bindings = info.bindings();
-                    quote! {
-                        __deser::__derive::Variant::<(#(#types,)*), #enum_ty>::boxed(
-                            |(#(#bindings,)*): (#(#types,)*)| #ident::#var_ident(#(#bindings),*)
-                        )
-                    }
+                (quote! { (#(#types,)*) }, quote! { (#(#bindings,)*) })
+            }
+            Content::Struct(ref idxs) => {
+                for &idx in idxs {
+                    let name = &info.fields[idx].field.ident;
+                    values[idx] = quote! { __content.#name };
+                }
+                (helper_ty.clone(), quote! { __content })
+            }
+        };
+
+        let builder = match info.tag_field() {
+            Some(tag_field) => {
+                let tag_ty = tag_field.de_ty();
+                values[info.tag_field.unwrap()] = tag_field.unwrap(quote! { __tag });
+                let construct = info.construct(ident, &values);
+                quote! {
+                    __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::boxed(
+                        |__tag: #tag_ty, #content_pattern: #content_ty| #construct
+                    )
+                }
+            }
+            None if info.other && matches!(info.content, Content::Unit) => {
+                let construct = info.construct(ident, &values);
+                quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct) }
+            }
+            None => {
+                let construct = info.construct(ident, &values);
+                quote! {
+                    __deser::__derive::Variant::<#content_ty, #enum_ty>::boxed(
+                        |#content_pattern: #content_ty| #construct
+                    )
                 }
             }
         };
@@ -405,54 +610,85 @@ pub fn derive_deserialize(
     }
 
     let descriptor = descriptor(container_attrs);
-    let other_builder = variants
-        .iter()
-        .zip(builders.iter())
-        .find(|(info, _)| info.other)
-        .map(|(_, builder)| quote! { __deser::__derive::Some(#builder) })
-        .unwrap_or_else(|| quote! { __deser::__derive::None });
+    let builder_ty = quote! {
+        __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>
+    };
 
-    let lookup = {
-        let arms = variants.iter().zip(builders.iter()).map(|(info, builder)| {
-            let names = &info.names;
-            quote! { #(#names)|* => __deser::__derive::Some(#builder), }
-        });
-        quote! {
-            #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-            fn __lookup #impl_generics (
-                __tag: &__deser::__derive::str,
-            ) -> __deser::__derive::Option<
-                __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>,
-            > #where_clause {
-                match __tag {
-                    #(#arms)*
-                    _ => #other_builder,
-                }
-            }
+    // makes a function for a special variant
+    let special_variant = |fn_name: &str, predicate: fn(&VariantInfo) -> bool| {
+        let fn_ident = syn::Ident::new(fn_name, Span::call_site());
+        match variants
+            .iter()
+            .zip(builders.iter())
+            .find(|(info, _)| predicate(info))
+        {
+            Some((_, builder)) => (
+                quote! {
+                    #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
+                    fn #fn_ident #impl_generics () -> #builder_ty #where_clause {
+                        #builder
+                    }
+                },
+                quote! {
+                    __deser::__derive::Some(
+                        #fn_ident #turbofish as __deser::__derive::VariantMaker<#enum_ty>
+                    )
+                },
+            ),
+            None => (quote! {}, quote! { __deser::__derive::None }),
         }
+    };
+
+    let variants_table = {
+        let arms = variants
+            .iter()
+            .zip(builders.iter())
+            .filter(|(info, _)| !info.other)
+            .map(|(info, builder)| {
+                let names = &info.names;
+                quote! { #(#names)|* => __deser::__derive::Some(#builder), }
+            });
+        let (other_fn, other) = special_variant("__other", |info| info.other);
+        let (default_fn, default) = special_variant("__default", |info| info.default);
+        (
+            quote! {
+                #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
+                fn __lookup #impl_generics (
+                    __tag: &__deser::__derive::str,
+                ) -> __deser::__derive::Option<#builder_ty> #where_clause {
+                    match __tag {
+                        #(#arms)*
+                        _ => __deser::__derive::None,
+                    }
+                }
+
+                #other_fn
+                #default_fn
+            },
+            quote! {
+                __deser::__derive::Variants {
+                    lookup: __lookup #turbofish,
+                    other: #other,
+                    default: #default,
+                }
+            },
+        )
     };
 
     let (support, handle) = match repr {
         Repr::External => {
             let unit_arms = variants
                 .iter()
-                .filter(|info| matches!(info.kind, Kind::Unit))
+                .filter(|info| matches!(info.content, Content::Unit) && !info.other)
                 .map(|info| {
                     let names = &info.names;
-                    let var_ident = info.ident;
-                    quote! { #(#names)|* => __deser::__derive::Some(#ident::#var_ident), }
+                    let construct = info.construct(ident, &[]);
+                    quote! { #(#names)|* => __deser::__derive::Some(#construct), }
                 });
-            let unit_other = variants
-                .iter()
-                .find(|info| info.other)
-                .map(|info| {
-                    let var_ident = info.ident;
-                    quote! { __deser::__derive::Some(#ident::#var_ident) }
-                })
-                .unwrap_or_else(|| quote! { __deser::__derive::None });
+            let (table_support, table) = variants_table;
             (
                 quote! {
-                    #lookup
+                    #table_support
 
                     #[allow(clippy::multiple_bound_locations)]
                     fn __unit #impl_generics (
@@ -460,7 +696,7 @@ pub fn derive_deserialize(
                     ) -> __deser::__derive::Option<#enum_ty> #where_clause {
                         match __name {
                             #(#unit_arms)*
-                            _ => #unit_other,
+                            _ => __deser::__derive::None,
                         }
                     }
                 },
@@ -468,35 +704,41 @@ pub fn derive_deserialize(
                     __deser::__derive::ExternallyTaggedSink::handle(
                         __slot,
                         &__Descriptor,
-                        __lookup #turbofish,
+                        #table,
                         __unit #turbofish,
                     )
                 },
             )
         }
-        Repr::Internal { tag } => (
-            lookup,
-            quote! {
-                __deser::__derive::InternallyTaggedSink::handle(
-                    __slot,
-                    #tag,
-                    &__Descriptor,
-                    __lookup #turbofish,
-                )
-            },
-        ),
-        Repr::Adjacent { tag, content } => (
-            lookup,
-            quote! {
-                __deser::__derive::AdjacentlyTaggedSink::handle(
-                    __slot,
-                    #tag,
-                    #content,
-                    &__Descriptor,
-                    __lookup #turbofish,
-                )
-            },
-        ),
+        Repr::Internal { tag } => {
+            let (table_support, table) = variants_table;
+            (
+                table_support,
+                quote! {
+                    __deser::__derive::InternallyTaggedSink::handle(
+                        __slot,
+                        #tag,
+                        &__Descriptor,
+                        #table,
+                    )
+                },
+            )
+        }
+        Repr::Adjacent { tag, content } => {
+            let (table_support, table) = variants_table;
+            (
+                table_support,
+                quote! {
+                    __deser::__derive::AdjacentlyTaggedSink::handle(
+                        __slot,
+                        #tag,
+                        #content,
+                        &__Descriptor,
+                        #table,
+                    )
+                },
+            )
+        }
         Repr::Untagged => {
             let indexes = 0..builders.len();
             (
@@ -504,9 +746,7 @@ pub fn derive_deserialize(
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                     fn __candidate #impl_generics (
                         __index: usize,
-                    ) -> __deser::__derive::Option<
-                        __deser::__derive::Box<dyn __deser::__derive::VariantBuilder<#enum_ty>>,
-                    > #where_clause {
+                    ) -> __deser::__derive::Option<#builder_ty> #where_clause {
                         match __index {
                             #(#indexes => __deser::__derive::Some(#builders),)*
                             _ => __deser::__derive::None,
@@ -540,40 +780,38 @@ pub fn derive_deserialize(
     })
 }
 
-/// Builds a `FieldsSer` for the fields of a struct variant.
+/// Builds a `FieldsSer` for the content fields of a struct variant.
 fn fields_ser(
     info: &VariantInfo,
     container_attrs: &ContainerAttrs,
-    tag: Option<(&str, &str)>,
+    tag: Option<(&str, TokenStream)>,
 ) -> syn::Result<TokenStream> {
-    let fields = match info.kind {
-        Kind::Struct(fields) => fields,
-        _ => unreachable!(),
-    };
-    let tag_push = tag.map(|(tag, name)| {
+    let tag_push = tag.map(|(tag, handle)| {
         quote! {
-            __fields.push((#tag, __deser::ser::SerializeHandle::to(&#name)));
+            __fields.push((#tag, #handle));
         }
     });
     let mut pushes = Vec::new();
-    for (field, binding) in fields.named.iter().zip(info.bindings()) {
-        let attrs = FieldAttrs::of(field)?;
+    for field in info.content_fields() {
+        let attrs = FieldAttrs::of(field.field)?;
         if attrs.flatten() {
             return Err(syn::Error::new_spanned(
-                field,
+                field.field,
                 "flatten is not supported in enum variants",
             ));
         }
         let name = attrs.plain_name().to_string();
+        let binding = &field.binding;
         let mut conditions = Vec::new();
         if let Some(path) = attrs.skip_serializing_if() {
             conditions.push(quote! { #path(#binding) });
         }
         if container_attrs.skip_serializing_optionals() {
-            conditions.push(quote! { __deser::ser::Serialize::is_optional(#binding) });
+            conditions.push(field.is_optional());
         }
+        let handle = field.ser_handle();
         let push = quote! {
-            __fields.push((#name, __deser::ser::SerializeHandle::to(#binding)));
+            __fields.push((#name, #handle));
         };
         pushes.push(if conditions.is_empty() {
             push
@@ -600,18 +838,18 @@ fn content_handle(
     info: &VariantInfo,
     container_attrs: &ContainerAttrs,
 ) -> syn::Result<TokenStream> {
-    let bindings = info.bindings();
-    Ok(match info.kind {
-        Kind::Unit => quote! { __deser::ser::SerializeHandle::to(&()) },
-        Kind::Newtype(_) => quote! { __deser::ser::SerializeHandle::to(__f0) },
-        Kind::Tuple(_) => quote! {
-            __deser::ser::SerializeHandle::boxed(__deser::__derive::SeqSer(
-                __deser::__derive::Vec::from([
-                    #(__deser::ser::SerializeHandle::to(#bindings)),*
-                ])
-            ))
-        },
-        Kind::Struct(_) => {
+    Ok(match info.content {
+        Content::Unit => quote! { __deser::ser::SerializeHandle::to(&()) },
+        Content::Newtype(idx) => info.fields[idx].ser_handle(),
+        Content::Tuple(_) => {
+            let handles = info.content_fields().into_iter().map(|x| x.ser_handle());
+            quote! {
+                __deser::ser::SerializeHandle::boxed(__deser::__derive::SeqSer(
+                    __deser::__derive::Vec::from([#(#handles),*])
+                ))
+            }
+        }
+        Content::Struct(_) => {
             let fields = fields_ser(info, container_attrs, None)?;
             quote! { __deser::ser::SerializeHandle::boxed(#fields) }
         }
@@ -628,89 +866,94 @@ pub fn derive_serialize(
     let repr = repr(container_attrs);
     let variants = collect_variants(enumeration, container_attrs)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-    let where_clause = where_clause_with_bound(
+    let where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
+        None,
+        quote!(__deser::adapters::SerializeAs),
         container_attrs.serialize_bound(),
+        &bound_fields(&variants),
     );
 
     let mut arms = Vec::new();
     for info in &variants {
-        let var_ident = info.ident;
         let name = &info.name;
-        let bindings = info.bindings();
-        let pattern = match info.kind {
-            Kind::Unit => quote! { #ident::#var_ident },
-            Kind::Newtype(_) | Kind::Tuple(_) => quote! { #ident::#var_ident(#(ref #bindings),*) },
-            Kind::Struct(fields) => {
-                let names = fields.named.iter().map(|x| &x.ident);
-                quote! { #ident::#var_ident { #(#names: ref #bindings),* } }
-            }
-        };
+        let pattern = info.pattern(ident);
 
-        let tag_entry = |tag: &str| {
-            quote! { (#tag, __deser::ser::SerializeHandle::to(&#name)) }
+        // the value of the tag, other variants can provide it with a field
+        let tag_handle = match info.tag_field() {
+            Some(field) => field.ser_handle(),
+            None => quote! { __deser::ser::SerializeHandle::to(&#name) },
         };
-        let chunk = match (repr, &info.kind) {
-            (Repr::External, Kind::Unit) => quote! {
-                __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name)))
+        let is_unit = matches!(info.content, Content::Unit);
+        let chunk = match repr {
+            Repr::External if is_unit => match info.tag_field() {
+                Some(_) => quote! { __deser::ser::Chunk::Forward(#tag_handle) },
+                None => quote! {
+                    __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name)))
+                },
             },
-            (Repr::External, _) => {
+            Repr::External => {
                 let content = content_handle(info, container_attrs)?;
-                quote! {
-                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
-                        .into_chunk()
+                match info.tag_field() {
+                    Some(_) => quote! {
+                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk()
+                    },
+                    None => quote! {
+                        __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
+                            .into_chunk()
+                    },
                 }
             }
-            (Repr::Internal { tag }, Kind::Unit) => {
-                let tag_entry = tag_entry(tag);
-                quote! {
-                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([#tag_entry]))
+            Repr::Internal { tag } => match info.content {
+                Content::Unit => quote! {
+                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
                         .into_chunk()
+                },
+                Content::Struct(_) => {
+                    let fields = fields_ser(info, container_attrs, Some((tag, tag_handle)))?;
+                    quote! { #fields.into_chunk() }
                 }
-            }
-            (Repr::Internal { tag }, Kind::Struct(_)) => {
-                let fields = fields_ser(info, container_attrs, Some((tag, name)))?;
-                quote! { #fields.into_chunk() }
-            }
-            (Repr::Internal { tag }, Kind::Newtype(_)) => quote! {
-                __deser::__derive::TaggedNewtype::new(#tag, #name, __f0).into_chunk()
+                Content::Newtype(idx) => {
+                    let inner = info.fields[idx].ser_value();
+                    quote! {
+                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_chunk()
+                    }
+                }
+                Content::Tuple(_) => unreachable!(),
             },
-            (Repr::Internal { .. }, Kind::Tuple(_)) => unreachable!(),
-            (Repr::Adjacent { tag, .. }, Kind::Unit) => {
-                let tag_entry = tag_entry(tag);
-                quote! {
-                    __deser::__derive::FieldsSer(__deser::__derive::Vec::from([#tag_entry]))
-                        .into_chunk()
-                }
-            }
-            (Repr::Adjacent { tag, content }, _) => {
-                let tag_entry = tag_entry(tag);
+            Repr::Adjacent { tag, .. } if is_unit => quote! {
+                __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
+                    .into_chunk()
+            },
+            Repr::Adjacent { tag, content } => {
                 let content_handle = content_handle(info, container_attrs)?;
                 quote! {
                     __deser::__derive::FieldsSer(__deser::__derive::Vec::from([
-                        #tag_entry,
+                        (#tag, #tag_handle),
                         (#content, #content_handle),
                     ]))
                     .into_chunk()
                 }
             }
-            (Repr::Untagged, Kind::Unit) => {
-                quote! { __deser::ser::Chunk::Atom(__deser::Atom::Null) }
-            }
-            (Repr::Untagged, Kind::Newtype(_)) => quote! {
-                __deser::ser::Serialize::serialize(__f0, __state)?
+            Repr::Untagged => match info.content {
+                Content::Unit => quote! { __deser::ser::Chunk::Atom(__deser::Atom::Null) },
+                Content::Newtype(idx) => {
+                    let value = info.fields[idx].ser_value();
+                    quote! { __deser::ser::Serialize::serialize(#value, __state)? }
+                }
+                Content::Tuple(_) => {
+                    let handles = info.content_fields().into_iter().map(|x| x.ser_handle());
+                    quote! {
+                        __deser::__derive::SeqSer(__deser::__derive::Vec::from([#(#handles),*]))
+                            .into_chunk()
+                    }
+                }
+                Content::Struct(_) => {
+                    let fields = fields_ser(info, container_attrs, None)?;
+                    quote! { #fields.into_chunk() }
+                }
             },
-            (Repr::Untagged, Kind::Tuple(_)) => quote! {
-                __deser::__derive::SeqSer(__deser::__derive::Vec::from([
-                    #(__deser::ser::SerializeHandle::to(#bindings)),*
-                ]))
-                .into_chunk()
-            },
-            (Repr::Untagged, Kind::Struct(_)) => {
-                let fields = fields_ser(info, container_attrs, None)?;
-                quote! { #fields.into_chunk() }
-            }
         };
         arms.push(quote! { #pattern => #chunk, });
     }

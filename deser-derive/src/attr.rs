@@ -147,6 +147,40 @@ fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
     Ok(path)
 }
 
+/// Replaces `_` in an adapter type with the `Same` adapter.
+fn replace_infer(tokens: TokenStream) -> TokenStream {
+    tokens
+        .into_iter()
+        .flat_map(|token| -> TokenStream {
+            match token {
+                TokenTree::Ident(ref ident) if ident == "_" => {
+                    let span = ident.span();
+                    quote::quote_spanned! { span=> __deser::adapters::Same }
+                }
+                TokenTree::Group(group) => {
+                    let mut new_group =
+                        proc_macro2::Group::new(group.delimiter(), replace_infer(group.stream()));
+                    new_group.set_span(group.span());
+                    TokenTree::Group(new_group).into()
+                }
+                other => other.into(),
+            }
+        })
+        .collect()
+}
+
+/// Parses the value of `as = Type`.
+///
+/// `_` in the type is replaced with the `Same` adapter.
+fn parse_adapter(meta: &ParseNestedMeta) -> syn::Result<syn::Type> {
+    let ty: syn::Type = meta
+        .value()?
+        .parse()
+        .map_err(|err| syn::Error::new(err.span(), "expected an adapter type"))?;
+    reject_self(ty.to_token_stream())?;
+    syn::parse2(replace_infer(ty.to_token_stream()))
+}
+
 /// Parses `bound(T: Trait, U: Other)` into where predicates.
 fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<Vec<syn::WherePredicate>> {
     if !meta.input.peek(syn::token::Paren) {
@@ -417,10 +451,38 @@ impl<'a> ContainerAttrs<'a> {
     }
 }
 
-pub fn ensure_no_field_attrs(field: &syn::Field) -> syn::Result<()> {
-    parse_deser_attrs(&field.attrs, |_, meta| {
-        Err(meta.error("unsupported attribute"))
-    })
+/// The attributes of unnamed fields (of newtype structs and tuple variants).
+pub struct UnnamedFieldAttrs {
+    adapter: Option<syn::Type>,
+    tag: bool,
+}
+
+impl UnnamedFieldAttrs {
+    pub fn of(field: &syn::Field) -> syn::Result<UnnamedFieldAttrs> {
+        let mut rv = UnnamedFieldAttrs {
+            adapter: None,
+            tag: false,
+        };
+        parse_deser_attrs(&field.attrs, |name, meta| match name {
+            "as" => {
+                let value = parse_adapter(meta)?;
+                set_once(meta, name, &mut rv.adapter, value)
+            }
+            "tag" => set_flag(meta, name, &mut rv.tag),
+            _ => Err(meta.error("unsupported attribute")),
+        })?;
+        Ok(rv)
+    }
+
+    /// Returns the adapter of the field.
+    pub fn adapter(&self) -> Option<&syn::Type> {
+        self.adapter.as_ref()
+    }
+
+    /// Returns `true` if the field receives the tag of the variant.
+    pub fn tag(&self) -> bool {
+        self.tag
+    }
 }
 
 pub struct FieldAttrs<'a> {
@@ -430,6 +492,8 @@ pub struct FieldAttrs<'a> {
     default: Option<TypeDefault>,
     flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
+    adapter: Option<syn::Type>,
+    tag: bool,
 }
 
 impl<'a> FieldAttrs<'a> {
@@ -441,6 +505,8 @@ impl<'a> FieldAttrs<'a> {
             default: None,
             flatten: false,
             skip_serializing_if: None,
+            adapter: None,
+            tag: false,
         };
 
         parse_deser_attrs(&field.attrs, |name, meta| match name {
@@ -461,6 +527,11 @@ impl<'a> FieldAttrs<'a> {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.skip_serializing_if, value)
             }
+            "as" => {
+                let value = parse_adapter(meta)?;
+                set_once(meta, name, &mut rv.adapter, value)
+            }
+            "tag" => set_flag(meta, name, &mut rv.tag),
             _ => Err(meta.error("unsupported attribute")),
         })?;
 
@@ -468,6 +539,24 @@ impl<'a> FieldAttrs<'a> {
             return Err(syn::Error::new_spanned(
                 field,
                 "cannot combine flatten and default",
+            ));
+        }
+        if rv.flatten && rv.adapter.is_some() {
+            return Err(syn::Error::new_spanned(
+                field,
+                "cannot combine flatten and as",
+            ));
+        }
+        if rv.tag
+            && (rv.rename.is_some()
+                || !rv.aliases.is_empty()
+                || rv.default.is_some()
+                || rv.flatten
+                || rv.skip_serializing_if.is_some())
+        {
+            return Err(syn::Error::new_spanned(
+                field,
+                "tag fields only support the as attribute",
             ));
         }
 
@@ -508,6 +597,16 @@ impl<'a> FieldAttrs<'a> {
     pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
         self.skip_serializing_if.as_ref()
     }
+
+    /// Returns the adapter of the field.
+    pub fn adapter(&self) -> Option<&syn::Type> {
+        self.adapter.as_ref()
+    }
+
+    /// Returns `true` if the field receives the tag of the variant.
+    pub fn tag(&self) -> bool {
+        self.tag
+    }
 }
 
 pub struct EnumVariantAttrs<'a> {
@@ -515,6 +614,7 @@ pub struct EnumVariantAttrs<'a> {
     rename: Option<String>,
     aliases: Vec<String>,
     other: bool,
+    default: bool,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -524,6 +624,7 @@ impl<'a> EnumVariantAttrs<'a> {
             rename: None,
             aliases: Vec::new(),
             other: false,
+            default: false,
         };
 
         parse_deser_attrs(&variant.attrs, |name, meta| match name {
@@ -535,21 +636,22 @@ impl<'a> EnumVariantAttrs<'a> {
                 rv.aliases.push(parse_str(meta)?);
                 Ok(())
             }
-            "other" => {
-                set_flag(meta, name, &mut rv.other)?;
-                if !matches!(variant.fields, syn::Fields::Unit) {
-                    return Err(meta.error("other is only supported on unit variants"));
-                }
-                Ok(())
-            }
+            "other" => set_flag(meta, name, &mut rv.other),
+            "default" => set_flag(meta, name, &mut rv.default),
             _ => Err(meta.error("unsupported attribute")),
         })?;
 
         Ok(rv)
     }
 
+    /// Returns `true` if this is the catch-all variant for unknown tags.
     pub fn other(&self) -> bool {
         self.other
+    }
+
+    /// Returns `true` if this variant is used if the tag is missing.
+    pub fn default(&self) -> bool {
+        self.default
     }
 
     pub fn variant(&self) -> &syn::Variant {

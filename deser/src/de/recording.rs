@@ -1,7 +1,8 @@
-use crate::de::{DeserializeDriver, Sink, SinkHandle};
-use crate::error::Error;
+use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
 use crate::extensions::Snapshot;
+use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use crate::State;
 
 /// A recorded value that can be replayed into a sink later.
@@ -41,6 +42,27 @@ use crate::State;
 ///         .unwrap();
 /// }
 /// assert_eq!(out, Some(vec![1, 2]));
+/// ```
+///
+/// # Raw Values
+///
+/// Recordings implement [`Deserialize`] and [`Serialize`].  This makes them
+/// usable as raw values that capture any value without interpreting it, for
+/// instance for the content of `#[deser(other)]` enum variants.  When
+/// serialized the recorded events are emitted again, including the event
+/// data attached to them (see [`State::event`]).  This means that format
+/// specific information carried as event data (for instance CBOR tags)
+/// survives a round trip through a recording.
+///
+/// ```
+/// use deser::de::Recording;
+/// use deser::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// pub struct Envelope {
+///     kind: String,
+///     payload: Recording,
+/// }
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Recording {
@@ -128,6 +150,14 @@ impl Recording {
             end: None,
             then: Some(Box::new(then)),
         })
+    }
+
+    /// Records a single atom, discarding a previously recorded value.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
+    pub(crate) fn set_atom(&mut self, atom: &Atom<'_>, state: &State) {
+        self.events.clear();
+        self.is_map_key = false;
+        record(self, true, Event::Atom(atom.to_static()), state);
     }
 
     /// Returns `true` if nothing was recorded.
@@ -295,5 +325,133 @@ impl<'a> Sink for Recorder<'a> {
             self.record(end, state);
         }
         Ok(())
+    }
+}
+
+/// Recordings are compared by their events.
+///
+/// The event data and the replayable extensions captured with the events
+/// are not compared.
+impl PartialEq for Recording {
+    fn eq(&self, other: &Self) -> bool {
+        self.events.len() == other.events.len()
+            && self
+                .events
+                .iter()
+                .zip(other.events.iter())
+                .all(|(a, b)| a.0 == b.0)
+    }
+}
+
+impl Deserialize for Recording {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_> {
+        Recording::capture(move |recording, _state| {
+            *out = Some(recording);
+            Ok(())
+        })
+    }
+}
+
+type RecordedEvent = (Event<'static>, Snapshot);
+
+/// Returns the number of events of the value the events start with.
+fn value_len(events: &[RecordedEvent]) -> usize {
+    let mut depth = 0usize;
+    for (index, (event, _)) in events.iter().enumerate() {
+        match event {
+            Event::MapStart | Event::SeqStart => depth += 1,
+            Event::MapEnd | Event::SeqEnd => depth = depth.saturating_sub(1),
+            Event::Atom(_) => {}
+        }
+        if depth == 0 {
+            return index + 1;
+        }
+    }
+    events.len()
+}
+
+/// A recorded value that is serialized.
+struct RecordedValue<'a>(&'a [RecordedEvent]);
+
+impl<'a> RecordedValue<'a> {
+    fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        let events = self.0;
+        let (first, snapshot) = match events.first() {
+            Some(first) => first,
+            None => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "cannot serialize an empty recording",
+                ))
+            }
+        };
+        state.extensions_mut().restore_event_data(snapshot);
+        let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
+        Ok(match first {
+            Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
+            Event::MapStart => Chunk::Map(Box::new(RecordedEmitter {
+                rest: inner,
+                current: RecordedValue(&[]),
+            })),
+            Event::SeqStart => Chunk::Seq(Box::new(RecordedEmitter {
+                rest: inner,
+                current: RecordedValue(&[]),
+            })),
+            Event::MapEnd | Event::SeqEnd => {
+                return Err(Error::new(ErrorKind::Unexpected, "malformed recording"))
+            }
+        })
+    }
+}
+
+impl<'a> Serialize for RecordedValue<'a> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        self.chunk(state)
+    }
+}
+
+/// Emits the values of a recorded map or sequence.
+struct RecordedEmitter<'a> {
+    rest: &'a [RecordedEvent],
+    current: RecordedValue<'a>,
+}
+
+impl<'a> RecordedEmitter<'a> {
+    fn next_value(&mut self) -> Option<SerializeHandle<'_>> {
+        if self.rest.is_empty() {
+            return None;
+        }
+        let len = value_len(self.rest);
+        let (value, rest) = self.rest.split_at(len);
+        self.current = RecordedValue(value);
+        self.rest = rest;
+        Some(SerializeHandle::to(&self.current))
+    }
+}
+
+impl<'a> SeqEmitter for RecordedEmitter<'a> {
+    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.next_value())
+    }
+}
+
+impl<'a> MapEmitter for RecordedEmitter<'a> {
+    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.next_value())
+    }
+
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
+        RecordedEmitter::next_value(self)
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "malformed recording"))
+    }
+}
+
+impl Serialize for Recording {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        RecordedValue(&self.events).chunk(state)
+    }
+
+    fn is_optional(&self) -> bool {
+        matches!(self.events.as_slice(), [(Event::Atom(Atom::Null), _)])
     }
 }

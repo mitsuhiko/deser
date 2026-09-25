@@ -140,6 +140,13 @@
 //! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the
 //!   parent struct.  Note that flattening only works with structs (more specifically with string) keys.
 //!   This feature is enabled by [`value_for_key`](crate::de::Sink::value_for_key).
+//! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
+//!   adapter instead of the field type's own implementation.  `_` in the
+//!   adapter stands for the type's own implementation.  See
+//!   [adapters](#adapters).
+//!
+//! The field of newtype structs and the fields of newtype and tuple variants
+//! support `as` as well.
 //!
 //! ## Enum Variant Attributes
 //!
@@ -148,11 +155,94 @@
 //! * `#[deser(rename = "...")]`: renames the enum variant.
 //! * `#[deser(alias = "...")]`: provides an alias for the variant name for deserialization.  This is ignored
 //!   for serialization.
-//! * `#[deser(other)]`: marks a unit variant as catch-all for unknown variant
-//!   names during deserialization (not supported for untagged enums).
+//! * `#[deser(other)]`: marks a variant as catch-all for unknown tags during
+//!   deserialization (not supported for untagged enums).  See
+//!   [other variants](#other-variants).
+//! * `#[deser(default)]`: marks the variant that is used if the tag is missing.
+//!   This is only supported for internally and adjacently tagged enums.  The
+//!   variant can also be marked as `other`.
 //!
 //! The fields of struct variants support the same attributes as struct fields,
 //! except for `flatten` which is only supported for deserialization.
+//!
+//! ## Adapters
+//!
+//! Adapters customize how a field is serialized and deserialized (see
+//! [`adapters`](crate::adapters)).  They compose with containers: to use an
+//! adapter for the values of an optional map, the adapter is wrapped in the
+//! same containers:
+//!
+//! ```
+//! use std::collections::BTreeMap;
+//! use std::net::IpAddr;
+//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::DisplayFromStr;
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Hosts {
+//!     #[deser(as = DisplayFromStr)]
+//!     primary: IpAddr,
+//!     #[deser(as = Option<BTreeMap<_, DisplayFromStr>>)]
+//!     named: Option<BTreeMap<String, IpAddr>>,
+//! }
+//! ```
+//!
+//! Missing values are handled by the adapter, `Option<U>` makes missing
+//! fields `None` like `Option<T>` does.  Type parameters that only appear in
+//! fields with adapters do not need to implement [`Serialize`](crate::Serialize)
+//! or [`Deserialize`](crate::Deserialize), instead the adapter needs to
+//! support the field type.
+//!
+//! ## Other Variants
+//!
+//! The variant marked with `#[deser(other)]` receives all tags that do not
+//! belong to a known variant.  This includes tags that are not strings.  The
+//! variant can capture the tag in a field marked with `#[deser(tag)]`, the
+//! tag field can be of any type that can be deserialized from the tag and it
+//! can use an adapter.  All other fields make up the content of the variant
+//! which follows the regular rules: a single remaining unnamed field is a
+//! newtype, multiple are a tuple and named fields are a struct.  If there are
+//! no remaining fields, the content is ignored.
+//!
+//! When serialized, the value of the tag field is used as tag which means
+//! that such values round trip.  To capture content without interpreting it,
+//! [`Recording`](crate::de::Recording) can be used:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//! use deser::de::Recording;
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(rename_all = "snake_case")]
+//! pub enum Kind {
+//!     Bash,
+//!     Zsh,
+//!     #[deser(other)]
+//!     Other(#[deser(tag)] String),
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "type", rename_all = "snake_case")]
+//! pub enum Event {
+//!     Click { x: u32, y: u32 },
+//!     #[deser(other)]
+//!     Unknown(#[deser(tag)] String, Recording),
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "type", rename_all = "snake_case")]
+//! pub enum Bind {
+//!     // used if the type is missing
+//!     #[deser(default)]
+//!     Http { address: String },
+//!     Tls { address: String, cert: String },
+//! }
+//! ```
+//!
+//! Only unknown and missing tags go to the other and default variants: known
+//! tags with invalid content are errors.  Variants with content that are
+//! represented by their tag alone (for instance a string for an externally
+//! tagged enum) receive null as content.
 //!
 //! ## Bounds
 //!

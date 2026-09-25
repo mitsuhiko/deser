@@ -1,12 +1,32 @@
 use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 
-use crate::attr::{
-    ensure_no_field_attrs, ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault,
-};
-use crate::bound::{where_clause_with_bound, with_lifetime_bound};
+use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault, UnnamedFieldAttrs};
+use crate::bound::{where_clause_for_fields, with_lifetime_bound, BoundField};
+
+/// Returns an expression that creates a sink handle for a slot.
+fn deserialize_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
+    match adapter {
+        // spanned so that errors about unsupported types point to the adapter
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<#ty>>::deserialize_into_as(#slot)
+        },
+        None => quote! { __deser::Deserialize::deserialize_into(#slot) },
+    }
+}
+
+/// Returns an expression that deserializes an atom into a slot.
+fn atom_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<#ty>>::__private_atom_into_as(#slot, __atom, __state)
+        },
+        None => quote! { __deser::__derive::atom_into(#slot, __atom, __state) },
+    }
+}
 
 pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     match &input.data {
@@ -34,6 +54,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
+    if let Some(attrs) = attrs.iter().find(|x| x.tag()) {
+        return Err(syn::Error::new_spanned(
+            attrs.field(),
+            "tag fields are only supported in other variants of enums",
+        ));
+    }
     let fieldname = attrs.iter().map(|x| &x.field().ident).collect::<Vec<_>>();
     let sink_fieldname = attrs
         .iter()
@@ -70,9 +96,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     __deser::__derive::None
                 }
+            } else if let Some(adapter) = f.adapter() {
+                let ty = &f.field().ty;
+                quote! {
+                    <#adapter as __deser::adapters::DeserializeAs<#ty>>::initial_value_as()
+                }
             } else {
                 quote! {
-                    __deser::de::Deserialize::__private_initial_value()
+                    __deser::de::Deserialize::initial_value()
                 }
             }
         })
@@ -107,17 +138,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 seen_names.insert(alias.clone());
                 rv = quote! { #rv | #alias };
             }
+            let ty = &x.field().ty;
+            let sink = deserialize_into(ty, x.adapter(), quote! { &mut self.#fieldname });
+            let atom = atom_into(ty, x.adapter(), quote! { &mut self.#fieldname });
             key_matcher.push(quote! {
                 #rv => __Key::Field(#index),
             });
             key_dispatch.push(quote! {
-                __Key::Field(#index) => __deser::Deserialize::deserialize_into(&mut self.#fieldname),
+                __Key::Field(#index) => #sink,
             });
             key_atom_dispatch.push(quote! {
-                __Key::Field(#index) => __deser::__derive::atom_into(&mut self.#fieldname, __atom, __state),
+                __Key::Field(#index) => #atom,
             });
             Some(quote! {
-                #rv => return __deser::__derive::Ok(__deser::__derive::Some(__deser::Deserialize::deserialize_into(&mut self.#fieldname))),
+                #rv => return __deser::__derive::Ok(__deser::__derive::Some(#sink)),
             })
         })
         .collect::<Vec<_>>();
@@ -131,9 +165,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(__deser::Deserialize);
-    let bounded_where_clause =
-        where_clause_with_bound(&input.generics, bound, container_attrs.deserialize_bound());
+    let bounded_where_clause = where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Deserialize),
+        None,
+        quote!(__deser::adapters::DeserializeAs),
+        container_attrs.deserialize_bound(),
+        &attrs
+            .iter()
+            .map(|x| BoundField {
+                ty: &x.field().ty,
+                adapter: x.adapter(),
+            })
+            .collect::<Vec<_>>(),
+    );
 
     let field_stage1_default = attrs
         .iter()
@@ -491,16 +536,39 @@ pub fn derive_enum(
         ));
     }
 
-    let fallback = match attrs.iter().find(|x| x.other()) {
+    if let Some(attrs) = attrs.iter().find(|x| x.default()) {
+        return Err(syn::Error::new_spanned(
+            attrs.variant(),
+            "default variants are only supported for internally and adjacently tagged enums",
+        ));
+    }
+
+    let (fallback, non_str_fallback) = match attrs.iter().find(|x| x.other()) {
         Some(other) => {
             let var_ident = &other.variant().ident;
-            quote! { #ident::#var_ident }
-        }
-        None => quote! {
-            return __deser::__derive::Err(
-                __deser::Error::new(__deser::ErrorKind::Unexpected, "unexpected value for enum")
+            (
+                quote! { #ident::#var_ident },
+                // other atoms are unknown tags too, extension values are
+                // lowered first.
+                quote! {
+                    __other @ __deser::Atom::Ext(_) => return self.unexpected_atom(__other, __state),
+                    _ => {
+                        self.slot = __deser::__derive::Some(#ident::#var_ident);
+                        return __deser::__derive::Ok(());
+                    }
+                },
             )
-        },
+        }
+        None => (
+            quote! {
+                return __deser::__derive::Err(
+                    __deser::Error::new(__deser::ErrorKind::Unexpected, "unexpected value for enum")
+                )
+            },
+            quote! {
+                __other => return self.unexpected_atom(__other, __state),
+            },
+        ),
     };
     if attrs.iter().filter(|x| x.other()).count() > 1 {
         return Err(syn::Error::new(
@@ -556,7 +624,7 @@ pub fn derive_enum(
                 ) -> __deser::__derive::Result<()> {
                     let s = match __atom {
                         __deser::Atom::Str(ref s) => &s as &__deser::__derive::str,
-                        __other => return self.unexpected_atom(__other, __state),
+                        #non_str_fallback
                     };
                     let value = match s {
                         #( #matcher => #ident::#var_idents, )*
@@ -579,15 +647,35 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let container_attrs = ContainerAttrs::of(input)?;
     let _type_name = container_attrs.container_name();
 
-    ensure_no_field_attrs(field)?;
+    let field_attrs = UnnamedFieldAttrs::of(field)?;
+    if field_attrs.tag() {
+        return Err(syn::Error::new_spanned(
+            field,
+            "tag fields are only supported in other variants of enums",
+        ));
+    }
+    let adapter = field_attrs.adapter();
 
     let field_type = &field.ty;
+    let make_sink = match adapter {
+        Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
+        None => quote! { __deser::de::OwnedSink::deserialize() },
+    };
+    let atom_into = atom_into(field_type, adapter, quote! { &mut __inner });
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bound = syn::parse_quote!(__deser::Deserialize);
-    let bounded_where_clause =
-        where_clause_with_bound(&input.generics, bound, container_attrs.deserialize_bound());
+    let bounded_where_clause = where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Deserialize),
+        None,
+        quote!(__deser::adapters::DeserializeAs),
+        container_attrs.deserialize_bound(),
+        &[BoundField {
+            ty: field_type,
+            adapter,
+        }],
+    );
 
     Ok(quote! {
         const _: () = {
@@ -603,7 +691,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 ) -> __deser::de::SinkHandle<'_> {
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
-                        sink: __deser::de::OwnedSink::deserialize(),
+                        sink: #make_sink,
                     })
                 }
 
@@ -614,7 +702,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
                     let mut __inner = __deser::__derive::None;
-                    <#field_type as __deser::de::Deserialize>::__private_atom_into(&mut __inner, __atom, __state)?;
+                    #atom_into?;
                     *__slot = __inner.map(#ident);
                     __deser::__derive::Ok(())
                 }

@@ -677,3 +677,99 @@ fn test_drive() {
     drop_node(rv);
     drop_node(node);
 }
+
+#[derive(Debug, Clone, PartialEq)]
+struct Converted(String, Vec<String>);
+
+impl From<Inner> for Converted {
+    fn from(value: Inner) -> Converted {
+        Converted(value.name, value.tags)
+    }
+}
+
+impl From<Converted> for Inner {
+    fn from(value: Converted) -> Inner {
+        Inner {
+            name: value.0,
+            tags: value.1,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[deser(tag = "type")]
+enum ForwardingTagged {
+    A(#[deser(as = deser::adapters::FromInto<Inner>)] Converted),
+    #[deser(other)]
+    Other(#[deser(tag)] String, deser::de::Recording),
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+struct WithAdapters {
+    #[deser(as = Vec<deser::adapters::FromInto<Inner>>)]
+    converted: Vec<Converted>,
+    #[deser(as = deser::adapters::VecSkipError)]
+    skipping: Vec<Inner>,
+    #[deser(as = deser::adapters::DefaultOnError)]
+    lenient: Inner,
+    tagged: Vec<ForwardingTagged>,
+}
+
+#[test]
+fn test_adapters_and_forwarding() {
+    let value = WithAdapters {
+        converted: vec![
+            Converted("a".into(), vec!["x".into()]),
+            Converted("b".into(), vec![]),
+        ],
+        skipping: vec![Inner {
+            name: "c".into(),
+            tags: vec!["y".into()],
+        }],
+        lenient: Inner {
+            name: "d".into(),
+            tags: vec![],
+        },
+        tagged: vec![
+            ForwardingTagged::A(Converted("e".into(), vec!["z".into()])),
+            ForwardingTagged::Other("f".into(), {
+                let mut out = None;
+                {
+                    let mut driver = DeserializeDriver::new(&mut out);
+                    for event in [Event::MapStart, "k".into(), "v".into(), Event::MapEnd] {
+                        driver.emit(event).unwrap();
+                    }
+                }
+                out.unwrap()
+            }),
+        ],
+    };
+
+    let mut expected = Vec::new();
+    {
+        let mut driver = SerializeDriver::new(&value);
+        while let Some((event, _, _)) = driver.next().unwrap() {
+            expected.push(event.to_static());
+        }
+    }
+    let step = if cfg!(miri) { 7 } else { 1 };
+    for skip in (0..=expected.len()).step_by(step) {
+        assert_eq!(drive_events(&value, skip, None).unwrap(), expected);
+    }
+    for abort in (0..expected.len()).step_by(step) {
+        assert!(drive_events(&value, 0, Some(abort)).is_err());
+    }
+
+    assert_eq!(emit_partial::<WithAdapters>(&expected).unwrap(), value);
+    for cut in (0..expected.len()).step_by(step) {
+        assert!(emit_partial::<WithAdapters>(&expected[..cut]).is_none());
+    }
+    for idx in (0..expected.len()).step_by(step) {
+        let mut events = expected.clone();
+        events[idx] = match events[idx] {
+            Event::Atom(Atom::Str(_)) => Event::Atom(Atom::Bool(true)),
+            _ => Event::Atom(Atom::Str("unexpected".into())),
+        };
+        let _ = catch_unwind(AssertUnwindSafe(|| emit_partial::<WithAdapters>(&events)));
+    }
+}

@@ -116,3 +116,40 @@ Serde depends on recursion for serialization as well as deserialization. E very
 level of nesting in your data means more stack usage until eventually you
 overflow the stack. Some formats set a cap on nesting depth to prevent stack
 overflows and just refuse to deserialize deeply nested data.
+
+## Composable Field Customization
+
+Serde customizes fields with `#[serde(with = "module")]` and
+`#[serde(deserialize_with = "function")]`.  Functions cannot be passed as type
+parameters, so this does not compose: a custom deserializer for `T` cannot be
+used for an `Option<T>`, a `Vec<T>` or the values of a map without writing
+another function.  Using `deserialize_with` on an optional field also makes the
+field required unless `#[serde(default)]` is added as well.
+
+Deser's `Deserialize` trait never takes `self`, it creates a sink for a slot.
+This makes it possible to express customizations as adapter types
+(`SerializeAs` and `DeserializeAs`) that create sinks for slots of other
+types.  The standard containers are adapters for the same containers holding
+other types, so `#[deser(as = Option<Vec<DisplayFromStr>>)]` works without
+extra code, and missing fields are handled by the adapter.
+
+**Related issues:**
+
+* [serde: Using de/serialize_with inside of an Option, Map, Vec #723](https://github.com/serde-rs/serde/issues/723)
+
+## Catch-All Variants
+
+Serde's `#[serde(other)]` only supports unit variants and does not work for
+the map form of externally tagged enums.  The unknown tag is lost which means
+that values do not round trip.
+
+In deser the `#[deser(other)]` variant can be any variant.  A field marked
+with `#[deser(tag)]` receives the unknown tag (which does not need to be a
+string) and is used as tag when serializing, the remaining fields receive the
+content.  Together with `Recording` as raw value, unknown variants can be
+passed through losslessly.  `#[deser(default)]` marks the variant used when
+the tag is missing.
+
+**Related issues:**
+
+* [serde: Tagged enums should support #[serde(other)] #912](https://github.com/serde-rs/serde/issues/912)
