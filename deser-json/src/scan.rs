@@ -187,6 +187,32 @@ pub fn find_escape(input: &[u8]) -> usize {
     len
 }
 
+/// Checks if the bytes are ASCII.
+///
+/// Most strings are short, these are checked with (possibly overlapping)
+/// word sized loads.
+#[inline(always)]
+pub fn is_ascii(bytes: &[u8]) -> bool {
+    let len = bytes.len();
+    if len > 16 {
+        bytes.is_ascii()
+    } else if len >= 8 {
+        (load_u64(bytes, 0) | load_u64(bytes, len - 8)) & 0x8080_8080_8080_8080 == 0
+    } else if len >= 4 {
+        (load_u32(bytes, 0) | load_u32(bytes, len - 4)) & 0x8080_8080 == 0
+    } else if len > 0 {
+        (bytes[0] | bytes[len / 2] | bytes[len - 1]) < 0x80
+    } else {
+        true
+    }
+}
+
+/// Checks if the bytes are valid UTF-8.
+#[inline]
+pub fn validate_utf8_slice(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).is_ok()
+}
+
 const CT: bool = true; // control character \x00..=\x1F
 const QU: bool = true; // quote \x22
 const BS: bool = true; // backslash \x5C
@@ -214,6 +240,19 @@ static ESCAPE: [bool; 256] = [
      O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O, // E
      O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O,  O, // F
 ];
+
+#[test]
+fn test_is_ascii() {
+    for len in 0..40 {
+        let mut bytes = vec![b'a'; len];
+        assert!(is_ascii(&bytes));
+        for idx in 0..len {
+            bytes[idx] = 0xc3;
+            assert!(!is_ascii(&bytes), "{} {}", len, idx);
+            bytes[idx] = b'a';
+        }
+    }
+}
 
 #[test]
 fn test_find_escape() {

@@ -43,6 +43,18 @@ fn test_spans() {
 }
 
 #[test]
+fn test_spans_from_slice() {
+    let doc: Doc = deser_json::Deserializer::from_slice(INPUT.as_bytes())
+        .track_locations(true)
+        .deserialize()
+        .unwrap();
+    let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
+    assert_eq!(span(doc.name.span), "2:11-2:17");
+    assert_eq!(span(doc.unicode.span), "5:14-5:21");
+    assert_eq!(doc.unicode.value, "äöü\n");
+}
+
+#[test]
 fn test_no_tracking() {
     let doc: Doc = deser_json::from_str(INPUT).unwrap();
     assert!(doc.name.span.is_none());

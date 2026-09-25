@@ -381,3 +381,53 @@ fn test_enum_representations() {
         vec![External::Point(1, -2), External::Name { first: "x".into() }]
     );
 }
+
+#[test]
+fn test_from_slice() {
+    use deser_json::from_slice;
+
+    let x: Vec<u32> = from_slice(b"[1, 2, 3]").unwrap();
+    assert_eq!(x, vec![1, 2, 3]);
+
+    // valid UTF-8 in plain and escaped strings
+    let x: Vec<String> =
+        from_slice("[\"\u{fc}ber\", \"\u{6c34}\\n\u{10151}\", \"\\u00e4\u{e4}\"]".as_bytes())
+            .unwrap();
+    assert_eq!(x, vec!["\u{fc}ber", "\u{6c34}\n\u{10151}", "\u{e4}\u{e4}"]);
+    let map: std::collections::BTreeMap<String, u32> =
+        from_slice("{\"\u{e4}\": 1}".as_bytes()).unwrap();
+    assert_eq!(map["\u{e4}"], 1);
+
+    // invalid UTF-8 in strings of all lengths, with and without escapes
+    for len in 0..40 {
+        let s = "a".repeat(len);
+        for bad in [&b"\xff"[..], b"\xc3", b"\xe6\xb0", b"\xed\xa0\x80", b"\x80"] {
+            for (prefix, suffix) in [("", ""), ("\\n", ""), ("", "\\n")] {
+                let mut input = format!("\"{}{}", prefix, s).into_bytes();
+                input.extend_from_slice(bad);
+                input.extend_from_slice(format!("{}\"", suffix).as_bytes());
+                let err = from_slice::<String>(&input).unwrap_err();
+                assert!(err.to_string().contains("utf-8"), "{:?}: {}", input, err);
+                // map keys too
+                let mut key = b"{".to_vec();
+                key.extend_from_slice(&input);
+                key.extend_from_slice(b": 1}");
+                assert!(from_slice::<std::collections::BTreeMap<String, u32>>(&key).is_err());
+            }
+        }
+    }
+
+    // a sequence split by an escape is invalid even if the escape decodes
+    // to bytes that could complete it
+    assert!(from_slice::<String>(b"\"\xc3\\u00a9\"").is_err());
+
+    // non-ASCII bytes outside of strings are rejected
+    assert!(from_slice::<Vec<u32>>(b"[1,\xc2\xa0 2]").is_err());
+    assert!(from_slice::<Vec<u32>>(b"[1]\xff").is_err());
+    assert!(from_slice::<bool>(b"tru\xc3").is_err());
+    assert!(from_slice::<u32>(b"1\xff").is_err());
+
+    // from_str is unaffected
+    let x: String = from_str("\"\u{fc}\"").unwrap();
+    assert_eq!(x, "\u{fc}");
+}

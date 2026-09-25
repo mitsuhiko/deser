@@ -6,7 +6,7 @@ use deser::Atom;
 use deser::Event;
 use deser::{Error, ErrorKind};
 
-use crate::scan::skip_to_escape;
+use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
 
 enum Number<'a> {
     I64(i64),
@@ -31,8 +31,8 @@ pub struct Deserializer<'a> {
     // the offset where the last token started
     #[cfg(feature = "locations")]
     token_start: usize,
-    #[cfg(feature = "locations")]
-    source: &'a str,
+    // `true` if the input is a byte slice which needs to be validated
+    validate_utf8: bool,
     #[cfg(feature = "locations")]
     track_locations: bool,
 }
@@ -51,14 +51,26 @@ impl<'a> Deserializer<'a> {
             // the parser works on bytes but relies on the input being valid
             // UTF-8 when it hands out string slices.
             input: input.as_bytes(),
+            validate_utf8: false,
             pos: 0,
             buffer: Vec::new(),
             #[cfg(feature = "locations")]
             token_start: 0,
             #[cfg(feature = "locations")]
-            source: input,
-            #[cfg(feature = "locations")]
             track_locations: false,
+        }
+    }
+
+    /// Creates a new deserializer for a byte slice.
+    ///
+    /// The input is not validated upfront.  Instead strings are validated as
+    /// UTF-8 when they are parsed (bytes outside of strings are only ever
+    /// accepted if they are ASCII).  Invalid UTF-8 is an error.
+    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer {
+            input,
+            validate_utf8: true,
+            ..Deserializer::new("")
         }
     }
 
@@ -72,6 +84,19 @@ impl<'a> Deserializer<'a> {
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
         self
+    }
+
+    /// Returns the input as string for the source map.
+    #[cfg(feature = "locations")]
+    fn source(&self) -> std::borrow::Cow<'a, str> {
+        if self.validate_utf8 {
+            // invalid UTF-8 fails the parsing when reached, the offsets of
+            // the tokens before it are not affected by the replacements.
+            String::from_utf8_lossy(self.input)
+        } else {
+            // SAFETY: the input was created from a string
+            std::borrow::Cow::Borrowed(unsafe { str::from_utf8_unchecked(self.input) })
+        }
     }
 
     /// Publishes the offsets of the token that was parsed last.
@@ -108,7 +133,7 @@ impl<'a> Deserializer<'a> {
         let rv = if self.track_locations {
             deser_location::Locations::set_source_map(
                 driver.state_mut(),
-                std::sync::Arc::new(deser_location::SourceMap::new(self.source)),
+                std::sync::Arc::new(deser_location::SourceMap::new(self.source())),
             );
             self.drive_impl::<true>(driver, &mut buffer)
         } else {
@@ -323,13 +348,24 @@ impl<'a> Deserializer<'a> {
     where
         'a: 'b,
     {
-        fn result(bytes: &[u8]) -> &str {
-            // SAFETY: the input is valid UTF-8 as it comes from a `&str`.  The
-            // borrowed slices start and end at ASCII characters (quotes and
-            // backslashes) so they are valid UTF-8 too.  The \u-escapes are
-            // validated when they are decoded into the buffer.
-            unsafe { str::from_utf8_unchecked(bytes) }
-        }
+        let validate_utf8 = self.validate_utf8;
+        let result = move |bytes: &'b [u8]| -> Result<&'b str, Error> {
+            // Strings in byte slices are validated here.  Bytes outside of
+            // strings are only accepted if they are ASCII so this validates
+            // the entire input.  The decoded escapes are valid UTF-8 and
+            // cannot complete an invalid sequence before them as they never
+            // start with a continuation byte, so validating the unescaped
+            // string is equivalent to validating the raw one.
+            if validate_utf8 && !is_ascii(bytes) && !validate_utf8_slice(bytes) {
+                return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+            }
+            // SAFETY: the input is valid UTF-8 as it comes from a `&str` or
+            // was validated above.  The borrowed slices start and end at
+            // ASCII characters (quotes and backslashes) so they are valid
+            // UTF-8 too.  The \u-escapes are validated when they are decoded
+            // into the buffer.
+            Ok(unsafe { str::from_utf8_unchecked(bytes) })
+        };
 
         // Index of the first byte not yet copied into the scratch space.
         let mut start = self.pos;
@@ -350,11 +386,11 @@ impl<'a> Deserializer<'a> {
                         // copying.
                         let borrowed = &self.input[start..self.pos];
                         self.pos += 1;
-                        return Ok(result(borrowed));
+                        return result(borrowed);
                     } else {
                         buffer.extend_from_slice(&self.input[start..self.pos]);
                         self.pos += 1;
-                        return Ok(result(buffer));
+                        return result(buffer);
                     }
                 }
                 b'\\' => {
@@ -843,4 +879,12 @@ fn emit_big_int(driver: &mut DeserializeDriver, text: &str) -> Result<(), Error>
 /// Deserializes JSON from the given string.
 pub fn from_str<T: Deserialize>(s: &str) -> Result<T, Error> {
     Deserializer::new(s).deserialize()
+}
+
+/// Deserializes JSON from the given bytes.
+///
+/// The input must be UTF-8.  Rather than validating the input upfront, the
+/// strings are validated while parsing (see [`Deserializer::from_slice`]).
+pub fn from_slice<T: Deserialize>(bytes: &[u8]) -> Result<T, Error> {
+    Deserializer::from_slice(bytes).deserialize()
 }

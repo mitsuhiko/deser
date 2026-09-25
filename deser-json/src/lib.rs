@@ -10,13 +10,23 @@
 //! assert_eq!(json, "[1,2,3,4]");
 //! ```
 //!
+//! Besides strings, JSON can also be parsed from byte slices with
+//! [`from_slice`].  In that case the input is validated as UTF-8 while it is
+//! parsed rather than upfront:
+//!
+//! ```rust
+//! let vec: Vec<String> = deser_json::from_slice(b"[\"a\", \"b\"]").unwrap();
+//! assert_eq!(vec, ["a", "b"]);
+//! assert!(deser_json::from_slice::<String>(b"\"\xff\"").is_err());
+//! ```
+//!
 //! By default this crate has no dependency crates other than `deser`, but optionally
-//! the `speedups` feature can be enabled in which case this also uses `ryu` and `itoa`
-//! crates are used for number formatting.
+//! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
+//! used for number formatting.
 mod buf;
 mod de;
 mod scan;
 mod ser;
 
-pub use self::de::{from_str, Deserializer};
+pub use self::de::{from_slice, from_str, Deserializer};
 pub use self::ser::{to_string, Serializer};
