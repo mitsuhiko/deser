@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 use deser::de::{Deserialize, DeserializeDriver};
@@ -47,6 +47,9 @@ pub struct Deserializer<'a> {
     version: Version,
     max_depth: Option<usize>,
     alias_limit: usize,
+    merge_keys: bool,
+    /// The input contains `<<`.  Otherwise there cannot be merge keys.
+    has_merge_marker: bool,
     #[cfg(feature = "locations")]
     track_locations: bool,
     doc: Document<'a>,
@@ -87,11 +90,24 @@ struct Document<'a> {
     nodes: Vec<Node<'a>>,
     /// The anchors and the range of their nodes in `nodes`.
     anchors: HashMap<Cow<'a, str>, (usize, usize)>,
-    /// The anchored collections that are currently recorded: the name,
-    /// the start of the recording and the depth of the collection.
-    open: Vec<(Cow<'a, str>, usize, usize)>,
+    /// The collections that are currently recorded.
+    open: Vec<OpenNode<'a>>,
+    /// The range of the last collection that was captured (recorded
+    /// without anchor, for merge keys).
+    captured: Option<(usize, usize)>,
     /// The depth of the collections from the parser (without aliases).
     depth: usize,
+}
+
+/// A collection that is being recorded.
+struct OpenNode<'a> {
+    anchor: Option<Cow<'a, str>>,
+    /// The index of the start node in the recording.
+    start: usize,
+    /// The depth of the collection.
+    depth: usize,
+    /// The range should be stored in `captured` when the collection ends.
+    capture: bool,
 }
 
 impl<'a> Document<'a> {
@@ -100,11 +116,15 @@ impl<'a> Document<'a> {
         self.nodes.clear();
         self.anchors.clear();
         self.open.clear();
+        self.captured = None;
         self.depth = 0;
     }
 
     /// Turns a parser event into a node and records anchors.
-    fn record(&mut self, event: YamlEvent<'a>) -> Result<Node<'a>, Error> {
+    ///
+    /// If `capture` is set, a collection is recorded even without anchor
+    /// and its range is stored in `captured` once it ends.
+    fn record(&mut self, event: YamlEvent<'a>, capture: bool) -> Result<Node<'a>, Error> {
         let start = event.start;
         let end = event.end.offset;
         let is_map = matches!(event.kind, EventKind::MappingStart { .. });
@@ -142,14 +162,20 @@ impl<'a> Document<'a> {
                 if !self.open.is_empty() {
                     self.nodes.push(node.clone());
                     let depth = self.depth + 1;
-                    if let Some((name, start, _)) = self.open.pop_if(|x| x.2 == depth) {
-                        self.anchors.insert(name, (start, self.nodes.len()));
+                    if let Some(open) = self.open.pop_if(|x| x.depth == depth) {
+                        let range = (open.start, self.nodes.len());
+                        if let Some(name) = open.anchor {
+                            self.anchors.insert(name, range);
+                        }
+                        if open.capture {
+                            self.captured = Some(range);
+                        }
                     }
                 }
                 return Ok(node);
             }
             EventKind::Alias { anchor } => {
-                if self.open.iter().any(|x| x.0 == anchor) {
+                if self.open.iter().any(|x| x.anchor.as_ref() == Some(&anchor)) {
                     return Err(error_at(start, "recursive alias"));
                 }
                 let range = match self.anchors.get(&anchor) {
@@ -165,21 +191,142 @@ impl<'a> Document<'a> {
             _ => unreachable!("unexpected event in document"),
         };
 
-        match anchor {
-            Some(name) => {
-                let index = self.nodes.len();
-                self.nodes.push(node.clone());
-                if let Node::Start { .. } = node {
-                    self.open.push((name, index, self.depth));
-                } else {
-                    self.anchors.insert(name, (index, index + 1));
-                }
+        let is_start = matches!(node, Node::Start { .. });
+        if anchor.is_some() || (capture && is_start) || !self.open.is_empty() {
+            let index = self.nodes.len();
+            self.nodes.push(node.clone());
+            if is_start && (anchor.is_some() || capture) {
+                self.open.push(OpenNode {
+                    anchor,
+                    start: index,
+                    depth: self.depth,
+                    capture,
+                });
+            } else if let Some(name) = anchor {
+                self.anchors.insert(name, (index, index + 1));
             }
-            None if !self.open.is_empty() => self.nodes.push(node.clone()),
-            None => {}
         }
         Ok(node)
     }
+
+    /// Returns the index after the recorded node that starts at `index`.
+    fn node_end(&self, index: usize) -> usize {
+        if !matches!(self.nodes[index], Node::Start { .. }) {
+            return index + 1;
+        }
+        let mut depth = 0;
+        for (offset, node) in self.nodes[index..].iter().enumerate() {
+            match node {
+                Node::Start { .. } => depth += 1,
+                Node::End { .. } => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return index + offset + 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        unreachable!("unbalanced recording");
+    }
+
+    /// Follows a recorded alias to the range of the node it refers to.
+    fn resolve_range(&self, mut range: (usize, usize)) -> (usize, usize) {
+        while let Node::Alias { range: target } = self.nodes[range.0] {
+            range = target;
+        }
+        range
+    }
+
+    /// Returns the ranges of the items of a recorded collection.
+    fn items(&self, range: (usize, usize)) -> impl Iterator<Item = (usize, usize)> + '_ {
+        let mut index = range.0 + 1;
+        std::iter::from_fn(move || {
+            if index + 1 >= range.1 {
+                return None;
+            }
+            let item = (index, self.node_end(index));
+            index = item.1;
+            Some(item)
+        })
+    }
+}
+
+/// The identity of a map key for the purpose of merge keys.
+///
+/// Only scalar keys are compared.  Two keys are the same if they resolve to
+/// the same value (so `1` and `0x1` are the same key).
+#[derive(PartialEq, Eq, Hash)]
+enum KeyId<'a> {
+    Null,
+    Bool(bool),
+    /// An integer as sign and magnitude.
+    Int(bool, u128),
+    Float(u64),
+    Str(Cow<'a, str>),
+    Bytes(Vec<u8>),
+    Tagged(Cow<'a, str>, Cow<'a, str>),
+}
+
+impl<'a> KeyId<'a> {
+    fn of_scalar(
+        tag: &Option<Cow<'a, str>>,
+        style: ScalarStyle,
+        value: &Cow<'a, str>,
+        version: Version,
+    ) -> Option<KeyId<'a>> {
+        let atom = match tag {
+            None if style == ScalarStyle::Plain => resolve_plain(value.clone(), version),
+            None => return Some(KeyId::Str(value.clone())),
+            Some(tag) => match classify_tag(tag) {
+                ScalarTag::Str => return Some(KeyId::Str(value.clone())),
+                ScalarTag::Standard(name) => resolve_standard(name, value.clone(), version).ok()?,
+                ScalarTag::Custom => return Some(KeyId::Tagged(tag.clone(), value.clone())),
+            },
+        };
+        Some(match atom {
+            Atom::Null => KeyId::Null,
+            Atom::Bool(value) => KeyId::Bool(value),
+            Atom::U64(value) => KeyId::Int(false, value.into()),
+            Atom::I64(value) => KeyId::Int(value < 0, value.unsigned_abs().into()),
+            Atom::F64(value) => KeyId::Float(value.to_bits()),
+            Atom::Str(value) => KeyId::Str(value),
+            Atom::Bytes(value) => KeyId::Bytes(value.into_owned()),
+            Atom::Ext(ref ext) => {
+                if let Some(&value) = ext.downcast_ref::<u128>() {
+                    KeyId::Int(false, value)
+                } else if let Some(&value) = ext.downcast_ref::<i128>() {
+                    KeyId::Int(value < 0, value.unsigned_abs())
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        })
+    }
+}
+
+fn is_merge_key(tag: &Option<Cow<'_, str>>, style: ScalarStyle, value: &str) -> bool {
+    tag.is_none() && style == ScalarStyle::Plain && value == "<<"
+}
+
+/// Something that is emitted before the next event from the parser.
+enum Pending<'a> {
+    /// A range of recorded nodes (for aliases and merged entries).
+    Range(usize, usize),
+    /// A single node.
+    Node(Node<'a>),
+}
+
+/// An open collection while merge keys are tracked.
+struct Frame<'a> {
+    is_map: bool,
+    /// For maps: the next node is a key.
+    expect_key: bool,
+    /// The keys that were emitted so far.
+    keys: HashSet<KeyId<'a>>,
+    /// The ranges of the merge key values.
+    sources: Vec<(usize, usize)>,
 }
 
 impl<'a> Deserializer<'a> {
@@ -195,6 +342,8 @@ impl<'a> Deserializer<'a> {
             version: Version::default(),
             max_depth: None,
             alias_limit: DEFAULT_ALIAS_LIMIT,
+            merge_keys: true,
+            has_merge_marker: input.contains("<<"),
             #[cfg(feature = "locations")]
             track_locations: false,
             doc: Document::default(),
@@ -251,6 +400,45 @@ impl<'a> Deserializer<'a> {
     /// for an alias counts as one event.  The default is 1,000,000.
     pub fn alias_limit(mut self, limit: usize) -> Deserializer<'a> {
         self.alias_limit = limit;
+        self
+    }
+
+    /// Enables or disables merge keys.
+    ///
+    /// Merge keys (`<<`) insert the entries of other mappings into a
+    /// mapping.  They are defined for YAML 1.1 but widely used with all
+    /// versions of YAML, which is why they are enabled by default:
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Service {
+    ///     image: String,
+    ///     replicas: u32,
+    /// }
+    ///
+    /// let input = "
+    /// base: &base {image: app, replicas: 1}
+    /// web:
+    ///   <<: *base
+    ///   replicas: 3
+    /// ";
+    /// let value: BTreeMap<String, Service> = deser_yaml::from_str(input).unwrap();
+    /// assert_eq!(value["web"].image, "app");
+    /// assert_eq!(value["web"].replicas, 3);
+    /// ```
+    ///
+    /// Only a plain `<<` is a merge key (`"<<"` is a regular key).  Its value
+    /// must be a mapping or a sequence of mappings.  Keys of the mapping take
+    /// precedence over merged keys, and with multiple mappings the earlier
+    /// ones take precedence.  The merged entries are emitted after the
+    /// entries of the mapping.
+    ///
+    /// When disabled, `<<` is a regular key.
+    pub fn merge_keys(mut self, yes: bool) -> Deserializer<'a> {
+        self.merge_keys = yes;
         self
     }
 
@@ -427,34 +615,63 @@ impl<'a> Deserializer<'a> {
         &mut self,
         driver: &mut DeserializeDriver,
     ) -> Result<(), Error> {
-        // the ranges of recorded nodes that are replayed for aliases
-        let mut replay: Vec<(usize, usize)> = Vec::new();
+        // nodes that are emitted before the next event from the parser
+        let mut pending: Vec<Pending<'a>> = Vec::new();
+        // the number of nodes produced by aliases and merges
         let mut replayed = 0;
         let mut depth = 0;
+        // merge keys need to know the keys of all open maps.  This is only
+        // done if the input can contain merge keys.
+        let track_merges = self.merge_keys && self.has_merge_marker;
+        let mut frames: Vec<Frame<'a>> = Vec::new();
+        let mut merge_value_follows = false;
 
         loop {
-            let node = if let Some(frame) = replay.last_mut() {
-                if frame.0 == frame.1 {
-                    replay.pop();
-                    continue;
+            let (node, index) =
+                match self.next_node(&mut pending, &mut replayed, merge_value_follows)? {
+                    Some(rv) => rv,
+                    None => return Ok(()),
+                };
+
+            if merge_value_follows {
+                merge_value_follows = false;
+                let range = self.merge_source(node, index, &mut pending)?;
+                let frame = frames.last_mut().unwrap();
+                frame.sources.push(range);
+                frame.expect_key = true;
+                continue;
+            }
+
+            if track_merges {
+                if let Some(frame) = frames.last_mut() {
+                    if frame.is_map {
+                        if frame.expect_key {
+                            if let Node::Scalar {
+                                ref tag,
+                                style,
+                                ref value,
+                                ..
+                            } = node
+                            {
+                                if is_merge_key(tag, style, value) {
+                                    frame.expect_key = false;
+                                    merge_value_follows = true;
+                                    continue;
+                                }
+                                if let Some(id) =
+                                    KeyId::of_scalar(tag, style, value, self.doc.version)
+                                {
+                                    frame.keys.insert(id);
+                                }
+                            }
+                        }
+                        // aliases are replayed, their nodes are counted
+                        if !matches!(node, Node::Alias { .. } | Node::End { .. }) {
+                            frame.expect_key = !frame.expect_key;
+                        }
+                    }
                 }
-                let node = self.doc.nodes[frame.0].clone();
-                frame.0 += 1;
-                replayed += 1;
-                if replayed > self.alias_limit {
-                    return Err(Error::new(
-                        ErrorKind::Unexpected,
-                        "aliases expand to too many events",
-                    ));
-                }
-                node
-            } else {
-                let event = self.next_event()?;
-                if let EventKind::DocumentEnd { .. } = event.kind {
-                    return Ok(());
-                }
-                self.doc.record(event)?
-            };
+            }
 
             match node {
                 Node::Scalar {
@@ -477,6 +694,14 @@ impl<'a> Deserializer<'a> {
                         return Err(error_at(start, "recursion limit exceeded"));
                     }
                     depth += 1;
+                    if track_merges {
+                        frames.push(Frame {
+                            is_map,
+                            expect_key: true,
+                            keys: HashSet::new(),
+                            sources: Vec::new(),
+                        });
+                    }
                     let event = if is_map {
                         Event::MapStart
                     } else {
@@ -493,11 +718,190 @@ impl<'a> Deserializer<'a> {
                     }
                 }
                 Node::End { is_map, start, end } => {
+                    if track_merges {
+                        let frame = frames.last_mut().unwrap();
+                        if !frame.sources.is_empty() {
+                            // emit the merged entries before the end of the
+                            // map, the end is emitted again afterwards
+                            let sources = std::mem::take(&mut frame.sources);
+                            let entries =
+                                self.merged_entries(&sources, &mut frame.keys, &mut replayed)?;
+                            pending.push(Pending::Node(Node::End { is_map, start, end }));
+                            for (key, value) in entries.into_iter().rev() {
+                                pending.push(Pending::Range(value.0, value.1));
+                                pending.push(Pending::Range(key.0, key.1));
+                            }
+                            continue;
+                        }
+                        frames.pop();
+                    }
                     depth -= 1;
                     publish_location::<LOCATIONS>(driver, start.offset, end);
                     driver.emit(if is_map { Event::MapEnd } else { Event::SeqEnd })?;
                 }
-                Node::Alias { range } => replay.push(range),
+                Node::Alias { range } => pending.push(Pending::Range(range.0, range.1)),
+            }
+        }
+    }
+
+    /// Returns the next node and its index if it was recorded.  Returns
+    /// `None` at the end of the document.
+    fn next_node(
+        &mut self,
+        pending: &mut Vec<Pending<'a>>,
+        replayed: &mut usize,
+        capture: bool,
+    ) -> Result<Option<(Node<'a>, Option<usize>)>, Error> {
+        loop {
+            let (node, index) = match pending.last_mut() {
+                Some(Pending::Range(start, end)) => {
+                    if start == end {
+                        pending.pop();
+                        continue;
+                    }
+                    let index = *start;
+                    *start += 1;
+                    (self.doc.nodes[index].clone(), Some(index))
+                }
+                Some(Pending::Node(_)) => match pending.pop() {
+                    Some(Pending::Node(node)) => return Ok(Some((node, None))),
+                    _ => unreachable!(),
+                },
+                None => {
+                    let event = self.next_event()?;
+                    if let EventKind::DocumentEnd { .. } = event.kind {
+                        return Ok(None);
+                    }
+                    return Ok(Some((self.doc.record(event, capture)?, None)));
+                }
+            };
+            self.count_replayed(replayed, 1)?;
+            return Ok(Some((node, index)));
+        }
+    }
+
+    fn count_replayed(&self, replayed: &mut usize, count: usize) -> Result<(), Error> {
+        *replayed += count;
+        if *replayed > self.alias_limit {
+            Err(Error::new(
+                ErrorKind::Unexpected,
+                "aliases expand to too many events",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Consumes the value of a merge key and returns the range of its
+    /// recorded nodes.
+    fn merge_source(
+        &mut self,
+        node: Node<'a>,
+        index: Option<usize>,
+        pending: &mut [Pending<'a>],
+    ) -> Result<(usize, usize), Error> {
+        match node {
+            Node::Alias { range } => Ok(range),
+            Node::Start { .. } => match index {
+                // the value is replayed, skip it
+                Some(index) => {
+                    let end = self.doc.node_end(index);
+                    if let Some(Pending::Range(start, _)) = pending.last_mut() {
+                        *start = end;
+                    }
+                    Ok((index, end))
+                }
+                // the value comes from the parser, record it without
+                // emitting it
+                None => {
+                    while self.doc.captured.is_none() {
+                        let event = self.next_event()?;
+                        self.doc.record(event, false)?;
+                    }
+                    Ok(self.doc.captured.take().unwrap())
+                }
+            },
+            Node::Scalar { start, .. } | Node::End { start, .. } => Err(error_at(
+                start,
+                "the value of a merge key must be a mapping or a sequence of mappings",
+            )),
+        }
+    }
+
+    /// Returns the entries that the merge keys of a map add.
+    ///
+    /// `keys` holds the keys the map already has, the merged keys are added.
+    /// Earlier sources take precedence over later ones, the merge keys of the
+    /// sources are applied recursively.
+    #[allow(clippy::type_complexity)]
+    fn merged_entries(
+        &self,
+        sources: &[(usize, usize)],
+        keys: &mut HashSet<KeyId<'a>>,
+        replayed: &mut usize,
+    ) -> Result<Vec<((usize, usize), (usize, usize))>, Error> {
+        let mut entries = Vec::new();
+        // the mappings to merge in reverse order
+        let mut stack = Vec::new();
+        self.push_merge_sources(sources, &mut stack);
+
+        while let Some(range) = stack.pop() {
+            match self.doc.nodes[range.0] {
+                Node::Start { is_map: true, .. } => {}
+                Node::Start { start, .. } | Node::Scalar { start, .. } => {
+                    return Err(error_at(
+                        start,
+                        "merge keys can only merge mappings or sequences of mappings",
+                    ))
+                }
+                _ => unreachable!(),
+            }
+            self.count_replayed(replayed, range.1 - range.0)?;
+
+            let mut nested = Vec::new();
+            let mut items = self.doc.items(range);
+            while let (Some(key), Some(value)) = (items.next(), items.next()) {
+                if let Node::Scalar {
+                    tag: ref key_tag,
+                    style,
+                    value: ref key_value,
+                    ..
+                } = self.doc.nodes[self.doc.resolve_range(key).0]
+                {
+                    if is_merge_key(key_tag, style, key_value) {
+                        nested.push(value);
+                        continue;
+                    }
+                    let version = self.doc.version;
+                    if let Some(id) = KeyId::of_scalar(key_tag, style, key_value, version) {
+                        if !keys.insert(id) {
+                            // the map (or an earlier source) has the key
+                            continue;
+                        }
+                    }
+                }
+                entries.push((key, value));
+            }
+            self.push_merge_sources(&nested, &mut stack);
+        }
+        Ok(entries)
+    }
+
+    /// Adds the mappings of merge key values to the stack (in reverse order,
+    /// so that the first mapping is processed first).
+    fn push_merge_sources(&self, sources: &[(usize, usize)], stack: &mut Vec<(usize, usize)>) {
+        for &source in sources.iter().rev() {
+            let source = self.doc.resolve_range(source);
+            match self.doc.nodes[source.0] {
+                Node::Start { is_map: false, .. } => {
+                    let items: Vec<_> = self
+                        .doc
+                        .items(source)
+                        .map(|item| self.doc.resolve_range(item))
+                        .collect();
+                    stack.extend(items.into_iter().rev());
+                }
+                _ => stack.push(source),
             }
         }
     }

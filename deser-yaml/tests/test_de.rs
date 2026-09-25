@@ -436,3 +436,157 @@ fn test_borrowed_strings() {
     }
     assert_eq!(sink.0, [true, true, true, false, false, false]);
 }
+
+#[test]
+fn test_merge_keys() {
+    // the example from the YAML 1.1 merge key specification: all maps are
+    // the same
+    let input = "
+- &CENTER { x: 1, y: 2 }
+- &LEFT { x: 0, y: 2 }
+- &BIG { r: 10 }
+- &SMALL { r: 1 }
+
+# Explicit keys
+- x: 1
+  y: 2
+  r: 10
+  label: center/big
+
+# Merge one map
+- << : *CENTER
+  r: 10
+  label: center/big
+
+# Merge multiple maps
+- << : [ *CENTER, *BIG ]
+  label: center/big
+
+# Override
+- << : [ *BIG, *LEFT, *SMALL ]
+  x: 1
+  label: center/big
+";
+    let value: Vec<BTreeMap<String, Value>> = from_str(input).unwrap();
+    let expected: BTreeMap<String, Value> = [
+        ("x".into(), Value::Int(1)),
+        ("y".into(), Value::Int(2)),
+        ("r".into(), Value::Int(10)),
+        ("label".into(), "center/big".into()),
+    ]
+    .into();
+    for map in &value[4..] {
+        assert_eq!(map, &expected);
+    }
+}
+
+#[test]
+fn test_merge_key_semantics() {
+    // merged entries come after the entries of the map, keys of the map win
+    // even if they come after the merge key
+    let value: Value = from_str("- &a {x: 1, y: 2}\n- {x: 0, <<: *a, z: 3, y: 0}\n").unwrap();
+    assert_eq!(
+        value,
+        seq![
+            map! { "x" => 1, "y" => 2 },
+            map! { "x" => 0, "z" => 3, "y" => 0 },
+        ]
+    );
+
+    // inline mappings, keys are compared by value
+    let value: Value = from_str("<<: {1: a, b: c, '2': d}\n0x1: x\n2: y\n").unwrap();
+    assert_eq!(
+        value,
+        Value::Map(vec![
+            (Value::Int(1), "x".into()),
+            (Value::Int(2), "y".into()),
+            ("b".into(), "c".into()),
+            ("2".into(), "d".into()),
+        ])
+    );
+
+    // merges are applied recursively, earlier sources win
+    let value: Value = from_str(
+        "
+- &a {a: 1, x: a}
+- &b {<<: *a, b: 2, x: b}
+- &c {c: 3, x: c}
+- {<<: [*b, *c]}
+- {<<: [*c, *b]}
+",
+    )
+    .unwrap();
+    let Value::Seq(items) = value else { panic!() };
+    assert_eq!(items[1], map! { "b" => 2, "x" => "b", "a" => 1 });
+    assert_eq!(items[3], map! { "b" => 2, "x" => "b", "a" => 1, "c" => 3 });
+    assert_eq!(items[4], map! { "c" => 3, "x" => "c", "b" => 2, "a" => 1 });
+
+    // an alias to a map with merge keys is merged as well
+    let value: Value = from_str("a: &a {<<: {x: 1}, y: 2}\nb: *a\n").unwrap();
+    assert_eq!(
+        value,
+        map! { "a" => map! { "y" => 2, "x" => 1 }, "b" => map! { "y" => 2, "x" => 1 } }
+    );
+
+    // nested maps with merge keys inside of merged maps
+    let value: Value = from_str("a: &a {n: {<<: {x: 1}}}\nb: {<<: *a}\n").unwrap();
+    assert_eq!(
+        value,
+        map! { "a" => map! { "n" => map! { "x" => 1 } }, "b" => map! { "n" => map! { "x" => 1 } } }
+    );
+
+    // anchors within merged inline maps can be used later
+    let value: Value = from_str("a: {<<: &m {x: 1}}\nb: *m\n").unwrap();
+    assert_eq!(
+        value,
+        map! { "a" => map! { "x" => 1 }, "b" => map! { "x" => 1 } }
+    );
+}
+
+#[test]
+fn test_merge_keys_disabled_or_quoted() {
+    let value: Value = from_str("'<<': 1\n\"<<\": 2\n").unwrap();
+    assert_eq!(value, map! { "<<" => 1, "<<" => 2 });
+    let value: Value = Deserializer::new("<<: {x: 1}")
+        .merge_keys(false)
+        .deserialize()
+        .unwrap();
+    assert_eq!(value, map! { "<<" => map! { "x" => 1 } });
+    // `<<` as a value or in a sequence is a string
+    let value: Value = from_str("a: <<\nb: [<<]").unwrap();
+    assert_eq!(value, map! { "a" => "<<", "b" => seq!["<<"] });
+}
+
+#[test]
+fn test_merge_key_errors() {
+    let err = from_str::<Value>("<<: 1").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: the value of a merge key must be a mapping or a sequence of mappings at line 1 column 5"
+    );
+    let err = from_str::<Value>("<<: [{a: 1}, [1]]").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: merge keys can only merge mappings or sequences of mappings at line 1 column 14"
+    );
+    let err = from_str::<Value>("- &a 1\n- <<: *a").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: merge keys can only merge mappings or sequences of mappings at line 1 column 3"
+    );
+
+    // merges count towards the alias limit
+    let mut input = String::from("a0: &a0 {x: 1, y: 2}\n");
+    for i in 1..30 {
+        input.push_str(&format!(
+            "a{i}: &a{i} {{<<: [*a{p}, *a{p}]}}\n",
+            i = i,
+            p = i - 1
+        ));
+    }
+    let err = from_str::<Value>(&input).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: aliases expand to too many events"
+    );
+}
