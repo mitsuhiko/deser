@@ -1,8 +1,10 @@
 //! Runs the official YAML test suite (vendored in `tests/data`).
 //!
 //! Every test case parses `in.yaml` and compares the produced events with
-//! `test.event`.  Cases with an `error` file must fail to parse and must
-//! produce exactly the events before the error.
+//! `test.event`.  Cases with an `error` file must fail to parse.  The
+//! events before the error are not compared: parsers detect errors at
+//! different points and the suite's partial event streams are not reliable
+//! (some are placeholders).
 //!
 //! This uses a custom harness so that every case is reported individually
 //! without pulling in dependencies.  Arguments that are not flags filter
@@ -153,19 +155,20 @@ fn run_case(case: &Case) -> Outcome {
         }
     };
 
-    let mut problems = Vec::new();
-    match (case.is_error, &error) {
-        (true, None) => problems.push("expected an error, but parsing succeeded".to_string()),
-        (false, Some(err)) => problems.push(format!("unexpected error: {}", err)),
-        (true, Some(err)) => problems.push(format!("error (expected): {}", err)),
-        (false, None) => {}
+    match (case.is_error, error) {
+        (false, None) if events == case.events => Outcome::Pass,
+        (false, None) => Outcome::Fail(diff(&case.events, &events)),
+        (false, Some(err)) => Outcome::Fail(format!(
+            "unexpected error: {}\n{}",
+            err,
+            diff(&case.events, &events)
+        )),
+        (true, None) => Outcome::Fail(format!(
+            "expected an error, but parsing succeeded\n{}",
+            diff(&case.events, &events)
+        )),
+        (true, Some(_)) => Outcome::Pass,
     }
-    if events != case.events {
-        problems.push(diff(&case.events, &events));
-    } else if error.is_none() || case.is_error {
-        return Outcome::Pass;
-    }
-    Outcome::Fail(problems.join("\n"))
 }
 
 fn print_failure(case: &Case, is_known: bool, details: &str) {

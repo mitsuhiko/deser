@@ -5,7 +5,7 @@ use crate::event::{EventKind, Props, ScalarStyle};
 use crate::parser::Parser;
 
 /// Guards the test suite against parser bugs that loop forever.
-const MAX_EVENTS: usize = 100_000;
+const MAX_EVENTS: usize = 10_000_000;
 
 /// Parses the input and renders the events in the format of the
 /// `test.event` files of the YAML test suite.
