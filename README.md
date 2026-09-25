@@ -100,6 +100,8 @@ included benchmark.
   providing the base functionality
 * [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): basic
   JSON implementation for deser
+* [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
+  implementation for deser with support for tags
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
 * [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a

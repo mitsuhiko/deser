@@ -29,9 +29,11 @@ pub struct Account {
 )]
 //!
 //! To serialize or deserialize this a data format implementation is needed.  At the moment
-//! only JSON is supported:
+//! the following formats are supported:
 //!
 //! * [`deser-json`](https://docs.rs/deser-json): implements JSON serialization and
+//!   deserialization.
+//! * [`deser-cbor`](https://docs.rs/deser-cbor): implements CBOR serialization and
 //!   deserialization.
 //!
 //! The data model can be extended with types that are not native to it.  For

@@ -4,6 +4,11 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-cbor` which implements CBOR (RFC 8949).  It reads all
+  well-formed CBOR (including indefinite length items), writes the preferred
+  serialization, optionally with deterministic map ordering, maps bignums
+  onto `u128` / `i128` and exposes tags through the state and the `Tagged`
+  wrapper.
 - Improved performance substantially.  Deserializing and serializing JSON is
   now on par with `serde_json` in the included benchmark (previously about
   1.5 and 1.9 times slower):
