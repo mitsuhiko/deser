@@ -1,6 +1,6 @@
 use deser::Deserialize;
 use deser_location::{Span, Spanned};
-use deser_toml::{Datetime, Deserializer};
+use deser_toml::{Datetime, DeserializerConfig};
 
 #[derive(Deserialize, Debug)]
 struct Doc {
@@ -34,9 +34,9 @@ x = true
 
 #[test]
 fn test_spans() {
-    let doc: Doc = Deserializer::new(INPUT)
+    let doc: Doc = DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str(INPUT)
         .unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings, columns count characters
@@ -59,9 +59,9 @@ fn test_spans() {
 
 #[test]
 fn test_root_span() {
-    let doc: Spanned<Nested> = Deserializer::new("x = true\n")
+    let doc: Spanned<Nested> = DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str("x = true\n")
         .unwrap();
     assert_eq!(format!("{:?}", doc.span.unwrap()), "1:1-2:1");
 }

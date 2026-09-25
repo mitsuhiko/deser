@@ -31,7 +31,7 @@
 //! the number and its value as `f64`.  Types like `f64` get the value, types
 //! which deserialize decimal numbers exactly (like
 //! [`Decimal`](deser::ext::Decimal)) use the text.  See
-//! [`Deserializer::exact_numbers`].
+//! [`DeserializerConfig::exact_numbers`].
 //!
 //! Strings without escape sequences are borrowed from the input, so types
 //! can borrow them:
@@ -55,5 +55,5 @@ mod de;
 mod scan;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer};
-pub use self::ser::{to_string, Serializer};
+pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig};
+pub use self::ser::{to_string, SerializerConfig};

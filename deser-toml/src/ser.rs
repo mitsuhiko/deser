@@ -8,7 +8,7 @@ use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
 use deser::ext::{Datetime, Number, Timestamp};
 
-/// Serializes a value to TOML.
+/// Configures how values are serialized to TOML.
 ///
 /// The value has to serialize to a map (for instance a struct or a map
 /// type) as TOML documents are tables.  As TOML has no null value, map
@@ -18,19 +18,22 @@ use deser::ext::{Datetime, Number, Timestamp};
 /// Values that are maps are written as `[table]` sections and sequences of
 /// maps as `[[array]]` sections unless they are nested in other sequences.
 /// The output is compatible with TOML 1.0.
-#[derive(Default)]
-pub struct Serializer {
+///
+/// There are no options yet.  [`to_string`](Self::to_string) works like
+/// the [`to_string`](crate::to_string) function.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SerializerConfig {
     _private: (),
 }
 
-impl Serializer {
-    /// Creates a new serializer.
-    pub fn new() -> Serializer {
-        Serializer::default()
+impl SerializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> SerializerConfig {
+        SerializerConfig { _private: () }
     }
 
     /// Serializes the given value.
-    pub fn serialize(&self, value: &dyn Serialize) -> Result<String, Error> {
+    pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
         let mut builder = Builder {
             doc: Document::default(),
             stack: Vec::new(),
@@ -52,7 +55,8 @@ impl Serializer {
 
 /// Serializes a value to TOML.
 ///
-/// See [`Serializer`] for more information.
+/// This uses the default [`SerializerConfig`], see there for more
+/// information.
 ///
 /// ```
 /// use std::collections::BTreeMap;
@@ -62,7 +66,7 @@ impl Serializer {
 /// assert_eq!(deser_toml::to_string(&value).unwrap(), "name = [\"a\", \"b\"]\n");
 /// ```
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
-    Serializer::new().serialize(value)
+    SerializerConfig::new().to_string(value)
 }
 
 /// A map or sequence that is being built.

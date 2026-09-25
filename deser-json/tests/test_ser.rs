@@ -187,9 +187,9 @@ fn test_well_known_types() {
     let value: Decimal = deser_json::from_str("\"-12.50\"").unwrap();
     assert_eq!(value, decimal);
     // unless disabled
-    let value: Decimal = deser_json::Deserializer::new("-12.50")
+    let value: Decimal = deser_json::DeserializerConfig::new()
         .exact_numbers(false)
-        .deserialize()
+        .from_str("-12.50")
         .unwrap();
     assert_eq!(value.as_str(), "-12.5");
     let value: BigInt =

@@ -19,7 +19,7 @@ assert_eq!(deser_toml::to_string(&value).unwrap(), "ports = [80, 443]\n");
 * Arbitrarily nested arrays and inline tables do not overflow the stack.
 * The serializer writes maps as tables and sequences of maps as arrays of
   tables.  The output is compatible with TOML 1.0.
-* Source locations (see `Deserializer::track_locations`).
+* Source locations (see `DeserializerConfig::track_locations`).
 
 ## Conformance tests
 

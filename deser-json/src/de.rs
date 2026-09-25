@@ -46,49 +46,40 @@ macro_rules! overflow {
     };
 }
 
-/// Deserializes a serializable from JSON.
-pub struct Deserializer<'a> {
-    input: &'a [u8],
-    pos: usize,
-    buffer: Vec<u8>,
-    // `true` if the input is a byte slice which needs to be validated
-    validate_utf8: bool,
+/// Configures how JSON is deserialized.
+///
+/// The configuration is independent of the input so it can be created once
+/// (even as a constant) and used for many inputs.  The methods
+/// [`from_str`](Self::from_str) and [`from_slice`](Self::from_slice) work
+/// like the functions of the same name.  To create a [`Deserializer`] with
+/// the configuration use [`Deserializer::from_str_with_config`] or
+/// [`Deserializer::from_slice_with_config`].
+///
+/// ```
+/// use deser_json::DeserializerConfig;
+///
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new().exact_numbers(false);
+/// let value: Vec<f64> = CONFIG.from_str("[0.10, 1e5]").unwrap();
+/// assert_eq!(value, [0.1, 1e5]);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeserializerConfig {
     track_locations: bool,
     exact_numbers: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Container {
-    Top,
-    Seq,
-    Map,
+impl Default for DeserializerConfig {
+    fn default() -> DeserializerConfig {
+        DeserializerConfig::new()
+    }
 }
 
-impl<'a> Deserializer<'a> {
-    /// Creates a new deserializer.
-    pub fn new(input: &'a str) -> Deserializer<'a> {
-        Deserializer {
-            // the parser works on bytes but relies on the input being valid
-            // UTF-8 when it hands out string slices.
-            input: input.as_bytes(),
-            validate_utf8: false,
-            pos: 0,
-            buffer: Vec::new(),
+impl DeserializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> DeserializerConfig {
+        DeserializerConfig {
             track_locations: false,
             exact_numbers: true,
-        }
-    }
-
-    /// Creates a new deserializer for a byte slice.
-    ///
-    /// The input is not validated upfront.  Instead strings are validated as
-    /// UTF-8 when they are parsed (bytes outside of strings are only ever
-    /// accepted if they are ASCII).  Invalid UTF-8 is an error.
-    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        Deserializer {
-            input,
-            validate_utf8: true,
-            ..Deserializer::new("")
         }
     }
 
@@ -101,7 +92,7 @@ impl<'a> Deserializer<'a> {
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
-    pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self
     }
@@ -129,9 +120,97 @@ impl<'a> Deserializer<'a> {
     /// formatted by `Debug`, for instance `0.5` or `3.14`) are emitted as
     /// `F64` as the text can be recovered from the value.  This keeps the
     /// common case fast.  When disabled, all floats are emitted as `F64`.
-    pub fn exact_numbers(mut self, yes: bool) -> Deserializer<'a> {
+    pub const fn exact_numbers(mut self, yes: bool) -> DeserializerConfig {
         self.exact_numbers = yes;
         self
+    }
+
+    /// Deserializes JSON from the given string.
+    pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
+        Deserializer::from_str_with_config(s, self).deserialize()
+    }
+
+    /// Deserializes JSON from the given bytes.
+    ///
+    /// The input must be UTF-8.  Rather than validating the input upfront,
+    /// the strings are validated while parsing (see
+    /// [`Deserializer::from_slice`]).
+    pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
+        Deserializer::from_slice_with_config(bytes, self).deserialize()
+    }
+}
+
+/// Deserializes a serializable from JSON.
+///
+/// Most of the time the [`from_str`](crate::from_str) and
+/// [`from_slice`](crate::from_slice) functions (or the methods of the same
+/// name on [`DeserializerConfig`]) are all that is needed.  The
+/// deserializer is useful to [`drive`](Self::drive) a custom sink.
+pub struct Deserializer<'a> {
+    input: &'a [u8],
+    pos: usize,
+    buffer: Vec<u8>,
+    // `true` if the input is a byte slice which needs to be validated
+    validate_utf8: bool,
+    config: DeserializerConfig,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Container {
+    Top,
+    Seq,
+    Map,
+}
+
+impl<'a> Deserializer<'a> {
+    /// Creates a new deserializer for a string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(input: &'a str) -> Deserializer<'a> {
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a string with the given configuration.
+    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+        Deserializer {
+            // the parser works on bytes but relies on the input being valid
+            // UTF-8 when it hands out string slices.
+            input: input.as_bytes(),
+            validate_utf8: false,
+            pos: 0,
+            buffer: Vec::new(),
+            config: config.clone(),
+        }
+    }
+
+    /// Creates a new deserializer for a byte slice.
+    ///
+    /// The input is not validated upfront.  Instead strings are validated as
+    /// UTF-8 when they are parsed (bytes outside of strings are only ever
+    /// accepted if they are ASCII).  Invalid UTF-8 is an error.
+    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a byte slice with the given
+    /// configuration.
+    ///
+    /// See [`from_slice`](Self::from_slice).
+    pub fn from_slice_with_config(
+        input: &'a [u8],
+        config: &DeserializerConfig,
+    ) -> Deserializer<'a> {
+        Deserializer {
+            input,
+            validate_utf8: true,
+            pos: 0,
+            buffer: Vec::new(),
+            config: config.clone(),
+        }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
     }
 
     /// Returns the input as string for the source.
@@ -168,7 +247,7 @@ impl<'a> Deserializer<'a> {
         // the scratch buffer for strings is moved out of the deserializer
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
-        if self.track_locations {
+        if self.config.track_locations {
             let source = self.source();
             driver.state_mut().set_source(source);
         }
@@ -210,7 +289,7 @@ impl<'a> Deserializer<'a> {
                         driver,
                         number,
                         self.input,
-                        self.exact_numbers,
+                        self.config.exact_numbers,
                         start,
                         self.pos,
                     )?
@@ -222,7 +301,7 @@ impl<'a> Deserializer<'a> {
                         driver,
                         number,
                         self.input,
-                        self.exact_numbers,
+                        self.config.exact_numbers,
                         start,
                         self.pos,
                     )?
@@ -1002,14 +1081,17 @@ fn emit_big_int(
 }
 
 /// Deserializes JSON from the given string.
+///
+/// This uses the default [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    Deserializer::new(s).deserialize()
+    Deserializer::from_str(s).deserialize()
 }
 
 /// Deserializes JSON from the given bytes.
 ///
 /// The input must be UTF-8.  Rather than validating the input upfront, the
 /// strings are validated while parsing (see [`Deserializer::from_slice`]).
+/// This uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     Deserializer::from_slice(bytes).deserialize()
 }

@@ -1,6 +1,6 @@
 use deser::Deserialize;
 use deser_location::{Span, Spanned};
-use deser_yaml::Deserializer;
+use deser_yaml::DeserializerConfig;
 
 #[derive(Deserialize, Debug)]
 struct Doc {
@@ -33,9 +33,9 @@ alias: *n
 
 #[test]
 fn test_spans() {
-    let doc: Doc = Deserializer::new(INPUT)
+    let doc: Doc = DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str(INPUT)
         .unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings

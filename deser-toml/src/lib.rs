@@ -75,7 +75,7 @@
 //! type is written as offset date-time in UTC, other well-known types
 //! (such as UUIDs and decimals) are written as strings.  TOML has no null value: map entries with null values
 //! are skipped and null values in sequences are an error.  Bytes cannot be
-//! serialized.  See [`Serializer`] for more information.
+//! serialized.  See [`SerializerConfig`] for more information.
 //!
 //! # Features
 //!
@@ -86,7 +86,7 @@ mod document;
 mod parser;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer};
-pub use self::ser::{to_string, Serializer};
+pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig};
+pub use self::ser::{to_string, SerializerConfig};
 /// Re-exported from [`deser::ext`] for convenience.
 pub use deser::ext::{Date, Datetime, Offset, Time};

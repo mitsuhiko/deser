@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use deser::{Deserialize, ErrorKind};
-use deser_yaml::{from_slice, from_str, Deserializer, Tagged, Version};
+use deser_yaml::{from_slice, from_str, Deserializer, DeserializerConfig, Tagged, Version};
 
 mod common;
 
@@ -213,7 +213,7 @@ again: *s
     assert_eq!(value, seq![1, seq![1], 2, seq![1], 2]);
 
     // aliases do not reach into other documents
-    let mut de = Deserializer::new("--- &a 1\n--- *a\n");
+    let mut de = Deserializer::from_str("--- &a 1\n--- *a\n");
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
@@ -249,25 +249,27 @@ fn test_alias_limit() {
     );
 
     let input = "a: &a [1, 2]\nb: [*a, *a]";
-    let mut de = Deserializer::new(input).alias_limit(8);
+    let mut de =
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new().alias_limit(8));
     assert_eq!(
         de.deserialize::<Value>().unwrap(),
         map! { "a" => seq![1, 2], "b" => seq![seq![1, 2], seq![1, 2]] }
     );
-    let mut de = Deserializer::new(input).alias_limit(7);
+    let mut de =
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new().alias_limit(7));
     assert!(de.deserialize::<Value>().is_err());
 }
 
 #[test]
 fn test_max_depth() {
     let input = "[[[[1]]]]";
-    assert!(Deserializer::new(input)
-        .max_depth(Some(4))
-        .deserialize::<Value>()
+    assert!(DeserializerConfig::new()
+        .max_depth(4)
+        .from_str::<Value>(input)
         .is_ok());
-    let err = Deserializer::new(input)
-        .max_depth(Some(3))
-        .deserialize::<Value>()
+    let err = DeserializerConfig::new()
+        .max_depth(3)
+        .from_str::<Value>(input)
         .unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -308,7 +310,7 @@ ignored: {}{}",
 
 #[test]
 fn test_documents() {
-    let mut de = Deserializer::new("--- 1\n---\n- 2\n...\n--- 3\n");
+    let mut de = Deserializer::from_str("--- 1\n---\n- 2\n...\n--- 3\n");
     assert!(!de.is_end());
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::Int(1));
     assert_eq!(de.deserialize::<Value>().unwrap(), seq![2]);
@@ -318,14 +320,14 @@ fn test_documents() {
     let err = de.deserialize::<Value>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
 
-    let docs: Vec<u32> = Deserializer::new("1\n--- 2\n--- 3\n")
+    let docs: Vec<u32> = Deserializer::from_str("1\n--- 2\n--- 3\n")
         .iter()
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(docs, [1, 2, 3]);
 
     // an empty document is null
-    let docs: Vec<Option<u32>> = Deserializer::new("---\n--- 1\n")
+    let docs: Vec<Option<u32>> = Deserializer::from_str("---\n--- 1\n")
         .iter()
         .collect::<Result<_, _>>()
         .unwrap();
@@ -346,28 +348,28 @@ fn test_empty_stream() {
     assert_eq!(from_str::<Option<u32>>("# just a comment\n").unwrap(), None);
     assert_eq!(from_str::<()>("").unwrap(), ());
     assert!(from_str::<u32>("").is_err());
-    assert!(Deserializer::new("# nothing").is_end());
-    assert_eq!(Deserializer::new("").iter::<Value>().count(), 0);
+    assert!(Deserializer::from_str("# nothing").is_end());
+    assert_eq!(Deserializer::from_str("").iter::<Value>().count(), 0);
 }
 
 #[test]
 fn test_error_recovery() {
     // a document that fails to deserialize is skipped
-    let mut de = Deserializer::new("--- [1, 2]\n--- abc\n--- 3\n");
+    let mut de = Deserializer::from_str("--- [1, 2]\n--- abc\n--- 3\n");
     assert!(de.deserialize::<u32>().is_err());
     assert!(de.deserialize::<u32>().is_err());
     assert_eq!(de.deserialize::<u32>().unwrap(), 3);
     assert!(de.is_end());
 
     // syntax errors end the stream
-    let mut de = Deserializer::new("--- 1\n--- [\n--- 3\n");
+    let mut de = Deserializer::from_str("--- 1\n--- [\n--- 3\n");
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     let err = de.deserialize::<Value>().unwrap_err();
     assert!(err.to_string().contains("syntax error"), "{}", err);
     assert!(de.deserialize::<Value>().is_err());
 
     // the iterator stops at the first error
-    let rv: Vec<_> = Deserializer::new("--- 1\n--- x\n--- 3\n")
+    let rv: Vec<_> = Deserializer::from_str("--- 1\n--- x\n--- 3\n")
         .iter::<u32>()
         .collect();
     assert_eq!(rv.len(), 2);
@@ -383,7 +385,7 @@ fn test_syntax_errors() {
     );
     let err = from_str::<Value>("[1, 2").unwrap_err();
     assert!(err.to_string().contains("syntax error"), "{}", err);
-    let mut de = Deserializer::new("- a\nb");
+    let mut de = Deserializer::from_str("- a\nb");
     assert!(!de.is_end());
     assert!(de.deserialize::<Value>().is_err());
 }
@@ -391,14 +393,14 @@ fn test_syntax_errors() {
 #[test]
 fn test_versions() {
     let input = "[yes, No, on, 0777, 0o777, 1_000, 1:30, 0b101, 3e3]";
-    let value: Value = Deserializer::new(input).deserialize().unwrap();
+    let value: Value = Deserializer::from_str(input).deserialize().unwrap();
     assert_eq!(
         value,
         seq!["yes", "No", "on", 777, 511, "1_000", "1:30", "0b101", 3000.0]
     );
-    let value: Value = Deserializer::new(input)
+    let value: Value = DeserializerConfig::new()
         .version(Version::V1_1)
-        .deserialize()
+        .from_str(input)
         .unwrap();
     assert_eq!(
         value,
@@ -406,8 +408,14 @@ fn test_versions() {
     );
 
     // the directive overrides the configured version
-    let mut de = Deserializer::new("%YAML 1.1\n--- yes\n...\n%YAML 1.2\n--- yes\n--- yes\n")
-        .version(Version::V1_1);
+    let mut de = Deserializer::from_str_with_config(
+        "%YAML 1.1\n--- yes\n...\n%YAML 1.2\n--- yes\n--- yes\n",
+        &DeserializerConfig::new().version(Version::V1_1),
+    );
+    assert_eq!(
+        de.config().clone(),
+        DeserializerConfig::new().version(Version::V1_1)
+    );
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::Bool(true));
     assert_eq!(de.deserialize::<Value>().unwrap(), "yes".into());
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::Bool(true));
@@ -453,9 +461,11 @@ fn test_borrowed_strings() {
     let mut sink = Borrowed(Vec::new());
     {
         let mut driver = DeserializeDriver::from_sink(SinkHandle::to(&mut sink));
-        Deserializer::new("[plain words, 'quoted', \"double\", 'it''s', \"esc\\n\", multi\n line]")
-            .drive(&mut driver)
-            .unwrap();
+        Deserializer::from_str(
+            "[plain words, 'quoted', \"double\", 'it''s', \"esc\\n\", multi\n line]",
+        )
+        .drive(&mut driver)
+        .unwrap();
     }
     assert_eq!(sink.0, [true, true, true, false, false, false]);
 }
@@ -570,9 +580,9 @@ fn test_merge_key_semantics() {
 fn test_merge_keys_disabled_or_quoted() {
     let value: Value = from_str("'<<': 1\n\"<<\": 2\n").unwrap();
     assert_eq!(value, map! { "<<" => 1, "<<" => 2 });
-    let value: Value = Deserializer::new("<<: {x: 1}")
+    let value: Value = DeserializerConfig::new()
         .merge_keys(false)
-        .deserialize()
+        .from_str("<<: {x: 1}")
         .unwrap();
     assert_eq!(value, map! { "<<" => map! { "x" => 1 } });
     // `<<` as a value or in a sequence is a string

@@ -49,7 +49,7 @@
 //! type.
 //!
 //! Aliases are expanded: every alias produces the events of the node it
-//! refers to (see [`Deserializer::alias_limit`]).
+//! refers to (see [`DeserializerConfig::alias_limit`]).
 //!
 //! # Documents
 //!
@@ -57,7 +57,7 @@
 //! most one document, [`Deserializer`] can read them one by one:
 //!
 //! ```rust
-//! let mut de = deser_yaml::Deserializer::new("--- a\n--- b\n");
+//! let mut de = deser_yaml::Deserializer::from_str("--- a\n--- b\n");
 //! let docs = de.iter::<String>().collect::<Result<Vec<_>, _>>().unwrap();
 //! assert_eq!(docs, ["a", "b"]);
 //! ```
@@ -72,7 +72,7 @@ mod resolve;
 mod scanner;
 pub mod tag;
 
-pub use self::de::{from_slice, from_str, Deserializer, Iter};
+pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig, Iter};
 pub use self::resolve::Version;
 pub use self::tag::{take_tag, Tagged};
 

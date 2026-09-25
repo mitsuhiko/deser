@@ -50,9 +50,9 @@ fn recursion_limit() {
 
     // ...but the depth can be limited.
     let bomb = vec![0x81u8; depth];
-    let err = deser_cbor::Deserializer::new(&bomb)
-        .max_depth(Some(256))
-        .deserialize::<Value>()
+    let err = deser_cbor::DeserializerConfig::new()
+        .max_depth(256)
+        .from_slice::<Value>(&bomb)
         .unwrap_err();
     assert!(
         err.to_string().contains("recursion limit exceeded"),
@@ -61,10 +61,12 @@ fn recursion_limit() {
     );
 
     let shallow = [0x81, 0x81, 0x81, 0x01]; // [[[1]]]
-    let mut de = deser_cbor::Deserializer::new(&shallow[..]).max_depth(Some(2));
+    let config = deser_cbor::DeserializerConfig::new().max_depth(2);
+    let mut de = deser_cbor::Deserializer::from_slice_with_config(&shallow, &config);
     assert!(de.deserialize::<Value>().is_err());
 
-    let mut de = deser_cbor::Deserializer::new(&shallow[..]).max_depth(Some(3));
+    let config = deser_cbor::DeserializerConfig::new().max_depth(3);
+    let mut de = deser_cbor::Deserializer::from_slice_with_config(&shallow, &config);
     assert_eq!(
         de.deserialize::<Value>().unwrap(),
         array![array![array![1u64]]]
@@ -448,7 +450,7 @@ fn nested_element_errors_propagate() {
 fn deserializer_can_continue_after_items() {
     // Tags from a failed item do not leak into the next one.
     let bytes = hex("c1c11c 02 c1c1f5 03");
-    let mut de = deser_cbor::Deserializer::new(&bytes);
+    let mut de = deser_cbor::Deserializer::from_slice(&bytes);
     assert!(de.deserialize::<Value>().is_err());
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::U64(2));
     assert!(de.deserialize::<u64>().is_err());

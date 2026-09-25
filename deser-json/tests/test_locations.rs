@@ -23,9 +23,9 @@ const INPUT: &str = r#"{
 
 #[test]
 fn test_spans() {
-    let doc: Doc = deser_json::Deserializer::new(INPUT)
+    let doc: Doc = deser_json::DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str(INPUT)
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings
@@ -43,9 +43,9 @@ fn test_spans() {
 
 #[test]
 fn test_spans_from_slice() {
-    let doc: Doc = deser_json::Deserializer::from_slice(INPUT.as_bytes())
+    let doc: Doc = deser_json::DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_slice(INPUT.as_bytes())
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     assert_eq!(span(doc.name.span), "2:11-2:17");
@@ -75,9 +75,9 @@ fn test_spans_through_buffering() {
     // the tag comes last, so all fields are buffered and replayed
     let input =
         "{\n  \"url\": \"http://x\",\n  \"headers\": [\"a\", \"b\"],\n  \"type\": \"Http\"\n}";
-    let backend: Backend = deser_json::Deserializer::new(input)
+    let backend: Backend = deser_json::DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str(input)
         .unwrap();
     let Backend::Http { url, headers } = backend;
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
@@ -103,9 +103,9 @@ enum Adjacent {
 #[test]
 fn test_spans_through_enum_buffering() {
     let input = "[\n  \"x\",\n  {\"c\": 42, \"t\": \"Value\"}\n]";
-    let (text, adjacent): (NumberOrText, Adjacent) = deser_json::Deserializer::new(input)
+    let (text, adjacent): (NumberOrText, Adjacent) = deser_json::DeserializerConfig::new()
         .track_locations(true)
-        .deserialize()
+        .from_str(input)
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     match text {

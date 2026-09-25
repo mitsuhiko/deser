@@ -149,6 +149,10 @@ impl<'a, 'de> Sink<'de> for Annotator<'a, 'de> {
     }
 }
 
+/// The JSON configuration: locations are needed for the spans.
+const CONFIG: deser_json::DeserializerConfig =
+    deser_json::DeserializerConfig::new().track_locations(true);
+
 /// Deserializes JSON and annotates all values with their path and location.
 pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
     let mut out = None;
@@ -156,9 +160,7 @@ pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Res
         let sink = Annotator::wrap(T::deserialize_into(&mut out));
         let sink = PathSink::wrap_ref(SinkHandle::boxed(sink));
         let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
-        deser_json::Deserializer::new(json)
-            .track_locations(true)
-            .drive(&mut driver)?;
+        deser_json::Deserializer::from_str_with_config(json, &CONFIG).drive(&mut driver)?;
     }
     out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
 }

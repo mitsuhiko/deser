@@ -74,9 +74,11 @@ fn test_nested_paths() {
     {
         let sink = PathSink::wrap_ref(Deserialize::deserialize_into(&mut out));
         let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
-        deser_json::Deserializer::new(r#"{"a": [{"x": 1, "y": 2}, {"z": 3}], "b": [{"w": 4}]}"#)
-            .drive(&mut driver)
-            .unwrap();
+        deser_json::Deserializer::from_str(
+            r#"{"a": [{"x": 1, "y": 2}, {"z": 3}], "b": [{"w": 4}]}"#,
+        )
+        .drive(&mut driver)
+        .unwrap();
     }
 
     let map = out.unwrap();
@@ -98,7 +100,7 @@ fn test_paths_through_buffering() {
     {
         let sink = PathSink::wrap_ref(Deserialize::deserialize_into(&mut out));
         let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
-        deser_json::Deserializer::new(r#"{"x": {"values": [1, 2], "type": "Item"}}"#)
+        deser_json::Deserializer::from_str(r#"{"x": {"values": [1, 2], "type": "Item"}}"#)
             .drive(&mut driver)
             .unwrap();
     }

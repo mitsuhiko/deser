@@ -9,6 +9,9 @@ use std::fmt::Debug;
 use common::{de, hex, ser, Value};
 use deser::de::DeserializeOwned;
 use deser::{Deserialize, Serialize};
+use deser_cbor::SerializerConfig;
+
+const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
 
 fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T) {
     let bytes = deser_cbor::to_vec(&value).unwrap();
@@ -18,7 +21,7 @@ fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T) {
     assert_eq!(deser_cbor::to_vec(&dynamic).unwrap(), bytes, "{:?}", value);
     // and so does the canonical encoding for values without maps
     if !matches!(dynamic, Value::Map(_)) {
-        assert_eq!(deser_cbor::to_canonical_vec(&value).unwrap(), bytes);
+        assert_eq!(CANONICAL.to_vec(&value).unwrap(), bytes);
     }
 }
 
@@ -394,7 +397,7 @@ fn stream_of_items() {
     buffer.extend(deser_cbor::to_vec(&"two").unwrap());
     buffer.extend(deser_cbor::to_vec(&vec![3u32]).unwrap());
 
-    let mut de = deser_cbor::Deserializer::new(&buffer);
+    let mut de = deser_cbor::Deserializer::from_slice(&buffer);
     let mut iter = de.iter::<Value>();
     assert_eq!(iter.next().unwrap().unwrap(), Value::from(1u64));
     assert_eq!(iter.next().unwrap().unwrap(), Value::from("two"));
@@ -408,19 +411,19 @@ fn stream_of_items() {
     let mut truncated = deser_cbor::to_vec(&1u32).unwrap();
     truncated.extend_from_slice(&[0x19, 0x01]); // u16 header missing a byte
 
-    let mut de = deser_cbor::Deserializer::new(&truncated);
+    let mut de = deser_cbor::Deserializer::from_slice(&truncated);
     let mut iter = de.iter::<u32>();
     assert_eq!(iter.next().unwrap().unwrap(), 1);
     assert!(iter.next().unwrap().is_err());
     assert!(iter.next().is_none());
 
     // Empty input is an empty sequence.
-    let mut de = deser_cbor::Deserializer::new(&[]);
+    let mut de = deser_cbor::Deserializer::from_slice(&[]);
     assert!(de.iter::<u32>().next().is_none());
 
     // The iterator stops after the first error, even when the failed item
     // consumed nothing (a reserved additional-information value).
-    let mut de = deser_cbor::Deserializer::new(&[0x01, 0x1c, 0x02]);
+    let mut de = deser_cbor::Deserializer::from_slice(&[0x01, 0x1c, 0x02]);
     let mut iter = de.iter::<u32>();
     assert_eq!(iter.next().unwrap().unwrap(), 1);
     let err = iter.next().unwrap().unwrap_err();
@@ -431,7 +434,7 @@ fn stream_of_items() {
 #[test]
 fn deserializer_offset() {
     let bytes = deser_cbor::to_vec(&(1u64, "ab")).unwrap();
-    let mut de = deser_cbor::Deserializer::new(&bytes);
+    let mut de = deser_cbor::Deserializer::from_slice(&bytes);
     assert_eq!(de.offset(), 0);
     let _: (u64, String) = de.deserialize().unwrap();
     assert_eq!(de.offset(), bytes.len());

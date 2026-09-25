@@ -8,8 +8,47 @@ use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 use crate::buf::Buffer;
 use crate::scan::{find_escape, skip_to_escape};
 
-/// Serializes a serializable to JSON.
-pub struct Serializer {
+/// Configures how values are serialized to JSON.
+///
+/// There are no options yet.  [`to_string`](Self::to_string) works like
+/// the [`to_string`](crate::to_string) function.
+///
+/// ```
+/// use deser_json::SerializerConfig;
+///
+/// const CONFIG: SerializerConfig = SerializerConfig::new();
+/// assert_eq!(CONFIG.to_string(&vec![1, 2]).unwrap(), "[1,2]");
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SerializerConfig {
+    _private: (),
+}
+
+impl SerializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> SerializerConfig {
+        SerializerConfig { _private: () }
+    }
+
+    /// Serializes the given value.
+    pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
+        let mut writer = Writer {
+            ser: Output {
+                out: Buffer::with_capacity(128),
+            },
+            stack: Vec::new(),
+            container: Container::Top,
+            first: true,
+            is_key: false,
+        };
+        SerializeDriver::new(value)
+            .drive(|event, descriptor, _| writer.event(event, descriptor))?;
+        Ok(writer.ser.out.into_string())
+    }
+}
+
+/// The output of the serializer.
+struct Output {
     out: Buffer,
 }
 
@@ -22,7 +61,7 @@ enum Container {
 
 /// Holds the state of the serializer while writing.
 struct Writer {
-    ser: Serializer,
+    ser: Output,
     // the state of the current container is held here, the state of the
     // outer containers is saved on the stack.
     stack: Vec<Container>,
@@ -107,34 +146,7 @@ impl Writer {
     }
 }
 
-impl Default for Serializer {
-    fn default() -> Serializer {
-        Serializer::new()
-    }
-}
-
-impl Serializer {
-    /// Creates a new serializer that writes into the given writer.
-    pub fn new() -> Serializer {
-        Serializer {
-            out: Buffer::with_capacity(128),
-        }
-    }
-
-    /// Serializes the given value.
-    pub fn serialize(self, value: &dyn Serialize) -> Result<String, Error> {
-        let mut writer = Writer {
-            ser: self,
-            stack: Vec::new(),
-            container: Container::Top,
-            first: true,
-            is_key: false,
-        };
-        SerializeDriver::new(value)
-            .drive(|event, descriptor, _| writer.event(event, descriptor))?;
-        Ok(writer.ser.out.into_string())
-    }
-
+impl Output {
     /// Writes an atom in key position including separator and colon.
     #[inline(always)]
     fn write_key_atom(&mut self, atom: Atom, first: bool) -> Result<(), Error> {
@@ -494,6 +506,8 @@ static ESCAPE: [u8; 256] = [
 ];
 
 /// Serializes a value to JSON.
+///
+/// This uses the default [`SerializerConfig`].
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
-    Serializer::new().serialize(value)
+    SerializerConfig::new().to_string(value)
 }

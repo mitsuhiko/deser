@@ -39,8 +39,8 @@
 //! Serialization produces the preferred serialization of RFC 8949: the
 //! shortest form is used for integers and lengths, floats are written in the
 //! shortest form that preserves their value and all maps and arrays have a
-//! definite length.  With [`to_canonical_vec`] map entries are additionally
-//! sorted to produce a deterministic encoding.
+//! definite length.  With [`SerializerConfig::canonical`] map entries are
+//! additionally sorted to produce a deterministic encoding.
 //!
 //! Deserialization accepts all well-formed CBOR including indefinite length
 //! strings, arrays and maps.  Map keys can be of any type.  Integers that
@@ -72,7 +72,7 @@ mod ser;
 mod simple;
 pub mod tag;
 
-pub use self::de::{from_slice, Deserializer, Iter};
-pub use self::ser::{to_canonical_vec, to_vec, Serializer};
+pub use self::de::{from_slice, Deserializer, DeserializerConfig, Iter};
+pub use self::ser::{to_vec, SerializerConfig};
 pub use self::simple::Simple;
 pub use self::tag::{take_tag, Tagged};

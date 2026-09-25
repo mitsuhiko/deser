@@ -22,6 +22,54 @@ const MAJOR_TAG: u8 = 6;
 const INDEFINITE: u8 = 31;
 const BREAK: u8 = 0xff;
 
+/// Configures how CBOR is deserialized.
+///
+/// The configuration is independent of the input so it can be created once
+/// (even as a constant) and used for many inputs.  The method
+/// [`from_slice`](Self::from_slice) works like the function of the same
+/// name.  To read multiple data items with the configuration create a
+/// [`Deserializer`] with [`Deserializer::from_slice_with_config`].
+///
+/// ```
+/// use deser_cbor::DeserializerConfig;
+///
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new().max_depth(1);
+/// assert!(CONFIG.from_slice::<Vec<u32>>(&[0x81, 0x01]).is_ok());
+/// assert!(CONFIG.from_slice::<Vec<Vec<u32>>>(&[0x81, 0x81, 0x01]).is_err());
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeserializerConfig {
+    max_depth: Option<usize>,
+}
+
+impl DeserializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> DeserializerConfig {
+        DeserializerConfig { max_depth: None }
+    }
+
+    /// Limits the nesting depth of arrays and maps.
+    ///
+    /// Deser does not use the stack to process nested data so arbitrarily
+    /// deep structures do not overflow the stack.  Still it can be useful to
+    /// limit the depth of untrusted inputs.  By default the depth is not
+    /// limited.
+    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
+        self.max_depth = Some(depth);
+        self
+    }
+
+    /// Deserializes a value from CBOR.
+    ///
+    /// See [`from_slice`](crate::from_slice).
+    pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
+        let mut de = Deserializer::from_slice_with_config(input, self);
+        let rv = de.deserialize()?;
+        de.end()?;
+        Ok(rv)
+    }
+}
+
 /// Deserializes a deserializable from CBOR.
 ///
 /// A deserializer reads data items from a slice.  Because CBOR sequences
@@ -31,15 +79,18 @@ const BREAK: u8 = 0xff;
 /// ```
 /// use deser_cbor::Deserializer;
 ///
-/// let mut de = Deserializer::new(&[0x01, 0x62, b'h', b'i']);
+/// let mut de = Deserializer::from_slice(&[0x01, 0x62, b'h', b'i']);
 /// assert_eq!(de.deserialize::<u32>().unwrap(), 1);
 /// assert_eq!(de.deserialize::<String>().unwrap(), "hi");
 /// assert!(de.is_end());
 /// ```
+///
+/// To deserialize a single data item, use [`from_slice`](crate::from_slice)
+/// (or the method of the same name on [`DeserializerConfig`]).
 pub struct Deserializer<'a> {
     input: &'a [u8],
     pos: usize,
-    max_depth: Option<usize>,
+    config: DeserializerConfig,
     // scratch space for strings split into chunks
     buffer: Vec<u8>,
     // the tags in front of the current item
@@ -73,26 +124,29 @@ impl Head {
 }
 
 impl<'a> Deserializer<'a> {
-    /// Creates a new deserializer.
-    pub fn new(input: &'a [u8]) -> Deserializer<'a> {
+    /// Creates a new deserializer for a byte slice.
+    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a byte slice with the given
+    /// configuration.
+    pub fn from_slice_with_config(
+        input: &'a [u8],
+        config: &DeserializerConfig,
+    ) -> Deserializer<'a> {
         Deserializer {
             input,
             pos: 0,
-            max_depth: None,
+            config: config.clone(),
             buffer: Vec::new(),
             tags: Vec::new(),
         }
     }
 
-    /// Limits the nesting depth of arrays and maps.
-    ///
-    /// Deser does not use the stack to process nested data so arbitrarily
-    /// deep structures do not overflow the stack.  Still it can be useful to
-    /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.
-    pub fn max_depth(mut self, depth: Option<usize>) -> Deserializer<'a> {
-        self.max_depth = depth;
-        self
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
     }
 
     /// Returns the current offset in the input.
@@ -135,7 +189,7 @@ impl<'a> Deserializer<'a> {
     /// the first error.
     ///
     /// ```
-    /// let mut de = deser_cbor::Deserializer::new(&[0x01, 0x02, 0x03]);
+    /// let mut de = deser_cbor::Deserializer::from_slice(&[0x01, 0x02, 0x03]);
     /// let items = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(items, [1, 2, 3]);
     /// ```
@@ -286,7 +340,7 @@ impl<'a> Deserializer<'a> {
             }
             MAJOR_ARRAY | MAJOR_MAP => {
                 let is_map = head.major == MAJOR_MAP;
-                if self.max_depth.is_some_and(|max| depth >= max) {
+                if self.config.max_depth.is_some_and(|max| depth >= max) {
                     return Err(Error::new(
                         ErrorKind::Unexpected,
                         format!("recursion limit exceeded at offset {}", start),
@@ -717,10 +771,8 @@ fn eof_error(offset: usize) -> Error {
 
 /// Deserializes a value from CBOR.
 ///
-/// The input must contain exactly one data item.
+/// The input must contain exactly one data item.  This uses the default
+/// [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(input: &'de [u8]) -> Result<T, Error> {
-    let mut de = Deserializer::new(input);
-    let rv = de.deserialize()?;
-    de.end()?;
-    Ok(rv)
+    DeserializerConfig::new().from_slice(input)
 }

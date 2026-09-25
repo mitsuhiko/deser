@@ -12,7 +12,8 @@ use deser::Atom;
 /// The YAML version that determines how plain scalars are resolved.
 ///
 /// A document can declare its version with a `%YAML` directive.  The
-/// version configured on the [`Deserializer`](crate::Deserializer) applies
+/// version configured with
+/// [`DeserializerConfig::version`](crate::DeserializerConfig::version) applies
 /// to documents that do not declare a version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]

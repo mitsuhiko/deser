@@ -7,6 +7,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use common::{de, hex, ser, to_hex, Value};
 use deser::Serialize;
+use deser_cbor::SerializerConfig;
+
+const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
 
 #[test]
 fn test_basic() {
@@ -212,7 +215,7 @@ fn keys_of(bytes: &[u8]) -> Vec<String> {
 fn canonical_rfc_key_order_example() {
     // RFC 8949 §4.2.1 (bytewise lexicographic): the keys must come out as
     // 10, 100, -1, "z", "aa", [100], [-1], false.
-    let bytes = deser_cbor::to_canonical_vec(&rfc_example_map()).unwrap();
+    let bytes = CANONICAL.to_vec(&rfc_example_map()).unwrap();
     assert_eq!(
         keys_of(&bytes),
         ["0a", "1864", "20", "617a", "626161", "811864", "8120", "f4"]
@@ -228,10 +231,7 @@ fn canonical_rfc_key_order_example() {
 #[test]
 fn canonical_hash_maps() {
     let map: HashMap<i64, bool> = [(100, true), (-1, false)].into_iter().collect();
-    assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&map).unwrap()),
-        "a21864f520f4"
-    );
+    assert_eq!(to_hex(&CANONICAL.to_vec(&map).unwrap()), "a21864f520f4");
 
     // HashMap iteration order is nondeterministic; the canonical encoding
     // is not.
@@ -239,13 +239,13 @@ fn canonical_hash_maps() {
         .into_iter()
         .collect();
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&map).unwrap()),
+        to_hex(&CANONICAL.to_vec(&map).unwrap()),
         "a461620361630461 7a01626161 02".replace(' ', "")
     );
 
     // large maps with longer headers
     let map: HashMap<u32, u32> = (0..1000).map(|x| (x, x)).collect();
-    let bytes = deser_cbor::to_canonical_vec(&map).unwrap();
+    let bytes = CANONICAL.to_vec(&map).unwrap();
     let sorted: BTreeMap<u32, u32> = (0..1000).map(|x| (x, x)).collect();
     assert_eq!(bytes, deser_cbor::to_vec(&sorted).unwrap());
 }
@@ -259,7 +259,7 @@ fn canonical_structs() {
         a: u8,
     }
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&Unsorted { b: 1, a: 2 }).unwrap()),
+        to_hex(&CANONICAL.to_vec(&Unsorted { b: 1, a: 2 }).unwrap()),
         "a26161026162 01".replace(' ', "")
     );
     assert_eq!(
@@ -283,20 +283,17 @@ fn canonical_sorting_recurses() {
         sorted_inner, sorted_inner
     )
     .replace(' ', "");
-    assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&value).unwrap()),
-        expected
-    );
+    assert_eq!(to_hex(&CANONICAL.to_vec(&value).unwrap()), expected);
 
     let tagged = Value::tag(1000, value.clone());
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&tagged).unwrap()),
+        to_hex(&CANONICAL.to_vec(&tagged).unwrap()),
         format!("d903e8{}", expected)
     );
 
     let map_key = Value::Map(vec![(value, Value::Null)]);
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&map_key).unwrap()),
+        to_hex(&CANONICAL.to_vec(&map_key).unwrap()),
         format!("a1{}f6", expected)
     );
 }
@@ -309,7 +306,7 @@ fn canonical_duplicate_keys_are_rejected() {
             (Value::from(1u64), Value::Null),
         ])
     };
-    assert!(deser_cbor::to_canonical_vec(&dup()).is_err());
+    assert!(CANONICAL.to_vec(&dup()).is_err());
     // the regular encoding writes them
     assert_eq!(ser(&dup()), "a201f601f6");
 
@@ -318,13 +315,17 @@ fn canonical_duplicate_keys_are_rejected() {
         (Value::from(1u64), Value::from("a")),
         (Value::from(1u128), Value::from("b")),
     ]);
-    assert!(deser_cbor::to_canonical_vec(&value).is_err());
+    assert!(CANONICAL.to_vec(&value).is_err());
 
     // Nested failures propagate.
-    assert!(deser_cbor::to_canonical_vec(&array![dup()]).is_err());
-    assert!(deser_cbor::to_canonical_vec(&Value::tag(9, dup())).is_err());
-    assert!(deser_cbor::to_canonical_vec(&Value::Map(vec![(dup(), Value::Null)])).is_err());
-    assert!(deser_cbor::to_canonical_vec(&Value::Map(vec![(Value::Null, dup())])).is_err());
+    assert!(CANONICAL.to_vec(&array![dup()]).is_err());
+    assert!(CANONICAL.to_vec(&Value::tag(9, dup())).is_err());
+    assert!(CANONICAL
+        .to_vec(&Value::Map(vec![(dup(), Value::Null)]))
+        .is_err());
+    assert!(CANONICAL
+        .to_vec(&Value::Map(vec![(Value::Null, dup())]))
+        .is_err());
 }
 
 #[test]
@@ -335,9 +336,10 @@ fn canonical_decode_encode_roundtrip_is_stable() {
     let messy = hex("bf617a017f626161ff9f0102ffff"); // {_ "z": 1, (_ "aa"): [_ 1, 2]}
     let value: Value = deser_cbor::from_slice(&messy).unwrap();
 
-    let once = deser_cbor::to_canonical_vec(&value).unwrap();
-    let twice =
-        deser_cbor::to_canonical_vec(&deser_cbor::from_slice::<Value>(&once).unwrap()).unwrap();
+    let once = CANONICAL.to_vec(&value).unwrap();
+    let twice = CANONICAL
+        .to_vec(&deser_cbor::from_slice::<Value>(&once).unwrap())
+        .unwrap();
 
     assert_eq!(once, twice);
     assert_eq!(to_hex(&once), "a2617a01626161 820102".replace(' ', ""));
@@ -346,11 +348,15 @@ fn canonical_decode_encode_roundtrip_is_stable() {
 #[test]
 fn canonical_floats_and_nan() {
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&f64::from_bits(0x7ff8_dead_beef_0000)).unwrap()),
+        to_hex(
+            &CANONICAL
+                .to_vec(&f64::from_bits(0x7ff8_dead_beef_0000))
+                .unwrap()
+        ),
         "f97e00"
     );
     assert_eq!(
-        to_hex(&deser_cbor::to_canonical_vec(&vec![1.0f64, 1.5, 0.1]).unwrap()),
+        to_hex(&CANONICAL.to_vec(&vec![1.0f64, 1.5, 0.1]).unwrap()),
         "83f93c00f93e00fb3fb999999999999a"
     );
 }

@@ -163,7 +163,7 @@ fn run_case(case: &Case) -> Outcome {
 /// Deserializes all documents and compares them with the JSON.
 fn check_json(case: &Case, json: &str) -> Outcome {
     let rv = panic::catch_unwind(|| {
-        Deserializer::new(&case.input)
+        Deserializer::from_str(&case.input)
             .iter::<Value>()
             .collect::<Result<Vec<_>, _>>()
     });

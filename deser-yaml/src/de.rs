@@ -12,8 +12,154 @@ use crate::resolve::{classify_tag, is_collection_tag, resolve_plain, resolve_sta
 use crate::resolve::{ScalarTag, Version};
 use crate::tag::CurrentTag;
 
-/// The default for [`Deserializer::alias_limit`].
+/// The default for [`DeserializerConfig::alias_limit`].
 const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
+
+/// Configures how YAML is deserialized.
+///
+/// The configuration is independent of the input so it can be created once
+/// (even as a constant) and used for many inputs.  The methods
+/// [`from_str`](Self::from_str) and [`from_slice`](Self::from_slice) work
+/// like the functions of the same name.  To read multiple documents with
+/// the configuration create a [`Deserializer`] with
+/// [`Deserializer::from_str_with_config`] or
+/// [`Deserializer::from_slice_with_config`].
+///
+/// ```
+/// use deser_yaml::{DeserializerConfig, Version};
+///
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new()
+///     .version(Version::V1_1)
+///     .max_depth(64);
+/// let (flag, mode): (bool, u32) = CONFIG.from_str("[yes, 0777]").unwrap();
+/// assert_eq!((flag, mode), (true, 0o777));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeserializerConfig {
+    version: Version,
+    max_depth: Option<usize>,
+    alias_limit: usize,
+    merge_keys: bool,
+    track_locations: bool,
+}
+
+impl Default for DeserializerConfig {
+    fn default() -> DeserializerConfig {
+        DeserializerConfig::new()
+    }
+}
+
+impl DeserializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> DeserializerConfig {
+        DeserializerConfig {
+            version: Version::V1_2,
+            max_depth: None,
+            alias_limit: DEFAULT_ALIAS_LIMIT,
+            merge_keys: true,
+            track_locations: false,
+        }
+    }
+
+    /// Sets the YAML version for documents that do not declare one.
+    ///
+    /// The version determines how plain scalars are resolved.  Documents
+    /// that start with a `%YAML` directive use the version they declare.  The
+    /// default is [`Version::V1_2`].
+    pub const fn version(mut self, version: Version) -> DeserializerConfig {
+        self.version = version;
+        self
+    }
+
+    /// Limits the nesting depth of sequences and mappings.
+    ///
+    /// Deser does not use the stack to process nested data so arbitrarily
+    /// deep structures do not overflow the stack.  Still it can be useful to
+    /// limit the depth of untrusted inputs.  By default the depth is not
+    /// limited.
+    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
+        self.max_depth = Some(depth);
+        self
+    }
+
+    /// Limits the number of events that aliases can expand to per document.
+    ///
+    /// Every scalar and every start and end of a collection that is replayed
+    /// for an alias counts as one event.  The default is 1,000,000.
+    pub const fn alias_limit(mut self, limit: usize) -> DeserializerConfig {
+        self.alias_limit = limit;
+        self
+    }
+
+    /// Enables or disables merge keys.
+    ///
+    /// Merge keys (`<<`) insert the entries of other mappings into a
+    /// mapping.  They are defined for YAML 1.1 but widely used with all
+    /// versions of YAML, which is why they are enabled by default:
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Service {
+    ///     image: String,
+    ///     replicas: u32,
+    /// }
+    ///
+    /// let input = "
+    /// base: &base {image: app, replicas: 1}
+    /// web:
+    ///   <<: *base
+    ///   replicas: 3
+    /// ";
+    /// let value: BTreeMap<String, Service> = deser_yaml::from_str(input).unwrap();
+    /// assert_eq!(value["web"].image, "app");
+    /// assert_eq!(value["web"].replicas, 3);
+    /// ```
+    ///
+    /// Only a plain `<<` is a merge key (`"<<"` is a regular key).  Its value
+    /// must be a mapping or a sequence of mappings.  Keys of the mapping take
+    /// precedence over merged keys, and with multiple mappings the earlier
+    /// ones take precedence.  The merged entries are emitted after the
+    /// entries of the mapping.
+    ///
+    /// When disabled, `<<` is a regular key.
+    pub const fn merge_keys(mut self, yes: bool) -> DeserializerConfig {
+        self.merge_keys = yes;
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// The byte range of every event is always published into the state
+    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// enabled additionally the input is set as source (see
+    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// ranges into lines and columns, for instance with the `Spanned` type
+    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
+    /// the input.
+    ///
+    /// Values produced by aliases report the location of the anchored node.
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+        self.track_locations = yes;
+        self
+    }
+
+    /// Deserializes a value from YAML.
+    ///
+    /// See [`from_str`](crate::from_str).
+    pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
+        deserialize_single(Deserializer::from_str_with_config(s, self))
+    }
+
+    /// Deserializes a value from YAML in a byte slice.
+    ///
+    /// See [`from_slice`](crate::from_slice).
+    pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
+        deserialize_single(Deserializer::from_slice_with_config(bytes, self))
+    }
+}
 
 /// Deserializes YAML.
 ///
@@ -23,18 +169,22 @@ const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
 /// ```
 /// use deser_yaml::Deserializer;
 ///
-/// let mut de = Deserializer::new("--- 1\n--- two\n");
+/// let mut de = Deserializer::from_str("--- 1\n--- two\n");
 /// assert_eq!(de.deserialize::<u32>().unwrap(), 1);
 /// assert_eq!(de.deserialize::<String>().unwrap(), "two");
 /// assert!(de.is_end());
 /// ```
+///
+/// To deserialize a single document, use [`from_str`](crate::from_str) and
+/// [`from_slice`](crate::from_slice) (or the methods of the same name on
+/// [`DeserializerConfig`]).
 ///
 /// # Aliases
 ///
 /// Aliases (`*name`) are expanded: the events of the anchored node are
 /// replayed.  To protect against inputs that expand exponentially (the
 /// "billion laughs" attack) the number of events produced by aliases is
-/// limited, see [`alias_limit`](Self::alias_limit).
+/// limited, see [`DeserializerConfig::alias_limit`].
 pub struct Deserializer<'a> {
     input: &'a str,
     parser: Parser<'a>,
@@ -44,13 +194,10 @@ pub struct Deserializer<'a> {
     pending_error: Option<Error>,
     /// The parser failed, no further documents can be read.
     failed: bool,
-    version: Version,
-    max_depth: Option<usize>,
-    alias_limit: usize,
-    merge_keys: bool,
-    /// The input contains `<<`.  Otherwise there cannot be merge keys.
-    has_merge_marker: bool,
-    track_locations: bool,
+    config: DeserializerConfig,
+    /// Merge keys are enabled and the input contains `<<`.  Otherwise
+    /// there cannot be merge keys.
+    track_merges: bool,
     /// The input as source for location tracking, shared by all documents.
     source: Option<Arc<str>>,
     doc: Document<'a>,
@@ -331,8 +478,14 @@ struct Frame<'a> {
 }
 
 impl<'a> Deserializer<'a> {
-    /// Creates a new deserializer.
-    pub fn new(input: &'a str) -> Deserializer<'a> {
+    /// Creates a new deserializer for a string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(input: &'a str) -> Deserializer<'a> {
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a string with the given configuration.
+    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             input,
             parser: Parser::new(input),
@@ -340,12 +493,8 @@ impl<'a> Deserializer<'a> {
             started: false,
             pending_error: None,
             failed: false,
-            version: Version::default(),
-            max_depth: None,
-            alias_limit: DEFAULT_ALIAS_LIMIT,
-            merge_keys: true,
-            has_merge_marker: input.contains("<<"),
-            track_locations: false,
+            config: config.clone(),
+            track_merges: config.merge_keys && input.contains("<<"),
             source: None,
             doc: Document::default(),
         }
@@ -355,10 +504,21 @@ impl<'a> Deserializer<'a> {
     ///
     /// The input must be UTF-8, otherwise deserializing fails.
     pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a byte slice with the given
+    /// configuration.
+    ///
+    /// The input must be UTF-8, otherwise deserializing fails.
+    pub fn from_slice_with_config(
+        input: &'a [u8],
+        config: &DeserializerConfig,
+    ) -> Deserializer<'a> {
         match str_from_utf8(input) {
-            Ok(input) => Deserializer::new(input),
+            Ok(input) => Deserializer::from_str_with_config(input, config),
             Err(err) => {
-                let mut rv = Deserializer::new("");
+                let mut rv = Deserializer::from_str_with_config("", config);
                 rv.pending_error = Some(err);
                 rv.failed = true;
                 rv
@@ -366,97 +526,9 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    /// Sets the YAML version for documents that do not declare one.
-    ///
-    /// The version determines how plain scalars are resolved.  Documents
-    /// that start with a `%YAML` directive use the version they declare.  The
-    /// default is [`Version::V1_2`].
-    ///
-    /// ```
-    /// use deser_yaml::{Deserializer, Version};
-    ///
-    /// let mut de = Deserializer::new("[yes, 0777]").version(Version::V1_1);
-    /// let (flag, mode): (bool, u32) = de.deserialize().unwrap();
-    /// assert_eq!((flag, mode), (true, 0o777));
-    /// ```
-    pub fn version(mut self, version: Version) -> Deserializer<'a> {
-        self.version = version;
-        self
-    }
-
-    /// Limits the nesting depth of sequences and mappings.
-    ///
-    /// Deser does not use the stack to process nested data so arbitrarily
-    /// deep structures do not overflow the stack.  Still it can be useful to
-    /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.
-    pub fn max_depth(mut self, depth: Option<usize>) -> Deserializer<'a> {
-        self.max_depth = depth;
-        self
-    }
-
-    /// Limits the number of events that aliases can expand to per document.
-    ///
-    /// Every scalar and every start and end of a collection that is replayed
-    /// for an alias counts as one event.  The default is 1,000,000.
-    pub fn alias_limit(mut self, limit: usize) -> Deserializer<'a> {
-        self.alias_limit = limit;
-        self
-    }
-
-    /// Enables or disables merge keys.
-    ///
-    /// Merge keys (`<<`) insert the entries of other mappings into a
-    /// mapping.  They are defined for YAML 1.1 but widely used with all
-    /// versions of YAML, which is why they are enabled by default:
-    ///
-    /// ```
-    /// use std::collections::BTreeMap;
-    /// use deser::Deserialize;
-    ///
-    /// #[derive(Deserialize)]
-    /// struct Service {
-    ///     image: String,
-    ///     replicas: u32,
-    /// }
-    ///
-    /// let input = "
-    /// base: &base {image: app, replicas: 1}
-    /// web:
-    ///   <<: *base
-    ///   replicas: 3
-    /// ";
-    /// let value: BTreeMap<String, Service> = deser_yaml::from_str(input).unwrap();
-    /// assert_eq!(value["web"].image, "app");
-    /// assert_eq!(value["web"].replicas, 3);
-    /// ```
-    ///
-    /// Only a plain `<<` is a merge key (`"<<"` is a regular key).  Its value
-    /// must be a mapping or a sequence of mappings.  Keys of the mapping take
-    /// precedence over merged keys, and with multiple mappings the earlier
-    /// ones take precedence.  The merged entries are emitted after the
-    /// entries of the mapping.
-    ///
-    /// When disabled, `<<` is a regular key.
-    pub fn merge_keys(mut self, yes: bool) -> Deserializer<'a> {
-        self.merge_keys = yes;
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`State::source`](deser::State::source)) which allows resolving the
-    /// ranges into lines and columns, for instance with the `Spanned` type
-    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
-    /// the input.
-    ///
-    /// Values produced by aliases report the location of the anchored node.
-    pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
-        self.track_locations = yes;
-        self
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
     }
 
     /// Returns `true` if there are no more documents.
@@ -511,7 +583,7 @@ impl<'a> Deserializer<'a> {
     /// The iterator stops after the first error.
     ///
     /// ```
-    /// let mut de = deser_yaml::Deserializer::new("--- 1\n--- 2\n--- 3\n");
+    /// let mut de = deser_yaml::Deserializer::from_str("--- 1\n--- 2\n--- 3\n");
     /// let docs = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(docs, [1, 2, 3]);
     /// ```
@@ -543,7 +615,7 @@ impl<'a> Deserializer<'a> {
             EventKind::DocumentStart { version, .. } => match version {
                 Some((1, minor)) if minor < 2 => Version::V1_1,
                 Some(_) => Version::V1_2,
-                None => self.version,
+                None => self.config.version,
             },
             EventKind::StreamEnd => {
                 // stay at the end of the stream
@@ -554,7 +626,7 @@ impl<'a> Deserializer<'a> {
         };
         self.doc.reset(version);
 
-        if self.track_locations {
+        if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
             driver.state_mut().set_source(source.clone());
         }
@@ -616,7 +688,7 @@ impl<'a> Deserializer<'a> {
         let mut depth = 0;
         // merge keys need to know the keys of all open maps.  This is only
         // done if the input can contain merge keys.
-        let track_merges = self.merge_keys && self.has_merge_marker;
+        let track_merges = self.track_merges;
         let mut frames: Vec<Frame<'a>> = Vec::new();
         let mut merge_value_follows = false;
 
@@ -684,7 +756,7 @@ impl<'a> Deserializer<'a> {
                     start,
                     end,
                 } => {
-                    if self.max_depth.is_some_and(|max| depth >= max) {
+                    if self.config.max_depth.is_some_and(|max| depth >= max) {
                         return Err(error_at(start, "recursion limit exceeded"));
                     }
                     depth += 1;
@@ -775,7 +847,7 @@ impl<'a> Deserializer<'a> {
 
     fn count_replayed(&self, replayed: &mut usize, count: usize) -> Result<(), Error> {
         *replayed += count;
-        if *replayed > self.alias_limit {
+        if *replayed > self.config.alias_limit {
             Err(Error::new(
                 ErrorKind::Unexpected,
                 "aliases expand to too many events",
@@ -989,18 +1061,21 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 ///
 /// The input must contain at most one document.  An empty stream (no
 /// document at all, for instance an empty file) is deserialized as null.
+/// This uses the default [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    from_deserializer(Deserializer::new(s))
+    deserialize_single(Deserializer::from_str(s))
 }
 
 /// Deserializes a value from YAML in a byte slice.
 ///
-/// The input must be UTF-8.  Otherwise this works like [`from_str`].
+/// The input must be UTF-8.  Otherwise this works like [`from_str`].  This
+/// uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    from_deserializer(Deserializer::from_slice(bytes))
+    deserialize_single(Deserializer::from_slice(bytes))
 }
 
-fn from_deserializer<'de, T: Deserialize<'de>>(mut de: Deserializer<'de>) -> Result<T, Error> {
+/// Deserializes the only document (or null for an empty stream).
+fn deserialize_single<'de, T: Deserialize<'de>>(mut de: Deserializer<'de>) -> Result<T, Error> {
     if de.is_end() {
         let mut out = None;
         {

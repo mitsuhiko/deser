@@ -4,6 +4,22 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Format options moved from the deserializers and serializers into new
+  `DeserializerConfig` and `SerializerConfig` types in all formats.  They
+  do not borrow the input, can be created in constants (the constructors
+  and setters are `const fn`) and reused.  Their `from_str` / `from_slice` and `to_string` /
+  `to_vec` methods work like the functions of the same name, which use the
+  default configuration.
+  - `Deserializer::new` was replaced by `Deserializer::from_str` and
+    `Deserializer::from_slice` (only `from_slice` for CBOR), and
+    `from_str_with_config` / `from_slice_with_config` create a deserializer
+    with a configuration which is available as `Deserializer::config`.  The
+    deserializer only holds the parsing state and has no setters anymore.
+  - The `Serializer` types were removed: `Serializer::new().serialize(&v)`
+    becomes `SerializerConfig::new().to_string(&v)` (`to_vec` for CBOR).
+    `deser_cbor::to_canonical_vec` was removed in favor of
+    `SerializerConfig::new().canonical(true).to_vec(&v)`.
+  - `max_depth` takes a `usize` instead of an `Option<usize>`.
 - `Deserialize`, `Sink`, `SinkHandle`, `DeserializeDriver`, `OwnedSink` and
   `DeserializeAs` have a lifetime `'de` for the data that is deserialized.
   Types can borrow from it: `&str` and `&[u8]` borrow, `Cow<str>` and
@@ -34,7 +50,7 @@ All notable changes to deser are documented here.
   use the value.  `deser-json` emits floats whose text cannot be recovered
   from their value as `f64` (and integers that do not fit into 128 bits) as
   numbers borrowing the text, so decimals are deserialized exactly.  This
-  can be disabled with `Deserializer::exact_numbers`.  `deser-json` writes
+  can be disabled with `DeserializerConfig::exact_numbers`.  `deser-json` writes
   numbers verbatim, `deser-toml` writes the text of non-integer numbers.
 - Extension values can borrow data: extensions implement the new
   `BorrowedExtension` trait on a `'static` key type which defines the type
@@ -197,7 +213,6 @@ All notable changes to deser are documented here.
     all values.
   - The byte specialization for `Vec<u8>` and `[u8; N]` no longer relies on
     an unsafe hook on `Deserialize`.
-  - `deser_json::Deserializer::new` now takes a `&str`.
 - Extension types now need to be `Send` and `Sync`.
 - `Option<T>` now also treats extension values that fall back to null as
   null.
@@ -205,7 +220,7 @@ All notable changes to deser are documented here.
 - Added `deser-location` which provides source locations.  Formats install a
   `SourceMap` and publish the byte offsets of every event into the
   deserializer state, `Spanned<T>` picks them up.  `deser-json` supports this
-  with the `locations` feature and `Deserializer::track_locations`.
+  with the `locations` feature and `DeserializerConfig::track_locations`.
 - Improved the performance of `deser_path::PathSink`.
 - Improved the performance of deserializer state extensions.
 - Added `deser::de::Recording` to record values and replay them into sinks

@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 
 use deser::Error;
-use deser_yaml::{Deserializer, Version};
+use deser_yaml::{DeserializerConfig, Version};
 
 mod common;
 
@@ -66,13 +66,7 @@ fn expected_value(info: &[Value]) -> Value {
 }
 
 fn load(input: &str, version: Version) -> Result<Value, Error> {
-    let mut de = Deserializer::new(input).version(version);
-    if de.is_end() {
-        return Ok(Value::Null);
-    }
-    let rv = de.deserialize()?;
-    de.end()?;
-    Ok(rv)
+    DeserializerConfig::new().version(version).from_str(input)
 }
 
 fn run_schema(schema: &str, version: Version, directive: &str) {

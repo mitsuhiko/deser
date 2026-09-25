@@ -7,44 +7,39 @@ use deser::{Atom, Error, ErrorKind, Event};
 use crate::document::{Document, Item, Span, Value};
 use crate::parser::{parse, ROOT};
 
-/// Deserializes TOML.
+/// Configures how TOML is deserialized.
+///
+/// The configuration is independent of the input so it can be created once
+/// (even as a constant) and used for many inputs.  The methods
+/// [`from_str`](Self::from_str) and [`from_slice`](Self::from_slice) work
+/// like the functions of the same name.  To create a [`Deserializer`] with
+/// the configuration use [`Deserializer::from_str_with_config`] or
+/// [`Deserializer::from_slice_with_config`].
 ///
 /// ```
-/// use deser_toml::Deserializer;
 /// use std::collections::BTreeMap;
+/// use deser_toml::DeserializerConfig;
 ///
-/// let mut de = Deserializer::new("a = 1\nb = 2");
-/// let value: BTreeMap<String, u32> = de.deserialize().unwrap();
-/// assert_eq!(value["b"], 2);
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new().track_locations(true);
+/// let value: BTreeMap<String, u32> = CONFIG.from_str("a = 1").unwrap();
+/// assert_eq!(value["a"], 1);
 /// ```
-pub struct Deserializer<'a> {
-    input: &'a str,
-    /// An error that is reported instead of parsing (invalid UTF-8).
-    error: Option<Error>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeserializerConfig {
     track_locations: bool,
 }
 
-impl<'a> Deserializer<'a> {
-    /// Creates a new deserializer.
-    pub fn new(input: &'a str) -> Deserializer<'a> {
-        Deserializer {
-            input,
-            error: None,
-            track_locations: false,
-        }
+impl Default for DeserializerConfig {
+    fn default() -> DeserializerConfig {
+        DeserializerConfig::new()
     }
+}
 
-    /// Creates a new deserializer for a byte slice.
-    ///
-    /// The input must be UTF-8, otherwise deserializing fails.
-    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        match str_from_utf8(input) {
-            Ok(input) => Deserializer::new(input),
-            Err(err) => {
-                let mut rv = Deserializer::new("");
-                rv.error = Some(err);
-                rv
-            }
+impl DeserializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> DeserializerConfig {
+        DeserializerConfig {
+            track_locations: false,
         }
     }
 
@@ -62,9 +57,92 @@ impl<'a> Deserializer<'a> {
     /// whole document for the root table), tables created by dotted keys
     /// report the location of the key.  Arrays of tables report the
     /// location of their first header.
-    pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self
+    }
+
+    /// Deserializes a value from TOML.
+    ///
+    /// See [`from_str`](crate::from_str).
+    pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
+        Deserializer::from_str_with_config(s, self).deserialize()
+    }
+
+    /// Deserializes a value from TOML in a byte slice.
+    ///
+    /// See [`from_slice`](crate::from_slice).
+    pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
+        Deserializer::from_slice_with_config(bytes, self).deserialize()
+    }
+}
+
+/// Deserializes TOML.
+///
+/// Most of the time the [`from_str`](crate::from_str) and
+/// [`from_slice`](crate::from_slice) functions (or the methods of the same
+/// name on [`DeserializerConfig`]) are all that is needed.  The
+/// deserializer is useful to [`drive`](Self::drive) a custom sink.
+///
+/// ```
+/// use deser_toml::Deserializer;
+/// use std::collections::BTreeMap;
+///
+/// let mut de = Deserializer::from_str("a = 1\nb = 2");
+/// let value: BTreeMap<String, u32> = de.deserialize().unwrap();
+/// assert_eq!(value["b"], 2);
+/// ```
+pub struct Deserializer<'a> {
+    input: &'a str,
+    /// An error that is reported instead of parsing (invalid UTF-8).
+    error: Option<Error>,
+    config: DeserializerConfig,
+}
+
+impl<'a> Deserializer<'a> {
+    /// Creates a new deserializer for a string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(input: &'a str) -> Deserializer<'a> {
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a string with the given configuration.
+    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+        Deserializer {
+            input,
+            error: None,
+            config: config.clone(),
+        }
+    }
+
+    /// Creates a new deserializer for a byte slice.
+    ///
+    /// The input must be UTF-8, otherwise deserializing fails.
+    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a new deserializer for a byte slice with the given
+    /// configuration.
+    ///
+    /// The input must be UTF-8, otherwise deserializing fails.
+    pub fn from_slice_with_config(
+        input: &'a [u8],
+        config: &DeserializerConfig,
+    ) -> Deserializer<'a> {
+        match str_from_utf8(input) {
+            Ok(input) => Deserializer::from_str_with_config(input, config),
+            Err(err) => Deserializer {
+                input: "",
+                error: Some(err),
+                config: config.clone(),
+            },
+        }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
     }
 
     /// Deserializes the document.
@@ -90,7 +168,7 @@ impl<'a> Deserializer<'a> {
         }
         let doc = parse(self.input)?;
 
-        if self.track_locations {
+        if self.config.track_locations {
             driver.state_mut().set_source(self.input);
         }
         emit(&doc, driver)
@@ -215,13 +293,16 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
 ///
 /// A TOML document is a table, so the value has to be deserializable from
 /// a map (such as a struct or a map type).
+///
+/// This uses the default [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    Deserializer::new(s).deserialize()
+    Deserializer::from_str(s).deserialize()
 }
 
 /// Deserializes a value from TOML in a byte slice.
 ///
-/// The input must be UTF-8.  Otherwise this works like [`from_str`].
+/// The input must be UTF-8.  Otherwise this works like [`from_str`].  This
+/// uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     Deserializer::from_slice(bytes).deserialize()
 }

@@ -19,7 +19,7 @@ const MAJOR_ARRAY: u8 = 4;
 const MAJOR_MAP: u8 = 5;
 const MAJOR_TAG: u8 = 6;
 
-/// Serializes a serializable to CBOR.
+/// Configures how values are serialized to CBOR.
 ///
 /// The output uses the preferred serialization of RFC 8949: integers,
 /// lengths and floats use their shortest (lossless) form and all maps and
@@ -29,8 +29,17 @@ const MAJOR_TAG: u8 = 6;
 /// additionally deterministically encoded (RFC 8949 §4.2.1): the entries of
 /// maps are sorted by the bytewise lexicographic order of their encoded keys
 /// and duplicate keys are rejected.
-#[derive(Debug, Default)]
-pub struct Serializer {
+///
+/// ```
+/// use std::collections::HashMap;
+/// use deser_cbor::SerializerConfig;
+///
+/// const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
+/// let map = HashMap::from([("b", 1), ("a", 2)]);
+/// assert_eq!(CANONICAL.to_vec(&map).unwrap(), b"\xa2\x61a\x02\x61b\x01");
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SerializerConfig {
     canonical: bool,
 }
 
@@ -459,10 +468,10 @@ fn encode_head(buf: &mut [u8; 9], major: u8, value: u64) -> &[u8] {
     }
 }
 
-impl Serializer {
-    /// Creates a new serializer.
-    pub fn new() -> Serializer {
-        Serializer::default()
+impl SerializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> SerializerConfig {
+        SerializerConfig { canonical: false }
     }
 
     /// Enables or disables the deterministic encoding.
@@ -471,13 +480,13 @@ impl Serializer {
     /// (bytewise lexicographic order, RFC 8949 §4.2.1) and duplicate keys
     /// are an error.  This makes the output independent of the iteration
     /// order of maps such as `HashMap`.
-    pub fn canonical(mut self, yes: bool) -> Serializer {
+    pub const fn canonical(mut self, yes: bool) -> SerializerConfig {
         self.canonical = yes;
         self
     }
 
     /// Serializes the given value.
-    pub fn serialize(self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+    pub fn to_vec(&self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
         let mut driver = SerializeDriver::new(value);
         let mut writer = Writer {
             out: Vec::with_capacity(128),
@@ -496,13 +505,8 @@ impl Serializer {
 }
 
 /// Serializes a value to CBOR.
-pub fn to_vec(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
-    Serializer::new().serialize(value)
-}
-
-/// Serializes a value to CBOR with the deterministic encoding.
 ///
-/// See [`Serializer::canonical`].
-pub fn to_canonical_vec(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
-    Serializer::new().canonical(true).serialize(value)
+/// This uses the default [`SerializerConfig`].
+pub fn to_vec(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+    SerializerConfig::new().to_vec(value)
 }
