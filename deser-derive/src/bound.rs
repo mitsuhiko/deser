@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 
 pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Generics {
     let bound = syn::Lifetime::new(lifetime, Span::call_site());
-    let def = syn::LifetimeDef {
+    let def = syn::LifetimeParam {
         attrs: Vec::new(),
         lifetime: bound.clone(),
         colon_token: None,

@@ -308,7 +308,7 @@ pub fn derive_deserialize(
                     .named
                     .iter()
                     .map(|field| {
-                        let deser_attrs = field.attrs.iter().filter(|x| x.path.is_ident("deser"));
+                        let deser_attrs = field.attrs.iter().filter(|x| x.path().is_ident("deser"));
                         let name = &field.ident;
                         let ty = &field.ty;
                         quote! { #(#deser_attrs)* #name: #ty, }

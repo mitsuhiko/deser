@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use syn::meta::ParseNestedMeta;
+
 #[derive(Copy, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum RenameAll {
@@ -14,21 +16,17 @@ pub enum RenameAll {
 }
 
 impl RenameAll {
-    fn parse(lit: &syn::Lit) -> Result<RenameAll, syn::Error> {
-        if let syn::Lit::Str(s) = &lit {
-            match s.value().as_str() {
-                "lowercase" => Ok(RenameAll::LowerCase),
-                "UPPERCASE" => Ok(RenameAll::UpperCase),
-                "PascalCase" => Ok(RenameAll::PascalCase),
-                "camelCase" => Ok(RenameAll::CamelCase),
-                "snake_case" => Ok(RenameAll::SnakeCase),
-                "SCREAMING_SNAKE_CASE" => Ok(RenameAll::ScreamingSnakeCase),
-                "kebab-case" => Ok(RenameAll::KebabCase),
-                "SCREAMING-KEBAB-CASE" => Ok(RenameAll::ScreamingKebabCase),
-                _ => Err(syn::Error::new_spanned(lit, "")),
-            }
-        } else {
-            Err(syn::Error::new_spanned(lit, "rename expects a string"))
+    fn parse(lit: &syn::LitStr) -> syn::Result<RenameAll> {
+        match lit.value().as_str() {
+            "lowercase" => Ok(RenameAll::LowerCase),
+            "UPPERCASE" => Ok(RenameAll::UpperCase),
+            "PascalCase" => Ok(RenameAll::PascalCase),
+            "camelCase" => Ok(RenameAll::CamelCase),
+            "snake_case" => Ok(RenameAll::SnakeCase),
+            "SCREAMING_SNAKE_CASE" => Ok(RenameAll::ScreamingSnakeCase),
+            "kebab-case" => Ok(RenameAll::KebabCase),
+            "SCREAMING-KEBAB-CASE" => Ok(RenameAll::ScreamingKebabCase),
+            _ => Err(syn::Error::new_spanned(lit, "unknown rename_all style")),
         }
     }
 }
@@ -50,49 +48,79 @@ pub struct ContainerAttrs<'a> {
     untagged: bool,
 }
 
-pub fn get_meta_items(attr: &syn::Attribute) -> syn::Result<Vec<syn::NestedMeta>> {
-    if !attr.path.is_ident("deser") {
-        return Ok(Vec::new());
+/// Invokes `logic` for every item in all `#[deser(...)]` attributes.
+///
+/// The callback is passed the name of the item.  Items with paths that are
+/// not plain identifiers are rejected.
+fn parse_deser_attrs(
+    attrs: &[syn::Attribute],
+    mut logic: impl FnMut(&str, &ParseNestedMeta) -> syn::Result<()>,
+) -> syn::Result<()> {
+    for attr in attrs {
+        if !attr.path().is_ident("deser") {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| match meta.path.get_ident() {
+            Some(ident) => logic(&ident.to_string(), &meta),
+            None => Err(meta.error("unsupported attribute")),
+        })?;
     }
-
-    match attr.parse_meta() {
-        Ok(syn::Meta::List(meta)) => Ok(meta.nested.into_iter().collect()),
-        Ok(_) => Err(syn::Error::new_spanned(attr, "expected #[deser(...)]")),
-        Err(err) => Err(err),
-    }
+    Ok(())
 }
 
-fn respan(stream: proc_macro2::TokenStream, span: proc_macro2::Span) -> proc_macro2::TokenStream {
-    stream
-        .into_iter()
-        .map(|mut token| {
-            if let proc_macro2::TokenTree::Group(g) = &mut token {
-                *g = proc_macro2::Group::new(g.delimiter(), respan(g.stream(), span));
-            }
-            token.set_span(span);
-            token
-        })
-        .collect()
+/// Stores a value in a slot that must not have been filled before.
+fn set_once<T>(
+    meta: &ParseNestedMeta,
+    name: &str,
+    slot: &mut Option<T>,
+    value: T,
+) -> syn::Result<()> {
+    if slot.is_some() {
+        return Err(meta.error(format!("duplicate {} attribute", name)));
+    }
+    *slot = Some(value);
+    Ok(())
 }
 
-fn get_lit_str(attr_name: &str, lit: &syn::Lit) -> syn::Result<String> {
-    if let syn::Lit::Str(lit) = lit {
-        Ok(lit.value())
+/// Sets a flag that must not have been set before and does not take a value.
+fn set_flag(meta: &ParseNestedMeta, name: &str, flag: &mut bool) -> syn::Result<()> {
+    if has_value(meta) {
+        return Err(meta.error(format!("{} does not take a value", name)));
+    }
+    if *flag {
+        return Err(meta.error(format!("duplicate {} attribute", name)));
+    }
+    *flag = true;
+    Ok(())
+}
+
+/// Checks if the item has a value (or arguments).
+fn has_value(meta: &ParseNestedMeta) -> bool {
+    !meta.input.is_empty() && !meta.input.peek(syn::Token![,])
+}
+
+/// Parses the value of `name = "..."`.
+fn parse_lit_str(meta: &ParseNestedMeta) -> syn::Result<syn::LitStr> {
+    meta.value()?.parse()
+}
+
+/// Parses the value of `name = "..."` as a string.
+fn parse_str(meta: &ParseNestedMeta) -> syn::Result<String> {
+    Ok(parse_lit_str(meta)?.value())
+}
+
+/// Parses the value of `name = "path"` as a path.
+fn parse_str_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
+    parse_lit_str(meta)?.parse()
+}
+
+/// Parses `default` or `default = "path"`.
+fn parse_default(meta: &ParseNestedMeta) -> syn::Result<TypeDefault> {
+    if has_value(meta) {
+        Ok(TypeDefault::Explicit(parse_str_path(meta)?))
     } else {
-        Err(syn::Error::new_spanned(
-            lit,
-            format!(
-                "expected attribute to be a string: `{} = \"...\"`",
-                attr_name,
-            ),
-        ))
+        Ok(TypeDefault::Implicit)
     }
-}
-
-fn parse_lit_into_expr_path(attr_name: &str, lit: &syn::Lit) -> syn::Result<syn::ExprPath> {
-    let string = get_lit_str(attr_name, lit)?;
-    let token_stream = syn::parse_str(&string)?;
-    syn::parse2(respan(token_stream, lit.span()))
 }
 
 impl<'a> ContainerAttrs<'a> {
@@ -107,99 +135,45 @@ impl<'a> ContainerAttrs<'a> {
             content: None,
             untagged: false,
         };
+        let is_enum = matches!(input.data, syn::Data::Enum(_));
 
-        for meta_item in input.attrs.iter().flat_map(get_meta_items).flatten() {
-            if let syn::NestedMeta::Meta(meta) = meta_item {
-                match &meta {
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename_all") => {
-                        if rv.rename_all.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate rename_all attribute",
-                            ));
-                        }
-                        rv.rename_all = Some(RenameAll::parse(&nv.lit)?);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename") => {
-                        if rv.rename.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate rename attribute",
-                            ));
-                        }
-                        rv.rename = Some(get_lit_str("rename", &nv.lit)?);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("tag") => {
-                        if rv.tag.is_some() {
-                            return Err(syn::Error::new_spanned(meta, "duplicate tag attribute"));
-                        }
-                        if !matches!(input.data, syn::Data::Enum(_)) {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "tag is only supported on enums",
-                            ));
-                        }
-                        rv.tag = Some(get_lit_str("tag", &nv.lit)?);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("content") => {
-                        if rv.content.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate content attribute",
-                            ));
-                        }
-                        rv.content = Some(get_lit_str("content", &nv.lit)?);
-                    }
-                    syn::Meta::Path(path) if path.is_ident("untagged") => {
-                        if rv.untagged {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate untagged attribute",
-                            ));
-                        }
-                        if !matches!(input.data, syn::Data::Enum(_)) {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "untagged is only supported on enums",
-                            ));
-                        }
-                        rv.untagged = true;
-                    }
-                    syn::Meta::Path(path) if path.is_ident("default") => {
-                        if rv.default.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate default attribute",
-                            ));
-                        }
-                        rv.default = Some(TypeDefault::Implicit);
-                    }
-                    syn::Meta::Path(path) if path.is_ident("skip_serializing_optionals") => {
-                        if rv.skip_serializing_optionals {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate skip_serializing_optionals attribute",
-                            ));
-                        }
-                        rv.skip_serializing_optionals = true;
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("default") => {
-                        if rv.default.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate default attribute",
-                            ));
-                        }
-                        rv.default = Some(TypeDefault::Explicit(parse_lit_into_expr_path(
-                            "default", &nv.lit,
-                        )?));
-                    }
-                    _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
-                }
-            } else {
-                return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
+        parse_deser_attrs(&input.attrs, |name, meta| match name {
+            "rename_all" => {
+                let value = RenameAll::parse(&parse_lit_str(meta)?)?;
+                set_once(meta, name, &mut rv.rename_all, value)
             }
-        }
+            "rename" => {
+                let value = parse_str(meta)?;
+                set_once(meta, name, &mut rv.rename, value)
+            }
+            "tag" => {
+                let value = parse_str(meta)?;
+                set_once(meta, name, &mut rv.tag, value)?;
+                if !is_enum {
+                    return Err(meta.error("tag is only supported on enums"));
+                }
+                Ok(())
+            }
+            "content" => {
+                let value = parse_str(meta)?;
+                set_once(meta, name, &mut rv.content, value)
+            }
+            "untagged" => {
+                set_flag(meta, name, &mut rv.untagged)?;
+                if !is_enum {
+                    return Err(meta.error("untagged is only supported on enums"));
+                }
+                Ok(())
+            }
+            "default" => {
+                let value = parse_default(meta)?;
+                set_once(meta, name, &mut rv.default, value)
+            }
+            "skip_serializing_optionals" => {
+                set_flag(meta, name, &mut rv.skip_serializing_optionals)
+            }
+            _ => Err(meta.error("unsupported attribute")),
+        })?;
 
         if rv.content.is_some() && rv.tag.is_none() {
             return Err(syn::Error::new(
@@ -333,11 +307,9 @@ impl<'a> ContainerAttrs<'a> {
 }
 
 pub fn ensure_no_field_attrs(field: &syn::Field) -> syn::Result<()> {
-    if let Some(first) = field.attrs.iter().flat_map(get_meta_items).flatten().next() {
-        Err(syn::Error::new_spanned(first, "unsupported attribute"))
-    } else {
-        Ok(())
-    }
+    parse_deser_attrs(&field.attrs, |_, meta| {
+        Err(meta.error("unsupported attribute"))
+    })
 }
 
 pub struct FieldAttrs<'a> {
@@ -360,66 +332,26 @@ impl<'a> FieldAttrs<'a> {
             skip_serializing_if: None,
         };
 
-        for meta_item in field.attrs.iter().flat_map(get_meta_items).flatten() {
-            if let syn::NestedMeta::Meta(meta) = meta_item {
-                match &meta {
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename") => {
-                        if rv.rename.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate rename attribute",
-                            ));
-                        }
-                        rv.rename = Some(get_lit_str("rename", &nv.lit)?);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("alias") => {
-                        rv.aliases.push(get_lit_str("alias", &nv.lit)?);
-                    }
-                    syn::Meta::Path(path) if path.is_ident("default") => {
-                        if rv.default.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate default attribute",
-                            ));
-                        }
-                        rv.default = Some(TypeDefault::Implicit);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("default") => {
-                        if rv.default.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate default attribute",
-                            ));
-                        }
-                        rv.default = Some(TypeDefault::Explicit(parse_lit_into_expr_path(
-                            "default", &nv.lit,
-                        )?));
-                    }
-                    syn::Meta::Path(path) if path.is_ident("flatten") => {
-                        if rv.flatten {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate flatten attribute",
-                            ));
-                        }
-                        rv.flatten = true;
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("skip_serializing_if") => {
-                        if rv.skip_serializing_if.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate skip_serializing_if attribute",
-                            ));
-                        }
-                        rv.skip_serializing_if =
-                            Some(parse_lit_into_expr_path("skip_serializing_if", &nv.lit)?);
-                    }
-                    _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
-                }
-            } else {
-                return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
+        parse_deser_attrs(&field.attrs, |name, meta| match name {
+            "rename" => {
+                let value = parse_str(meta)?;
+                set_once(meta, name, &mut rv.rename, value)
             }
-        }
+            "alias" => {
+                rv.aliases.push(parse_str(meta)?);
+                Ok(())
+            }
+            "default" => {
+                let value = parse_default(meta)?;
+                set_once(meta, name, &mut rv.default, value)
+            }
+            "flatten" => set_flag(meta, name, &mut rv.flatten),
+            "skip_serializing_if" => {
+                let value = parse_str_path(meta)?;
+                set_once(meta, name, &mut rv.skip_serializing_if, value)
+            }
+            _ => Err(meta.error("unsupported attribute")),
+        })?;
 
         if rv.flatten && rv.default.is_some() {
             return Err(syn::Error::new_spanned(
@@ -483,39 +415,24 @@ impl<'a> EnumVariantAttrs<'a> {
             other: false,
         };
 
-        for meta_item in variant.attrs.iter().flat_map(get_meta_items).flatten() {
-            if let syn::NestedMeta::Meta(meta) = meta_item {
-                match &meta {
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("rename") => {
-                        if rv.rename.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "duplicate rename attribute",
-                            ));
-                        }
-                        rv.rename = Some(get_lit_str("rename", &nv.lit)?);
-                    }
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("alias") => {
-                        rv.aliases.push(get_lit_str("alias", &nv.lit)?);
-                    }
-                    syn::Meta::Path(path) if path.is_ident("other") => {
-                        if rv.other {
-                            return Err(syn::Error::new_spanned(meta, "duplicate other attribute"));
-                        }
-                        if !matches!(variant.fields, syn::Fields::Unit) {
-                            return Err(syn::Error::new_spanned(
-                                meta,
-                                "other is only supported on unit variants",
-                            ));
-                        }
-                        rv.other = true;
-                    }
-                    _ => return Err(syn::Error::new_spanned(meta, "unsupported attribute")),
-                }
-            } else {
-                return Err(syn::Error::new_spanned(meta_item, "unsupported attribute"));
+        parse_deser_attrs(&variant.attrs, |name, meta| match name {
+            "rename" => {
+                let value = parse_str(meta)?;
+                set_once(meta, name, &mut rv.rename, value)
             }
-        }
+            "alias" => {
+                rv.aliases.push(parse_str(meta)?);
+                Ok(())
+            }
+            "other" => {
+                set_flag(meta, name, &mut rv.other)?;
+                if !matches!(variant.fields, syn::Fields::Unit) {
+                    return Err(meta.error("other is only supported on unit variants"));
+                }
+                Ok(())
+            }
+            _ => Err(meta.error("unsupported attribute")),
+        })?;
 
         Ok(rv)
     }
