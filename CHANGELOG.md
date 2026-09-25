@@ -4,6 +4,13 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Extension values can borrow data: extensions implement the new
+  `BorrowedExtension` trait on a `'static` key type which defines the type
+  of the values for a lifetime.  They are created with
+  `ExtValue::borrowed_value` and `ExtValue::owned_value` and looked up with
+  `ExtValue::downcast_value_ref`.  Owned extension values are now reference
+  counted which makes cloning them cheap.  `ExtValue::owned` no longer
+  returns an `ExtValue<'static>`.
 - Added well-known extension types to `deser::ext`: `Datetime` (with
   `Date`, `Time` and `Offset`), `Timestamp`, `Duration`, `Uuid`, `Decimal`
   and `BigInt`.  They are dependency free representations of common types

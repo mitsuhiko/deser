@@ -186,3 +186,108 @@ fn test_optional_null_extension() {
     // non optional types still reject it
     assert!(deserialize::<u32>(vec![null()]).is_err());
 }
+
+/// An extension that borrows its text.
+mod borrowed {
+    use std::borrow::Cow;
+
+    use deser::ext::BorrowedExtension;
+    use deser::Atom;
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Literal<'a> {
+        pub text: Cow<'a, str>,
+        pub value: f64,
+    }
+
+    impl BorrowedExtension for Literal<'static> {
+        type Value<'a> = Literal<'a>;
+
+        fn name<'v>(_value: &'v Literal<'_>) -> &'v str {
+            "literal"
+        }
+
+        fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> {
+            Atom::F64(value.value)
+        }
+
+        fn to_static(value: &Literal<'_>) -> Literal<'static> {
+            Literal {
+                text: Cow::Owned(value.text.to_string()),
+                value: value.value,
+            }
+        }
+
+        fn shorten<'s, 'l: 's>(value: &'s Literal<'l>) -> &'s Literal<'s> {
+            value
+        }
+    }
+}
+
+fn shorten<'long: 'short, 'short>(ext: ExtValue<'long>) -> ExtValue<'short> {
+    ext
+}
+
+#[test]
+fn test_borrowed_extension() {
+    use borrowed::Literal;
+    use std::borrow::Cow;
+
+    let input = String::from("1.50");
+    let detached = {
+        let literal = Literal {
+            text: Cow::Borrowed(&input),
+            value: 1.5,
+        };
+        let ext = ExtValue::borrowed_value::<Literal>(&literal);
+        assert!(ext.is::<Literal>());
+        assert!(!ext.is::<u128>());
+        assert_eq!(ext.name(), "literal");
+        assert_eq!(ext.fallback(), Atom::F64(1.5));
+        assert_eq!(ext.downcast_value_ref::<Literal>().unwrap().text, "1.50");
+        assert!(ext.downcast_ref::<u128>().is_none());
+        assert_eq!(format!("{:?}", ext), format!("{:?}", literal));
+
+        // values can be used with shorter lifetimes, cloned and compared
+        let ext = shorten(ext);
+        let cloned = ext.clone();
+        assert_eq!(cloned, ext);
+        assert_eq!(ext.as_borrowed(), ext);
+        ext.to_static()
+    };
+    drop(input);
+    assert_eq!(
+        detached.downcast_value_ref::<Literal>().unwrap().text,
+        "1.50"
+    );
+
+    // owned values that borrow
+    let input = String::from("2.5");
+    let owned = ExtValue::owned_value::<Literal>(Literal {
+        text: Cow::Borrowed(&input),
+        value: 2.5,
+    });
+    assert_eq!(owned.clone(), owned);
+    assert_ne!(owned, detached);
+    assert_ne!(owned, ExtValue::owned(42u128));
+    let other = String::from("2.5");
+    assert_eq!(
+        owned,
+        ExtValue::owned_value::<Literal>(Literal {
+            text: Cow::Borrowed(&other),
+            value: 2.5,
+        })
+    );
+
+    // sinks that do not know the extension get the fallback
+    let atom = Atom::Ext(owned.clone());
+    let value: f64 = {
+        let mut out = None;
+        {
+            let mut driver = DeserializeDriver::new(&mut out);
+            driver.emit(atom).unwrap();
+        }
+        out.unwrap()
+    };
+    assert_eq!(value, 2.5);
+}

@@ -27,6 +27,17 @@
 //! buffering, see the
 //! [`located` example](https://github.com/mitsuhiko/deser/tree/main/examples/located).
 //!
+//! # Borrowing Extensions
+//!
+//! Extension values can borrow data, for instance a number that keeps its
+//! original text from the input.  Such extensions implement
+//! [`BorrowedExtension`] on a `'static` key type which defines the type of
+//! the values for a lifetime.  Their values are created with
+//! [`ExtValue::borrowed_value`] or [`ExtValue::owned_value`] and looked up
+//! with [`ExtValue::downcast_value_ref`].  When values are buffered they are
+//! detached from the data they borrow with
+//! [`BorrowedExtension::to_static`].
+//!
 //! # Well-Known Types
 //!
 //! Some types are common enough that many data formats support them
@@ -102,8 +113,9 @@
 //!     }
 //! }
 //! ```
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::fmt;
+use std::sync::Arc;
 
 use crate::event::Atom;
 
@@ -123,6 +135,10 @@ pub use self::uuid::Uuid;
 
 /// A type that can be passed through deser as an extension to the data model.
 ///
+/// This is implemented for extension types without lifetimes, which covers
+/// most extensions.  Types that borrow data implement
+/// [`BorrowedExtension`] instead.
+///
 /// See the [module level documentation](self) for more information.
 pub trait Extension: Any + fmt::Debug + Clone + PartialEq + Send + Sync {
     /// Returns the human readable name of the extension type.
@@ -137,61 +153,208 @@ pub trait Extension: Any + fmt::Debug + Clone + PartialEq + Send + Sync {
     fn fallback(&self) -> Atom<'_>;
 }
 
-/// The object safe version of [`Extension`].
-trait DynExtension: fmt::Debug + Send + Sync {
-    fn name(&self) -> &str;
-    fn fallback(&self) -> Atom<'_>;
-    fn clone_box(&self) -> Box<dyn DynExtension>;
-    fn dyn_eq(&self, other: &dyn DynExtension) -> bool;
-    fn as_any(&self) -> &dyn Any;
+/// An extension whose values can borrow data.
+///
+/// The trait is implemented by a `'static` key type which identifies the
+/// extension.  The values are of type [`Value<'a>`](Self::Value) and can
+/// borrow for `'a`.  Typically the key is the value type with a `'static`
+/// lifetime.  Every [`Extension`] is a borrowed extension whose values are
+/// of the type itself.
+///
+/// All methods are associated functions that take the value.  Values are
+/// created with [`ExtValue::borrowed_value`] and
+/// [`ExtValue::owned_value`] and looked up with
+/// [`ExtValue::downcast_value_ref`] with the key type:
+///
+/// ```
+/// use std::borrow::Cow;
+/// use deser::ext::{BorrowedExtension, ExtValue};
+/// use deser::Atom;
+///
+/// /// A number with its original text.
+/// #[derive(Debug, Clone, PartialEq)]
+/// pub struct Literal<'a> {
+///     pub text: Cow<'a, str>,
+///     pub value: f64,
+/// }
+///
+/// impl BorrowedExtension for Literal<'static> {
+///     type Value<'a> = Literal<'a>;
+///
+///     fn name<'v>(_value: &'v Literal<'_>) -> &'v str {
+///         "literal"
+///     }
+///
+///     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> {
+///         Atom::F64(value.value)
+///     }
+///
+///     fn to_static(value: &Literal<'_>) -> Literal<'static> {
+///         Literal {
+///             text: Cow::Owned(value.text.to_string()),
+///             value: value.value,
+///         }
+///     }
+///
+///     fn shorten<'s, 'l: 's>(value: &'s Literal<'l>) -> &'s Literal<'s> {
+///         value
+///     }
+/// }
+///
+/// let input = String::from("1.50");
+/// let literal = Literal { text: Cow::Borrowed(&input), value: 1.5 };
+/// let ext = ExtValue::borrowed_value::<Literal>(&literal);
+/// assert_eq!(ext.downcast_value_ref::<Literal>().unwrap().text, "1.50");
+/// assert_eq!(ext.fallback(), Atom::F64(1.5));
+/// ```
+pub trait BorrowedExtension: 'static {
+    /// The type of the values of this extension.
+    type Value<'a>: fmt::Debug + PartialEq + Send + Sync + 'a;
+
+    /// Returns the human readable name of the extension type.
+    ///
+    /// This is used for error messages.
+    fn name<'v>(value: &'v Self::Value<'_>) -> &'v str;
+
+    /// Lowers the value into the core data model.
+    ///
+    /// See [`Extension::fallback`].
+    fn fallback<'v>(value: &'v Self::Value<'_>) -> Atom<'v>;
+
+    /// Detaches a value from the data it borrows.
+    ///
+    /// This is used when values are buffered (see
+    /// [`ExtValue::to_static`]).
+    fn to_static(value: &Self::Value<'_>) -> Self::Value<'static>;
+
+    /// Shortens the lifetime of a value.
+    ///
+    /// This proves that a value can be used with a shorter lifetime.  For
+    /// types that are covariant in their lifetime (which is the case for
+    /// most types that hold references or [`Cow`](std::borrow::Cow)s) the
+    /// implementation is just `value`.
+    fn shorten<'s, 'l: 's>(value: &'s Self::Value<'l>) -> &'s Self::Value<'s>;
 }
 
-impl<T: Extension> DynExtension for T {
+impl<T: Extension> BorrowedExtension for T {
+    type Value<'a> = T;
+
+    fn name(value: &T) -> &str {
+        Extension::name(value)
+    }
+
+    fn fallback<'v>(value: &'v T) -> Atom<'v> {
+        Extension::fallback(value)
+    }
+
+    fn to_static(value: &T) -> T {
+        value.clone()
+    }
+
+    fn shorten<'s, 'l: 's>(value: &'s T) -> &'s T {
+        value
+    }
+}
+
+/// The object safe interface to extension values.
+trait ErasedExtension: fmt::Debug + Send + Sync {
+    /// The type id of the key of the extension.
+    fn key(&self) -> TypeId;
+    fn name(&self) -> &str;
+    fn fallback(&self) -> Atom<'_>;
+    fn to_static(&self) -> Arc<dyn ErasedExtension>;
+    /// Returns a pointer to a `K::Value<'s>` where `'s` is the lifetime of
+    /// the borrow of self.
+    fn value_ptr(&self) -> *const ();
+    fn dyn_eq(&self, other: &dyn ErasedExtension) -> bool;
+}
+
+/// Holds the value of an extension with the key `K`.
+#[repr(transparent)]
+struct Holder<'x, K: BorrowedExtension>(K::Value<'x>);
+
+impl<'x, K: BorrowedExtension> fmt::Debug for Holder<'x, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl<'x, K: BorrowedExtension> ErasedExtension for Holder<'x, K> {
+    fn key(&self) -> TypeId {
+        TypeId::of::<K>()
+    }
+
     fn name(&self) -> &str {
-        Extension::name(self)
+        K::name(&self.0)
     }
 
     fn fallback(&self) -> Atom<'_> {
-        Extension::fallback(self)
+        K::fallback(&self.0)
     }
 
-    fn clone_box(&self) -> Box<dyn DynExtension> {
-        Box::new(self.clone())
+    fn to_static(&self) -> Arc<dyn ErasedExtension> {
+        Arc::new(Holder::<'static, K>(K::to_static(&self.0)))
     }
 
-    fn dyn_eq(&self, other: &dyn DynExtension) -> bool {
-        other.as_any().downcast_ref::<T>() == Some(self)
+    fn value_ptr(&self) -> *const () {
+        // the value is shortened through the implementation of the
+        // extension, which proves that it's valid for the shorter lifetime.
+        K::shorten(&self.0) as *const K::Value<'_> as *const ()
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn dyn_eq(&self, other: &dyn ErasedExtension) -> bool {
+        other.key() == TypeId::of::<K>()
+            // SAFETY: the keys match, so the pointer points to a
+            // `K::Value<'s>` for the borrow of `other`.
+            && K::shorten(&self.0) == unsafe { &*(other.value_ptr() as *const K::Value<'_>) }
     }
 }
 
 /// An extension value carried by [`Atom::Ext`].
 ///
-/// The value is either borrowed (which is typical during serialization) or
-/// owned (which is typical for deserialization where a data format creates
-/// the value).
+/// The value is either borrowed (which is typical during serialization and
+/// for values that formats create while parsing) or owned.  Owned values are
+/// reference counted, so cloning an extension value is cheap.
+///
+/// Extension values are covariant in their lifetime and they can borrow
+/// data (see [`BorrowedExtension`]).
 pub struct ExtValue<'a>(Repr<'a>);
 
 enum Repr<'a> {
-    Borrowed(&'a dyn DynExtension),
-    Owned(Box<dyn DynExtension>),
+    Borrowed(&'a (dyn ErasedExtension + 'a)),
+    Owned(Arc<dyn ErasedExtension + 'a>),
 }
 
 impl<'a> ExtValue<'a> {
     /// Creates an extension value borrowing from a value.
     pub fn borrowed<T: Extension>(value: &'a T) -> ExtValue<'a> {
-        ExtValue(Repr::Borrowed(value))
+        ExtValue::borrowed_value::<T>(value)
     }
 
     /// Creates an extension value that owns the value.
-    pub fn owned<T: Extension>(value: T) -> ExtValue<'static> {
-        ExtValue(Repr::Owned(Box::new(value)))
+    pub fn owned<T: Extension>(value: T) -> ExtValue<'a> {
+        ExtValue::owned_value::<T>(value)
     }
 
-    fn get(&self) -> &dyn DynExtension {
+    /// Creates an extension value borrowing from the value of an extension.
+    ///
+    /// The extension is identified by its key `K` (see
+    /// [`BorrowedExtension`]).
+    pub fn borrowed_value<K: BorrowedExtension>(value: &'a K::Value<'a>) -> ExtValue<'a> {
+        // SAFETY: the holder is a transparent wrapper around the value
+        let holder = unsafe { &*(value as *const K::Value<'a> as *const Holder<'a, K>) };
+        ExtValue(Repr::Borrowed(holder))
+    }
+
+    /// Creates an extension value that owns the value of an extension.
+    ///
+    /// The extension is identified by its key `K` (see
+    /// [`BorrowedExtension`]).
+    pub fn owned_value<K: BorrowedExtension>(value: K::Value<'a>) -> ExtValue<'a> {
+        ExtValue(Repr::Owned(Arc::new(Holder::<'a, K>(value))))
+    }
+
+    fn get(&self) -> &(dyn ErasedExtension + 'a) {
         match self.0 {
             Repr::Borrowed(value) => value,
             Repr::Owned(ref value) => &**value,
@@ -210,14 +373,41 @@ impl<'a> ExtValue<'a> {
         self.get().fallback()
     }
 
-    /// Returns `true` if the value is of type `T`.
-    pub fn is<T: Extension>(&self) -> bool {
-        self.get().as_any().is::<T>()
+    /// Returns `true` if the value is of the extension with the key `K`.
+    ///
+    /// For extensions without lifetimes the key is the type.
+    pub fn is<K: BorrowedExtension>(&self) -> bool {
+        self.get().key() == TypeId::of::<K>()
     }
 
     /// Returns the value if it's of type `T`.
+    ///
+    /// ```
+    /// use deser::ext::ExtValue;
+    ///
+    /// let ext = ExtValue::owned(42u128);
+    /// assert_eq!(ext.downcast_ref::<u128>(), Some(&42));
+    /// ```
+    ///
+    /// For extensions that borrow use
+    /// [`downcast_value_ref`](Self::downcast_value_ref).
     pub fn downcast_ref<T: Extension>(&self) -> Option<&T> {
-        self.get().as_any().downcast_ref::<T>()
+        self.downcast_value_ref::<T>()
+    }
+
+    /// Returns the value if it's of the extension with the key `K`.
+    ///
+    /// See [`BorrowedExtension`] for an example.  The returned value borrows
+    /// from this extension value.
+    pub fn downcast_value_ref<K: BorrowedExtension>(&self) -> Option<&K::Value<'_>> {
+        let value = self.get();
+        if value.key() == TypeId::of::<K>() {
+            // SAFETY: the keys match, so the pointer points to a
+            // `K::Value<'s>` for the borrow of self.
+            Some(unsafe { &*(value.value_ptr() as *const K::Value<'_>) })
+        } else {
+            None
+        }
     }
 
     /// Returns a value borrowing from this one.
@@ -226,8 +416,11 @@ impl<'a> ExtValue<'a> {
     }
 
     /// Makes a static clone of the value decoupling the lifetimes.
+    ///
+    /// Values that borrow data are detached from it (see
+    /// [`BorrowedExtension::to_static`]).
     pub fn to_static(&self) -> ExtValue<'static> {
-        ExtValue(Repr::Owned(self.get().clone_box()))
+        ExtValue(Repr::Owned(self.get().to_static()))
     }
 }
 
@@ -235,7 +428,7 @@ impl<'a> Clone for ExtValue<'a> {
     fn clone(&self) -> Self {
         match self.0 {
             Repr::Borrowed(value) => ExtValue(Repr::Borrowed(value)),
-            Repr::Owned(ref value) => ExtValue(Repr::Owned(value.clone_box())),
+            Repr::Owned(ref value) => ExtValue(Repr::Owned(value.clone())),
         }
     }
 }
