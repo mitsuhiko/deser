@@ -23,18 +23,36 @@ use deser::ser::{Chunk, Serialize};
 use deser::State;
 use deser::{Atom, Descriptor, Error};
 
-/// The tags of the current event in the deserializer state.
+/// The tags of the current data item, attached as event data when
+/// deserializing.
 ///
 /// The tags are ordered from the outermost to the innermost tag.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub(crate) struct CurrentTags(pub(crate) Vec<u64>);
 
-/// The tags that the serializer should write in front of the next item.
-///
-/// The serializer installs this extension, tags are only collected if it
-/// exists.
-#[derive(Debug, Default, Clone)]
+/// The tags that the serializer writes in front of a data item, attached as
+/// event data when serializing.
+#[derive(Debug, Default)]
 pub(crate) struct PendingTags(pub(crate) Vec<u64>);
+
+// Event data is reset with `clone_from` which retains the memory of the
+// vectors only if it's forwarded (derived clones do not do that).
+macro_rules! impl_clone {
+    ($ty:ident) => {
+        impl Clone for $ty {
+            fn clone(&self) -> $ty {
+                $ty(self.0.clone())
+            }
+
+            fn clone_from(&mut self, source: &$ty) {
+                self.0.clone_from(&source.0);
+            }
+        }
+    };
+}
+
+impl_clone!(CurrentTags);
+impl_clone!(PendingTags);
 
 /// Takes the outermost tag of the current data item from the state.
 ///
@@ -52,9 +70,13 @@ pub(crate) struct PendingTags(pub(crate) Vec<u64>);
 /// }
 /// ```
 pub fn take_tag(state: &mut State) -> Option<u64> {
-    match state.get::<CurrentTags>() {
-        Some(tags) if !tags.0.is_empty() => Some(state.get_mut::<CurrentTags>().0.remove(0)),
-        _ => None,
+    if state
+        .event::<CurrentTags>()
+        .is_some_and(|tags| !tags.0.is_empty())
+    {
+        Some(state.event_mut::<CurrentTags>().0.remove(0))
+    } else {
+        None
     }
 }
 
@@ -62,11 +84,10 @@ pub fn take_tag(state: &mut State) -> Option<u64> {
 ///
 /// This is what [`Tagged`] uses internally.  It must be called from
 /// [`Serialize::serialize`] and applies to the value serialized from that
-/// call.  If the serializer does not support tags this does nothing.
+/// call.  The tag is attached to the first event of the value (see
+/// [`State::event`]), serializers which do not support tags ignore it.
 pub fn push_tag(state: &mut State, tag: u64) {
-    if state.get::<PendingTags>().is_some() {
-        state.get_mut::<PendingTags>().0.push(tag);
-    }
+    state.event_mut::<PendingTags>().0.push(tag);
 }
 
 /// A value with an optional CBOR tag.

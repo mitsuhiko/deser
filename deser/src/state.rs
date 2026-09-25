@@ -16,9 +16,16 @@ const STACK_CAPACITY: usize = 128;
 /// the drivers.
 ///
 /// Besides some information about the current position (such as the
-/// [`depth`](Self::depth)) it holds extension values: arbitrary typed values
-/// that can be used by formats and types to exchange information that is not
-/// part of the data model, for instance source locations or paths.
+/// [`depth`](Self::depth)) it holds typed values that can be used by formats
+/// and types to exchange information that is not part of the data model:
+///
+/// * Extension values ([`get`](Self::get) and [`get_mut`](Self::get_mut))
+///   remain in the state until they are changed.  They are used for
+///   information that spans many events such as the current path.
+/// * Event data ([`event`](Self::event) and [`event_mut`](Self::event_mut))
+///   is attached to a single event and detached by the drivers after the
+///   event was delivered.  It is used for information about an individual
+///   value, such as its source location or a tag.
 ///
 /// Extension values have to be [`Send`] so that the state is [`Send`] too.
 /// This means that the state never prevents an ongoing serialization or
@@ -83,11 +90,81 @@ impl State {
     /// instance for internally tagged enums, see
     /// [`Recording`](crate::de::Recording)) the values of replayable
     /// extensions are captured for every event and restored when the event is
-    /// replayed.  This is used for information that formats or wrappers put
-    /// into the state for the current event, such as source locations or
-    /// paths.
+    /// replayed.  This is used for information that changes from event to
+    /// event but remains in the state, such as the current path.  Event data
+    /// is always captured, it does not need to be marked.
     pub fn set_replayable<T: Clone + Default + fmt::Debug + Send + 'static>(&mut self) {
         self.extensions.set_replayable::<T>();
+    }
+
+    /// Returns the data of a type attached to the current event.
+    ///
+    /// Returns `None` if no such data is attached to the event.
+    ///
+    /// Event data is attached to the next event and detached by the driver
+    /// after that event was delivered:
+    ///
+    /// * During deserialization, formats attach data with
+    ///   [`DeserializeDriver::emit_with`](crate::de::DeserializeDriver::emit_with).
+    ///   The sinks that receive the event (including the
+    ///   [`finish`](crate::de::Sink::finish) of a container on its end event)
+    ///   can access it.
+    /// * During serialization, [`Serialize`](crate::ser::Serialize)
+    ///   implementations and emitters attach data while they produce a
+    ///   value.  The format receives it together with the first event of the
+    ///   value from the [`SerializeDriver`](crate::ser::SerializeDriver).
+    ///
+    /// Event data is captured by a [`Recording`](crate::de::Recording) and
+    /// restored when the events are replayed.
+    #[inline]
+    pub fn event<T: fmt::Debug + Send + 'static>(&self) -> Option<&T> {
+        self.extensions.event()
+    }
+
+    /// Returns the data of a type attached to the current event mutably.
+    ///
+    /// If no data of this type is attached to the current event yet, the
+    /// default value is attached.  See [`event`](Self::event) for more
+    /// information.
+    ///
+    /// Detached values are retained and reused for later events.  They are
+    /// reset with [`clone_from`](Clone::clone_from) from the default value,
+    /// which means that types which forward `clone_from` to their fields
+    /// (unlike derived implementations of [`Clone`]) reuse the memory of
+    /// collections such as [`Vec`].
+    ///
+    /// ```
+    /// # use deser::State;
+    /// #[derive(Debug, Default, Clone)]
+    /// struct Tags(Vec<u64>);
+    ///
+    /// fn push_tag(state: &mut State, tag: u64) {
+    ///     state.event_mut::<Tags>().0.push(tag);
+    /// }
+    /// ```
+    #[inline]
+    pub fn event_mut<T: Default + Clone + fmt::Debug + Send + 'static>(&mut self) -> &mut T {
+        self.extensions.event_mut()
+    }
+
+    /// Returns `true` if any data is attached to the current event.
+    ///
+    /// This is a cheap check that formats can use to skip looking up event
+    /// data for the vast majority of events that have none.
+    #[inline(always)]
+    pub fn has_event_data(&self) -> bool {
+        self.extensions.has_event_data()
+    }
+
+    /// Detaches all data from the current event.
+    ///
+    /// The drivers call this after the events that carry data.  Formats
+    /// which attach data for every event they emit (such as source
+    /// locations) do not need to detach it between events as it's replaced,
+    /// but they should detach it once they are done.
+    #[inline(always)]
+    pub fn clear_event_data(&mut self) {
+        self.extensions.clear_event_data();
     }
 
     /// Returns the current recursion depth.

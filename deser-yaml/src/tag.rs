@@ -23,7 +23,7 @@ use deser::ser::{Chunk, Serialize};
 use deser::State;
 use deser::{Atom, Descriptor, Error};
 
-/// The tag of the current event in the deserializer state.
+/// The tag of the current node, attached as event data.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct CurrentTag(pub(crate) Option<String>);
 
@@ -41,9 +41,13 @@ pub(crate) struct CurrentTag(pub(crate) Option<String>);
 /// }
 /// ```
 pub fn take_tag(state: &mut State) -> Option<String> {
-    match state.get::<CurrentTag>() {
-        Some(tag) if tag.0.is_some() => state.get_mut::<CurrentTag>().0.take(),
-        _ => None,
+    if state
+        .event::<CurrentTag>()
+        .is_some_and(|tag| tag.0.is_some())
+    {
+        state.event_mut::<CurrentTag>().0.take()
+    } else {
+        None
     }
 }
 

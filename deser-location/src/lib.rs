@@ -44,10 +44,11 @@
 //!
 //! # Buffering
 //!
-//! The span is out-of-band information in the deserializer state.  The
-//! locations are registered as replayable state, so values that are
-//! internally buffered with a [`Recording`](deser::de::Recording) (as some
-//! enum representations do) retain their locations when they are replayed.
+//! The span of an event is attached to the event in the state (see
+//! [`State::event`]).  Values that are internally buffered with a
+//! [`Recording`](deser::de::Recording) (as some enum representations do)
+//! retain their locations when they are replayed as recordings capture the
+//! data of every event.
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -212,31 +213,34 @@ impl SourceMap {
 
 /// Location information in the [`State`].
 ///
-/// Formats install a [`SourceMap`] and publish the byte offsets of the event
-/// they emit next.  Consumers retrieve the resolved span of the current
+/// Formats install a [`SourceMap`] and attach the byte offsets to every
+/// event they emit.  Consumers retrieve the resolved span of the current
 /// event with [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
 pub struct Locations {
     source_map: Option<Arc<SourceMap>>,
-    current: Option<(usize, usize)>,
 }
+
+/// The byte offsets of the current event, attached as event data.
+#[derive(Debug, Default, Clone, Copy)]
+struct EventOffsets(usize, usize);
 
 impl Locations {
     /// Installs the source map.  Called by formats once.
-    ///
-    /// This also marks the locations as replayable so that values which are
-    /// internally buffered (for instance for internally tagged enums) retain
-    /// their locations.
     pub fn set_source_map(state: &mut State, source_map: Arc<SourceMap>) {
-        state.set_replayable::<Locations>();
         state.get_mut::<Locations>().source_map = Some(source_map);
     }
 
-    /// Sets the byte offsets of the current event.  Called by formats for
-    /// every event.
+    /// Sets the byte offsets of the event that is emitted next.  Called by
+    /// formats for every event.
+    ///
+    /// The offsets are attached as event data (see [`State::event`]).  As
+    /// every event gets new offsets they do not need to be detached between
+    /// events, formats detach them with [`State::clear_event_data`] once they
+    /// are done.
     #[inline]
     pub fn set_current(state: &mut State, start: usize, end: usize) {
-        state.get_mut::<Locations>().current = Some((start, end));
+        *state.event_mut::<EventOffsets>() = EventOffsets(start, end);
     }
 
     /// Returns the source map if the format provides one.
@@ -246,11 +250,9 @@ impl Locations {
 
     /// Returns the span of the current event if the format provides it.
     pub fn current_span(state: &State) -> Option<Span> {
-        let locations = state.get::<Locations>()?;
-        match (&locations.source_map, locations.current) {
-            (Some(source_map), Some((start, end))) => Some(source_map.span(start, end)),
-            _ => None,
-        }
+        let EventOffsets(start, end) = *state.event::<EventOffsets>()?;
+        let source_map = state.get::<Locations>()?.source_map.as_ref()?;
+        Some(source_map.span(start, end))
     }
 }
 

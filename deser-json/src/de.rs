@@ -135,7 +135,10 @@ impl<'a> Deserializer<'a> {
                 driver.state_mut(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.source())),
             );
-            self.drive_impl::<true>(driver, &mut buffer)
+            let rv = self.drive_impl::<true>(driver, &mut buffer);
+            // the span is attached to every event, detach the last one
+            driver.state_mut().clear_event_data();
+            rv
         } else {
             self.drive_impl::<false>(driver, &mut buffer)
         };

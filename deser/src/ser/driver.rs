@@ -28,6 +28,9 @@ pub struct SerializeDriver<'a> {
     // be called on it.
     needs_finish: Option<(Held, bool)>,
     stack: Vec<Frame>,
+    // `true` if `next` returned an event.  Its event data is detached on the
+    // next call.
+    delivered: bool,
     _marker: PhantomData<&'a dyn Serialize>,
 }
 
@@ -132,6 +135,7 @@ impl<'a> SerializeDriver<'a> {
             next_value: Some(unsafe { Held::new(SerializeHandle::Borrowed(serializable)) }),
             needs_finish: None,
             stack: Vec::with_capacity(STACK_CAPACITY),
+            delivered: false,
             _marker: PhantomData,
         }
     }
@@ -159,12 +163,21 @@ impl<'a> SerializeDriver<'a> {
     pub fn next(
         &mut self,
     ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &mut State)>, Error> {
+        let rv = self.advance()?;
+        self.delivered = rv.is_some();
         // The event borrows from the values held by the driver but never
         // from the state (serializables cannot return chunks borrowing from
         // it), which is why the state can be handed out mutably.
-        Ok(self
-            .advance()?
-            .map(|(event, descriptor)| (event, descriptor, &mut self.state)))
+        Ok(rv.map(|(event, descriptor)| (event, descriptor, &mut self.state)))
+    }
+
+    /// Detaches the event data of an event returned by `next`.
+    #[inline(always)]
+    fn detach_delivered_event_data(&mut self) {
+        if self.delivered {
+            self.delivered = false;
+            self.state.clear_event_data();
+        }
     }
 
     /// Drives the serialization to the end and invokes a callback for every
@@ -193,6 +206,7 @@ impl<'a> SerializeDriver<'a> {
         F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
         // `next` might have been used before.
+        self.detach_delivered_event_data();
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;
@@ -217,6 +231,7 @@ impl<'a> SerializeDriver<'a> {
                                 &STRUCT_KEY_DESCRIPTOR,
                                 &mut self.state,
                             )?;
+                            self.state.clear_event_data();
                             (value, false)
                         }
                         StructField::Skip => continue,
@@ -245,6 +260,7 @@ impl<'a> SerializeDriver<'a> {
                             &STRUCT_KEY_DESCRIPTOR,
                             &mut self.state,
                         )?;
+                        self.state.clear_event_data();
                         (value, false)
                     }
                     None => {
@@ -303,6 +319,7 @@ impl<'a> SerializeDriver<'a> {
         let (emitter, event) = match kind {
             BeginKind::Chunk(Chunk::Atom(atom)) => {
                 f(Event::Atom(atom), descriptor, &mut self.state)?;
+                self.state.clear_event_data();
                 if needs_finish {
                     serializable.finish(&mut self.state)?;
                 }
@@ -322,7 +339,9 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         });
         self.state.descriptor_stack.push(descriptor);
-        f(event, descriptor, &mut self.state)
+        f(event, descriptor, &mut self.state)?;
+        self.state.clear_event_data();
+        Ok(())
     }
 
     /// Ends the container on the top of the stack and emits the end event.
@@ -333,6 +352,7 @@ impl<'a> SerializeDriver<'a> {
     {
         let (event, descriptor) = self.end_container();
         f(event, descriptor, &mut self.state)?;
+        self.state.clear_event_data();
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;
@@ -346,6 +366,7 @@ impl<'a> SerializeDriver<'a> {
     /// the values and frames held by the driver.  It's only valid until the
     /// next call.
     fn advance(&mut self) -> Result<NextEvent<'static>, Error> {
+        self.detach_delivered_event_data();
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;

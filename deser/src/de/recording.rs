@@ -11,10 +11,10 @@ use crate::State;
 /// where the tag can come after the fields of the variant.  Such types record
 /// values and replay them once they know where they should go.
 ///
-/// A recording captures the events of a value together with the values of
-/// all replayable extensions in the state (see
-/// [`State::set_replayable`]) at the time of each event.  When
-/// replaying, these values are restored for every event.  This means that
+/// A recording captures the events of a value together with the data
+/// attached to them (see [`State::event`]) and the values of all replayable
+/// extensions in the state (see [`State::set_replayable`]) at the time of
+/// each event.  When replaying, these values are restored for every event.  This means that
 /// information such as source locations or paths remains correct for replayed
 /// values.  Map keys are also replayed as map keys, so format specific key
 /// handling (like integer keys in JSON) continues to work.
@@ -164,8 +164,9 @@ impl Recording {
     fn replay_events(&self, sink: SinkHandle<'_>, state: &mut State) -> Result<(), Error> {
         DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
             for (event, snapshot) in self.events.iter() {
-                driver.state_mut().extensions_mut().restore(snapshot);
-                driver.emit(event.as_borrowed())?;
+                driver.emit_with(event.as_borrowed(), |state| {
+                    state.extensions_mut().restore(snapshot)
+                })?;
             }
             Ok(())
         })

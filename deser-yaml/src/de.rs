@@ -556,7 +556,10 @@ impl<'a> Deserializer<'a> {
                 driver.state_mut(),
                 std::sync::Arc::new(deser_location::SourceMap::new(self.input)),
             );
-            self.drive_document::<true>(driver)
+            let rv = self.drive_document::<true>(driver);
+            // the span is attached to every event, detach the last one
+            driver.state_mut().clear_event_data();
+            rv
         } else {
             self.drive_document::<false>(driver)
         };
@@ -949,19 +952,16 @@ fn emit_scalar<const LOCATIONS: bool>(
     }
 }
 
-/// Emits an event with a tag in the state.
+/// Emits an event with a tag attached to it.
 #[cold]
 fn emit_tagged<'e, E: Into<Event<'e>>>(
     driver: &mut DeserializeDriver,
     tag: &str,
     event: E,
 ) -> Result<(), Error> {
-    let state = driver.state_mut();
-    state.set_replayable::<CurrentTag>();
-    state.get_mut::<CurrentTag>().0 = Some(tag.to_string());
-    let rv = driver.emit(event);
-    driver.state_mut().get_mut::<CurrentTag>().0 = None;
-    rv
+    driver.emit_with(event, |state| {
+        state.event_mut::<CurrentTag>().0 = Some(tag.to_string());
+    })
 }
 
 fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {

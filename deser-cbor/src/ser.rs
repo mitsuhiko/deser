@@ -72,7 +72,7 @@ struct Insertion {
 
 impl Writer {
     #[inline(always)]
-    fn event(&mut self, event: Event, state: &mut State) -> Result<(), Error> {
+    fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => {
                 self.begin_item(state);
@@ -87,30 +87,30 @@ impl Writer {
     /// Accounts for a new item in the current container and writes the
     /// pending tags.
     #[inline(always)]
-    fn begin_item(&mut self, state: &mut State) {
+    fn begin_item(&mut self, state: &State) {
         if let Some(ref mut frame) = self.frame {
             frame.items += 1;
             if self.canonical && frame.is_map {
                 self.offsets.push(self.out.len());
             }
         }
-        if state
-            .get::<PendingTags>()
-            .is_some_and(|tags| !tags.0.is_empty())
-        {
-            self.write_pending_tags(state);
+        if state.has_event_data() {
+            self.write_tags(state);
         }
     }
 
+    /// Writes the tags attached to the current event.
     #[cold]
-    fn write_pending_tags(&mut self, state: &mut State) {
-        for tag in state.get_mut::<PendingTags>().0.drain(..) {
-            self.write_head(MAJOR_TAG, tag);
+    fn write_tags(&mut self, state: &State) {
+        if let Some(tags) = state.event::<PendingTags>() {
+            for &tag in tags.0.iter() {
+                self.write_head(MAJOR_TAG, tag);
+            }
         }
     }
 
     #[inline(never)]
-    fn start(&mut self, is_map: bool, state: &mut State) -> Result<(), Error> {
+    fn start(&mut self, is_map: bool, state: &State) -> Result<(), Error> {
         self.begin_item(state);
         let frame = Frame {
             header: self.out.len(),
@@ -416,8 +416,6 @@ impl Serializer {
     /// Serializes the given value.
     pub fn serialize(self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
         let mut driver = SerializeDriver::new(value);
-        // tags are only collected if the extension exists
-        driver.state_mut().get_mut::<PendingTags>();
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,

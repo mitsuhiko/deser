@@ -19,6 +19,13 @@ All notable changes to deser are documented here.
   as for values that are not buffered, and maps and sequences remain the
   current container while their sink is finished.
 - Improved the performance of serializing CBOR tags.
+- Added event data to the `State`: values attached to a single event with
+  `State::event_mut` and read with `State::event`.  Formats attach data with
+  `DeserializeDriver::emit_with`, during serialization `Serialize`
+  implementations attach data to their first event and the serialize driver
+  detaches it after the event was delivered.  Recordings capture event data
+  automatically.  Source locations and the CBOR and YAML tags are now event
+  data, `Locations` is no longer replayable.
 
 - Changed `#[deser(default = ...)]` to take an expression instead of a
   function name in a string, and `#[deser(skip_serializing_if = ...)]` to

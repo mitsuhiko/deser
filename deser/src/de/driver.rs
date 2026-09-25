@@ -107,6 +107,10 @@ impl<'a> DeserializeDriver<'a> {
 
     /// Emits an event into the driver.
     ///
+    /// To attach data to the event (see
+    /// [`State::event`](crate::State::event)) use
+    /// [`emit_with`](Self::emit_with).
+    ///
     /// # Panics
     ///
     /// The driver keeps an internal state and emitting events when they are
@@ -120,6 +124,38 @@ impl<'a> DeserializeDriver<'a> {
             Event::MapEnd => self.emit_end(true),
             Event::SeqEnd => self.emit_end(false),
         }
+    }
+
+    /// Emits an event with data attached to it.
+    ///
+    /// The callback attaches the data to the state with
+    /// [`State::event_mut`](crate::State::event_mut), the data is detached
+    /// after the event was emitted.  Events emitted with
+    /// [`emit`](Self::emit) do not pay for event data this way.
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    /// use deser::Event;
+    ///
+    /// #[derive(Debug, Default, Clone)]
+    /// struct Offset(usize);
+    ///
+    /// let mut out = None::<Vec<u32>>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.emit(Event::SeqStart).unwrap();
+    /// driver.emit_with(1u64, |state| state.event_mut::<Offset>().0 = 1).unwrap();
+    /// assert!(!driver.state().has_event_data());
+    /// ```
+    #[inline]
+    pub fn emit_with<'e, E, F>(&mut self, event: E, attach: F) -> Result<(), Error>
+    where
+        E: Into<Event<'e>>,
+        F: FnOnce(&mut State),
+    {
+        attach(&mut self.state);
+        let rv = self.emit(event);
+        self.state.clear_event_data();
+        rv
     }
 
     fn emit_atom(&mut self, atom: Atom) -> Result<(), Error> {

@@ -329,14 +329,11 @@ impl<'a> Deserializer<'a> {
 
     #[cold]
     fn emit_tagged(&mut self, driver: &mut DeserializeDriver, event: Event) -> Result<(), Error> {
-        let state = driver.state_mut();
-        state.set_replayable::<CurrentTags>();
-        let current = state.get_mut::<CurrentTags>();
-        std::mem::swap(&mut current.0, &mut self.tags);
-        let rv = driver.emit(event);
-        let current = driver.state_mut().get_mut::<CurrentTags>();
-        std::mem::swap(&mut current.0, &mut self.tags);
-        current.0.clear();
+        let tags = &mut self.tags;
+        let rv = driver.emit_with(event, |state| {
+            // swapping retains the memory of both vectors
+            std::mem::swap(&mut state.event_mut::<CurrentTags>().0, tags);
+        });
         self.tags.clear();
         rv
     }
