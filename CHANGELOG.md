@@ -20,6 +20,10 @@ All notable changes to deser are documented here.
   128 bits are passed on as `BigInt` instead of tagged byte strings.
 - `deser-json` writes `BigInt` and `Decimal` as numbers.
 - `deser-yaml` supports the `!!timestamp` tag (as `Datetime`).
+- Added `deser-toml` which implements TOML 1.1 from scratch.  It passes the
+  toml-test suite, supports date-times through the well-known `Datetime`
+  type, writes maps as tables and sequences of maps as arrays of tables and
+  supports source locations.
 - Merged `DeserializerState` and `SerializerState` into a single
   `deser::State` without a lifetime parameter.  `is_map_key` and
   `set_replayable` are available in both directions and the serialize driver

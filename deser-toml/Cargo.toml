@@ -1,0 +1,31 @@
+[package]
+name = "deser-toml"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition = "2021"
+description = "TOML support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "toml"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-toml"
+# the vendored conformance test data is only needed for development
+exclude = ["tests/data"]
+
+[features]
+speedups = ["simdutf8"]
+locations = ["deser-location"]
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser-location = { version = "0.8.0", path = "../deser-location", optional = true }
+simdutf8 = { version = "0.1.5", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive", "jiff"] }
+jiff = "0.2.14"
+deser-json = { version = "0.8.0", path = "../deser-json" }
+
+[[test]]
+name = "toml_test_suite"
+harness = false

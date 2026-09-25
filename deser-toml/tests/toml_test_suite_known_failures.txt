@@ -1,0 +1,2 @@
+# Tests of toml-test that are expected to fail.
+# Format: <name> [# reason].  Regenerate with DESER_TOML_BLESS=1.

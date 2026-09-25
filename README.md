@@ -102,6 +102,8 @@ included benchmark.
   JSON implementation for deser
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
   implementation for deser with support for tags
+* [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
+  implementation for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
   that extends deser to track the path during serialization
 * [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a
