@@ -42,6 +42,8 @@ pub enum EventKind<'a> {
     DocumentStart {
         /// `---` was present.
         explicit: bool,
+        /// The version declared with the `%YAML` directive.
+        version: Option<(u32, u32)>,
     },
     DocumentEnd {
         /// `...` was present.

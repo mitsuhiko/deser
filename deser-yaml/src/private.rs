@@ -31,7 +31,7 @@ fn write_event(out: &mut String, kind: &EventKind) {
     match kind {
         EventKind::StreamStart => out.push_str("+STR"),
         EventKind::StreamEnd => out.push_str("-STR"),
-        EventKind::DocumentStart { explicit } => {
+        EventKind::DocumentStart { explicit, .. } => {
             out.push_str(if *explicit { "+DOC ---" } else { "+DOC" })
         }
         EventKind::DocumentEnd { explicit } => {

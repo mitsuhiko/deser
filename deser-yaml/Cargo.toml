@@ -12,8 +12,14 @@ documentation = "https://docs.rs/deser-yaml"
 # the vendored conformance test data is only needed for development
 exclude = ["tests/data"]
 
+[features]
+speedups = ["simdutf8"]
+locations = ["deser-location"]
+
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser-location = { version = "0.8.0", path = "../deser-location", optional = true }
+simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

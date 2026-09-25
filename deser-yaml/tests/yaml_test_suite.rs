@@ -1,7 +1,8 @@
 //! Runs the official YAML test suite (vendored in `tests/data`).
 //!
 //! Every test case parses `in.yaml` and compares the produced events with
-//! `test.event`.  Cases with an `error` file must fail to parse.  The
+//! `test.event`.  If the case has an `in.json` file, the documents are also
+//! deserialized and compared with it (ignoring tags).  Cases with an `error` file must fail to parse.  The
 //! events before the error are not compared: parsers detect errors at
 //! different points and the suite's partial event streams are not reliable
 //! (some are placeholders).
@@ -22,6 +23,11 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use deser_yaml::__private::parse_to_test_events;
+use deser_yaml::Deserializer;
+
+mod common;
+
+use common::{parse_json_stream, Value};
 
 const KNOWN_FAILURES: &str = "tests/yaml_test_suite_known_failures.txt";
 const SUITE: &str = "tests/data/yaml-test-suite";
@@ -33,6 +39,7 @@ struct Case {
     tags: Vec<String>,
     input: String,
     events: String,
+    json: Option<String>,
     is_error: bool,
 }
 
@@ -143,6 +150,81 @@ fn main() -> ExitCode {
 }
 
 fn run_case(case: &Case) -> Outcome {
+    match check_events(case) {
+        Outcome::Pass => {}
+        fail => return fail,
+    }
+    match case.json {
+        Some(ref json) if !case.is_error => check_json(case, json),
+        _ => Outcome::Pass,
+    }
+}
+
+/// Deserializes all documents and compares them with the JSON.
+fn check_json(case: &Case, json: &str) -> Outcome {
+    let rv = panic::catch_unwind(|| {
+        Deserializer::new(&case.input)
+            .iter::<Value>()
+            .collect::<Result<Vec<_>, _>>()
+    });
+    let docs = match rv {
+        Ok(Ok(docs)) => docs,
+        Ok(Err(err)) => return Outcome::Fail(format!("deserialization failed: {}", err)),
+        Err(_) => return Outcome::Fail("deserializer panicked".into()),
+    };
+    let docs: Vec<Value> = docs.into_iter().map(Value::untagged).collect();
+    let expected = parse_json_stream(json);
+    if docs.len() == expected.len() && docs.iter().zip(&expected).all(|(a, b)| json_eq(a, b)) {
+        Outcome::Pass
+    } else {
+        Outcome::Fail(format!(
+            "deserialized value does not match in.json\n  expected: {:?}\n  actual:   {:?}",
+            expected, docs
+        ))
+    }
+}
+
+/// Compares a deserialized value with a value from JSON.
+///
+/// JSON cannot represent everything YAML can: object keys are unordered,
+/// integers and floats are not distinguished (`450.00` is written as
+/// `450`) and binary data is represented as base64 string.
+fn json_eq(yaml: &Value, json: &Value) -> bool {
+    match (yaml, json) {
+        (Value::Int(a), Value::Float(b)) | (Value::Float(b), Value::Int(a)) => *a as f64 == *b,
+        (Value::Bytes(a), Value::Str(b)) => {
+            let b: String = b.chars().filter(|c| !c.is_whitespace()).collect();
+            base64(a) == b
+        }
+        (Value::Seq(a), Value::Seq(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| json_eq(a, b))
+        }
+        (Value::Map(a), Value::Map(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, v)| b.iter().any(|(k2, v2)| json_eq(k, k2) && json_eq(v, v2)))
+        }
+        (a, b) => a == b,
+    }
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut rv = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().fold(0u32, |acc, &b| acc << 8 | b as u32) << (8 * (3 - chunk.len()));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                rv.push(CHARS[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                rv.push('=');
+            }
+        }
+    }
+    rv
+}
+
+fn check_events(case: &Case) -> Outcome {
     let (events, error) = match panic::catch_unwind(|| parse_to_test_events(&case.input)) {
         Ok(rv) => rv,
         Err(panic) => {
@@ -258,6 +340,7 @@ fn load_cases(suite: &Path) -> Vec<Case> {
                 tags: tags.get(top_id).cloned().unwrap_or_default(),
                 input: read(&dir.join("in.yaml")),
                 events: read(&dir.join("test.event")),
+                json: fs::read_to_string(dir.join("in.json")).ok(),
                 is_error: dir.join("error").is_file(),
                 id,
             }

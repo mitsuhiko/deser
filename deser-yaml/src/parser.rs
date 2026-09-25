@@ -41,6 +41,8 @@ pub struct Parser<'a> {
     states: Vec<State>,
     /// The tag handles of the current document.
     tag_handles: Vec<(Cow<'a, str>, Cow<'a, str>)>,
+    /// The end of the last event.  Block collections end there.
+    last_end: Mark,
 }
 
 impl<'a> Parser<'a> {
@@ -50,6 +52,7 @@ impl<'a> Parser<'a> {
             state: State::StreamStart,
             states: Vec::new(),
             tag_handles: Vec::new(),
+            last_end: Mark::default(),
         }
     }
 
@@ -58,6 +61,12 @@ impl<'a> Parser<'a> {
     /// After [`EventKind::StreamEnd`] or an error, no more events must be
     /// requested.
     pub fn next_event(&mut self) -> Result<Event<'a>, Error> {
+        let event = self.parse_event()?;
+        self.last_end = event.end;
+        Ok(event)
+    }
+
+    fn parse_event(&mut self) -> Result<Event<'a>, Error> {
         match self.state {
             State::StreamStart => self.parse_stream_start(),
             State::ImplicitDocumentStart => self.parse_document_start(true),
@@ -158,7 +167,7 @@ impl<'a> Parser<'a> {
                 if self.peek()? != TokenType::DocumentStart && !implicit {
                     return self.error("missing document end marker before directive");
                 }
-                self.parse_directives()?;
+                let version = self.parse_directives()?;
                 if self.peek()? != TokenType::DocumentStart {
                     return self.error("did not find expected <document start>");
                 }
@@ -166,7 +175,10 @@ impl<'a> Parser<'a> {
                 self.states.push(State::DocumentEnd);
                 self.state = State::DocumentContent;
                 Self::event(
-                    EventKind::DocumentStart { explicit: true },
+                    EventKind::DocumentStart {
+                        explicit: true,
+                        version,
+                    },
                     start,
                     token.end,
                 )
@@ -176,7 +188,14 @@ impl<'a> Parser<'a> {
                 self.reset_tag_handles();
                 self.states.push(State::DocumentEnd);
                 self.state = State::BlockNode;
-                Self::event(EventKind::DocumentStart { explicit: false }, mark, mark)
+                Self::event(
+                    EventKind::DocumentStart {
+                        explicit: false,
+                        version: None,
+                    },
+                    mark,
+                    mark,
+                )
             }
             _ => self.error("did not find expected <document start>"),
         }
@@ -190,25 +209,26 @@ impl<'a> Parser<'a> {
             .push((Cow::Borrowed("!!"), Cow::Borrowed("tag:yaml.org,2002:")));
     }
 
-    fn parse_directives(&mut self) -> Result<(), Error> {
+    /// Parses the directives of a document and returns the version.
+    fn parse_directives(&mut self) -> Result<Option<(u32, u32)>, Error> {
         self.reset_tag_handles();
-        let mut seen_version = false;
+        let mut version = None;
         let mut custom_handles = Vec::new();
         loop {
             match self.peek()? {
                 TokenType::VersionDirective => {
                     let token = self.next();
-                    if seen_version {
+                    if version.is_some() {
                         return Err(syntax_error(token.start, "duplicate %YAML directive"));
                     }
-                    seen_version = true;
-                    if let TokenKind::VersionDirective(major, _minor) = token.kind {
+                    if let TokenKind::VersionDirective(major, minor) = token.kind {
                         if major != 1 {
                             return Err(syntax_error(
                                 token.start,
                                 "incompatible YAML document version",
                             ));
                         }
+                        version = Some((major, minor));
                     }
                 }
                 TokenType::TagDirective => {
@@ -225,7 +245,7 @@ impl<'a> Parser<'a> {
                 TokenType::ReservedDirective => {
                     self.next();
                 }
-                _ => return Ok(()),
+                _ => return Ok(version),
             }
         }
     }
@@ -399,9 +419,9 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenType::BlockEnd => {
-                let token = self.next();
+                self.next();
                 self.pop_state();
-                Self::event(EventKind::SequenceEnd, token.start, token.end)
+                Self::event(EventKind::SequenceEnd, self.last_end, self.last_end)
             }
             _ => self.error("did not find expected '-' indicator"),
         }
@@ -421,9 +441,8 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            let mark = self.peek_mark()?;
             self.pop_state();
-            Self::event(EventKind::SequenceEnd, mark, mark)
+            Self::event(EventKind::SequenceEnd, self.last_end, self.last_end)
         }
     }
 
@@ -452,9 +471,9 @@ impl<'a> Parser<'a> {
                 Self::empty_scalar(mark, Props::default())
             }
             TokenType::BlockEnd => {
-                let token = self.next();
+                self.next();
                 self.pop_state();
-                Self::event(EventKind::MappingEnd, token.start, token.end)
+                Self::event(EventKind::MappingEnd, self.last_end, self.last_end)
             }
             _ => self.error("did not find expected key"),
         }
@@ -638,6 +657,21 @@ impl<'a> Parser<'a> {
             Self::empty_scalar(mark, Props::default())
         }
     }
+}
+
+/// Creates an error for a problem at a position that is not a syntax
+/// error (for instance an invalid value).
+#[cold]
+pub fn error_at(mark: Mark, msg: &str) -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        format!(
+            "{} at line {} column {}",
+            msg,
+            mark.line + 1,
+            mark.column + 1
+        ),
+    )
 }
 
 #[cold]

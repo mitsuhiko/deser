@@ -73,7 +73,8 @@ fetch "$YAML_TEST_SCHEMA_REPO" "$YAML_TEST_SCHEMA_COMMIT" "$TMP/schema"
 OUT="$DATA/yaml-test-schema"
 rm -rf "$OUT"
 mkdir -p "$OUT"
-cp "$TMP/schema"/data/schema-*.json "$OUT/"
+# the JSON files do not contain the error cases, the YAML files do
+cp "$TMP/schema"/data/schema-*.json "$TMP/schema"/data/schema-*.yaml "$OUT/"
 cp "$TMP/schema/LICENSE" "$OUT/LICENSE"
 cat > "$OUT/SOURCE" <<EOF
 https://github.com/$YAML_TEST_SCHEMA_REPO
