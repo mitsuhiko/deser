@@ -6,7 +6,7 @@ use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
-use deser::ext::{Datetime, Timestamp};
+use deser::ext::{Datetime, Number, Timestamp};
 
 /// Serializes a value to TOML.
 ///
@@ -227,6 +227,15 @@ fn convert_ext(ext: &ExtValue, descriptor: &dyn Descriptor) -> Result<Converted,
             return Err(Error::new(ErrorKind::Unexpected, "invalid datetime"));
         }
         return Ok(Converted::Value(Value::Datetime(*value)));
+    }
+    // numbers from text formats keep their text if it's a float, the syntax
+    // of JSON floats is valid in TOML
+    if let Some(value) = ext.downcast_value_ref::<Number>() {
+        return Ok(Converted::Value(if value.is_integer() {
+            Value::Float(value.value())
+        } else {
+            Value::FloatText(Cow::Owned(value.as_str().to_string()))
+        }));
     }
     // instants are written as offset date-times in UTC if possible
     if let Some(value) = ext
@@ -466,6 +475,7 @@ impl<'d> Writer<'d> {
             Value::Int(value) => write!(self.out, "{}", value).unwrap(),
             Value::UInt(value) => write!(self.out, "{}", value).unwrap(),
             Value::Float(value) => write_float(&mut self.out, value),
+            Value::FloatText(ref value) => self.out.push_str(value),
             Value::Bool(value) => self.out.push_str(if value { "true" } else { "false" }),
             Value::Datetime(ref value) => write!(self.out, "{}", value).unwrap(),
             Value::Table(id) => {

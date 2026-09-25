@@ -298,6 +298,12 @@ impl WellKnown for BigInt {
                     BigInt::from(value)
                 } else if let Some(&value) = ext.downcast_ref::<i128>() {
                     BigInt::from(value)
+                } else if let Some(value) = ext
+                    .downcast_value_ref::<crate::ext::Number>()
+                    .filter(|x| x.is_integer())
+                {
+                    // integer literals that do not fit into 128 bits
+                    value.as_str().parse()?
                 } else {
                     return Ok(None);
                 }

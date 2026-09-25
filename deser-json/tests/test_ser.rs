@@ -181,11 +181,17 @@ fn test_well_known_types() {
         to_string(&map).unwrap(),
         r#"{"123456789012345678901234567890123456789012":-12.50}"#
     );
-    // numbers are parsed as floats, strings retain the exact value
+    // numbers are passed on exactly
     let value: Decimal = deser_json::from_str("-12.50").unwrap();
-    assert_eq!(value.as_str(), "-12.5");
+    assert_eq!(value, decimal);
     let value: Decimal = deser_json::from_str("\"-12.50\"").unwrap();
     assert_eq!(value, decimal);
+    // unless disabled
+    let value: Decimal = deser_json::Deserializer::new("-12.50")
+        .exact_numbers(false)
+        .deserialize()
+        .unwrap();
+    assert_eq!(value.as_str(), "-12.5");
     let value: BigInt =
         deser_json::from_str("\"123456789012345678901234567890123456789012\"").unwrap();
     assert_eq!(value, big);

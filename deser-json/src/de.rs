@@ -1,7 +1,7 @@
 use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver};
-use deser::ext::ExtValue;
+use deser::ext::{ExtValue, Number as ExactNumber};
 use deser::Atom;
 use deser::Event;
 use deser::{Error, ErrorKind};
@@ -22,7 +22,22 @@ enum Number<'a> {
     /// holds the (validated) textual representation.
     BigInt(&'a str),
     U64(u64),
+    /// A float whose text is the shortest representation of its value.
     F64(f64),
+    /// A float (or an integer which does not fit into 128 bits) whose text
+    /// cannot be recovered from the value.  This is passed on as number
+    /// extension value if exact numbers are enabled.
+    Literal(f64),
+}
+
+impl Number<'_> {
+    /// Returns the value of a float.
+    fn into_f64(self) -> f64 {
+        match self {
+            Number::F64(value) | Number::Literal(value) => value,
+            _ => unreachable!("not a float"),
+        }
+    }
 }
 
 macro_rules! overflow {
@@ -39,6 +54,7 @@ pub struct Deserializer<'a> {
     // `true` if the input is a byte slice which needs to be validated
     validate_utf8: bool,
     track_locations: bool,
+    exact_numbers: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,6 +75,7 @@ impl<'a> Deserializer<'a> {
             pos: 0,
             buffer: Vec::new(),
             track_locations: false,
+            exact_numbers: true,
         }
     }
 
@@ -86,6 +103,34 @@ impl<'a> Deserializer<'a> {
     /// the input.
     pub fn track_locations(mut self, yes: bool) -> Deserializer<'a> {
         self.track_locations = yes;
+        self
+    }
+
+    /// Enables or disables exact numbers.
+    ///
+    /// When enabled (which is the default) floats which lose precision as
+    /// `f64` and integers that do not fit into 128 bits are emitted as
+    /// [`Number`](deser::ext::Number) extension values.  These carry the
+    /// text of the number together with its value as `f64`, which is what
+    /// types that do not know about exact numbers receive.  Types like
+    /// [`Decimal`](deser::ext::Decimal) (and the types of `rust_decimal` or
+    /// `bigdecimal`) use the text to deserialize the number exactly:
+    ///
+    /// ```
+    /// use deser::ext::Decimal;
+    ///
+    /// let value: Decimal = deser_json::from_str("0.10000000000000000001").unwrap();
+    /// assert_eq!(value.as_str(), "0.10000000000000000001");
+    /// let value: f64 = deser_json::from_str("0.10000000000000000001").unwrap();
+    /// assert_eq!(value, 0.1);
+    /// ```
+    ///
+    /// Floats whose text is the shortest representation of their value (as
+    /// formatted by `Debug`, for instance `0.5` or `3.14`) are emitted as
+    /// `F64` as the text can be recovered from the value.  This keeps the
+    /// common case fast.  When disabled, all floats are emitted as `F64`.
+    pub fn exact_numbers(mut self, yes: bool) -> Deserializer<'a> {
+        self.exact_numbers = yes;
         self
     }
 
@@ -161,12 +206,26 @@ impl<'a> Deserializer<'a> {
                 },
                 b'0'..=b'9' => {
                     let number = self.parse_integer(true, byte)?;
-                    emit_number(driver, number, start, self.pos)?
+                    emit_number(
+                        driver,
+                        number,
+                        self.input,
+                        self.exact_numbers,
+                        start,
+                        self.pos,
+                    )?
                 }
                 b'-' => {
                     let first_digit = self.next_or_nul();
                     let number = self.parse_integer(false, first_digit)?;
-                    emit_number(driver, number, start, self.pos)?
+                    emit_number(
+                        driver,
+                        number,
+                        self.input,
+                        self.exact_numbers,
+                        start,
+                        self.pos,
+                    )?
                 }
                 b'n' => {
                     self.parse_ident(b"ull")?;
@@ -614,7 +673,7 @@ impl<'a> Deserializer<'a> {
                 return Ok(Number::BigInt(text));
             }
         }
-        Ok(Number::F64(float))
+        Ok(Number::Literal(float))
     }
 
     fn parse_long_integer(
@@ -632,7 +691,9 @@ impl<'a> Deserializer<'a> {
                     exponent += 1;
                 }
                 b'.' => {
-                    return self.parse_decimal(nonnegative, significand, exponent);
+                    return self
+                        .parse_decimal(nonnegative, significand, exponent)
+                        .map(Number::into_f64);
                 }
                 b'e' | b'E' => {
                     return self.parse_exponent(nonnegative, significand, exponent);
@@ -646,12 +707,10 @@ impl<'a> Deserializer<'a> {
 
     fn parse_number(&mut self, nonnegative: bool, significand: u64) -> Result<Number<'a>, Error> {
         match self.peek_or_nul() {
-            b'.' => self
-                .parse_decimal(nonnegative, significand, 0)
-                .map(Number::F64),
+            b'.' => self.parse_decimal(nonnegative, significand, 0),
             b'e' | b'E' => self
                 .parse_exponent(nonnegative, significand, 0)
-                .map(Number::F64),
+                .map(Number::Literal),
             _ => {
                 Ok(if nonnegative {
                     Number::U64(significand)
@@ -669,15 +728,21 @@ impl<'a> Deserializer<'a> {
         }
     }
 
+    /// Parses the fraction of a number.
+    ///
+    /// This returns a [`Number::Literal`] unless the text of the number is
+    /// the shortest representation of its value.
     fn parse_decimal(
         &mut self,
         nonnegative: bool,
         mut significand: u64,
-        mut exponent: i32,
-    ) -> Result<f64, Error> {
+        starting_exp: i32,
+    ) -> Result<Number<'a>, Error> {
         self.bump();
 
+        let mut exponent = starting_exp;
         let mut at_least_one_digit = false;
+        let mut overflowed = false;
         while let c @ b'0'..=b'9' = self.peek_or_nul() {
             self.bump();
             let digit = u64::from(c - b'0');
@@ -689,6 +754,7 @@ impl<'a> Deserializer<'a> {
                 while let b'0'..=b'9' = self.peek_or_nul() {
                     self.bump();
                 }
+                overflowed = true;
                 break;
             }
 
@@ -701,8 +767,22 @@ impl<'a> Deserializer<'a> {
         }
 
         match self.peek_or_nul() {
-            b'e' | b'E' => self.parse_exponent(nonnegative, significand, exponent),
-            _ => f64_from_parts(nonnegative, significand, exponent),
+            b'e' | b'E' => self
+                .parse_exponent(nonnegative, significand, exponent)
+                .map(Number::Literal),
+            _ => {
+                let value = f64_from_parts(nonnegative, significand, exponent)?;
+                Ok(
+                    if !overflowed
+                        && starting_exp == 0
+                        && is_shortest_repr(significand, exponent.unsigned_abs())
+                    {
+                        Number::F64(value)
+                    } else {
+                        Number::Literal(value)
+                    },
+                )
+            }
         }
     }
 
@@ -844,11 +924,31 @@ static POW10: [f64; 309] = [
     1e300, 1e301, 1e302, 1e303, 1e304, 1e305, 1e306, 1e307, 1e308,
 ];
 
+/// Returns `true` if a decimal number without exponent is the shortest
+/// representation of its value as `f64` (as formatted by `Debug`).
+///
+/// The number is given as its digits (without the dot) and the number of
+/// fraction digits.  In that case the text can be recovered from the value,
+/// so the value is emitted as float.  This is the case if the fraction has
+/// no trailing zeros (other than `.0`), there are at most 15 significant
+/// digits and the value is zero or at least 1e-4 (below that the shortest
+/// representation uses an exponent).  15 digits are guaranteed to roundtrip
+/// through `f64` and in that range `f64_from_parts` rounds correctly.
+#[inline]
+fn is_shortest_repr(digits: u64, frac_len: u32) -> bool {
+    const MAX: u64 = 1_000_000_000_000_000;
+    digits < MAX
+        && (frac_len == 1 || !digits.is_multiple_of(10))
+        && (frac_len <= 4 || digits == 0 || (frac_len <= 19 && digits >= 10u64.pow(frac_len - 4)))
+}
+
 /// Emits a number.
 #[inline]
 fn emit_number(
     driver: &mut DeserializeDriver<'_, '_>,
     number: Number,
+    input: &[u8],
+    exact_numbers: bool,
     start: usize,
     end: usize,
 ) -> Result<(), Error> {
@@ -856,8 +956,31 @@ fn emit_number(
         Number::U64(val) => driver.emit_at(Event::from(val), start, end),
         Number::I64(val) => driver.emit_at(Event::from(val), start, end),
         Number::F64(val) => driver.emit_at(Event::from(val), start, end),
+        Number::Literal(val) if exact_numbers => emit_literal(driver, input, val, start, end),
+        Number::Literal(val) => driver.emit_at(Event::from(val), start, end),
         Number::BigInt(val) => emit_big_int(driver, val, start, end),
     }
+}
+
+/// Emits a number as number extension value with its text.
+///
+/// This is not inlined to keep the code of the parser loop small.
+#[inline(never)]
+fn emit_literal(
+    driver: &mut DeserializeDriver<'_, '_>,
+    input: &[u8],
+    value: f64,
+    start: usize,
+    end: usize,
+) -> Result<(), Error> {
+    // SAFETY: numbers only consist of ASCII characters
+    let text = unsafe { str::from_utf8_unchecked(&input[start..end]) };
+    let number = ExactNumber::new(text, value);
+    driver.emit_at(
+        Atom::Ext(ExtValue::borrowed_value::<ExactNumber>(&number)),
+        start,
+        end,
+    )
 }
 
 /// Emits an integer that does not fit into 64 bits as extension value.

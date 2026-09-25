@@ -27,6 +27,15 @@ All notable changes to deser are documented here.
     `Deserialize<'de>`.
   - Recordings are detached from the data, so buffered values (for instance
     in internally tagged or untagged enums) cannot be borrowed.
+- Added the well-known `deser::ext::Number` extension: a number literal
+  of a text format (in the syntax of JSON numbers) together with its value
+  as `f64` which is the fallback.  `Decimal`, `BigInt` and the bridged
+  `rust_decimal`, `bigdecimal` and `num-bigint` types use the text, floats
+  use the value.  `deser-json` emits floats whose text cannot be recovered
+  from their value as `f64` (and integers that do not fit into 128 bits) as
+  numbers borrowing the text, so decimals are deserialized exactly.  This
+  can be disabled with `Deserializer::exact_numbers`.  `deser-json` writes
+  numbers verbatim, `deser-toml` writes the text of non-integer numbers.
 - Extension values can borrow data: extensions implement the new
   `BorrowedExtension` trait on a `'static` key type which defines the type
   of the values for a lifetime.  They are created with

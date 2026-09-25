@@ -11,6 +11,7 @@ use crate::de::{is_null_atom, Deserialize, OwnedSink, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
+use crate::ext::Number;
 use crate::State;
 
 make_slot_wrapper!(SlotWrapper);
@@ -296,11 +297,30 @@ macro_rules! float_sink {
                         **self = Some(*ext.downcast_ref::<i128>().unwrap() as $ty);
                         Ok(())
                     }
-                    other => self.unexpected_atom(other, state),
+                    other => {
+                        // text formats emit floats as numbers, these are
+                        // handled out of line to keep the common case small.
+                        match number_value(&other) {
+                            Some(value) => {
+                                **self = Some(value as $ty);
+                                Ok(())
+                            }
+                            None => self.unexpected_atom(other, state),
+                        }
+                    }
                 }
             }
         }
     };
+}
+
+/// Returns the value of a number extension value.
+#[inline(never)]
+fn number_value(atom: &Atom) -> Option<f64> {
+    match *atom {
+        Atom::Ext(ref ext) => ext.downcast_value_ref::<Number>().map(|x| x.value()),
+        _ => None,
+    }
 }
 
 float_sink!(f32);

@@ -101,3 +101,18 @@ stamp = "+010000-01-01T00:00:00Z"
     assert_eq!(value["a"].as_str(), "1.5");
     assert_eq!(value["b"].as_str(), "42");
 }
+
+#[test]
+fn test_numbers() {
+    use deser::ext::Number;
+    use std::collections::BTreeMap;
+
+    // numbers from JSON keep their text in TOML
+    let value: BTreeMap<String, Number> =
+        deser_json::from_str(r#"{"a": 0.10000000000000000001, "b": 1E5}"#).unwrap();
+    let toml = to_string(&value).unwrap();
+    assert_eq!(toml, "a = 0.10000000000000000001\nb = 1E5\n");
+    let back: BTreeMap<String, f64> = from_str(&toml).unwrap();
+    assert_eq!(back["a"], 0.1);
+    assert_eq!(back["b"], 100000.0);
+}

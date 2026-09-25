@@ -5,7 +5,7 @@ use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::known::{impl_well_known, invalid, WellKnown};
-use crate::ext::{BigInt, Extension};
+use crate::ext::{BigInt, Extension, Number};
 
 /// An exact decimal number of arbitrary precision.
 ///
@@ -15,6 +15,8 @@ use crate::ext::{BigInt, Extension};
 /// scale) are retained.  The fallback is the text as string.
 ///
 /// When deserializing, decimals, strings, integers and floats are accepted.
+/// [`Number`] extension values (which text formats like JSON emit for
+/// floats) are converted exactly.
 ///
 /// ```
 /// use deser::ext::Decimal;
@@ -120,39 +122,7 @@ impl Decimal {
 
 /// Checks the syntax of JSON numbers.
 fn is_valid_decimal(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let mut pos = 0;
-    let digits = |pos: &mut usize| {
-        let start = *pos;
-        while bytes.get(*pos).is_some_and(u8::is_ascii_digit) {
-            *pos += 1;
-        }
-        *pos - start
-    };
-    if bytes.first() == Some(&b'-') {
-        pos += 1;
-    }
-    let int_start = pos;
-    let int_len = digits(&mut pos);
-    if int_len == 0 || (int_len > 1 && bytes[int_start] == b'0') {
-        return false;
-    }
-    if bytes.get(pos) == Some(&b'.') {
-        pos += 1;
-        if digits(&mut pos) == 0 {
-            return false;
-        }
-    }
-    if let Some(b'e' | b'E') = bytes.get(pos) {
-        pos += 1;
-        if let Some(b'+' | b'-') = bytes.get(pos) {
-            pos += 1;
-        }
-        if digits(&mut pos) == 0 {
-            return false;
-        }
-    }
-    pos == bytes.len()
+    crate::ext::number::is_json_number(s)
 }
 
 impl fmt::Display for Decimal {
@@ -231,6 +201,9 @@ impl WellKnown for Decimal {
             Atom::Ext(ref ext) => {
                 if let Some(value) = ext.downcast_ref::<Decimal>() {
                     value.clone()
+                } else if let Some(value) = ext.downcast_value_ref::<Number>() {
+                    // numbers use the same syntax as decimals
+                    Decimal(value.as_str().to_string())
                 } else if let Some(value) = BigInt::from_atom(atom)? {
                     Decimal::from(value)
                 } else {

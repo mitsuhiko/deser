@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::ext::{BigInt, Decimal, ExtValue};
+use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
 
@@ -349,6 +349,10 @@ impl Serializer {
             return Ok(());
         } else if let Some(val) = ext.downcast_ref::<Decimal>() {
             // decimals use the syntax of JSON numbers
+            self.write_str(val.as_str());
+            return Ok(());
+        } else if let Some(val) = ext.downcast_value_ref::<Number>() {
+            // numbers keep their text, so they roundtrip exactly
             self.write_str(val.as_str());
             return Ok(());
         }

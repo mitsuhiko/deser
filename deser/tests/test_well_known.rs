@@ -527,3 +527,51 @@ fn test_num_bigint() {
     );
     assert!(deserialize::<BigUint, _>(-1i64).is_err());
 }
+
+#[test]
+fn test_number() {
+    use deser::ext::Number;
+
+    let number = Number::parse("0.10000000000000000001").unwrap();
+    let atom = || Atom::Ext(ExtValue::borrowed_value::<Number>(&number));
+    // floats get the value
+    assert_eq!(deserialize::<f64, _>(atom()).unwrap(), 0.1);
+    // decimals get the text
+    assert_eq!(
+        deserialize::<Decimal, _>(atom()).unwrap().as_str(),
+        "0.10000000000000000001"
+    );
+    // big integers only accept integer numbers
+    assert!(deserialize::<BigInt, _>(atom()).is_err());
+    let big = Number::parse("123456789012345678901234567890123456789012").unwrap();
+    assert_eq!(
+        deserialize::<BigInt, _>(Atom::Ext(ExtValue::borrowed_value::<Number>(&big)))
+            .unwrap()
+            .to_string(),
+        "123456789012345678901234567890123456789012"
+    );
+    // numbers themselves
+    assert_eq!(deserialize::<Number, _>(atom()).unwrap(), number);
+    assert_eq!(deserialize::<Number, _>(42u64).unwrap().as_str(), "42");
+    assert_eq!(deserialize::<Number, _>("1e5").unwrap().value(), 100000.0);
+
+    #[cfg(feature = "rust_decimal")]
+    {
+        let value: rust_decimal::Decimal = deserialize(atom()).unwrap();
+        assert_eq!(value.to_string(), "0.10000000000000000001");
+    }
+    #[cfg(feature = "bigdecimal")]
+    {
+        let value: bigdecimal::BigDecimal = deserialize(atom()).unwrap();
+        assert_eq!(value.to_string(), "0.10000000000000000001");
+    }
+    #[cfg(feature = "num-bigint")]
+    {
+        let value: num_bigint::BigInt =
+            deserialize(Atom::Ext(ExtValue::borrowed_value::<Number>(&big))).unwrap();
+        assert_eq!(
+            value.to_string(),
+            "123456789012345678901234567890123456789012"
+        );
+    }
+}

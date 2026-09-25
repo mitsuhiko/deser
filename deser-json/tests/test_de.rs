@@ -464,3 +464,114 @@ fn test_borrowing() {
     let err = deser_json::from_str::<&str>(r#""\n""#).unwrap_err();
     assert!(err.to_string().contains("expected a borrowed string"));
 }
+
+#[test]
+fn test_exact_numbers() {
+    use deser::ext::{BigInt, Decimal, Number};
+
+    // floats are emitted as numbers, types that do not know about them get
+    // the float value
+    assert_eq!(deser_json::from_str::<f64>("1.5e3").unwrap(), 1500.0);
+    assert_eq!(deser_json::from_str::<f32>("0.1").unwrap(), 0.1);
+    assert_eq!(
+        deser_json::from_str::<Vec<f64>>("[1.0, -0.5, 2]").unwrap(),
+        [1.0, -0.5, 2.0]
+    );
+
+    // decimals and numbers get the exact text
+    let value: Decimal = deser_json::from_str("123456789.123456789123456789").unwrap();
+    assert_eq!(value.as_str(), "123456789.123456789123456789");
+    let value: Number = deser_json::from_str("1.50E+3").unwrap();
+    assert_eq!(value.as_str(), "1.50E+3");
+    assert_eq!(value.value(), 1500.0);
+
+    // integers that do not fit into 128 bits
+    let big = "123456789012345678901234567890123456789012345";
+    let value: BigInt = deser_json::from_str(big).unwrap();
+    assert_eq!(value.to_string(), big);
+    let value: f64 = deser_json::from_str(big).unwrap();
+    assert_eq!(value, 1.2345678901234568e44);
+
+    // numbers roundtrip exactly through the serializer
+    #[derive(deser::Deserialize, deser::Serialize)]
+    struct Doc<'a> {
+        value: Number<'a>,
+        values: Vec<Number<'a>>,
+    }
+    let json = r#"{"value":0.10000000000000000001,"values":[1.0,1E-400,-0.00]}"#;
+    let doc: Doc = deser_json::from_str(json).unwrap();
+    assert_eq!(deser_json::to_string(&doc).unwrap(), json);
+
+    // numbers are ignored like other values
+    #[derive(deser::Deserialize)]
+    struct Empty {}
+    let _: Empty = deser_json::from_str(r#"{"a": 1.5, "b": [2.5]}"#).unwrap();
+}
+
+#[test]
+fn test_exact_number_text() {
+    use deser::ext::Number;
+
+    // the text of every number is retained, either as number or as float
+    // whose text is the shortest representation of its value.
+    let mut rng: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut next = |n: u64| {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng % n
+    };
+    let check = |text: &str| {
+        let number: Number = deser_json::from_str(text).unwrap();
+        assert_eq!(number.as_str(), text);
+    };
+    for text in [
+        "0.0",
+        "-0.0",
+        "0.00",
+        "1.0",
+        "1.10",
+        "0.0001",
+        "0.00001",
+        "0.00010",
+        "100.0",
+        "123456789012345.0",
+        "12345678901234.5",
+        "0.123456789012345",
+        "0.1234567890123456",
+        "1e5",
+        "1E-5",
+        "1.5e+300",
+        "-0.5e-3",
+        "18446744073709551615.5",
+        "184467440737095516150.5",
+    ] {
+        check(text);
+    }
+    for _ in 0..100_000 {
+        let mut text = String::new();
+        if next(2) == 0 {
+            text.push('-');
+        }
+        let int_len = next(20) as usize;
+        if int_len == 0 {
+            text.push('0');
+        } else {
+            text.push(char::from(b'1' + next(9) as u8));
+            for _ in 1..int_len {
+                text.push(char::from(b'0' + next(10) as u8));
+            }
+        }
+        text.push('.');
+        let zeros = if int_len == 0 { next(8) as usize } else { 0 };
+        text.extend(std::iter::repeat_n('0', zeros));
+        for _ in 0..1 + next(18) {
+            let digit = if next(4) == 0 { 0 } else { next(10) as u8 };
+            text.push(char::from(b'0' + digit));
+        }
+        if next(8) == 0 {
+            text.push_str(&format!("e{}", next(40) as i32 - 20));
+        }
+        check(&text);
+    }
+}

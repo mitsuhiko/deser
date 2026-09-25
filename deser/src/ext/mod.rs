@@ -54,6 +54,7 @@
 //! | [`Uuid`]      | UUIDs                                | hyphenated string            |
 //! | [`Decimal`]   | exact decimal numbers                | decimal string               |
 //! | [`BigInt`]    | integers that do not fit 128 bits    | decimal string               |
+//! | [`Number`]    | number literals of text formats      | `f64`                        |
 //!
 //! All well-known types implement [`Serialize`](crate::Serialize) and
 //! [`Deserialize`](crate::Deserialize).  When deserialized they accept
@@ -125,12 +126,14 @@ mod datetime;
 mod decimal;
 mod duration;
 pub(crate) mod known;
+mod number;
 mod uuid;
 
 pub use self::bigint::BigInt;
 pub use self::datetime::{Date, Datetime, Offset, Time, Timestamp};
 pub use self::decimal::Decimal;
 pub use self::duration::Duration;
+pub use self::number::Number;
 pub use self::uuid::Uuid;
 
 /// A type that can be passed through deser as an extension to the data model.
@@ -264,8 +267,8 @@ trait ErasedExtension: fmt::Debug + Send + Sync {
     fn fallback(&self) -> Atom<'_>;
     fn to_static(&self) -> Arc<dyn ErasedExtension>;
     /// Returns a pointer to a `K::Value<'s>` where `'s` is the lifetime of
-    /// the borrow of self.
-    fn value_ptr(&self) -> *const ();
+    /// the borrow of self if the key is `key`, otherwise null.
+    fn value_ptr(&self, key: TypeId) -> *const ();
     fn dyn_eq(&self, other: &dyn ErasedExtension) -> bool;
 }
 
@@ -296,17 +299,23 @@ impl<'x, K: BorrowedExtension> ErasedExtension for Holder<'x, K> {
         Arc::new(Holder::<'static, K>(K::to_static(&self.0)))
     }
 
-    fn value_ptr(&self) -> *const () {
-        // the value is shortened through the implementation of the
-        // extension, which proves that it's valid for the shorter lifetime.
-        K::shorten(&self.0) as *const K::Value<'_> as *const ()
+    #[inline]
+    fn value_ptr(&self, key: TypeId) -> *const () {
+        if key == TypeId::of::<K>() {
+            // the value is shortened through the implementation of the
+            // extension, which proves that it's valid for the shorter
+            // lifetime.
+            K::shorten(&self.0) as *const K::Value<'_> as *const ()
+        } else {
+            std::ptr::null()
+        }
     }
 
     fn dyn_eq(&self, other: &dyn ErasedExtension) -> bool {
-        other.key() == TypeId::of::<K>()
-            // SAFETY: the keys match, so the pointer points to a
-            // `K::Value<'s>` for the borrow of `other`.
-            && K::shorten(&self.0) == unsafe { &*(other.value_ptr() as *const K::Value<'_>) }
+        let other = other.value_ptr(TypeId::of::<K>());
+        // SAFETY: the pointer is not null if the keys match, then it points
+        // to a `K::Value<'s>` for the borrow of `other`.
+        !other.is_null() && K::shorten(&self.0) == unsafe { &*(other as *const K::Value<'_>) }
     }
 }
 
@@ -399,15 +408,12 @@ impl<'a> ExtValue<'a> {
     ///
     /// See [`BorrowedExtension`] for an example.  The returned value borrows
     /// from this extension value.
+    #[inline]
     pub fn downcast_value_ref<K: BorrowedExtension>(&self) -> Option<&K::Value<'_>> {
-        let value = self.get();
-        if value.key() == TypeId::of::<K>() {
-            // SAFETY: the keys match, so the pointer points to a
-            // `K::Value<'s>` for the borrow of self.
-            Some(unsafe { &*(value.value_ptr() as *const K::Value<'_>) })
-        } else {
-            None
-        }
+        let ptr = self.get().value_ptr(TypeId::of::<K>());
+        // SAFETY: the pointer is not null if the keys match, then it points
+        // to a `K::Value<'s>` for the borrow of self.
+        (!ptr.is_null()).then(|| unsafe { &*(ptr as *const K::Value<'_>) })
     }
 
     /// Returns a value borrowing from this one.
