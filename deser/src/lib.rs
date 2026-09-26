@@ -35,6 +35,10 @@ pub struct Account {
 //!   deserialization.
 //! * [`deser-cbor`](https://docs.rs/deser-cbor): implements CBOR serialization and
 //!   deserialization.
+//! * [`deser-toml`](https://docs.rs/deser-toml): implements TOML serialization and
+//!   deserialization.
+//! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML deserialization
+//!   (serialization is not yet supported).
 //!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
