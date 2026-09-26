@@ -63,7 +63,7 @@ fn item_events() -> Vec<Event<'static>> {
 fn test_struct_default() {
     // duplicate fields are rejected by default
     let err = deserialize::<Item>(None, item_events()).unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'id'");
+    assert_eq!(err.message(), "duplicate field `id`");
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn test_struct_first() {
 #[test]
 fn test_struct_error() {
     let err = deserialize::<Item>(Some(DuplicateKeys::Error), item_events()).unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'id'");
+    assert_eq!(err.message(), "duplicate field `id`");
 
     let err = deserialize::<Item>(
         Some(DuplicateKeys::Error),
@@ -105,7 +105,7 @@ fn test_struct_error() {
         ]),
     )
     .unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'name'");
+    assert_eq!(err.message(), "duplicate field `name`");
 
     // unknown keys are not fields, they are ignored
     assert_eq!(
@@ -158,7 +158,7 @@ fn test_flatten() {
         1
     );
     let err = deserialize::<Query>(Some(DuplicateKeys::Error), events()).unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'limit'");
+    assert_eq!(err.message(), "duplicate field `limit`");
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn test_buffered() {
         Message::Ping { id: 1 }
     );
     let err = deserialize::<Message>(Some(DuplicateKeys::Error), events()).unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'id'");
+    assert_eq!(err.message(), "duplicate field `id`");
 }
 
 #[test]

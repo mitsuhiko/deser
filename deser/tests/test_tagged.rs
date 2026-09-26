@@ -142,7 +142,7 @@ fn test_errors() {
     ])
     .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::MissingField);
-    assert_eq!(err.to_string(), "MissingField: missing tag 'type'");
+    assert_eq!(err.to_string(), "MissingField: missing tag `type`");
 
     let err = deserialize::<Shape>(vec![
         Event::map_start(),
@@ -153,7 +153,7 @@ fn test_errors() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant 'triangle' for Shape"
+        "Unexpected: unknown variant `triangle`, expected one of `circle`, `rect`, `empty`, `polygon`"
     );
 
     let err = deserialize::<Shape>(vec![
@@ -163,7 +163,7 @@ fn test_errors() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.to_string(), "MissingField: Missing field 'radius'");
+    assert_eq!(err.to_string(), "MissingField: missing field `radius`");
 
     let err = deserialize::<Shape>(vec!["circle".into()]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Unexpected);
@@ -458,12 +458,12 @@ fn test_flattened_internally_tagged() {
 
     let err = deserialize::<Query>(map(&[("q", "x".into()), ("number", 3u64.into())])).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::MissingField);
-    assert_eq!(err.message(), "missing tag 'type'");
+    assert_eq!(err.message(), "missing tag `type`");
     let err =
         deserialize::<Query>(map(&[("type", "Page".into()), ("type", "Page".into())])).unwrap_err();
-    assert_eq!(err.message(), "duplicate tag 'type'");
+    assert_eq!(err.message(), "duplicate tag `type`");
     let err = deserialize::<Query>(map(&[("q", "x".into()), ("type", "Page".into())])).unwrap_err();
-    assert_eq!(err.message(), "Missing field 'number'");
+    assert_eq!(err.message(), "missing field `number`");
 
     // flattened fields before the enum get their keys first
     #[derive(Debug, Deserialize, PartialEq)]

@@ -33,7 +33,7 @@ pub(crate) fn parse_bool(value: &str) -> Result<bool, Error> {
 pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str) -> Error {
     match err.kind() {
         IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
-            Error::new(ErrorKind::OutOfRange, "value out of range for type")
+            Error::new(ErrorKind::OutOfRange, invalid_message(value, expecting))
         }
         _ => invalid(value, expecting),
     }
@@ -42,13 +42,26 @@ pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str) -> Err
 /// Creates the error for a lexical atom that cannot be parsed.
 #[cold]
 pub(crate) fn invalid(value: &str, expecting: &str) -> Error {
+    Error::new(ErrorKind::Unexpected, invalid_message(value, expecting))
+}
+
+fn invalid_message(value: &str, expecting: &str) -> String {
     let mut msg = String::from("invalid value ");
     match value.char_indices().nth(MAX_QUOTED) {
         Some((end, _)) => write!(msg, "{:?}...", &value[..end]).unwrap(),
         None => write!(msg, "{:?}", value).unwrap(),
     }
     write!(msg, ", expected {}", expecting).unwrap();
-    Error::new(ErrorKind::Unexpected, msg)
+    msg
+}
+
+/// Creates the error for a number that does not fit into the type.
+#[cold]
+pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str) -> Error {
+    Error::new(
+        ErrorKind::OutOfRange,
+        format!("invalid value {}, expected {}", value, expecting),
+    )
 }
 
 #[test]

@@ -156,7 +156,8 @@ pub mod __derive {
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
-        InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,
+        InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, unknown_variant,
+        untagged_handle,
     };
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,
@@ -168,7 +169,7 @@ pub mod __derive {
     pub fn new_missing_field_error(name: &str) -> super::Error {
         super::Error::new(
             super::ErrorKind::MissingField,
-            format!("Missing field '{}'", name),
+            format!("missing field `{}`", name),
         )
     }
 }

@@ -174,31 +174,27 @@ macro_rules! int_sink {
 
             #[allow(clippy::useless_conversion)]
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+                let out_of_range =
+                    |value: &dyn std::fmt::Display| lexical::out_of_range(value, stringify!($ty));
                 let value = match atom {
-                    Atom::U64(value) => <$ty>::try_from(value).ok(),
-                    Atom::I64(value) => <$ty>::try_from(value).ok(),
+                    Atom::U64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
+                    Atom::I64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
                     Atom::Ext(ref ext) if ext.is::<u128>() => {
-                        <$ty>::try_from(*ext.downcast_ref::<u128>().unwrap()).ok()
+                        let value = *ext.downcast_ref::<u128>().unwrap();
+                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
                     }
                     Atom::Ext(ref ext) if ext.is::<i128>() => {
-                        <$ty>::try_from(*ext.downcast_ref::<i128>().unwrap()).ok()
+                        let value = *ext.downcast_ref::<i128>().unwrap();
+                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
                     }
                     Atom::Lexical(ref value) => match value.parse::<$ty>() {
-                        Ok(value) => Some(value),
+                        Ok(value) => value,
                         Err(err) => return Err(lexical::int_error(value, err, stringify!($ty))),
                     },
                     other => return self.unexpected_atom(other, state),
                 };
-                match value {
-                    Some(value) => {
-                        **self = Some(value);
-                        Ok(())
-                    }
-                    None => Err(Error::new(
-                        ErrorKind::OutOfRange,
-                        "value out of range for type",
-                    )),
-                }
+                **self = Some(value);
+                Ok(())
             }
         }
     };

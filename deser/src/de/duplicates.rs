@@ -72,5 +72,5 @@ pub fn mark_seen(seen: &mut [u64], index: usize) -> bool {
 pub fn duplicate_field(name: &str, state: &State) -> Result<bool, Error> {
     state
         .duplicate_keys()
-        .resolve(|| format!("duplicate field '{}'", name))
+        .resolve(|| format!("duplicate field `{}`", name))
 }

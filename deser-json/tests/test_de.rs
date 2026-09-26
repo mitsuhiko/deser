@@ -766,7 +766,7 @@ fn test_duplicate_keys() {
 
     let json = r#"{"port": 80, "port": 81}"#;
     let err = from_str::<Config>(json).unwrap_err();
-    assert_eq!(err.message(), "duplicate field 'port'");
+    assert_eq!(err.message(), "duplicate field `port`");
     // the error points at the value of the duplicate key
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
     let config = Deserializer::from_str(json)
@@ -803,4 +803,59 @@ fn test_flattened_internally_tagged() {
     let err = from_str::<Query>(r#"{"number": "3", "a": 1, "type": "Page"}"#).unwrap_err();
     assert_eq!(err.message(), "unexpected string, expected u32");
     assert_eq!(err.column(), Some(12));
+}
+
+#[test]
+fn test_error_messages() {
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    enum Unit {
+        A,
+        B,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    enum Data {
+        A(u32),
+        B { x: u32 },
+        C,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct S {
+        x: u32,
+    }
+
+    let msg = |err: deser::Error| err.message().to_string();
+    assert_eq!(
+        msg(from_str::<u8>("300").unwrap_err()),
+        "invalid value 300, expected u8"
+    );
+    assert_eq!(
+        msg(from_str::<u32>("-1").unwrap_err()),
+        "invalid value -1, expected u32"
+    );
+    assert_eq!(
+        msg(from_str::<Unit>(r#""D""#).unwrap_err()),
+        "unknown variant `D`, expected `A` or `B`"
+    );
+    assert_eq!(
+        msg(from_str::<Data>(r#""D""#).unwrap_err()),
+        "unknown variant `D`, expected one of `A`, `B`, `C`"
+    );
+    assert_eq!(
+        msg(from_str::<f64>("1e400").unwrap_err()),
+        "number out of range"
+    );
+    assert_eq!(
+        msg(from_str::<String>(r#""\ud800""#).unwrap_err()),
+        "lone surrogate in unicode escape in string"
+    );
+    assert_eq!(
+        msg(from_str::<String>(r#""\x""#).unwrap_err()),
+        "invalid escape in string"
+    );
+    assert_eq!(msg(from_str::<S>("{}").unwrap_err()), "missing field `x`");
 }

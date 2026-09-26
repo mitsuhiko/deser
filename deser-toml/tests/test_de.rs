@@ -762,7 +762,7 @@ fn test_invalid_utf8() {
 fn test_error_locations() {
     assert_eq!(
         fails("a = 1\nb = 2\nb = 3"),
-        "Unexpected: key 'b' is already defined at line 3 column 1"
+        "Unexpected: key `b` is already defined at line 3 column 1"
     );
     assert_eq!(
         fails("a = \"ä\\q\""),
@@ -778,7 +778,7 @@ fn test_error_locations() {
     );
     assert_eq!(
         fails("[a.b.c]\n[a]\nb.c.d = 1"),
-        "Unexpected: cannot add keys to table 'c' which is defined elsewhere at line 3 column 3"
+        "Unexpected: cannot add keys to table `c` which is defined elsewhere at line 3 column 3"
     );
     assert_eq!(
         fails("a = 0x-1"),
@@ -836,7 +836,7 @@ fn test_large_tables() {
     assert_eq!(value.len(), 1000);
     assert_eq!(value["k999"], 999);
     let err = from_str::<Value>(&format!("{}k500 = 1", input)).unwrap_err();
-    assert!(err.to_string().contains("'k500' is already defined"));
+    assert!(err.to_string().contains("`k500` is already defined"));
 }
 
 #[test]

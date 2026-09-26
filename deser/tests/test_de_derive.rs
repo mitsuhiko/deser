@@ -153,7 +153,7 @@ fn test_container_and_field_defaults() {
 }
 
 #[test]
-#[should_panic(expected = "Missing field 'field1'")]
+#[should_panic(expected = "missing field `field1`")]
 fn test_container_no_defaults() {
     #[derive(Deserialize)]
     pub struct MyContainer {
@@ -612,7 +612,7 @@ fn test_flatten_basics() {
 }
 
 #[test]
-#[should_panic = "Missing field 'b'"]
+#[should_panic = "missing field `b`"]
 fn test_flatten_incomplete_inner() {
     #[derive(Deserialize, PartialEq, Eq, Debug)]
     struct Test {

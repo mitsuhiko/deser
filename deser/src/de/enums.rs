@@ -222,6 +222,8 @@ pub struct Variants<'de, E> {
     pub other: Option<VariantMaker<'de, E>>,
     /// Creates the variant for missing tags (`#[deser(default)]`).
     pub default: Option<VariantMaker<'de, E>>,
+    /// The names of the variants for errors.
+    pub names: &'static [&'static str],
 }
 
 impl<'de, E> Clone for Variants<'de, E> {
@@ -234,12 +236,7 @@ impl<'de, E> Copy for Variants<'de, E> {}
 
 impl<'de, E> Variants<'de, E> {
     /// Returns the variant for a recorded tag.
-    fn resolve(
-        &self,
-        tag: &Recording,
-        name: &str,
-        state: &mut State,
-    ) -> Result<BoxedVariant<'de, E>, Error> {
+    fn resolve(&self, tag: &Recording, state: &mut State) -> Result<BoxedVariant<'de, E>, Error> {
         let tag_name = tag_name(tag);
         if let Some(ref tag_name) = tag_name
             && let Some(variant) = (self.lookup)(tag_name)
@@ -252,7 +249,7 @@ impl<'de, E> Variants<'de, E> {
                 variant.set_tag(Some(tag), state)?;
                 Ok(variant)
             }
-            None => Err(unknown_variant(tag_name.as_deref(), name)),
+            None => Err(unknown_variant(tag_name.as_deref(), self.names)),
         }
     }
 
@@ -266,7 +263,7 @@ impl<'de, E> Variants<'de, E> {
             }
             None => Err(Error::new(
                 ErrorKind::MissingField,
-                format!("missing tag '{}'", tag),
+                format!("missing tag `{}`", tag),
             )),
         }
     }
@@ -291,14 +288,45 @@ fn tag_name(tag: &Recording) -> Option<Cow<'_, str>> {
     }
 }
 
-fn unknown_variant(tag: Option<&str>, name: &str) -> Error {
-    Error::new(
-        ErrorKind::Unexpected,
-        match tag {
-            Some(tag) => format!("unknown variant '{}' for {}", tag, name),
-            None => format!("unknown variant for {}", name),
-        },
-    )
+/// Creates the error for an unknown variant.
+///
+/// `tag` is the name that was given (if it was a string), `names` are the
+/// names of the variants.
+#[cold]
+pub fn unknown_variant(tag: Option<&str>, names: &[&str]) -> Error {
+    let mut msg = String::from("unknown variant");
+    if let Some(tag) = tag {
+        msg.push_str(" `");
+        msg.push_str(tag);
+        msg.push('`');
+    }
+    match names {
+        [] => msg.push_str(", there are no variants"),
+        [name] => {
+            msg.push_str(", expected `");
+            msg.push_str(name);
+            msg.push('`');
+        }
+        [first, second] => {
+            msg.push_str(", expected `");
+            msg.push_str(first);
+            msg.push_str("` or `");
+            msg.push_str(second);
+            msg.push('`');
+        }
+        names => {
+            msg.push_str(", expected one of ");
+            for (idx, name) in names.iter().enumerate() {
+                if idx > 0 {
+                    msg.push_str(", ");
+                }
+                msg.push('`');
+                msg.push_str(name);
+                msg.push('`');
+            }
+        }
+    }
+    Error::new(ErrorKind::Unexpected, msg)
 }
 
 /// Feeds a null to a variant which has no content.
@@ -388,7 +416,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             None => {
                 return match atom {
                     Atom::Str(ref name) | Atom::Lexical(ref name) => {
-                        Err(unknown_variant(Some(name), self.name))
+                        Err(unknown_variant(Some(name), self.variants.names))
                     }
                     other => self.unexpected_atom(other, state),
                 };
@@ -420,7 +448,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        let variant = self.variants.resolve(&self.key, self.name, state)?;
+        let variant = self.variants.resolve(&self.key, state)?;
         Ok(SinkHandle::to(self.variant.insert(variant).sink()))
     }
 
@@ -502,14 +530,14 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
+            Some(ref tag) => self.variants.resolve(tag, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)
     }
 
     fn duplicate(&self, key: &str) -> Error {
-        Error::new(ErrorKind::Unexpected, format!("duplicate field '{}'", key))
+        Error::new(ErrorKind::Unexpected, format!("duplicate field `{}`", key))
     }
 }
 
@@ -652,7 +680,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
+            Some(ref tag) => self.variants.resolve(tag, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)
@@ -681,7 +709,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
-                    format!("duplicate tag '{}'", self.tag),
+                    format!("duplicate tag `{}`", self.tag),
                 ));
             }
             return Ok(self.tag_value.insert(Recording::new()).recorder());
@@ -705,7 +733,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
-                    format!("duplicate tag '{}'", self.tag),
+                    format!("duplicate tag `{}`", self.tag),
                 ));
             }
             return Ok(Some(self.tag_value.insert(Recording::new()).recorder()));

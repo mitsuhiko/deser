@@ -771,48 +771,42 @@ impl<'a> Cursor<'a> {
             b't' => buffer.push(b'\t'),
             b'u' => {
                 let c = match self.decode_hex_escape()? {
-                    0xDC00..=0xDFFF => {
-                        return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
-                    }
+                    0xDC00..=0xDFFF => return Err(lone_surrogate()),
 
                     // Non-BMP characters are encoded as a sequence of
                     // two hex escapes, representing UTF-16 surrogates.
                     n1 @ 0xD800..=0xDBFF => {
-                        if self.next_or_eof()? != b'\\' {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
-                        }
-                        if self.next_or_eof()? != b'u' {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
+                        if self.next_or_eof()? != b'\\' || self.next_or_eof()? != b'u' {
+                            return Err(lone_surrogate());
                         }
 
                         let n2 = self.decode_hex_escape()?;
 
                         if !(0xDC00..=0xDFFF).contains(&n2) {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
+                            return Err(lone_surrogate());
                         }
 
                         let n = (u32::from(n1 - 0xD800) << 10 | u32::from(n2 - 0xDC00)) + 0x1_0000;
 
                         match char::from_u32(n) {
                             Some(c) => c,
-                            None => {
-                                return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
-                            }
+                            None => return Err(lone_surrogate()),
                         }
                     }
 
                     n => match char::from_u32(u32::from(n)) {
                         Some(c) => c,
-                        None => {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
-                        }
+                        None => return Err(lone_surrogate()),
                     },
                 };
 
                 buffer.extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
             }
             _ => {
-                return Err(Error::new(ErrorKind::Unexpected, "invalid string"));
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "invalid escape in string",
+                ));
             }
         }
 
@@ -1161,7 +1155,7 @@ fn f64_from_parts(nonnegative: bool, significand: u64, mut exponent: i32) -> Res
                 if exponent >= 0 {
                     f *= pow;
                     if f.is_infinite() {
-                        return Err(Error::new(ErrorKind::OutOfRange, "infinite float"));
+                        return Err(number_out_of_range());
                     }
                 } else {
                     f /= pow;
@@ -1173,7 +1167,7 @@ fn f64_from_parts(nonnegative: bool, significand: u64, mut exponent: i32) -> Res
                     break;
                 }
                 if exponent >= 0 {
-                    return Err(Error::new(ErrorKind::Unexpected, "unexpected float"));
+                    return Err(number_out_of_range());
                 }
                 f /= 1e308;
                 exponent += 308;
@@ -1291,6 +1285,19 @@ fn emit_big_int<'i, O: Out<'i>>(out: &mut O, text: &str) -> Result<(), Error> {
         let value: u128 = text.parse().unwrap();
         out.emit(Atom::Ext(ExtValue::borrowed(&value)))
     }
+}
+
+#[cold]
+fn lone_surrogate() -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        "lone surrogate in unicode escape in string",
+    )
+}
+
+#[cold]
+fn number_out_of_range() -> Error {
+    Error::new(ErrorKind::OutOfRange, "number out of range")
 }
 
 #[cfg(test)]

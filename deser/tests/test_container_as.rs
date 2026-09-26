@@ -712,7 +712,7 @@ fn test_flatten() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: Failed to deserialize flattened field 'marker'"
+        "Unexpected: failed to deserialize flattened field `marker`"
     );
 }
 

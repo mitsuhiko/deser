@@ -312,7 +312,7 @@ fn collect_variants<'a>(
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     variant,
-                    format!("variant name '{}' used more than once", name),
+                    format!("variant name `{}` used more than once", name),
                 ));
             }
             names.push(name);
@@ -675,6 +675,10 @@ pub fn derive_deserialize(
             });
         let (other_fn, other) = special_variant("__other", |info| info.other);
         let (default_fn, default) = special_variant("__default", |info| info.default);
+        let names = variants
+            .iter()
+            .filter(|info| !info.other)
+            .map(|info| &info.name);
         (
             quote! {
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
@@ -695,6 +699,7 @@ pub fn derive_deserialize(
                     lookup: __lookup #turbofish,
                     other: #other,
                     default: #default,
+                    names: &[#(#names),*],
                 }
             },
         )

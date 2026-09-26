@@ -305,7 +305,7 @@ impl<'a> Parser<'a> {
                 Some(Found::Other) => {
                     return Err(self.error(
                         key.span.start,
-                        &format!("key '{}' is not a table", key.name),
+                        &format!("key `{}` is not a table", key.name),
                     ));
                 }
             };
@@ -337,11 +337,11 @@ impl<'a> Parser<'a> {
                 }
                 Some(Found::Table(_)) => Err(self.error(
                     last.span.start,
-                    &format!("table '{}' is not an array of tables", last.name),
+                    &format!("table `{}` is not an array of tables", last.name),
                 )),
                 Some(Found::Other) => Err(self.error(
                     last.span.start,
-                    &format!("key '{}' is already defined", last.name),
+                    &format!("key `{}` is already defined", last.name),
                 )),
             }
         } else {
@@ -355,15 +355,15 @@ impl<'a> Parser<'a> {
                 }
                 Some(Found::Table(_)) => Err(self.error(
                     last.span.start,
-                    &format!("table '{}' is already defined", last.name),
+                    &format!("table `{}` is already defined", last.name),
                 )),
                 Some(Found::Array(id)) if self.doc.arrays[id].of_tables => Err(self.error(
                     last.span.start,
-                    &format!("'{}' is already defined as array of tables", last.name),
+                    &format!("`{}` is already defined as array of tables", last.name),
                 )),
                 Some(_) => Err(self.error(
                     last.span.start,
-                    &format!("key '{}' is already defined", last.name),
+                    &format!("key `{}` is already defined", last.name),
                 )),
             }
         }
@@ -455,7 +455,7 @@ impl<'a> Parser<'a> {
                         return Err(self.error(
                             key.span.start,
                             &format!(
-                                "cannot add keys to table '{}' which is defined elsewhere",
+                                "cannot add keys to table `{}` which is defined elsewhere",
                                 key.name
                             ),
                         ));
@@ -464,7 +464,7 @@ impl<'a> Parser<'a> {
                 Some(_) => {
                     return Err(self.error(
                         key.span.start,
-                        &format!("key '{}' is already defined", key.name),
+                        &format!("key `{}` is already defined", key.name),
                     ));
                 }
             };
@@ -618,7 +618,7 @@ impl<'a> Parser<'a> {
                 if self.doc.find(table, &key.name).is_some() {
                     return Err(self.error(
                         key.span.start,
-                        &format!("key '{}' is already defined", key.name),
+                        &format!("key `{}` is already defined", key.name),
                     ));
                 }
                 self.doc.insert(

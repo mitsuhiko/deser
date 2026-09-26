@@ -242,7 +242,7 @@ fn test_non_zero() {
         ErrorKind::OutOfRange,
         "value must be non-zero",
     );
-    assert_err::<NonZero<u8>>(vec![256u64.into()], ErrorKind::OutOfRange, "out of range");
+    assert_err::<NonZero<u8>>(vec![256u64.into()], ErrorKind::OutOfRange, "invalid value 256, expected u8");
 
     // usable as map keys
     let mut map = std::collections::BTreeMap::new();
@@ -403,7 +403,7 @@ fn test_atomics() {
         roundtrip(&value, vec![3u64.into()]).load(atomic::Ordering::Relaxed),
         3
     );
-    assert_err::<AtomicI8>(vec![1000u64.into()], ErrorKind::OutOfRange, "out of range");
+    assert_err::<AtomicI8>(vec![1000u64.into()], ErrorKind::OutOfRange, "invalid value 1000, expected i8");
 }
 
 #[test]

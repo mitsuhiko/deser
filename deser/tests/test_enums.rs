@@ -118,7 +118,7 @@ fn test_externally_tagged() {
     let err = deserialize::<External>(vec!["Nope".into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant 'Nope' for External"
+        "Unexpected: unknown variant `Nope`, expected one of `Unit`, `Newtype`, `Tuple`, `Struct`"
     );
     let err = deserialize::<External>(vec![
         Event::map_start(),
@@ -329,7 +329,7 @@ fn test_adjacently_tagged() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.to_string(), "MissingField: missing tag 't'");
+    assert_eq!(err.to_string(), "MissingField: missing tag `t`");
     assert!(
         deserialize::<Adjacent>(vec![
             Event::map_start(),

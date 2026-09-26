@@ -360,7 +360,7 @@ impl<'a> Document<'a> {
                 }
                 let range = match self.anchors.get(&anchor) {
                     Some(&range) => range,
-                    None => return Err(error_at(start, &format!("unknown anchor '{}'", anchor))),
+                    None => return Err(error_at(start, &format!("unknown anchor `{}`", anchor))),
                 };
                 let node = Node::Alias { range };
                 if !self.open.is_empty() {

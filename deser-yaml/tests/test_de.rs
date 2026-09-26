@@ -217,7 +217,7 @@ again: *s
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: unknown anchor 'a' at line 2 column 5"
+        "Unexpected: unknown anchor `a` at line 2 column 5"
     );
 
     let err = from_str::<Value>("&a [*a]").unwrap_err();

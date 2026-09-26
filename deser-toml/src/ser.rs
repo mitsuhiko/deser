@@ -278,7 +278,7 @@ impl Builder {
                 if self.doc.find(id, &key).is_some() {
                     return Err(Error::new(
                         ErrorKind::Unexpected,
-                        format!("duplicate key '{}'", key),
+                        format!("duplicate key `{}`", key),
                     ));
                 }
                 self.doc.insert(

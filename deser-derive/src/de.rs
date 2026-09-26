@@ -176,7 +176,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     if let Some((first_duplicate_name, field)) = first_duplicate_name {
         return Err(syn::Error::new_spanned(
             field,
-            format!("field name '{}' used more than once", first_duplicate_name),
+            format!("field name `{}` used more than once", first_duplicate_name),
         ));
     }
 
@@ -219,7 +219,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             } else if attrs.flatten() {
                 // this should never happen unless the inner deserializer fucked up
                 let error = format!(
-                    "Failed to deserialize flattened field '{}'",
+                    "failed to deserialize flattened field `{}`",
                     attrs.name(&container_attrs)
                 );
                 quote! {
@@ -667,7 +667,7 @@ pub fn derive_enum(
         return Err(syn::Error::new_spanned(
             field,
             format!(
-                "variant name '{}' used more than once",
+                "variant name `{}` used more than once",
                 first_duplicate_name
             ),
         ));
@@ -697,10 +697,13 @@ pub fn derive_enum(
             )
         }
         None => (
-            quote! {
-                return __deser::__derive::Err(
-                    __deser::Error::new(__deser::ErrorKind::Unexpected, "unexpected value for enum")
-                )
+            {
+                let names = attrs.iter().map(|x| x.name(&container_attrs).to_string());
+                quote! {
+                    return __deser::__derive::Err(
+                        __deser::__derive::unknown_variant(__deser::__derive::Some(s), &[#(#names),*])
+                    )
+                }
             },
             quote! {
                 __other => return self.unexpected_atom(__other, __state),

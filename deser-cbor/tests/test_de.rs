@@ -275,7 +275,7 @@ fn type_mismatches() {
     let msg = de::<u64>("f4").unwrap_err().to_string();
     assert!(msg.contains("bool"), "{}", msg);
     let msg = de::<u64>("20").unwrap_err().to_string();
-    assert!(msg.contains("out of range"), "{}", msg);
+    assert!(msg.contains("invalid value -1, expected u64"), "{}", msg);
     let msg = de::<bool>("f0").unwrap_err().to_string();
     assert!(msg.contains("expected bool"), "{}", msg);
 }
@@ -416,7 +416,7 @@ fn identifiers() {
     assert_eq!(de::<F>("a1c1616101").unwrap(), F { a: 1 });
     // A missing field is reported.
     let msg = de::<F>("a0").unwrap_err().to_string();
-    assert!(msg.contains("Missing field"), "{}", msg);
+    assert!(msg.contains("missing field `a`"), "{}", msg);
 }
 
 #[test]

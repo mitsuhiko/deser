@@ -19,6 +19,14 @@ All notable changes to deser are documented here.
   serializing.  Flattened maps silently stayed empty and failed to
   serialize before.  `deser_value::Value` and `deser_value::Map` can be
   flattened the same way.
+- Improved error messages.  Unknown variants list the expected variants
+  (``unknown variant `D`, expected `A` or `B` ``, enums with only unit
+  variants reported `unexpected value for enum` before), integers that do
+  not fit into their type report the value and the type (`invalid value
+  300, expected u8` instead of `value out of range for type`).  Names are
+  quoted with backticks (``missing field `x` `` instead of `Missing field
+  'x'`) and messages are lowercase.  JSON reports numbers out of range and
+  invalid escapes in strings more precisely.
 - JSON and TOML serialize `bool` map keys as strings (`{"true": 1}`) like
   `serde_json`, which they can also be deserialized from.
 - Flattened `Option`s are `None` if no key was given for them and `None`
