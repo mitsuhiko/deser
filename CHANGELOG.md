@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser::ser::EventSink` and `SerializeDriver::drive_sink`.  Like
+  `drive` with a callback, but formats can mark `EventSink::event` as
+  `#[inline(always)]` so that it's specialized for every kind of event the
+  driver delivers.  `deser-json` and `deser-cbor` use it.
+- Serialization drives values that are atoms or sequences and maps of such
+  values (plain values) in one go instead of one by one, and derived
+  structs emit their fields with plain values directly.  This makes the
+  serialize driver two to three times faster for float and container heavy
+  data.
 - JSON, YAML and TOML format floats with `zmij` with the `speedups`
   feature (`deser-json` used `ryu` before, YAML and TOML the standard
   library).  All three write the same shortest text now, exponents always

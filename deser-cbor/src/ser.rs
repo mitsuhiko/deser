@@ -84,6 +84,13 @@ struct Insertion {
     bytes: [u8; 8],
 }
 
+impl ser::EventSink for Writer {
+    #[inline(always)]
+    fn event(&mut self, event: Event, state: &mut State) -> Result<(), Error> {
+        Writer::event(self, event, state)
+    }
+}
+
 impl Writer {
     #[inline(always)]
     fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
@@ -544,7 +551,7 @@ impl SerializerConfig {
             offsets: Vec::new(),
             insertions: Vec::new(),
         };
-        driver.drive(|event, state| writer.event(event, state))?;
+        driver.drive_sink(&mut writer)?;
         if !writer.insertions.is_empty() {
             writer.apply_insertions();
         }

@@ -312,7 +312,7 @@ impl SerializerConfig {
                 first: true,
                 is_key: false,
             };
-            driver.drive(|event, _| writer.event(event))?;
+            driver.drive_sink(&mut writer)?;
             Ok(writer.ser.out.into_string())
         } else {
             let inline_width = match self.inline {
@@ -479,6 +479,13 @@ struct Writer {
     is_key: bool,
 }
 
+impl ser::EventSink for Writer {
+    #[inline(always)]
+    fn event(&mut self, event: Event, _state: &mut deser::State) -> Result<(), Error> {
+        Writer::event(self, event)
+    }
+}
+
 impl Writer {
     #[inline(always)]
     fn event(&mut self, event: Event) -> Result<(), Error> {
@@ -509,7 +516,7 @@ impl Writer {
         }
     }
 
-    #[inline(never)]
+    #[inline]
     fn start(&mut self, is_map: bool) -> Result<(), Error> {
         if self.is_key {
             return Err(Error::new(
@@ -533,7 +540,7 @@ impl Writer {
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline]
     fn end(&mut self, is_map: bool) -> Result<(), Error> {
         if is_map {
             if self.container != Container::Map || !self.is_key {
@@ -818,6 +825,7 @@ impl Output {
         self.write_str(&val.to_string())
     }
 
+    #[inline]
     fn write_u64(&mut self, val: u64) {
         #[cfg(feature = "speedups")]
         {
@@ -829,6 +837,7 @@ impl Output {
         }
     }
 
+    #[inline]
     fn write_i64(&mut self, val: i64) {
         #[cfg(feature = "speedups")]
         {

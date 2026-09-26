@@ -197,6 +197,33 @@ impl<F: FnMut(Event<'_>, &mut State) -> Result<(), Error>> Callback for Plain<F>
     }
 }
 
+/// Receives the events of [`SerializeDriver::drive_sink`].
+///
+/// This is like the callback of [`drive`](SerializeDriver::drive) but
+/// formats can mark the implementation as `#[inline(always)]` which makes
+/// the compiler specialize it for every kind of event the driver delivers.
+pub trait EventSink {
+    /// Receives an event.
+    fn event(&mut self, event: Event<'_>, state: &mut State) -> Result<(), Error>;
+}
+
+/// A callback that delivers to an event sink.
+struct Sink<'s, S>(&'s mut S);
+
+impl<S: EventSink> Callback for Sink<'_, S> {
+    const DESCRIBED: bool = false;
+
+    #[inline(always)]
+    fn call(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.0.event(event, state)
+    }
+}
+
 /// A callback that receives values.
 struct Described<F>(F);
 
@@ -385,6 +412,16 @@ impl<'a> SerializeDriver<'a> {
         F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         match self.drive_impl(Plain(f)) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(self.state.attach_error_context(err)),
+        }
+    }
+
+    /// Like [`drive`](Self::drive) but delivers the events to an
+    /// [`EventSink`].
+    #[inline]
+    pub fn drive_sink<S: EventSink>(&mut self, sink: &mut S) -> Result<(), Error> {
+        match self.drive_impl(Sink(sink)) {
             Ok(()) => Ok(()),
             Err(err) => Err(self.state.attach_error_context(err)),
         }

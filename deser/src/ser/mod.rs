@@ -113,7 +113,7 @@ pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
 
-pub use driver::SerializeDriver;
+pub use driver::{EventSink, SerializeDriver};
 
 pub(crate) use self::begin::{
     Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedStruct, PlainSink, StructField, plain_atom,
