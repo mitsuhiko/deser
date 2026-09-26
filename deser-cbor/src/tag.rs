@@ -11,6 +11,11 @@
 //! * When serializing, [`Tagged`] registers its tag in the state and the
 //!   serializer writes it in front of the next data item.
 //!
+//! Both directions use the same event data.  This means that values which
+//! capture event data (such as [`Recording`](deser::de::Recording)) keep
+//! the tags: CBOR that is deserialized into a recording and serialized again
+//! retains its tags.
+//!
 //! The simplest way to work with tags is the [`Tagged`] wrapper.
 //!
 //! The bignum tags 2 and 3 are handled by the format itself: they are
@@ -29,36 +34,25 @@ use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Describe, Serialize};
 use deser::{Atom, ContainerShape, Error};
 
-/// The tags of the current data item, attached as event data when
-/// deserializing.
+/// The tags of a data item, attached as event data to its first event.
 ///
-/// The tags are ordered from the outermost to the innermost tag.
+/// The deserializer publishes the tags it read, the serializer writes the
+/// tags in front of the data item.  The tags are ordered from the outermost
+/// to the innermost tag.
 #[derive(Debug, Default)]
-pub(crate) struct CurrentTags(pub(crate) Vec<u64>);
-
-/// The tags that the serializer writes in front of a data item, attached as
-/// event data when serializing.
-#[derive(Debug, Default)]
-pub(crate) struct PendingTags(pub(crate) Vec<u64>);
+pub(crate) struct Tags(pub(crate) Vec<u64>);
 
 // Event data is reset with `clone_from` which retains the memory of the
-// vectors only if it's forwarded (derived clones do not do that).
-macro_rules! impl_clone {
-    ($ty:ident) => {
-        impl Clone for $ty {
-            fn clone(&self) -> $ty {
-                $ty(self.0.clone())
-            }
+// vector only if it's forwarded (derived clones do not do that).
+impl Clone for Tags {
+    fn clone(&self) -> Tags {
+        Tags(self.0.clone())
+    }
 
-            fn clone_from(&mut self, source: &$ty) {
-                self.0.clone_from(&source.0);
-            }
-        }
-    };
+    fn clone_from(&mut self, source: &Tags) {
+        self.0.clone_from(&source.0);
+    }
 }
-
-impl_clone!(CurrentTags);
-impl_clone!(PendingTags);
 
 /// Takes the outermost tag of the current data item from the state.
 ///
@@ -76,11 +70,8 @@ impl_clone!(PendingTags);
 /// }
 /// ```
 pub fn take_tag(state: &mut State) -> Option<u64> {
-    if state
-        .event::<CurrentTags>()
-        .is_some_and(|tags| !tags.0.is_empty())
-    {
-        Some(state.event_mut::<CurrentTags>().0.remove(0))
+    if state.event::<Tags>().is_some_and(|tags| !tags.0.is_empty()) {
+        Some(state.event_mut::<Tags>().0.remove(0))
     } else {
         None
     }
@@ -93,7 +84,7 @@ pub fn take_tag(state: &mut State) -> Option<u64> {
 /// call.  The tag is attached to the first event of the value (see
 /// [`State::event`]), serializers which do not support tags ignore it.
 pub fn push_tag(state: &mut State, tag: u64) {
-    state.event_mut::<PendingTags>().0.push(tag);
+    state.event_mut::<Tags>().0.push(tag);
 }
 
 /// A value with an optional CBOR tag.

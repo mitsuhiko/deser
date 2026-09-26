@@ -34,6 +34,9 @@ All notable changes to deser are documented here.
   `SerializeDriver::drive_described` which passes the value of every event.
   `deser-debug` uses it and formats values like `#[derive(Debug)]` (including
   struct and newtype names).
+- `deser-cbor` uses the same event data for tags when reading and writing,
+  values that capture event data (such as `Recording`) keep the tags when
+  they are serialized again.
 - `deser-cbor` writes definite lengths directly if the length of a
   container is known and fails if the number of items does not match.  It
   passes the declared lengths of its input on, which `Vec`, `HashMap` and

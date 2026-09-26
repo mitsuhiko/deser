@@ -8,7 +8,7 @@ use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::float::f16_to_f64;
 use crate::simple::Simple;
-use crate::tag::CurrentTags;
+use crate::tag::Tags;
 
 const MAJOR_UNSIGNED: u8 = 0;
 const MAJOR_NEGATIVE: u8 = 1;
@@ -433,7 +433,7 @@ impl<'a> Deserializer<'a> {
     fn attach_tags(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
         // swapping retains the memory of both vectors
         std::mem::swap(
-            &mut driver.state_mut().event_mut::<CurrentTags>().0,
+            &mut driver.state_mut().event_mut::<Tags>().0,
             &mut self.tags,
         );
         self.tags.clear();

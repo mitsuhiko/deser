@@ -223,3 +223,16 @@ fn other_formats_ignore_tags() {
     // previous serialization.
     assert_eq!(ser(&1u32), "01");
 }
+
+#[test]
+fn recordings_keep_tags() {
+    // nested tags on a value and on a map entry survive a recording
+    for input in [
+        "d864d8651a514b67b0",
+        "a1616dd864a16162d82a01",
+        "82d864617801",
+    ] {
+        let recording: deser::de::Recording = deser_cbor::from_slice(&hex(input)).unwrap();
+        assert_eq!(ser(&recording), input);
+    }
+}

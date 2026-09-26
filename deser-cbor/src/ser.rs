@@ -9,7 +9,7 @@ use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 use crate::buf::extend;
 use crate::float::f64_to_f16;
 use crate::simple::Simple;
-use crate::tag::PendingTags;
+use crate::tag::Tags;
 
 const MAJOR_UNSIGNED: u8 = 0;
 const MAJOR_NEGATIVE: u8 = 1;
@@ -116,7 +116,7 @@ impl Writer {
     /// Writes the tags attached to the current event.
     #[cold]
     fn write_tags(&mut self, state: &State) {
-        if let Some(tags) = state.event::<PendingTags>() {
+        if let Some(tags) = state.event::<Tags>() {
             for &tag in tags.0.iter() {
                 self.write_head(MAJOR_TAG, tag);
             }
