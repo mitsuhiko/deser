@@ -11,6 +11,7 @@ members = [
   "deser-value",
   "deser-yaml",
   "deser-toml",
+  "deser-urlencoded",
   "deser-tokio",
   "examples/adapters",
   "examples/borrowing",

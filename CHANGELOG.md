@@ -11,6 +11,11 @@ All notable changes to deser are documented here.
   `1e13` for `f32`) are written without exponent.  The output does not
   depend on the feature.
 - `deser-yaml` no longer allocates for every scalar it writes.
+- Added `deser-urlencoded` for query strings and form data
+  (`application/x-www-form-urlencoded`).  Keys and values are lexical atoms,
+  keys can be nested with brackets (`a[b][0]`, `a[]`) or dots, repeated keys
+  are sequences.  Values are serialized with repeated keys (like
+  `serde_url_params`), brackets or indexes.
 - Added `Atom::Lexical` for text whose type the format cannot express
   (like the values of query strings).  The sink decides what it means:
   integers and floats parse it, `bool` accepts `true`, `yes`, `on`, `1`,

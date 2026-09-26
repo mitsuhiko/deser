@@ -8,7 +8,7 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is an experimental serialization system for Rust for self describing
-formats such as JSON, YAML, TOML and CBOR.  If you know serde you will feel at
+formats such as JSON, YAML, TOML, CBOR and query strings.  If you know serde you will feel at
 home: you derive `Serialize` and `Deserialize` on your types and pick a format
 crate.  What deser does differently is what happens when data gets messy:
 
@@ -20,6 +20,9 @@ crate.  What deser does differently is what happens when data gets messy:
 * **Bytes, dates, UUIDs and big numbers just work:** they are native where
   the format supports them (CBOR byte strings, TOML date-times) and fall
   back to strings everywhere else, without in-band signalling.
+* **Text of unknown type is parsed by its type:** where the format cannot
+  say what a value is (query strings, the keys of JSON objects), the type it
+  is deserialized into decides, also in flattened structs and tagged enums.
 * **Hooks between format and types:** layers see every value and can track
   paths, rename keys, redact values or reject input, without support from
   the format or your types.
@@ -227,6 +230,8 @@ included benchmark.
   implementation for deser
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
   implementation for deser
+* [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded):
+  query strings and form data (`application/x-www-form-urlencoded`) for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a layer
   that tracks the path during serialization and deserialization and adds it
   to errors
