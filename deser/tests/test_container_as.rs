@@ -699,7 +699,7 @@ fn test_flatten() {
     let err = serialize_drive(&value).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unable to flatten on struct into struct"
+        "Unexpected: only structs and maps can be flattened"
     );
     let err = deserialize::<Flattened>(vec![
         Event::map_start(),

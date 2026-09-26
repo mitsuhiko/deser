@@ -168,10 +168,40 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         self.value_atom(atom, state)
     }
 
+    /// Takes all keys when the value is flattened into a struct.
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        _state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        match self.building {
+            Building::Map(_) => self.flush(),
+            Building::None if !matches!(self.out, Out::Seq(_)) => {
+                self.building = Building::Map(Map::new());
+            }
+            _ => return Ok(None),
+        }
+        self.slot = Some(Value::from(key));
+        self.begin_value()?;
+        Ok(Some(Value::deserialize_into(&mut self.slot)))
+    }
+
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.flush();
         let kind = match std::mem::replace(&mut self.building, Building::None) {
-            Building::None => return Ok(()),
+            // a value that is flattened into a struct is an empty map if no
+            // key was left for it
+            Building::None => match self.out {
+                Out::Value(ref mut out @ None) => {
+                    **out = Some(Value::from(Map::new()));
+                    return Ok(());
+                }
+                Out::Map(ref mut out @ None) => {
+                    **out = Some(Map::new());
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            },
             Building::Seq(seq) => Kind::Seq(seq),
             Building::Map(map) => Kind::Map(map),
         };

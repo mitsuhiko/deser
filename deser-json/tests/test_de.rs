@@ -80,6 +80,52 @@ fn test_optional_compounds() {
 }
 
 #[test]
+fn test_flatten_map() {
+    use std::collections::{BTreeMap, HashMap};
+
+    // flattened maps take the keys no field took
+    #[derive(Deserialize, deser::Serialize, PartialEq, Eq, Debug)]
+    pub struct User {
+        id: u64,
+        #[deser(flatten)]
+        extra: BTreeMap<String, u32>,
+    }
+
+    let json = r#"{"id":42,"a":1,"b":2}"#;
+    let user: User = from_str(json).unwrap();
+    assert_eq!(
+        user,
+        User {
+            id: 42,
+            extra: BTreeMap::from([("a".into(), 1), ("b".into(), 2)]),
+        }
+    );
+    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+
+    let user: User = from_str(r#"{"id":42}"#).unwrap();
+    assert!(user.extra.is_empty());
+    let err = from_str::<User>(r#"{"id":42,"a":"x"}"#).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected u32");
+    let err = from_str::<User>(r#"{"id":42,"a":1,"a":2}"#).unwrap_err();
+    assert_eq!(err.message(), "duplicate key in map");
+
+    // keys are parsed like other map keys
+    #[derive(Deserialize, deser::Serialize, PartialEq, Eq, Debug)]
+    pub struct Numbers {
+        name: String,
+        #[deser(flatten)]
+        numbers: HashMap<u32, bool>,
+    }
+
+    let json = r#"{"name":"x","2":true}"#;
+    let numbers: Numbers = from_str(json).unwrap();
+    assert_eq!(numbers.numbers, HashMap::from([(2, true)]));
+    assert_eq!(deser_json::to_string(&numbers).unwrap(), json);
+    let err = from_str::<Numbers>(r#"{"name":"x","y":true}"#).unwrap_err();
+    assert_eq!(err.message(), "invalid value \"y\", expected u32");
+}
+
+#[test]
 fn test_flatten_optional() {
     #[derive(Deserialize, PartialEq, Eq, Debug)]
     pub struct User {

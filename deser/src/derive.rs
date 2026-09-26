@@ -173,11 +173,15 @@
 //! * `#[deser(alias = "...")]`: provides an alias for the field name for deserialization.  This is ignored
 //!   for serialization.
 //! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the
-//!   parent struct.  Note that flattening only works with structs (more specifically with string) keys.
+//!   parent struct.  Note that flattening only works with string keys.
 //!   This feature is enabled by [`value_for_key`](crate::de::Sink::value_for_key).
 //!   Internally tagged enums can be flattened too.  Until their tag was seen
 //!   they take all keys that the struct and the flattened fields before them
 //!   do not take, so they should come after other flattened fields.
+//!   Maps (and `deser_value::Value`) take all keys that the struct and the
+//!   flattened fields before them do not take, the keys are parsed into the
+//!   key type like the keys of JSON objects.  When serializing, the keys of
+//!   the map become fields.
 //! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See
@@ -205,7 +209,7 @@
 //!   variant can also be marked as `other`.
 //!
 //! The fields of struct variants support the same attributes as struct fields,
-//! except for `flatten` which is only supported for deserialization.
+//! except for `flatten`.
 //!
 //! ## Adapters
 //!
@@ -328,8 +332,8 @@
 //!   for instance a tree can be `FromInto<Vec<Tree>>`.
 //! * Missing values and optional values are handled by the adapter, as for
 //!   fields with adapters.
-//! * Values can be flattened if the adapter serializes them as a struct, for
-//!   instance with `TryFromInto<RawStruct>`.
+//! * Values can be flattened if the adapter serializes them as a struct or
+//!   map, for instance with `TryFromInto<RawStruct>`.
 //! * Adapters are `'static` which means that type parameters used in the
 //!   adapter need to be `'static` and adapters cannot convert from borrowed
 //!   data.  For types with type parameters the derive requires the adapter

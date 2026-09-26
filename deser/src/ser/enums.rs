@@ -4,9 +4,8 @@
 use std::borrow::Cow;
 
 use crate::State;
-use crate::error::{Error, ErrorKind};
-use crate::event::Atom;
-use crate::ser::flatten::Forwarded;
+use crate::error::Error;
+use crate::ser::flatten::FlattenedStruct;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
 
 /// Serializes a map with a single entry.
@@ -163,44 +162,19 @@ impl<'a> TaggedNewtype<'a> {
     pub fn into_chunk(self) -> Chunk<'a> {
         Chunk::Struct(Box::new(TaggedNewtypeEmitter {
             value: self,
-            emitter: None,
-            forwarded: Forwarded::new(),
+            content: None,
             started: false,
             done: false,
         }))
     }
 }
 
-/// The content of a newtype variant of an internally tagged enum.
-enum TaggedContent<'a> {
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>),
-}
-
 struct TaggedNewtypeEmitter<'a> {
     value: TaggedNewtype<'a>,
-    // `emitter` must be declared (and thus dropped) before `forwarded` as it
-    // can borrow from the forwarded values.
-    emitter: Option<TaggedContent<'a>>,
-    // values the inner value forwarded to (see `Chunk::Forward`)
-    forwarded: Forwarded,
+    // the fields of the inner value, once the tag was emitted
+    content: Option<FlattenedStruct<'a>>,
     started: bool,
     done: bool,
-}
-
-/// Returns the string of a map key.
-fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
-    let rv = match key.serialize(state)? {
-        Chunk::Atom(Atom::Str(key) | Atom::Lexical(key)) => key.into_owned(),
-        _ => {
-            return Err(Error::new(
-                ErrorKind::UnsupportedType,
-                "newtype variants of internally tagged enums must contain maps with string keys",
-            ));
-        }
-    };
-    key.finish(state)?;
-    Ok(rv)
 }
 
 impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
@@ -218,40 +192,13 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
         if self.done {
             return Ok(None);
         }
-        if self.emitter.is_none() {
-            // SAFETY: the emitter is dropped before the forwarded values.
-            let chunk = unsafe { self.forwarded.serialize(self.value.inner, state)? };
-            self.emitter = Some(match chunk {
-                Chunk::Struct(emitter) => TaggedContent::Struct(emitter),
-                Chunk::Map(emitter) => TaggedContent::Map(emitter),
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::UnsupportedType,
-                        "newtype variants of internally tagged enums must contain structs or maps",
-                    ));
-                }
-            });
+        if self.content.is_none() {
+            self.content = Some(FlattenedStruct::new(self.value.inner, state)?);
         }
-        let item = match self.emitter.as_mut().unwrap() {
-            TaggedContent::Struct(emitter) => emitter.next(state)?,
-            // map keys are converted into strings so that they can be
-            // emitted as struct fields.
-            TaggedContent::Map(emitter) => {
-                let key = match emitter.next_key(state)? {
-                    Some(key) => Some(map_key_string(&*key, state)?),
-                    None => None,
-                };
-                match key {
-                    Some(key) => Some((Cow::Owned(key), emitter.next_value(state)?)),
-                    None => None,
-                }
-            }
-        };
-        match item {
+        match self.content.as_mut().unwrap().next(state)? {
             Some(item) => Ok(Some(item)),
             None => {
                 self.done = true;
-                self.forwarded.finish(state)?;
                 self.value.inner.finish(state)?;
                 Ok(None)
             }

@@ -718,6 +718,22 @@ where
             VA::__private_borrowed_atom_into_as(&mut self.value, atom, state)
         }
 
+        /// Takes all keys when the map is flattened into a struct.
+        ///
+        /// The key is parsed like the keys of formats that only have string
+        /// keys.
+        fn value_for_key(
+            &mut self,
+            key: &str,
+            state: &mut State,
+        ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+            // `map` is not invoked for flattened maps
+            self.duplicate_keys = state.duplicate_keys();
+            self.flush()?;
+            KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Cow::Borrowed(key)), state)?;
+            Ok(Some(VA::deserialize_into_as(&mut self.value)))
+        }
+
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
             self.flush()?;
             *self.slot = Some(take(&mut self.map));

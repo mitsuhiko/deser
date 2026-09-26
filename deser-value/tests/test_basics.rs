@@ -423,3 +423,35 @@ fn test_serializer() {
     serializer.serialize(&"x").unwrap();
     assert_eq!(serializer.values(), [value!(1), value!("x")]);
 }
+
+#[test]
+fn test_flatten() {
+    #[derive(Debug, deser::Deserialize, deser::Serialize)]
+    struct WithValue {
+        id: u32,
+        #[deser(flatten)]
+        extra: Value,
+    }
+
+    #[derive(Debug, deser::Deserialize, deser::Serialize)]
+    struct WithMap {
+        id: u32,
+        #[deser(flatten)]
+        extra: Map,
+    }
+
+    let input = value!({"id": 1, "a": [1, 2], "b": {"c": null}});
+    let rv = from_value::<WithValue>(&input).unwrap();
+    assert_eq!(rv.extra, value!({"a": [1, 2], "b": {"c": null}}));
+    assert_eq!(to_value(&rv).unwrap(), input);
+    let rv = from_value::<WithMap>(&input).unwrap();
+    assert_eq!(rv.extra.len(), 2);
+    assert_eq!(to_value(&rv).unwrap(), input);
+
+    // without other keys the value is an empty map
+    let input = value!({"id": 1});
+    let rv = from_value::<WithValue>(&input).unwrap();
+    assert_eq!(rv.extra, value!({}));
+    let rv = from_value::<WithMap>(&input).unwrap();
+    assert!(rv.extra.is_empty());
+}

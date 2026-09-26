@@ -13,6 +13,12 @@ All notable changes to deser are documented here.
   structs emit their fields with plain values directly.  This makes the
   serialize driver two to three times faster for float and container heavy
   data.
+- Maps can be flattened into structs (`#[deser(flatten)] extra:
+  BTreeMap<String, Value>`).  They take all keys that no field took (the
+  keys are parsed into the key type) and their entries become fields when
+  serializing.  Flattened maps silently stayed empty and failed to
+  serialize before.  `deser_value::Value` and `deser_value::Map` can be
+  flattened the same way.
 - Newtype variants of `()` (`A(())`) in internally tagged enums are
   unit variants (`{"type": "A"}`, other keys are ignored).  They failed
   in both directions before.

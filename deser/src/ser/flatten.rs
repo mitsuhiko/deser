@@ -6,8 +6,9 @@ use std::borrow::Cow;
 
 use crate::State;
 use crate::error::{Error, ErrorKind};
+use crate::event::Atom;
 use crate::ser::driver::Held;
-use crate::ser::{Chunk, Serialize, SerializeHandle, StructEmitter};
+use crate::ser::{Chunk, MapEmitter, Serialize, SerializeHandle, StructEmitter};
 
 /// Holds the values a value forwarded to (see [`Chunk::Forward`]).
 ///
@@ -63,17 +64,25 @@ impl Forwarded {
     }
 }
 
+/// The emitter of a value that is flattened.
+enum Content<'a> {
+    Struct(Box<dyn StructEmitter + 'a>),
+    Map(Box<dyn MapEmitter + 'a>),
+}
+
 /// The fields of a value that is flattened into a struct.
 ///
-/// The value has to serialize as a struct.  If it forwards to another value
-/// (as values serialized with [`FromInto`](crate::adapters::FromInto) do)
-/// the fields of the value it forwards to are used.  After the last field
-/// the values it forwarded to are finished, the flattened value itself has
-/// to be finished by the caller.
+/// The value has to serialize as a struct or as a map (whose keys become
+/// field names, they have to be strings, integers, booleans or chars).  If
+/// it forwards to another value (as values serialized with
+/// [`FromInto`](crate::adapters::FromInto) do) the fields of the value it
+/// forwards to are used.  After the last field the values it forwarded to
+/// are finished, the flattened value itself has to be finished by the
+/// caller.
 pub struct FlattenedStruct<'a> {
-    // `emitter` must be declared (and thus dropped) before `forwarded` as it
+    // `content` must be declared (and thus dropped) before `forwarded` as it
     // can borrow from the forwarded values.
-    emitter: Box<dyn StructEmitter + 'a>,
+    content: Content<'a>,
     forwarded: Forwarded,
     done: bool,
 }
@@ -85,17 +94,21 @@ impl<'a> FlattenedStruct<'a> {
         // SAFETY: the chunk is declared after `forwarded` and dropped before
         // it, the emitter is moved into a struct which drops it first.
         let chunk = unsafe { forwarded.serialize(value, state)? };
-        match chunk {
-            Chunk::Struct(emitter) => Ok(FlattenedStruct {
-                emitter,
-                forwarded,
-                done: false,
-            }),
-            _ => Err(Error::new(
-                ErrorKind::Unexpected,
-                "unable to flatten on struct into struct",
-            )),
-        }
+        let content = match chunk {
+            Chunk::Struct(emitter) => Content::Struct(emitter),
+            Chunk::Map(emitter) => Content::Map(emitter),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "only structs and maps can be flattened",
+                ));
+            }
+        };
+        Ok(FlattenedStruct {
+            content,
+            forwarded,
+            done: false,
+        })
     }
 
     /// Produces the next field.
@@ -110,13 +123,43 @@ impl<'a> FlattenedStruct<'a> {
         if self.done {
             return Ok(None);
         }
-        match self.emitter.next(state)? {
-            Some(item) => Ok(Some(item)),
-            None => {
-                self.done = true;
-                self.forwarded.finish(state)?;
-                Ok(None)
+        match self.content {
+            Content::Struct(ref mut emitter) => {
+                if let Some(item) = emitter.next(state)? {
+                    return Ok(Some(item));
+                }
+            }
+            Content::Map(ref mut emitter) => {
+                let key = match emitter.next_key(state)? {
+                    Some(key) => Some(map_key_string(&*key, state)?),
+                    None => None,
+                };
+                if let Some(key) = key {
+                    return Ok(Some((Cow::Owned(key), emitter.next_value(state)?)));
+                }
             }
         }
+        self.done = true;
+        self.forwarded.finish(state)?;
+        Ok(None)
     }
+}
+
+/// Returns the field name for the key of a flattened map.
+fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
+    let rv = match key.serialize(state)? {
+        Chunk::Atom(Atom::Str(key) | Atom::Lexical(key)) => key.into_owned(),
+        Chunk::Atom(Atom::U64(value)) => value.to_string(),
+        Chunk::Atom(Atom::I64(value)) => value.to_string(),
+        Chunk::Atom(Atom::Bool(value)) => value.to_string(),
+        Chunk::Atom(Atom::Char(value)) => value.to_string(),
+        _ => {
+            return Err(Error::new(
+                ErrorKind::UnsupportedType,
+                "the keys of flattened maps must be strings, integers, booleans or chars",
+            ));
+        }
+    };
+    key.finish(state)?;
+    Ok(rv)
 }
