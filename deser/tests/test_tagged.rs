@@ -495,3 +495,37 @@ fn test_flattened_internally_tagged() {
         }
     );
 }
+
+#[test]
+fn test_internally_tagged_unit_newtype() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    #[deser(tag = "type")]
+    enum Tagged {
+        Empty(()),
+        Other { x: u32 },
+    }
+
+    let events = serialize(&Tagged::Empty(()));
+    assert_eq!(
+        events,
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Empty".into(),
+            Event::MapEnd
+        ]
+    );
+    assert_eq!(deserialize::<Tagged>(events).unwrap(), Tagged::Empty(()));
+
+    // other keys are ignored like for unit variants
+    let value: Tagged = deserialize(vec![
+        Event::map_start(),
+        "type".into(),
+        "Empty".into(),
+        "x".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, Tagged::Empty(()));
+}

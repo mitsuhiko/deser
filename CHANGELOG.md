@@ -13,6 +13,9 @@ All notable changes to deser are documented here.
   structs emit their fields with plain values directly.  This makes the
   serialize driver two to three times faster for float and container heavy
   data.
+- Newtype variants of `()` (`A(())`) in internally tagged enums are
+  unit variants (`{"type": "A"}`, other keys are ignored).  They failed
+  in both directions before.
 - JSON, YAML and TOML format floats with `zmij` with the `speedups`
   feature (`deser-json` used `ryu` before, YAML and TOML the standard
   library).  All three write the same shortest text now, exponents always

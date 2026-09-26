@@ -379,6 +379,15 @@ fn collect_variants<'a>(
             Shape::Unit => Content::Unit,
             Shape::Tuple => match content_idxs.len() {
                 0 => Content::Unit,
+                // `()` has nothing to merge with the tag of internally
+                // tagged enums, the variant is a unit variant.
+                1 if matches!(repr, Repr::Internal { .. })
+                    && !attrs.other()
+                    && is_unit_type(fields[0].ty())
+                    && !fields[0].adapters.any() =>
+                {
+                    Content::Unit
+                }
                 1 => Content::Newtype(content_idxs[0]),
                 _ => Content::Tuple(content_idxs),
             },
@@ -407,6 +416,16 @@ fn collect_variants<'a>(
     }
 
     Ok(rv)
+}
+
+/// Returns `true` if the type is written as `()`.
+fn is_unit_type(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Tuple(tuple) => tuple.elems.is_empty(),
+        syn::Type::Paren(paren) => is_unit_type(&paren.elem),
+        syn::Type::Group(group) => is_unit_type(&group.elem),
+        _ => false,
+    }
 }
 
 /// Defines the name of the type which is used in error messages.
@@ -551,7 +570,13 @@ pub fn derive_deserialize(
         // pattern that makes the values of the content fields available.
         let mut values = vec![TokenStream::new(); info.fields.len()];
         let (content_ty, content_pattern) = match info.content {
-            Content::Unit if needs_helper => (helper_ty.clone(), quote! { _ }),
+            Content::Unit if needs_helper => {
+                // fields of unit variants are `()` (see `collect_variants`)
+                for value in &mut values {
+                    *value = quote! { () };
+                }
+                (helper_ty.clone(), quote! { _ })
+            }
             Content::Unit if info.other => {
                 (quote! { __deser::__derive::IgnoredContent }, quote! { _ })
             }

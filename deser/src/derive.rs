@@ -104,7 +104,7 @@
 //!   other variants are maps with a single key: `{"A": content}`.
 //! * internally tagged (`#[deser(tag = "type")]`): `{"type": "A", ...fields}`.
 //!   Supports unit, struct and newtype variants (the inner value must be a
-//!   struct or map).
+//!   struct or map).  Newtype variants of `()` (`A(())`) are unit variants.
 //! * adjacently tagged (`#[deser(tag = "t", content = "c")]`):
 //!   `{"t": "A", "c": content}`.
 //! * untagged (`#[deser(untagged)]`): just the content.  The variants are
