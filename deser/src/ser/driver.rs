@@ -811,16 +811,27 @@ impl<'a> SerializeDriver<'a> {
     }
 
     /// Ends the container on the top of the stack and emits the end event.
+    ///
+    /// Unlike with `next` the value does not need to outlive this call.
     #[inline]
     fn drive_end<C: Callback>(&mut self, f: &mut C) -> Result<(), Error> {
-        let event = self.end_container();
-        // SAFETY: the value that started the container is held until the
-        // next event.  This is only read if the callback uses it.
-        let value = unsafe { self.finished_value() };
+        let Frame {
+            emitter,
+            serializable,
+            needs_finish,
+        } = self.stack.pop().unwrap();
+        let event = match emitter {
+            Emitter::Seq(_) | Emitter::IndexedSeq(..) => Event::SeqEnd,
+            _ => Event::MapEnd,
+        };
+        // the emitter borrows from the serializable, drop it first.
+        drop(emitter);
+        self.state.depth -= 1;
+        // SAFETY: the value is held until the end of this function
+        let value = unsafe { serializable.get() };
         self.deliver(f, event, value)?;
-        if let Some((held, true)) = self.needs_finish.take() {
-            // SAFETY: the value is alive until the end of this block
-            unsafe { held.get() }.finish(&mut self.state)?;
+        if needs_finish {
+            value.finish(&mut self.state)?;
         }
         Ok(())
     }
