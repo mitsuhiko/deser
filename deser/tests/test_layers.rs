@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use deser::de::{DeserializeDriver, Format, Layer, LayerEvent, Limits, Next, Sink, SinkHandle};
+use deser::de::{
+    DeserializeDriver, Deserializer, Layer, LayerEvent, Limits, Next, Sink, SinkHandle,
+};
 use deser::ser::{self, SerializeDriver};
 use deser::{
     Atom, Deserialize, Error, ErrorAttachment, ErrorContext, ErrorKind, Event, Serialize, State,
@@ -32,7 +34,7 @@ fn emit_all(driver: &mut DeserializeDriver<'_, '_>, events: Vec<Event<'_>>) -> R
 /// A format for tests that emits a list of events.
 struct Events<'a>(Vec<Event<'a>>);
 
-impl<'de> Format<'de> for Events<'de> {
+impl<'de> Deserializer<'de> for Events<'de> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
         for (idx, event) in std::mem::take(&mut self.0).into_iter().enumerate() {
             driver.state_mut().set_input_range(idx, idx + 1);

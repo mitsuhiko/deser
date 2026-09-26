@@ -3,7 +3,7 @@ use std::str;
 use std::sync::Arc;
 
 use deser::adapters::bytes::BytesFormat;
-use deser::de::{Deserialize, DeserializeDriver, Format};
+use deser::de::{self, Deserialize, DeserializeDriver};
 use deser::{Error, ErrorKind};
 
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -373,9 +373,21 @@ impl<'a> Deserializer<'a> {
     /// next line.
     ///
     /// To configure the deserialization (for instance to add layers) use
-    /// [`Format::deserialize_with`].
+    /// [`deserialize_with`](Self::deserialize_with).
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        Format::deserialize(self)
+        de::Deserializer::deserialize(self)
+    }
+
+    /// Deserializes the next value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'a>),
+    {
+        de::Deserializer::deserialize_with(self, setup)
     }
 
     /// Returns an iterator over the remaining values.
@@ -402,7 +414,7 @@ impl<'a> Deserializer<'a> {
     /// Parses the next value and feeds the events into the given driver.
     ///
     /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink).
-    /// See also [`Format::deserialize_with`].
+    /// See also [`deserialize_with`](Self::deserialize_with).
     ///
     /// Strings without escape sequences are passed on borrowed from the
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
@@ -543,7 +555,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
     }
 }
 
-impl<'a> Format<'a> for Deserializer<'a> {
+impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         Deserializer::drive(self, driver)
     }

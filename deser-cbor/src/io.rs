@@ -2,7 +2,7 @@
 use std::io::{Read, Write};
 
 use deser::de::{Decoder, Frame, Limits, Progress};
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
+use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind, State};

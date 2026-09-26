@@ -99,6 +99,6 @@ mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
 pub use self::io::{from_reader, to_writer};
-pub use self::ser::{SerializerConfig, to_string};
+pub use self::ser::{Serializer, SerializerConfig, to_string};
 /// Re-exported from [`deser::ext`] for convenience.
 pub use deser::ext::{Date, Datetime, Offset, Time};

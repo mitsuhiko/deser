@@ -6,7 +6,6 @@
 //! internally tagged `Backend` below has to record its fields until it sees
 //! the `type` which can come last.  The recording remembers where every
 //! value came from.
-use deser::de::Format;
 use deser::{Deserialize, Error};
 use deser_path::{Path, PathLayer};
 

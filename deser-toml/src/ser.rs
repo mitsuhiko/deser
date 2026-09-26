@@ -4,7 +4,7 @@ use std::fmt::Write;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
 use deser::hints::Layout;
-use deser::ser::SerializeDriver;
+use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
@@ -108,6 +108,94 @@ impl SerializerConfig {
         };
         writer.write_document()?;
         Ok(writer.out)
+    }
+}
+
+/// Serializes values into TOML.
+///
+/// A TOML document holds a single value, writing a second one fails.
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use deser_toml::Serializer;
+///
+/// let mut serializer = Serializer::new();
+/// serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();
+/// assert!(serializer.serialize(&BTreeMap::from([("b", 2)])).is_err());
+/// assert_eq!(serializer.finish(), "a = 1\n");
+/// ```
+///
+/// To write to a [`Write`](std::io::Write) use a
+/// [`deser::io::Writer`] with the configuration.
+#[derive(Debug, Clone)]
+pub struct Serializer {
+    config: SerializerConfig,
+    out: String,
+    written: usize,
+}
+
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::with_config(&SerializerConfig::new())
+    }
+
+    /// Creates a serializer with the given configuration.
+    pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer {
+            config: config.clone(),
+            out: String::new(),
+            written: 0,
+        }
+    }
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is written.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the output written so far.
+    pub fn output(&self) -> &str {
+        &self.out
+    }
+
+    /// Returns the output.
+    pub fn finish(self) -> String {
+        self.out
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        if self.written > 0 {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "a TOML document holds a single value",
+            ));
+        }
+        let toml = self.config.serialize_driver(driver)?;
+        self.out.push_str(&toml);
+        self.written += 1;
+        Ok(())
     }
 }
 

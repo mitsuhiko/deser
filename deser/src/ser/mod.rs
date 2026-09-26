@@ -104,11 +104,13 @@ mod encoder;
 pub(crate) mod enums;
 mod impls;
 mod layer;
+mod serializer;
 
 pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::encoder::Encoder;
 pub use self::layer::{Layer, Next};
+pub use self::serializer::Serializer;
 
 pub use driver::SerializeDriver;
 

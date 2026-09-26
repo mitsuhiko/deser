@@ -26,6 +26,12 @@ All notable changes to deser are documented here.
   between tokens for this.  Values that fail in a sink are skipped so the
   stream continues.  `Decoder::is_text` controls if the positions of
   errors are resolved into lines and columns.
+- Added the `deser::ser::Serializer` trait and a `Serializer` for all
+  formats (JSON, CBOR, YAML and TOML) which serializes values into an
+  in-memory output.  More than one value can be written (as JSON Lines
+  with `Trailing::Newline`, a CBOR sequence or YAML documents).
+- `deser_json::SerializerConfig::default()` returns the same configuration
+  as `new()` (it was derived before which disabled compact output).
 - Added `deser::io` to read values from and write values to streams with
   decoders and encoders: `Reader` and `Writer` (and `from_reader` and
   `to_writer`) use them with `std::io::Read` and `std::io::Write`,
@@ -177,8 +183,9 @@ All notable changes to deser are documented here.
   events, the number of items of maps and sequences and the length of strings
   and bytes.  The `max_depth` options of `deser-yaml` and `deser-cbor` add
   this layer and no longer have their own implementation.
-- Added `deser::de::Format` which is implemented by the deserializers of all
-  formats.  `Format::deserialize_with` allows configuring the driver, for
+- Added the `deser::de::Deserializer` trait which is implemented by the
+  deserializers of all formats.  `Deserializer::deserialize_with` (also an
+  inherent method of the deserializers) allows configuring the driver, for
   instance to add layers or to wrap the sink with the new
   `DeserializeDriver::wrap_sink`.  The formats' `Deserializer::deserialize`
   forwards to it.  The serializer configurations have new `to_string_with`

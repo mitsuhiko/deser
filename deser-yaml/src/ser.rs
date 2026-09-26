@@ -1,5 +1,5 @@
 use deser::adapters::bytes::BytesFormat;
-use deser::ser::SerializeDriver;
+use deser::ser::{self, SerializeDriver};
 use deser::{Error, Serialize};
 
 use crate::emit::Emitter;
@@ -431,6 +431,88 @@ impl SerializerConfig {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
         self.document(&mut driver, 0)
+    }
+}
+
+/// Serializes values into YAML documents.
+///
+/// Every call to [`serialize`](Self::serialize) writes a document,
+/// documents after the first start with `---`.
+///
+/// ```
+/// use deser_yaml::Serializer;
+///
+/// let mut serializer = Serializer::new();
+/// serializer.serialize(&"a").unwrap();
+/// serializer.serialize(&vec![1, 2]).unwrap();
+/// assert_eq!(serializer.finish(), "a\n---\n- 1\n- 2\n");
+/// ```
+///
+/// To write to a [`Write`](std::io::Write) use a
+/// [`deser::io::Writer`] with the configuration.
+#[derive(Debug, Clone)]
+pub struct Serializer {
+    config: SerializerConfig,
+    out: String,
+    written: usize,
+}
+
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::with_config(&SerializerConfig::new())
+    }
+
+    /// Creates a serializer with the given configuration.
+    pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer {
+            config: config.clone(),
+            out: String::new(),
+            written: 0,
+        }
+    }
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is written.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the documents written so far.
+    pub fn output(&self) -> &str {
+        &self.out
+    }
+
+    /// Returns the documents.
+    pub fn finish(self) -> String {
+        self.out
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        let document = self.config.document(driver, self.written)?;
+        self.out.push_str(&document);
+        self.written += 1;
+        Ok(())
     }
 }
 

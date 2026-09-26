@@ -180,7 +180,7 @@ impl<'n, 'de> Next<'n, 'de> {
 /// ```
 ///
 /// Formats typically accept a limits layer when deserializing with
-/// [`Format::deserialize_with`](crate::de::Format::deserialize_with).
+/// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with).
 #[derive(Debug, Clone, Default)]
 pub struct Limits {
     max_depth: Option<usize>,

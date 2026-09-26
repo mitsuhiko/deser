@@ -152,7 +152,8 @@ fn test_event_data_is_attached() {
     }
     let mut probe = Probe(None);
     let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::to(&mut probe));
-    deser::de::Format::drive(&mut deser_value::Deserializer::new(&value[0]), &mut driver).unwrap();
+    deser::de::Deserializer::drive(&mut deser_value::Deserializer::new(&value[0]), &mut driver)
+        .unwrap();
     drop(driver);
     assert_eq!(probe.0, Some(Marker(42)));
 }

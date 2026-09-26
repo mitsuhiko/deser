@@ -8,7 +8,7 @@
 //! For untrusted input it can still make sense to reject such data (for
 //! instance because it's processed recursively later).  The `Limits`
 //! layer limits the depth and the size of the input.
-use deser::de::{Format, Limits};
+use deser::de::Limits;
 use deser::{Deserialize, Serialize};
 
 /// A recursive type.

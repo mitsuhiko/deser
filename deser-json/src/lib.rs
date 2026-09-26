@@ -145,4 +145,4 @@ mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
 pub use self::io::{StreamState, from_reader, to_writer};
-pub use self::ser::{Indent, InlinePolicy, SerializerConfig, to_string};
+pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};

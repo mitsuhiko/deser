@@ -57,8 +57,8 @@
 //! assert_eq!(map[&2], "World");
 //! ```
 //!
-//! Data formats implement the [`Format`] trait which feeds the events of a
-//! value into a driver.
+//! The deserializers of data formats implement the [`Deserializer`] trait
+//! which feeds the events of a value into a driver.
 //!
 //! # Layers and Wrapped Sinks
 //!
@@ -73,7 +73,7 @@
 //!   driver and the sinks of the values.  They are useful for changes that
 //!   depend on the target types.
 //!
-//! Both are set up with [`Format::deserialize_with`].
+//! Both are set up with [`Deserializer::deserialize_with`].
 //!
 //! # Deserializing Primitives
 //!
@@ -217,10 +217,10 @@ use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
 mod decoder;
+mod deserializer;
 mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
-mod format;
 mod ignore;
 pub(crate) mod impls;
 mod layer;
@@ -230,8 +230,8 @@ mod recording;
 mod sinkbox;
 
 pub use self::decoder::{Decoder, Frame, Progress};
+pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
-pub use self::format::Format;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;

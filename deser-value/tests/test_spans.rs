@@ -1,5 +1,4 @@
 use deser::Deserialize;
-use deser::de::Format;
 use deser_location::Spanned;
 use deser_path::{Path, PathLayer};
 use deser_value::{Deserializer, Value, from_value};

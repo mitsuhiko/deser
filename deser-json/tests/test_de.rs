@@ -636,7 +636,7 @@ fn test_error_locations() {
 
 #[test]
 fn test_limits() {
-    use deser::de::{Format, Limits};
+    use deser::de::Limits;
 
     let input = r#"{"a": [[1]], "b": "hello"}"#;
     let parse = |limits: Limits| {

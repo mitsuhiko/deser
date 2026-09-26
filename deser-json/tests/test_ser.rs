@@ -289,3 +289,51 @@ fn test_float_format() {
         assert_eq!(to_string(&value).unwrap(), expected);
     }
 }
+
+#[test]
+fn test_serializer() {
+    use deser::ser::{Layer, Next};
+    use deser::{Atom, Error, Event};
+    use deser_json::{Serializer, SerializerConfig, Trailing};
+
+    // a single value by default
+    let mut serializer = Serializer::new();
+    serializer.serialize(&vec![1, 2]).unwrap();
+    assert!(serializer.serialize(&3).is_err());
+    assert_eq!(serializer.finish(), "[1,2]");
+
+    // values are separated according to `trailing`
+    let mut serializer = Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Stop));
+    serializer.serialize(&1).unwrap();
+    serializer.serialize(&2).unwrap();
+    assert_eq!(serializer.output(), "1\n2");
+    let mut serializer =
+        Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Newline));
+    serializer.serialize(&1).unwrap();
+    // a value that fails writes nothing
+    let invalid = std::collections::BTreeMap::from([(vec![1u32], 1u32)]);
+    assert!(serializer.serialize(&invalid).is_err());
+    serializer.serialize(&2).unwrap();
+    assert_eq!(serializer.finish(), "1\n2\n");
+
+    /// Writes all numbers as strings.
+    struct NumbersAsStrings;
+
+    impl Layer for NumbersAsStrings {
+        fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+            match event {
+                Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+                event => next.emit(event),
+            }
+        }
+    }
+
+    let mut serializer = Serializer::new();
+    serializer
+        .serialize_with(&vec![1u64], |driver| driver.push_layer(NumbersAsStrings))
+        .unwrap();
+    assert_eq!(serializer.finish(), r#"["1"]"#);
+
+    // the default configuration is the same as `new`
+    assert_eq!(SerializerConfig::default(), SerializerConfig::new());
+}

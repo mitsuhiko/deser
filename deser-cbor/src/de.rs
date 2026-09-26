@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use deser::Error;
-use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
+use deser::de::{self, Deserialize, DeserializeDriver, Limits};
 
 use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 
@@ -134,9 +134,21 @@ impl<'a> Deserializer<'a> {
     /// automatically.
     ///
     /// To configure the deserialization (for instance to add layers) use
-    /// [`Format::deserialize_with`].
+    /// [`deserialize_with`](Self::deserialize_with).
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        Format::deserialize(self)
+        de::Deserializer::deserialize(self)
+    }
+
+    /// Deserializes the next value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'a>),
+    {
+        de::Deserializer::deserialize_with(self, setup)
     }
 
     /// Returns an iterator over the remaining data items.
@@ -217,7 +229,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
     }
 }
 
-impl<'a> Format<'a> for Deserializer<'a> {
+impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         Deserializer::drive(self, driver)
     }

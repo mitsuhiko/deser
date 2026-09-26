@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 use deser::State;
-use deser::de::{Format, Layer, LayerEvent, Next, OwnedSink, Sink, SinkHandle};
+use deser::de::{Layer, LayerEvent, Next, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::{Atom, Deserialize, Error, Event};
 use deser_location::{Locations, Span, Spanned};

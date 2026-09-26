@@ -10,7 +10,7 @@
 //!
 //! During deserialization, the `Limits` layer of deser limits the input and
 //! the `PathLayer` of `deser-path` adds the path to errors.
-use deser::de::{Format, Limits};
+use deser::de::Limits;
 use deser::ser::{Layer, Next};
 use deser::{Atom, Deserialize, Error, Event, Serialize};
 use deser_path::{Path, PathLayer};

@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 
 use deser::State;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
-use deser::ser::SerializeDriver;
+use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
@@ -547,6 +547,89 @@ impl SerializerConfig {
             writer.apply_insertions();
         }
         Ok(writer.out)
+    }
+}
+
+/// Serializes values into CBOR.
+///
+/// Every call to [`serialize`](Self::serialize) writes a data item, the
+/// items follow each other which makes the output a [CBOR
+/// sequence](https://www.rfc-editor.org/rfc/rfc8742).
+///
+/// ```
+/// use deser_cbor::Serializer;
+///
+/// let mut serializer = Serializer::new();
+/// serializer.serialize(&1u32).unwrap();
+/// serializer.serialize(&"hi").unwrap();
+/// assert_eq!(serializer.finish(), [0x01, 0x62, b'h', b'i']);
+/// ```
+///
+/// To write to a [`Write`](std::io::Write) use a
+/// [`deser::io::Writer`] with the configuration.
+#[derive(Debug, Clone)]
+pub struct Serializer {
+    config: SerializerConfig,
+    out: Vec<u8>,
+    written: usize,
+}
+
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::with_config(&SerializerConfig::new())
+    }
+
+    /// Creates a serializer with the given configuration.
+    pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer {
+            config: config.clone(),
+            out: Vec::new(),
+            written: 0,
+        }
+    }
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is written.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the output written so far.
+    pub fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    /// Returns the output.
+    pub fn finish(self) -> Vec<u8> {
+        self.out
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        let bytes = self.config.serialize_driver(driver)?;
+        self.out.extend_from_slice(&bytes);
+        self.written += 1;
+        Ok(())
     }
 }
 

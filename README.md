@@ -72,7 +72,6 @@ are retained:
 
 ```rust
 use deser::Deserialize;
-use deser::de::Format;
 use deser_path::{Path, PathLayer};
 
 #[derive(Debug, Deserialize)]

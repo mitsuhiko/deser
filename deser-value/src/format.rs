@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use deser::de::{Deserialize, DeserializeDriver, Format};
+use deser::de::{self, Deserialize, DeserializeDriver};
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
 
@@ -9,12 +9,12 @@ use crate::value::{Kind, Value};
 
 /// Deserializes types from a [`Value`].
 ///
-/// This is a [`Format`] which emits the events of a value.  It's what
+/// This is a [`Deserializer`](deser::de::Deserializer) which emits the
+/// events of a value.  It's what
 /// [`from_value`] uses, use it directly to configure the deserialization,
 /// for instance to add layers:
 ///
 /// ```
-/// use deser::de::Format;
 /// use deser_path::{Path, PathLayer};
 /// use deser_value::{value, Deserializer};
 ///
@@ -42,9 +42,26 @@ impl<'a> Deserializer<'a> {
     pub fn new(value: &'a Value) -> Deserializer<'a> {
         Deserializer { value }
     }
+
+    /// Deserializes the value.
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
+        de::Deserializer::deserialize(self)
+    }
+
+    /// Deserializes the value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'a>),
+    {
+        de::Deserializer::deserialize_with(self, setup)
+    }
 }
 
-impl<'de> Format<'de> for Deserializer<'de> {
+impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
         let mut source = None;
         drive(self.value, driver, &mut source).map_err(|err| match source {

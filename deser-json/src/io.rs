@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 
 use deser::adapters::bytes::BytesFormat;
 use deser::de::{Decoder, Frame, Progress};
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
+use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind, State};
@@ -433,23 +433,7 @@ impl Encoder for SerializerConfig {
         index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        let trailing = self.trailing_mode();
-        match trailing {
-            Trailing::Strict if index > 0 => {
-                return Err(Error::new(
-                    ErrorKind::Unexpected,
-                    "a stream with Trailing::Strict holds a single value",
-                ));
-            }
-            Trailing::Stop if index > 0 => out.push(b'\n'),
-            _ => {}
-        }
-        let json = self.serialize_driver(driver)?;
-        out.extend_from_slice(json.as_bytes());
-        if trailing == Trailing::Newline {
-            out.push(b'\n');
-        }
-        Ok(())
+        self.encode_value(driver, index, out)
     }
 }
 

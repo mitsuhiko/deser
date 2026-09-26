@@ -9,7 +9,6 @@
 //! they refer to attached (see [`Error::attachment`]):
 //!
 //! ```rust
-//! use deser::de::Format;
 //! use deser_path::{Path, PathLayer, PathSegment};
 //!
 //! #[derive(deser::Deserialize, Debug)]

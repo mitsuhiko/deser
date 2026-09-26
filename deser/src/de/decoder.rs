@@ -61,7 +61,7 @@ pub enum Progress {
 /// [`feed`](Self::feed), which only needs to buffer incomplete tokens.
 ///
 /// Types which produce the events of a value from something else than bytes
-/// implement [`Format`](crate::de::Format) instead.
+/// implement [`Deserializer`](crate::de::Deserializer) instead.
 pub trait Decoder {
     /// The state of a stream.
     ///

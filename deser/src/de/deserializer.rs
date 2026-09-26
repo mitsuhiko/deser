@@ -1,11 +1,14 @@
 use crate::de::{Deserialize, DeserializeDriver};
 use crate::error::{Error, ErrorKind};
 
-/// A data format that can be deserialized.
+/// Deserializes values from an input.
 ///
-/// Formats implement [`drive`](Self::drive) which parses the input and
-/// feeds the events of a value into a driver.  The provided methods create
-/// the driver:
+/// This is implemented by the deserializers of the data formats (for
+/// instance `deser_json::Deserializer`) and by other sources of values
+/// (like the value type of `deser-value`).  A deserializer holds its input,
+/// every call deserializes the next value.  Deserializers implement
+/// [`drive`](Self::drive) which parses the input and feeds the events of a
+/// value into a driver.  The provided methods create the driver:
 ///
 /// * [`deserialize`](Self::deserialize) deserializes a value.
 /// * [`deserialize_with`](Self::deserialize_with) deserializes a value and
@@ -13,13 +16,13 @@ use crate::error::{Error, ErrorKind};
 ///   [`Layer`](crate::de::Layer)s or to wrap the sink of the value.
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, Format, Limits};
+/// use deser::de::{DeserializeDriver, Deserializer, Limits};
 /// use deser::{Error, Event};
 ///
 /// /// A format which reads comma separated numbers as a sequence.
 /// struct Numbers<'a>(&'a str);
 ///
-/// impl<'de> Format<'de> for Numbers<'de> {
+/// impl<'de> Deserializer<'de> for Numbers<'de> {
 ///     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 ///         driver.emit(Event::seq_start())?;
 ///         for item in self.0.split(',') {
@@ -40,7 +43,7 @@ use crate::error::{Error, ErrorKind};
 /// });
 /// assert_eq!(rv.unwrap_err().to_string(), "Unexpected: too many items");
 /// ```
-pub trait Format<'de> {
+pub trait Deserializer<'de> {
     /// Parses the input and feeds the events of a value into the driver.
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>;
 

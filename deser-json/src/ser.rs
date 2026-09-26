@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
-use deser::ser::SerializeDriver;
+use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
@@ -74,13 +74,19 @@ pub enum InlinePolicy {
 ///
 /// [`to_string`](Self::to_string) works like the
 /// [`to_string`](crate::to_string) function.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
     bytes: BytesFormat,
     indent: Indent,
     compact: bool,
     inline: InlinePolicy,
     trailing: Trailing,
+}
+
+impl Default for SerializerConfig {
+    fn default() -> SerializerConfig {
+        SerializerConfig::new()
+    }
 }
 
 impl SerializerConfig {
@@ -318,6 +324,135 @@ impl SerializerConfig {
             driver.drive(|event, state| writer.event(event, state))?;
             Ok(writer.finish())
         }
+    }
+}
+
+/// Serializes values into JSON.
+///
+/// Every call to [`serialize`](Self::serialize) writes a value.  What
+/// follows the values depends on [`SerializerConfig::trailing`]: by default
+/// only a single value can be written, with [`Trailing::Newline`] every
+/// value is followed by a line break ([JSON Lines](https://jsonlines.org/)).
+///
+/// ```
+/// use deser_json::{Serializer, SerializerConfig, Trailing};
+///
+/// const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+/// let mut serializer = Serializer::with_config(&LINES);
+/// serializer.serialize(&vec![1, 2]).unwrap();
+/// serializer.serialize(&"x").unwrap();
+/// assert_eq!(serializer.finish(), "[1,2]\n\"x\"\n");
+/// ```
+///
+/// To write to a [`Write`](std::io::Write) use a
+/// [`deser::io::Writer`] with the configuration.
+#[derive(Debug, Clone)]
+pub struct Serializer {
+    config: SerializerConfig,
+    // only holds the output of `encode_value` which is valid UTF-8
+    out: Vec<u8>,
+    written: usize,
+}
+
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::with_config(&SerializerConfig::new())
+    }
+
+    /// Creates a serializer with the given configuration.
+    pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer {
+            config: config.clone(),
+            out: Vec::new(),
+            written: 0,
+        }
+    }
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is written.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the output written so far.
+    pub fn output(&self) -> &str {
+        // SAFETY: the output is valid UTF-8, see `SerializerConfig::encode_value`
+        unsafe { std::str::from_utf8_unchecked(&self.out) }
+    }
+
+    /// Returns the output.
+    pub fn finish(self) -> String {
+        // SAFETY: the output is valid UTF-8, see `SerializerConfig::encode_value`
+        unsafe { String::from_utf8_unchecked(self.out) }
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        let len = self.out.len();
+        match self
+            .config
+            .encode_value(driver, self.written, &mut self.out)
+        {
+            Ok(()) => {
+                self.written += 1;
+                Ok(())
+            }
+            Err(err) => {
+                self.out.truncate(len);
+                Err(err)
+            }
+        }
+    }
+}
+
+impl SerializerConfig {
+    /// Serializes a value as the value with the given index of a stream.
+    ///
+    /// This writes what separates the values of a stream.  Only valid UTF-8
+    /// is appended to the output.
+    pub(crate) fn encode_value(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        index: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let trailing = self.trailing_mode();
+        match trailing {
+            Trailing::Strict if index > 0 => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "with Trailing::Strict only a single value can be written",
+                ));
+            }
+            Trailing::Stop if index > 0 => out.push(b'\n'),
+            _ => {}
+        }
+        let json = self.serialize_driver(driver)?;
+        out.extend_from_slice(json.as_bytes());
+        if trailing == Trailing::Newline {
+            out.push(b'\n');
+        }
+        Ok(())
     }
 }
 

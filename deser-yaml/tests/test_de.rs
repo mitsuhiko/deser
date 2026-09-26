@@ -670,7 +670,7 @@ fn test_error_locations() {
     assert_eq!((err.line(), err.column()), (Some(1), Some(3)));
 
     // the limits of the configuration are enforced by a layer
-    use deser::de::{Format, Limits};
+    use deser::de::Limits;
     let err = Deserializer::from_str("a: [1, 2, 3]")
         .deserialize_with::<Value, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
         .unwrap_err();
