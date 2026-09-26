@@ -26,6 +26,26 @@ pub enum Indent {
     Tab,
 }
 
+/// When maps and sequences are written on a single line in indented
+/// output.
+///
+/// Maps and sequences with the [`Layout::Compact`](deser::hints::Layout)
+/// hint are always written on a single line, the ones with
+/// [`Layout::Expanded`](deser::hints::Layout) never (unless they are in a
+/// map or sequence on a single line).  See [`SerializerConfig::inline`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum InlinePolicy {
+    /// Only compact maps and sequences are written on a single line.
+    #[default]
+    Never,
+    /// Maps and sequences which only contain scalars (no maps or
+    /// sequences, not even empty ones) are written on a single line if
+    /// that line is not longer than the given number of characters
+    /// (including the indentation, a tab counts as one character).
+    LeafIfFits(usize),
+}
+
 /// Configures how values are serialized to JSON.
 ///
 /// By default the output is as short as possible: no line breaks and no
@@ -58,6 +78,7 @@ pub struct SerializerConfig {
     bytes: BytesFormat,
     indent: Indent,
     compact: bool,
+    inline: InlinePolicy,
 }
 
 impl SerializerConfig {
@@ -67,6 +88,7 @@ impl SerializerConfig {
             bytes: BytesFormat::BASE64,
             indent: Indent::None,
             compact: true,
+            inline: InlinePolicy::Never,
         }
     }
 
@@ -106,6 +128,41 @@ impl SerializerConfig {
     /// ```
     pub const fn compact(mut self, yes: bool) -> SerializerConfig {
         self.compact = yes;
+        self
+    }
+
+    /// Sets when maps and sequences are written on a single line in
+    /// indented output.
+    ///
+    /// ```
+    /// use deser::Serialize;
+    /// use deser_json::{Indent, InlinePolicy, SerializerConfig};
+    ///
+    /// #[derive(Serialize)]
+    /// struct Shape {
+    ///     name: &'static str,
+    ///     points: Vec<Vec<i32>>,
+    /// }
+    ///
+    /// let shape = Shape {
+    ///     name: "line",
+    ///     points: vec![vec![0, 0], vec![3, 4]],
+    /// };
+    /// const CONFIG: SerializerConfig = SerializerConfig::new()
+    ///     .pretty(Indent::Spaces(2))
+    ///     .inline(InlinePolicy::LeafIfFits(80));
+    /// assert_eq!(CONFIG.to_string(&shape).unwrap(), r#"{
+    ///   "name": "line",
+    ///   "points": [
+    ///     [0, 0],
+    ///     [3, 4]
+    ///   ]
+    /// }"#);
+    /// ```
+    ///
+    /// This has no effect without [indentation](Self::indent).
+    pub const fn inline(mut self, policy: InlinePolicy) -> SerializerConfig {
+        self.inline = policy;
         self
     }
 
@@ -208,7 +265,11 @@ impl SerializerConfig {
             driver.drive(|event, _| writer.event(event))?;
             Ok(writer.ser.out.into_string())
         } else {
-            let mut writer = PrettyWriter::new(ser, self.indent, self.compact);
+            let inline_width = match self.inline {
+                InlinePolicy::Never => None,
+                InlinePolicy::LeafIfFits(width) => Some(width),
+            };
+            let mut writer = PrettyWriter::new(ser, self.indent, self.compact, inline_width);
             driver.drive(|event, state| writer.event(event, state))?;
             Ok(writer.finish())
         }

@@ -76,6 +76,26 @@ impl Buffer {
         }
     }
 
+    /// Returns the number of bytes written.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// Returns the written text.
+    pub fn as_str(&self) -> &str {
+        // SAFETY: the buffer only contains valid UTF-8, see above.
+        unsafe { std::str::from_utf8_unchecked(&self.bytes) }
+    }
+
+    /// Shortens the buffer to the given length.
+    ///
+    /// The length must be at a character boundary.
+    pub fn truncate(&mut self, len: usize) {
+        assert!(self.as_str().is_char_boundary(len));
+        self.bytes.truncate(len);
+    }
+
     /// Converts the buffer into a string.
     pub fn into_string(self) -> String {
         // SAFETY: the buffer only contains valid UTF-8, see above.

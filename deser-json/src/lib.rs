@@ -65,7 +65,8 @@
 //! Indentation and spaces can also be configured on their own with
 //! [`SerializerConfig::indent`] and [`SerializerConfig::compact`].  Maps
 //! and sequences with the [`Layout::Compact`](deser::hints::Layout) hint
-//! are written on a single line in indented output.
+//! are written on a single line in indented output, short ones that only
+//! contain scalars can be too (see [`SerializerConfig::inline`]).
 //!
 //! # JSON Lines
 //!
@@ -108,4 +109,4 @@ mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
-pub use self::ser::{Indent, SerializerConfig, to_string};
+pub use self::ser::{Indent, InlinePolicy, SerializerConfig, to_string};

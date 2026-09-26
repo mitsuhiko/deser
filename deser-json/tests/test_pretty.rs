@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use deser::Serialize;
 use deser::hints::{Compact, Expanded};
-use deser_json::{Indent, SerializerConfig, to_string};
+use deser_json::{Indent, InlinePolicy, SerializerConfig, to_string};
 
 const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
 
@@ -211,5 +211,135 @@ fn test_same_as_compact() {
     ] {
         let json = config.to_string(&value).unwrap();
         assert_eq!(strip(&json), compact, "{}", json);
+    }
+}
+
+#[test]
+fn test_inline() {
+    const INLINE: SerializerConfig = PRETTY.inline(InlinePolicy::LeafIfFits(20));
+    assert_eq!(
+        INLINE.to_string(&service()).unwrap(),
+        r#"{
+  "name": "web",
+  "ports": [80, 443],
+  "labels": {
+    "env": "prod",
+    "tier": "web"
+  },
+  "volumes": [],
+  "env": {},
+  "command": null
+}"#
+    );
+    // only containers of scalars, not even empty ones
+    assert_eq!(
+        INLINE.to_string(&vec![vec![1], vec![]]).unwrap(),
+        "[\n  [1],\n  []\n]"
+    );
+    assert_eq!(
+        INLINE
+            .to_string(&BTreeMap::from([("a", vec![1]), ("b", vec![2])]))
+            .unwrap(),
+        "{\n  \"a\": [1],\n  \"b\": [2]\n}"
+    );
+    // the whole line including the closing bracket has to fit
+    let value = BTreeMap::from([("k", vec![1, 2, 3])]);
+    for (width, expected) in [
+        (16, "{\n  \"k\": [1, 2, 3]\n}"),
+        (15, "{\n  \"k\": [\n    1,\n    2,\n    3\n  ]\n}"),
+        (14, "{\n  \"k\": [\n    1,\n    2,\n    3\n  ]\n}"),
+    ] {
+        let config = PRETTY.inline(InlinePolicy::LeafIfFits(width));
+        assert_eq!(config.to_string(&value).unwrap(), expected, "{}", width);
+    }
+    // characters are counted, not bytes
+    let config = PRETTY.inline(InlinePolicy::LeafIfFits(12));
+    assert_eq!(
+        config.to_string(&vec!["äöü", "ß"]).unwrap(),
+        r#"["äöü", "ß"]"#
+    );
+    let config = PRETTY.inline(InlinePolicy::LeafIfFits(11));
+    assert_eq!(
+        config.to_string(&vec!["äöü", "ß"]).unwrap(),
+        "[\n  \"äöü\",\n  \"ß\"\n]"
+    );
+    // without spaces after separators
+    let config = SerializerConfig::new()
+        .indent(Indent::Tab)
+        .inline(InlinePolicy::LeafIfFits(13));
+    assert_eq!(
+        config
+            .to_string(&vec![vec!["a, b", "c"], vec!["long, long", "x"]])
+            .unwrap(),
+        "[\n\t[\"a, b\",\"c\"],\n\t[\n\t\t\"long, long\",\n\t\t\"x\"\n\t]\n]"
+    );
+    // no effect without indentation
+    let config = SerializerConfig::new()
+        .compact(false)
+        .inline(InlinePolicy::LeafIfFits(1));
+    assert_eq!(config.to_string(&vec![vec![1, 2]]).unwrap(), "[[1, 2]]");
+}
+
+#[test]
+fn test_inline_layout_hints() {
+    #[derive(Serialize)]
+    struct Hinted {
+        #[deser(as = Expanded)]
+        expanded: Vec<u32>,
+        #[deser(as = Compact)]
+        compact: Vec<Vec<u32>>,
+        auto: Vec<u32>,
+    }
+    let value = Hinted {
+        expanded: vec![1],
+        compact: vec![vec![1, 2, 3, 4, 5, 6, 7, 8, 9]],
+        auto: vec![2],
+    };
+    let config = PRETTY.inline(InlinePolicy::LeafIfFits(20));
+    assert_eq!(
+        config.to_string(&value).unwrap(),
+        r#"{
+  "expanded": [
+    1
+  ],
+  "compact": [[1, 2, 3, 4, 5, 6, 7, 8, 9]],
+  "auto": [2]
+}"#
+    );
+}
+
+#[test]
+fn test_inline_widths() {
+    let value = (
+        service(),
+        vec![vec![1u64, 22, 333, 4444], vec![], vec![55555]],
+        BTreeMap::from([
+            ("x", BTreeMap::from([("y", vec![true, false])])),
+            ("z", BTreeMap::new()),
+        ]),
+        vec![Some(1.5f64), None],
+    );
+    let compact = to_string(&value).unwrap();
+    for compact_setting in [true, false] {
+        for width in 0..80 {
+            let config = SerializerConfig::new()
+                .indent(Indent::Spaces(2))
+                .compact(compact_setting)
+                .inline(InlinePolicy::LeafIfFits(width));
+            let json = config.to_string(&value).unwrap();
+            assert_eq!(strip(&json), compact, "{}", json);
+            for line in json.lines() {
+                let line = line.trim_end_matches(',');
+                let is_inline = (line.ends_with(']') && line.contains('['))
+                    || (line.ends_with('}') && line.contains('{'));
+                if is_inline && !line.ends_with("[]") && !line.ends_with("{}") {
+                    assert!(line.chars().count() <= width, "{}\n{}", width, json);
+                }
+            }
+            // everything fits into a wide line
+            if width == 79 {
+                assert!(json.contains("[1, 22, 333, 4444]") || compact_setting);
+            }
+        }
     }
 }
