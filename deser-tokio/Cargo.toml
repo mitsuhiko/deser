@@ -1,0 +1,42 @@
+[package]
+name = "deser-tokio"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Read and write deser values with tokio"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "tokio", "async"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-tokio"
+autotests = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Adds `Codec` which implements the codec traits of tokio-util.
+codec = ["dep:tokio-util", "dep:bytes"]
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+tokio = { version = "1.38", default-features = false, features = ["io-util"] }
+futures-core = { version = "0.3.30", default-features = false }
+tokio-util = { version = "0.7.11", default-features = false, features = ["codec"], optional = true }
+bytes = { version = "1.6", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-json = { version = "0.8.0", path = "../deser-json" }
+deser-cbor = { version = "0.8.0", path = "../deser-cbor" }
+# no "macros": tokio-macros enables the "full" feature of syn which changes
+# what the derive of deser accepts (see `deser/src/derive_errors.rs`).
+tokio = { version = "1.38", features = ["io-util", "rt", "rt-multi-thread", "net", "time"] }
+tokio-util = { version = "0.7.11", features = ["codec"] }
+futures-util = { version = "0.3.30", default-features = false, features = ["sink"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

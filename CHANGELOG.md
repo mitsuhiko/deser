@@ -29,6 +29,12 @@ All notable changes to deser are documented here.
   `deser::io` which read and write streams of documents.  Documents are
   split at document markers.  `Encoder::end_documents` ends every document
   with `...` for streams that stay open.
+- Added `deser-tokio` which reads and writes values with tokio's
+  `AsyncRead` and `AsyncWrite` using the decoders and encoders of the
+  formats: `Reader` (also as a `Stream`), `Writer`, `from_reader` and
+  `to_writer`.  The futures are `Send` and reads are cancellation safe.
+  With the `codec` feature `Codec` implements the codec traits of
+  tokio-util.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:

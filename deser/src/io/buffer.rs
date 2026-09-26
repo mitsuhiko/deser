@@ -349,8 +349,14 @@ impl<D: Decoder> DecodeBuffer<D> {
 
     /// Creates the error for a value where none is expected.
     ///
-    /// The error refers to the start of the ready value.
-    pub(crate) fn trailing_error(&self) -> Error {
+    /// The error refers to the start of the ready value.  Adapters use
+    /// this to check that a stream ends after a value (see
+    /// [`Reader::end`](crate::io::Reader::end)).
+    ///
+    /// # Panics
+    ///
+    /// Panics if no value is ready (see [`poll`](Self::poll)).
+    pub fn trailing_error(&self) -> Error {
         let (start, _, _) = self.ready.expect("no value is ready");
         let mut position = self.position;
         position.advance(&self.data[self.start..self.start + start]);

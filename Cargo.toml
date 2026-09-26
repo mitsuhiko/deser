@@ -10,6 +10,7 @@ members = [
   "deser-serde",
   "deser-yaml",
   "deser-toml",
+  "deser-tokio",
   "examples/adapters",
   "examples/borrowing",
   "examples/bytes",
