@@ -85,7 +85,24 @@
 //! empty value.  Empty values are `None` for optionals if the type does not
 //! accept them (`page=` is `None` for an `Option<u32>` and `Some("")` for an
 //! `Option<String>`).  Booleans accept `true`, `yes`, `on` and `1` and
-//! `false`, `no`, `off` and `0` (HTML checkboxes send `on`).
+//! `false`, `no`, `off` and `0` (HTML checkboxes send `on`).  Flags which
+//! are switched on by giving their key (like `?recursive`) use the
+//! [`Flag`](deser::adapters::Flag) adapter:
+//!
+//! ```rust
+//! use deser::adapters::Flag;
+//!
+//! #[derive(deser::Deserialize)]
+//! struct Tree {
+//!     #[deser(as = Flag)]
+//!     recursive: bool,
+//! }
+//!
+//! assert!(deser_urlencoded::from_str::<Tree>("recursive").unwrap().recursive);
+//! assert!(deser_urlencoded::from_str::<Tree>("recursive=").unwrap().recursive);
+//! assert!(!deser_urlencoded::from_str::<Tree>("recursive=0").unwrap().recursive);
+//! assert!(!deser_urlencoded::from_str::<Tree>("").unwrap().recursive);
+//! ```
 //!
 //! Keys and values are percent-decoded (`+` is a space) before the keys are
 //! split, so `a%5B%5D=1` (as sent by browsers) is the same as `a[]=1`.

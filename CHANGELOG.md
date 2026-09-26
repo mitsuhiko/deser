@@ -11,6 +11,9 @@ All notable changes to deser are documented here.
   `1e13` for `f32`) are written without exponent.  The output does not
   depend on the feature.
 - `deser-yaml` no longer allocates for every scalar it writes.
+- Added the `Flag` adapter for `bool` fields which are switched on by
+  giving their key (like `?recursive` in a query string): a missing key is
+  `false`, an empty value or null `true`, other values are booleans.
 - Internally tagged enums can be flattened into structs.  Until the tag
   was seen, they take the keys that the struct and the flattened fields
   before them do not take.

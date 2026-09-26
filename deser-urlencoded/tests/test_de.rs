@@ -589,3 +589,47 @@ fn test_locations() {
     assert_eq!(err.message(), "invalid value \"x\", expected u32");
     assert_eq!((err.line(), err.column()), (Some(1), Some(7)));
 }
+
+#[test]
+fn test_flags() {
+    use deser::Serialize;
+    use deser::adapters::Flag;
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Tree {
+        #[deser(as = Flag, skip_serializing_if = std::ops::Not::not)]
+        recursive: bool,
+        depth: Option<u32>,
+    }
+
+    for (input, recursive) in [
+        ("recursive", true),
+        ("recursive=&depth=1", true),
+        ("depth=1&recursive=yes", true),
+        ("recursive=0", false),
+        ("recursive=1&recursive=off", false),
+        ("recursive=off&recursive", true),
+        ("depth=1", false),
+        ("", false),
+    ] {
+        assert_eq!(
+            from_str::<Tree>(input).unwrap().recursive,
+            recursive,
+            "{}",
+            input
+        );
+    }
+
+    let tree = Tree {
+        recursive: false,
+        depth: Some(1),
+    };
+    assert_eq!(deser_urlencoded::to_string(&tree).unwrap(), "depth=1");
+    let tree = Tree {
+        recursive: true,
+        depth: None,
+    };
+    let out = deser_urlencoded::to_string(&tree).unwrap();
+    assert_eq!(out, "recursive=true");
+    assert_eq!(from_str::<Tree>(&out).unwrap(), tree);
+}

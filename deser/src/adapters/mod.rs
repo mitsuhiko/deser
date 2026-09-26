@@ -55,6 +55,8 @@
 //!   cannot be deserialized.
 //! * [`Borrowed`]: deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the
 //!   data if possible.
+//! * [`Flag`]: a `bool` which is set by giving its key (like `?recursive`
+//!   in a query string).
 //! * The adapters for bytes are in [`bytes`]: the encodings (for instance
 //!   [`Hex`](bytes::Hex)) and [`BytesFallback`](bytes::BytesFallback).
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
@@ -138,7 +140,8 @@ mod ser_impls;
 mod stock;
 
 pub use self::stock::{
-    Borrowed, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
+    Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
+    VecSkipError,
 };
 
 /// Deserializes a value of type `T` on behalf of it.

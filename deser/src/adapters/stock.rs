@@ -10,6 +10,7 @@ use std::str::FromStr;
 use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
+use crate::de::lexical::parse_bool;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Recording, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
@@ -217,6 +218,86 @@ impl<T: Display + ?Sized> SerializeAs<T> for DisplayFromStr {
             ContainerShape::new(),
             false,
         ))
+    }
+}
+
+/// A flag that is set if its key is given.
+///
+/// This is for `bool` fields that are switched on by giving their key,
+/// like `?recursive` in a query string:
+///
+/// * if the key is missing, the flag is `false` (no `#[deser(default)]` is
+///   needed)
+/// * an empty value (`?recursive` or `?recursive=`) or null is `true`
+/// * other values are booleans, strings are parsed like
+///   [lexical atoms](crate::Atom::Lexical) (`?recursive=0` is `false`)
+///
+/// The flag is serialized as boolean.
+///
+/// ```
+/// use deser::adapters::Flag;
+///
+/// #[derive(deser::Deserialize, deser::Serialize)]
+/// pub struct Tree {
+///     #[deser(as = Flag, skip_serializing_if = std::ops::Not::not)]
+///     recursive: bool,
+/// }
+/// ```
+pub struct Flag;
+
+make_slot_wrapper!(FlagSlot);
+
+impl<'de> Sink<'de> for FlagSlot<bool> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("flag")
+    }
+
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        let value = match atom {
+            Atom::Bool(value) => value,
+            Atom::Null => true,
+            Atom::Str(ref value) | Atom::Lexical(ref value) if value.is_empty() => true,
+            Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool(value)?,
+            other => return self.unexpected_atom(other, state),
+        };
+        **self = Some(value);
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeAs<'de, bool> for Flag {
+    fn deserialize_into_as(out: &mut Option<bool>) -> SinkHandle<'_, 'de> {
+        FlagSlot::make_handle(out)
+    }
+
+    fn initial_value_as() -> Option<bool> {
+        Some(false)
+    }
+
+    #[inline]
+    fn __private_atom_into_as(
+        out: &mut Option<bool>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let sink = FlagSlot::wrap(out);
+        sink.atom(atom, state)?;
+        sink.finish(state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<bool>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Self::__private_atom_into_as(out, atom, state)
+    }
+}
+
+impl SerializeAs<bool> for Flag {
+    fn serialize_as<'a>(value: &'a bool, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(Atom::Bool(*value)))
     }
 }
 

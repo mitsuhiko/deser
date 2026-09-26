@@ -921,3 +921,66 @@ fn test_recording_raw_value() {
         ]
     );
 }
+
+#[test]
+fn test_flag() {
+    use deser::adapters::Flag;
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Tree {
+        #[deser(as = Flag, skip_serializing_if = std::ops::Not::not)]
+        recursive: bool,
+        #[deser(as = Option<Flag>)]
+        verbose: Option<bool>,
+    }
+
+    let with = |value: Option<Event<'static>>| {
+        let mut out = None::<Tree>;
+        {
+            let mut driver = deser::de::DeserializeDriver::new(&mut out);
+            driver.emit(Event::map_start())?;
+            if let Some(value) = value {
+                driver.emit("recursive")?;
+                driver.emit(value)?;
+            }
+            driver.emit(Event::MapEnd)?;
+        }
+        Ok::<_, deser::Error>(out.unwrap())
+    };
+    let recursive = |value| with(value).map(|tree| tree.recursive);
+
+    // missing is false, given without value is true
+    assert!(!recursive(None).unwrap());
+    assert!(recursive(Some(Atom::Lexical("".into()).into())).unwrap());
+    assert!(recursive(Some(Event::from(""))).unwrap());
+    assert!(recursive(Some(Event::from(()))).unwrap());
+    // values are booleans
+    assert!(recursive(Some(Event::from(true))).unwrap());
+    assert!(!recursive(Some(Event::from(false))).unwrap());
+    assert!(recursive(Some(Atom::Lexical("yes".into()).into())).unwrap());
+    assert!(!recursive(Some(Atom::Lexical("0".into()).into())).unwrap());
+    assert!(!recursive(Some(Event::from("off"))).unwrap());
+    let err = recursive(Some(Atom::Lexical("maybe".into()).into())).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "invalid value \"maybe\", expected bool (true, yes, on, 1, false, no, off or 0)"
+    );
+    assert!(recursive(Some(Event::from(1u64))).is_err());
+    assert_eq!(with(None).unwrap().verbose, None);
+
+    let tree = Tree {
+        recursive: true,
+        verbose: Some(false),
+    };
+    assert_eq!(
+        serialize(&tree),
+        vec![
+            Event::map_start(),
+            "recursive".into(),
+            true.into(),
+            "verbose".into(),
+            false.into(),
+            Event::MapEnd,
+        ]
+    );
+}
