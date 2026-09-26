@@ -133,7 +133,7 @@ impl Serialize for Value {
             Value::I64(value) => Atom::I64(value),
             Value::U128(ref value) => Atom::Ext(ExtValue::borrowed(value)),
             Value::I128(ref value) => Atom::Ext(ExtValue::borrowed(value)),
-            Value::F64(value) => Atom::Float(deser::Float::new(value)),
+            Value::F64(value) => Atom::F64(value),
             Value::Str(ref value) => Atom::Str(value.as_str().into()),
             Value::Bytes(ref value) => Atom::Bytes(value.as_slice().into()),
             Value::Simple(value) => Atom::Ext(ExtValue::owned(Simple::new(value).unwrap())),
@@ -234,7 +234,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             Atom::Char(value) => Value::Str(value.to_string()),
             Atom::U64(value) => Value::U64(value),
             Atom::I64(value) => Value::I64(value),
-            Atom::Float(value) => Value::F64(value.value()),
+            Atom::F64(value) => Value::F64(value),
             Atom::Ext(ref ext) if ext.is::<u128>() => Value::U128(*ext.downcast_ref().unwrap()),
             Atom::Ext(ref ext) if ext.is::<i128>() => Value::I128(*ext.downcast_ref().unwrap()),
             Atom::Ext(ref ext) if ext.is::<Simple>() => {

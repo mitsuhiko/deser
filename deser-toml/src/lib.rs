@@ -33,7 +33,7 @@
 //! | arrays (including arrays of tables)   | sequences                               |
 //! | strings                               | `Str`                                   |
 //! | integers                              | `U64`, `I64`                            |
-//! | floats                                | `Float`                                 |
+//! | floats                                | `F64`                                   |
 //! | booleans                              | `Bool`                                  |
 //! | date-times, dates and times           | [`Datetime`]                            |
 //!

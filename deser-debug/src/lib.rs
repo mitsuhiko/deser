@@ -73,7 +73,7 @@ fn dump<'a>(
             Event::Atom(Atom::Char(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
-            Event::Atom(Atom::Float(v)) => fmt::Debug::fmt(&v.value(), f)?,
+            Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::Ext(ref v)) => fmt::Debug::fmt(v, f)?,
             Event::Atom(..) => f.debug_struct("?").finish()?,
             Event::MapStart(_) => {

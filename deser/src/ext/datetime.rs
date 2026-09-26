@@ -701,8 +701,7 @@ impl WellKnown for Timestamp {
                 seconds: value,
                 nanosecond: 0,
             },
-            Atom::Float(value) => {
-                let value = value.value();
+            Atom::F64(value) => {
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("timestamp out of range"));
                 }

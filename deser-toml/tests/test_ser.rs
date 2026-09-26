@@ -11,7 +11,7 @@ use common::Value;
 struct Config {
     name: String,
     port: u16,
-    ratio: f32,
+    ratio: f64,
     owner: Option<String>,
     tags: Vec<String>,
     created: Datetime,
@@ -207,7 +207,7 @@ fn test_numbers() {
     assert_eq!(to_string(&map).unwrap(), "nan = nan\n");
     let mut map = BTreeMap::new();
     map.insert("a", 0.1f32);
-    assert_eq!(to_string(&map).unwrap(), "a = 0.1\n");
+    assert_eq!(to_string(&map).unwrap(), "a = 0.10000000149011612\n");
     let mut map = BTreeMap::new();
     map.insert("a", u64::MAX);
     assert_eq!(to_string(&map).unwrap(), "a = 18446744073709551615\n");

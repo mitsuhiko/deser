@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, Float, FloatKind, Serialize};
+use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
 use crate::scan::{find_escape, skip_to_escape};
@@ -273,7 +273,7 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::Float(val) => self.write_float(val),
+            Atom::F64(val) => self.write_f64(val),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())
@@ -353,34 +353,6 @@ impl Output {
             self.out.push_str_unchecked(key);
             self.out.push_unchecked(b'"');
             self.out.push_unchecked(b':');
-        }
-    }
-
-    /// Writes a float atom.
-    ///
-    /// Floats are widened to f64 in the data model, the kind tells us the
-    /// original precision.
-    #[inline(never)]
-    fn write_float(&mut self, val: Float) {
-        if val.kind() == FloatKind::F32 {
-            self.write_f32(val.value() as f32);
-        } else {
-            self.write_f64(val.value());
-        }
-    }
-
-    fn write_f32(&mut self, val: f32) {
-        if val.is_finite() {
-            #[cfg(feature = "speedups")]
-            {
-                self.write_str(ryu::Buffer::new().format_finite(val))
-            }
-            #[cfg(not(feature = "speedups"))]
-            {
-                self.write_str(val.to_string().as_str())
-            }
-        } else {
-            self.write_str("null")
         }
     }
 
@@ -467,7 +439,7 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::Float(val) => self.write_float(val),
+            Atom::F64(val) => self.write_f64(val),
             // like in TOML the fallbacks of extension values are never
             // sequences
             Atom::Bytes(val) => self.write_bytes_str(&val, val.fallback),

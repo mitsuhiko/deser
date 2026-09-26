@@ -20,9 +20,8 @@ use crate::ext::ExtValue;
 /// Values which are not part of the core data model are represented as
 /// [`Atom::Ext`].  For more information see [`ext`](crate::ext).
 ///
-/// Some atoms carry metadata that consumers can ignore: [`Float`] knows the
-/// kind of float it came from and [`Bytes`] can carry a representation for
-/// formats without native bytes.
+/// [`Bytes`] can carry a representation for formats without native bytes
+/// which formats with native bytes ignore.
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Atom<'a> {
@@ -33,7 +32,7 @@ pub enum Atom<'a> {
     Char(char),
     U64(u64),
     I64(i64),
-    Float(Float),
+    F64(f64),
     /// A value that extends the data model.
     ///
     /// See [`ext`](crate::ext) for more information.
@@ -51,7 +50,7 @@ impl<'a> Atom<'a> {
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
-            Atom::Float(v) => Atom::Float(v),
+            Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.to_static()),
         }
     }
@@ -68,7 +67,7 @@ impl<'a> Atom<'a> {
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
-            Atom::Float(v) => Atom::Float(v),
+            Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.as_borrowed()),
         }
     }
@@ -83,7 +82,7 @@ impl<'a> Atom<'a> {
             Atom::Char(_) => "char",
             Atom::U64(_) => "unsigned integer",
             Atom::I64(_) => "signed integer",
-            Atom::Float(_) => "float",
+            Atom::F64(_) => "float",
             Atom::Ext(ref v) => v.name(),
         }
     }
@@ -130,13 +129,13 @@ impl_from!(char, Char);
 
 impl From<f64> for Event<'static> {
     fn from(value: f64) -> Self {
-        Event::Atom(Atom::Float(Float::new(value)))
+        Event::Atom(Atom::F64(value))
     }
 }
 
 impl From<f32> for Event<'static> {
     fn from(value: f32) -> Self {
-        Event::Atom(Atom::Float(Float::from_f32(value)))
+        Event::Atom(Atom::F64(value.into()))
     }
 }
 
@@ -261,101 +260,6 @@ impl fmt::Debug for Event<'_> {
             f.write_str(name)
         } else {
             f.debug_tuple(name).field(&shape).finish()
-        }
-    }
-}
-
-/// The kind of a float before it was widened to `f64`.
-///
-/// Floats are passed through the data model as `f64` which represents all
-/// narrower binary floats exactly.  The kind tells which type the value came
-/// from so that formats can write the shortest representation or use a
-/// native encoding.  It is never required for correctness, formats which
-/// ignore it write the `f64`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[non_exhaustive]
-pub enum FloatKind {
-    /// A 64 bit float.
-    #[default]
-    F64,
-    /// A 32 bit float.
-    F32,
-}
-
-/// A float in the data model.
-///
-/// This is an `f64` together with the [`FloatKind`] it was widened from.
-/// The kind always matches the value: a float of kind [`FloatKind::F32`]
-/// has a value that is exactly representable as `f32`.
-#[derive(Clone, Copy, PartialEq)]
-pub struct Float {
-    value: f64,
-    kind: FloatKind,
-}
-
-impl Float {
-    /// Creates a float from an `f64`.
-    #[inline]
-    pub const fn new(value: f64) -> Float {
-        Float {
-            value,
-            kind: FloatKind::F64,
-        }
-    }
-
-    /// Creates a float from an `f32`.
-    #[inline]
-    pub const fn from_f32(value: f32) -> Float {
-        Float {
-            value: value as f64,
-            kind: FloatKind::F32,
-        }
-    }
-
-    /// Creates a float of the given kind.
-    ///
-    /// Returns `None` if the value cannot be represented exactly in the
-    /// kind.
-    pub fn with_kind(value: f64, kind: FloatKind) -> Option<Float> {
-        let exact = match kind {
-            FloatKind::F64 => true,
-            FloatKind::F32 => value.is_nan() || (value as f32) as f64 == value,
-        };
-        exact.then_some(Float { value, kind })
-    }
-
-    /// Returns the value.
-    #[inline]
-    pub const fn value(self) -> f64 {
-        self.value
-    }
-
-    /// Returns the kind of float the value came from.
-    #[inline]
-    pub const fn kind(self) -> FloatKind {
-        self.kind
-    }
-}
-
-impl From<f64> for Float {
-    #[inline]
-    fn from(value: f64) -> Float {
-        Float::new(value)
-    }
-}
-
-impl From<f32> for Float {
-    #[inline]
-    fn from(value: f32) -> Float {
-        Float::from_f32(value)
-    }
-}
-
-impl fmt::Debug for Float {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.kind {
-            FloatKind::F64 => fmt::Debug::fmt(&self.value, f),
-            FloatKind::F32 => write!(f, "{:?}f32", self.value as f32),
         }
     }
 }

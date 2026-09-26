@@ -438,7 +438,7 @@ impl<'a> KeyId<'a> {
             Atom::Bool(value) => KeyId::Bool(value),
             Atom::U64(value) => KeyId::Int(false, value.into()),
             Atom::I64(value) => KeyId::Int(value < 0, value.unsigned_abs().into()),
-            Atom::Float(value) => KeyId::Float(value.value().to_bits()),
+            Atom::F64(value) => KeyId::Float(value.to_bits()),
             Atom::Str(value) => KeyId::Str(value),
             Atom::Bytes(value) => KeyId::Bytes(value.into_owned()),
             Atom::Ext(ref ext) => {

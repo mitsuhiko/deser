@@ -23,7 +23,7 @@
 //! | [`Timestamp`]           | epoch date/time (tag 1) or date/time (tag 0)      |
 //! | [`Uuid`]                | UUIDs (tag 37)                                    |
 //! | [`Decimal`]             | decimal fractions (tag 4)                         |
-//! | `Float`                 | half, single or double precision floats           |
+//! | `F64`                   | half, single or double precision floats           |
 //! | `Str`, `Char`           | text strings                                      |
 //! | `Bytes`                 | byte strings                                      |
 //! | maps and sequences      | maps and arrays                                   |

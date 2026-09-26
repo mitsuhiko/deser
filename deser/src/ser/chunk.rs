@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::event::{Atom, Bytes, Float};
+use crate::event::{Atom, Bytes};
 use crate::ser::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
 /// A chunk represents the minimum state necessary to serialize a value.
@@ -71,13 +71,13 @@ impl_from!(char, Char);
 
 impl From<f64> for Chunk<'static> {
     fn from(value: f64) -> Self {
-        Chunk::Atom(Atom::Float(Float::new(value)))
+        Chunk::Atom(Atom::F64(value))
     }
 }
 
 impl From<f32> for Chunk<'static> {
     fn from(value: f32) -> Self {
-        Chunk::Atom(Atom::Float(Float::from_f32(value)))
+        Chunk::Atom(Atom::F64(f64::from(value)))
     }
 }
 

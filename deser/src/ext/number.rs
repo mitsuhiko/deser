@@ -4,7 +4,7 @@ use std::fmt;
 use crate::State;
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::Error;
-use crate::event::{Atom, Float};
+use crate::event::Atom;
 use crate::ext::known::invalid;
 use crate::ext::{BorrowedExtension, ExtValue};
 use crate::ser::{Chunk, Serialize};
@@ -147,7 +147,7 @@ impl BorrowedExtension for Number<'static> {
     }
 
     fn fallback<'v>(value: &'v Number<'_>) -> Atom<'v> {
-        Atom::Float(Float::new(value.value))
+        Atom::F64(value.value)
     }
 
     fn to_static(value: &Number<'_>) -> Number<'static> {
@@ -190,9 +190,7 @@ impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
             },
             Atom::U64(value) => Number::new(value.to_string(), value as f64),
             Atom::I64(value) => Number::new(value.to_string(), value as f64),
-            Atom::Float(value) if value.value().is_finite() => {
-                Number::new(format!("{:?}", value.value()), value.value())
-            }
+            Atom::F64(value) if value.is_finite() => Number::new(format!("{:?}", value), value),
             Atom::Str(ref value) => Number::parse(value.to_string())?,
             other => return self.unexpected_atom(other, state),
         };
@@ -217,7 +215,7 @@ fn test_number() {
     }
 
     let ext = ExtValue::borrowed_value::<Number>(&number);
-    assert_eq!(ext.fallback(), Atom::Float(Float::new(-12500.0)));
+    assert_eq!(ext.fallback(), Atom::F64(-12500.0));
     assert_eq!(ext.name(), "number");
     assert_eq!(
         ext.downcast_value_ref::<Number>().unwrap().as_str(),

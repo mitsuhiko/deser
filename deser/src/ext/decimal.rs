@@ -206,7 +206,7 @@ impl WellKnown for Decimal {
             Atom::Str(ref value) => value.parse()?,
             Atom::U64(value) => Decimal::from(value),
             Atom::I64(value) => Decimal::from(value),
-            Atom::Float(value) => Decimal::try_from(value.value())?,
+            Atom::F64(value) => Decimal::try_from(value)?,
             _ => return Ok(None),
         }))
     }

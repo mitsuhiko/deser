@@ -85,7 +85,7 @@ mod soundness;
 mod derive_errors;
 
 pub use self::error::{Error, ErrorKind};
-pub use self::event::{Atom, Bytes, ContainerShape, Event, Float, FloatKind, Order};
+pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
 pub use self::state::State;
 
 // common re-exports

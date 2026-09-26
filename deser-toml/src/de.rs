@@ -299,7 +299,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                     Value::Int(value) if value >= 0 => Atom::U64(value as u64),
                     Value::Int(value) => Atom::I64(value),
                     Value::UInt(value) => Atom::U64(value),
-                    Value::Float(value) => Atom::Float(value.into()),
+                    Value::Float(value) => Atom::F64(value),
                     Value::Bool(value) => Atom::Bool(value),
                     Value::Datetime(ref value) => Atom::Ext(ExtValue::borrowed(value)),
                     Value::Str(_) | Value::Table(_) | Value::Array(_) => unreachable!(),

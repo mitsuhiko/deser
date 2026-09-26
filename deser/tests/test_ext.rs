@@ -208,7 +208,7 @@ mod borrowed {
         }
 
         fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> {
-            Atom::Float(deser::Float::new(value.value))
+            Atom::F64(value.value)
         }
 
         fn to_static(value: &Literal<'_>) -> Literal<'static> {
@@ -243,7 +243,7 @@ fn test_borrowed_extension() {
         assert!(ext.is::<Literal>());
         assert!(!ext.is::<u128>());
         assert_eq!(ext.name(), "literal");
-        assert_eq!(ext.fallback(), Atom::Float(deser::Float::new(1.5)));
+        assert_eq!(ext.fallback(), Atom::F64(1.5));
         assert_eq!(ext.downcast_value_ref::<Literal>().unwrap().text, "1.50");
         assert!(ext.downcast_ref::<u128>().is_none());
         assert_eq!(format!("{:?}", ext), format!("{:?}", literal));

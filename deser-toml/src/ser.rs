@@ -4,7 +4,7 @@ use std::fmt::Write;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, FloatKind, Serialize};
+use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
 use deser::ext::{Datetime, Number, Timestamp};
@@ -271,19 +271,7 @@ fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
             Err(_) => Value::UInt(value),
         },
         Atom::I64(value) => Value::Int(value),
-        Atom::Float(value) => {
-            let value_f64 = value.value();
-            if value.kind() == FloatKind::F32 {
-                // keep the shortest representation of the f32
-                Value::Float(
-                    format!("{:?}", value_f64 as f32)
-                        .parse()
-                        .unwrap_or(value_f64),
-                )
-            } else {
-                Value::Float(value_f64)
-            }
-        }
+        Atom::F64(value) => Value::Float(value),
         // bytes are converted by the builder, this is reached for the
         // fallbacks of extension values which cannot be arrays.
         Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, value.fallback, bytes))),

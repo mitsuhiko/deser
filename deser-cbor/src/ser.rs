@@ -273,7 +273,7 @@ impl Writer {
             Atom::Char(c) => self.write_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_head(MAJOR_UNSIGNED, val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::Float(val) => self.write_f64(val.value()),
+            Atom::F64(val) => self.write_f64(val),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())

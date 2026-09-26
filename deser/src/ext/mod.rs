@@ -189,7 +189,7 @@ pub trait Extension: Any + fmt::Debug + Clone + PartialEq + Send + Sync {
 ///     }
 ///
 ///     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> {
-///         Atom::Float(value.value.into())
+///         Atom::F64(value.value)
 ///     }
 ///
 ///     fn to_static(value: &Literal<'_>) -> Literal<'static> {
@@ -208,7 +208,7 @@ pub trait Extension: Any + fmt::Debug + Clone + PartialEq + Send + Sync {
 /// let literal = Literal { text: Cow::Borrowed(&input), value: 1.5 };
 /// let ext = ExtValue::borrowed_value::<Literal>(&literal);
 /// assert_eq!(ext.downcast_value_ref::<Literal>().unwrap().text, "1.50");
-/// assert_eq!(ext.fallback(), Atom::Float(1.5.into()));
+/// assert_eq!(ext.fallback(), Atom::F64(1.5));
 /// ```
 pub trait BorrowedExtension: 'static {
     /// The type of the values of this extension.

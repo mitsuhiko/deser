@@ -4,7 +4,7 @@ use std::hash::BuildHasher;
 
 use crate::State;
 use crate::error::Error;
-use crate::event::{Atom, Bytes, ContainerShape, Float, Order};
+use crate::event::{Atom, Bytes, ContainerShape, Order};
 use crate::ext::ExtValue;
 use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 
@@ -74,7 +74,7 @@ impl Serialize for f32 {
     __begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Float(Float::from_f32(*self))))
+        Ok(Chunk::Atom(Atom::F64(f64::from(*self))))
     }
 }
 
@@ -82,7 +82,7 @@ impl Serialize for f64 {
     __begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Float(Float::new(*self))))
+        Ok(Chunk::Atom(Atom::F64(*self)))
     }
 }
 
