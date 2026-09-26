@@ -13,11 +13,13 @@ All notable changes to deser are documented here.
   deserializes.  It can be held across calls, for instance to deserialize
   a value from input which arrives over time.
 - Decoders can deserialize values while their input arrives
-  (`Decoder::feed`), JSON (except for JSON Lines) supports this.
+  (`Decoder::feed`), JSON (except for JSON Lines) and CBOR support this.
   `Reader::read` (also in `deser-tokio`) uses it if possible, which only
-  buffers incomplete tokens instead of the complete value.  The JSON
-  parser was rewritten as a state machine which can be suspended between
-  tokens for this, parsing complete inputs is as fast as before.
+  buffers incomplete tokens instead of the complete value.  The JSON and
+  CBOR parsers were rewritten as state machines which can be suspended
+  between tokens for this.  Values that fail in a sink are skipped so the
+  stream continues.  `Decoder::is_text` controls if the positions of
+  errors are resolved into lines and columns.
 - Added `deser::io` to read values from and write values to streams with
   decoders and encoders: `Reader` and `Writer` (and `from_reader` and
   `to_writer`) use them with `std::io::Read` and `std::io::Write`,

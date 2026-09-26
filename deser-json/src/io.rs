@@ -305,6 +305,10 @@ impl Decoder for DeserializerConfig {
         Deserializer::from_frame(frame, self).drive(driver)
     }
 
+    fn is_text(&self) -> bool {
+        true
+    }
+
     /// JSON Lines are read line by line, the other values while their
     /// input arrives.
     fn supports_feed(&self) -> bool {

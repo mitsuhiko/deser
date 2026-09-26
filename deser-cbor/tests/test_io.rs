@@ -156,3 +156,70 @@ fn test_borrowed() {
     let value: &str = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value, "hi");
 }
+
+#[test]
+fn test_feeding_skips_items_that_fail() {
+    // [1, "x", [2]] does not fit, the items around it do
+    let input = [0x81, 0x01, 0x83, 0x01, 0x61, b'x', 0x81, 0x02, 0x81, 0x03];
+    for size in 1..=input.len() {
+        let mut reader = Reader::new(
+            Chunked {
+                input: &input,
+                size,
+            },
+            DeserializerConfig::new(),
+        );
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
+        let err = reader.read::<Vec<u32>>().unwrap_err();
+        assert_eq!(err.offset(), Some(4));
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
+    }
+}
+
+#[test]
+fn test_feeding_with_limits() {
+    // [[[1]]] exceeds a depth of 2, [[1]] does not
+    let input = [0x81, 0x81, 0x81, 0x01, 0x81, 0x81, 0x01];
+    let config = DeserializerConfig::new().max_depth(2);
+    let mut reader = Reader::new(
+        Chunked {
+            input: &input,
+            size: 2,
+        },
+        config,
+    );
+    let err = reader.read::<Recording>().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: recursion limit exceeded at offset 2"
+    );
+    // the item is skipped, the depth is limited per item
+    assert_eq!(reader.read::<Vec<Vec<u32>>>().unwrap(), Some(vec![vec![1]]));
+}
+
+#[test]
+fn test_feeding_bounds_the_buffer() {
+    use deser::de::DeserializeDriver;
+    use deser::io::{DecodeBuffer, Status};
+
+    let value = (0..10_000u32)
+        .map(|idx| (idx, "x".repeat(50)))
+        .collect::<Vec<_>>();
+    let bytes = deser_cbor::to_vec(&value).unwrap();
+    let mut buffer = DecodeBuffer::new(DeserializerConfig::new());
+    let mut out = None::<Vec<(u32, String)>>;
+    let mut max_buffered = 0;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        for chunk in bytes.chunks(1024) {
+            buffer.extend_from_slice(chunk);
+            if buffer.feed(&mut driver).unwrap() == Status::Ready {
+                break;
+            }
+            max_buffered = max_buffered.max(buffer.buffered());
+        }
+    }
+    assert_eq!(out.unwrap(), value);
+    assert!(max_buffered < 100, "{max_buffered} bytes buffered");
+}

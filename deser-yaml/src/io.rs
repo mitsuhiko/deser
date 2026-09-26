@@ -131,6 +131,10 @@ impl Decoder for DeserializerConfig {
         de.end()
     }
 
+    fn is_text(&self) -> bool {
+        true
+    }
+
     fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
     where
         T: Deserialize<'de>,

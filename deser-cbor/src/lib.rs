@@ -94,6 +94,7 @@ mod buf;
 mod de;
 mod float;
 mod io;
+mod parser;
 mod ser;
 mod simple;
 pub mod tag;

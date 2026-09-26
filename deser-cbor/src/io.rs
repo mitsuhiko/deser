@@ -1,13 +1,14 @@
 //! Reading and writing CBOR streams.
 use std::io::{Read, Write};
 
-use deser::de::{Decoder, Frame};
+use deser::de::{Decoder, Frame, Limits, Progress};
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind};
+use deser::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig};
+use crate::parser::{Copying, Discard, Parser, Progress as ParseProgress};
 use crate::ser::SerializerConfig;
 
 const MAJOR_BYTES: u8 = 2;
@@ -21,7 +22,7 @@ const INDEFINITE: u8 = 31;
 /// The state of a CBOR stream that is read.
 ///
 /// See [`Decoder::State`].
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct StreamState {
     // the position up to which the item was scanned
     pos: usize,
@@ -30,6 +31,23 @@ pub struct StreamState {
     stack: Vec<Option<u64>>,
     // an item was not well-formed
     failed: bool,
+    // parses items incrementally (see `Decoder::feed`)
+    parser: Parser,
+    // the driver of the current item was set up
+    started: bool,
+    // the rest of an item that failed in a sink is skipped from the
+    // position in the input
+    skipping: Option<usize>,
+    // parsing failed, the stream cannot be continued
+    feed_failed: bool,
+    // the stream ended within an item
+    ended: bool,
+}
+
+impl std::fmt::Debug for StreamState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamState").finish_non_exhaustive()
+    }
 }
 
 /// The result of scanning an item.
@@ -147,6 +165,10 @@ impl StreamState {
 /// byte was read.  Reading continues after items that fail to deserialize,
 /// items that are not well-formed end the stream.
 ///
+/// Items which do not borrow are deserialized while their input arrives
+/// (see [`Decoder::feed`]) so only incomplete data items (like strings)
+/// are buffered.
+///
 /// ```
 /// use deser::io::Reader;
 /// use deser_cbor::DeserializerConfig;
@@ -199,6 +221,85 @@ impl Decoder for DeserializerConfig {
         let mut de = Deserializer::from_slice_with_config(frame, self);
         de.drive(driver)?;
         de.end()
+    }
+
+    fn supports_feed(&self) -> bool {
+        true
+    }
+
+    fn feed(
+        &self,
+        state: &mut StreamState,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Progress, Error> {
+        if state.ended {
+            return Ok(Progress::End);
+        }
+        if state.feed_failed {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "cannot continue after an error",
+            ));
+        }
+
+        // skip the rest of an item that failed in a sink
+        let mut pos = 0;
+        if let Some(skip) = state.skipping {
+            let mut discard = Discard(State::new());
+            match state.parser.parse(input, skip, eof, offset, &mut discard) {
+                Ok(ParseProgress::Done(end)) => {
+                    state.skipping = None;
+                    pos = end;
+                }
+                Ok(ParseProgress::NeedMore(consumed)) => {
+                    state.skipping = Some(0);
+                    return Ok(Progress::NeedMore { consumed });
+                }
+                Err(err) => {
+                    state.skipping = None;
+                    return Err(fail(state, err, eof));
+                }
+            }
+        }
+
+        if !state.started {
+            if pos == input.len() {
+                return Ok(if eof {
+                    Progress::End
+                } else {
+                    Progress::NeedMore { consumed: pos }
+                });
+            }
+            if let Some(max_depth) = self.max_depth_limit() {
+                driver.push_layer(Limits::new().max_depth(max_depth));
+            }
+            state.started = true;
+        }
+        match state
+            .parser
+            .parse(input, pos, eof, offset, &mut Copying(driver))
+        {
+            Ok(ParseProgress::Done(end)) => {
+                state.started = false;
+                Ok(Progress::Done { consumed: end })
+            }
+            Ok(ParseProgress::NeedMore(consumed)) => Ok(Progress::NeedMore { consumed }),
+            Err(err) => {
+                state.started = false;
+                match state.parser.recoverable() {
+                    // a sink failed, the next call continues after the
+                    // item.  The input is not consumed on errors.
+                    Some(resume) => {
+                        state.skipping = Some(resume);
+                        Err(err)
+                    }
+                    None => Err(fail(state, err, eof)),
+                }
+            }
+        }
     }
 
     fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
@@ -283,4 +384,13 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 /// ```
 pub fn to_writer<W: Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
+}
+
+/// Ends the stream after an error that cannot be recovered from.
+fn fail(state: &mut StreamState, err: Error, eof: bool) -> Error {
+    state.parser.reset();
+    state.feed_failed = true;
+    // after an incomplete item at the end there are no more items
+    state.ended = eof && err.kind() == ErrorKind::EndOfFile;
+    err
 }

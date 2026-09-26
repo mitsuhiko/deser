@@ -207,11 +207,12 @@ impl<D: Decoder> DecodeBuffer<D> {
                 Err(err) => {
                     self.failed = true;
                     let base = self.position;
-                    return Err(err.resolve_position(input).shift_position(
-                        base.offset,
-                        base.line,
-                        base.column,
-                    ));
+                    let err = if self.decoder.is_text() {
+                        err.resolve_position(input)
+                    } else {
+                        err
+                    };
+                    return Err(err.shift_position(base.offset, base.line, base.column));
                 }
             };
             match frame {
@@ -384,7 +385,8 @@ impl<D: Decoder> DecodeBuffer<D> {
     fn locate(&self, err: Error) -> Error {
         match err.offset() {
             Some(offset)
-                if err.line().is_none()
+                if self.decoder.is_text()
+                    && err.line().is_none()
                     && offset >= self.position.offset
                     && offset - self.position.offset <= self.end - self.start =>
             {

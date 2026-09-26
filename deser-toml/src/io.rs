@@ -53,6 +53,10 @@ impl Decoder for DeserializerConfig {
         Deserializer::from_slice_with_config(frame, self).drive(driver)
     }
 
+    fn is_text(&self) -> bool {
+        true
+    }
+
     fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
     where
         T: Deserialize<'de>,

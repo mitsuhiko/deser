@@ -96,6 +96,14 @@ pub trait Decoder {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error>;
 
+    /// Returns `true` if the format is text.
+    ///
+    /// For text formats the positions of errors are resolved into lines and
+    /// columns.  This is `false` by default.
+    fn is_text(&self) -> bool {
+        false
+    }
+
     /// Returns `true` if the decoder implements [`feed`](Self::feed).
     ///
     /// This can depend on the configuration, for instance JSON Lines are
@@ -190,6 +198,10 @@ impl<D: Decoder + ?Sized> Decoder for &D {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         (**self).drive(frame, driver)
+    }
+
+    fn is_text(&self) -> bool {
+        (**self).is_text()
     }
 
     fn supports_feed(&self) -> bool {
