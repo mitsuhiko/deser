@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
+use deser::__format::IntBuffer;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::{self, SerializeDriver};
@@ -829,26 +830,12 @@ impl Output {
 
     #[inline]
     fn write_u64(&mut self, val: u64) {
-        #[cfg(feature = "speedups")]
-        {
-            self.write_str(itoa::Buffer::new().format(val))
-        }
-        #[cfg(not(feature = "speedups"))]
-        {
-            self.write_str(&val.to_string())
-        }
+        self.write_str(IntBuffer::new().format_u64(val))
     }
 
     #[inline]
     fn write_i64(&mut self, val: i64) {
-        #[cfg(feature = "speedups")]
-        {
-            self.write_str(itoa::Buffer::new().format(val))
-        }
-        #[cfg(not(feature = "speedups"))]
-        {
-            self.write_str(&val.to_string())
-        }
+        self.write_str(IntBuffer::new().format_i64(val))
     }
 
     #[inline]
