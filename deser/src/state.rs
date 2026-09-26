@@ -284,12 +284,17 @@ impl State {
     ///
     /// ```
     /// use deser::de::DeserializeDriver;
-    /// use deser::{Error, Event, State};
+    /// use deser::{Error, ErrorAttachment, Event, State};
+    ///
+    /// #[derive(Debug)]
+    /// struct Depth(usize);
+    ///
+    /// impl ErrorAttachment for Depth {}
     ///
     /// fn add_depth(err: Error, state: &State) -> Error {
-    ///     match err.path() {
+    ///     match err.attachment::<Depth>() {
     ///         Some(_) => err,
-    ///         None => err.with_path(format!("<depth {}>", state.depth())),
+    ///         None => err.with_attachment(Depth(state.depth())),
     ///     }
     /// }
     ///
@@ -299,7 +304,7 @@ impl State {
     /// driver.emit(Event::seq_start()).unwrap();
     /// driver.emit(Event::seq_start()).unwrap();
     /// let err = driver.emit(true).unwrap_err();
-    /// assert_eq!(err.path(), Some("<depth 2>"));
+    /// assert_eq!(err.attachment::<Depth>().unwrap().0, 2);
     /// ```
     pub fn add_error_context(&mut self, f: ErrorContextFn) {
         if !self

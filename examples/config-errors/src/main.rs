@@ -8,7 +8,7 @@
 //! value came from.
 use deser::de::Format;
 use deser::{Deserialize, Error};
-use deser_path::PathLayer;
+use deser_path::{Path, PathLayer};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -83,19 +83,28 @@ fn main() {
     // a port that does not fit into a u16
     let err = load_toml(&TOML.replace("8081", "80810")).unwrap_err();
     println!("{}", err);
-    assert_eq!(err.path(), Some("servers[1].port"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "servers[1].port"
+    );
     assert_eq!((err.line(), err.column()), (Some(11), Some(8)));
 
     // a type error in a buffered value
     let err = load_toml(&TOML.replace("timeout = 30", "timeout = \"30s\"")).unwrap_err();
     println!("{}", err);
-    assert_eq!(err.path(), Some("servers[1].backend.timeout"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "servers[1].backend.timeout"
+    );
     assert_eq!((err.line(), err.column()), (Some(15), Some(11)));
 
     // the same in YAML
     let err = load_yaml(&YAML.replace("timeout: 30", "timeout: 30s")).unwrap_err();
     println!("{}", err);
-    assert_eq!(err.path(), Some("servers[1].backend.timeout"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "servers[1].backend.timeout"
+    );
     assert_eq!((err.line(), err.column()), (Some(11), Some(16)));
 
     // syntax errors have a location too

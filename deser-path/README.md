@@ -12,7 +12,7 @@ changes to your types:
 ```rust
 use deser::Deserialize;
 use deser::de::Format;
-use deser_path::PathLayer;
+use deser_path::{Path, PathLayer};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -33,7 +33,7 @@ let json = r#"{"servers": [
 let err = deser_json::Deserializer::from_str(json)
     .deserialize_with::<Config, _>(|driver| driver.push_layer(PathLayer::new()))
     .unwrap_err();
-assert_eq!(err.path(), Some("servers[1].port"));
+assert_eq!(err.attachment::<Path>().unwrap().to_string(), "servers[1].port");
 assert_eq!((err.line(), err.column()), (Some(3), Some(39)));
 ```
 

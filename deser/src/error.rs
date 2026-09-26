@@ -1,4 +1,5 @@
 //! Error interface.
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -13,23 +14,68 @@ pub enum ErrorKind {
     EndOfFile,
 }
 
+/// Additional information attached to an [`Error`].
+///
+/// Besides the location in the input, which is built into errors, layers
+/// and other code can attach typed values to errors with
+/// [`Error::with_attachment`] and retrieve them with
+/// [`Error::attachment`].  An error holds at most one attachment per type.
+/// For instance the `deser-path` crate attaches the path of the value an
+/// error refers to.
+///
+/// Attachments can contribute to the [`Display`](fmt::Display) output of
+/// the error with [`fmt_context`](Self::fmt_context).
+///
+/// ```
+/// use std::fmt;
+/// use deser::{Error, ErrorAttachment, ErrorKind};
+///
+/// #[derive(Debug)]
+/// struct FileName(String);
+///
+/// impl ErrorAttachment for FileName {
+///     fn fmt_context(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         write!(f, " in {}", self.0)
+///     }
+/// }
+///
+/// let err = Error::new(ErrorKind::Unexpected, "unexpected string")
+///     .with_position(12, 2, 5)
+///     .with_attachment(FileName("config.json".into()));
+/// assert_eq!(err.attachment::<FileName>().unwrap().0, "config.json");
+/// assert_eq!(
+///     err.to_string(),
+///     "Unexpected: unexpected string at line 2 column 5 in config.json"
+/// );
+/// ```
+pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
+    /// Writes the attachment as part of the error message.
+    ///
+    /// The output is appended to the message and the location of the
+    /// error, so it typically starts with a space.  By default attachments
+    /// are not shown.
+    fn fmt_context(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _ = f;
+        Ok(())
+    }
+}
+
 /// An error for deser.
 ///
 /// Besides a kind and a message an error can carry context: the location
 /// in the input it refers to (see [`offset`](Self::offset),
-/// [`line`](Self::line) and [`column`](Self::column)) and the path of the
-/// value it refers to (see [`path`](Self::path)).  The context is part of
-/// the [`Display`](fmt::Display) output:
+/// [`line`](Self::line) and [`column`](Self::column)) and typed
+/// attachments (see [`ErrorAttachment`]).  The context is part of the
+/// [`Display`](fmt::Display) output:
 ///
 /// ```
 /// use deser::{Error, ErrorKind};
 ///
 /// let err = Error::new(ErrorKind::Unexpected, "unexpected string")
-///     .with_position(12, 2, 5)
-///     .with_path("servers[1].port");
+///     .with_position(12, 2, 5);
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: unexpected string at line 2 column 5 (path: servers[1].port)"
+///     "Unexpected: unexpected string at line 2 column 5"
 /// );
 /// ```
 ///
@@ -54,9 +100,17 @@ struct ErrorInner {
     offset: Option<usize>,
     // line and column (1-based)
     line_column: Option<(usize, usize)>,
-    path: Option<String>,
+    // in the order they were attached, at most one per type
+    attachments: Vec<Attachment>,
     // `true` once the driver attached the context of the current event.
     has_context: bool,
+}
+
+#[derive(Debug)]
+struct Attachment {
+    // Invariant: the type of the value
+    type_id: TypeId,
+    value: Box<dyn ErrorAttachment>,
 }
 
 impl Error {
@@ -70,7 +124,7 @@ impl Error {
                 source: None,
                 offset: None,
                 line_column: None,
-                path: None,
+                attachments: Vec::new(),
                 has_context: false,
             }),
         }
@@ -156,18 +210,50 @@ impl Error {
         self.inner.line_column.map(|x| x.1)
     }
 
-    /// Sets the path of the value the error refers to.
+    /// Attaches a value to the error.
     ///
-    /// The path is a human readable string such as `servers[1].port`, see
-    /// for instance the `deser-path` crate.
-    pub fn with_path<P: Into<String>>(mut self, path: P) -> Self {
-        self.inner.path = Some(path.into());
+    /// An attachment of the same type is replaced but keeps its position
+    /// in the [`Display`](fmt::Display) output.  See [`ErrorAttachment`].
+    pub fn with_attachment<T: ErrorAttachment>(mut self, value: T) -> Self {
+        let type_id = TypeId::of::<T>();
+        let value = Box::new(value);
+        match self
+            .inner
+            .attachments
+            .iter_mut()
+            .find(|x| x.type_id == type_id)
+        {
+            Some(attachment) => attachment.value = value,
+            None => self.inner.attachments.push(Attachment { type_id, value }),
+        }
         self
     }
 
-    /// Returns the path of the value the error refers to.
-    pub fn path(&self) -> Option<&str> {
-        self.inner.path.as_deref()
+    /// Returns the attachment of the given type.
+    pub fn attachment<T: ErrorAttachment>(&self) -> Option<&T> {
+        let type_id = TypeId::of::<T>();
+        let attachment = self
+            .inner
+            .attachments
+            .iter()
+            .find(|x| x.type_id == type_id)?;
+        (&*attachment.value as &dyn Any).downcast_ref()
+    }
+
+    /// Returns the attachment of the given type mutably.
+    pub fn attachment_mut<T: ErrorAttachment>(&mut self) -> Option<&mut T> {
+        let type_id = TypeId::of::<T>();
+        let attachment = self
+            .inner
+            .attachments
+            .iter_mut()
+            .find(|x| x.type_id == type_id)?;
+        (&mut *attachment.value as &mut dyn Any).downcast_mut()
+    }
+
+    /// Iterates over the attachments in the order they were attached.
+    pub fn attachments(&self) -> impl Iterator<Item = &dyn ErrorAttachment> {
+        self.inner.attachments.iter().map(|x| &*x.value)
     }
 
     /// Returns `true` if the context of an event was attached.
@@ -192,8 +278,8 @@ impl fmt::Debug for Error {
         if let Some((line, column)) = self.inner.line_column {
             s.field("line", &line).field("column", &column);
         }
-        if let Some(ref path) = self.inner.path {
-            s.field("path", path);
+        if !self.inner.attachments.is_empty() {
+            s.field("attachments", &DebugAttachments(&self.inner.attachments));
         }
         s.field("source", &self.inner.source).finish()
     }
@@ -207,10 +293,20 @@ impl fmt::Display for Error {
             (None, Some(offset)) => write!(f, " at offset {}", offset)?,
             (None, None) => {}
         }
-        if let Some(ref path) = self.inner.path {
-            write!(f, " (path: {})", path)?;
+        for attachment in self.inner.attachments.iter() {
+            attachment.value.fmt_context(f)?;
         }
         Ok(())
+    }
+}
+
+struct DebugAttachments<'a>(&'a [Attachment]);
+
+impl fmt::Debug for DebugAttachments<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|x| &x.value))
+            .finish()
     }
 }
 

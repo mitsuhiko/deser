@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use deser::de::{DeserializeDriver, Format, Layer, LayerEvent, Limits, Next, Sink, SinkHandle};
 use deser::ser::{self, SerializeDriver};
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
+use deser::{Atom, Deserialize, Error, ErrorAttachment, ErrorKind, Event, Serialize, State};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -299,9 +299,6 @@ fn test_error_context() {
     assert_eq!(err.offset(), None);
 
     // the context functions see the state at the time of the error
-    fn add_depth(err: Error, state: &State) -> Error {
-        err.with_path(format!("depth {}", state.depth()))
-    }
     let mut out = None::<Vec<Vec<u32>>>;
     let mut driver = DeserializeDriver::new(&mut out);
     driver.state_mut().add_error_context(add_depth);
@@ -311,10 +308,11 @@ fn test_error_context() {
         vec![Event::seq_start(), Event::seq_start(), "x".into()],
     )
     .unwrap_err();
-    assert_eq!(err.path(), Some("depth 2"));
+    // registering the function twice has no effect
+    assert_eq!(err.attachment::<Depths>().unwrap().0, vec![2]);
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u32 at offset 2 (path: depth 2)"
+        "Unexpected: unexpected string, expected u32 at offset 2 (depths: [2])"
     );
 
     // errors of layers get the context too
@@ -325,8 +323,30 @@ fn test_error_context() {
     assert_eq!(err.offset(), Some(1));
 }
 
+/// The depths of the states an error passed through.
+#[derive(Debug)]
+struct Depths(Vec<usize>);
+
+impl ErrorAttachment for Depths {
+    fn fmt_context(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, " (depths: {:?})", self.0)
+    }
+}
+
+fn add_depth(mut err: Error, state: &State) -> Error {
+    match err.attachment_mut::<Depths>() {
+        Some(depths) => {
+            depths.0.push(state.depth());
+            err
+        }
+        None => err.with_attachment(Depths(vec![state.depth()])),
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct Marker(u32);
+
+impl ErrorAttachment for Marker {}
 
 /// Sets a marker in the state for every map key.
 struct MarkKeys;
@@ -351,7 +371,7 @@ impl Layer for MarkKeys {
 
 fn add_marker(err: Error, state: &State) -> Error {
     match state.get::<Marker>() {
-        Some(marker) => err.with_path(format!("marker {}", marker.0)),
+        Some(marker) => err.with_attachment(marker.clone()),
         None => err,
     }
 }
@@ -383,7 +403,7 @@ fn test_error_context_of_replayed_values() {
     .deserialize_with(|driver| driver.push_layer(MarkKeys));
     let err = rv.unwrap_err();
     assert_eq!(err.offset(), Some(6));
-    assert_eq!(err.path(), Some("marker 2"));
+    assert_eq!(err.attachment::<Marker>().unwrap().0, 2);
 }
 
 /// Deserializes strings in upper case.
@@ -503,15 +523,11 @@ fn test_ser_error_context() {
         }
     }
 
-    fn add_depth(err: Error, state: &State) -> Error {
-        err.with_path(format!("depth {}", state.depth()))
-    }
-
     let value = vec![vec![Fails]];
     let mut driver = SerializeDriver::new(&value);
     driver.state_mut().add_error_context(add_depth);
     let err = driver.drive(|_, _| Ok(())).unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: nope (path: depth 2)");
+    assert_eq!(err.to_string(), "Unexpected: nope (depths: [2])");
 
     let mut driver = SerializeDriver::new(&value);
     driver.state_mut().add_error_context(add_depth);
@@ -522,7 +538,7 @@ fn test_ser_error_context() {
             Err(err) => break err,
         }
     };
-    assert_eq!(err.to_string(), "Unexpected: nope (path: depth 2)");
+    assert_eq!(err.to_string(), "Unexpected: nope (depths: [2])");
 }
 
 #[test]

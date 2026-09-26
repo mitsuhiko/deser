@@ -133,7 +133,7 @@ fn test_error_path() {
     let mut driver = SerializeDriver::new(&map);
     driver.push_layer(PathLayer::new());
     let err = driver.drive(|_, _| Ok(())).unwrap_err();
-    assert_eq!(err.path(), Some("items[1]"));
+    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "items[1]");
     assert_eq!(
         err.to_string(),
         "Unexpected: cannot serialize (path: items[1])"

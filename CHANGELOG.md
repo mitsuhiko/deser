@@ -27,6 +27,13 @@ All notable changes to deser are documented here.
     the value and the state, `State::top_descriptor` is gone.
 
   Serialization got 4-12% faster.
+- Replaced the path of errors with typed attachments: `Error::with_path`
+  and `Error::path` are gone, `Error::with_attachment`,
+  `Error::attachment`, `Error::attachment_mut` and `Error::attachments`
+  attach and retrieve values of types implementing the new
+  `ErrorAttachment` trait, which can contribute to the error message.
+  The location of errors stays built in.  `PathLayer` attaches the
+  structured `Path` (`err.attachment::<Path>()`) instead of a string.
 - Added `Serialize::describe` and `deser::ser::Describe` with which values
   describe their Rust shape: structs, newtypes, enum variants (with their
   kind and representation), `Option`, tuples and sets.  The derive and the

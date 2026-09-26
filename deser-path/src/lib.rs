@@ -6,11 +6,11 @@
 //! [`DeserializeDriver`](deser::de::DeserializeDriver) and a
 //! [`SerializeDriver`](deser::ser::SerializeDriver).  Types can retrieve
 //! the current [`Path`] from the state and errors get the path of the value
-//! they refer to attached (see [`Error::path`](deser::Error::path)):
+//! they refer to attached (see [`Error::attachment`]):
 //!
 //! ```rust
 //! use deser::de::Format;
-//! use deser_path::PathLayer;
+//! use deser_path::{Path, PathLayer, PathSegment};
 //!
 //! #[derive(deser::Deserialize, Debug)]
 //! struct Server {
@@ -22,7 +22,13 @@
 //! let err = de
 //!     .deserialize_with::<Vec<Server>, _>(|driver| driver.push_layer(PathLayer::new()))
 //!     .unwrap_err();
-//! assert_eq!(err.path(), Some("[0].port"));
+//! let path = err.attachment::<Path>().unwrap();
+//! assert_eq!(path.to_string(), "[0].port");
+//! assert_eq!(path.segments()[0], PathSegment::Index(0));
+//! assert_eq!(
+//!     err.to_string(),
+//!     "Unexpected: unexpected string, expected u16 at line 1 column 24 (path: [0].port)"
+//! );
 //! ```
 //!
 //! During serialization, the path is available to the
@@ -52,7 +58,7 @@
 //! ```
 use std::fmt;
 
-use deser::{Atom, Error, State};
+use deser::{Atom, Error, ErrorAttachment, State};
 
 mod de;
 mod ser;
@@ -93,6 +99,10 @@ impl Clone for PathSegment {
 /// This type is stored in the state and can be retrieved at any point.  By
 /// inspecting the [`segments`](Self::segments) a type can figure out where
 /// it's invoked from.  It formats as `servers[1].host`.
+///
+/// The [`PathLayer`] also attaches the path to errors (see
+/// [`Error::attachment`]) where it shows up as `(path: servers[1].host)` in
+/// the error message.
 #[derive(Default)]
 pub struct Path {
     segments: Vec<PathSegment>,
@@ -224,12 +234,18 @@ impl fmt::Display for Path {
     }
 }
 
+impl ErrorAttachment for Path {
+    fn fmt_context(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, " (path: {})", self)
+    }
+}
+
 /// A layer that tracks the current [`Path`] in the state.
 ///
 /// The layer works for serialization (it implements
 /// [`deser::ser::Layer`]) and deserialization (it implements
 /// [`deser::de::Layer`]).  It attaches the path to errors which do not have
-/// one (see [`Error::path`]).
+/// one (see [`Error::attachment`]).
 ///
 /// During deserialization the path is also correct for values which are
 /// buffered and replayed (for instance by internally tagged enums).
@@ -274,11 +290,11 @@ impl PathLayer {
 
 /// Attaches the current path to an error.
 fn add_path_to_error(err: Error, state: &State) -> Error {
-    if err.path().is_some() {
+    if err.attachment::<Path>().is_some() {
         return err;
     }
     match state.get::<Path>() {
-        Some(path) if !path.segments.is_empty() => err.with_path(path.to_string()),
+        Some(path) if !path.segments.is_empty() => err.with_attachment(path.clone()),
         _ => err,
     }
 }

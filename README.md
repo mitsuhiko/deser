@@ -73,7 +73,7 @@ are retained:
 ```rust
 use deser::Deserialize;
 use deser::de::Format;
-use deser_path::PathLayer;
+use deser_path::{Path, PathLayer};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -101,7 +101,7 @@ type = "http"
 let err = deser_toml::Deserializer::from_str(toml)
     .deserialize_with::<Config, _>(|driver| driver.push_layer(PathLayer::new()))
     .unwrap_err();
-assert_eq!(err.path(), Some("servers[1].timeout"));
+assert_eq!(err.attachment::<Path>().unwrap().to_string(), "servers[1].timeout");
 assert_eq!((err.line(), err.column()), (Some(8), Some(11)));
 
 // Unexpected: unexpected string, expected u32 at line 8 column 11 (path: servers[1].timeout)

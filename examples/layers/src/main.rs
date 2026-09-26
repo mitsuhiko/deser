@@ -13,7 +13,7 @@
 use deser::de::{Format, Limits};
 use deser::ser::{Layer, Next};
 use deser::{Atom, Deserialize, Error, Event, Serialize};
-use deser_path::PathLayer;
+use deser_path::{Path, PathLayer};
 
 /// Renames the string keys of maps.
 pub struct RenameKeys(pub fn(&str) -> String);
@@ -182,8 +182,14 @@ fn main() {
     };
     let err = parse(Limits::new().max_items(5)).unwrap_err();
     println!("{}", err);
-    assert_eq!(err.path(), Some("api_tokens[5]"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "api_tokens[5]"
+    );
     let err = parse(Limits::new()).unwrap_err();
     println!("{}", err);
-    assert_eq!(err.path(), Some("settings.dark_mode"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "settings.dark_mode"
+    );
 }

@@ -133,7 +133,10 @@ fn test_error_paths() {
         r#"{"servers": [{"host": "a", "port": 1}, {"host": "b", "port": true}]}"#,
     )
     .unwrap_err();
-    assert_eq!(err.path(), Some("servers[1].port"));
+    assert_eq!(
+        err.attachment::<Path>().unwrap().to_string(),
+        "servers[1].port"
+    );
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected bool, expected u16 at line 1 column 62 (path: servers[1].port)"
@@ -142,15 +145,15 @@ fn test_error_paths() {
     // missing fields are reported for the struct
     let err =
         from_json::<BTreeMap<String, Vec<Server>>>(r#"{"servers": [{"host": "a"}]}"#).unwrap_err();
-    assert_eq!(err.path(), Some("servers[0]"));
+    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "servers[0]");
 
     // errors at the root have no path
     let err = from_json::<u32>("true").unwrap_err();
-    assert_eq!(err.path(), None);
+    assert!(err.attachment::<Path>().is_none());
 
     // syntax errors have no path
     let err = from_json::<Vec<u32>>("[1, 2").unwrap_err();
-    assert_eq!(err.path(), None);
+    assert!(err.attachment::<Path>().is_none());
 }
 
 #[test]
@@ -166,7 +169,7 @@ fn test_error_paths_through_buffering() {
     let err =
         from_json::<BTreeMap<String, Tagged>>(r#"{"x": {"values": [1, "two"], "type": "Item"}}"#)
             .unwrap_err();
-    assert_eq!(err.path(), Some("x.values[1]"));
+    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "x.values[1]");
     // the location is the one of the replayed value
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
 }

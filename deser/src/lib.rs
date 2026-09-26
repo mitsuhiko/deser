@@ -87,7 +87,7 @@ mod soundness;
 #[cfg(all(doctest, feature = "derive"))]
 mod derive_errors;
 
-pub use self::error::{Error, ErrorKind};
+pub use self::error::{Error, ErrorAttachment, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
 pub use self::state::State;
 
