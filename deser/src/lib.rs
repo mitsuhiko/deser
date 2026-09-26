@@ -45,7 +45,8 @@ pub struct Account {
 //!
 //! How individual values are serialized and deserialized can be customized
 //! with adapters, which compose with containers.  For more information see
-//! [`adapters`].
+//! [`adapters`].  Types which only implement serde's traits can be used with
+//! the adapters of [`deser-serde`](https://docs.rs/deser-serde).
 //!
 //! # Features
 //!

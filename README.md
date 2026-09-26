@@ -129,6 +129,9 @@ included benchmark.
   support them
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats
   a serializable to the `std::fmt` debug format
+* [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): adapters
+  to serialize and deserialize types with their serde implementations
+  (`#[deser(as = Serde)]`)
 
 ## Inspiration
 
