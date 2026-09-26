@@ -176,10 +176,7 @@ fn test_errors() {
             results,
             [
                 Ok(vec![1]),
-                Err(
-                    "Unexpected: unexpected string, expected u32 at line 2 column 2"
-                        .into()
-                ),
+                Err("Unexpected: unexpected string, expected u32 at line 2 column 2".into()),
                 Err("Unexpected: unexpected character at line 3 column 7".into()),
                 Ok(vec![3]),
             ]
