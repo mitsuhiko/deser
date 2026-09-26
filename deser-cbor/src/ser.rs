@@ -7,7 +7,7 @@ use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
-use crate::float::f64_to_f16;
+use crate::float::f32_to_f16;
 use crate::simple::Simple;
 use crate::tag::Tags;
 
@@ -43,23 +43,40 @@ pub struct SerializerConfig {
     canonical: bool,
 }
 
-/// An open map or array.
+/// An open map or array (or the top level).
 struct Frame {
-    /// The offset of the header.  If the length is not known upfront, the
-    /// header is written with a length of zero and patched when the
-    /// container ends.
-    header: usize,
-    /// The offset of the content (after the header).
-    body: usize,
-    /// The length written into the header if it was known upfront.
-    len: Option<u64>,
     /// The number of items written into the container so far.  For maps
     /// both keys and values are counted.
     items: u64,
-    is_map: bool,
+    /// The number of items the header announced (for maps twice the
+    /// number of entries) or [`UNKNOWN_LEN`] if the header is patched when
+    /// the container ends.
+    expected: u64,
+    /// The offset of the header.
+    header: usize,
+    /// The offset of the content (after the header).
+    body: usize,
     /// For maps in canonical mode: the index into the entry offsets where
     /// the offsets of this map begin.
     offsets_start: usize,
+    is_map: bool,
+}
+
+/// The expected number of items of a container whose length is patched.
+const UNKNOWN_LEN: u64 = u64::MAX;
+
+impl Frame {
+    /// The frame of the top level, which is not a container.
+    fn top() -> Frame {
+        Frame {
+            items: 0,
+            expected: UNKNOWN_LEN,
+            header: 0,
+            body: 0,
+            offsets_start: 0,
+            is_map: false,
+        }
+    }
 }
 
 /// Holds the state of the serializer while writing.
@@ -68,7 +85,7 @@ struct Writer {
     canonical: bool,
     // the frame of the current container is held here, the frames of the
     // outer containers are saved on the stack.
-    frame: Option<Frame>,
+    frame: Frame,
     stack: Vec<Frame>,
     // in canonical mode the offsets of the keys and values of the open maps
     offsets: Vec<usize>,
@@ -109,11 +126,9 @@ impl Writer {
     /// pending tags.
     #[inline(always)]
     fn begin_item(&mut self, state: &State) {
-        if let Some(ref mut frame) = self.frame {
-            frame.items += 1;
-            if self.canonical && frame.is_map {
-                self.offsets.push(self.out.len());
-            }
+        self.frame.items += 1;
+        if self.canonical && self.frame.is_map {
+            self.offsets.push(self.out.len());
         }
         if state.has_event_data() {
             self.write_tags(state);
@@ -130,61 +145,73 @@ impl Writer {
         }
     }
 
-    #[inline(never)]
+    #[inline]
     fn start(&mut self, is_map: bool, shape: ContainerShape, state: &State) -> Result<(), Error> {
         self.begin_item(state);
         let header = self.out.len();
         let major = if is_map { MAJOR_MAP } else { MAJOR_ARRAY };
         // with a known length the header is written right away, otherwise a
         // byte is reserved and the length is patched in at the end.
-        let len = shape.len().map(|len| len as u64);
-        match len {
-            Some(len) => self.write_head(major, len),
-            None => self.out.push(major << 5),
-        }
+        let expected = match shape.len() {
+            Some(len) => {
+                self.write_head(major, len as u64);
+                if is_map { len as u64 * 2 } else { len as u64 }
+            }
+            None => {
+                self.out.push(major << 5);
+                UNKNOWN_LEN
+            }
+        };
         let frame = Frame {
+            items: 0,
+            expected,
             header,
             body: self.out.len(),
-            items: 0,
-            is_map,
             offsets_start: self.offsets.len(),
-            len,
+            is_map,
         };
-        if let Some(parent) = self.frame.replace(frame) {
-            self.stack.push(parent);
-        }
+        self.stack.push(std::mem::replace(&mut self.frame, frame));
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline]
     fn end(&mut self) -> Result<(), Error> {
-        let frame = match self.frame.take() {
-            Some(frame) => frame,
-            None => return Err(Error::new(ErrorKind::Unexpected, "unexpected end")),
+        let Some(parent) = self.stack.pop() else {
+            return Err(Error::new(ErrorKind::Unexpected, "unexpected end"));
         };
-        self.frame = self.stack.pop();
-        let count = if frame.is_map {
-            if frame.items % 2 != 0 {
+        let frame = std::mem::replace(&mut self.frame, parent);
+        if frame.is_map && self.canonical {
+            if !frame.items.is_multiple_of(2) {
                 return Err(Error::new(ErrorKind::Unexpected, "map without value"));
             }
-            if self.canonical {
-                self.sort_entries(&frame)?;
+            self.sort_entries(&frame)?;
+        }
+        if frame.items == frame.expected {
+            Ok(())
+        } else {
+            self.end_unknown(frame)
+        }
+    }
+
+    /// Ends a container whose length was not known upfront.
+    #[inline(never)]
+    fn end_unknown(&mut self, frame: Frame) -> Result<(), Error> {
+        if frame.expected != UNKNOWN_LEN {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "number of items does not match the length of the container",
+            ));
+        }
+        let count = if frame.is_map {
+            if !frame.items.is_multiple_of(2) {
+                return Err(Error::new(ErrorKind::Unexpected, "map without value"));
             }
             frame.items / 2
         } else {
             frame.items
         };
-        match frame.len {
-            Some(len) if len != count => Err(Error::new(
-                ErrorKind::Unexpected,
-                "number of items does not match the length of the container",
-            )),
-            Some(_) => Ok(()),
-            None => {
-                self.patch_length(frame.header, count);
-                Ok(())
-            }
-        }
+        self.patch_length(frame.header, count);
+        Ok(())
     }
 
     /// Patches the length of a container into the header.
@@ -304,8 +331,7 @@ impl Writer {
             Atom::U64(val) => self.write_head(MAJOR_UNSIGNED, val),
             Atom::I64(val) => self.write_i64(val),
             Atom::F64(val) => self.write_f64(val),
-            // the shortest form of the value is at most single precision
-            Atom::F32(val) => self.write_f64(f64::from(val)),
+            Atom::F32(val) => self.write_f32(val),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())
@@ -345,19 +371,40 @@ impl Writer {
     }
 
     /// Writes a float in the shortest form that preserves its value.
+    #[inline]
     fn write_f64(&mut self, val: f64) {
-        if val.is_nan() {
-            self.out.extend_from_slice(&[0xf9, 0x7e, 0x00]);
-        } else if let Some(half) = f64_to_f16(val) {
-            self.out.push(0xf9);
-            self.out.extend_from_slice(&half.to_be_bytes());
-        } else if f64::from(val as f32) == val {
-            self.out.push(0xfa);
-            self.out.extend_from_slice(&(val as f32).to_be_bytes());
+        // a value that fits into a half fits into a single
+        if f64::from(val as f32) == val {
+            self.write_f32(val as f32);
+        } else if val.is_nan() {
+            self.write_nan();
         } else {
-            self.out.push(0xfb);
-            self.out.extend_from_slice(&val.to_be_bytes());
+            let mut buf = [0xfb; 9];
+            buf[1..].copy_from_slice(&val.to_be_bytes());
+            extend(&mut self.out, &buf);
         }
+    }
+
+    /// Writes a single precision float in the shortest form that preserves
+    /// its value.
+    #[inline]
+    fn write_f32(&mut self, val: f32) {
+        if let Some(half) = f32_to_f16(val) {
+            let [a, b] = half.to_be_bytes();
+            extend(&mut self.out, &[0xf9, a, b]);
+        } else if val.is_nan() {
+            self.write_nan();
+        } else {
+            let mut buf = [0xfa; 5];
+            buf[1..].copy_from_slice(&val.to_be_bytes());
+            extend(&mut self.out, &buf);
+        }
+    }
+
+    /// Writes NaN, always as the canonical half precision NaN.
+    #[cold]
+    fn write_nan(&mut self) {
+        self.out.extend_from_slice(&[0xf9, 0x7e, 0x00]);
     }
 
     #[cold]
@@ -546,7 +593,7 @@ impl SerializerConfig {
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,
-            frame: None,
+            frame: Frame::top(),
             stack: Vec::new(),
             offsets: Vec::new(),
             insertions: Vec::new(),
