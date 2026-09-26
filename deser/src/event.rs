@@ -588,15 +588,16 @@ impl ContainerShape {
     /// Types that accept sequences (like `Vec<T>`) receive the values,
     /// types that do not (like `u32`) receive a single value as
     /// [`DuplicateKeys`](crate::de::DuplicateKeys) in the
-    /// [`State`](crate::State) decides: the last one (the default), the first
-    /// one or an error.  The sequence has to consist of atoms.
+    /// [`State`](crate::State) decides: the last one, the first one or an
+    /// error (the default).  The sequence has to consist of atoms.
     ///
     /// ```
-    /// use deser::de::DeserializeDriver;
+    /// use deser::de::{DeserializeDriver, DuplicateKeys};
     /// use deser::{Atom, ContainerShape, Event};
     ///
     /// let mut out = None::<u32>;
     /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.state_mut().set_duplicate_keys(DuplicateKeys::Last);
     /// driver.emit(Event::SeqStart(ContainerShape::new().with_repeated(true))).unwrap();
     /// driver.emit(Atom::Lexical("1".into())).unwrap();
     /// driver.emit(Atom::Lexical("2".into())).unwrap();

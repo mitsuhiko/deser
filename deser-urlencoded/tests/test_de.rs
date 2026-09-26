@@ -564,7 +564,7 @@ fn test_values() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Query {
         page: u32,
-        tags: String,
+        tags: Vec<String>,
         filter: Filter,
     }
 
@@ -572,7 +572,7 @@ fn test_values() {
         deser_value::from_value::<Query>(&value).unwrap(),
         Query {
             page: 2,
-            tags: "b".into(),
+            tags: vec!["a".into(), "b".into()],
             filter: Filter { age: 30 },
         }
     );

@@ -9,9 +9,17 @@ fn lexical(value: &str) -> Event<'_> {
 }
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
+    deserialize_with_policy(events, deser::de::DuplicateKeys::default())
+}
+
+fn deserialize_with_policy<T: DeserializeOwned>(
+    events: Vec<Event<'_>>,
+    policy: deser::de::DuplicateKeys,
+) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
+        driver.state_mut().set_duplicate_keys(policy);
         for event in events {
             driver.emit(event)?;
         }
@@ -344,7 +352,7 @@ fn test_repeated() {
         ])
     };
     assert_eq!(
-        deserialize::<Query>(events()).unwrap(),
+        deserialize_with_policy::<Query>(events(), DuplicateKeys::Last).unwrap(),
         Query {
             tags: vec!["a".into()],
             page: 2,
@@ -360,26 +368,16 @@ fn test_repeated() {
         }
     );
 
-    let with_policy = |policy| {
-        let mut out = None::<Query>;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            driver.state_mut().set_duplicate_keys(policy);
-            for event in events() {
-                driver.emit(event)?;
-            }
-        }
-        Ok::<_, Error>(out.unwrap())
-    };
     assert_eq!(
-        with_policy(DuplicateKeys::First).unwrap(),
+        deserialize_with_policy::<Query>(events(), DuplicateKeys::First).unwrap(),
         Query {
             tags: vec!["a".into()],
             page: 1,
             sort: Some("name".into()),
         }
     );
-    let err = with_policy(DuplicateKeys::Error).unwrap_err();
+    // the default
+    let err = deserialize::<Query>(events()).unwrap_err();
     assert_eq!(err.message(), "duplicate key");
 
     // sequences that are not repeated keys are not collapsed
@@ -414,11 +412,14 @@ fn test_repeated_buffered() {
     }
 
     assert_eq!(
-        deserialize::<Search>(query(&[
-            ("limit", &["10", "20"]),
-            ("tags", &["1"]),
-            ("kind", &["Items"]),
-        ]))
+        deserialize_with_policy::<Search>(
+            query(&[
+                ("limit", &["10", "20"]),
+                ("tags", &["1"]),
+                ("kind", &["Items"]),
+            ]),
+            deser::de::DuplicateKeys::Last
+        )
         .unwrap(),
         Search::Items {
             paginate: Paginate {

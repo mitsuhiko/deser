@@ -271,9 +271,7 @@ impl<'a> Deserializer<'a> {
         if self.config.bytes != BytesFormat::BASE64 {
             *state.get_mut::<BytesFormat>() = self.config.bytes;
         }
-        if self.config.duplicate_keys != DuplicateKeys::Last {
-            state.set_duplicate_keys(self.config.duplicate_keys);
-        }
+        state.set_duplicate_keys(self.config.duplicate_keys);
         tree.emit(driver)
             .map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

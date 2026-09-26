@@ -693,15 +693,16 @@ fn test_duplicate_keys() {
     }
 
     let json = r#"{"port": 80, "port": 81}"#;
-    assert_eq!(from_str::<Config>(json).unwrap(), Config { port: 81 });
-    let err = Deserializer::from_str(json)
-        .deserialize_with::<Config, _>(|driver| {
-            driver.state_mut().set_duplicate_keys(DuplicateKeys::Error)
-        })
-        .unwrap_err();
+    let err = from_str::<Config>(json).unwrap_err();
     assert_eq!(err.message(), "duplicate field 'port'");
     // the error points at the value of the duplicate key
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
+    let config = Deserializer::from_str(json)
+        .deserialize_with::<Config, _>(|driver| {
+            driver.state_mut().set_duplicate_keys(DuplicateKeys::Last)
+        })
+        .unwrap();
+    assert_eq!(config, Config { port: 81 });
 }
 
 #[test]

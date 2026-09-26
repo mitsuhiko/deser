@@ -60,10 +60,17 @@ fn item_events() -> Vec<Event<'static>> {
 }
 
 #[test]
+fn test_struct_default() {
+    // duplicate fields are rejected by default
+    let err = deserialize::<Item>(None, item_events()).unwrap_err();
+    assert_eq!(err.message(), "duplicate field 'id'");
+}
+
+#[test]
 fn test_struct_last() {
-    // the default, also for values that are containers and aliases
+    // also for values that are containers and aliases
     assert_eq!(
-        deserialize::<Item>(None, item_events()).unwrap(),
+        deserialize::<Item>(Some(DuplicateKeys::Last), item_events()).unwrap(),
         Item {
             id: 2,
             tags: vec!["y".into(), "z".into()],
@@ -137,7 +144,10 @@ fn test_flatten() {
         ])
     };
     assert_eq!(
-        deserialize::<Query>(None, events()).unwrap().paginate.limit,
+        deserialize::<Query>(Some(DuplicateKeys::Last), events())
+            .unwrap()
+            .paginate
+            .limit,
         2
     );
     assert_eq!(
@@ -168,7 +178,7 @@ fn test_buffered() {
         ])
     };
     assert_eq!(
-        deserialize::<Message>(None, events()).unwrap(),
+        deserialize::<Message>(Some(DuplicateKeys::Last), events()).unwrap(),
         Message::Ping { id: 2 }
     );
     assert_eq!(
@@ -183,9 +193,12 @@ fn test_buffered() {
 fn test_maps() {
     let events = || map(&[("a", 1u64.into()), ("b", 2u64.into()), ("a", 3u64.into())]);
 
-    let rv = deserialize::<BTreeMap<String, u32>>(None, events()).unwrap();
+    let err = deserialize::<BTreeMap<String, u32>>(None, events()).unwrap_err();
+    assert_eq!(err.message(), "duplicate key in map");
+
+    let rv = deserialize::<BTreeMap<String, u32>>(Some(DuplicateKeys::Last), events()).unwrap();
     assert_eq!(rv, BTreeMap::from([("a".into(), 3), ("b".into(), 2)]));
-    let rv = deserialize::<HashMap<String, u32>>(None, events()).unwrap();
+    let rv = deserialize::<HashMap<String, u32>>(Some(DuplicateKeys::Last), events()).unwrap();
     assert_eq!(rv, HashMap::from([("a".into(), 3), ("b".into(), 2)]));
 
     let rv = deserialize::<BTreeMap<String, u32>>(Some(DuplicateKeys::First), events()).unwrap();

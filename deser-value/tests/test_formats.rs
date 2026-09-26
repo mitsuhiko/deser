@@ -254,9 +254,10 @@ fn test_repeated() {
     struct Query {
         page: u32,
     }
-    assert_eq!(from_value::<Query>(&value).unwrap(), Query { page: 2 });
-    assert_eq!(
-        from_value::<Query>(&to_value(&value).unwrap()).unwrap(),
-        Query { page: 2 }
-    );
+    // a single value is picked from the repeated values (which is an error
+    // by default)
+    let err = from_value::<Query>(&value).unwrap_err();
+    assert_eq!(err.message(), "duplicate key");
+    let err = from_value::<Query>(&to_value(&value).unwrap()).unwrap_err();
+    assert_eq!(err.message(), "duplicate key");
 }

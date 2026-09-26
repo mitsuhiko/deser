@@ -730,7 +730,7 @@ where
         map: M::default(),
         key: None,
         value: None,
-        duplicate_keys: DuplicateKeys::Last,
+        duplicate_keys: DuplicateKeys::Error,
         _marker: PhantomData,
     })
 }

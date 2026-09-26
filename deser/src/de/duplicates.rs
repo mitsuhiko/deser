@@ -7,7 +7,9 @@ use crate::error::{Error, ErrorKind};
 /// commonly repeat keys.  Where a single value is expected (the field of a
 /// struct or an entry of a map) the policy in the [`State`] decides what
 /// happens (see [`State::set_duplicate_keys`]).  The default is
-/// [`Last`](Self::Last).
+/// [`Error`](Self::Error): if the same key could mean different values to
+/// different parsers (a proxy might use the first value, the application the
+/// last) the input is rejected.
 ///
 /// ```
 /// use std::collections::BTreeMap;
@@ -29,11 +31,11 @@ use crate::error::{Error, ErrorKind};
 #[non_exhaustive]
 pub enum DuplicateKeys {
     /// The last value is used.
-    #[default]
     Last,
     /// The first value is used, later ones are ignored.
     First,
     /// Duplicate keys are rejected.
+    #[default]
     Error,
 }
 

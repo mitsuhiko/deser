@@ -58,9 +58,13 @@ All notable changes to deser are documented here.
   position.
 - Added `deser::de::DuplicateKeys` which decides what happens if a key is
   given more than once for a single value (a field of a derived struct or
-  an entry of a map): the last value wins (the default, like before), the
-  first one wins or it's an error.  It's set on the state
-  (`State::set_duplicate_keys`) and also applies to buffered values.
+  an entry of a map): the last value wins, the first one wins or it's an
+  error.  The default is an error (derived structs and maps used the last
+  value before), as different parsers picking different values for the
+  same input is a security problem.  `deser-urlencoded` uses the last
+  value by default as repeated keys are common in query strings.  It's set
+  on the state (`State::set_duplicate_keys`) and also applies to buffered
+  values.
   `MapSkipError` skips duplicate entries if they are an error.  Values of
   fields that are containers (like `Vec`) are replaced, not merged.
 - Sequences can be marked as the values of a key that was given more than
