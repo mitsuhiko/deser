@@ -179,14 +179,14 @@ impl DeserializerConfig {
     ///
     /// See [`from_str`](crate::from_str).
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
-        deserialize_single(Deserializer::from_str_with_config(s, self))
+        deserialize_single(Deserializer::from_str_with_config(s, self), |_| {})
     }
 
     /// Deserializes a value from YAML in a byte slice.
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
-        deserialize_single(Deserializer::from_slice_with_config(bytes, self))
+        deserialize_single(Deserializer::from_slice_with_config(bytes, self), |_| {})
     }
 }
 
@@ -1098,7 +1098,7 @@ impl<'a> Format<'a> for Deserializer<'a> {
 /// document at all, for instance an empty file) is deserialized as null.
 /// This uses the default [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    deserialize_single(Deserializer::from_str(s))
+    deserialize_single(Deserializer::from_str(s), |_| {})
 }
 
 /// Deserializes a value from YAML in a byte slice.
@@ -1106,20 +1106,25 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// The input must be UTF-8.  Otherwise this works like [`from_str`].  This
 /// uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    deserialize_single(Deserializer::from_slice(bytes))
+    deserialize_single(Deserializer::from_slice(bytes), |_| {})
 }
 
 /// Deserializes the only document (or null for an empty stream).
-fn deserialize_single<'de, T: Deserialize<'de>>(mut de: Deserializer<'de>) -> Result<T, Error> {
+pub(crate) fn deserialize_single<'de, T, F>(mut de: Deserializer<'de>, setup: F) -> Result<T, Error>
+where
+    T: Deserialize<'de>,
+    F: FnOnce(&mut DeserializeDriver<'_, 'de>),
+{
     if de.is_end() {
         let mut out = None;
         {
             let mut driver = DeserializeDriver::new(&mut out);
+            setup(&mut driver);
             driver.emit(Atom::Null)?;
         }
         return out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty document"));
     }
-    let rv = de.deserialize()?;
+    let rv = de.deserialize_with(setup)?;
     de.end()?;
     Ok(rv)
 }

@@ -1,8 +1,9 @@
 //! Reading and writing JSON streams.
 use std::io::{Read, Write};
 
-use deser::de::{DeserializeDriver, DeserializeOwned};
-use deser::io::{Decoder, Encoder, Frame};
+use deser::de::{Decoder, Frame};
+use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
+use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 
@@ -260,6 +261,14 @@ impl Decoder for DeserializerConfig {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         Deserializer::from_frame(frame, self).drive(driver)
+    }
+
+    fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'de>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
+    {
+        Deserializer::from_slice_with_config(input, self).deserialize_with(setup)
     }
 }
 

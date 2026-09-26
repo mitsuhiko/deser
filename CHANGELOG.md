@@ -4,14 +4,18 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
-- Added `deser::io` to read values from and write values to streams.
-  The configurations of the formats implement `Decoder`, which splits a
-  stream into the frames of values and deserializes them, and `Encoder`,
-  which serializes values.  `Reader` and `Writer` (and `from_reader` and
+- Added the `deser::de::Decoder` and `deser::ser::Encoder` traits for data
+  formats which deserialize from and serialize into bytes.  The
+  configurations of the formats implement them, which makes them usable in
+  generic code: `Decoder::from_slice` and `Decoder::from_reader`,
+  `Encoder::to_vec` and `Encoder::to_writer`.
+- Added `deser::io` to read values from and write values to streams with
+  decoders and encoders: `Reader` and `Writer` (and `from_reader` and
   `to_writer`) use them with `std::io::Read` and `std::io::Write`,
-  `Writer::write_with` supports layers.  `DecodeBuffer` implements the
-  framing without doing IO itself for other kinds of IO (such as async
-  runtimes).  Errors of values refer to positions in the stream.
+  `Writer::write_with` supports layers.  Decoders split streams into the
+  frames of values.  `DecodeBuffer` implements the framing without doing
+  IO itself for other kinds of IO (such as async runtimes).  Errors of
+  values refer to positions in the stream.
 - `deser-json` reads and writes streams: `from_reader` and `to_writer`
   (also on the configurations) and the configurations for `deser::io`.
   Streams are split according to `Trailing`: a single value, JSON Lines or

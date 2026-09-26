@@ -5,14 +5,16 @@
 //! or pipes, without the formats having to know about IO.  The
 //! configurations of the formats implement [`Decoder`] (for reading) and
 //! [`Encoder`] (for writing) and this module (or an adapter for an async
-//! runtime such as `deser-tokio`) does the IO.  The configuration that is
+//! runtime such as `deser-tokio`) does the IO.  Single values are read and
+//! written with [`Decoder::from_reader`] and [`Encoder::to_writer`].  The configuration that is
 //! used to deserialize from or serialize into a string is also used for
 //! streams:
 //!
 //! ```
 //! # fn example() -> Result<(), deser::Error> {
 //! use deser::io::{Reader, Writer};
-//! # use deser::io::{Decoder, Encoder, Frame};
+//! # use deser::de::{Decoder, Frame};
+//! # use deser::ser::Encoder;
 //! # use deser::de::DeserializeDriver;
 //! # use deser::ser::SerializeDriver;
 //! # use deser::Error;
@@ -82,131 +84,14 @@
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 
-use crate::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use crate::de::{Decoder, Deserialize, DeserializeDriver, DeserializeOwned, Frame};
 use crate::error::{Error, ErrorKind};
-use crate::ser::{Serialize, SerializeDriver};
+use crate::ser::{Encoder, Serialize, SerializeDriver};
 
 mod buffer;
 
+use self::buffer::Position;
 pub use self::buffer::{DecodeBuffer, Status};
-
-/// The result of [`Decoder::frame`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Frame {
-    /// The next value is complete.
-    ///
-    /// Its bytes are `input[start..end]`.  Afterwards the first `consumed`
-    /// bytes of the input (at least up to `end`) are discarded, the bytes
-    /// before `start` are skipped.
-    Value {
-        start: usize,
-        end: usize,
-        consumed: usize,
-    },
-    /// The input does not contain a complete value.
-    ///
-    /// The first `consumed` bytes of the input are discarded, for instance
-    /// whitespace before the next value.  If bytes were consumed, the
-    /// decoder is invoked again right away (as a value might follow them),
-    /// otherwise once more input was read.  At the end of the input the
-    /// decoder must not return this without consuming bytes.
-    Incomplete { consumed: usize },
-    /// There are no more values.
-    ///
-    /// This must only be returned at the end of the input.
-    End,
-}
-
-/// Splits a stream into values and deserializes them.
-///
-/// This is implemented by the deserializer configurations of the data
-/// formats.  Decoders are used with a [`DecodeBuffer`] (for instance
-/// through a [`Reader`]), see the [module documentation](self) for more
-/// information.
-pub trait Decoder {
-    /// The state of a stream.
-    ///
-    /// This holds the progress of splitting a stream into values, for
-    /// instance how far the input was scanned.  Every stream starts with the
-    /// default state.
-    type State: Default;
-
-    /// Finds the next value in the input.
-    ///
-    /// The input holds the data that was read so far (minus the data that
-    /// was discarded).  If it does not contain a complete value yet,
-    /// [`Frame::Incomplete`] is returned and the method is invoked again
-    /// once more data was read: the input then starts after the bytes that
-    /// were consumed and continues with the new data.  This allows decoders
-    /// to keep the progress of their scan in the state so they do not have
-    /// to scan the input again.  `eof` is `true` if no more data follows the
-    /// input.
-    ///
-    /// Once a value is complete, [`Frame::Value`] is returned and the value
-    /// is deserialized with [`drive`](Self::drive).  The next call starts a
-    /// new value, again after the consumed bytes.  Offsets of errors refer
-    /// to the input.
-    fn frame(&self, state: &mut Self::State, input: &[u8], eof: bool) -> Result<Frame, Error>;
-
-    /// Deserializes a value from its frame.
-    ///
-    /// The frame holds the bytes of a value found by
-    /// [`frame`](Self::frame).  Offsets of errors refer to the frame.
-    fn drive<'de>(
-        &self,
-        frame: &'de [u8],
-        driver: &mut DeserializeDriver<'_, 'de>,
-    ) -> Result<(), Error>;
-}
-
-impl<D: Decoder + ?Sized> Decoder for &D {
-    type State = D::State;
-
-    fn frame(&self, state: &mut Self::State, input: &[u8], eof: bool) -> Result<Frame, Error> {
-        (**self).frame(state, input, eof)
-    }
-
-    fn drive<'de>(
-        &self,
-        frame: &'de [u8],
-        driver: &mut DeserializeDriver<'_, 'de>,
-    ) -> Result<(), Error> {
-        (**self).drive(frame, driver)
-    }
-}
-
-/// Serializes values into the bytes of a stream.
-///
-/// This is implemented by the serializer configurations of the data
-/// formats.  Encoders are used by a [`Writer`] (or the equivalent of an
-/// async runtime) to write a value or a stream of values.  Encoders write
-/// everything that separates values in the stream, for instance the line
-/// breaks of JSON Lines or the markers between YAML documents.
-pub trait Encoder {
-    /// Serializes a value and appends its bytes to the output.
-    ///
-    /// The value is serialized by driving the driver, which might have been
-    /// configured before (for instance with layers).  `index` is the number
-    /// of values that were written to the stream before.  If this fails,
-    /// the output can contain a partial value (the writers discard it).
-    fn encode(
-        &self,
-        driver: &mut SerializeDriver<'_>,
-        index: usize,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error>;
-}
-
-impl<E: Encoder + ?Sized> Encoder for &E {
-    fn encode(
-        &self,
-        driver: &mut SerializeDriver<'_>,
-        index: usize,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
-        (**self).encode(driver, index, out)
-    }
-}
 
 /// Serializes a value into a buffer with an encoder.
 ///
@@ -214,7 +99,7 @@ impl<E: Encoder + ?Sized> Encoder for &E {
 /// and of adapters for other kinds of IO.
 ///
 /// ```
-/// # use deser::io::Encoder;
+/// # use deser::ser::Encoder;
 /// # use deser::ser::SerializeDriver;
 /// # use deser::Error;
 /// # struct Debug;
@@ -318,7 +203,8 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// Reads the next value which can borrow from the reader's buffer.
     ///
     /// ```
-    /// # use deser::io::{Decoder, Frame, Reader};
+    /// # use deser::de::{Decoder, Frame};
+    /// # use deser::io::Reader;
     /// # use deser::de::DeserializeDriver;
     /// # use deser::Error;
     /// # struct LinesConfig;
@@ -491,6 +377,80 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     pub fn into_inner(self) -> W {
         self.writer
     }
+}
+
+/// Deserializes the single value of a slice with the frames of a decoder.
+///
+/// This is the provided implementation of [`Decoder::from_slice_with`].
+pub(crate) fn decode_slice<'de, D, T, F>(
+    decoder: &D,
+    input: &'de [u8],
+    setup: F,
+) -> Result<T, Error>
+where
+    D: Decoder + ?Sized,
+    T: Deserialize<'de>,
+    F: FnOnce(&mut DeserializeDriver<'_, 'de>),
+{
+    // moves the position of an error by the position of the part of the
+    // input it refers to
+    let locate = |err: Error, offset: usize| {
+        let mut position = Position::start();
+        position.advance(&input[..offset]);
+        err.shift_position(position.offset, position.line, position.column)
+    };
+
+    let mut state = D::State::default();
+
+    // finds the next value from `pos` and returns its range
+    let mut next = |pos: &mut usize| -> Result<Option<(usize, usize)>, Error> {
+        loop {
+            match decoder
+                .frame(&mut state, &input[*pos..], true)
+                .map_err(|err| locate(err, *pos))?
+            {
+                Frame::Value {
+                    start,
+                    end,
+                    consumed,
+                } => {
+                    let range = (*pos + start, *pos + end);
+                    *pos += consumed;
+                    return Ok(Some(range));
+                }
+                Frame::Incomplete { consumed } if consumed > 0 => *pos += consumed,
+                Frame::Incomplete { .. } => {
+                    return Err(locate(
+                        Error::new(ErrorKind::EndOfFile, "unexpected end of input")
+                            .with_position(0, 1, 1),
+                        *pos,
+                    ));
+                }
+                Frame::End => return Ok(None),
+            }
+        }
+    };
+
+    let mut pos = 0;
+    let (start, end) =
+        next(&mut pos)?.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))?;
+    let mut out = None;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        setup(&mut driver);
+        decoder
+            .drive(&input[start..end], &mut driver)
+            .map_err(|err| locate(err, start))?;
+    }
+    let value = out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))?;
+    if let Some((start, _)) = next(&mut pos)? {
+        return Err(locate(
+            Error::new(ErrorKind::Unexpected, "unexpected value after the end")
+                .with_position(0, 1, 1),
+            start,
+        ));
+    }
+    Ok(value)
 }
 
 /// Reads a single value from a [`Read`].

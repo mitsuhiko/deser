@@ -72,8 +72,10 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
+use deser::de::Decoder;
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::{DecodeBuffer, Decoder, Encoder, Status};
+use deser::io::{DecodeBuffer, Status};
+use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 use futures_core::Stream;

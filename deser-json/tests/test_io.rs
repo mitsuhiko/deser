@@ -273,3 +273,37 @@ fn test_writer_strict_and_layers() {
         .unwrap();
     assert_eq!(writer.into_inner(), b"[\"1\",\"2\"]\n");
 }
+
+#[test]
+fn test_generic_formats() {
+    use deser::de::{Decoder, DeserializeOwned};
+    use deser::ser::{Encoder, Serialize};
+
+    /// Roundtrips a value through any format.
+    fn roundtrip<T, D, E>(decoder: &D, encoder: &E, value: &T) -> T
+    where
+        T: Serialize + DeserializeOwned,
+        D: Decoder,
+        E: Encoder,
+    {
+        let bytes = encoder.to_vec(value).unwrap();
+        decoder.from_slice(&bytes).unwrap()
+    }
+
+    let value = vec![(1u32, "a".to_string())];
+    assert_eq!(roundtrip(&STRICT, &SerializerConfig::new(), &value), value);
+    assert_eq!(
+        roundtrip(
+            &deser_json::DeserializerConfig::new(),
+            &SerializerConfig::new(),
+            &value
+        ),
+        value
+    );
+
+    // the configurations deserialize from slices like `from_slice`
+    let value: Vec<&str> = Decoder::from_slice(&STRICT, br#"["a", "b"]"#).unwrap();
+    assert_eq!(value, ["a", "b"]);
+    assert!(Decoder::from_slice::<u32>(&STRICT, b"1 2").is_err());
+    assert_eq!(Decoder::from_slice::<u32>(&STOP, b"1 2").unwrap(), 1);
+}

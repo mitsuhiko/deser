@@ -1,6 +1,6 @@
+use crate::de::{Decoder, Frame};
 use crate::de::{Deserialize, DeserializeDriver};
 use crate::error::{Error, ErrorKind};
-use crate::io::{Decoder, Frame};
 
 /// The minimum number of bytes offered to read into.
 const READ_SIZE: usize = 8 * 1024;
@@ -18,16 +18,25 @@ pub enum Status {
 
 /// A position in the stream.
 #[derive(Debug, Clone, Copy)]
-struct Position {
-    offset: usize,
+pub(crate) struct Position {
+    pub(crate) offset: usize,
     // 1-based
-    line: usize,
-    column: usize,
+    pub(crate) line: usize,
+    pub(crate) column: usize,
 }
 
 impl Position {
+    /// The start of a stream.
+    pub(crate) fn start() -> Position {
+        Position {
+            offset: 0,
+            line: 1,
+            column: 1,
+        }
+    }
+
     /// Advances the position over the given bytes.
-    fn advance(&mut self, bytes: &[u8]) {
+    pub(crate) fn advance(&mut self, bytes: &[u8]) {
         self.offset += bytes.len();
         let line_start = match bytes.iter().rposition(|&b| b == b'\n') {
             Some(index) => {
@@ -57,7 +66,7 @@ impl Position {
 /// [`deserialize`](Self::deserialize):
 ///
 /// ```
-/// # use deser::io::{Decoder, Frame};
+/// # use deser::de::{Decoder, Frame};
 /// # use deser::de::DeserializeDriver;
 /// # use deser::Error;
 /// # struct LinesConfig;
@@ -127,11 +136,7 @@ impl<D: Decoder> DecodeBuffer<D> {
             start: 0,
             end: 0,
             eof: false,
-            position: Position {
-                offset: 0,
-                line: 1,
-                column: 1,
-            },
+            position: Position::start(),
             ready: None,
             done: false,
             failed: false,

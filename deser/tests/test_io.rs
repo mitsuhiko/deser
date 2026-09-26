@@ -1,7 +1,9 @@
 use std::io::Read;
 
 use deser::de::DeserializeDriver;
-use deser::io::{DecodeBuffer, Decoder, Encoder, Frame, Reader, Status, Writer};
+use deser::de::{Decoder, Frame};
+use deser::io::{DecodeBuffer, Reader, Status, Writer};
+use deser::ser::Encoder;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event};
 
@@ -265,4 +267,28 @@ fn test_writer() {
     let mut out = Vec::new();
     deser::io::to_writer(&mut out, Lines, &42u64).unwrap();
     assert_eq!(out, b"42\n");
+}
+
+#[test]
+fn test_provided_methods() {
+    // `from_slice` finds the value with the frames of the decoder
+    assert_eq!(Lines.from_slice::<u64>(b"\n\n42\n\n").unwrap(), 42);
+    let value: &str = Lines.from_slice(b"hello").unwrap();
+    assert_eq!(value, "hello");
+    let err = Lines.from_slice::<u64>(b"").unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::EndOfFile);
+    let err = Lines.from_slice::<u64>(b"1\n\n2").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unexpected value after the end at line 3 column 1"
+    );
+    let err = Lines.from_slice::<u64>(b"\n  x\n").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(2), Some(3)));
+
+    assert_eq!(Lines.from_reader::<u64, _>(&b"7\n"[..]).unwrap(), 7);
+
+    assert_eq!(Lines.to_vec(&42u64).unwrap(), b"42\n");
+    let mut out = Vec::new();
+    Lines.to_writer(&mut out, &"x").unwrap();
+    assert_eq!(out, b"x\n");
 }

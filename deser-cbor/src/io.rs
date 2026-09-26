@@ -1,8 +1,9 @@
 //! Reading and writing CBOR streams.
 use std::io::{Read, Write};
 
-use deser::de::{DeserializeDriver, DeserializeOwned};
-use deser::io::{Decoder, Encoder, Frame};
+use deser::de::{Decoder, Frame};
+use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
+use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 
@@ -198,6 +199,17 @@ impl Decoder for DeserializerConfig {
         let mut de = Deserializer::from_slice_with_config(frame, self);
         de.drive(driver)?;
         de.end()
+    }
+
+    fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'de>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
+    {
+        let mut de = Deserializer::from_slice_with_config(input, self);
+        let rv = de.deserialize_with(setup)?;
+        de.end()?;
+        Ok(rv)
     }
 }
 

@@ -99,6 +99,7 @@ use crate::event::ContainerShape;
 mod chunk;
 mod describe;
 mod driver;
+mod encoder;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
 mod impls;
@@ -106,6 +107,7 @@ mod layer;
 
 pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
+pub use self::encoder::Encoder;
 pub use self::layer::{Layer, Next};
 
 pub use driver::SerializeDriver;
