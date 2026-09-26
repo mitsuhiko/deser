@@ -98,15 +98,41 @@
 //! assert_eq!(out, "[1,2]\n[3]\n");
 //! ```
 //!
+//! # Streams
+//!
+//! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
+//! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
+//! or write more than one value (for instance JSON Lines from a socket) use
+//! the [`Decoder`] and [`Encoder`] with [`deser::io`] (or an adapter for an
+//! async runtime such as `deser-tokio`).  How values are split depends on
+//! [`DeserializerConfig::trailing`], the reader only buffers until a value
+//! is complete:
+//!
+//! ```rust
+//! use deser::io::{Reader, Writer};
+//! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
+//!
+//! let input = &b"{\"id\": 1}\n{\"id\": 2}\n"[..];
+//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let mut reader = Reader::new(input, config.decoder());
+//! let mut writer = Writer::new(Vec::new(), SerializerConfig::new().encoder().lines());
+//! while let Some(value) = reader.read::<std::collections::BTreeMap<String, u32>>().unwrap() {
+//!     writer.write(&value).unwrap();
+//! }
+//! assert_eq!(writer.into_inner(), b"{\"id\":1}\n{\"id\":2}\n");
+//! ```
+//!
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
 //! used for number formatting and `simdutf8` is used to validate UTF-8 when parsing
 //! byte slices.
 mod buf;
 mod de;
+mod io;
 mod pretty;
 mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
+pub use self::io::{Decoder, Encoder, from_reader, to_writer};
 pub use self::ser::{Indent, InlinePolicy, SerializerConfig, to_string};

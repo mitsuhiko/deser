@@ -203,23 +203,20 @@ impl<D: Decoder> DecodeBuffer<D> {
                 }
                 Frame::Incomplete { consumed } => {
                     assert!(consumed <= input.len(), "invalid frame");
-                    self.consume(consumed);
+                    // a value might follow the discarded data
+                    if consumed > 0 {
+                        self.consume(consumed);
+                        continue;
+                    }
                     if self.eof {
-                        // the decoder cannot get more input, this would
-                        // loop forever.
-                        if consumed == 0 {
-                            self.failed = true;
-                            return Err(Error::new(
-                                ErrorKind::EndOfFile,
-                                "unexpected end of input",
-                            )
+                        // the decoder cannot get more input
+                        self.failed = true;
+                        return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of input")
                             .shift_position(
                                 self.position.offset,
                                 self.position.line,
                                 self.position.column,
                             ));
-                        }
-                        continue;
                     }
                     return Ok(Status::NeedInput);
                 }

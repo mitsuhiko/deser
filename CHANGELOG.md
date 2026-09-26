@@ -11,6 +11,12 @@ All notable changes to deser are documented here.
   `std::io::Read` and `std::io::Write`.  `DecodeBuffer` implements the
   framing without doing IO itself for other kinds of IO (such as async
   runtimes).  Errors of values refer to positions in the stream.
+- `deser-json` reads and writes streams: `from_reader` and `to_writer`
+  (also on the configurations) and the `Decoder` (created with
+  `DeserializerConfig::decoder`) and `Encoder` (created with
+  `SerializerConfig::encoder`) for `deser::io`.  The decoder splits the
+  stream according to `Trailing`: a single value, JSON Lines or
+  concatenated values.  `Encoder::lines` writes JSON Lines.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:

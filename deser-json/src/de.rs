@@ -183,6 +183,11 @@ impl DeserializerConfig {
         self
     }
 
+    /// Returns what may follow a value.
+    pub(crate) fn trailing_mode(&self) -> Trailing {
+        self.trailing
+    }
+
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state

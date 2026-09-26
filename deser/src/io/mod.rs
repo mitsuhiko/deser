@@ -90,10 +90,13 @@ pub enum Frame {
         end: usize,
         consumed: usize,
     },
-    /// More input is needed for the next value.
+    /// The input does not contain a complete value.
     ///
     /// The first `consumed` bytes of the input are discarded, for instance
-    /// whitespace before the next value.
+    /// whitespace before the next value.  If bytes were consumed, the
+    /// decoder is invoked again right away (as a value might follow them),
+    /// otherwise once more input was read.  At the end of the input the
+    /// decoder must not return this without consuming bytes.
     Incomplete { consumed: usize },
     /// There are no more values.
     ///
