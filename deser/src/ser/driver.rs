@@ -666,13 +666,22 @@ impl<'a> SerializeDriver<'a> {
             }
             // callbacks that describe values need to see every value
             BeginKind::Struct(fields) if !C::DESCRIBED => {
-                return self.drive_indexed_struct(value, fields, shape, f);
+                // an owned value is dropped here, not in the callee where
+                // `fields` (which borrows from it) is an argument.
+                let mut value = Some(value);
+                let rv = self.drive_indexed_struct(&mut value, fields, shape, f);
+                drop(value);
+                return rv;
             }
             BeginKind::Struct(fields) => {
                 (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
             }
             BeginKind::Seq(seq) if !C::DESCRIBED => {
-                return self.drive_indexed_seq(value, seq, shape, f);
+                // see above
+                let mut value = Some(value);
+                let rv = self.drive_indexed_seq(&mut value, seq, shape, f);
+                drop(value);
+                return rv;
             }
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
             BeginKind::Chunk(Chunk::Forward(forwarded)) => {
@@ -694,17 +703,21 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// Its leading plain fields are emitted right away.  If all fields are
     /// plain the struct is ended, otherwise it's placed on the stack.
+    ///
+    /// The value is taken if it's placed on the stack, otherwise the caller
+    /// drops it.  An owned value must not be dropped in here as `fields`
+    /// borrows from it (it's an argument, which must stay valid for the
+    /// whole call).
     #[inline(always)]
     fn drive_indexed_struct<C: Callback>(
         &mut self,
-        value: Held,
+        value: &mut Option<Held>,
         fields: &'static dyn IndexedStruct,
         shape: ContainerShape,
         f: &mut C,
     ) -> Result<(), Error> {
-        // SAFETY: the value is held until the end of this function or by
-        // the frame.
-        let serializable = unsafe { value.get() };
+        // SAFETY: the value is held by the caller or by the frame
+        let serializable = unsafe { value.as_ref().unwrap().get() };
         self.state.depth += 1;
         self.deliver(f, Event::MapStart(shape), serializable)?;
         self.state.is_map_key = false;
@@ -715,7 +728,7 @@ impl<'a> SerializeDriver<'a> {
         } else {
             self.stack.push(Frame {
                 emitter: Emitter::IndexedStruct(fields, index),
-                serializable: value,
+                serializable: value.take().unwrap(),
                 // indexed structs do not need `finish`
                 needs_finish: false,
             });
@@ -727,17 +740,21 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// If its elements are plain, they are emitted right away and the
     /// sequence is ended.  Otherwise it's placed on the stack.
+    ///
+    /// The value is taken if it's placed on the stack, otherwise the caller
+    /// drops it.  An owned value must not be dropped in here as `seq`
+    /// borrows from it (it's an argument, which must stay valid for the
+    /// whole call).
     #[inline(always)]
     fn drive_indexed_seq<C: Callback>(
         &mut self,
-        value: Held,
+        value: &mut Option<Held>,
         seq: &'static dyn IndexedSeq,
         shape: ContainerShape,
         f: &mut C,
     ) -> Result<(), Error> {
-        // SAFETY: the value is held until the end of this function or by
-        // the frame.
-        let serializable = unsafe { value.get() };
+        // SAFETY: the value is held by the caller or by the frame
+        let serializable = unsafe { value.as_ref().unwrap().get() };
         self.state.depth += 1;
         self.deliver(f, Event::SeqStart(shape), serializable)?;
         self.state.is_map_key = false;
@@ -748,7 +765,7 @@ impl<'a> SerializeDriver<'a> {
         } else {
             self.stack.push(Frame {
                 emitter: Emitter::IndexedSeq(seq, 0),
-                serializable: value,
+                serializable: value.take().unwrap(),
                 // indexed sequences do not need `finish`
                 needs_finish: false,
             });
