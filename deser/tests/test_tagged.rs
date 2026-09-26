@@ -529,3 +529,32 @@ fn test_internally_tagged_unit_newtype() {
     .unwrap();
     assert_eq!(value, Tagged::Empty(()));
 }
+
+#[test]
+fn test_tag_in_newtype_content() {
+    #[derive(Debug, Serialize)]
+    #[deser(tag = "type")]
+    enum Leaf {
+        Leaf { v: u32 },
+    }
+
+    #[derive(Debug, Serialize)]
+    #[deser(tag = "type")]
+    enum Not {
+        Not(Leaf),
+    }
+
+    // the tag would be written twice
+    let mut driver = SerializeDriver::new(&Not::Not(Leaf::Leaf { v: 1 }));
+    let err = loop {
+        match driver.next() {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("expected an error"),
+            Err(err) => break err,
+        }
+    };
+    assert_eq!(
+        err.message(),
+        "the content of the variant has a field `type` like the tag"
+    );
+}

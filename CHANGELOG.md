@@ -39,6 +39,10 @@ All notable changes to deser are documented here.
 - Flattened `Option`s are `None` if no key was given for them and `None`
   serializes no fields.  Both failed before.  Unlike serde, errors in the
   value are reported and not turned into `None`.
+- Newtype variants of internally tagged enums fail to serialize if their
+  content has a field with the name of the tag (for instance another
+  internally tagged enum with the same tag).  The tag was written twice
+  before, which most parsers read as the inner tag.
 - Newtype variants of `()` (`A(())`) in internally tagged enums are
   unit variants (`{"type": "A"}`, other keys are ignored).  They failed
   in both directions before.

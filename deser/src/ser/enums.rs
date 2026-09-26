@@ -204,7 +204,17 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             }
             self.content = Some(content);
         }
+        let tag = self.value.tag;
         match self.content.as_mut().unwrap().next(state)? {
+            // the tag would be given twice (for instance by an internally
+            // tagged enum with the same tag) and most parsers use the last.
+            Some((name, _)) if name == tag => Err(Error::new(
+                ErrorKind::Unexpected,
+                format!(
+                    "the content of the variant has a field `{}` like the tag",
+                    tag
+                ),
+            )),
             Some(item) => Ok(Some(item)),
             None => {
                 self.done = true;
