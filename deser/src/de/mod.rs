@@ -730,8 +730,13 @@ pub trait Sink<'de>: Send {
     ///
     /// For [`Atom::Ext`] values the atom is lowered into the core data model
     /// with [`fallback`](crate::ext::ExtValue::fallback) and passed to
-    /// [`atom`](Self::atom) again.  For all other atoms an error is returned.
+    /// [`atom`](Self::atom) again.  [`Atom::F32`] is widened into an
+    /// [`Atom::F64`] and passed on the same way, so sinks that accept floats
+    /// only need to handle `F64`.  For all other atoms an error is returned.
     fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if let Atom::F32(value) = atom {
+            return self.atom(Atom::F64(f64::from(value)), state);
+        }
         if let Atom::Ext(ref ext) = atom {
             let fallback = ext.fallback();
             debug_assert!(

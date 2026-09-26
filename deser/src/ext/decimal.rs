@@ -175,6 +175,20 @@ impl TryFrom<f64> for Decimal {
     }
 }
 
+impl TryFrom<f32> for Decimal {
+    type Error = Error;
+
+    /// Converts a float with the shortest representation that roundtrips
+    /// through `f32`.
+    fn try_from(value: f32) -> Result<Decimal, Error> {
+        if value.is_finite() {
+            Decimal::new(format!("{:?}", value))
+        } else {
+            Err(invalid("decimals cannot be infinite or NaN"))
+        }
+    }
+}
+
 impl Extension for Decimal {
     fn name(&self) -> &str {
         "decimal"
@@ -207,6 +221,7 @@ impl WellKnown for Decimal {
             Atom::U64(value) => Decimal::from(value),
             Atom::I64(value) => Decimal::from(value),
             Atom::F64(value) => Decimal::try_from(value)?,
+            Atom::F32(value) => Decimal::try_from(value)?,
             _ => return Ok(None),
         }))
     }

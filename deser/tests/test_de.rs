@@ -17,6 +17,62 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
 }
 
 #[test]
+fn test_floats() {
+    // single precision floats are accepted by both float types
+    assert_eq!(
+        deserialize::<f32>(vec![Event::Atom(Atom::F32(0.1))]),
+        0.1f32
+    );
+    assert_eq!(
+        deserialize::<f64>(vec![Event::Atom(Atom::F32(0.1))]),
+        f64::from(0.1f32)
+    );
+    assert_eq!(
+        deserialize::<f32>(vec![Event::Atom(Atom::F64(0.5))]),
+        0.5f32
+    );
+    assert_eq!(deserialize::<f32>(vec![0.25f32.into()]), 0.25f32);
+}
+
+#[test]
+fn test_f32_fallback() {
+    // sinks that only know `F64` get single precision floats widened
+    struct F64Only(f64);
+
+    make_slot_wrapper!(SlotWrapper);
+
+    impl<'de> Sink<'de> for SlotWrapper<F64Only> {
+        fn atom(&mut self, atom: Atom, state: &mut deser::State) -> Result<(), deser::Error> {
+            match atom {
+                Atom::F64(value) => {
+                    **self = Some(F64Only(value));
+                    Ok(())
+                }
+                other => self.unexpected_atom(other, state),
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for F64Only {
+        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+            SlotWrapper::make_handle(out)
+        }
+    }
+
+    let value = deserialize::<F64Only>(vec![Event::Atom(Atom::F32(1.5))]);
+    assert_eq!(value.0, 1.5);
+
+    // integers do not accept floats of either precision
+    let mut out = None::<u32>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    let err = driver.emit(Event::Atom(Atom::F32(1.0))).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unexpected float, expected u32"
+    );
+}
+
+#[test]
 fn test_optional() {
     let mut out = None::<Option<usize>>;
     {

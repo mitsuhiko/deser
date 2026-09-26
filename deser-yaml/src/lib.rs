@@ -66,7 +66,7 @@
 //! |-----------------------------------------|-----------------------------------------------|
 //! | `Null`                                  | `null` (see [`NullStyle`])                    |
 //! | `Bool`, integers                        | `true`, `false`, `42`                         |
-//! | `F64`                                   | `1.5`, `1.0e+20`, `.inf`, `.nan`               |
+//! | `F32`, `F64`                            | `1.5`, `1.0e+20`, `.inf`, `.nan` (the shortest text for the precision) |
 //! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
 //! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
 //! | [`Datetime`](deser::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |

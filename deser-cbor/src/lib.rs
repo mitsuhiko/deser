@@ -23,7 +23,7 @@
 //! | [`Timestamp`]           | epoch date/time (tag 1) or date/time (tag 0)      |
 //! | [`Uuid`]                | UUIDs (tag 37)                                    |
 //! | [`Decimal`]             | decimal fractions (tag 4)                         |
-//! | `F64`                   | half, single or double precision floats           |
+//! | `F32`, `F64`            | half, single or double precision floats           |
 //! | `Str`, `Char`           | text strings                                      |
 //! | `Bytes`                 | byte strings                                      |
 //! | maps and sequences      | maps and arrays                                   |
@@ -48,7 +48,9 @@
 //! and larger ones as [`BigInt`].  The tags 0, 4, 37 and 1004 are turned
 //! into the well-known types [`Datetime`], [`Decimal`] and [`Uuid`] if their
 //! content is valid.  Epoch based date/times (tag 1) are passed on as tagged
-//! numbers, [`Timestamp`] accepts them.
+//! numbers, [`Timestamp`] accepts them.  All floats are read as `F64`: RFC
+//! 8949 does not distinguish the precisions in the data model, the shortest
+//! one that preserves the value is picked when writing.
 //!
 //! [`BigInt`]: deser::ext::BigInt
 //! [`Datetime`]: deser::ext::Datetime

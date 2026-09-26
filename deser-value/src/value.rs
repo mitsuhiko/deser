@@ -85,6 +85,13 @@ pub enum Kind {
     ///
     /// Values created by this crate only use this for negative integers.
     I64(i64),
+    /// A single precision float.
+    ///
+    /// It keeps the precision for serialization (`0.1f32` is written as
+    /// `0.1`), otherwise it behaves like the same value as `F64`: they
+    /// compare equal and hash the same.
+    F32(f32),
+    /// A double precision float.
     F64(f64),
     Char(char),
     Str(String),
@@ -407,7 +414,7 @@ impl Kind {
             Kind::Bool(_) => "bool",
             Kind::U64(_) => "unsigned integer",
             Kind::I64(_) => "signed integer",
-            Kind::F64(_) => "float",
+            Kind::F32(_) | Kind::F64(_) => "float",
             Kind::Char(_) => "char",
             Kind::Str(_) => "string",
             Kind::Bytes(_) => "bytes",
@@ -486,10 +493,12 @@ impl Kind {
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Kind::F64(value) => Some(*value),
+            Kind::F32(value) => Some(f64::from(*value)),
             Kind::U64(value) => Some(*value as f64),
             Kind::I64(value) => Some(*value as f64),
             Kind::Ext(ext) => match ext.fallback() {
                 Atom::F64(value) => Some(value),
+                Atom::F32(value) => Some(f64::from(value)),
                 Atom::U64(value) => Some(value as f64),
                 Atom::I64(value) => Some(value as f64),
                 _ => None,
@@ -761,7 +770,7 @@ impl From<i128> for Value {
 
 impl From<f32> for Value {
     fn from(value: f32) -> Value {
-        Value::new(Kind::F64(f64::from(value)))
+        Value::new(Kind::F32(value))
     }
 }
 
@@ -892,7 +901,17 @@ impl PartialEq<bool> for Value {
 
 impl PartialEq<f64> for Value {
     fn eq(&self, other: &f64) -> bool {
-        matches!(self.kind, Kind::F64(value) if value == *other)
+        match self.kind {
+            Kind::F64(value) => value == *other,
+            Kind::F32(value) => f64::from(value) == *other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<f32> for Value {
+    fn eq(&self, other: &f32) -> bool {
+        *self == f64::from(*other)
     }
 }
 

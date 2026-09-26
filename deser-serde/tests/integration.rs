@@ -225,6 +225,23 @@ macro_rules! adapter_tests {
 
                 let value: As<Option<u32>, A> = deser_json::from_str("null").unwrap();
                 assert_eq!(*value, None);
+
+                // f32 values keep their precision in both directions
+                let value: As<f32, A> = deser_json::from_str("0.1").unwrap();
+                assert_eq!(*value, 0.1);
+                assert_eq!(deser_json::to_string(&value).unwrap(), "0.1");
+                let mut out = None::<As<Vec<f32>, A>>;
+                {
+                    let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                    for event in [
+                        deser::Event::seq_start(),
+                        deser::Event::Atom(deser::Atom::F32(0.1)),
+                        deser::Event::SeqEnd,
+                    ] {
+                        driver.emit(event).unwrap();
+                    }
+                }
+                assert_eq!(*out.unwrap(), [0.1f32]);
             }
 
             #[test]

@@ -199,8 +199,23 @@ fn test_decimal() {
         deserialize::<Decimal, _>(u128::MAX).unwrap().as_str(),
         u128::MAX.to_string()
     );
+    // f32 values use the shortest text for their precision
+    assert_eq!(
+        deserialize::<Decimal, _>(0.1f32).unwrap(),
+        Decimal::new("0.1").unwrap()
+    );
     assert!(deserialize::<Decimal, _>("1,5").is_err());
     assert!(deserialize::<Decimal, _>(f64::NAN).is_err());
+    assert!(deserialize::<Decimal, _>(f32::INFINITY).is_err());
+}
+
+#[test]
+fn test_number_from_f32() {
+    use deser::ext::Number;
+
+    let number = deserialize::<Number<'static>, _>(0.1f32).unwrap();
+    assert_eq!(number.as_str(), "0.1");
+    assert_eq!(number.value(), 0.1);
 }
 
 #[test]

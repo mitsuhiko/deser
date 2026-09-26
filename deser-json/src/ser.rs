@@ -623,7 +623,8 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::F64(val) => self.write_f64(val),
+            Atom::F64(val) => self.write_float(val),
+            Atom::F32(val) => self.write_float(val),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())
@@ -706,7 +707,10 @@ impl Output {
         }
     }
 
-    fn write_f64(&mut self, val: f64) {
+    /// Writes a float with the shortest text that reads back as the same
+    /// value of its type (`f32` or `f64`).
+    #[inline]
+    fn write_float<F: Float>(&mut self, val: F) {
         if val.is_finite() {
             #[cfg(feature = "speedups")]
             {
@@ -789,7 +793,8 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::F64(val) => self.write_f64(val),
+            Atom::F64(val) => self.write_float(val),
+            Atom::F32(val) => self.write_float(val),
             // like in TOML the fallbacks of extension values are never
             // sequences
             Atom::Bytes(val) => self.write_bytes_str(&val, val.fallback),
@@ -922,14 +927,66 @@ static ESCAPE: [u8; 256] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
 ];
 
+/// The floats that are written (`f32` and `f64`).
+#[cfg(feature = "speedups")]
+trait Float: ryu::Float + FloatFormat {}
+
+#[cfg(feature = "speedups")]
+impl<F: ryu::Float + FloatFormat> Float for F {}
+
+/// The floats that are written (`f32` and `f64`).
+#[cfg(not(feature = "speedups"))]
+trait Float: FloatFormat {}
+
+#[cfg(not(feature = "speedups"))]
+impl<F: FloatFormat> Float for F {}
+
+/// How ryu formats floats of a type.
+trait FloatFormat: Copy + std::fmt::LowerExp {
+    /// Values below `10^MAX_PLAIN` are written without exponent.
+    const MAX_PLAIN: i32;
+    /// Values of at least `10^MIN_PLAIN` are written without exponent.
+    const MIN_PLAIN: i32;
+
+    fn is_finite(self) -> bool;
+    fn abs(self) -> Self;
+}
+
+impl FloatFormat for f64 {
+    const MAX_PLAIN: i32 = 16;
+    const MIN_PLAIN: i32 = -5;
+
+    fn is_finite(self) -> bool {
+        f64::is_finite(self)
+    }
+
+    fn abs(self) -> Self {
+        f64::abs(self)
+    }
+}
+
+impl FloatFormat for f32 {
+    const MAX_PLAIN: i32 = 13;
+    const MIN_PLAIN: i32 = -6;
+
+    fn is_finite(self) -> bool {
+        f32::is_finite(self)
+    }
+
+    fn abs(self) -> Self {
+        f32::abs(self)
+    }
+}
+
 /// Formats a finite float like `ryu::Buffer::format_finite`.
 ///
 /// This is used without the `speedups` feature so that the output does not
-/// depend on the feature: the shortest digits that read back as the value,
-/// in scientific notation only for very large and very small values and
-/// always with a `.` or an exponent (`1.0`, `0.001`, `1e16`, `1.5e-7`).
+/// depend on the feature: the shortest digits that read back as the value
+/// of its type, in scientific notation only for very large and very small
+/// values and always with a `.` or an exponent (`1.0`, `0.001`, `1e16`,
+/// `1.5e-7`).
 #[cfg_attr(feature = "speedups", allow(dead_code))]
-fn format_finite(val: f64) -> String {
+fn format_finite<F: FloatFormat>(val: F) -> String {
     // the standard library formats the shortest digits that read back
     let scientific = format!("{:e}", val);
     let (mantissa, exp) = scientific.split_once('e').unwrap();
@@ -952,17 +1009,17 @@ fn format_finite(val: f64) -> String {
     let k = kk - len;
     let mut out = String::with_capacity(len as usize + 8);
     out.push_str(sign);
-    if 0 <= k && kk <= 16 {
+    if 0 <= k && kk <= F::MAX_PLAIN {
         // 1234e7 -> 12340000000.0
         out.push_str(&digits);
         out.extend(std::iter::repeat_n('0', k as usize));
         out.push_str(".0");
-    } else if 0 < kk && kk <= 16 {
+    } else if 0 < kk && kk <= F::MAX_PLAIN {
         // 1234e-2 -> 12.34
         out.push_str(&digits[..kk as usize]);
         out.push('.');
         out.push_str(&digits[kk as usize..]);
-    } else if -5 < kk && kk <= 0 {
+    } else if F::MIN_PLAIN < kk && kk <= 0 {
         // 1234e-6 -> 0.001234
         out.push_str("0.");
         out.extend(std::iter::repeat_n('0', -kk as usize));
@@ -984,7 +1041,7 @@ fn format_finite(val: f64) -> String {
 /// with the last one decremented (with the same exponent).
 #[cfg_attr(feature = "speedups", allow(dead_code))]
 #[cold]
-fn is_tie(val: f64, digits: &str, exp: i32) -> bool {
+fn is_tie<F: FloatFormat>(val: F, digits: &str, exp: i32) -> bool {
     let mut middle = digits.to_string();
     let last = middle.pop().unwrap();
     middle.push((last as u8 - 1) as char);
@@ -997,7 +1054,7 @@ fn is_tie(val: f64, digits: &str, exp: i32) -> bool {
     };
     // the rounded digits are cheap to check, the exact ones are only
     // formatted if they match.  The exact expansion of a double has at
-    // most 767 significant digits.
+    // most 767 significant digits (a float at most 112).
     matches(digits.len()) && matches(800)
 }
 
@@ -1040,6 +1097,51 @@ fn test_format_finite_like_ryu() {
         x ^= x >> 7;
         x ^= x << 17;
         let val = f64::from_bits(x);
+        if val.is_finite() {
+            check(val);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "speedups"))]
+#[test]
+fn test_format_finite_f32_like_ryu() {
+    let check = |val: f32| {
+        assert_eq!(
+            format_finite(val),
+            ryu::Buffer::new().format_finite(val),
+            "{:e}",
+            val
+        );
+    };
+    for val in [
+        0.0,
+        -0.0,
+        1.0,
+        0.1,
+        1e12,
+        1e13,
+        1.5e13,
+        1234567.8,
+        1e-5,
+        1e-6,
+        1e-7,
+        1.5e-6,
+        f32::MAX,
+        f32::MIN,
+        f32::MIN_POSITIVE,
+        f32::EPSILON,
+        1e-45,
+    ] {
+        check(val);
+    }
+    let iterations = if cfg!(miri) { 100 } else { 100_000 };
+    let mut x: u32 = 0x4f6c_dd1d;
+    for _ in 0..iterations {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        let val = f32::from_bits(x);
         if val.is_finite() {
             check(val);
         }

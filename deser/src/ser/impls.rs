@@ -78,7 +78,7 @@ impl Serialize for f32 {
     begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::F64(f64::from(*self))))
+        Ok(Chunk::Atom(Atom::F32(*self)))
     }
 }
 

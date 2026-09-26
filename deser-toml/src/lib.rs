@@ -73,7 +73,10 @@
 //! When serializing, maps are written as tables and sequences of maps as
 //! arrays of tables.  The well-known [`Timestamp`](deser::ext::Timestamp)
 //! type is written as offset date-time in UTC, other well-known types
-//! (such as UUIDs and decimals) are written as strings.  TOML has no null value: map entries with null values
+//! (such as UUIDs and decimals) are written as strings.  Floats are
+//! written with the shortest text that reads back as the same value of
+//! their precision (`0.1f32` as `0.1`).  TOML has no null value: map
+//! entries with null values
 //! are skipped and null values in sequences are an error.  TOML has no
 //! bytes either, they are written as base64 strings by default (see
 //! [`deser::adapters::bytes`]).  See [`SerializerConfig`] for more

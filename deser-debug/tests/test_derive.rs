@@ -72,6 +72,13 @@ enum Untagged {
 }
 
 #[test]
+fn test_floats() {
+    check(0.1f32);
+    check(vec![0.1f32, 1.0, f32::MAX, f32::NAN]);
+    check(0.1f64);
+}
+
+#[test]
 fn test_structs() {
     check(Meters(5.5));
     check(Some(Meters(1.0)));

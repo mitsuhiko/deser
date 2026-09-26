@@ -101,7 +101,7 @@ impl<'e, E: Emit + ?Sized> ser::Serializer for EventSerializer<'e, E> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<(), Error> {
-        self.atom(Atom::F64(v.into()))
+        self.atom(Atom::F32(v))
     }
 
     fn serialize_f64(self, v: f64) -> Result<(), Error> {

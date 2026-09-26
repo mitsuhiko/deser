@@ -100,6 +100,22 @@ fn test_numbers() {
     assert_ne!(value!(0.0), value!(-0.0));
     assert_ne!(value!(1.0), value!(1));
 
+    // single precision floats keep their precision but compare and hash
+    // like the same value as f64
+    let single = value!(0.1f32);
+    assert!(matches!(*single, Kind::F32(value) if value == 0.1));
+    assert!(matches!(*to_value(&0.1f32).unwrap(), Kind::F32(_)));
+    assert_eq!(single, value!(f64::from(0.1f32)));
+    assert_ne!(single, value!(0.1f64));
+    assert_eq!(hash(&single), hash(&value!(f64::from(0.1f32))));
+    assert_eq!(single, 0.1f32);
+    assert_eq!(single, f64::from(0.1f32));
+    assert_eq!(single.as_f64(), Some(f64::from(0.1f32)));
+    assert_eq!(from_value::<f32>(&single).unwrap(), 0.1);
+    assert_eq!(from_value::<f64>(&single).unwrap(), f64::from(0.1f32));
+    assert_eq!(format!("{:?}", single), "0.1");
+    assert_eq!(single.name(), "float");
+
     assert_eq!(value!(1).as_f64(), Some(1.0));
     assert_eq!(value!(-1).as_u64(), None);
     assert_eq!(value!(-1).as_i64(), Some(-1));

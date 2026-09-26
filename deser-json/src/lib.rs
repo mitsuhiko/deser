@@ -26,7 +26,10 @@
 //! well-known types (such as date-times and UUIDs) are written as strings.
 //! JSON has no bytes, they are written as base64 strings by default and
 //! types that expect bytes accept strings and arrays of integers (see
-//! [`deser::adapters::bytes`] and [`SerializerConfig::bytes`]).
+//! [`deser::adapters::bytes`] and [`SerializerConfig::bytes`]).  Floats
+//! are written with the shortest text that reads back as the same value of
+//! their precision (`0.1f32` as `0.1`, not `0.10000000149011612`), floats
+//! that are infinite or NaN as `null`.
 //!
 //! When parsing, floats whose text cannot be recovered from their value as
 //! `f64` (like `0.10` or `1e5`) and integers that do not fit into 128 bits

@@ -297,6 +297,8 @@ impl Writer {
             Atom::U64(val) => self.write_head(MAJOR_UNSIGNED, val),
             Atom::I64(val) => self.write_i64(val),
             Atom::F64(val) => self.write_f64(val),
+            // the shortest form of the value is at most single precision
+            Atom::F32(val) => self.write_f64(f64::from(val)),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())

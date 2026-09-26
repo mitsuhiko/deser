@@ -4,6 +4,18 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `Atom::F32` for single precision floats.  `f32` values are no
+  longer widened to `f64` when serialized, so the text formats write them
+  with the shortest text for their precision (`0.1f32` as `0.1` instead of
+  `0.10000000149011612`) in JSON, YAML and TOML, which also makes the
+  output smaller and faster to write.  The default
+  `Sink::unexpected_atom` widens `F32` into `F64`, so sinks that only
+  handle `F64` keep working (`Atom::widen_float` does the same for other
+  consumers).  Serializers have to handle the new atom.  Parsers keep
+  producing `F64`.  `deser-value` has `Kind::F32` (which compares and
+  hashes like the same `F64`), `deser-serde` maps it to serde's `f32` and
+  `deser-debug` formats it like `Debug`.  `Decimal` and `Number` use the
+  shortest text of `f32` values.
 - Added the `io` feature (enabled by default in `deser` and the formats)
   for everything related to streams (`deser::io`).  Without it the formats
   have deserializers and serializers for in-memory data only.

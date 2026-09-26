@@ -163,6 +163,7 @@ fn leaf_atom(kind: &Kind) -> Atom<'_> {
         Kind::Bool(value) => Atom::Bool(*value),
         Kind::U64(value) => Atom::U64(*value),
         Kind::I64(value) => Atom::I64(*value),
+        Kind::F32(value) => Atom::F32(*value),
         Kind::F64(value) => Atom::F64(*value),
         Kind::Char(value) => Atom::Char(*value),
         Kind::Str(value) => Atom::Str(Cow::Borrowed(value)),

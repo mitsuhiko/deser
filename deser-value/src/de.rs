@@ -230,6 +230,7 @@ fn atom_value(atom: Atom, state: &State) -> Result<Value, Error> {
         Atom::Char(value) => Kind::Char(value),
         Atom::U64(value) => Kind::U64(value),
         Atom::I64(value) => Kind::from_i64(value),
+        Atom::F32(value) => Kind::F32(value),
         Atom::F64(value) => Kind::F64(value),
         Atom::Ext(value) => Kind::from_ext(value),
         other => return Err(other.unexpected_error("any value")),

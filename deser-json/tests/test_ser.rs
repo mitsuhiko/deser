@@ -249,16 +249,21 @@ fn test_extension_fallback() {
 
 #[test]
 fn test_float_precision() {
-    // floats are f64 in the data model, f32 values are written as the f64
-    // they widen to which reads back as the same f32.
+    // f32 values are written with the shortest text for their precision
     assert_eq!(to_string(&0.1f64).unwrap(), "0.1");
     assert_eq!(to_string(&0.5f32).unwrap(), "0.5");
-    assert_eq!(to_string(&0.1f32).unwrap(), "0.10000000149011612");
+    assert_eq!(to_string(&0.1f32).unwrap(), "0.1");
     assert_eq!(
-        deser_json::from_str::<f32>(&to_string(&0.1f32).unwrap()).unwrap(),
-        0.1f32
+        to_string(&f64::from(0.1f32)).unwrap(),
+        "0.10000000149011612"
     );
+    assert_eq!(
+        to_string(&vec![1.1f32, 16777216.0, 3.4028235e38, 1e-45]).unwrap(),
+        "[1.1,16777216.0,3.4028235e38,1e-45]"
+    );
+    assert_eq!(deser_json::from_str::<f32>("0.1").unwrap(), 0.1f32);
     assert_eq!(to_string(&f32::NAN).unwrap(), "null");
+    assert_eq!(to_string(&f32::INFINITY).unwrap(), "null");
 }
 
 #[test]
@@ -285,6 +290,25 @@ fn test_float_format() {
         // exactly between two shortest candidates, the even one is used
         (-(1149636667324797.0 + 0.25), "-1149636667324797.2"),
         (165793407361858.0 + 0.125, "165793407361858.12"),
+    ] {
+        assert_eq!(to_string(&value).unwrap(), expected);
+    }
+    for (value, expected) in [
+        (0.0f32, "0.0"),
+        (-0.0, "-0.0"),
+        (1.0, "1.0"),
+        (0.1, "0.1"),
+        (1e12, "1000000000000.0"),
+        (1e13, "1e13"),
+        (1.5e13, "1.5e13"),
+        (1e-5, "0.00001"),
+        (1e-6, "0.000001"),
+        (1e-7, "1e-7"),
+        (f32::MAX, "3.4028235e38"),
+        (1e-45, "1e-45"),
+        // exactly between two shortest candidates, the even one is used
+        (f32::from_bits(0x3980_0000), "0.00024414062"),
+        (f32::from_bits(0x3b90_0000), "0.0043945312"),
     ] {
         assert_eq!(to_string(&value).unwrap(), expected);
     }

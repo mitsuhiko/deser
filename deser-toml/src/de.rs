@@ -335,7 +335,9 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                     Value::Bool(value) => Atom::Bool(value),
                     Value::Datetime(ref value) => Atom::Ext(ExtValue::borrowed(value)),
                     Value::Str(_) | Value::Table(_) | Value::Array(_) => unreachable!(),
-                    Value::FloatText(_) => unreachable!("only used when serializing"),
+                    Value::Float32(_) | Value::FloatText(_) => {
+                        unreachable!("only used when serializing")
+                    }
                 };
                 emit_at(driver, atom, item.span)?;
             }

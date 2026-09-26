@@ -27,6 +27,22 @@ fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
 }
 
 #[test]
+fn test_floats() {
+    assert_eq!(capture_events(&0.1f32), vec![Event::Atom(Atom::F32(0.1))]);
+    assert_eq!(capture_events(&0.1f64), vec![Event::Atom(Atom::F64(0.1))]);
+    assert_eq!(Event::from(0.5f32), Event::Atom(Atom::F32(0.5)));
+    assert_eq!(
+        capture_events(&[1.5f32, 2.5]),
+        vec![
+            Event::seq_start(),
+            Event::Atom(Atom::F32(1.5)),
+            Event::Atom(Atom::F32(2.5)),
+            Event::SeqEnd,
+        ]
+    );
+}
+
+#[test]
 fn test_optional() {
     let events = capture_events(&None::<usize>);
     assert_eq!(events, vec![Event::Atom(Atom::Null)]);

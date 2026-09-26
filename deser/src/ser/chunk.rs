@@ -77,7 +77,7 @@ impl From<f64> for Chunk<'static> {
 
 impl From<f32> for Chunk<'static> {
     fn from(value: f32) -> Self {
-        Chunk::Atom(Atom::F64(f64::from(value)))
+        Chunk::Atom(Atom::F32(value))
     }
 }
 

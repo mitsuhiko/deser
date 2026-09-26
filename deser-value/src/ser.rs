@@ -33,6 +33,7 @@ impl Serialize for Kind {
             Kind::Bool(value) => Chunk::Atom(Atom::Bool(*value)),
             Kind::U64(value) => Chunk::Atom(Atom::U64(*value)),
             Kind::I64(value) => Chunk::Atom(Atom::I64(*value)),
+            Kind::F32(value) => Chunk::Atom(Atom::F32(*value)),
             Kind::F64(value) => Chunk::Atom(Atom::F64(*value)),
             Kind::Char(value) => Chunk::Atom(Atom::Char(*value)),
             Kind::Str(value) => Chunk::Atom(Atom::Str(Cow::Borrowed(value))),

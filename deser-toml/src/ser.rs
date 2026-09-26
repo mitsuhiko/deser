@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::Write;
+use std::fmt::{self, Write};
 
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
@@ -380,6 +380,7 @@ fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
         },
         Atom::I64(value) => Value::Int(value),
         Atom::F64(value) => Value::Float(value),
+        Atom::F32(value) => Value::Float32(value),
         // bytes are converted by the builder, this is reached for the
         // fallbacks of extension values which cannot be arrays.
         Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, value.fallback, bytes))),
@@ -663,6 +664,7 @@ impl<'d> Writer<'d> {
             Value::Int(value) => write!(self.out, "{}", value).unwrap(),
             Value::UInt(value) => write!(self.out, "{}", value).unwrap(),
             Value::Float(value) => write_float(&mut self.out, value),
+            Value::Float32(value) => write_float(&mut self.out, value),
             Value::FloatText(ref value) => self.out.push_str(value),
             Value::Bool(value) => self.out.push_str(if value { "true" } else { "false" }),
             Value::Datetime(ref value) => write!(self.out, "{}", value).unwrap(),
@@ -678,11 +680,14 @@ impl<'d> Writer<'d> {
     }
 }
 
-fn write_float(out: &mut String, value: f64) {
-    if value.is_nan() {
+/// Writes a float with the shortest text that reads back as the same value
+/// of its type (`f32` or `f64`).
+fn write_float<F: Into<f64> + fmt::Debug + Copy>(out: &mut String, value: F) {
+    let wide: f64 = value.into();
+    if wide.is_nan() {
         out.push_str("nan");
-    } else if value.is_infinite() {
-        out.push_str(if value > 0.0 { "inf" } else { "-inf" });
+    } else if wide.is_infinite() {
+        out.push_str(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
         let start = out.len();
         write!(out, "{:?}", value).unwrap();

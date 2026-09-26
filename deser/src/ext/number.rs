@@ -191,6 +191,8 @@ impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
             Atom::U64(value) => Number::new(value.to_string(), value as f64),
             Atom::I64(value) => Number::new(value.to_string(), value as f64),
             Atom::F64(value) if value.is_finite() => Number::new(format!("{:?}", value), value),
+            // the text of an `f32` is shorter, the value is the one of the text
+            Atom::F32(value) if value.is_finite() => Number::parse(format!("{:?}", value))?,
             Atom::Str(ref value) => Number::parse(value.to_string())?,
             other => return self.unexpected_atom(other, state),
         };

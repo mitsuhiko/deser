@@ -75,6 +75,7 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
         Atom::Char(v) => visitor.visit_char(v),
         Atom::U64(v) => visitor.visit_u64(v),
         Atom::I64(v) => visitor.visit_i64(v),
+        Atom::F32(v) => visitor.visit_f32(v),
         Atom::F64(v) => visitor.visit_f64(v),
         Atom::Ext(ext) => {
             // 128 bit integers are extension values in deser.  Small values

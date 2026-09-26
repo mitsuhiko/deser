@@ -32,6 +32,8 @@ pub(crate) enum Value<'a> {
     /// An integer larger than `i64::MAX`.
     UInt(u64),
     Float(f64),
+    /// A single precision float (only used when serializing).
+    Float32(f32),
     /// A float that is written as is (only used when serializing).
     FloatText(Cow<'a, str>),
     Bool(bool),

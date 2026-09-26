@@ -310,12 +310,15 @@ pub fn push_indent(out: &mut String, indent: usize) {
 
 /// Writes a float so that readers of YAML 1.1 and 1.2 read it as float.
 ///
-/// YAML 1.1 requires a `.` in floats and a sign in exponents.
-pub fn write_float(out: &mut String, value: f64) {
-    if value.is_nan() {
+/// YAML 1.1 requires a `.` in floats and a sign in exponents.  The text is
+/// the shortest that reads back as the same value of its type (`f32` or
+/// `f64`).
+pub fn write_float<F: Into<f64> + std::fmt::Debug + Copy>(out: &mut String, value: F) {
+    let wide: f64 = value.into();
+    if wide.is_nan() {
         out.push_str(".nan");
-    } else if value.is_infinite() {
-        out.push_str(if value > 0.0 { ".inf" } else { "-.inf" });
+    } else if wide.is_infinite() {
+        out.push_str(if wide > 0.0 { ".inf" } else { "-.inf" });
     } else {
         let formatted = format!("{:?}", value);
         match formatted.split_once('e') {

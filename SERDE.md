@@ -104,6 +104,12 @@ deserializers which do not know about an extension can still process it.  This
 is also how `u128` and `i128` are supported, without having to extend the core
 data model.
 
+The one width that the core data model keeps is the precision of floats.  An
+`f32` widened to `f64` is the same value, but not the same text: `0.1f32` would
+be written as `0.10000000149011612`.  Integers do not have this problem, their
+text does not depend on their width.  Sinks that do not care receive `f32`
+values as `f64`, the same way extension values fall back.
+
 ## Mandatory Buffering
 
 Serde currently requires mandatory internal buffering even to implement features

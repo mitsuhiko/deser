@@ -95,10 +95,8 @@ Usage:
 * `cargo run --release -- sizes` prints the sizes of the inputs.
 * `cargo run --release -- interop` prints the sizes of the output of deser
   and serde and whether they read each other's output.  The serialization
-  benchmarks do not produce the same output: the YAML libraries use
-  different styles and deser writes `f32` with the digits of the `f64`
-  value (which makes the output of `canada` and `point-cloud` about twice
-  as large).
+  benchmarks of YAML do not produce the same output as the libraries use
+  different styles.
 * With the `count-allocs` feature, `allocs [FILTER]` counts the allocations
   of a single run of every benchmark.
 

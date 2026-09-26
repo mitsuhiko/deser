@@ -207,7 +207,19 @@ fn test_numbers() {
     assert_eq!(to_string(&map).unwrap(), "nan = nan\n");
     let mut map = BTreeMap::new();
     map.insert("a", 0.1f32);
+    assert_eq!(to_string(&map).unwrap(), "a = 0.1\n");
+    let mut map = BTreeMap::new();
+    map.insert("a", f64::from(0.1f32));
     assert_eq!(to_string(&map).unwrap(), "a = 0.10000000149011612\n");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "a",
+        vec![1.0f32, 3.4028235e38, 1e-45, f32::INFINITY, f32::NAN],
+    );
+    assert_eq!(
+        to_string(&map).unwrap(),
+        "a = [1.0, 3.4028235e38, 1e-45, inf, nan]\n"
+    );
     let mut map = BTreeMap::new();
     map.insert("a", u64::MAX);
     assert_eq!(to_string(&map).unwrap(), "a = 18446744073709551615\n");

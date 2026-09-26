@@ -22,6 +22,12 @@ use crate::ext::ExtValue;
 ///
 /// [`Bytes`] can carry a representation for formats without native bytes
 /// which formats with native bytes ignore.
+///
+/// Floats are [`F32`](Atom::F32) or [`F64`](Atom::F64) depending on their
+/// precision.  A single precision float is a value of its own as its
+/// shortest text differs from the one of the same value as `f64` (`0.1f32`
+/// is `0.1`, as `f64` it's `0.10000000149011612`).  Consumers that do not
+/// care about the precision can [widen](Atom::widen_float) it.
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Atom<'a> {
@@ -32,6 +38,16 @@ pub enum Atom<'a> {
     Char(char),
     U64(u64),
     I64(i64),
+    /// A single precision float.
+    ///
+    /// Formats write it with the precision of an `f32`, for instance text
+    /// formats with the shortest text that reads back as the same `f32`.
+    /// Formats do not produce it when they read floats (the precision of
+    /// a float in the input is unknown or, like in CBOR, an encoding
+    /// detail).  Sinks receive it as [`F64`](Atom::F64) unless they handle
+    /// it (see [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).
+    F32(f32),
+    /// A double precision float.
     F64(f64),
     /// A value that extends the data model.
     ///
@@ -50,6 +66,7 @@ impl<'a> Atom<'a> {
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
+            Atom::F32(v) => Atom::F32(v),
             Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.to_static()),
         }
@@ -67,8 +84,28 @@ impl<'a> Atom<'a> {
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
             Atom::I64(v) => Atom::I64(v),
+            Atom::F32(v) => Atom::F32(v),
             Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.as_borrowed()),
+        }
+    }
+
+    /// Widens an [`F32`](Atom::F32) into an [`F64`](Atom::F64).
+    ///
+    /// Other atoms are returned unchanged.  This is useful for consumers
+    /// which do not distinguish the precision of floats.
+    ///
+    /// ```
+    /// use deser::Atom;
+    ///
+    /// assert_eq!(Atom::F32(1.5).widen_float(), Atom::F64(1.5));
+    /// assert_eq!(Atom::U64(1).widen_float(), Atom::U64(1));
+    /// ```
+    #[inline]
+    pub fn widen_float(self) -> Atom<'a> {
+        match self {
+            Atom::F32(v) => Atom::F64(f64::from(v)),
+            other => other,
         }
     }
 
@@ -82,7 +119,7 @@ impl<'a> Atom<'a> {
             Atom::Char(_) => "char",
             Atom::U64(_) => "unsigned integer",
             Atom::I64(_) => "signed integer",
-            Atom::F64(_) => "float",
+            Atom::F32(_) | Atom::F64(_) => "float",
             Atom::Ext(ref v) => v.name(),
         }
     }
@@ -135,7 +172,7 @@ impl From<f64> for Event<'static> {
 
 impl From<f32> for Event<'static> {
     fn from(value: f32) -> Self {
-        Event::Atom(Atom::F64(value.into()))
+        Event::Atom(Atom::F32(value))
     }
 }
 

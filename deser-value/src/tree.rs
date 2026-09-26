@@ -46,6 +46,7 @@ fn clone_leaf(kind: &Kind) -> Kind {
         Kind::Bool(value) => Kind::Bool(*value),
         Kind::U64(value) => Kind::U64(*value),
         Kind::I64(value) => Kind::I64(*value),
+        Kind::F32(value) => Kind::F32(*value),
         Kind::F64(value) => Kind::F64(*value),
         Kind::Char(value) => Kind::Char(*value),
         Kind::Str(value) => Kind::Str(value.clone()),
@@ -198,6 +199,10 @@ fn eq_leaf(a: &Kind, b: &Kind) -> bool {
             i128::from(*a) == i128::from(*b)
         }
         (Kind::F64(a), Kind::F64(b)) => a.to_bits() == b.to_bits(),
+        (Kind::F32(a), Kind::F32(b)) => a.to_bits() == b.to_bits(),
+        (Kind::F32(a), Kind::F64(b)) | (Kind::F64(b), Kind::F32(a)) => {
+            f64::from(*a).to_bits() == b.to_bits()
+        }
         (Kind::Char(a), Kind::Char(b)) => a == b,
         (Kind::Str(a), Kind::Str(b)) => a == b,
         (Kind::Bytes(a), Kind::Bytes(b)) => a.data() == b.data(),
@@ -286,7 +291,8 @@ pub(crate) fn eq_map(a: &Map, b: &Map) -> bool {
 }
 
 // The tags of the kinds when hashed.  Integers are hashed by their value
-// so that `U64` and `I64` of the same value hash the same.
+// so that `U64` and `I64` of the same value hash the same, floats as `f64`
+// so that `F32` and `F64` of the same value hash the same.
 const TAG_NULL: u8 = 0;
 const TAG_BOOL: u8 = 1;
 const TAG_INT: u8 = 2;
@@ -313,6 +319,11 @@ pub(crate) fn hash_bool<H: Hasher>(value: bool, state: &mut H) {
     value.hash(state);
 }
 
+fn hash_f64<H: Hasher>(value: f64, state: &mut H) {
+    state.write_u8(TAG_F64);
+    value.to_bits().hash(state);
+}
+
 pub(crate) fn hash_char<H: Hasher>(value: char, state: &mut H) {
     state.write_u8(TAG_CHAR);
     value.hash(state);
@@ -335,10 +346,8 @@ fn hash_fallback<H: Hasher>(atom: &Atom<'_>, state: &mut H) {
         Atom::Char(value) => hash_char(*value, state),
         Atom::U64(value) => hash_int(i128::from(*value), state),
         Atom::I64(value) => hash_int(i128::from(*value), state),
-        Atom::F64(value) => {
-            state.write_u8(TAG_F64);
-            value.to_bits().hash(state);
-        }
+        Atom::F64(value) => hash_f64(*value, state),
+        Atom::F32(value) => hash_f64(f64::from(*value), state),
         _ => {}
     }
 }
@@ -357,10 +366,8 @@ fn hash_node<'a, H: Hasher>(
         Kind::Bool(value) => hash_bool(*value, state),
         Kind::U64(value) => hash_int(i128::from(*value), state),
         Kind::I64(value) => hash_int(i128::from(*value), state),
-        Kind::F64(value) => {
-            state.write_u8(TAG_F64);
-            value.to_bits().hash(state);
-        }
+        Kind::F64(value) => hash_f64(*value, state),
+        Kind::F32(value) => hash_f64(f64::from(*value), state),
         Kind::Char(value) => hash_char(*value, state),
         Kind::Str(value) => hash_str(value, state),
         Kind::Bytes(value) => {
@@ -418,6 +425,7 @@ fn fmt_leaf(kind: &Kind, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Kind::Bool(value) => write!(f, "{}", value),
         Kind::U64(value) => write!(f, "{}", value),
         Kind::I64(value) => write!(f, "{}", value),
+        Kind::F32(value) => write!(f, "{:?}", value),
         Kind::F64(value) => write!(f, "{:?}", value),
         Kind::Char(value) => write!(f, "{:?}", value),
         Kind::Str(value) => write!(f, "{:?}", value),

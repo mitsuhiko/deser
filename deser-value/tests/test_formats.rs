@@ -22,6 +22,17 @@ fn test_json_round_trip() {
 }
 
 #[test]
+fn test_f32_precision() {
+    // values keep the precision of floats for the formats
+    let value = to_value(&vec![0.1f32, 1.5]).unwrap();
+    assert_eq!(deser_json::to_string(&value).unwrap(), "[0.1,1.5]");
+    assert_eq!(deser_json::to_string(&value.clone()).unwrap(), "[0.1,1.5]");
+    assert_eq!(deser_yaml::to_string(&value).unwrap(), "- 0.1\n- 1.5\n");
+    let value = to_value(&vec![0.1f64]).unwrap();
+    assert_eq!(deser_json::to_string(&value).unwrap(), "[0.1]");
+}
+
+#[test]
 fn test_toml_round_trip() {
     let input = "title = \"x\"\nwhen = 1979-05-27T07:32:00Z\n\n[owner]\nname = \"Tom\"\n";
     let value: Value = deser_toml::from_str(input).unwrap();

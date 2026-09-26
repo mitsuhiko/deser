@@ -283,6 +283,10 @@ macro_rules! float_sink {
                         **self = Some(value as $ty);
                         Ok(())
                     }
+                    Atom::F32(value) => {
+                        **self = Some(value as $ty);
+                        Ok(())
+                    }
                     Atom::Ext(ref ext) if ext.is::<u128>() => {
                         **self = Some(*ext.downcast_ref::<u128>().unwrap() as $ty);
                         Ok(())

@@ -640,6 +640,11 @@ impl<'c> Emitter<'c> {
                 write_float(&mut out, value);
                 (Scalar::Text(out), None)
             }
+            Atom::F32(value) => {
+                let mut out = String::new();
+                write_float(&mut out, value);
+                (Scalar::Text(out), None)
+            }
             Atom::Char(value) => (
                 self.render_owned_str(value.to_string(), context, style),
                 None,

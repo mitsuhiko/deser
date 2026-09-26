@@ -329,11 +329,38 @@ fn test_numbers() {
             assert!(parsed == value || value.is_nan(), "{} {:?}", yaml, version);
         }
     }
-    // f32 is written as the f64 it widens to
+    // f32 is written with the shortest text for its precision
+    assert_eq!(to_string(&0.1f32).unwrap(), "0.1\n");
     assert_eq!(
-        from_str::<f32>(&to_string(&0.1f32).unwrap()).unwrap(),
-        0.1f32
+        to_string(&f64::from(0.1f32)).unwrap(),
+        "0.10000000149011612\n"
     );
+    assert_eq!(
+        to_string(&vec![3.4028235e38f32, 1e-45, f32::INFINITY, f32::NAN]).unwrap(),
+        "- 3.4028235e+38\n- 1.0e-45\n- .inf\n- .nan\n"
+    );
+    assert_eq!(from_str::<f32>("0.1").unwrap(), 0.1f32);
+    // f32 values read back as the same value in YAML 1.1 and 1.2
+    let mut state = 0x2545_f491u32;
+    for _ in 0..10_000 {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        let value = f32::from_bits(state);
+        let yaml = to_string(&value).unwrap();
+        for version in [Version::V1_1, Version::V1_2] {
+            let parsed: f32 = DeserializerConfig::new()
+                .version(version)
+                .from_str(&yaml)
+                .unwrap();
+            assert!(
+                parsed.to_bits() == value.to_bits() || value.is_nan(),
+                "{} {:?}",
+                yaml,
+                version
+            );
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
