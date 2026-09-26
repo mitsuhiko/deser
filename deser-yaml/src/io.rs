@@ -147,7 +147,7 @@ impl Decoder for DeserializerConfig {
 /// Writes YAML documents to a stream (see [`deser::io`]).
 ///
 /// Every value is written as a document, documents after the first start
-/// with `---` (like with a [`Serializer`](crate::Serializer)).
+/// with `---`.
 ///
 /// ```
 /// use deser::io::Writer;

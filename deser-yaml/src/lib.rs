@@ -82,7 +82,8 @@
 //! through a [`Recording`](deser::de::Recording).
 //!
 //! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
-//! multiple documents are written with [`Serializer`].
+//! multiple documents are written with a [`deser::io::Writer`] (see
+//! [streams](#streams)).
 //!
 //! # Documents
 //!
@@ -139,8 +140,7 @@ pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str}
 pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::resolve::Version;
 pub use self::ser::{
-    FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
-    to_string,
+    FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig, to_string,
 };
 pub use self::tag::{Tagged, set_tag, take_tag};
 

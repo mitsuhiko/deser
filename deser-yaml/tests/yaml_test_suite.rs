@@ -24,8 +24,8 @@ use std::process::ExitCode;
 
 use deser_yaml::__private::parse_to_test_events;
 use deser_yaml::{
-    Deserializer, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer,
-    SerializerConfig, Version,
+    Deserializer, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig,
+    Version,
 };
 
 mod common;
@@ -222,11 +222,11 @@ fn check_roundtrip(case: &Case) -> Outcome {
     };
     for (name, config) in roundtrip_configs() {
         let rv = panic::catch_unwind(|| {
-            let mut serializer = Serializer::new(config.clone());
+            let mut writer = deser::io::Writer::new(Vec::new(), config.clone());
             for doc in &docs {
-                serializer.serialize(doc).map_err(|err| err.to_string())?;
+                writer.write(doc).map_err(|err| err.to_string())?;
             }
-            Ok::<_, String>(serializer.finish())
+            Ok::<_, String>(String::from_utf8(writer.into_inner()).unwrap())
         });
         let output = match rv {
             Ok(Ok(output)) => output,

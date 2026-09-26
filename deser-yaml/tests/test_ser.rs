@@ -7,7 +7,7 @@ use deser::ser::{Layer, Next};
 use deser::{Deserialize, Serialize};
 use deser_yaml::style::{DoubleQuoted, Folded, Literal, Plain, ScalarStyle, SingleQuoted};
 use deser_yaml::{
-    DeserializerConfig, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer,
+    DeserializerConfig, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle,
     SerializerConfig, Tagged, Version, from_str, to_string,
 };
 
@@ -448,11 +448,13 @@ fn test_datetimes() {
 
 #[test]
 fn test_documents() {
-    let mut serializer = Serializer::new(SerializerConfig::new());
-    serializer.serialize(&"a\n\n").unwrap();
-    serializer.serialize(&vec![1]).unwrap();
-    serializer.serialize(&()).unwrap();
-    let yaml = serializer.finish();
+    use deser::io::Writer;
+
+    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    writer.write(&"a\n\n").unwrap();
+    writer.write(&vec![1]).unwrap();
+    writer.write(&()).unwrap();
+    let yaml = String::from_utf8(writer.into_inner()).unwrap();
     assert_eq!(yaml, "|+\n  a\n\n---\n- 1\n---\nnull\n");
     let docs = deser_yaml::Deserializer::from_str(&yaml)
         .iter::<Value>()
@@ -473,10 +475,10 @@ fn test_documents() {
     assert_eq!(DIRECTIVE.to_string(&1).unwrap(), "%YAML 1.2\n---\n1\n");
 
     // directives of later documents follow the end of the previous one
-    let mut serializer = Serializer::new(DIRECTIVE);
-    serializer.serialize(&"a").unwrap();
-    serializer.serialize(&"b").unwrap();
-    let yaml = serializer.finish();
+    let mut writer = Writer::new(Vec::new(), DIRECTIVE);
+    writer.write(&"a").unwrap();
+    writer.write(&"b").unwrap();
+    let yaml = String::from_utf8(writer.into_inner()).unwrap();
     assert_eq!(yaml, "%YAML 1.2\n---\na\n...\n%YAML 1.2\n---\nb\n");
     let docs = deser_yaml::Deserializer::from_str(&yaml)
         .iter::<String>()

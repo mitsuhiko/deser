@@ -352,8 +352,8 @@ impl SerializerConfig {
 
     /// Always starts documents with `---`.
     ///
-    /// Documents of a [`Serializer`] after the first one always start with
-    /// `---`.
+    /// When writing a stream of documents (see [`deser::io`]), documents
+    /// after the first one always start with `---`.
     pub const fn document_start(mut self, yes: bool) -> SerializerConfig {
         self.document_start = yes;
         self
@@ -428,9 +428,9 @@ impl SerializerConfig {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut serializer = Serializer::new(self.clone());
-        serializer.serialize_with(value, setup)?;
-        Ok(serializer.finish())
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        self.document(&mut driver, 0)
     }
 }
 
@@ -461,79 +461,4 @@ impl SerializerConfig {
 /// ```
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
-}
-
-/// Serializes a stream of documents.
-///
-/// Every value is written as a document, documents after the first start
-/// with `---`.
-///
-/// ```
-/// use deser_yaml::{Serializer, SerializerConfig};
-///
-/// let mut serializer = Serializer::new(SerializerConfig::new());
-/// serializer.serialize(&"a").unwrap();
-/// serializer.serialize(&vec![1, 2]).unwrap();
-/// assert_eq!(serializer.finish(), "a\n---\n- 1\n- 2\n");
-/// ```
-#[derive(Debug)]
-pub struct Serializer {
-    config: SerializerConfig,
-    out: String,
-    documents: usize,
-}
-
-impl Serializer {
-    /// Creates a serializer with the given configuration.
-    pub fn new(config: SerializerConfig) -> Serializer {
-        Serializer {
-            config,
-            out: String::new(),
-            documents: 0,
-        }
-    }
-
-    /// Serializes a value as document.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
-        self.serialize_with(value, |_| {})
-    }
-
-    /// Serializes a value as document with a configured driver.
-    ///
-    /// See [`SerializerConfig::to_string_with`].  If the serialization fails,
-    /// nothing is written.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
-    where
-        F: FnOnce(&mut SerializeDriver<'_>),
-    {
-        let document = self.document_with(value, setup)?;
-        self.out.push_str(&document);
-        Ok(())
-    }
-
-    /// Serializes a value as the next document and returns it.
-    pub(crate) fn document_with<F>(
-        &mut self,
-        value: &dyn Serialize,
-        setup: F,
-    ) -> Result<String, Error>
-    where
-        F: FnOnce(&mut SerializeDriver<'_>),
-    {
-        let mut driver = SerializeDriver::new(value);
-        setup(&mut driver);
-        let document = self.config.document(&mut driver, self.documents)?;
-        self.documents += 1;
-        Ok(document)
-    }
-
-    /// Returns the written documents.
-    pub fn finish(self) -> String {
-        self.out
-    }
-
-    /// Returns the documents written so far.
-    pub fn output(&self) -> &str {
-        &self.out
-    }
 }
