@@ -385,3 +385,113 @@ fn test_replay_keeps_state() {
     assert_eq!(direct.depth, 2);
     assert_eq!(replayed, direct);
 }
+
+#[test]
+fn test_flattened_internally_tagged() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(tag = "type")]
+    enum Kind {
+        Page { number: u32, exact: Option<bool> },
+        Cursor { cursor: String },
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Query {
+        q: String,
+        #[deser(flatten)]
+        kind: Kind,
+    }
+
+    let map = |pairs: &[(&'static str, Event<'static>)]| {
+        let mut events = vec![Event::map_start()];
+        for (key, value) in pairs {
+            events.push((*key).into());
+            events.push(value.clone());
+        }
+        events.push(Event::MapEnd);
+        events
+    };
+    let expected = Query {
+        q: "x".into(),
+        kind: Kind::Page {
+            number: 3,
+            exact: None,
+        },
+    };
+
+    // the tag last, the other keys are buffered
+    assert_eq!(
+        deserialize::<Query>(map(&[
+            ("number", 3u64.into()),
+            ("q", "x".into()),
+            ("unknown", true.into()),
+            ("type", "Page".into()),
+        ]))
+        .unwrap(),
+        expected
+    );
+    // the tag first
+    assert_eq!(
+        deserialize::<Query>(map(&[
+            ("type", "Page".into()),
+            ("q", "x".into()),
+            ("number", 3u64.into()),
+            ("unknown", true.into()),
+        ]))
+        .unwrap(),
+        expected
+    );
+    assert_eq!(
+        deserialize::<Query>(map(&[
+            ("cursor", "abc".into()),
+            ("type", "Cursor".into()),
+            ("q", "x".into()),
+        ]))
+        .unwrap(),
+        Query {
+            q: "x".into(),
+            kind: Kind::Cursor {
+                cursor: "abc".into()
+            },
+        }
+    );
+
+    let err = deserialize::<Query>(map(&[("q", "x".into()), ("number", 3u64.into())])).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::MissingField);
+    assert_eq!(err.message(), "missing tag 'type'");
+    let err =
+        deserialize::<Query>(map(&[("type", "Page".into()), ("type", "Page".into())])).unwrap_err();
+    assert_eq!(err.message(), "duplicate tag 'type'");
+    let err = deserialize::<Query>(map(&[("q", "x".into()), ("type", "Page".into())])).unwrap_err();
+    assert_eq!(err.message(), "Missing field 'number'");
+
+    // flattened fields before the enum get their keys first
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Paginate {
+        limit: u32,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Both {
+        #[deser(flatten)]
+        paginate: Paginate,
+        #[deser(flatten)]
+        kind: Kind,
+    }
+
+    assert_eq!(
+        deserialize::<Both>(map(&[
+            ("limit", 10u64.into()),
+            ("number", 3u64.into()),
+            ("type", "Page".into()),
+        ]))
+        .unwrap(),
+        Both {
+            paginate: Paginate { limit: 10 },
+            kind: Kind::Page {
+                number: 3,
+                exact: None
+            },
+        }
+    );
+}

@@ -703,3 +703,31 @@ fn test_duplicate_keys() {
     // the error points at the value of the duplicate key
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
 }
+
+#[test]
+fn test_flattened_internally_tagged() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(tag = "type")]
+    enum Tagged {
+        Page { number: u32 },
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Query {
+        a: u32,
+        #[deser(flatten)]
+        tagged: Tagged,
+    }
+
+    assert_eq!(
+        from_str::<Query>(r#"{"a": 1, "number": 3, "type": "Page"}"#).unwrap(),
+        Query {
+            a: 1,
+            tagged: Tagged::Page { number: 3 },
+        }
+    );
+    // errors in buffered values point at their location
+    let err = from_str::<Query>(r#"{"number": "3", "a": 1, "type": "Page"}"#).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected u32");
+    assert_eq!(err.column(), Some(12));
+}

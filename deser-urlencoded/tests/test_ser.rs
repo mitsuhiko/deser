@@ -216,6 +216,28 @@ fn test_enums() {
     );
     assert_eq!(from_str::<Query>(&out).unwrap(), value);
 
+    // internally tagged enums can be flattened
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct Flattened {
+        q: String,
+        #[deser(flatten)]
+        tagged: Tagged,
+    }
+    let value = Flattened {
+        q: "x".into(),
+        tagged: Tagged::Page {
+            number: 3,
+            exact: true,
+        },
+    };
+    let out = to_string(&value).unwrap();
+    assert_eq!(out, "q=x&type=Page&number=3&exact=true");
+    assert_eq!(from_str::<Flattened>(&out).unwrap(), value);
+    assert_eq!(
+        from_str::<Flattened>("number=3&exact=on&q=x&type=Page").unwrap(),
+        value
+    );
+
     // the tag of internally tagged enums is a parameter
     let value = Tagged::Page {
         number: 3,

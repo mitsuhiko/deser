@@ -175,6 +175,9 @@
 //! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the
 //!   parent struct.  Note that flattening only works with structs (more specifically with string) keys.
 //!   This feature is enabled by [`value_for_key`](crate::de::Sink::value_for_key).
+//!   Internally tagged enums can be flattened too.  Until their tag was seen
+//!   they take all keys that the struct and the flattened fields before them
+//!   do not take, so they should come after other flattened fields.
 //! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See

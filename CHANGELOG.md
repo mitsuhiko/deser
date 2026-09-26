@@ -11,6 +11,9 @@ All notable changes to deser are documented here.
   `1e13` for `f32`) are written without exponent.  The output does not
   depend on the feature.
 - `deser-yaml` no longer allocates for every scalar it writes.
+- Internally tagged enums can be flattened into structs.  Until the tag
+  was seen, they take the keys that the struct and the flattened fields
+  before them do not take.
 - Added `deser-urlencoded` for query strings and form data
   (`application/x-www-form-urlencoded`).  Keys and values are lexical atoms,
   keys can be nested with brackets (`a[b][0]`, `a[]`) or dots, repeated keys

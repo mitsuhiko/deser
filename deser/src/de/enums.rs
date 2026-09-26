@@ -690,6 +690,36 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         Ok(self.pending.last_mut().unwrap().1.recorder())
     }
 
+    /// Takes the keys of a struct the enum is flattened into.
+    ///
+    /// Once the tag is known, keys are offered to the variant.  Until then
+    /// all keys offered are recorded (they are the keys that no field of the
+    /// struct took) and replayed into the variant, which ignores those it
+    /// does not know.
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        if key == self.tag {
+            if self.tag_value.is_some() {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    format!("duplicate tag '{}'", self.tag),
+                ));
+            }
+            return Ok(Some(self.tag_value.insert(Recording::new()).recorder()));
+        }
+        self.ensure_variant(state)?;
+        if let Some(variant) = &mut self.variant {
+            return variant.sink().value_for_key(key, state);
+        }
+        let mut recorded_key = Recording::new();
+        recorded_key.set_atom(&Atom::Str(Cow::Borrowed(key)), state);
+        self.pending.push((recorded_key, Recording::new()));
+        Ok(Some(self.pending.last_mut().unwrap().1.recorder()))
+    }
+
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.ensure_variant(state)?;
         if self.variant.is_none() {
