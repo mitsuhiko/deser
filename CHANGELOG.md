@@ -24,6 +24,11 @@ All notable changes to deser are documented here.
 - `deser-toml` reads and writes streams: `from_reader` and `to_writer`
   (also on the configurations) and the `Decoder` and `Encoder` for
   `deser::io`.  A stream holds a single document.
+- `deser-yaml` reads and writes streams: `from_reader` and `to_writer`
+  (also on the configurations) and the `Decoder` and `Encoder` for
+  `deser::io` which read and write streams of documents.  Documents are
+  split at document markers.  `Encoder::end_documents` ends every document
+  with `...` for streams that stay open.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:

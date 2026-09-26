@@ -95,12 +95,37 @@
 //! assert_eq!(docs, ["a", "b"]);
 //! ```
 //!
+//! # Streams
+//!
+//! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
+//! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
+//! or write streams of documents use the [`Decoder`] and [`Encoder`] with
+//! [`deser::io`] (or an adapter for an async runtime such as
+//! `deser-tokio`).  The reader only buffers until a document is complete:
+//!
+//! ```rust
+//! use deser::io::{Reader, Writer};
+//!
+//! let encoder = deser_yaml::Encoder::default().end_documents();
+//! let mut writer = Writer::new(Vec::new(), encoder);
+//! writer.write(&vec![1, 2]).unwrap();
+//! writer.write(&"done").unwrap();
+//! let output = writer.into_inner();
+//! assert_eq!(output, b"- 1\n- 2\n...\n---\ndone\n...\n");
+//!
+//! let mut reader = Reader::new(&output[..], deser_yaml::Decoder::default());
+//! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
+//! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("done"));
+//! assert_eq!(reader.read::<String>().unwrap(), None);
+//! ```
+//!
 //! # Features
 //!
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 mod de;
 mod emit;
 mod event;
+mod io;
 mod parser;
 mod quote;
 mod resolve;
@@ -110,6 +135,7 @@ pub mod style;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::io::{Decoder, Encoder, from_reader, to_writer};
 pub use self::resolve::Version;
 pub use self::ser::{
     FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,

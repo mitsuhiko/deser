@@ -4,6 +4,7 @@
 #[macro_use]
 mod common;
 mod test_de;
+mod test_io;
 mod test_locations;
 mod test_parser;
 mod test_schema;

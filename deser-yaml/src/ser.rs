@@ -454,6 +454,20 @@ impl Serializer {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
+        let document = self.document_with(value, setup)?;
+        self.out.push_str(&document);
+        Ok(())
+    }
+
+    /// Serializes a value as the next document and returns it.
+    pub(crate) fn document_with<F>(
+        &mut self,
+        value: &dyn Serialize,
+        setup: F,
+    ) -> Result<String, Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
         let mut out = String::new();
         if self.config.version_directive {
             out.push_str("%YAML 1.2\n---\n");
@@ -465,9 +479,8 @@ impl Serializer {
         setup(&mut driver);
         driver.drive(|event, state| emitter.event(event, state))?;
         let document = emitter.finish()?;
-        self.out.push_str(&document);
         self.documents += 1;
-        Ok(())
+        Ok(document)
     }
 
     /// Returns the written documents.
