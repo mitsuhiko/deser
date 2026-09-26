@@ -5,6 +5,7 @@
 mod common;
 mod test_bytes;
 mod test_de;
+mod test_io;
 mod test_locations;
 mod test_ser;
 mod test_well_known;

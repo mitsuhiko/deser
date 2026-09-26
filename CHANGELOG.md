@@ -21,6 +21,9 @@ All notable changes to deser are documented here.
   (also on the configurations) and the `Decoder` and `Encoder` for
   `deser::io` which read and write CBOR sequences.  Items are split by
   scanning their heads.
+- `deser-toml` reads and writes streams: `from_reader` and `to_writer`
+  (also on the configurations) and the `Decoder` and `Encoder` for
+  `deser::io`.  A stream holds a single document.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:

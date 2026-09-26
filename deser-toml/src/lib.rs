@@ -79,16 +79,26 @@
 //! [`deser::adapters::bytes`]).  See [`SerializerConfig`] for more
 //! information.
 //!
+//! # Streams
+//!
+//! Documents are read from a [`Read`](std::io::Read) with [`from_reader`]
+//! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
+//! [`Decoder`] and [`Encoder`] do the same with [`deser::io`] or an adapter
+//! for an async runtime (such as `deser-tokio`).  As TOML documents cannot
+//! be split, the whole document is read before it's parsed.
+//!
 //! # Features
 //!
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 mod datetime;
 mod de;
 mod document;
+mod io;
 mod parser;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+pub use self::io::{Decoder, Encoder, from_reader, to_writer};
 pub use self::ser::{SerializerConfig, to_string};
 /// Re-exported from [`deser::ext`] for convenience.
 pub use deser::ext::{Date, Datetime, Offset, Time};
