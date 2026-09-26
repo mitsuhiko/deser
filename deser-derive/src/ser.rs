@@ -348,7 +348,6 @@ fn derive_indexed_struct(
             }
             let name = &attrs.field().ident;
             let fieldstr = attrs.name(container_attrs);
-            let ty = &attrs.field().ty;
             let field_skip = attrs.skip_serializing_if().map(|path| {
                 quote! {
                     if #path(&self.#name) {
@@ -367,7 +366,7 @@ fn derive_indexed_struct(
             };
             quote! {
                 #index => {
-                    if !<#ty as __deser::Serialize>::__private_is_plain() {
+                    if !__deser::Serialize::__private_is_plain_value(&self.#name) {
                         return __deser::__derive::Ok(__index);
                     }
                     '__field: {

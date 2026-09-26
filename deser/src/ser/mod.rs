@@ -290,10 +290,24 @@ pub trait Serialize: Sync {
         false
     }
 
+    /// Returns `true` if this value is plain.
+    ///
+    /// This is `true` for all values of plain types and for some values
+    /// of other types, like empty sequences and maps or `None`.
+    #[doc(hidden)]
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool
+    where
+        Self: Sized,
+    {
+        Self::__private_is_plain()
+    }
+
     /// Emits the events of a plain value.
     ///
-    /// This is only invoked if [`__private_is_plain`](Self::__private_is_plain)
-    /// returns `true`.
+    /// This is only invoked if
+    /// [`__private_is_plain_value`](Self::__private_is_plain_value) returns
+    /// `true`.
     #[doc(hidden)]
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         let _ = sink;

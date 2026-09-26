@@ -378,6 +378,32 @@ fn test_drive_like_next() {
             last: None,
         });
     }
+    // empty containers and `None` of types that are not plain are plain
+    #[derive(deser::Serialize)]
+    struct Node {
+        id: u32,
+        children: Vec<Node>,
+        parent: Option<Box<Node>>,
+        map: BTreeMap<u32, Node>,
+        array: [Box<Node>; 0],
+    }
+    let leaf = || Node {
+        id: 2,
+        children: vec![],
+        parent: None,
+        map: BTreeMap::new(),
+        array: [],
+    };
+    check(&Node {
+        id: 1,
+        children: vec![leaf(), leaf()],
+        parent: Some(Box::new(leaf())),
+        map: BTreeMap::from([(1, leaf())]),
+        array: [],
+    });
+    check(&Vec::<Node>::new());
+    check(&vec![None::<Node>]);
+
     check(&vec![
         Optionals {
             a: None,

@@ -171,7 +171,7 @@ macro_rules! begin_plain_if {
         #[inline]
         fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
             let shape = self.container_shape();
-            if <Self as Serialize>::__private_is_plain() {
+            if Serialize::__private_is_plain_value(self) {
                 Ok(Begin::plain(self, shape))
             } else {
                 Ok(Begin::chunk(self.serialize(state)?, shape, false))
@@ -215,6 +215,11 @@ macro_rules! serialize_slice {
                 #[inline]
                 fn __private_is_plain() -> bool {
                     T::__private_is_plain()
+                }
+
+                #[inline]
+                fn __private_is_plain_value(&self) -> bool {
+                    T::__private_is_plain() || self.is_empty()
                 }
 
                 fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
@@ -282,13 +287,14 @@ fn emit_plain_slice<T: Serialize>(
     }
 }
 
-/// Emits the elements of a sequence if they are plain.
+/// Emits the elements of a sequence if they are plain (or if there are
+/// none).
 #[inline]
 fn emit_plain_elements<'a, T: Serialize + 'a>(
-    values: impl Iterator<Item = &'a T>,
+    values: impl ExactSizeIterator<Item = &'a T>,
     sink: &mut dyn PlainSink,
 ) -> Result<bool, Error> {
-    if !T::__private_is_plain() {
+    if !T::__private_is_plain() && values.len() > 0 {
         return Ok(false);
     }
     for value in values {
@@ -345,6 +351,11 @@ impl<T: Serialize> Serialize for VecDeque<T> {
     #[inline]
     fn __private_is_plain() -> bool {
         T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        T::__private_is_plain() || self.is_empty()
     }
 
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
@@ -486,6 +497,11 @@ where
         K::__private_is_plain() && V::__private_is_plain()
     }
 
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        (K::__private_is_plain() && V::__private_is_plain()) || self.is_empty()
+    }
+
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         sink.map_start(self.container_shape())?;
         for (key, value) in self {
@@ -543,6 +559,11 @@ where
         K::__private_is_plain() && V::__private_is_plain()
     }
 
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        (K::__private_is_plain() && V::__private_is_plain()) || self.is_empty()
+    }
+
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         sink.map_start(self.container_shape())?;
         for (key, value) in self {
@@ -590,6 +611,11 @@ where
         T::__private_is_plain()
     }
 
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        T::__private_is_plain() || self.is_empty()
+    }
+
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         sink.seq_start(self.container_shape())?;
         for value in self {
@@ -634,6 +660,11 @@ where
     #[inline]
     fn __private_is_plain() -> bool {
         T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        T::__private_is_plain() || self.is_empty()
     }
 
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
@@ -699,6 +730,14 @@ where
     #[inline]
     fn __private_is_plain() -> bool {
         T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        match self {
+            Some(value) => value.__private_is_plain_value(),
+            None => true,
+        }
     }
 
     #[inline]
@@ -843,6 +882,11 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
     #[inline]
     fn __private_is_plain() -> bool {
         T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(&self) -> bool {
+        T::__private_is_plain() || N == 0
     }
 
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
