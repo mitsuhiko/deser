@@ -1,9 +1,27 @@
-all: test
+# All targets run through the utility runner.  It shows a status line with a
+# spinner per task and only prints the output of tasks that fail.
+#
+# What can run in parallel:
+#
+# * Tasks in different cargo workspaces (the main one, `benchmark` and the
+#   ones in `compile-times`) have their own target directories and run fully
+#   in parallel.
+# * Tasks in the same workspace share the target directory.  Cargo only
+#   locks it while building, so their builds are serialized but running tests
+#   (for instance unit tests next to doctests, or the miri tests) overlaps.
+# * Benchmarks never run in parallel with anything as that would skew the
+#   numbers.
+RUN := ./scripts/utility-runner
 
-test:
-	@cargo test
+# In CI the runner streams the output where cargo's progress bar is noise.
+ifeq ($(CI),true)
+export CARGO_TERM_PROGRESS_WHEN := never
+endif
 
-MIRI_CRATES := deser deser-cbor deser-json deser-location deser-path deser-debug
+# ordered by how long they take, the slowest start first
+MIRI_CRATES := deser-cbor deser deser-json deser-path deser-location deser-debug
+# every miri run is single threaded
+MIRI_JOBS ?= 6
 
 # keep in sync with `rust-version` in Cargo.toml
 MSRV := 1.88
@@ -11,42 +29,54 @@ MSRV := 1.88
 # standalone workspaces that are not part of the main workspace
 EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version compile-times/miniserde-version
 
+all: test
+
+test:
+	@$(RUN) -j 2 \
+		"test" "cargo test --workspace --all-features --tests" \
+		"doctest" "cargo test --workspace --all-features --doc"
+
 miri-test:
-	@for crate in $(MIRI_CRATES); do \
-		(cd $$crate && MIRIFLAGS="-Zmiri-strict-provenance" cargo +nightly miri test --all-features) || exit 1; \
-		(cd $$crate && MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-tree-borrows" cargo +nightly miri test --all-features) || exit 1; \
-	done
+	@$(RUN) "miri:setup" "cargo +nightly miri setup"
+	@$(RUN) -j $(MIRI_JOBS) $(foreach crate,$(MIRI_CRATES), \
+		"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features" \
+		"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features")
 
 check:
-	@cargo check --all-features
+	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
 
+# uses its own target directory so it does not invalidate the regular builds
 msrv:
-	@rustup toolchain install $(MSRV) --profile minimal 2> /dev/null
-	@cargo +$(MSRV) test --workspace --all-features
+	@$(RUN) "msrv" "rustup toolchain install $(MSRV) --profile minimal && CARGO_TARGET_DIR=target/msrv cargo +$(MSRV) test --workspace --all-features"
 
 doc:
-	@cargo doc --all-features
+	@$(RUN) "doc" "cargo doc --all-features"
 
 format:
-	@rustup component add rustfmt 2> /dev/null
-	@cargo fmt --all
+	@rustup component add rustfmt > /dev/null 2>&1
+	@$(RUN) -j 5 \
+		"fmt" "cargo fmt --all" \
+		"fmt:benchmark" "cd benchmark && cargo fmt --all" \
+		$(foreach ws,$(EXTRA_WORKSPACES),"fmt:$(notdir $(ws))" "cd $(ws) && cargo fmt --all")
 
 format-check:
-	@rustup component add rustfmt 2> /dev/null
-	@cargo fmt --all -- --check
+	@rustup component add rustfmt > /dev/null 2>&1
+	@$(RUN) -j 5 \
+		"fmt" "cargo fmt --all -- --check" \
+		"fmt:benchmark" "cd benchmark && cargo fmt --all -- --check" \
+		$(foreach ws,$(EXTRA_WORKSPACES),"fmt:$(notdir $(ws))" "cd $(ws) && cargo fmt --all -- --check")
 
 lint:
-	@rustup component add clippy 2> /dev/null
-	@cargo clippy --workspace --all-targets --all-features -- -D warnings
-	@cd benchmark && RUSTC_BOOTSTRAP=1 cargo clippy --all-targets --all-features -- -D warnings
-	@for ws in $(EXTRA_WORKSPACES); do \
-		(cd $$ws && cargo clippy --all-targets -- -D warnings) || exit 1; \
-	done
+	@rustup component add clippy > /dev/null 2>&1
+	@$(RUN) -j 5 \
+		"clippy" "cargo clippy --workspace --all-targets --all-features -- -D warnings" \
+		"clippy:benchmark" "cd benchmark && RUSTC_BOOTSTRAP=1 cargo clippy --all-targets --all-features -- -D warnings" \
+		$(foreach ws,$(EXTRA_WORKSPACES),"clippy:$(notdir $(ws))" "cd $(ws) && cargo clippy --all-targets -- -D warnings")
 
 bench:
-	@cd benchmark; RUSTC_BOOTSTRAP=1 cargo bench
+	@$(RUN) "bench" --show-on-output "cd benchmark && RUSTC_BOOTSTRAP=1 cargo bench"
 
 bench-compile-times:
-	@cd compile-times/; ./bench.sh
+	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
 .PHONY: all test miri-test check msrv doc format format-check lint bench bench-compile-times

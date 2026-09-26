@@ -1,0 +1,595 @@
+#!/usr/bin/env python3
+"""
+Parallel task runner with pretty status display.
+
+Vendored from gondolin's scripts/run-parallel.  Changes: runs with a plain
+python3, avoids the status UI if stdout is not a terminal (only a line per
+finished task and the output of failed tasks is printed) and prefixes the
+lines of streamed output with the task label.
+
+Usage:
+    utility-runner [options] label1 [task-options] command1 label2 [task-options] command2 ...
+
+Global Options:
+    -j, --jobs N          Max parallel jobs (default: 4)
+    --fail-fast           Exit immediately when a task fails
+
+Per-Task Options (placed between label and command):
+    --show-on-output      Show output even if task succeeds (useful for linters with warnings)
+    --show-on-match=REGEX Show output if it matches REGEX (e.g., --show-on-match="warning|warn")
+
+Examples:
+    utility-runner "build" "make build" "test" "make test"
+    utility-runner "lint" --show-on-output "ast-grep scan ." "check" "tsc --noEmit"
+    utility-runner "eslint" --show-on-match="warning" "eslint ." "build" "make"
+
+Env:
+    UTILITY_RUNNER_NO_CAPTURE=1  Stream task output immediately (disables
+                                 status UI, the default if CI=true)
+"""
+
+import argparse
+import asyncio
+import os
+import pty
+import re
+import shutil
+import signal
+import sys
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+
+# ANSI escape codes
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+MAGENTA = "\033[35m"
+CYAN = "\033[36m"
+WHITE = "\033[37m"
+CLEAR_LINE = "\033[2K"
+CURSOR_UP = "\033[A"
+HIDE_CURSOR = "\033[?25l"
+SHOW_CURSOR = "\033[?25h"
+
+# Spinner frames (colorful)
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+SPINNER_COLOR = f"{DIM}{CYAN}"
+
+# Status icons
+ICON_SUCCESS = f"{GREEN}✓{RESET}"
+ICON_FAILURE = f"{RED}✗{RESET}"
+ICON_RUNNING = f"{YELLOW}●{RESET}"
+
+# Regex to strip ANSI codes and OSC sequences
+#
+# We see a lot of these in CI logs because commands are run under a PTY (so they
+# enable interactive progress UI). GitHub Actions logs are not a real terminal,
+# so escape sequences show up as garbage.
+#
+# Handles:
+# - CSI: ESC [ ... @-~  (including private modes with '?')
+# - OSC: ESC ] ... BEL or ST (ESC \\)
+# - 2-byte ESC control sequences like ESC M / ESC 7 / ESC 8
+# - charset sequences like ESC (0
+ANSI_PATTERN = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[@-Z\\-_]|\x1b[()][AB012]"
+)
+# Pattern to filter out OSC terminal query responses from output (e.g., OSC 10/11 color responses)
+OSC_RESPONSE_PATTERN = re.compile(r"\x1b\]1[0-9];[^\x07]*\x07")
+
+
+class TaskStatus(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
+@dataclass
+class Task:
+    label: str
+    command: str
+    show_on_output: bool = False
+    show_on_match: re.Pattern | None = None
+    status: TaskStatus = TaskStatus.PENDING
+    last_line: str = ""
+    exit_code: int | None = None
+    started_at: float | None = None
+    duration_s: float | None = None
+    output: list[str] = field(default_factory=list)
+    # incomplete line of streamed output
+    pending: str = ""
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return ANSI_PATTERN.sub("", text)
+
+
+def get_terminal_width() -> int:
+    """Get current terminal width, with fallback."""
+    try:
+        return shutil.get_terminal_size().columns
+    except Exception:
+        return 80
+
+
+def truncate_line(text: str, max_width: int) -> str:
+    """Truncate text to fit within max_width, adding ellipsis if needed."""
+    if len(text) <= max_width:
+        return text
+    if max_width <= 3:
+        return text[:max_width]
+    return text[: max_width - 1] + "…"
+
+
+def format_duration(seconds: float) -> str:
+    """Format a duration in a compact, human-readable form."""
+    if seconds < 1:
+        ms = int(round(seconds * 1000))
+        return f"{ms}ms"
+
+    total_seconds = int(round(seconds))
+    minutes, sec = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    if hours > 0:
+        return f"{hours}h{minutes}m"
+    if minutes > 0:
+        return f"{minutes}m{sec}s"
+    return f"{sec}s"
+
+
+class ParallelRunner:
+    def __init__(self, tasks: list[Task], max_jobs: int = 4, fail_fast: bool = False):
+        self.tasks = tasks
+        self.max_jobs = max_jobs
+        self.fail_fast = fail_fast
+        self.no_capture = (
+            os.getenv("UTILITY_RUNNER_NO_CAPTURE") == "1" or os.getenv("CI") == "true"
+        )
+        self.is_tty = sys.stdout.isatty()
+        # the status UI with spinners needs a terminal
+        self.interactive = not self.no_capture and self.is_tty
+        # streamed output is prefixed with the label if there are many tasks
+        self.prefix_output = len(tasks) > 1
+        self.spinner_index = 0
+        self.lines_printed = 0
+        self.first_failure_code: int | None = None
+        self.should_stop = False
+        self._display_lock = asyncio.Lock()
+
+    def _get_spinner(self) -> str:
+        """Get current spinner character with color."""
+        frame = SPINNER_FRAMES[self.spinner_index % len(SPINNER_FRAMES)]
+        return f"{SPINNER_COLOR}{frame}{RESET}"
+
+    def _format_task_line(self, task: Task) -> str:
+        """Format a single task status line."""
+        term_width = get_terminal_width()
+
+        # Status icon
+        if task.status == TaskStatus.PENDING:
+            icon = f"{DIM}○{RESET}"
+        elif task.status == TaskStatus.RUNNING:
+            icon = self._get_spinner()
+        elif task.status == TaskStatus.SUCCESS:
+            icon = ICON_SUCCESS
+        elif task.status == TaskStatus.FAILURE:
+            icon = ICON_FAILURE
+        else:
+            icon = f"{DIM}○{RESET}"
+
+        # Label
+        label = task.label
+
+        # Calculate available space for the last line
+        # Format: "icon label: last_line"
+        prefix = f"{icon} {BOLD}{label}{RESET}"
+        prefix_visible_len = 1 + 1 + len(label)  # icon + space + label
+
+        if task.status == TaskStatus.SUCCESS:
+            if task.duration_s is not None:
+                return f"{prefix} {DIM}took {format_duration(task.duration_s)}{RESET}"
+            return prefix
+        elif task.status == TaskStatus.FAILURE:
+            if task.duration_s is not None:
+                return f"{prefix} {DIM}failed after {format_duration(task.duration_s)} (exit {task.exit_code}){RESET}"
+            return f"{prefix} {DIM}(exit {task.exit_code}){RESET}"
+        elif task.status == TaskStatus.PENDING:
+            if self.should_stop:
+                return f"{prefix} {DIM}(skipped){RESET}"
+            return prefix
+        elif task.last_line:
+            # Clean and truncate the last line
+            clean_line = strip_ansi(task.last_line).strip()
+            # Remove any control characters
+            clean_line = "".join(c for c in clean_line if c.isprintable() or c == " ")
+
+            # Only show if there's actual content after stripping
+            if clean_line:
+                available = term_width - prefix_visible_len - 3  # 3 for ": " and some padding
+                if available > 0:
+                    truncated = truncate_line(clean_line, available)
+                    return f"{prefix} {DIM}{truncated}{RESET}"
+
+        return prefix
+
+    def _print(self, text: str = ""):
+        """Print text, without ANSI codes if stdout is not a terminal."""
+        if not self.is_tty:
+            text = strip_ansi(text)
+        sys.stdout.write(text + "\n")
+        sys.stdout.flush()
+
+    def _stream(self, task: Task, text: str, final: bool = False):
+        """Write streamed output line by line, prefixed with the label."""
+        pending = task.pending + text
+        # a \r at the end might be the start of a \r\n in the next chunk
+        carry = "\r" if pending.endswith("\r") and not final else ""
+        if carry:
+            pending = pending[:-1]
+        pending = pending.replace("\r\n", "\n").replace("\r", "\n")
+        *lines, pending = pending.split("\n")
+        if final and pending:
+            lines.append(pending)
+            pending = ""
+        task.pending = pending + carry
+        prefix = f"{task.label} | " if self.prefix_output else ""
+        for line in lines:
+            sys.stdout.write(f"{prefix}{line}\n")
+        sys.stdout.flush()
+
+    async def _render_display(self):
+        """Render the current status display."""
+        if not self.interactive:
+            return
+        async with self._display_lock:
+            # Move cursor up to overwrite previous output
+            if self.lines_printed > 0:
+                sys.stdout.write(f"\033[{self.lines_printed}A")
+
+            for task in self.tasks:
+                line = self._format_task_line(task)
+                sys.stdout.write(f"{CLEAR_LINE}{line}\n")
+
+            self.lines_printed = len(self.tasks)
+            sys.stdout.flush()
+
+    async def _run_task(self, task: Task, semaphore: asyncio.Semaphore):
+        """Run a single task with PTY for color support."""
+        async with semaphore:
+            if self.should_stop:
+                # Task was skipped due to fail-fast
+                return
+
+            task.status = TaskStatus.RUNNING
+            task.started_at = time.monotonic()
+
+            # Create a pseudo-terminal
+            master_fd, slave_fd = pty.openpty()
+
+            try:
+                # Set terminal size on the PTY
+                import fcntl
+                import struct
+                import termios
+
+                term_size = shutil.get_terminal_size()
+                winsize = struct.pack("HHHH", term_size.lines, term_size.columns, 0, 0)
+                fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+            except Exception:
+                pass
+
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    task.command,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    close_fds=True,
+                )
+
+                os.close(slave_fd)
+                slave_fd = -1
+
+                # Read output from master_fd
+                loop = asyncio.get_event_loop()
+
+                def read_output():
+                    try:
+                        while True:
+                            try:
+                                data = os.read(master_fd, 4096)
+                                if not data:
+                                    break
+                                return data
+                            except OSError:
+                                break
+                    except Exception:
+                        pass
+                    return b""
+
+                # Set master_fd to non-blocking
+                import fcntl
+
+                flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+                fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+                buffer = ""
+                while True:
+                    # Check if process has finished
+                    try:
+                        # Use wait with timeout=0 to poll without blocking
+                        await asyncio.wait_for(
+                            asyncio.shield(process.wait()), timeout=0.01
+                        )
+                        # Process finished, drain remaining output
+                        try:
+                            while True:
+                                data = os.read(master_fd, 4096)
+                                if not data:
+                                    break
+                                text = data.decode("utf-8", errors="replace")
+                                # Filter out terminal query responses
+                                text = OSC_RESPONSE_PATTERN.sub("", text)
+                                if self.no_capture:
+                                    text = strip_ansi(text)
+                                task.output.append(text)
+                                buffer += text
+                                if self.no_capture:
+                                    self._stream(task, text)
+                        except (BlockingIOError, OSError):
+                            pass
+                        break
+                    except asyncio.TimeoutError:
+                        pass  # Process still running
+
+                    try:
+                        data = os.read(master_fd, 4096)
+                        if data:
+                            text = data.decode("utf-8", errors="replace")
+                            # Filter out terminal query responses (e.g., OSC 10/11 color queries)
+                            text = OSC_RESPONSE_PATTERN.sub("", text)
+                            if self.no_capture:
+                                text = strip_ansi(text)
+                            task.output.append(text)
+                            buffer += text
+                            if self.no_capture:
+                                self._stream(task, text)
+
+                            # Extract last meaningful line
+                            lines = buffer.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                            # Find last non-empty line
+                            for line in reversed(lines):
+                                stripped = strip_ansi(line).strip()
+                                if stripped:
+                                    task.last_line = line
+                                    break
+
+                            # Keep only last part of buffer to avoid memory issues
+                            if len(buffer) > 8192:
+                                buffer = buffer[-4096:]
+                    except BlockingIOError:
+                        await asyncio.sleep(0.05)
+                    except OSError:
+                        break
+
+                # Ensure we have the final exit code
+                if process.returncode is None:
+                    await process.wait()
+                task.exit_code = process.returncode
+                if task.started_at is not None:
+                    task.duration_s = time.monotonic() - task.started_at
+
+                if task.exit_code == 0:
+                    task.status = TaskStatus.SUCCESS
+                else:
+                    task.status = TaskStatus.FAILURE
+                    if self.first_failure_code is None:
+                        self.first_failure_code = task.exit_code
+                    if self.fail_fast:
+                        self.should_stop = True
+
+                if self.no_capture:
+                    self._stream(task, "", final=True)
+                if not self.interactive:
+                    # without the status UI, report tasks as they finish
+                    self._print(self._format_task_line(task))
+
+            finally:
+                if slave_fd != -1:
+                    try:
+                        os.close(slave_fd)
+                    except OSError:
+                        pass
+                try:
+                    os.close(master_fd)
+                except OSError:
+                    pass
+
+    async def _spinner_loop(self):
+        """Update spinner animation."""
+        if not self.interactive:
+            return
+        while not self.should_stop and any(
+            t.status in (TaskStatus.PENDING, TaskStatus.RUNNING) for t in self.tasks
+        ):
+            self.spinner_index += 1
+            await self._render_display()
+            await asyncio.sleep(0.08)
+
+    async def run(self) -> int:
+        """Run all tasks and return exit code."""
+        # Hide cursor during execution
+        if self.interactive:
+            sys.stdout.write(HIDE_CURSOR)
+            sys.stdout.flush()
+
+        try:
+            semaphore = asyncio.Semaphore(self.max_jobs)
+
+            # Start all tasks
+            task_coros = [self._run_task(task, semaphore) for task in self.tasks]
+
+            # Run spinner and tasks concurrently
+            spinner_task = (
+                asyncio.create_task(self._spinner_loop()) if self.interactive else None
+            )
+
+            await asyncio.gather(*task_coros)
+
+            self.should_stop = True
+            if spinner_task is not None:
+                await spinner_task
+
+            # Final render
+            await self._render_display()
+
+            if self.no_capture:
+                return (
+                    self.first_failure_code if self.first_failure_code is not None else 0
+                )
+
+            # Collect tasks that need their output shown
+            tasks_to_show: list[tuple[Task, str, str]] = []  # (task, header_color, reason)
+
+            for task in self.tasks:
+                output = "".join(task.output)
+                if task.status == TaskStatus.FAILURE:
+                    tasks_to_show.append((task, RED, f"exit {task.exit_code}"))
+                elif task.status == TaskStatus.SUCCESS and output.strip():
+                    # Check show_on_output
+                    if task.show_on_output:
+                        tasks_to_show.append((task, YELLOW, "output"))
+                    # Check show_on_match
+                    elif task.show_on_match and task.show_on_match.search(output):
+                        tasks_to_show.append((task, YELLOW, "matched"))
+
+            if tasks_to_show:
+                self._print()  # Empty line before output
+                for task, color, reason in tasks_to_show:
+                    self._print(f"{color}{BOLD}━━━ {task.label} ({reason}) ━━━{RESET}")
+                    output = "".join(task.output)
+                    # Print output, preserving colors on terminals
+                    if output.strip():
+                        self._print(output.rstrip())
+                    self._print()
+
+            return self.first_failure_code if self.first_failure_code is not None else 0
+
+        finally:
+            # Show cursor again
+            if self.interactive:
+                sys.stdout.write(SHOW_CURSOR)
+                sys.stdout.flush()
+
+
+def parse_args() -> tuple[argparse.Namespace, list[Task]]:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Run multiple commands in parallel with pretty output",
+        usage="%(prog)s [options] label1 [--show-on-output] [--show-on-match=REGEX] command1 ...",
+    )
+    parser.add_argument(
+        "-j", "--jobs", type=int, default=4, help="Max parallel jobs (default: 4)"
+    )
+    parser.add_argument(
+        "--fail-fast", action="store_true", help="Stop on first failure"
+    )
+
+    # Parse known args to separate global options from task definitions
+    args, remaining = parser.parse_known_args()
+
+    if len(remaining) == 0:
+        parser.error("No tasks specified")
+
+    # Parse tasks with per-task options
+    # Format: label [--show-on-output] [--show-on-match=REGEX] command
+    tasks = []
+    i = 0
+    while i < len(remaining):
+        if i >= len(remaining):
+            break
+
+        label = remaining[i]
+        i += 1
+
+        # Parse per-task options
+        show_on_output = False
+        show_on_match: re.Pattern | None = None
+
+        while i < len(remaining):
+            arg = remaining[i]
+            if arg == "--show-on-output":
+                show_on_output = True
+                i += 1
+            elif arg.startswith("--show-on-match="):
+                pattern = arg[len("--show-on-match="):]
+                try:
+                    show_on_match = re.compile(pattern)
+                except re.error as e:
+                    parser.error(f"Invalid regex for --show-on-match: {e}")
+                i += 1
+            elif arg.startswith("--show-on-match"):
+                # Handle --show-on-match REGEX (space-separated)
+                i += 1
+                if i >= len(remaining):
+                    parser.error("--show-on-match requires a REGEX argument")
+                pattern = remaining[i]
+                try:
+                    show_on_match = re.compile(pattern)
+                except re.error as e:
+                    parser.error(f"Invalid regex for --show-on-match: {e}")
+                i += 1
+            else:
+                break
+
+        if i >= len(remaining):
+            parser.error(f"Missing command for task '{label}'")
+
+        command = remaining[i]
+        i += 1
+
+        tasks.append(Task(
+            label=label,
+            command=command,
+            show_on_output=show_on_output,
+            show_on_match=show_on_match,
+        ))
+
+    if len(tasks) == 0:
+        parser.error("No tasks specified")
+
+    return args, tasks
+
+
+async def async_main():
+    args, tasks = parse_args()
+
+    runner = ParallelRunner(tasks=tasks, max_jobs=args.jobs, fail_fast=args.fail_fast)
+
+    # Handle SIGINT gracefully
+    def handle_sigint(sig, frame):
+        runner.should_stop = True
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.flush()
+        sys.exit(130)
+
+    signal.signal(signal.SIGINT, handle_sigint)
+
+    return await runner.run()
+
+
+def main():
+    exit_code = asyncio.run(async_main())
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()

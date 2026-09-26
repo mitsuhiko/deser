@@ -398,8 +398,11 @@ fn test_from_slice() {
         from_slice("{\"\u{e4}\": 1}".as_bytes()).unwrap();
     assert_eq!(map["\u{e4}"], 1);
 
-    // invalid UTF-8 in strings of all lengths, with and without escapes
-    for len in 0..40 {
+    // invalid UTF-8 in strings of all lengths, with and without escapes.
+    // Under miri only the lengths which cover every offset in the 8 and 16
+    // byte blocks of the scanner are checked.
+    let max_len = if cfg!(miri) { 18 } else { 40 };
+    for len in 0..max_len {
         let s = "a".repeat(len);
         for bad in [&b"\xff"[..], b"\xc3", b"\xe6\xb0", b"\xed\xa0\x80", b"\x80"] {
             for (prefix, suffix) in [("", ""), ("\\n", ""), ("", "\\n")] {
@@ -548,7 +551,9 @@ fn test_exact_number_text() {
     ] {
         check(text);
     }
-    for _ in 0..100_000 {
+    // miri is too slow for many iterations
+    let iterations = if cfg!(miri) { 200 } else { 100_000 };
+    for _ in 0..iterations {
         let mut text = String::new();
         if next(2) == 0 {
             text.push('-');
