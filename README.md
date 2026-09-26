@@ -208,6 +208,9 @@ included benchmark.
 * [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): reads
   and writes values of all formats with tokio (for instance JSON Lines or
   CBOR sequences on sockets)
+* [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value): a
+  dynamic value type which retains extension values, tags, formatting hints
+  and source locations
 * [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): adapters
   to serialize and deserialize types with their serde implementations
   (`#[deser(as = Serde)]`)

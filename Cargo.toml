@@ -8,6 +8,7 @@ members = [
   "deser-location",
   "deser-path",
   "deser-serde",
+  "deser-value",
   "deser-yaml",
   "deser-toml",
   "deser-tokio",

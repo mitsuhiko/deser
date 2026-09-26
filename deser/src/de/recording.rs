@@ -413,7 +413,9 @@ impl<'a> RecordedValue<'a> {
                 ));
             }
         };
-        state.extensions_mut().restore_event_data(snapshot);
+        state
+            .extensions_mut()
+            .restore_event_data(snapshot.event_data());
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {
             Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),

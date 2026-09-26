@@ -51,6 +51,19 @@ All notable changes to deser are documented here.
     with adapters.
   - Types that are not thread safe (such as `Rc` or `RefCell`) can no
     longer be serialized or deserialized.
+- Added the `deser-value` crate with a dynamic `Value` type.  Maps can have
+  any value as key and keep the order of their entries, extension values
+  keep their type, and maps and sequences keep their `Order`.  Event data
+  (such as CBOR and YAML tags or formatting hints) and, if the format tracks
+  locations, the span of every value are kept in its `Meta` data, so types
+  deserialized from a value report errors at the original location.  Values
+  are converted with `to_value` and `from_value` (which can borrow strings
+  from the value) and built with the `value!` macro.  Values are processed
+  without recursion, including dropping, cloning, comparing and formatting.
+- Added `EventData` which holds event data detached from its event.
+  `State::capture_event_data` captures the data of the current event and
+  `State::attach_event_data` attaches it to another event.  Event data now
+  has to be `Sync` (`State::event_mut` requires it).
 - Removed `Descriptor`.  The information it carried moved to where it
   belongs:
   - Bytes carry the format for formats without native bytes as

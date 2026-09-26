@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::event::ContainerShape;
-use crate::extensions::Extensions;
+use crate::extensions::{EventData, Extensions};
 
 /// The input range of events without one.
 pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
@@ -157,6 +157,10 @@ impl State {
     /// default value is attached.  See [`event`](Self::event) for more
     /// information.
     ///
+    /// Event data has to be [`Send`] and [`Sync`] so that it can be captured
+    /// (see [`capture_event_data`](Self::capture_event_data)) without
+    /// preventing the captured data from being shared between threads.
+    ///
     /// Detached values are retained and reused for later events.  They are
     /// reset with [`clone_from`](Clone::clone_from) from the default value,
     /// which means that types which forward `clone_from` to their fields
@@ -175,6 +179,25 @@ impl State {
     #[inline]
     pub fn event_mut<T: Default + Clone + fmt::Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         self.extensions.event_mut()
+    }
+
+    /// Captures the data attached to the current event.
+    ///
+    /// The captured data can be attached to another event later with
+    /// [`attach_event_data`](Self::attach_event_data).  This allows types
+    /// which hold values outside of a serialization or deserialization to
+    /// retain data like tags (see [`EventData`]).
+    pub fn capture_event_data(&self) -> EventData {
+        self.extensions.capture_event_data()
+    }
+
+    /// Attaches captured data to the current event.
+    ///
+    /// Data of the same types that is already attached to the event is
+    /// replaced, other data is retained.  See
+    /// [`event`](Self::event) for when event data is attached and detached.
+    pub fn attach_event_data(&mut self, data: &EventData) {
+        self.extensions.attach_event_data(data);
     }
 
     /// Returns `true` if any data is attached to the current event.

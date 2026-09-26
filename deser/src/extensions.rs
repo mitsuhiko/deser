@@ -27,6 +27,7 @@ impl Debug for TypeKey {
 trait DebugAny: Any + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
 impl<T: Any + Debug + Send + Sync + 'static> DebugAny for T {
@@ -37,7 +38,17 @@ impl<T: Any + Debug + Send + Sync + 'static> DebugAny for T {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
 }
+
+/// The values of event data are also `Sync` so that captured event data
+/// can be shared between threads (see [`EventData`]).
+trait EventAny: DebugAny + Sync {}
+
+impl<T: DebugAny + Sync> EventAny for T {}
 
 /// Functions to clone values of a type behind a `dyn DebugAny`.
 #[derive(Copy, Clone)]
@@ -61,14 +72,36 @@ impl CloneFns {
     }
 }
 
+/// Functions to clone event data behind a `dyn EventAny`.
+#[derive(Copy, Clone)]
+struct EventFns {
+    clone: fn(&dyn EventAny) -> Box<dyn EventAny>,
+    clone_into: fn(&mut dyn EventAny, &dyn EventAny),
+}
+
+impl EventFns {
+    fn of<T: Clone + Debug + Send + Sync + 'static>() -> EventFns {
+        EventFns {
+            clone: |value| Box::new(value.as_any().downcast_ref::<T>().unwrap().clone()),
+            clone_into: |target, value| {
+                target
+                    .as_any_mut()
+                    .downcast_mut::<T>()
+                    .unwrap()
+                    .clone_from(value.as_any().downcast_ref::<T>().unwrap())
+            },
+        }
+    }
+}
+
 /// A value attached to the current event.
 struct EventEntry {
     key: TypeKey,
     // values are retained when they are deactivated so that their memory
     // can be reused for the next event.
     active: bool,
-    value: Box<dyn DebugAny>,
-    fns: CloneFns,
+    value: Box<dyn EventAny>,
+    fns: EventFns,
 }
 
 /// Typed values stored in a state.
@@ -163,7 +196,7 @@ impl Extensions {
             return None;
         }
         // SAFETY: values are always stored with the key of their type
-        Some(unsafe { &*(&*entry.value as *const dyn DebugAny).cast::<T>() })
+        Some(unsafe { &*(&*entry.value as *const dyn EventAny).cast::<T>() })
     }
 
     /// Returns the data of a type attached to the current event mutably.
@@ -177,7 +210,7 @@ impl Extensions {
         };
         let entry = &mut self.events[index];
         // SAFETY: values are always stored with the key of their type
-        let value = unsafe { &mut *(&mut *entry.value as *mut dyn DebugAny).cast::<T>() };
+        let value = unsafe { &mut *(&mut *entry.value as *mut dyn EventAny).cast::<T>() };
         if !entry.active {
             // the value of a previous event is reset in place which retains
             // the memory of collections
@@ -194,7 +227,7 @@ impl Extensions {
             key: TypeKey::of::<T>(),
             active: false,
             value: Box::new(T::default()),
-            fns: CloneFns::of::<T>(),
+            fns: EventFns::of::<T>(),
         });
         self.events.len() - 1
     }
@@ -228,14 +261,7 @@ impl Extensions {
                 })
                 .collect();
         }
-        if self.has_event_data {
-            snapshot.events = self
-                .events
-                .iter()
-                .filter(|entry| entry.active)
-                .map(|entry| (entry.key, (entry.fns.clone)(&*entry.value), entry.fns))
-                .collect();
-        }
+        snapshot.events = self.capture_event_data();
         snapshot
     }
 
@@ -250,26 +276,51 @@ impl Extensions {
                 None => self.entries.push((*key, (fns.clone)(&**value))),
             }
         }
-        self.restore_event_data(snapshot);
+        self.restore_event_data(&snapshot.events);
     }
 
-    /// Restores only the event data from a snapshot.
-    ///
-    /// The event data is replaced by the event data of the snapshot.
-    pub fn restore_event_data(&mut self, snapshot: &Snapshot) {
+    /// Captures the data attached to the current event.
+    pub fn capture_event_data(&self) -> EventData {
+        if !self.has_event_data {
+            return EventData::default();
+        }
+        EventData {
+            entries: self
+                .events
+                .iter()
+                .filter(|entry| entry.active)
+                .map(|entry| EventDataEntry {
+                    key: entry.key,
+                    value: (entry.fns.clone)(&*entry.value),
+                    fns: entry.fns,
+                })
+                .collect(),
+        }
+    }
+
+    /// Replaces the data attached to the current event.
+    pub fn restore_event_data(&mut self, data: &EventData) {
         self.clear_event_data();
-        for (key, value, fns) in snapshot.events.iter() {
-            match self.event_position(key.0) {
+        self.attach_event_data(data);
+    }
+
+    /// Attaches data to the current event.
+    ///
+    /// Data of the same types that is already attached is replaced, other
+    /// data is retained.
+    pub fn attach_event_data(&mut self, data: &EventData) {
+        for entry in data.entries.iter() {
+            match self.event_position(entry.key.0) {
                 Some(index) => {
-                    let entry = &mut self.events[index];
-                    (fns.clone_into)(&mut *entry.value, &**value);
-                    entry.active = true;
+                    let target = &mut self.events[index];
+                    (entry.fns.clone_into)(&mut *target.value, &*entry.value);
+                    target.active = true;
                 }
                 None => self.events.push(EventEntry {
-                    key: *key,
+                    key: entry.key,
                     active: true,
-                    value: (fns.clone)(&**value),
-                    fns: *fns,
+                    value: (entry.fns.clone)(&*entry.value),
+                    fns: entry.fns,
                 }),
             }
             self.has_event_data = true;
@@ -281,22 +332,25 @@ impl Extensions {
 #[derive(Default)]
 pub struct Snapshot {
     replayable: Vec<(TypeKey, Box<dyn DebugAny>, CloneFns)>,
-    events: Vec<(TypeKey, Box<dyn DebugAny>, CloneFns)>,
+    events: EventData,
+}
+
+impl Snapshot {
+    /// Returns the captured event data.
+    pub fn event_data(&self) -> &EventData {
+        &self.events
+    }
 }
 
 impl Clone for Snapshot {
     fn clone(&self) -> Snapshot {
-        fn clone_values(
-            values: &[(TypeKey, Box<dyn DebugAny>, CloneFns)],
-        ) -> Vec<(TypeKey, Box<dyn DebugAny>, CloneFns)> {
-            values
+        Snapshot {
+            replayable: self
+                .replayable
                 .iter()
                 .map(|(key, value, fns)| (*key, (fns.clone)(&**value), *fns))
-                .collect()
-        }
-        Snapshot {
-            replayable: clone_values(&self.replayable),
-            events: clone_values(&self.events),
+                .collect(),
+            events: self.events.clone(),
         }
     }
 }
@@ -304,12 +358,148 @@ impl Clone for Snapshot {
 impl Debug for Snapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map()
+            .entries(self.replayable.iter().map(|(key, value, _)| (key, value)))
             .entries(
-                self.replayable
+                self.events
+                    .entries
                     .iter()
-                    .chain(self.events.iter())
-                    .map(|(key, value, _)| (key, value)),
+                    .map(|entry| (entry.key, &entry.value)),
             )
+            .finish()
+    }
+}
+
+/// Data attached to an event, detached from the event.
+///
+/// Formats and values attach data to individual events (see
+/// [`State::event`](crate::State::event)), for instance tags or formatting
+/// hints.  This captures such data so that it can be attached to an event
+/// again later.  This is used by types which hold on to values outside of a
+/// serialization or deserialization, such as the values of the
+/// `deser-value` crate, so that data like CBOR tags survives.
+///
+/// ```
+/// use deser::de::DeserializeDriver;
+/// use deser::EventData;
+///
+/// #[derive(Debug, Default, Clone, PartialEq)]
+/// struct Tag(u64);
+///
+/// let mut data = EventData::new();
+/// data.insert(Tag(42));
+/// assert_eq!(data.get::<Tag>(), Some(&Tag(42)));
+///
+/// let mut out = None::<bool>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// driver.state_mut().attach_event_data(&data);
+/// assert_eq!(driver.state().event::<Tag>(), Some(&Tag(42)));
+/// assert_eq!(driver.state().capture_event_data().get::<Tag>(), Some(&Tag(42)));
+/// ```
+///
+/// Event data has to be [`Send`] and [`Sync`], which means that captured
+/// event data is too.
+#[derive(Default)]
+pub struct EventData {
+    // Invariant: the value of an entry is always of the type of its key and
+    // there is at most one entry per key.
+    entries: Vec<EventDataEntry>,
+}
+
+struct EventDataEntry {
+    key: TypeKey,
+    value: Box<dyn EventAny>,
+    fns: EventFns,
+}
+
+impl EventData {
+    /// Creates empty event data.
+    pub const fn new() -> EventData {
+        EventData {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Returns `true` if no data is held.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn position(&self, key: TypeId) -> Option<usize> {
+        self.entries.iter().position(|entry| entry.key.0 == key)
+    }
+
+    /// Returns the data of a type.
+    pub fn get<T: Debug + Send + 'static>(&self) -> Option<&T> {
+        let entry = &self.entries[self.position(TypeId::of::<T>())?];
+        // SAFETY: values are always stored with the key of their type
+        Some(unsafe { &*(&*entry.value as *const dyn EventAny).cast::<T>() })
+    }
+
+    /// Returns the data of a type mutably.
+    ///
+    /// If there is no data of this type, the default value is inserted.
+    pub fn get_mut<T: Default + Clone + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
+        let index = match self.position(TypeId::of::<T>()) {
+            Some(index) => index,
+            None => {
+                self.entries.push(EventDataEntry {
+                    key: TypeKey::of::<T>(),
+                    value: Box::new(T::default()),
+                    fns: EventFns::of::<T>(),
+                });
+                self.entries.len() - 1
+            }
+        };
+        let entry = &mut self.entries[index];
+        // SAFETY: values are always stored with the key of their type
+        unsafe { &mut *(&mut *entry.value as *mut dyn EventAny).cast::<T>() }
+    }
+
+    /// Inserts data, replacing data of the same type.
+    pub fn insert<T: Clone + Debug + Send + Sync + 'static>(&mut self, value: T) {
+        let entry = EventDataEntry {
+            key: TypeKey::of::<T>(),
+            value: Box::new(value),
+            fns: EventFns::of::<T>(),
+        };
+        match self.position(TypeId::of::<T>()) {
+            Some(index) => self.entries[index] = entry,
+            None => self.entries.push(entry),
+        }
+    }
+
+    /// Removes the data of a type and returns it.
+    pub fn remove<T: Debug + Send + 'static>(&mut self) -> Option<T> {
+        let entry = self.entries.remove(self.position(TypeId::of::<T>())?);
+        entry
+            .value
+            .into_any()
+            .downcast::<T>()
+            .ok()
+            .map(|value| *value)
+    }
+}
+
+impl Clone for EventData {
+    fn clone(&self) -> EventData {
+        EventData {
+            entries: self
+                .entries
+                .iter()
+                .map(|entry| EventDataEntry {
+                    key: entry.key,
+                    value: (entry.fns.clone)(&*entry.value),
+                    fns: entry.fns,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl Debug for EventData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.entries.iter().map(|entry| (entry.key, &entry.value)))
             .finish()
     }
 }
