@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
-use crate::ser::{Chunk, SerializeHandle};
+use crate::ser::{Chunk, Serialize, SerializeHandle};
 
 /// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
 pub struct Begin<'a> {
@@ -24,6 +24,9 @@ pub(crate) enum BeginKind<'a> {
     Chunk(Chunk<'a>),
     Struct(&'a dyn IndexedStruct),
     Seq(&'a dyn IndexedSeq),
+    /// A plain value (see [`PlainSink`]), the driver either emits it or
+    /// serializes it into a chunk.
+    Plain(&'a dyn Serialize),
 }
 
 impl<'a> Begin<'a> {
@@ -45,6 +48,21 @@ impl<'a> Begin<'a> {
     pub fn indexed_struct(value: &'a dyn IndexedStruct, shape: ContainerShape) -> Begin<'a> {
         Begin {
             kind: BeginKind::Struct(value),
+            shape,
+            needs_finish: false,
+        }
+    }
+
+    /// Begins a plain value (see [`PlainSink`]).
+    ///
+    /// The driver emits the value with
+    /// [`__private_emit_plain`](Serialize::__private_emit_plain) or if it
+    /// needs to drive every value on its own, with
+    /// [`serialize`](Serialize::serialize).  `finish` is not invoked.
+    #[inline]
+    pub fn plain(value: &'a dyn Serialize, shape: ContainerShape) -> Begin<'a> {
+        Begin {
+            kind: BeginKind::Plain(value),
             shape,
             needs_finish: false,
         }
@@ -80,6 +98,18 @@ pub enum StructField<'a> {
 /// [`StructField::End`] is returned.
 pub trait IndexedStruct: Sync {
     fn field(&self, index: usize, state: &mut State) -> Result<StructField<'_>, Error>;
+
+    /// Emits the fields from `index` on as long as their values are plain
+    /// (see [`PlainSink`]).
+    ///
+    /// Returns the index of the first field that was not emitted or
+    /// [`FIELDS_END`] if all fields were emitted.  Skipped fields count as
+    /// emitted.
+    #[inline]
+    fn emit_plain_fields(&self, index: usize, sink: &mut dyn PlainSink) -> Result<usize, Error> {
+        let _ = sink;
+        Ok(index)
+    }
 }
 
 /// A struct emitter for an [`IndexedStruct`].
@@ -135,6 +165,10 @@ pub trait IndexedSeq: Sync {
     }
 }
 
+/// Returned by [`IndexedStruct::emit_plain_fields`] if all fields were
+/// emitted.
+pub const FIELDS_END: usize = usize::MAX;
+
 /// Receives the events of plain values.
 ///
 /// Plain values are atoms and sequences of plain values which do not use
@@ -148,6 +182,12 @@ pub trait PlainSink {
     fn atom(&mut self, atom: Atom<'_>) -> Result<(), Error>;
     fn seq_start(&mut self, shape: ContainerShape) -> Result<(), Error>;
     fn seq_end(&mut self) -> Result<(), Error>;
+    fn map_start(&mut self, shape: ContainerShape) -> Result<(), Error>;
+    fn map_end(&mut self) -> Result<(), Error>;
+    /// Marks the next value as map key.
+    fn key(&mut self);
+    /// Emits the key of a struct field.
+    fn field(&mut self, name: &str) -> Result<(), Error>;
 }
 
 /// Implements the plain methods of `Serialize` for a value that serializes

@@ -164,6 +164,22 @@ where
     }
 }
 
+/// Implements `__private_begin` for containers which begin as plain value
+/// if their contents are plain (see `PlainSink`).
+macro_rules! begin_plain_if {
+    () => {
+        #[inline]
+        fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
+            let shape = self.container_shape();
+            if <Self as Serialize>::__private_is_plain() {
+                Ok(Begin::plain(self, shape))
+            } else {
+                Ok(Begin::chunk(self.serialize(state)?, shape, false))
+            }
+        }
+    };
+}
+
 /// Implements `Serialize` for the containers of slices.
 ///
 /// `[T]` itself does not implement `Serialize` as the containers provide
@@ -431,7 +447,7 @@ where
     K: Serialize,
     V: Serialize,
 {
-    begin_without_finish!();
+    begin_plain_if!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -464,6 +480,21 @@ where
 
         Ok(Chunk::Map(Box::new(Emitter(self.iter(), None))))
     }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        K::__private_is_plain() && V::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        sink.map_start(self.container_shape())?;
+        for (key, value) in self {
+            sink.key();
+            key.__private_emit_plain(sink)?;
+            value.__private_emit_plain(sink)?;
+        }
+        sink.map_end()
+    }
 }
 
 impl<K, V, H> Serialize for HashMap<K, V, H>
@@ -473,7 +504,7 @@ where
     H: Sync,
     H: BuildHasher,
 {
-    begin_without_finish!();
+    begin_plain_if!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -506,13 +537,28 @@ where
 
         Ok(Chunk::Map(Box::new(Emitter(self.iter(), None))))
     }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        K::__private_is_plain() && V::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        sink.map_start(self.container_shape())?;
+        for (key, value) in self {
+            sink.key();
+            key.__private_emit_plain(sink)?;
+            value.__private_emit_plain(sink)?;
+        }
+        sink.map_end()
+    }
 }
 
 impl<T> Serialize for BTreeSet<T>
 where
     T: Serialize,
 {
-    begin_without_finish!();
+    begin_plain_if!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -538,6 +584,19 @@ where
 
         Ok(Chunk::Seq(Box::new(Emitter(self.iter()))))
     }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        sink.seq_start(self.container_shape())?;
+        for value in self {
+            value.__private_emit_plain(sink)?;
+        }
+        sink.seq_end()
+    }
 }
 
 impl<T, H> Serialize for HashSet<T, H>
@@ -545,7 +604,7 @@ where
     T: Serialize,
     H: BuildHasher + Sync,
 {
-    begin_without_finish!();
+    begin_plain_if!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -570,6 +629,19 @@ where
         }
 
         Ok(Chunk::Seq(Box::new(Emitter(self.iter()))))
+    }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        sink.seq_start(self.container_shape())?;
+        for value in self {
+            value.__private_emit_plain(sink)?;
+        }
+        sink.seq_end()
     }
 }
 

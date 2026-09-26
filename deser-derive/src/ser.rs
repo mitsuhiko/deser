@@ -335,6 +335,52 @@ fn derive_indexed_struct(
         })
         .collect::<Vec<_>>();
 
+    // fields with plain values (without adapters) are emitted directly, the
+    // skips are the same as in `field`.
+    let plain_arms = attrs
+        .iter()
+        .enumerate()
+        .map(|(index, attrs)| {
+            if attrs.adapters().ser().is_some() {
+                return quote! {
+                    #index => return __deser::__derive::Ok(__index),
+                };
+            }
+            let name = &attrs.field().ident;
+            let fieldstr = attrs.name(container_attrs);
+            let ty = &attrs.field().ty;
+            let field_skip = attrs.skip_serializing_if().map(|path| {
+                quote! {
+                    if #path(&self.#name) {
+                        break '__field;
+                    }
+                }
+            });
+            let optional_skip = if container_attrs.skip_serializing_optionals() {
+                Some(quote! {
+                    if __deser::ser::Serialize::is_optional(&self.#name) {
+                        break '__field;
+                    }
+                })
+            } else {
+                None
+            };
+            quote! {
+                #index => {
+                    if !<#ty as __deser::Serialize>::__private_is_plain() {
+                        return __deser::__derive::Ok(__index);
+                    }
+                    '__field: {
+                        #field_skip
+                        #optional_skip
+                        __sink.field(#fieldstr)?;
+                        __deser::Serialize::__private_emit_plain(&self.#name, __sink)?;
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
     let bounded_where_clause = struct_where_clause(input, container_attrs, attrs);
 
     // the number of fields is only known if none can be skipped
@@ -384,6 +430,22 @@ fn derive_indexed_struct(
                         )*
                         _ => __deser::__derive::StructField::End,
                     })
+                }
+
+                fn emit_plain_fields(
+                    &self,
+                    mut __index: usize,
+                    __sink: &mut dyn __deser::__derive::PlainSink,
+                ) -> __deser::__derive::Result<usize> {
+                    loop {
+                        match __index {
+                            #(
+                                #plain_arms
+                            )*
+                            _ => return __deser::__derive::Ok(__deser::__derive::FIELDS_END),
+                        }
+                        __index += 1;
+                    }
                 }
             }
 

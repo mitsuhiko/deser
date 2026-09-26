@@ -154,7 +154,9 @@ pub mod __derive {
         AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
         InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,
     };
-    pub use crate::ser::begin::{Begin, IndexedStruct, IndexedStructEmitter, StructField};
+    pub use crate::ser::begin::{
+        Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,
+    };
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
     pub use crate::ser::flatten::FlattenedStruct;
 

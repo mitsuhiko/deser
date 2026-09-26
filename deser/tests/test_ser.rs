@@ -322,4 +322,72 @@ fn test_drive_like_next() {
         ((1u32, 2u32), vec![3u32]),
         ((4, 5), vec![]),
     ]));
+    check(&vec![std::collections::HashMap::from([(
+        "a".to_string(),
+        1u8,
+    )])]);
+    check(&std::collections::BTreeSet::from([(1u8, 'x')]));
+    check(&std::collections::HashSet::from([1u64]));
+
+    // structs emit runs of plain fields
+    fn is_zero(value: &u32) -> bool {
+        *value == 0
+    }
+
+    #[derive(deser::Serialize)]
+    struct Inner {
+        a: u32,
+        b: Vec<(f32, f32)>,
+    }
+
+    #[derive(deser::Serialize)]
+    struct Outer {
+        id: u64,
+        name: String,
+        #[deser(skip_serializing_if = is_zero)]
+        skipped: u32,
+        inner: Inner,
+        inners: Vec<Inner>,
+        #[deser(as = deser::adapters::bytes::BytesFallback<deser::adapters::bytes::Hex>)]
+        bytes: Vec<u8>,
+        tags: BTreeMap<String, Vec<u32>>,
+        last: Option<i8>,
+    }
+
+    #[derive(deser::Serialize)]
+    #[deser(skip_serializing_optionals)]
+    struct Optionals {
+        a: Option<u32>,
+        b: Option<u32>,
+        c: (u32, Option<()>),
+    }
+
+    let inner = || Inner {
+        a: 1,
+        b: vec![(0.5, 1.5)],
+    };
+    for skipped in [0, 1] {
+        check(&Outer {
+            id: 1,
+            name: "x".into(),
+            skipped,
+            inner: inner(),
+            inners: vec![inner(), inner()],
+            bytes: vec![1, 2],
+            tags: BTreeMap::from([("t".into(), vec![1])]),
+            last: None,
+        });
+    }
+    check(&vec![
+        Optionals {
+            a: None,
+            b: Some(1),
+            c: (1, None),
+        },
+        Optionals {
+            a: Some(2),
+            b: None,
+            c: (2, Some(())),
+        },
+    ]);
 }
