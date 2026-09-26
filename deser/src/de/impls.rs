@@ -1,5 +1,7 @@
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
+use std::collections::{
+    BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque, btree_map, hash_map,
+};
 use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -8,6 +10,7 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same};
+use crate::de::DuplicateKeys;
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
@@ -564,7 +567,11 @@ fn cautious_capacity<T>(state: &State) -> usize {
 
 pub(crate) trait MapTarget<K, V>: Default + Send {
     const UNORDERED: bool;
-    fn insert_entry(&mut self, key: K, value: V);
+    /// Inserts an entry.
+    ///
+    /// If the key exists, the value is only replaced if `replace` is set.
+    /// Returns `true` if the key existed.
+    fn insert_entry(&mut self, key: K, value: V, replace: bool) -> bool;
     fn reserve_entries(&mut self, additional: usize) {
         let _ = additional;
     }
@@ -574,8 +581,19 @@ impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
     const UNORDERED: bool = false;
 
     #[inline]
-    fn insert_entry(&mut self, key: K, value: V) {
-        self.insert(key, value);
+    fn insert_entry(&mut self, key: K, value: V, replace: bool) -> bool {
+        match self.entry(key) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(value);
+                false
+            }
+            btree_map::Entry::Occupied(mut entry) => {
+                if replace {
+                    entry.insert(value);
+                }
+                true
+            }
+        }
     }
 }
 
@@ -585,8 +603,19 @@ impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K,
     const UNORDERED: bool = true;
 
     #[inline]
-    fn insert_entry(&mut self, key: K, value: V) {
-        self.insert(key, value);
+    fn insert_entry(&mut self, key: K, value: V, replace: bool) -> bool {
+        match self.entry(key) {
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(value);
+                false
+            }
+            hash_map::Entry::Occupied(mut entry) => {
+                if replace {
+                    entry.insert(value);
+                }
+                true
+            }
+        }
     }
 
     #[inline]
@@ -609,14 +638,21 @@ where
         map: M,
         key: Option<K>,
         value: Option<V>,
+        duplicate_keys: DuplicateKeys,
         _marker: PhantomData<fn() -> (KA, VA)>,
     }
 
     impl<'a, M: MapTarget<K, V>, K, V, KA, VA> MapSink<'a, M, K, V, KA, VA> {
-        fn flush(&mut self) {
+        #[inline]
+        fn flush(&mut self) -> Result<(), Error> {
             if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
-                self.map.insert_entry(key, value);
+                let replace = self.duplicate_keys != DuplicateKeys::First;
+                if self.map.insert_entry(key, value, replace) {
+                    self.duplicate_keys
+                        .resolve(|| "duplicate key in map".into())?;
+                }
             }
+            Ok(())
         }
     }
 
@@ -634,11 +670,12 @@ where
 
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
             self.map.reserve_entries(cautious_capacity::<(K, V)>(state));
+            self.duplicate_keys = state.duplicate_keys();
             Ok(())
         }
 
         fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.flush();
+            self.flush()?;
             Ok(KA::deserialize_into_as(&mut self.key))
         }
 
@@ -647,7 +684,7 @@ where
         }
 
         fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.flush();
+            self.flush()?;
             KA::__private_atom_into_as(&mut self.key, atom, state)
         }
 
@@ -656,7 +693,7 @@ where
         }
 
         fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-            self.flush();
+            self.flush()?;
             KA::__private_borrowed_atom_into_as(&mut self.key, atom, state)
         }
 
@@ -665,7 +702,7 @@ where
         }
 
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-            self.flush();
+            self.flush()?;
             *self.slot = Some(take(&mut self.map));
             Ok(())
         }
@@ -676,6 +713,7 @@ where
         map: M::default(),
         key: None,
         value: None,
+        duplicate_keys: DuplicateKeys::Last,
         _marker: PhantomData,
     })
 }

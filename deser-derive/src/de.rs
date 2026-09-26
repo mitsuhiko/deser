@@ -134,52 +134,44 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut key_dispatch = Vec::new();
     let mut key_atom_dispatch = Vec::new();
     let mut key_borrowed_atom_dispatch = Vec::new();
-    let matcher = attrs
-        .iter()
-        .zip(sink_fieldname.iter())
-        .enumerate()
-        .filter_map(|(index, (x, fieldname))| {
-            if x.flatten() {
-                return None;
-            }
+    for (index, (x, fieldname)) in attrs.iter().zip(sink_fieldname.iter()).enumerate() {
+        if x.flatten() {
+            continue;
+        }
 
-            let name = x.name(&container_attrs).to_string();
-            if first_duplicate_name.is_none() && seen_names.contains(&name) {
-                first_duplicate_name = Some((name.clone(), x.field()));
-            }
-            seen_names.insert(name.clone());
+        let name = x.name(&container_attrs).to_string();
+        if first_duplicate_name.is_none() && seen_names.contains(&name) {
+            first_duplicate_name = Some((name.clone(), x.field()));
+        }
+        seen_names.insert(name.clone());
 
-            let mut rv = quote! { #name };
-            for alias in x.aliases() {
-                let alias = alias.clone();
-                if first_duplicate_name.is_none() && seen_names.contains(&alias) {
-                    first_duplicate_name = Some((alias.clone(), x.field()));
-                }
-                seen_names.insert(alias.clone());
-                rv = quote! { #rv | #alias };
+        let mut rv = quote! { #name };
+        for alias in x.aliases() {
+            let alias = alias.clone();
+            if first_duplicate_name.is_none() && seen_names.contains(&alias) {
+                first_duplicate_name = Some((alias.clone(), x.field()));
             }
-            let ty = &x.field().ty;
-            let sink = deserialize_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
-            let atom = atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
-            let borrowed_atom =
-                borrowed_atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
-            key_matcher.push(quote! {
-                #rv => __Key::Field(#index),
-            });
-            key_dispatch.push(quote! {
-                __Key::Field(#index) => #sink,
-            });
-            key_atom_dispatch.push(quote! {
-                __Key::Field(#index) => #atom,
-            });
-            key_borrowed_atom_dispatch.push(quote! {
-                __Key::Field(#index) => #borrowed_atom,
-            });
-            Some(quote! {
-                #rv => return __deser::__derive::Ok(__deser::__derive::Some(#sink)),
-            })
-        })
-        .collect::<Vec<_>>();
+            seen_names.insert(alias.clone());
+            rv = quote! { #rv | #alias };
+        }
+        let ty = &x.field().ty;
+        let sink = deserialize_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+        let atom = atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+        let borrowed_atom =
+            borrowed_atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+        key_matcher.push(quote! {
+            #rv => __Key::Field(#index),
+        });
+        key_dispatch.push(quote! {
+            __Key::Field(#index) => #sink,
+        });
+        key_atom_dispatch.push(quote! {
+            __Key::Field(#index) => #atom,
+        });
+        key_borrowed_atom_dispatch.push(quote! {
+            __Key::Field(#index) => #borrowed_atom,
+        });
+    }
 
     if let Some((first_duplicate_name, field)) = first_duplicate_name {
         return Err(syn::Error::new_spanned(
@@ -300,6 +292,20 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         None
     };
 
+    // The names of the fields by index for errors about duplicate fields and
+    // a bit per field to detect them.
+    let field_names = attrs
+        .iter()
+        .map(|x| {
+            if x.flatten() {
+                String::new()
+            } else {
+                x.name(&container_attrs).to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+    let seen_words = attrs.len().div_ceil(64);
+
     // Keys are resolved to a field index directly in the key sink so that
     // deserializing a struct does not need to allocate a string per key.  Only
     // if flattened fields exist are unknown keys retained so that they can be
@@ -383,9 +389,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
 
+            const __FIELDS: &[&__deser::__derive::str] = &[#(#field_names),*];
+
             struct __Sink #wrapper_impl_generics #where_clause {
                 slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
                 key: __KeySink,
+                seen: [u64; #seen_words],
                 #(
                     #sink_fieldname: #sink_fieldty,
                 )*
@@ -400,6 +409,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
                         key: __KeySink { key: __Key::Unknown },
+                        seen: [0; #seen_words],
                         #(
                             #sink_fieldname: #sink_defaults,
                         )*
@@ -430,7 +440,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn next_value(&mut self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
-                    __deser::__derive::Ok(match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                    let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    if let __Key::Field(__index) = __key
+                        && __deser::__derive::mark_seen(&mut self.seen, __index)
+                        && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
+                    {
+                        return __deser::__derive::Ok(__deser::de::SinkHandle::null());
+                    }
+                    __deser::__derive::Ok(match __key {
                         #(
                             #key_dispatch
                         )*
@@ -450,7 +467,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                    let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    if let __Key::Field(__index) = __key
+                        && __deser::__derive::mark_seen(&mut self.seen, __index)
+                        && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
+                    {
+                        return __deser::__derive::Ok(());
+                    }
+                    match __key {
                         #(
                             #key_atom_dispatch
                         )*
@@ -471,7 +495,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    match __deser::__derive::replace(&mut self.key.key, __Key::Unknown) {
+                    let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    if let __Key::Field(__index) = __key
+                        && __deser::__derive::mark_seen(&mut self.seen, __index)
+                        && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
+                    {
+                        return __deser::__derive::Ok(());
+                    }
+                    match __key {
                         #(
                             #key_borrowed_atom_dispatch
                         )*
@@ -484,18 +515,31 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn value_for_key(&mut self, __key: &str, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>>
                 {
-                    match __key {
+                    let __field = match __key {
                         #(
-                            #matcher
+                            #key_matcher
                         )*
-                        __other => {
-                            #(
-                                if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__other, __state)? {
-                                    return __deser::__derive::Ok(__deser::__derive::Some(__sink));
-                                }
-                            )*
+                        _ => __Key::Unknown,
+                    };
+                    if let __Key::Field(__index) = __field {
+                        if __deser::__derive::mark_seen(&mut self.seen, __index)
+                            && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
+                        {
+                            return __deser::__derive::Ok(__deser::__derive::Some(__deser::de::SinkHandle::null()));
                         }
+                        return __deser::__derive::Ok(__deser::__derive::Some(match __field {
+                            #(
+                                #key_dispatch
+                            )*
+                            #[allow(unreachable_patterns)]
+                            _ => __deser::de::SinkHandle::null(),
+                        }));
                     }
+                    #(
+                        if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__key, __state)? {
+                            return __deser::__derive::Ok(__deser::__derive::Some(__sink));
+                        }
+                    )*
                     __deser::__derive::Ok(__deser::__derive::None)
                 }
 

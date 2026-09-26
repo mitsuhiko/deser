@@ -150,6 +150,7 @@ pub mod __derive {
     pub use crate::de::atoms::{
         atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle,
     };
+    pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
         InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,

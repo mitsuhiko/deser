@@ -219,6 +219,7 @@ use crate::event::Atom;
 pub(crate) mod atoms;
 mod deserializer;
 mod driver;
+pub(crate) mod duplicates;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
 mod ignore;
@@ -233,6 +234,7 @@ mod sinkbox;
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
+pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;

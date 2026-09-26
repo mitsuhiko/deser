@@ -10,6 +10,7 @@ mod test_custom_map;
 mod test_de;
 mod test_de_derive;
 mod test_derive_unscoped;
+mod test_duplicates;
 mod test_enums;
 mod test_event_data;
 mod test_ext;

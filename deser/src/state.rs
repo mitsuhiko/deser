@@ -3,6 +3,7 @@ use std::any::TypeId;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::de::DuplicateKeys;
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::extensions::{EventData, Extensions};
@@ -48,6 +49,7 @@ pub struct State {
     // the shape of the container that is currently started
     pub(crate) container_shape: ContainerShape,
     pub(crate) is_map_key: bool,
+    duplicate_keys: DuplicateKeys,
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
@@ -84,6 +86,7 @@ impl State {
             depth: 0,
             container_shape: ContainerShape::new(),
             is_map_key: false,
+            duplicate_keys: DuplicateKeys::Last,
             input_range: NO_RANGE,
             source: None,
             error_context: Vec::new(),
@@ -99,6 +102,7 @@ impl State {
                 depth: 0,
                 container_shape: ContainerShape::new(),
                 is_map_key: false,
+                duplicate_keys: DuplicateKeys::Last,
                 input_range: NO_RANGE,
                 source: None,
                 error_context: Vec::new(),
@@ -266,6 +270,21 @@ impl State {
     /// keys of structs) is serialized and emitted.
     pub fn is_map_key(&self) -> bool {
         self.is_map_key
+    }
+
+    /// Returns what happens if a key is given more than once.
+    ///
+    /// See [`DuplicateKeys`] for more information.
+    #[inline]
+    pub fn duplicate_keys(&self) -> DuplicateKeys {
+        self.duplicate_keys
+    }
+
+    /// Sets what happens if a key is given more than once.
+    ///
+    /// See [`DuplicateKeys`] for more information.
+    pub fn set_duplicate_keys(&mut self, policy: DuplicateKeys) {
+        self.duplicate_keys = policy;
     }
 
     /// Returns the byte range in the input of the current event.

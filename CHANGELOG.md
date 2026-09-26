@@ -33,6 +33,13 @@ All notable changes to deser are documented here.
   for maps built by hand (for instance `deser_value::value!` with string
   keys).  `deser-serde` parses lexical atoms instead of strings in key
   position.
+- Added `deser::de::DuplicateKeys` which decides what happens if a key is
+  given more than once for a single value (a field of a derived struct or
+  an entry of a map): the last value wins (the default, like before), the
+  first one wins or it's an error.  It's set on the state
+  (`State::set_duplicate_keys`) and also applies to buffered values.
+  `MapSkipError` skips duplicate entries if they are an error.  Values of
+  fields that are containers (like `Vec`) are replaced, not merged.
 - Added `Atom::F32` for single precision floats.  `f32` values are no
   longer widened to `f64` when serialized, so the text formats write them
   with the shortest text for their precision (`0.1f32` as `0.1` instead of

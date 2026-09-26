@@ -11,7 +11,7 @@ use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::mapped::MappedSink;
-use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
+use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Recording, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
@@ -696,6 +696,9 @@ where
         map: M,
         // the key of the current entry, `None` if it failed
         key: Option<K>,
+        // if the values of duplicate keys replace earlier ones.  With
+        // `DuplicateKeys::Error` duplicate entries fail and are skipped.
+        replace: bool,
         _marker: PhantomData<fn() -> (V, KA, VA)>,
     }
 
@@ -706,7 +709,8 @@ where
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
-        fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+        fn map(&mut self, state: &mut State) -> Result<(), Error> {
+            self.replace = state.duplicate_keys() == DuplicateKeys::Last;
             Ok(())
         }
 
@@ -732,8 +736,9 @@ where
                 None => return Ok(SinkHandle::null()),
             };
             let map = &mut self.map;
+            let replace = self.replace;
             Ok(try_deserialize::<V, VA>(move |value| {
-                map.insert_entry(key, value)
+                map.insert_entry(key, value, replace);
             }))
         }
 
@@ -741,7 +746,7 @@ where
             if let Some(key) = self.key.take()
                 && let Some(value) = try_atom::<V, VA>(atom, state)
             {
-                self.map.insert_entry(key, value);
+                self.map.insert_entry(key, value, self.replace);
             }
             Ok(())
         }
@@ -750,7 +755,7 @@ where
             if let Some(key) = self.key.take()
                 && let Some(value) = try_borrowed_atom::<V, VA>(atom, state)
             {
-                self.map.insert_entry(key, value);
+                self.map.insert_entry(key, value, self.replace);
             }
             Ok(())
         }
@@ -765,6 +770,7 @@ where
         slot: out,
         map: M::default(),
         key: None,
+        replace: true,
         _marker: PhantomData,
     })
 }

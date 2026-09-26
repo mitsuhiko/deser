@@ -681,3 +681,25 @@ fn test_lexical_keys() {
     let err = from_str::<BTreeMap<u16, u16>>(r#"{"http": 80}"#).unwrap_err();
     assert_eq!(err.message(), "invalid value \"http\", expected u16");
 }
+
+#[test]
+fn test_duplicate_keys() {
+    use deser::de::DuplicateKeys;
+    use deser_json::Deserializer;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Config {
+        port: u16,
+    }
+
+    let json = r#"{"port": 80, "port": 81}"#;
+    assert_eq!(from_str::<Config>(json).unwrap(), Config { port: 81 });
+    let err = Deserializer::from_str(json)
+        .deserialize_with::<Config, _>(|driver| {
+            driver.state_mut().set_duplicate_keys(DuplicateKeys::Error)
+        })
+        .unwrap_err();
+    assert_eq!(err.message(), "duplicate field 'port'");
+    // the error points at the value of the duplicate key
+    assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
+}
