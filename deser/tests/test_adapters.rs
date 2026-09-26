@@ -11,6 +11,19 @@ use deser::de::{DeserializeDriver, DeserializeOwned, Recording, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
     {
@@ -26,7 +39,7 @@ fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(without_len(event.to_static()));
     }
     events
 }
@@ -35,7 +48,7 @@ fn serialize_drive(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     SerializeDriver::new(value)
         .drive(|event, _| {
-            events.push(event.to_static());
+            events.push(without_len(event.to_static()));
             Ok(())
         })
         .unwrap();
@@ -891,7 +904,10 @@ fn test_recording_raw_value() {
     let mut tags = Vec::new();
     SerializeDriver::new(&recording)
         .drive(|event, state| {
-            tags.push((event.to_static(), state.event::<Tag>().cloned()));
+            tags.push((
+                without_len(event.to_static()),
+                state.event::<Tag>().cloned(),
+            ));
             Ok(())
         })
         .unwrap();

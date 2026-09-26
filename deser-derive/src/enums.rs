@@ -921,6 +921,31 @@ pub fn derive_serialize(
         });
     }
 
+    // the number of entries of the maps is fixed for these representations
+    let container_shape = match repr {
+        Repr::External => quote! { __deser::ContainerShape::new().with_len(1) },
+        Repr::Adjacent { .. } => {
+            let arms = variants.iter().map(|info| {
+                let var_ident = info.ident;
+                let pattern = match info.shape {
+                    Shape::Unit => quote! { #ident::#var_ident },
+                    Shape::Tuple => quote! { #ident::#var_ident(..) },
+                    Shape::Named => quote! { #ident::#var_ident { .. } },
+                };
+                let len: usize = if matches!(info.content, Content::Unit) {
+                    1
+                } else {
+                    2
+                };
+                quote! { #pattern => #len, }
+            });
+            quote! {
+                __deser::ContainerShape::new().with_len(match *self { #(#arms)* })
+            }
+        }
+        _ => quote! { __deser::ContainerShape::new() },
+    };
+
     let mut arms = Vec::new();
     for info in &variants {
         let name = &info.name;
@@ -1012,6 +1037,10 @@ pub fn derive_serialize(
                     match *self {
                         #(#describe_arms)*
                     }
+                }
+
+                fn container_shape(&self) -> __deser::ContainerShape {
+                    #container_shape
                 }
 
                 fn serialize(

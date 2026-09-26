@@ -389,7 +389,10 @@ fn test_serialize() {
 
     let mut driver = SerializeDriver::new(&m);
     while let Some((event, _, _)) = driver.next().unwrap() {
-        v.push(format!("{:?}", event));
+        v.push(format!(
+            "{:?}",
+            crate::event::without_len(event.to_static())
+        ));
     }
 
     assert_eq!(

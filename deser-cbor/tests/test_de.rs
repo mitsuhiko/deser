@@ -528,3 +528,14 @@ fn value_error_offsets() {
     let ranges: Vec<_> = out.unwrap().into_iter().map(|x| x.0).collect();
     assert_eq!(ranges, [1..2, 2..6]);
 }
+
+#[test]
+fn test_declared_lengths_are_not_trusted() {
+    use std::collections::HashMap;
+    // an array and a map that claim billions of items but are empty: the
+    // preallocation is capped, deserialization fails at the end of input.
+    assert!(deser_cbor::from_slice::<Vec<u64>>(&common::hex("9b00000000ffffffff")).is_err());
+    assert!(
+        deser_cbor::from_slice::<HashMap<String, u64>>(&common::hex("bb00000000ffffffff")).is_err()
+    );
+}

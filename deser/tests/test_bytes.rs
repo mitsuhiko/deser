@@ -7,6 +7,19 @@ use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     deserialize_with(events, None)
 }
@@ -44,7 +57,7 @@ fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)
                 }
                 event => (event, None),
             };
-            events.push((event.to_static(), format));
+            events.push((without_len(event.to_static()), format));
             Ok(())
         })
         .unwrap();

@@ -2,6 +2,19 @@ use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize, SerializeDriver};
 use deser::{Atom, Deserialize, Error, Event, State, make_slot_wrapper};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 /// Event data used by the tests.
 #[derive(Debug, Default, Clone, PartialEq)]
 struct Marker(u32);
@@ -108,14 +121,20 @@ fn test_event_data_when_serializing() {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&values);
     while let Some((event, _, state)) = driver.next().unwrap() {
-        events.push((event.to_static(), state.event::<Marker>().map(|x| x.0)));
+        events.push((
+            without_len(event.to_static()),
+            state.event::<Marker>().map(|x| x.0),
+        ));
     }
     assert_eq!(events, expected);
 
     let mut events = Vec::new();
     SerializeDriver::new(&values)
         .drive(|event, state| {
-            events.push((event.to_static(), state.event::<Marker>().map(|x| x.0)));
+            events.push((
+                without_len(event.to_static()),
+                state.event::<Marker>().map(|x| x.0),
+            ));
             Ok(())
         })
         .unwrap();

@@ -4,11 +4,24 @@ use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, SerializeDriver};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, make_slot_wrapper};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(without_len(event.to_static()));
     }
     events
 }

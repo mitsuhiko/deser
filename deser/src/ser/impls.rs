@@ -139,8 +139,12 @@ where
                 ContainerShape::new(),
                 false,
             ),
-            None => Begin::indexed_seq(self, ContainerShape::new()),
+            None => Begin::indexed_seq(self, self.container_shape()),
         })
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -164,8 +168,12 @@ where
                 ContainerShape::new(),
                 false,
             ),
-            None => Begin::indexed_seq(self, ContainerShape::new()),
+            None => Begin::indexed_seq(self, self.container_shape()),
         })
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -212,7 +220,9 @@ where
     __begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Sorted)
+        ContainerShape::new()
+            .with_order(Order::Sorted)
+            .with_len(self.len())
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -251,7 +261,9 @@ where
     __begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Arbitrary)
+        ContainerShape::new()
+            .with_order(Order::Arbitrary)
+            .with_len(self.len())
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -288,7 +300,9 @@ where
     __begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Sorted)
+        ContainerShape::new()
+            .with_order(Order::Sorted)
+            .with_len(self.len())
     }
 
     fn describe(&self, d: &mut dyn Describe) {
@@ -318,7 +332,9 @@ where
     __begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Arbitrary)
+        ContainerShape::new()
+            .with_order(Order::Arbitrary)
+            .with_len(self.len())
     }
 
     fn describe(&self, d: &mut dyn Describe) {
@@ -393,13 +409,24 @@ where
     }
 }
 
+/// Counts as one, used to count repetitions.
+macro_rules! count_one {
+    ($name:ident) => {
+        1
+    };
+}
+
 macro_rules! serialize_for_tuple {
     () => ();
     ($($name:ident,)+) => (
         impl<$($name: Serialize),*> Serialize for ($($name,)*) {
             #[inline]
             fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-                Ok(Begin::indexed_seq(self, ContainerShape::new()))
+                Ok(Begin::indexed_seq(self, self.container_shape()))
+            }
+
+            fn container_shape(&self) -> ContainerShape {
+                ContainerShape::new().with_len(0 $(+ count_one!($name))*)
             }
 
             fn describe(&self, d: &mut dyn Describe) {
@@ -473,8 +500,12 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
                 ContainerShape::new(),
                 false,
             ),
-            None => Begin::indexed_seq(self, ContainerShape::new()),
+            None => Begin::indexed_seq(self, self.container_shape()),
         })
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {

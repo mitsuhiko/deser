@@ -4,7 +4,7 @@ use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
-use deser::{Atom, Bytes, Error, ErrorKind, Event};
+use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::float::f16_to_f64;
 use crate::simple::Simple;
@@ -348,13 +348,20 @@ impl<'a> Deserializer<'a> {
             }
             MAJOR_ARRAY | MAJOR_MAP => {
                 let is_map = head.major == MAJOR_MAP;
+                // the declared length is passed on, it's not trusted by sinks
+                let mut shape = ContainerShape::new();
+                if !head.is_indefinite()
+                    && let Ok(len) = usize::try_from(head.arg)
+                {
+                    shape = shape.with_len(len);
+                }
                 self.emit(
                     driver,
                     start,
                     if is_map {
-                        Event::map_start()
+                        Event::MapStart(shape)
                     } else {
-                        Event::seq_start()
+                        Event::SeqStart(shape)
                     },
                 )?;
                 return Ok(Some(Frame {

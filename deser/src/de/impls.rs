@@ -386,8 +386,9 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
                 }
             }
 
-            fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            fn seq(&mut self, state: &mut State) -> Result<(), Error> {
                 self.is_seq = true;
+                self.vec.reserve(cautious_capacity::<T>(state));
                 Ok(())
             }
 
@@ -430,9 +431,27 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
 }
 
 /// Maps that can be deserialized.
+/// The maximum number of bytes that are preallocated for the declared
+/// length of a container.
+///
+/// The length comes from the input which is not trusted.
+const MAX_PREALLOCATION: usize = 1024 * 1024;
+
+/// Returns the number of elements to preallocate for a container.
+#[inline]
+fn cautious_capacity<T>(state: &State) -> usize {
+    match state.container_shape().len() {
+        Some(len) => len.min(MAX_PREALLOCATION / std::mem::size_of::<T>().max(1)),
+        None => 0,
+    }
+}
+
 pub(crate) trait MapTarget<K, V>: Default {
     const UNORDERED: bool;
     fn insert_entry(&mut self, key: K, value: V);
+    fn reserve_entries(&mut self, additional: usize) {
+        let _ = additional;
+    }
 }
 
 impl<K: Ord, V> MapTarget<K, V> for BTreeMap<K, V> {
@@ -450,6 +469,11 @@ impl<K: Hash + Eq, V, H: BuildHasher + Default> MapTarget<K, V> for HashMap<K, V
     #[inline]
     fn insert_entry(&mut self, key: K, value: V) {
         self.insert(key, value);
+    }
+
+    #[inline]
+    fn reserve_entries(&mut self, additional: usize) {
+        self.reserve(additional);
     }
 }
 
@@ -488,7 +512,8 @@ where
             Cow::Borrowed(if M::UNORDERED { "HashMap" } else { "BTreeMap" })
         }
 
-        fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+        fn map(&mut self, state: &mut State) -> Result<(), Error> {
+            self.map.reserve_entries(cautious_capacity::<(K, V)>(state));
             Ok(())
         }
 
@@ -585,6 +610,9 @@ where
 trait SetTarget<T>: Default {
     const UNORDERED: bool;
     fn insert_element(&mut self, value: T);
+    fn reserve_elements(&mut self, additional: usize) {
+        let _ = additional;
+    }
 }
 
 impl<T: Ord> SetTarget<T> for BTreeSet<T> {
@@ -602,6 +630,11 @@ impl<T: Hash + Eq, H: BuildHasher + Default> SetTarget<T> for HashSet<T, H> {
     #[inline]
     fn insert_element(&mut self, value: T) {
         self.insert(value);
+    }
+
+    #[inline]
+    fn reserve_elements(&mut self, additional: usize) {
+        self.reserve(additional);
     }
 }
 
@@ -632,7 +665,8 @@ where
             Cow::Borrowed(if S::UNORDERED { "HashSet" } else { "BTreeSet" })
         }
 
-        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+        fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+            self.set.reserve_elements(cautious_capacity::<T>(state));
             Ok(())
         }
 

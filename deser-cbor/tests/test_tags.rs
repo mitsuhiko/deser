@@ -9,6 +9,19 @@ use common::{Value, de, hex, ser};
 use deser::{Deserialize, Serialize};
 use deser_cbor::Tagged;
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 #[test]
 fn tagged_roundtrip() {
     // Tag 0: standard date/time string.
@@ -197,7 +210,7 @@ fn other_formats_ignore_tags() {
     let mut events = Vec::new();
     deser::ser::SerializeDriver::new(&value)
         .drive(|event, _| {
-            events.push(format!("{:?}", event));
+            events.push(format!("{:?}", without_len(event.to_static())));
             Ok(())
         })
         .unwrap();

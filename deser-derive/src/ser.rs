@@ -315,12 +315,26 @@ fn derive_indexed_struct(
 
     let bounded_where_clause = struct_where_clause(input, container_attrs, attrs);
 
+    // the number of fields is only known if none can be skipped
+    let shape = if container_attrs.skip_serializing_optionals()
+        || attrs.iter().any(|x| x.skip_serializing_if().is_some())
+    {
+        quote! { __deser::ContainerShape::new() }
+    } else {
+        let len = attrs.len();
+        quote! { __deser::ContainerShape::new().with_len(#len) }
+    };
+
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
                     __d.structure(#type_name);
+                }
+
+                fn container_shape(&self) -> __deser::ContainerShape {
+                    #shape
                 }
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
@@ -333,7 +347,7 @@ fn derive_indexed_struct(
                 fn __private_begin(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
-                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, __deser::ContainerShape::new()))
+                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, #shape))
                 }
             }
 

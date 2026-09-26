@@ -364,3 +364,61 @@ fn canonical_floats_and_nan() {
         "83f93c00f93e00fb3fb999999999999a"
     );
 }
+
+/// A sequence that reports a wrong length in its shape.
+struct Liar(usize);
+
+impl Serialize for Liar {
+    fn serialize(&self, _state: &mut deser::State) -> Result<deser::ser::Chunk<'_>, deser::Error> {
+        struct Emitter(usize);
+        impl deser::ser::SeqEmitter for Emitter {
+            fn next(
+                &mut self,
+                _state: &mut deser::State,
+            ) -> Result<Option<deser::ser::SerializeHandle<'_>>, deser::Error> {
+                Ok(if self.0 > 0 {
+                    self.0 -= 1;
+                    Some(deser::ser::SerializeHandle::boxed(1u64))
+                } else {
+                    None
+                })
+            }
+        }
+        Ok(deser::ser::Chunk::Seq(Box::new(Emitter(2))))
+    }
+
+    fn container_shape(&self) -> deser::ContainerShape {
+        deser::ContainerShape::new().with_len(self.0)
+    }
+}
+
+#[test]
+fn test_known_lengths() {
+    // known lengths are written upfront, the output is the same
+    assert_eq!(ser(&Liar(2)), "820101");
+    let long = (0..30u64).collect::<Vec<_>>();
+    assert_eq!(&ser(&long)[..4], "981e");
+    // a wrong length is an error
+    let err = deser_cbor::to_vec(&Liar(3)).unwrap_err();
+    assert!(err.to_string().contains("does not match"), "{}", err);
+    assert!(deser_cbor::to_vec(&Liar(1)).is_err());
+}
+
+#[test]
+fn test_lengths_are_passed_on() {
+    let mut shapes = Vec::new();
+    let recording: deser::de::Recording =
+        deser_cbor::from_slice(&hex("a2616101616282810203")).unwrap();
+    for event in recording.events() {
+        if let deser::Event::MapStart(shape) | deser::Event::SeqStart(shape) = event {
+            shapes.push(shape.len());
+        }
+    }
+    assert_eq!(shapes, [Some(2), Some(2), Some(1)]);
+    // indefinite lengths are unknown
+    let recording: deser::de::Recording = deser_cbor::from_slice(&hex("9f01ff")).unwrap();
+    assert!(matches!(
+        recording.events().next(),
+        Some(deser::Event::SeqStart(shape)) if shape.len().is_none()
+    ));
+}

@@ -4,11 +4,24 @@ use std::collections::BTreeSet;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Event, Serialize};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(without_len(event.to_static()));
     }
     events
 }
@@ -114,13 +127,35 @@ fn test_shape_forwarding() {
 
     let mut map = std::collections::HashMap::new();
     map.insert(1u32, 2u32);
-    let arbitrary = deser::ContainerShape::new().with_order(deser::Order::Arbitrary);
+    let arbitrary = deser::ContainerShape::new()
+        .with_order(deser::Order::Arbitrary)
+        .with_len(1);
     assert_eq!(top_shape(&map), Some(arbitrary));
     assert_eq!(top_shape(&&map), Some(arbitrary));
     assert_eq!(top_shape(&Box::new(&map)), Some(arbitrary));
     assert_eq!(top_shape(&Some(&map)), Some(arbitrary));
     assert_eq!(top_shape(&None::<u32>), None);
-    assert_eq!(top_shape(&vec![1u32]), Some(deser::ContainerShape::new()));
+    let len = |len| Some(deser::ContainerShape::new().with_len(len));
+    assert_eq!(top_shape(&vec![1u32]), len(1));
+    assert_eq!(top_shape(&[1u32, 2, 3]), len(3));
+    assert_eq!(top_shape(&(1, "x")), len(2));
+
+    #[derive(Serialize)]
+    struct Point {
+        x: u32,
+        y: u32,
+    }
+    #[derive(Serialize)]
+    #[deser(skip_serializing_optionals)]
+    struct MaybePoint {
+        x: Option<u32>,
+    }
+    assert_eq!(top_shape(&Point { x: 1, y: 2 }), len(2));
+    // fields can be skipped, the length is unknown
+    assert_eq!(
+        top_shape(&MaybePoint { x: None }),
+        Some(deser::ContainerShape::new())
+    );
 
     assert!(Serialize::is_optional(&&None::<u32>));
     assert!(Serialize::is_optional(&Box::new(None::<u32>)));
@@ -160,14 +195,14 @@ fn test_is_map_key() {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&item);
     while let Some((event, _, state)) = driver.next().unwrap() {
-        events.push((event.to_static(), state.is_map_key()));
+        events.push((without_len(event.to_static()), state.is_map_key()));
     }
     assert_eq!(events, expected);
 
     let mut events = Vec::new();
     SerializeDriver::new(&item)
         .drive(|event, state| {
-            events.push((event.to_static(), state.is_map_key()));
+            events.push((without_len(event.to_static()), state.is_map_key()));
             Ok(())
         })
         .unwrap();

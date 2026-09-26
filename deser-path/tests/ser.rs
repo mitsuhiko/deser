@@ -5,6 +5,19 @@ use deser::ser::{Chunk, Serialize, SerializeDriver};
 use deser::{Atom, Error, ErrorKind};
 use deser_path::{Path, PathLayer};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 struct MyBool(bool);
 
 impl Serialize for MyBool {
@@ -24,7 +37,7 @@ fn events(value: &dyn Serialize) -> Vec<String> {
         .drive(|event, state| {
             events.push(format!(
                 "{:?}|{}",
-                event,
+                without_len(event.to_static()),
                 state.get::<Path>().map_or(String::new(), Path::to_string)
             ));
             Ok(())

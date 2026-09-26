@@ -168,6 +168,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
         })
     }
 
+    fn container_shape_as(value: &Vec<T>) -> ContainerShape {
+        ContainerShape::new().with_len(value.len())
+    }
+
     #[inline]
     fn __private_begin_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Begin<'a>, Error> {
         let shape = Self::container_shape_as(value);
@@ -200,6 +204,10 @@ impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
         })
     }
 
+    fn container_shape_as(value: &[T; N]) -> ContainerShape {
+        ContainerShape::new().with_len(value.len())
+    }
+
     #[inline]
     fn __private_begin_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Begin<'a>, Error> {
         let shape = Self::container_shape_as(value);
@@ -219,6 +227,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
                 std::marker::PhantomData,
             ))),
         })
+    }
+
+    fn container_shape_as(value: &[T]) -> ContainerShape {
+        ContainerShape::new().with_len(value.len())
     }
 
     #[inline]
@@ -245,8 +257,10 @@ where
         })))
     }
 
-    fn container_shape_as(_value: &BTreeMap<K, V>) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Sorted)
+    fn container_shape_as(value: &BTreeMap<K, V>) -> ContainerShape {
+        ContainerShape::new()
+            .with_order(Order::Sorted)
+            .with_len(value.len())
     }
 
     #[inline]
@@ -280,8 +294,10 @@ where
         })))
     }
 
-    fn container_shape_as(_value: &HashMap<K, V, H>) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Arbitrary)
+    fn container_shape_as(value: &HashMap<K, V, H>) -> ContainerShape {
+        ContainerShape::new()
+            .with_order(Order::Arbitrary)
+            .with_len(value.len())
     }
 
     #[inline]
@@ -306,8 +322,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
         ))))
     }
 
-    fn container_shape_as(_value: &BTreeSet<T>) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Sorted)
+    fn container_shape_as(value: &BTreeSet<T>) -> ContainerShape {
+        ContainerShape::new()
+            .with_order(Order::Sorted)
+            .with_len(value.len())
     }
 
     fn describe_as(_value: &BTreeSet<T>, d: &mut dyn Describe) {
@@ -336,8 +354,10 @@ impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSe
         ))))
     }
 
-    fn container_shape_as(_value: &HashSet<T, H>) -> ContainerShape {
-        ContainerShape::new().with_order(Order::Arbitrary)
+    fn container_shape_as(value: &HashSet<T, H>) -> ContainerShape {
+        ContainerShape::new()
+            .with_order(Order::Arbitrary)
+            .with_len(value.len())
     }
 
     fn describe_as(_value: &HashSet<T, H>, d: &mut dyn Describe) {
@@ -356,6 +376,13 @@ impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSe
             false,
         ))
     }
+}
+
+/// Counts as one, used to count repetitions.
+macro_rules! count_one {
+    ($name:ident) => {
+        1
+    };
 }
 
 macro_rules! serialize_as_for_tuple {
@@ -391,11 +418,15 @@ macro_rules! serialize_as_for_tuple {
                 d.tuple();
             }
 
+            fn container_shape_as(_value: &($($name,)*)) -> ContainerShape {
+                ContainerShape::new().with_len(0 $(+ count_one!($name))*)
+            }
+
             #[inline]
             fn __private_begin_as<'a>(value: &'a ($($name,)*), _state: &mut State) -> Result<Begin<'a>, Error> {
                 Ok(Begin::indexed_seq(
                     SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value),
-                    ContainerShape::new(),
+                    Self::container_shape_as(value),
                 ))
             }
         }

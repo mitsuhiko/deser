@@ -507,6 +507,16 @@ impl fmt::Debug for ContainerShape {
     }
 }
 
+/// Removes the length from container starts, for tests.
+#[cfg(test)]
+pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
+    match event {
+        Event::MapStart(shape) => Event::MapStart(ContainerShape::new().with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::new().with_order(shape.order())),
+        event => event,
+    }
+}
+
 #[test]
 fn test_sizes() {
     assert_eq!(std::mem::size_of::<Atom>(), 32);

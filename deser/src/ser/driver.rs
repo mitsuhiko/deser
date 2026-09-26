@@ -780,7 +780,7 @@ fn test_seq_emitting() {
     let mut driver = SerializeDriver::new(&vec);
     let mut events = Vec::new();
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(crate::event::without_len(event.to_static()));
     }
 
     assert_eq!(
@@ -809,7 +809,7 @@ fn test_map_emitting() {
     let mut driver = SerializeDriver::new(&map);
     let mut events = Vec::new();
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(crate::event::without_len(event.to_static()));
     }
 
     assert_eq!(
@@ -855,7 +855,7 @@ fn test_state_mut() {
     driver.state_mut().get_mut::<Uppercase>().0 = true;
     let mut events = Vec::new();
     while let Some((event, _, _)) = driver.next().unwrap() {
-        events.push(event.to_static());
+        events.push(crate::event::without_len(event.to_static()));
     }
 
     assert_eq!(

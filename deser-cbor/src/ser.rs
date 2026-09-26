@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use deser::State;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Bytes, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
 use crate::float::f64_to_f16;
@@ -45,9 +45,14 @@ pub struct SerializerConfig {
 
 /// An open map or array.
 struct Frame {
-    /// The offset of the header.  The header is written with a length of
-    /// zero and patched when the container ends.
+    /// The offset of the header.  If the length is not known upfront, the
+    /// header is written with a length of zero and patched when the
+    /// container ends.
     header: usize,
+    /// The offset of the content (after the header).
+    body: usize,
+    /// The length written into the header if it was known upfront.
+    len: Option<u64>,
     /// The number of items written into the container so far.  For maps
     /// both keys and values are counted.
     items: u64,
@@ -87,8 +92,8 @@ impl Writer {
                 self.begin_item(state);
                 self.write_atom(atom)
             }
-            Event::MapStart(_) => self.start(true, state),
-            Event::SeqStart(_) => self.start(false, state),
+            Event::MapStart(shape) => self.start(true, shape, state),
+            Event::SeqStart(shape) => self.start(false, shape, state),
             Event::MapEnd | Event::SeqEnd => self.end(),
         }
     }
@@ -119,16 +124,25 @@ impl Writer {
     }
 
     #[inline(never)]
-    fn start(&mut self, is_map: bool, state: &State) -> Result<(), Error> {
+    fn start(&mut self, is_map: bool, shape: ContainerShape, state: &State) -> Result<(), Error> {
         self.begin_item(state);
+        let header = self.out.len();
+        let major = if is_map { MAJOR_MAP } else { MAJOR_ARRAY };
+        // with a known length the header is written right away, otherwise a
+        // byte is reserved and the length is patched in at the end.
+        let len = shape.len().map(|len| len as u64);
+        match len {
+            Some(len) => self.write_head(major, len),
+            None => self.out.push(major << 5),
+        }
         let frame = Frame {
-            header: self.out.len(),
+            header,
+            body: self.out.len(),
             items: 0,
             is_map,
             offsets_start: self.offsets.len(),
+            len,
         };
-        self.out
-            .push(if is_map { MAJOR_MAP } else { MAJOR_ARRAY } << 5);
         if let Some(parent) = self.frame.replace(frame) {
             self.stack.push(parent);
         }
@@ -153,8 +167,17 @@ impl Writer {
         } else {
             frame.items
         };
-        self.patch_length(frame.header, count);
-        Ok(())
+        match frame.len {
+            Some(len) if len != count => Err(Error::new(
+                ErrorKind::Unexpected,
+                "number of items does not match the length of the container",
+            )),
+            Some(_) => Ok(()),
+            None => {
+                self.patch_length(frame.header, count);
+                Ok(())
+            }
+        }
     }
 
     /// Patches the length of a container into the header.
@@ -219,7 +242,7 @@ impl Writer {
     #[cold]
     fn sort_entries(&mut self, frame: &Frame) -> Result<(), Error> {
         let offsets = self.offsets.split_off(frame.offsets_start);
-        let body_start = frame.header + 1;
+        let body_start = frame.body;
         let body_end = self.out.len();
         // (key start, value start, entry end)
         let mut entries: Vec<(usize, usize, usize)> = (0..offsets.len())

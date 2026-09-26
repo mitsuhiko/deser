@@ -5,6 +5,19 @@ use deser::de::{DeserializeDriver, Format, Layer, LayerEvent, Limits, Next, Sink
 use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
+/// Removes the length from container starts, the tests are not about it.
+fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
+    match event {
+        deser::Event::MapStart(shape) => {
+            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        deser::Event::SeqStart(shape) => {
+            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+        }
+        event => event,
+    }
+}
+
 /// Emits events into a driver, each with an input range of one byte.
 fn emit_all(driver: &mut DeserializeDriver<'_, '_>, events: Vec<Event<'_>>) -> Result<(), Error> {
     for (idx, event) in events.into_iter().enumerate() {
@@ -453,7 +466,7 @@ fn serialize_with_layers<F: FnOnce(&mut SerializeDriver)>(
     let mut events = Vec::new();
     driver
         .drive(|event, _| {
-            events.push(event.to_static());
+            events.push(without_len(event.to_static()));
             Ok(())
         })
         .unwrap();
