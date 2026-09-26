@@ -137,7 +137,7 @@
 //!
 //! * `io` (enabled by default): reading and writing streams, see
 //!   [streams](#streams).
-//! * `speedups`: uses the `ryu` and `itoa` crates for number formatting and
+//! * `speedups`: uses the `zmij` and `itoa` crates for number formatting and
 //!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
 //!   crate has no dependencies other than `deser`.
 mod buf;

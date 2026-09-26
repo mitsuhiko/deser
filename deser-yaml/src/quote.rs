@@ -308,32 +308,47 @@ pub fn push_indent(out: &mut String, indent: usize) {
     out.extend(std::iter::repeat_n(' ', indent));
 }
 
+/// The floats that are written (`f32` and `f64`).
+#[cfg(feature = "speedups")]
+pub trait Float: zmij::Float + deser::__float::Float {}
+
+#[cfg(feature = "speedups")]
+impl<F: zmij::Float + deser::__float::Float> Float for F {}
+
+/// The floats that are written (`f32` and `f64`).
+#[cfg(not(feature = "speedups"))]
+pub trait Float: deser::__float::Float {}
+
+#[cfg(not(feature = "speedups"))]
+impl<F: deser::__float::Float> Float for F {}
+
 /// Writes a float so that readers of YAML 1.1 and 1.2 read it as float.
 ///
 /// YAML 1.1 requires a `.` in floats and a sign in exponents.  The text is
 /// the shortest that reads back as the same value of its type (`f32` or
 /// `f64`).
-pub fn write_float<F: Into<f64> + std::fmt::Debug + Copy>(out: &mut String, value: F) {
-    let wide: f64 = value.into();
+pub fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
+    let wide = value.to_f64();
     if wide.is_nan() {
-        out.push_str(".nan");
+        out.write_str(".nan").unwrap();
     } else if wide.is_infinite() {
-        out.push_str(if wide > 0.0 { ".inf" } else { "-.inf" });
+        out.write_str(if wide > 0.0 { ".inf" } else { "-.inf" })
+            .unwrap();
     } else {
-        let formatted = format!("{:?}", value);
+        #[cfg(feature = "speedups")]
+        let mut buffer = zmij::Buffer::new();
+        #[cfg(feature = "speedups")]
+        let formatted = buffer.format_finite(value);
+        #[cfg(not(feature = "speedups"))]
+        let formatted = &deser::__float::format_finite(value);
+        // the exponent always has a sign, the mantissa needs a `.`
         match formatted.split_once('e') {
-            Some((mantissa, exponent)) => {
-                out.push_str(mantissa);
-                if !mantissa.contains('.') {
-                    out.push_str(".0");
-                }
-                out.push('e');
-                if !exponent.starts_with('-') {
-                    out.push('+');
-                }
-                out.push_str(exponent);
+            Some((mantissa, exponent)) if !mantissa.contains('.') => {
+                out.write_str(mantissa).unwrap();
+                out.write_str(".0e").unwrap();
+                out.write_str(exponent).unwrap();
             }
-            None => out.push_str(&formatted),
+            _ => out.write_str(formatted).unwrap(),
         }
     }
 }

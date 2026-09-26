@@ -198,7 +198,7 @@ fn test_numbers() {
     let toml = roundtrip(&value);
     assert_eq!(
         toml,
-        "int = 42\nneg = -42\nfloat = 1.0\nbig = 1e100\nsmall = 1.5e-7\nnegzero = -0.0\n\
+        "int = 42\nneg = -42\nfloat = 1.0\nbig = 1e+100\nsmall = 1.5e-7\nnegzero = -0.0\n\
          inf = inf\nneginf = -inf\n"
     );
 
@@ -218,7 +218,7 @@ fn test_numbers() {
     );
     assert_eq!(
         to_string(&map).unwrap(),
-        "a = [1.0, 3.4028235e38, 1e-45, inf, nan]\n"
+        "a = [1.0, 3.4028235e+38, 1e-45, inf, nan]\n"
     );
     let mut map = BTreeMap::new();
     map.insert("a", u64::MAX);

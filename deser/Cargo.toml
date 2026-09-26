@@ -41,6 +41,8 @@ uuid = { version = "1", optional = true, default-features = false }
 # the tests use derive
 deser = { path = ".", features = ["derive"] }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }
+# the float formatting of the formats without speedups is tested against it
+zmij = "1.0.23"
 
 [[test]]
 name = "integration"

@@ -4,6 +4,13 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- JSON, YAML and TOML format floats with `zmij` with the `speedups`
+  feature (`deser-json` used `ryu` before, YAML and TOML the standard
+  library).  All three write the same shortest text now, exponents always
+  have a sign (`1e+16`) and values between `1e-5` and `1e16` (`1e-6` and
+  `1e13` for `f32`) are written without exponent.  The output does not
+  depend on the feature.
+- `deser-yaml` no longer allocates for every scalar it writes.
 - Added `Atom::F32` for single precision floats.  `f32` values are no
   longer widened to `f64` when serialized, so the text formats write them
   with the shortest text for their precision (`0.1f32` as `0.1` instead of

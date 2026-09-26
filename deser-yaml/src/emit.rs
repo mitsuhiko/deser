@@ -8,6 +8,9 @@
 //! For the flow policy the events of a collection are recorded while it's
 //! written in flow style.  If it turns out not to fit, the output is rolled
 //! back and the recorded events are written in block style.
+use std::borrow::Cow;
+use std::fmt::{self, Write};
+
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser::hints::Layout;
@@ -117,11 +120,63 @@ struct Attempt {
 /// A scalar that was rendered for a position.
 enum Scalar<'a> {
     /// Text that is written as is.
-    Text(String),
+    Text(Cow<'a, str>),
+    /// Short text that is written as is (numbers), without allocating.
+    Short(ShortText),
     /// A block scalar.
     Block(BlockScalar<'a>),
     /// Nothing (a null with [`NullStyle::Empty`]).
     Empty,
+}
+
+/// A short text held inline.
+struct ShortText {
+    buf: [u8; 48],
+    len: usize,
+}
+
+impl ShortText {
+    fn new() -> ShortText {
+        ShortText {
+            buf: [0; 48],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        // only complete strings are written into the buffer
+        std::str::from_utf8(&self.buf[..self.len]).unwrap()
+    }
+}
+
+impl fmt::Write for ShortText {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let end = self.len + s.len();
+        self.buf
+            .get_mut(self.len..end)
+            .ok_or(fmt::Error)?
+            .copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
+impl<'a> Scalar<'a> {
+    /// Returns the text of a scalar that is written inline.
+    fn text(&self) -> Option<&str> {
+        match self {
+            Scalar::Text(text) => Some(text),
+            Scalar::Short(text) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Renders a number (or other short text) with its `Display`.
+    fn short(value: impl fmt::Display) -> Scalar<'a> {
+        let mut text = ShortText::new();
+        write!(text, "{}", value).expect("short text");
+        Scalar::Short(text)
+    }
 }
 
 pub(crate) struct Emitter<'c> {
@@ -560,9 +615,9 @@ impl<'c> Emitter<'c> {
                 self.write_inline_start(tag);
                 self.out.push_str("null");
             }
-            Scalar::Text(text) => {
+            Scalar::Text(_) | Scalar::Short(_) => {
                 self.write_inline_start(tag);
-                self.out.push_str(&text);
+                self.out.push_str(scalar.text().unwrap());
             }
             Scalar::Block(block) => {
                 self.write_inline_start(tag);
@@ -594,18 +649,18 @@ impl<'c> Emitter<'c> {
         let (scalar, implicit_tag) = self.render(&atom, context, hints.style)?;
         let tag = hints.tag.as_deref().or(implicit_tag);
         let text = match scalar {
-            Scalar::Text(text) => text,
-            Scalar::Empty => "null".into(),
+            Scalar::Empty => "null",
             Scalar::Block(_) => unreachable!("keys are never block scalars"),
+            ref scalar => scalar.text().unwrap(),
         };
         if text.len() > MAX_SIMPLE_KEY_LEN {
             self.begin_explicit_key();
             self.write_inline_start(tag);
-            self.out.push_str(&text);
+            self.out.push_str(text);
         } else {
             self.begin_entry();
             self.write_inline_start(tag);
-            self.out.push_str(&text);
+            self.out.push_str(text);
             self.out.push(':');
             self.space = true;
         }
@@ -633,17 +688,17 @@ impl<'c> Emitter<'c> {
                 Scalar::Text(if value { "true" } else { "false" }.into()),
                 None,
             ),
-            Atom::U64(value) => (Scalar::Text(value.to_string()), None),
-            Atom::I64(value) => (Scalar::Text(value.to_string()), None),
+            Atom::U64(value) => (Scalar::short(value), None),
+            Atom::I64(value) => (Scalar::short(value), None),
             Atom::F64(value) => {
-                let mut out = String::new();
-                write_float(&mut out, value);
-                (Scalar::Text(out), None)
+                let mut text = ShortText::new();
+                write_float(&mut text, value);
+                (Scalar::Short(text), None)
             }
             Atom::F32(value) => {
-                let mut out = String::new();
-                write_float(&mut out, value);
-                (Scalar::Text(out), None)
+                let mut text = ShortText::new();
+                write_float(&mut text, value);
+                (Scalar::Short(text), None)
             }
             Atom::Char(value) => (
                 self.render_owned_str(value.to_string(), context, style),
@@ -668,7 +723,7 @@ impl<'c> Emitter<'c> {
                     } else if encoded.len() > BINARY_LINE_LEN && context == Context::Block {
                         (Scalar::Block(wrap_binary(&encoded)), tag)
                     } else {
-                        (Scalar::Text(encoded), tag)
+                        (Scalar::Text(encoded.into()), tag)
                     }
                 } else {
                     (self.render_owned_str(encoded, context, style), None)
@@ -687,24 +742,24 @@ impl<'c> Emitter<'c> {
         style: Option<ScalarStyle>,
     ) -> Result<(Scalar<'a>, Option<&'static str>), Error> {
         if let Some(value) = ext.downcast_ref::<u128>() {
-            return Ok((Scalar::Text(value.to_string()), None));
+            return Ok((Scalar::short(value), None));
         }
         if let Some(value) = ext.downcast_ref::<i128>() {
-            return Ok((Scalar::Text(value.to_string()), None));
+            return Ok((Scalar::short(value), None));
         }
         if let Some(value) = ext.downcast_ref::<BigInt>() {
-            return Ok((Scalar::Text(value.to_string()), None));
+            return Ok((Scalar::Text(value.to_string().into()), None));
         }
         // number literals keep their text if YAML reads it as number
         if let Some(value) = ext.downcast_value_ref::<Number>()
             && self.is_number(value.as_str())
         {
-            return Ok((Scalar::Text(value.as_str().to_string()), None));
+            return Ok((Scalar::Text(value.as_str().into()), None));
         }
         if let Some(value) = ext.downcast_ref::<Decimal>()
             && self.is_number(value.as_str())
         {
-            return Ok((Scalar::Text(value.as_str().to_string()), None));
+            return Ok((Scalar::Text(value.as_str().into()), None));
         }
         let datetime = ext.downcast_ref::<Datetime>().copied().or_else(|| {
             ext.downcast_ref::<Timestamp>()
@@ -728,7 +783,8 @@ impl<'c> Emitter<'c> {
                 let (scalar, tag) = self.render(&fallback, context, style)?;
                 Ok((
                     match scalar {
-                        Scalar::Text(text) => Scalar::Text(text),
+                        Scalar::Text(text) => Scalar::Text(Cow::Owned(text.into_owned())),
+                        Scalar::Short(text) => Scalar::Short(text),
                         Scalar::Empty => Scalar::Empty,
                         Scalar::Block(_) => unreachable!("only strings are block scalars"),
                     },
@@ -758,7 +814,7 @@ impl<'c> Emitter<'c> {
             .config
             .timestamp_tag
             .then_some("tag:yaml.org,2002:timestamp");
-        (Scalar::Text(text), tag)
+        (Scalar::Text(text.into()), tag)
     }
 
     /// Returns `true` if text is read as number in all versions.
@@ -780,7 +836,7 @@ impl<'c> Emitter<'c> {
             other => other,
         };
         match self.render_str(&value, context, style) {
-            Scalar::Text(text) => Scalar::Text(text),
+            Scalar::Text(text) => Scalar::Text(Cow::Owned(text.into_owned())),
             _ => unreachable!("strings outside of blocks are text"),
         }
     }
@@ -805,12 +861,12 @@ impl<'c> Emitter<'c> {
             Some(ScalarStyle::SingleQuoted) if is_single_quote_safe(value) => {
                 let mut out = String::with_capacity(value.len() + 2);
                 write_single_quoted(&mut out, value);
-                return Scalar::Text(out);
+                return Scalar::Text(out.into());
             }
             Some(ScalarStyle::DoubleQuoted) => {
                 let mut out = String::with_capacity(value.len() + 2);
                 write_double_quoted(&mut out, value);
-                return Scalar::Text(out);
+                return Scalar::Text(out.into());
             }
             Some(ScalarStyle::Literal) if block => {
                 if let Some(block) = BlockScalar::literal(value) {
@@ -841,14 +897,15 @@ impl<'c> Emitter<'c> {
                 return Scalar::Block(block);
             }
         }
-        let mut out = String::with_capacity(value.len() + 2);
         if !self.config.quote_all && is_plain_safe(value, self.config.compat, flow) {
-            out.push_str(value);
-        } else if self.config.quote_style == QuoteStyle::Single && is_single_quote_safe(value) {
+            return Scalar::Text(Cow::Borrowed(value));
+        }
+        let mut out = String::with_capacity(value.len() + 2);
+        if self.config.quote_style == QuoteStyle::Single && is_single_quote_safe(value) {
             write_single_quoted(&mut out, value);
         } else {
             write_double_quoted(&mut out, value);
         }
-        Scalar::Text(out)
+        Scalar::Text(out.into())
     }
 }

@@ -16,14 +16,14 @@ autotests = false
 default = ["io"]
 # reading and writing values from and to streams (with `deser::io`)
 io = ["deser/io"]
-# faster number formatting (itoa and ryu) and UTF-8 validation (simdutf8)
-speedups = ["dep:itoa", "dep:ryu", "dep:simdutf8"]
+# faster number formatting (itoa and zmij) and UTF-8 validation (simdutf8)
+speedups = ["dep:itoa", "dep:simdutf8", "dep:zmij"]
 
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
 itoa = { version = "1.0.1", optional = true }
-ryu = { version = "1.0.9", optional = true }
 simdutf8 = { version = "0.1.5", optional = true }
+zmij = { version = "1.0.23", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

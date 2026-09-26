@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::{self, Write};
+use std::fmt::Write;
 
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
@@ -680,21 +680,34 @@ impl<'d> Writer<'d> {
     }
 }
 
+/// The floats that are written (`f32` and `f64`).
+#[cfg(feature = "speedups")]
+trait Float: zmij::Float + deser::__float::Float {}
+
+#[cfg(feature = "speedups")]
+impl<F: zmij::Float + deser::__float::Float> Float for F {}
+
+/// The floats that are written (`f32` and `f64`).
+#[cfg(not(feature = "speedups"))]
+trait Float: deser::__float::Float {}
+
+#[cfg(not(feature = "speedups"))]
+impl<F: deser::__float::Float> Float for F {}
+
 /// Writes a float with the shortest text that reads back as the same value
-/// of its type (`f32` or `f64`).
-fn write_float<F: Into<f64> + fmt::Debug + Copy>(out: &mut String, value: F) {
-    let wide: f64 = value.into();
+/// of its type (`f32` or `f64`).  The text always has a fractional part or
+/// an exponent.
+fn write_float<F: Float>(out: &mut String, value: F) {
+    let wide = value.to_f64();
     if wide.is_nan() {
         out.push_str("nan");
     } else if wide.is_infinite() {
         out.push_str(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
-        let start = out.len();
-        write!(out, "{:?}", value).unwrap();
-        // floats need a fractional part or an exponent
-        if !out[start..].contains(['.', 'e', 'E']) {
-            out.push_str(".0");
-        }
+        #[cfg(feature = "speedups")]
+        out.push_str(zmij::Buffer::new().format_finite(value));
+        #[cfg(not(feature = "speedups"))]
+        out.push_str(&deser::__float::format_finite(value));
     }
 }
 
