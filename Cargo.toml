@@ -9,14 +9,21 @@ members = [
   "deser-path",
   "deser-yaml",
   "deser-toml",
+  "examples/adapters",
+  "examples/borrowing",
+  "examples/bytes",
+  "examples/config-errors",
   "examples/crate-path",
-  "examples/derive",
+  "examples/deep-nesting",
   "examples/enums",
+  "examples/formats",
   "examples/json",
+  "examples/json-lines",
   "examples/json-numbers",
   "examples/layers",
   "examples/located",
   "examples/manual-struct",
+  "examples/optionals",
 ]
 resolver = "3"
 

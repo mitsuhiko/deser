@@ -112,6 +112,10 @@ All notable changes to deser are documented here.
   format sees keys with the path of their map.
 - Added the `layers` example with serialization layers that rename keys,
   skip null values and redact values.  The `located` example uses layers.
+- Added the `adapters`, `borrowing`, `bytes`, `config-errors`,
+  `deep-nesting`, `formats`, `json-lines` and `optionals` examples.  The
+  `derive` example was merged into the `json` example.  The examples are
+  listed in `examples/README.md`.
 - Format options moved from the deserializers and serializers into new
   `DeserializerConfig` and `SerializerConfig` types in all formats.  They
   do not borrow the input, can be created in constants (the constructors

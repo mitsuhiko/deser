@@ -1,0 +1,20 @@
+[package]
+name = "formats"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive", "jiff", "uuid"] }
+deser-cbor = { path = "../../deser-cbor" }
+deser-json = { path = "../../deser-json" }
+deser-toml = { path = "../../deser-toml" }
+deser-yaml = { path = "../../deser-yaml" }
+jiff = "0.2.14"
+uuid = "1"
+
+[[bin]]
+name = "formats"
+path = "src/main.rs"
+test = false

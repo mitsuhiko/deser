@@ -1,51 +1,33 @@
-//! This example shows how to pass information through deser that is not part
-//! of its data model: every value is annotated with the path and the source
-//! location (line and column) where it was found in the input, and types can
-//! pick up that information.
+//! Passing information through deser that is not part of its data model:
+//! values are annotated with their path and source location (line and
+//! column) and types pick that up.
 //!
-//! This is similar to what `serde_spanned` or `serde_path_to_error` do for
-//! serde.  The interesting part is that this keeps working when a value is
-//! internally buffered and replayed, as untagged enums or internally tagged
-//! enums (where the tag does not come first) have to do.  In serde such
-//! information is typically lost in that case (serde issue #1183).
+//! This is similar to `serde_spanned` or `serde_path_to_error`, but it keeps
+//! working when values are buffered and replayed, as untagged enums and
+//! internally tagged enums (where the tag does not come first) have to do.
+//! In serde such information is typically lost then (serde issue #1183).
+//! Errors carry locations and paths too, also for buffered values (see the
+//! `config-errors` example).
 //!
 //! There are two ways to carry such information and both survive buffering:
 //!
-//! * Out-of-band in the deserializer state.  The JSON deserializer publishes
-//!   the input range of every event there (`State::input_range`) which
-//!   `deser_location::Locations` resolves into lines and columns, and the
-//!   `deser_path::PathLayer` maintains the path there as replayable state.
-//!   A `deser::de::Recording` captures both for every recorded event and
-//!   restores them on replay.  `deser_location::Spanned` reads the location
-//!   from the state.
-//! * In-band as extension values.  [`Annotator`] is a layer which turns
-//!   every primitive value into a [`LocatedAtom`] extension value carrying
-//!   the value, its path and its location.  Its fallback is the plain value,
-//!   so types that do not know about it continue to work.  [`Located`]
-//!   picks the information up from the extension value.  As layers see the
-//!   events before they are recorded, the annotated values are recorded
-//!   and replayed as well.
-//!
-//! [`Either`] is a hand written untagged enum on top of
-//! `Recording::capture`.  [`Backend`], [`Action`], [`Hook`] and [`Limit`] are
-//! derived enums in the different representations (internally tagged,
-//! externally tagged, adjacently tagged and untagged) which buffer where
-//! needed.
-//!
-//! The path layer also attaches the path to errors, see the end of `main`.
+//! * Out-of-band in the state: the JSON deserializer publishes the input
+//!   range of every event, `deser_location::Spanned` resolves it.
+//! * In-band as extension values: the [`Annotator`] layer turns primitive
+//!   values into [`LocatedAtom`] extension values.  Their fallback is the
+//!   plain value, so types that do not know about them continue to work.
+//!   [`Located`] picks the information up.
 use std::borrow::Cow;
 use std::fmt;
 
 use deser::State;
-use deser::de::{Format, Layer, LayerEvent, Next, OwnedSink, Recording, Sink, SinkHandle};
+use deser::de::{Format, Layer, LayerEvent, Next, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::{Atom, Deserialize, Error, Event};
 use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathLayer};
 
-/// A primitive value annotated with the path and location where it was found.
-///
-/// This is the value that is passed through the data model as extension.
+/// A primitive value annotated with its path and location (in-band).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocatedAtom {
     path: String,
@@ -64,11 +46,8 @@ impl Extension for LocatedAtom {
     }
 }
 
-/// A layer which annotates all primitive values with their path and
-/// location.
-///
-/// This needs to be added after a `PathLayer` which maintains the path and
-/// the format needs to publish locations.
+/// A layer which annotates primitive values (but not map keys) with their
+/// path and location.  It needs to be added after a `PathLayer`.
 pub struct Annotator;
 
 impl Layer for Annotator {
@@ -77,10 +56,8 @@ impl Layer for Annotator {
         event: LayerEvent<'_, 'de>,
         next: &mut Next<'_, 'de>,
     ) -> Result<(), Error> {
-        // map keys are not annotated and values that already are extension
-        // values are passed through as is as fallbacks cannot be extension
-        // values themselves.
         let located = match event.event() {
+            // fallbacks cannot be extension values, those are passed on
             Event::Atom(atom) if !next.state().is_map_key() && !matches!(atom, Atom::Ext(_)) => {
                 LocatedAtom {
                     path: next
@@ -94,28 +71,23 @@ impl Layer for Annotator {
             }
             _ => return next.emit(event),
         };
-        next.emit(LayerEvent::new(Event::Atom(Atom::Ext(ExtValue::borrowed(
-            &located,
-        )))))
+        let ext = ExtValue::borrowed(&located);
+        next.emit(LayerEvent::new(Event::Atom(Atom::Ext(ext))))
     }
 }
 
-/// The JSON configuration: locations are needed for the spans.
-const CONFIG: deser_json::DeserializerConfig =
-    deser_json::DeserializerConfig::new().track_locations(true);
-
 /// Deserializes JSON and annotates all values with their path and location.
 pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
-    deser_json::Deserializer::from_str_with_config(json, &CONFIG).deserialize_with(|driver| {
+    // locations are needed for the spans
+    let config = deser_json::DeserializerConfig::new().track_locations(true);
+    deser_json::Deserializer::from_str_with_config(json, &config).deserialize_with(|driver| {
         driver.push_layer(PathLayer::new());
         driver.push_layer(Annotator);
     })
 }
 
-/// A value together with the path and location where it was found (in-band).
-///
-/// This information is only available if the input was annotated, otherwise
-/// it's `None`.
+/// A primitive value with its path and location (in-band).  They are `None`
+/// if the input was not annotated.
 pub struct Located<T> {
     pub value: T,
     pub path: Option<String>,
@@ -126,12 +98,10 @@ pub struct Located<T> {
 impl<T: fmt::Debug> fmt::Debug for Located<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.value, f)?;
-        match (&self.path, &self.span) {
-            (Some(path), Some(span)) => write!(f, " ({} @ {:?})", path, span),
-            (Some(path), None) => write!(f, " ({})", path),
-            (None, Some(span)) => write!(f, " (@ {:?})", span),
-            (None, None) => Ok(()),
+        if let (Some(path), Some(span)) = (&self.path, &self.span) {
+            write!(f, " ({} @ {:?})", path, span)?;
         }
+        Ok(())
     }
 }
 
@@ -166,30 +136,10 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for LocatedSink<'a, 'de, T> {
         }
     }
 
-    fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().map(state)
-    }
-
-    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().seq(state)
-    }
-
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_key(state)
-    }
-
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_value(state)
-    }
-
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().finish(state)?;
-        let span = self.span;
-        *self.out = self.sink.take().map(|value| Located {
-            value,
-            path: self.path.take(),
-            span,
-        });
+        let (path, span) = (self.path.take(), self.span);
+        *self.out = self.sink.take().map(|value| Located { value, path, span });
         Ok(())
     }
 
@@ -198,70 +148,8 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for LocatedSink<'a, 'de, T> {
     }
 }
 
-/// An untagged enum: the value is either an `A` or a `B`.
-///
-/// Since it's not known upfront which one it is, the value is recorded and
-/// then replayed into `A` and if that fails, into `B`.
-#[derive(Debug)]
-pub enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
-
-impl<'de, A: Deserialize<'de>, B: Deserialize<'de>> Deserialize<'de> for Either<A, B> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        Recording::capture(move |recording, state| {
-            let mut left = None;
-            if recording
-                .replay(A::deserialize_into(&mut left), state)
-                .is_ok()
-            {
-                *out = left.map(Either::Left);
-            } else {
-                let mut right = None;
-                recording.replay(B::deserialize_into(&mut right), state)?;
-                *out = right.map(Either::Right);
-            }
-            Ok(())
-        })
-    }
-}
-
-/// An internally tagged enum.  If the tag does not come first, the fields
-/// have to be buffered until the tag is known.
-#[derive(Debug, Deserialize)]
-#[deser(tag = "type", rename_all = "lowercase")]
-pub enum Backend {
-    Http {
-        url: Located<String>,
-        timeout: Spanned<u32>,
-    },
-    File {
-        path: Located<String>,
-    },
-}
-
-/// An externally tagged enum (the default) with the different variant kinds.
-#[derive(Debug, Deserialize)]
-#[deser(rename_all = "snake_case")]
-pub enum Action {
-    Restart { delay: Located<u32> },
-    Notify(Located<String>),
-    Scale(Located<u32>, Spanned<u32>),
-    Noop,
-}
-
-/// An adjacently tagged enum.  If the content comes before the tag, it's
-/// buffered until the tag is known.
-#[derive(Debug, Deserialize)]
-#[deser(tag = "kind", content = "data", rename_all = "snake_case")]
-pub enum Hook {
-    Command(Vec<Located<String>>),
-    Url(Spanned<String>),
-}
-
-/// An untagged enum.  The value is buffered and replayed into the variants
-/// until one accepts it.
+/// Untagged: the value is buffered and replayed into the variants until
+/// one accepts it.
 #[derive(Debug, Deserialize)]
 #[deser(untagged)]
 pub enum Limit {
@@ -275,87 +163,32 @@ pub enum Limit {
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub name: Located<String>,
-    pub port: Located<u16>,
     // plain types do not know about locations and get the fallback
     pub debug: bool,
-    // the out-of-band location from the state works as long as nothing is
-    // buffered
-    pub workers: Spanned<u32>,
-    // untagged values are buffered and replayed, in-band information
-    // survives this
-    pub timeout: Either<Located<u64>, Located<String>>,
-    // as does out-of-band information from the state as recordings capture
-    // and restore it
-    pub retries: Either<Spanned<u64>, Spanned<String>>,
-    // the tag comes last, so the fields are buffered
-    pub backend: Backend,
-    // the other enum representations
-    pub actions: Vec<Action>,
-    pub hooks: Vec<Hook>,
     pub limits: Vec<Limit>,
     // out-of-band spans also work for maps and sequences
-    pub servers: Vec<Spanned<Server>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Server {
-    pub host: Located<String>,
-    pub weight: Option<Located<u32>>,
-    pub backup: Option<bool>,
+    pub hosts: Spanned<Vec<Located<String>>>,
 }
 
 const INPUT: &str = r#"
 {
     "name": "demo",
-    "port": 8080,
     "debug": true,
-    "workers": 4,
-    "timeout": "30s",
-    "retries": 3,
-    "backend": {
-        "url": "https://example.com/",
-        "timeout": 30,
-        "type": "http"
-    },
-    "actions": [
-        {"restart": {"delay": 5}},
-        {"notify": "ops@example.com"},
-        {"scale": [2, 10]},
-        "noop"
-    ],
-    "hooks": [
-        {"data": ["systemctl", "reload"], "kind": "command"},
-        {"kind": "url", "data": "https://hooks.example.com/"}
-    ],
-    "limits": [
-        100,
-        {"max": 20, "min": 10}
-    ],
-    "servers": [
-        {"host": "a.example.com", "weight": 2, "backup": false},
-        {"host": "b.example.com", "weight": null, "backup": null}
-    ]
+    "limits": [100, {"max": 20, "min": 10}],
+    "hosts": ["a.example.com", "b.example.com"]
 }
 "#;
 
 fn main() {
-    println!("with locations:");
     let config: Config = from_json_with_locations(INPUT).unwrap();
     println!("{:#?}", config);
+    let Limit::Range { ref min, ref max } = config.limits[1] else {
+        panic!("expected a range");
+    };
+    assert_eq!(min.path.as_deref(), Some("limits[1].min"));
+    assert_eq!(max.span.unwrap().start.line, 5);
 
-    println!();
-    println!("plain JSON:");
+    // without annotations and location tracking the values are plain
     let config: Config = deser_json::from_str(INPUT).unwrap();
-    println!("{:#?}", config);
-
-    // errors carry the location and, with the path layer, the path.  This
-    // also works for values which are buffered: the backend is replayed
-    // once its type is known.
-    println!();
-    println!("error:");
-    let input = INPUT.replace(r#""timeout": 30,"#, r#""timeout": "30s","#);
-    let err = from_json_with_locations::<Config>(&input).unwrap_err();
-    println!("{}", err);
-    assert_eq!(err.path(), Some("backend.timeout"));
-    assert_eq!((err.line(), err.column()), (Some(11), Some(20)));
+    assert!(config.name.span.is_none() && config.hosts.span.is_none());
 }

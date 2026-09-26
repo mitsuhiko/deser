@@ -1,3 +1,11 @@
+//! Implementing `Serialize` and `Deserialize` by hand, which is what the
+//! derive generates for you.
+//!
+//! Serialization hands out a `StructEmitter` which yields the fields one by
+//! one, deserialization a `Sink` which receives them.  Neither recurses:
+//! the nested values are handed back to the driver as handles.  The sink is
+//! fed with events directly through a `DeserializeDriver`, no data format
+//! is involved.
 use std::borrow::Cow;
 
 use deser::State;

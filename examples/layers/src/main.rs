@@ -4,7 +4,7 @@
 //! During serialization, layers can transform the output without the types
 //! knowing about it:
 //!
-//! * [`RenameKeys`] renames the keys of maps (here to camel case),
+//! * [`RenameKeys`] renames the keys of maps (here to kebab case),
 //! * [`SkipNulls`] drops map entries with null values,
 //! * [`Redact`] replaces the values of sensitive keys.
 //!
@@ -28,23 +28,6 @@ impl Layer for RenameKeys {
             event => next.emit(event),
         }
     }
-}
-
-/// Converts `snake_case` to `camelCase`.
-fn camel_case(key: &str) -> String {
-    let mut rv = String::with_capacity(key.len());
-    let mut upper = false;
-    for c in key.chars() {
-        if c == '_' {
-            upper = true;
-        } else if upper {
-            rv.extend(c.to_uppercase());
-            upper = false;
-        } else {
-            rv.push(c);
-        }
-    }
-    rv
 }
 
 /// Drops map entries with null values.
@@ -169,13 +152,13 @@ fn main() {
         .to_string_with(&user, |driver| {
             driver.push_layer(SkipNulls::default());
             driver.push_layer(Redact::new(&["password_hash", "api_tokens"]));
-            driver.push_layer(RenameKeys(camel_case));
+            driver.push_layer(RenameKeys(|key| key.replace('_', "-")));
         })
         .unwrap();
     println!("{}", json);
     assert_eq!(
         json,
-        r#"{"userName":"jdoe","passwordHash":"[redacted]","apiTokens":"[redacted]","settings":{"darkMode":true}}"#
+        r#"{"user-name":"jdoe","password-hash":"[redacted]","api-tokens":"[redacted]","settings":{"dark-mode":true}}"#
     );
 
     // during deserialization, the limits layer rejects input that is too
