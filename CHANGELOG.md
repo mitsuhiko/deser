@@ -87,7 +87,9 @@ All notable changes to deser are documented here.
   locations, the span of every value are kept in its `Meta` data, so types
   deserialized from a value report errors at the original location.  Values
   are converted with `to_value` and `from_value` (which can borrow strings
-  from the value) and built with the `value!` macro.  Values are processed
+  from the value), the `Serializer` and `Deserializer` configure the
+  conversion (for instance with layers).  Values are built with the
+  `value!` macro.  Values are processed
   without recursion, including dropping, cloning, comparing and formatting.
 - Added `EventData` which holds event data detached from its event.
   `State::capture_event_data` captures the data of the current event and

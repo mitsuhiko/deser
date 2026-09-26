@@ -17,7 +17,9 @@
 //! ```
 //!
 //! Values are converted from and into other types with [`to_value`] and
-//! [`from_value`].  Values can be built with the [`value!`] macro.
+//! [`from_value`].  To configure the conversion (for instance to add
+//! layers) use the [`Serializer`] and the [`Deserializer`].  Values can be
+//! built with the [`value!`] macro.
 //!
 //! # Retained Information
 //!
@@ -69,7 +71,7 @@ mod ser;
 mod tree;
 mod value;
 
-pub use self::format::{Deserializer, from_value, to_value};
+pub use self::format::{Deserializer, Serializer, from_value, to_value};
 pub use self::index::ValueIndex;
 pub use self::map::{IntoIter, Iter, IterMut, Keys, Map, MapKey, Values, ValuesMut};
 pub use self::seq::Seq;

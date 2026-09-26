@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use deser::de::{self, Deserialize, DeserializeDriver};
-use deser::ser::{Serialize, SerializeDriver};
+use deser::ser::{self, Serialize, SerializeDriver};
 use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
 
 use crate::value::{Kind, Value};
@@ -212,17 +212,105 @@ pub fn from_value<'de, T: Deserialize<'de>>(value: &'de Value) -> Result<T, Erro
 /// assert_eq!(value, value!({"a": 1, "b": 2}));
 /// assert_eq!(value.as_map().unwrap().order(), Order::Sorted);
 /// ```
+///
+/// To configure the serialization use the [`Serializer`].
 pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
-    let mut out = None;
-    {
-        let mut de = DeserializeDriver::new(&mut out);
-        SerializeDriver::new(value).drive(|event, state| {
-            if state.has_event_data() {
-                de.state_mut()
-                    .attach_event_data(&state.capture_event_data());
-            }
-            de.emit(event)
-        })?;
+    let mut serializer = Serializer::new();
+    serializer.serialize(value)?;
+    Ok(serializer.finish().pop().expect("a value was serialized"))
+}
+
+/// Serializes values into [`Value`]s.
+///
+/// This is a [`Serializer`](deser::ser::Serializer) which builds a value
+/// from the events of a serialized value.  It's what [`to_value`] uses, use
+/// it directly to configure the serialization, for instance to add layers.
+/// Every call to [`serialize`](Self::serialize) adds a value:
+///
+/// ```
+/// use deser::ser::{Layer, Next};
+/// use deser::{Atom, Error, Event};
+/// use deser_value::{Serializer, value};
+///
+/// /// Writes all numbers as strings.
+/// struct NumbersAsStrings;
+///
+/// impl Layer for NumbersAsStrings {
+///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+///         match event {
+///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+///             event => next.emit(event),
+///         }
+///     }
+/// }
+///
+/// let mut serializer = Serializer::new();
+/// serializer.serialize(&true).unwrap();
+/// serializer
+///     .serialize_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
+///     .unwrap();
+/// assert_eq!(serializer.finish(), [value!(true), value!(["1", "2"])]);
+/// ```
+///
+/// The [event data](deser::State::event) of the serialized values (such as
+/// formatting hints) is captured in the [meta data](crate::Meta) of the
+/// values.
+#[derive(Debug, Default, Clone)]
+pub struct Serializer {
+    values: Vec<Value>,
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::default()
     }
-    out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "no value was serialized"))
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is added.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the values serialized so far.
+    pub fn values(&self) -> &[Value] {
+        &self.values
+    }
+
+    /// Returns the values.
+    pub fn finish(self) -> Vec<Value> {
+        self.values
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        let mut out = None;
+        {
+            let mut de = DeserializeDriver::new(&mut out);
+            driver.drive(|event, state| {
+                if state.has_event_data() {
+                    de.state_mut()
+                        .attach_event_data(&state.capture_event_data());
+                }
+                de.emit(event)
+            })?;
+        }
+        let value =
+            out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "no value was serialized"))?;
+        self.values.push(value);
+        Ok(())
+    }
 }

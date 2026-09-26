@@ -50,6 +50,11 @@ let err = from_value::<Config>(&value).unwrap_err();
 assert_eq!((err.line(), err.column()), (Some(2), Some(11)));
 ```
 
+Values are converted from and into other types with `to_value` and
+`from_value`.  To configure the conversion (for instance to add layers)
+use `deser_value::Serializer` and `deser_value::Deserializer`, which work
+like the serializers and deserializers of the formats.
+
 Like the rest of deser, values do not use recursion.  Deeply nested values
 can be deserialized, serialized, cloned, compared, formatted and dropped
 without overflowing the stack.

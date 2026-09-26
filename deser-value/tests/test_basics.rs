@@ -382,3 +382,25 @@ fn test_container_keys_compare_in_order() {
     );
     assert_ne!(value!({[1]: 2, "a": 1}), value!({"b": 2, "a": 1}));
 }
+
+#[test]
+fn test_serializer() {
+    use deser::ser::{Chunk, Serialize};
+    use deser::{Error, ErrorKind, State};
+    use deser_value::Serializer;
+
+    struct Failing;
+
+    impl Serialize for Failing {
+        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+            Err(Error::new(ErrorKind::Unexpected, "failed"))
+        }
+    }
+
+    let mut serializer = Serializer::new();
+    serializer.serialize(&1u32).unwrap();
+    // a value that fails is not added
+    assert!(serializer.serialize(&vec![Failing]).is_err());
+    serializer.serialize(&"x").unwrap();
+    assert_eq!(serializer.values(), [value!(1), value!("x")]);
+}
