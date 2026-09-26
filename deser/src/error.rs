@@ -12,6 +12,9 @@ pub enum ErrorKind {
     OutOfRange,
     WrongLength,
     EndOfFile,
+    /// Reading or writing failed (see [`io`](crate::io)).  The IO error is
+    /// the [`source`](std::error::Error::source) of the error.
+    Io,
 }
 
 /// Additional information attached to an [`Error`].
@@ -195,6 +198,25 @@ impl Error {
         self
     }
 
+    /// Moves the position of the error by the position of the input it
+    /// refers to.
+    ///
+    /// This is used for errors of inputs which are part of a larger input,
+    /// the base is the position (offset, line and column) of the start of
+    /// the part.
+    pub(crate) fn shift_position(mut self, offset: usize, line: usize, column: usize) -> Self {
+        if let Some(ref mut error_offset) = self.inner.offset {
+            *error_offset += offset;
+        }
+        if let Some((ref mut error_line, ref mut error_column)) = self.inner.line_column {
+            if *error_line == 1 {
+                *error_column += column - 1;
+            }
+            *error_line += line - 1;
+        }
+        self
+    }
+
     /// Returns the byte offset in the input the error refers to.
     pub fn offset(&self) -> Option<usize> {
         self.inner.offset
@@ -307,6 +329,12 @@ impl fmt::Debug for DebugAttachments<'_> {
         f.debug_list()
             .entries(self.0.iter().map(|x| &x.value))
             .finish()
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Error {
+        Error::new(ErrorKind::Io, err.to_string()).with_source(err)
     }
 }
 

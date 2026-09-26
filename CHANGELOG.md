@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser::io` to read values from and write values to streams.
+  Formats provide a `Decoder` which splits a stream into the frames of
+  values and deserializes them and an `Encoder` which serializes values.
+  `Reader` and `Writer` (and `from_reader` and `to_writer`) use them with
+  `std::io::Read` and `std::io::Write`.  `DecodeBuffer` implements the
+  framing without doing IO itself for other kinds of IO (such as async
+  runtimes).  Errors of values refer to positions in the stream.
+- Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
+  converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:
   `SerializeDriver` and `DeserializeDriver` are `Send`.  This allows them
   to be suspended across an `.await` in multi threaded runtimes.

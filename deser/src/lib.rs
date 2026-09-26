@@ -40,6 +40,9 @@ pub struct Account {
 //! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML serialization and
 //!   deserialization.
 //!
+//! Values can be read from and written to streams (such as files or
+//! sockets) with the decoders and encoders of the formats, see [`io`].
+//!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
 //!
@@ -75,6 +78,7 @@ pub mod de;
 mod error;
 pub mod ext;
 pub mod hints;
+pub mod io;
 pub mod ser;
 
 mod extensions;
