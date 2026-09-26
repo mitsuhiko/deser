@@ -13,7 +13,8 @@ use deser::ser::Serialize;
 /// `FramedRead`, `FramedWrite` and `Framed`:
 ///
 /// ```
-/// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
 /// use futures_util::{SinkExt, StreamExt};
 /// use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 /// use deser_tokio::Codec;
@@ -35,7 +36,7 @@ use deser::ser::Serialize;
 ///     ),
 /// );
 /// assert_eq!(server.next().await.unwrap().unwrap(), [1, 2]);
-/// # });
+/// # }
 /// ```
 ///
 /// The data read by the framed reader is moved into the codec's buffer, so

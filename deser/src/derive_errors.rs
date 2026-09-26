@@ -73,16 +73,6 @@
 /// }
 /// ```
 ///
-/// Closures are not supported in default expressions.
-///
-/// ```compile_fail
-/// #[derive(deser::Deserialize)]
-/// struct Test {
-///     #[deser(default = (|| 42)())]
-///     field: u32,
-/// }
-/// ```
-///
 /// `skip_serializing_if` takes a path, not a string.
 ///
 /// ```compile_fail

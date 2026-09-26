@@ -10,8 +10,7 @@ deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
 deser-tokio = { path = "../../deser-tokio", features = ["codec"] }
 futures-util = { version = "0.3.30", default-features = false, features = ["sink"] }
-# no "macros" as this would change the features of syn for the workspace
-tokio = { version = "1.38", features = ["net", "rt-multi-thread"] }
+tokio = { version = "1.38", features = ["macros", "net", "rt-multi-thread"] }
 tokio-util = { version = "0.7.11", features = ["codec"] }
 
 [[bin]]

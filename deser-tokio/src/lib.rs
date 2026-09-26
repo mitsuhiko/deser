@@ -8,7 +8,8 @@
 //! can be read from sockets with bounded memory:
 //!
 //! ```
-//! # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), deser::Error> {
 //! use deser::{Deserialize, Serialize};
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //! use deser_tokio::{Reader, Writer};
@@ -39,7 +40,7 @@
 //!     responses.write(&request.id).await?;
 //! }
 //! # client.await.unwrap();
-//! # Ok::<(), deser::Error>(()) }).unwrap();
+//! # Ok(()) }
 //! ```
 //!
 //! Single values are read with [`from_reader`] and written with
@@ -329,13 +330,14 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
 /// is read to the end.
 ///
 /// ```
-/// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
 /// let input = &b"[1, 2, 3]"[..];
 /// let value: Vec<u32> = deser_tokio::from_reader(input, deser_json::Decoder::default())
 ///     .await
 ///     .unwrap();
 /// assert_eq!(value, [1, 2, 3]);
-/// # });
+/// # }
 /// ```
 pub async fn from_reader<T, R, D>(reader: R, decoder: D) -> Result<T, Error>
 where
@@ -355,13 +357,14 @@ where
 /// Writes a single value to an [`AsyncWrite`] and flushes it.
 ///
 /// ```
-/// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
 /// let mut out = Vec::new();
 /// deser_tokio::to_writer(&mut out, deser_json::Encoder::default(), &vec![1, 2])
 ///     .await
 ///     .unwrap();
 /// assert_eq!(out, b"[1,2]");
-/// # });
+/// # }
 /// ```
 pub async fn to_writer<W, E>(writer: W, encoder: E, value: &dyn Serialize) -> Result<(), Error>
 where

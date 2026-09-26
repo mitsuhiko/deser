@@ -46,7 +46,8 @@ async fn handle(socket: TcpStream) -> Result<(), deser::Error> {
     }
 }
 
-async fn run() -> Result<(), deser::Error> {
+#[tokio::main]
+async fn main() -> Result<(), deser::Error> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     tokio::spawn(async move {
@@ -78,11 +79,4 @@ async fn run() -> Result<(), deser::Error> {
         println!("{:?}", response);
     }
     Ok(())
-}
-
-fn main() -> Result<(), deser::Error> {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?
-        .block_on(run())
 }
