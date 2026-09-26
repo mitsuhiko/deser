@@ -91,7 +91,10 @@ lint:
 bench:
 	@$(RUN) "bench" --show-on-output "cd benchmark && RUSTC_BOOTSTRAP=1 cargo bench"
 
+bench-versus:
+	@$(RUN) "bench-versus" --show-on-output "cd benchmark && cargo run --release -- versus"
+
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint bench bench-compile-times
+.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint bench bench-versus bench-compile-times

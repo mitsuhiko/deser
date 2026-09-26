@@ -4,6 +4,9 @@
 //! datasets cover what it barely contains: floats (f64 and f32), bytes,
 //! hash maps and deeply nested small containers.  They are generated
 //! deterministically so that runs are comparable.
+//!
+//! All but the blobs are compared against serde.  serde has no bytes for
+//! `Vec<u8>` (they are sequences of integers) and no `BytesFallback`.
 use std::collections::HashMap;
 
 use deser::adapters::bytes::{BytesFallback, Hex};
@@ -27,12 +30,12 @@ impl Rng {
 }
 
 /// Float heavy: GeoJSON-like features with f64 coordinates.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 pub struct FeatureCollection {
     features: Vec<Feature>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Feature {
     id: u64,
     name: String,
@@ -40,9 +43,10 @@ struct Feature {
     geometry: Geometry,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Geometry {
     #[deser(rename = "type")]
+    #[serde(rename = "type")]
     kind: String,
     coordinates: Vec<[f64; 2]>,
 }
@@ -67,7 +71,7 @@ pub fn features() -> FeatureCollection {
 }
 
 /// f32 heavy: a point cloud.  Exercises the f32 precision path.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 pub struct PointCloud {
     points: Vec<[f32; 3]>,
 }
@@ -88,12 +92,12 @@ pub fn point_cloud() -> PointCloud {
 }
 
 /// Bytes heavy: many small blobs, plain and with a bytes fallback format.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Blobs {
     blobs: Vec<Blob>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 struct Blob {
     id: u32,
     data: Vec<u8>,
@@ -116,7 +120,7 @@ pub fn blobs() -> Blobs {
 }
 
 /// Hash map heavy: many small maps.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 pub struct Registry {
     entries: Vec<HashMap<String, u64>>,
 }
@@ -136,7 +140,7 @@ pub fn registry() -> Registry {
 
 /// Container heavy: a tree of small nodes.  Every node is a struct with a
 /// sequence, so most events are container starts and ends.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 pub struct Node {
     id: u32,
     weight: (u8, u8),

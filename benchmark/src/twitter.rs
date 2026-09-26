@@ -1,13 +1,16 @@
-//! The types of the Twitter dump (`benches/twitter.json`).
+//! The types of the Twitter dump (`data/json-benchmark/twitter.json`).
+//!
+//! The fields that are always `null` are `Option<()>` rather than `()` as
+//! TOML has no null and leaves them out.
 use deser::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 pub struct Twitter {
     statuses: Vec<Status>,
     search_metadata: SearchMetadata,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Status {
     metadata: Metadata,
     created_at: String,
@@ -22,10 +25,10 @@ struct Status {
     in_reply_to_user_id_str: Option<String>,
     in_reply_to_screen_name: Option<String>,
     user: User,
-    geo: (),
-    coordinates: (),
-    place: (),
-    contributors: (),
+    geo: Option<()>,
+    coordinates: Option<()>,
+    place: Option<()>,
+    contributors: Option<()>,
     retweeted_status: Option<Box<Status>>,
     retweet_count: u32,
     favorite_count: u32,
@@ -36,13 +39,13 @@ struct Status {
     lang: String,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Metadata {
     result_type: String,
     iso_language_code: String,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct User {
     id: u32,
     id_str: String,
@@ -86,18 +89,18 @@ struct User {
     notifications: bool,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct UserEntities {
     url: Option<UserUrl>,
     description: UserEntitiesDescription,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct UserUrl {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Url {
     url: String,
     expanded_url: String,
@@ -105,12 +108,12 @@ struct Url {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct UserEntitiesDescription {
     urls: Vec<Url>,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct StatusEntities {
     hashtags: Vec<Hashtag>,
     symbols: Vec<()>,
@@ -119,13 +122,13 @@ struct StatusEntities {
     media: Option<Vec<Media>>,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Hashtag {
     text: String,
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct UserMention {
     screen_name: String,
     name: String,
@@ -134,7 +137,7 @@ struct UserMention {
     indices: Indices,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Media {
     id: u64,
     id_str: String,
@@ -152,7 +155,7 @@ struct Media {
     source_status_id_str: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Sizes {
     medium: Size,
     small: Size,
@@ -160,7 +163,7 @@ struct Sizes {
     large: Size,
 }
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Size {
     w: u16,
     h: u16,
@@ -169,7 +172,7 @@ struct Size {
 
 type Indices = (u8, u8);
 
-#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct SearchMetadata {
     completed_in: f32,
     max_id: u64,

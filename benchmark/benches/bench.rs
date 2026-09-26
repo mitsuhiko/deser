@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use test::Bencher;
 
 fn input_json() -> String {
-    std::fs::read_to_string("benches/twitter.json").unwrap()
+    std::fs::read_to_string("data/json-benchmark/twitter.json").unwrap()
 }
 
 fn input_struct() -> Twitter {
