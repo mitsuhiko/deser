@@ -250,6 +250,28 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             },
         )
         .collect::<Vec<_>>();
+    // if a flattened field took a key and the value used if it did not
+    let flatten_used = attrs
+        .iter()
+        .filter(|x| x.flatten())
+        .map(|x| {
+            let name = x.field().ident.as_ref().unwrap();
+            syn::Ident::new(&format!("used_{}", name), Span::call_site())
+        })
+        .collect::<Vec<_>>();
+    let flatten_initial = attrs
+        .iter()
+        .filter(|x| x.flatten())
+        .map(|x| {
+            let name = x.field().ident.as_ref().unwrap();
+            syn::Ident::new(&format!("initial_{}", name), Span::call_site())
+        })
+        .collect::<Vec<_>>();
+    let flatten_ty = attrs
+        .iter()
+        .filter(|x| x.flatten())
+        .map(|x| &x.field().ty)
+        .collect::<Vec<_>>();
 
     let stage2_default = if container_attrs.default().is_some() {
         let need_container_default = sink_fieldname
@@ -398,6 +420,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 #(
                     #sink_fieldname: #sink_fieldty,
                 )*
+                #(
+                    #flatten_used: bool,
+                )*
                 _marker: __deser::__derive::PhantomData<&'de ()>,
             }
 
@@ -412,6 +437,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         seen: [0; #seen_words],
                         #(
                             #sink_fieldname: #sink_defaults,
+                        )*
+                        #(
+                            #flatten_used: false,
                         )*
                         _marker: __deser::__derive::PhantomData,
                     })
@@ -537,6 +565,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                     #(
                         if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__key, __state)? {
+                            self.#flatten_used = true;
                             return __deser::__derive::Ok(__deser::__derive::Some(__sink));
                         }
                     )*
@@ -545,11 +574,27 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
                 fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
                     #![allow(unused_mut)]
+                    // a flattened value that took no key is missing, the
+                    // value for missing values of its type is used (`None`
+                    // for options).  Types without one are finished (maps
+                    // are empty, structs report missing fields).
                     #(
-                        self.#flatten_fields.borrow_mut().finish(__state)?;
+                        let #flatten_initial = if self.#flatten_used {
+                            __deser::__derive::None
+                        } else {
+                            <#flatten_ty as __deser::Deserialize<'de>>::initial_value()
+                        };
+                        if #flatten_initial.is_none() {
+                            self.#flatten_fields.borrow_mut().finish(__state)?;
+                        }
                     )*
                     #(
                         let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
+                    )*
+                    #(
+                        if #flatten_initial.is_some() {
+                            #flatten_fields = #flatten_initial;
+                        }
                     )*
                     #stage2_default
                     *self.slot = __deser::__derive::Some(#ident {

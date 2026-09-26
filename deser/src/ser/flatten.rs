@@ -68,12 +68,15 @@ impl Forwarded {
 enum Content<'a> {
     Struct(Box<dyn StructEmitter + 'a>),
     Map(Box<dyn MapEmitter + 'a>),
+    // null (like `None`) has no fields
+    Empty,
 }
 
 /// The fields of a value that is flattened into a struct.
 ///
 /// The value has to serialize as a struct or as a map (whose keys become
-/// field names, they have to be strings, integers, booleans or chars).  If
+/// field names, they have to be strings, integers, booleans or chars).  Null
+/// (like `None`) has no fields.  If
 /// it forwards to another value (as values serialized with
 /// [`FromInto`](crate::adapters::FromInto) do) the fields of the value it
 /// forwards to are used.  After the last field the values it forwarded to
@@ -97,6 +100,7 @@ impl<'a> FlattenedStruct<'a> {
         let content = match chunk {
             Chunk::Struct(emitter) => Content::Struct(emitter),
             Chunk::Map(emitter) => Content::Map(emitter),
+            Chunk::Atom(Atom::Null) => Content::Empty,
             _ => {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
@@ -109,6 +113,11 @@ impl<'a> FlattenedStruct<'a> {
             forwarded,
             done: false,
         })
+    }
+
+    /// Returns `true` if the value was null.
+    pub(crate) fn is_null(&self) -> bool {
+        matches!(self.content, Content::Empty)
     }
 
     /// Produces the next field.
@@ -138,6 +147,7 @@ impl<'a> FlattenedStruct<'a> {
                     return Ok(Some((Cow::Owned(key), emitter.next_value(state)?)));
                 }
             }
+            Content::Empty => {}
         }
         self.done = true;
         self.forwarded.finish(state)?;

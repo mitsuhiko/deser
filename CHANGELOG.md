@@ -19,6 +19,9 @@ All notable changes to deser are documented here.
   serializing.  Flattened maps silently stayed empty and failed to
   serialize before.  `deser_value::Value` and `deser_value::Map` can be
   flattened the same way.
+- Flattened `Option`s are `None` if no key was given for them and `None`
+  serializes no fields.  Both failed before.  Unlike serde, errors in the
+  value are reported and not turned into `None`.
 - Newtype variants of `()` (`A(())`) in internally tagged enums are
   unit variants (`{"type": "A"}`, other keys are ignored).  They failed
   in both directions before.

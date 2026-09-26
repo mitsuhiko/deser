@@ -181,7 +181,9 @@
 //!   Maps (and `deser_value::Value`) take all keys that the struct and the
 //!   flattened fields before them do not take, the keys are parsed into the
 //!   key type like the keys of JSON objects.  When serializing, the keys of
-//!   the map become fields.
+//!   the map become fields.  A flattened `Option` is `None` if the value did
+//!   not take any key (unlike serde, errors in the value are not turned into
+//!   `None`), when serializing `None` has no fields.
 //! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See

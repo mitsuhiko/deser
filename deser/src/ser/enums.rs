@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 
 use crate::State;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::ser::flatten::FlattenedStruct;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
 
@@ -193,7 +193,16 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             return Ok(None);
         }
         if self.content.is_none() {
-            self.content = Some(FlattenedStruct::new(self.value.inner, state)?);
+            let content = FlattenedStruct::new(self.value.inner, state)?;
+            // the tag alone would be deserialized as the content (not as
+            // null), `()` is handled by the derive.
+            if content.is_null() {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "newtype variants of internally tagged enums must contain structs or maps",
+                ));
+            }
+            self.content = Some(content);
         }
         match self.content.as_mut().unwrap().next(state)? {
             Some(item) => Ok(Some(item)),

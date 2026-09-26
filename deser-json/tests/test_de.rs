@@ -127,19 +127,20 @@ fn test_flatten_map() {
 
 #[test]
 fn test_flatten_optional() {
-    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    #[derive(Deserialize, deser::Serialize, PartialEq, Eq, Debug)]
     pub struct User {
         id: u64,
         #[deser(flatten)]
         attrs: Option<Attrs>,
     }
 
-    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    #[derive(Deserialize, deser::Serialize, PartialEq, Eq, Debug)]
     pub struct Attrs {
         is_admin: bool,
     }
 
-    let user: User = from_str(r#"{"id": 42, "is_admin": true}"#).unwrap();
+    let json = r#"{"id":42,"is_admin":true}"#;
+    let user: User = from_str(json).unwrap();
     assert_eq!(
         user,
         User {
@@ -147,6 +148,31 @@ fn test_flatten_optional() {
             attrs: Some(Attrs { is_admin: true }),
         }
     );
+    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+
+    // without any of its keys the value is missing
+    let json = r#"{"id":42}"#;
+    let user: User = from_str(json).unwrap();
+    assert_eq!(
+        user,
+        User {
+            id: 42,
+            attrs: None
+        }
+    );
+    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+    let user: User = from_str(r#"{"id":42,"other":true}"#).unwrap();
+    assert_eq!(
+        user,
+        User {
+            id: 42,
+            attrs: None
+        }
+    );
+
+    // errors are not swallowed
+    let err = from_str::<User>(r#"{"id":42,"is_admin":1}"#).unwrap_err();
+    assert_eq!(err.message(), "unexpected unsigned integer, expected bool");
 }
 
 #[test]
