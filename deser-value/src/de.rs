@@ -132,7 +132,8 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         self.meta = capture_meta(state);
         self.building = Building::Seq(
             Seq::with_capacity(shape.len().unwrap_or(0).min(MAX_PREALLOC))
-                .with_order(shape.order()),
+                .with_order(shape.order())
+                .with_repeated(shape.is_repeated()),
         );
         Ok(())
     }

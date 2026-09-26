@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use crate::State;
 use crate::de::layer::{Layer, LayerEvent, Next};
-use crate::de::{Deserialize, SinkHandle};
-use crate::error::Error;
+use crate::de::{Deserialize, DuplicateKeys, SinkHandle};
+use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
@@ -64,6 +64,9 @@ pub(crate) struct DriverCore<'de> {
     // is open.
     root: Option<SinkHandle<'de, 'de>>,
     sink_stack: Vec<(SinkHandle<'de, 'de>, Container)>,
+    // the value of a collapsed sequence that is delivered at its end (with
+    // `DuplicateKeys::Last`).
+    pending: Option<Atom<'de>>,
 }
 
 const STACK_CAPACITY: usize = 128;
@@ -80,6 +83,10 @@ enum Container {
     /// A map, the flag is `true` if a key is expected next.
     Map(bool),
     Seq,
+    /// A sequence of the values of a repeated key which is delivered to a
+    /// sink that does not accept sequences, with the number of values so
+    /// far.  See [`ContainerShape::with_repeated`].
+    Collapse(DuplicateKeys, usize),
 }
 
 /// Erases the lifetime of a sink handle.
@@ -138,6 +145,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                 sink_stack: Vec::with_capacity(STACK_CAPACITY),
                 // SAFETY: the driver cannot outlive 'a
                 root: Some(unsafe { erase_lifetime(sink) }),
+                pending: None,
             },
             layers: Vec::new(),
             _marker: PhantomData,
@@ -363,6 +371,16 @@ impl<'de> DriverCore<'de> {
                 self.state.is_map_key = false;
                 sink.borrowed_value_atom(atom, &mut self.state)
             }
+            Some((_, Container::Collapse(policy, count))) => {
+                self.state.is_map_key = false;
+                *count += 1;
+                if *count == 1 || *policy == DuplicateKeys::Last {
+                    self.pending = Some(atom);
+                    Ok(())
+                } else {
+                    collapse_duplicate(*policy)
+                }
+            }
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
                 sink.borrowed_atom(atom, &mut self.state)?;
@@ -387,6 +405,16 @@ impl<'de> DriverCore<'de> {
             Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
                 sink.value_atom(atom, &mut self.state)
+            }
+            Some((_, Container::Collapse(policy, count))) => {
+                self.state.is_map_key = false;
+                *count += 1;
+                if *count == 1 || *policy == DuplicateKeys::Last {
+                    self.pending = Some(atom.to_static());
+                    Ok(())
+                } else {
+                    collapse_duplicate(*policy)
+                }
             }
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
@@ -419,6 +447,12 @@ impl<'de> DriverCore<'de> {
                 // SAFETY: see above
                 unsafe { erase_lifetime(sink) }
             }
+            Some((_, Container::Collapse(..))) => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "the values of a repeated key must be atoms",
+                ));
+            }
             None => self.root.take().expect("no active sink"),
         };
         self.state.container_shape = shape;
@@ -426,8 +460,15 @@ impl<'de> DriverCore<'de> {
             sink.map(&mut self.state)?;
             Container::Map(true)
         } else {
-            sink.seq(&mut self.state)?;
-            Container::Seq
+            match sink.seq(&mut self.state) {
+                Ok(()) => Container::Seq,
+                // the values of a repeated key for a sink which wants a
+                // single value
+                Err(err) if shape.is_repeated() && err.kind() == ErrorKind::Unexpected => {
+                    Container::Collapse(self.state.duplicate_keys(), 0)
+                }
+                Err(err) => return Err(err),
+            }
         };
         self.state.depth += 1;
         self.sink_stack.push((sink, container));
@@ -438,14 +479,21 @@ impl<'de> DriverCore<'de> {
     fn emit_end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.sink_stack.last() {
             Some((_, Container::Map(_))) if is_map => {}
-            Some((_, Container::Seq)) if !is_map => {}
+            Some((_, Container::Seq | Container::Collapse(..))) if !is_map => {}
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
         }
-        let (mut sink, _) = self.sink_stack.pop().unwrap();
+        let (mut sink, container) = self.sink_stack.pop().unwrap();
+        let mut rv = Ok(());
+        if let Container::Collapse(..) = container
+            && let Some(atom) = self.pending.take()
+        {
+            self.state.is_map_key = false;
+            rv = sink.borrowed_atom(atom, &mut self.state);
+        }
         // the container remains the current one while it's finished as sinks
         // can still produce values within it (for instance by replaying
         // recorded values).
-        let rv = sink.finish(&mut self.state);
+        let rv = rv.and_then(|()| sink.finish(&mut self.state));
         self.state.depth -= 1;
         if self.sink_stack.is_empty() {
             // the root sink is retained until the driver is dropped
@@ -453,6 +501,15 @@ impl<'de> DriverCore<'de> {
         }
         rv
     }
+}
+
+/// Handles a value of a repeated key after the first one for a sink that
+/// accepts a single value with the `First` or `Error` policy.
+///
+/// The value that is kept is delivered at the end of the sequence.
+#[cold]
+fn collapse_duplicate(policy: DuplicateKeys) -> Result<(), Error> {
+    policy.resolve(|| "duplicate key".into()).map(|_| ())
 }
 
 impl<'de> Drop for DriverCore<'de> {

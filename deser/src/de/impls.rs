@@ -13,7 +13,9 @@ use crate::adapters::{DeserializeAs, Same};
 use crate::de::DuplicateKeys;
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
-use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
+use crate::de::{
+    Deserialize, OwnedSink, Sink, SinkHandle, empty_as_none, is_empty_lexical, is_null_atom,
+};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes};
 use crate::ext::Number;
@@ -474,7 +476,22 @@ where
                         None => self.unexpected_atom(atom, state),
                     }
                 }
+                // a single value of a key given once in a query string
+                Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                    self.is_seq = true;
+                    A::__private_atom_into_as(&mut self.element, atom, state)
+                }
                 other => self.unexpected_atom(other, state),
+            }
+        }
+
+        fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+            match atom {
+                Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                    self.is_seq = true;
+                    A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
+                }
+                other => self.atom(other, state),
             }
         }
 
@@ -827,6 +844,23 @@ where
             Cow::Borrowed(if S::UNORDERED { "HashSet" } else { "BTreeSet" })
         }
 
+        fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            match atom {
+                // a single value of a key given once in a query string
+                Atom::Lexical(_) => A::__private_atom_into_as(&mut self.element, atom, state),
+                other => self.unexpected_atom(other, state),
+            }
+        }
+
+        fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+            match atom {
+                Atom::Lexical(_) => {
+                    A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
+                }
+                other => self.atom(other, state),
+            }
+        }
+
         fn seq(&mut self, state: &mut State) -> Result<(), Error> {
             self.set.reserve_elements(cautious_capacity::<T>(state));
             Ok(())
@@ -950,6 +984,8 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
             // for nested options where the inner one becomes `Some(None)`.
             drop(A::deserialize_into_as(inner));
             Ok(())
+        } else if is_empty_lexical(&atom) {
+            empty_as_none(A::__private_atom_into_as(inner, atom, state), inner)
         } else {
             A::__private_atom_into_as(inner, atom, state)
         }
@@ -965,6 +1001,11 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
         if is_null_atom(&atom) {
             drop(A::deserialize_into_as(inner));
             Ok(())
+        } else if is_empty_lexical(&atom) {
+            empty_as_none(
+                A::__private_borrowed_atom_into_as(inner, atom, state),
+                inner,
+            )
         } else {
             A::__private_borrowed_atom_into_as(inner, atom, state)
         }
@@ -1167,7 +1208,22 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                             )),
                         }
                     }
+                    // a single value of a key given once in a query string
+                    Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                        self.is_seq = true;
+                        self.value_atom(atom, state)
+                    }
                     other => self.unexpected_atom(other, state),
+                }
+            }
+
+            fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+                match atom {
+                    Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                        self.is_seq = true;
+                        self.borrowed_value_atom(atom, state)
+                    }
+                    other => self.atom(other, state),
                 }
             }
 

@@ -40,6 +40,17 @@ All notable changes to deser are documented here.
   (`State::set_duplicate_keys`) and also applies to buffered values.
   `MapSkipError` skips duplicate entries if they are an error.  Values of
   fields that are containers (like `Vec`) are replaced, not merged.
+- Sequences can be marked as the values of a key that was given more than
+  once (`ContainerShape::with_repeated`), like `a=1&a=2` in a query
+  string.  Types that accept sequences receive the values, for types that
+  do not the driver picks a single value according to `DuplicateKeys`.
+  `deser-value` keeps the flag on `Seq`.
+- Sequences (`Vec`, `VecDeque`, sets, arrays, ...) accept a single lexical
+  atom as a sequence of one element, like a key that is given once in a
+  query string.  Byte buffers decode it as bytes like strings.
+- Optionals are `None` for an empty lexical atom if their value rejects it
+  (`?limit=` is `None` for an `Option<u32>` and `Some("")` for an
+  `Option<String>`).
 - Added `Atom::F32` for single precision floats.  `f32` values are no
   longer widened to `f64` when serialized, so the text formats write them
   with the shortest text for their precision (`0.1f32` as `0.1` instead of

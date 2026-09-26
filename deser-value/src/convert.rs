@@ -114,7 +114,9 @@ fn drive<'de>(
             }
             match value.kind {
                 Kind::Seq(ref seq) => {
-                    driver.emit(Event::SeqStart(shape(seq.len(), seq.order())))?;
+                    driver.emit(Event::SeqStart(
+                        shape(seq.len(), seq.order()).with_repeated(seq.is_repeated()),
+                    ))?;
                     stack.push(Frame::Seq(seq.iter(), value));
                 }
                 Kind::Map(ref map) => {

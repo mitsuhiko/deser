@@ -317,7 +317,9 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// When a null atom is received the wrapped sink is not invoked (not even
     /// [`finish`](Sink::finish)) and the handle turns into a null handle.  An
     /// atom counts as null if it is [`Atom::Null`] or an extension value which
-    /// falls back to null.
+    /// falls back to null.  An empty [`Atom::Lexical`] (like the value of
+    /// `?limit=` in a query string) is passed to the wrapped sink, if the
+    /// sink rejects it the handle turns into a null handle too.
     ///
     /// This is used to implement `Option<T>`: the slot is set to `Some(None)`
     /// before the handle of the inner value is created and made to ignore
@@ -395,6 +397,30 @@ pub(crate) fn is_null_atom(atom: &Atom) -> bool {
     }
 }
 
+/// Checks if an atom is an empty lexical atom.
+///
+/// Optionals are `None` for these if the value rejects them (like the
+/// empty value of a number in a query string).
+#[inline]
+pub(crate) fn is_empty_lexical(atom: &Atom) -> bool {
+    matches!(atom, Atom::Lexical(value) if value.is_empty())
+}
+
+/// Turns the rejection of an empty lexical atom into `None`.
+///
+/// Values are rejected with [`ErrorKind::Unexpected`], other errors are
+/// passed on.
+#[cold]
+pub(crate) fn empty_as_none<T>(rv: Result<(), Error>, slot: &mut Option<T>) -> Result<(), Error> {
+    match rv {
+        Err(err) if err.kind() == ErrorKind::Unexpected => {
+            *slot = None;
+            Ok(())
+        }
+        rv => rv,
+    }
+}
+
 // The methods on the handle are inherent so that they can be used without
 // having the `Sink` trait in scope.  The `Sink` implementation delegates to
 // them.
@@ -405,6 +431,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         if self.skip_null(&atom) {
             return Ok(());
         }
+        if self.is_optional() && is_empty_lexical(&atom) {
+            let rv = self.sink_mut().atom(atom, state);
+            return self.empty_as_null(rv);
+        }
         self.sink_mut().atom(atom, state)
     }
 
@@ -414,7 +444,35 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         if self.skip_null(&atom) {
             return Ok(());
         }
+        if self.is_optional() && is_empty_lexical(&atom) {
+            let rv = self.sink_mut().borrowed_atom(atom, state);
+            return self.empty_as_null(rv);
+        }
         self.sink_mut().borrowed_atom(atom, state)
+    }
+
+    /// Returns `true` if the handle ignores null atoms (see
+    /// [`ignore_null`](Self::ignore_null)).
+    #[inline(always)]
+    fn is_optional(&self) -> bool {
+        matches!(
+            self.0,
+            HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_)
+        )
+    }
+
+    /// Turns the rejection of an empty lexical atom into a null.
+    ///
+    /// The handle becomes a null handle, like for null atoms.
+    #[cold]
+    fn empty_as_null(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
+        match rv {
+            Err(err) if err.kind() == ErrorKind::Unexpected => {
+                *self = SinkHandle::null();
+                Ok(())
+            }
+            rv => rv,
+        }
     }
 
     /// Forwards to [`Sink::unexpected_atom`].

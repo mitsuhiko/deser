@@ -10,9 +10,12 @@ use crate::value::{Kind, Value};
 /// A sequence of values.
 ///
 /// A sequence dereferences to a [`Vec`] of its values.  Additionally it
-/// holds the [`Order`] of the values which is passed on to formats when the
-/// sequence is serialized.  The order is not considered when sequences are
-/// compared.
+/// holds the [`Order`] of the values and if it holds the values of a
+/// repeated key (see [`ContainerShape::with_repeated`]), which are passed on
+/// when the sequence is serialized.  They are not considered when sequences
+/// are compared.
+///
+/// [`ContainerShape::with_repeated`]: deser::ContainerShape::with_repeated
 ///
 /// ```
 /// use deser::Order;
@@ -28,6 +31,7 @@ use crate::value::{Kind, Value};
 pub struct Seq {
     pub(crate) items: Vec<Value>,
     pub(crate) order: Order,
+    pub(crate) repeated: bool,
 }
 
 impl Seq {
@@ -36,6 +40,7 @@ impl Seq {
         Seq {
             items: Vec::new(),
             order: Order::Natural,
+            repeated: false,
         }
     }
 
@@ -44,6 +49,7 @@ impl Seq {
         Seq {
             items: Vec::with_capacity(capacity),
             order: Order::Natural,
+            repeated: false,
         }
     }
 
@@ -61,6 +67,33 @@ impl Seq {
     pub fn with_order(mut self, order: Order) -> Seq {
         self.order = order;
         self
+    }
+
+    /// Returns `true` if the sequence holds the values of a repeated key.
+    ///
+    /// See [`ContainerShape::with_repeated`](deser::ContainerShape::with_repeated).
+    pub fn is_repeated(&self) -> bool {
+        self.repeated
+    }
+
+    /// Sets if the sequence holds the values of a repeated key.
+    pub fn set_repeated(&mut self, yes: bool) {
+        self.repeated = yes;
+    }
+
+    /// Sets if the sequence holds the values of a repeated key and returns
+    /// the sequence.
+    pub fn with_repeated(mut self, yes: bool) -> Seq {
+        self.repeated = yes;
+        self
+    }
+
+    /// Creates an empty sequence with the order and the repeated flag of
+    /// this one.
+    pub(crate) fn empty_like(&self, capacity: usize) -> Seq {
+        Seq::with_capacity(capacity)
+            .with_order(self.order)
+            .with_repeated(self.repeated)
     }
 
     /// Converts the sequence into a vector.
@@ -125,6 +158,7 @@ impl From<Vec<Value>> for Seq {
         Seq {
             items,
             order: Order::Natural,
+            repeated: false,
         }
     }
 }

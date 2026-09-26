@@ -224,3 +224,39 @@ fn test_lexical() {
     assert_eq!(back, value);
     assert!(!back["port"].is_lexical());
 }
+
+#[test]
+fn test_repeated() {
+    use deser::de::DeserializeDriver;
+    use deser::{Atom, ContainerShape, Event};
+
+    // the values of a repeated key stay repeated in values
+    let mut out = None::<Value>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        for event in [
+            Event::map_start(),
+            Atom::Lexical("page".into()).into(),
+            Event::SeqStart(ContainerShape::new().with_repeated(true)),
+            Atom::Lexical("1".into()).into(),
+            Atom::Lexical("2".into()).into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ] {
+            driver.emit(event).unwrap();
+        }
+    }
+    let value = out.unwrap();
+    assert!(value["page"].as_seq().unwrap().is_repeated());
+    assert!(value.clone()["page"].as_seq().unwrap().is_repeated());
+
+    #[derive(Debug, deser::Deserialize, PartialEq)]
+    struct Query {
+        page: u32,
+    }
+    assert_eq!(from_value::<Query>(&value).unwrap(), Query { page: 2 });
+    assert_eq!(
+        from_value::<Query>(&to_value(&value).unwrap()).unwrap(),
+        Query { page: 2 }
+    );
+}

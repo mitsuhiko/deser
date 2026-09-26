@@ -55,7 +55,7 @@ fn clone_leaf(kind: &Kind) -> Kind {
         Kind::Ext(value) => Kind::Ext(value.clone()),
         Kind::Seq(seq) => {
             debug_assert!(seq.is_empty());
-            Kind::Seq(Seq::new().with_order(seq.order))
+            Kind::Seq(seq.empty_like(0))
         }
         Kind::Map(map) => {
             debug_assert!(map.is_empty());
@@ -86,7 +86,7 @@ impl<'a> CloneFrame<'a> {
     fn seq(seq: &'a Seq, meta: Option<Box<Meta>>) -> CloneFrame<'a> {
         CloneFrame::Seq {
             iter: seq.items.iter(),
-            out: Seq::with_capacity(seq.len()).with_order(seq.order),
+            out: seq.empty_like(seq.len()),
             meta,
         }
     }
@@ -176,7 +176,7 @@ pub(crate) fn clone_kind(kind: &Kind) -> Kind {
 
 pub(crate) fn clone_seq(seq: &Seq) -> Kind {
     if seq.is_empty() {
-        return Kind::Seq(Seq::new().with_order(seq.order));
+        return Kind::Seq(seq.empty_like(0));
     }
     clone_tree(CloneFrame::seq(seq, None))
 }

@@ -512,6 +512,7 @@ impl Order {
 }
 
 const ORDER_MASK: u32 = 0b11;
+const REPEATED: u32 = 0b100;
 const UNKNOWN_LEN: usize = usize::MAX;
 
 /// Facts about a map or sequence.
@@ -522,6 +523,8 @@ const UNKNOWN_LEN: usize = usize::MAX;
 ///
 /// * [`order`](Self::order): how significant the order of the elements is.
 /// * [`len`](Self::len): the number of elements (entries for maps) if known.
+/// * [`is_repeated`](Self::is_repeated): the sequence holds the values of a
+///   key that was given more than once.
 ///
 /// ```
 /// use deser::{ContainerShape, Order};
@@ -576,6 +579,49 @@ impl ContainerShape {
     pub const fn order(&self) -> Order {
         Order::from_bits(self.flags)
     }
+
+    /// Marks a sequence as the values of a key that was given more than
+    /// once.
+    ///
+    /// Formats where keys can repeat (like query strings with `a=1&a=2`)
+    /// emit the values of a repeated key as a sequence with this flag.
+    /// Types that accept sequences (like `Vec<T>`) receive the values,
+    /// types that do not (like `u32`) receive a single value as
+    /// [`DuplicateKeys`](crate::de::DuplicateKeys) in the
+    /// [`State`](crate::State) decides: the last one (the default), the first
+    /// one or an error.  The sequence has to consist of atoms.
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{Atom, ContainerShape, Event};
+    ///
+    /// let mut out = None::<u32>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.emit(Event::SeqStart(ContainerShape::new().with_repeated(true))).unwrap();
+    /// driver.emit(Atom::Lexical("1".into())).unwrap();
+    /// driver.emit(Atom::Lexical("2".into())).unwrap();
+    /// driver.emit(Event::SeqEnd).unwrap();
+    /// drop(driver);
+    /// assert_eq!(out, Some(2));
+    /// ```
+    #[inline]
+    pub const fn with_repeated(mut self, yes: bool) -> ContainerShape {
+        if yes {
+            self.flags |= REPEATED;
+        } else {
+            self.flags &= !REPEATED;
+        }
+        self
+    }
+
+    /// Returns `true` if the sequence holds the values of a key that was
+    /// given more than once.
+    ///
+    /// See [`with_repeated`](Self::with_repeated).
+    #[inline]
+    pub const fn is_repeated(&self) -> bool {
+        self.flags & REPEATED != 0
+    }
 }
 
 impl Default for ContainerShape {
@@ -586,10 +632,13 @@ impl Default for ContainerShape {
 
 impl fmt::Debug for ContainerShape {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ContainerShape")
-            .field("len", &self.len())
-            .field("order", &self.order())
-            .finish()
+        let mut s = f.debug_struct("ContainerShape");
+        s.field("len", &self.len()).field("order", &self.order());
+        // rare, only shown if set
+        if self.is_repeated() {
+            s.field("is_repeated", &true);
+        }
+        s.finish()
     }
 }
 
@@ -598,7 +647,11 @@ impl fmt::Debug for ContainerShape {
 pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
         Event::MapStart(shape) => Event::MapStart(ContainerShape::new().with_order(shape.order())),
-        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::new().with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(
+            ContainerShape::new()
+                .with_order(shape.order())
+                .with_repeated(shape.is_repeated()),
+        ),
         event => event,
     }
 }
