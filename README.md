@@ -56,8 +56,9 @@ assert_eq!(
 
 The same type works unchanged with
 [`deser-yaml`](https://docs.rs/deser-yaml),
-[`deser-toml`](https://docs.rs/deser-toml) and
-[`deser-cbor`](https://docs.rs/deser-cbor).  Deriving requires the `derive`
+[`deser-toml`](https://docs.rs/deser-toml),
+[`deser-cbor`](https://docs.rs/deser-cbor) and
+[`deser-urlencoded`](https://docs.rs/deser-urlencoded).  Deriving requires the `derive`
 feature, which is not enabled by default:
 
 ```toml

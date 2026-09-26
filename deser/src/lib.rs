@@ -39,6 +39,9 @@ pub struct Account {
 //!   deserialization.
 //! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML serialization and
 //!   deserialization.
+//! * [`deser-urlencoded`](https://docs.rs/deser-urlencoded): implements query string
+//!   and form data (`application/x-www-form-urlencoded`) serialization and
+//!   deserialization.
 //!
 //! The data formats have a deserializer (which deserializes values from a
 //! slice) and a serializer (which serializes values into a buffer).  Values
