@@ -15,6 +15,7 @@ members = [
   "examples/bytes",
   "examples/config-errors",
   "examples/crate-path",
+  "examples/debug",
   "examples/deep-nesting",
   "examples/enums",
   "examples/formats",

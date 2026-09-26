@@ -1,0 +1,16 @@
+[package]
+name = "debug"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-debug = { path = "../../deser-debug" }
+deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "debug"
+path = "src/main.rs"
+test = false

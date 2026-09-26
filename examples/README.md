@@ -17,6 +17,8 @@ Getting started:
   errors.
 * [`optionals`](optionals): skipping optional fields and telling missing
   values apart from null for partial updates.
+* [`debug`](debug): formatting values like `#[derive(Debug)]` with
+  `deser-debug`, keeping the Rust shape of options, newtypes and enums.
 
 What sets deser apart:
 
