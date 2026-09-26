@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
@@ -163,8 +162,6 @@ impl FromStr for Duration {
     }
 }
 
-static DURATION_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Duration" };
-
 impl Extension for Duration {
     fn name(&self) -> &str {
         "duration"
@@ -177,10 +174,6 @@ impl Extension for Duration {
 
 impl WellKnown for Duration {
     const EXPECTING: &'static str = "duration";
-
-    fn descriptor() -> &'static dyn Descriptor {
-        &DURATION_DESCRIPTOR
-    }
 
     /// Accepts durations, strings and numbers (seconds).
     fn from_atom(atom: &Atom) -> Result<Option<Duration>, Error> {
@@ -198,7 +191,8 @@ impl WellKnown for Duration {
                 seconds: value,
                 nanosecond: 0,
             },
-            Atom::F64(value) => {
+            Atom::Float(value) => {
+                let value = value.value();
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("duration out of range"));
                 }

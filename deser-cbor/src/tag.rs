@@ -22,10 +22,12 @@
 //! valid.  Otherwise they are passed on as tagged values.
 use std::fmt;
 
+use std::borrow::Cow;
+
 use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::{Atom, Descriptor, Error};
+use deser::{Atom, ContainerShape, Error};
 
 /// The tags of the current data item, attached as event data when
 /// deserializing.
@@ -172,8 +174,8 @@ impl<T: Serialize> Serialize for Tagged<T> {
         self.value.is_optional()
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.value.descriptor()
+    fn container_shape(&self) -> ContainerShape {
+        self.value.container_shape()
     }
 }
 
@@ -259,11 +261,11 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
+    fn expecting(&self) -> Cow<'_, str> {
         if let Some(ref compound) = self.compound {
-            return compound.borrow().descriptor();
+            return compound.borrow().expecting();
         }
         let mut slot = None;
-        T::deserialize_into(&mut slot).descriptor()
+        Cow::Owned(T::deserialize_into(&mut slot).expecting().into_owned())
     }
 }

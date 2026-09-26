@@ -75,7 +75,6 @@ mod error;
 pub mod ext;
 pub mod ser;
 
-mod descriptors;
 mod extensions;
 mod state;
 
@@ -85,9 +84,8 @@ mod soundness;
 #[cfg(all(doctest, feature = "derive"))]
 mod derive_errors;
 
-pub use self::descriptors::Descriptor;
 pub use self::error::{Error, ErrorKind};
-pub use self::event::{Atom, Event};
+pub use self::event::{Atom, Bytes, ContainerShape, Event, Float, FloatKind, Order};
 pub use self::state::State;
 
 // common re-exports

@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
@@ -633,9 +632,6 @@ fn expect(bytes: &[u8], pos: &mut usize, c: u8) -> Result<(), Error> {
     }
 }
 
-static DATETIME_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Datetime" };
-static TIMESTAMP_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Timestamp" };
-
 impl Extension for Datetime {
     fn name(&self) -> &str {
         "datetime"
@@ -648,10 +644,6 @@ impl Extension for Datetime {
 
 impl WellKnown for Datetime {
     const EXPECTING: &'static str = "datetime";
-
-    fn descriptor() -> &'static dyn Descriptor {
-        &DATETIME_DESCRIPTOR
-    }
 
     /// Accepts date-times, timestamps and strings.
     fn from_atom(atom: &Atom) -> Result<Option<Datetime>, Error> {
@@ -686,10 +678,6 @@ impl Extension for Timestamp {
 impl WellKnown for Timestamp {
     const EXPECTING: &'static str = "timestamp";
 
-    fn descriptor() -> &'static dyn Descriptor {
-        &TIMESTAMP_DESCRIPTOR
-    }
-
     /// Accepts timestamps, offset date-times, strings and numbers (seconds
     /// since the epoch).
     fn from_atom(atom: &Atom) -> Result<Option<Timestamp>, Error> {
@@ -713,7 +701,8 @@ impl WellKnown for Timestamp {
                 seconds: value,
                 nanosecond: 0,
             },
-            Atom::F64(value) => {
+            Atom::Float(value) => {
+                let value = value.value();
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("timestamp out of range"));
                 }

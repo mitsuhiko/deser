@@ -6,9 +6,8 @@ use crate::State;
 use crate::adapters::bytes::{BytesEncoding, BytesFormat};
 use crate::adapters::{DeserializeAs, SerializeAs};
 use crate::de::{Deserialize, Sink, SinkHandle};
-use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
-use crate::event::Atom;
+use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk};
 
 mod sealed {
@@ -125,24 +124,6 @@ impl BytesFallbackFormatImpl for IntSeq {
     }
 }
 
-/// The descriptor of bytes that request a format.
-struct FormatDescriptor<F>(PhantomData<fn() -> F>);
-
-impl<F: BytesFallbackFormatImpl> Descriptor for FormatDescriptor<F> {
-    fn name(&self) -> Option<&str> {
-        Some("bytes")
-    }
-
-    fn bytes_format(&self) -> Option<BytesFormat> {
-        Some(F::FORMAT)
-    }
-}
-
-#[inline(always)]
-fn format_descriptor<F: BytesFallbackFormatImpl>() -> &'static dyn Descriptor {
-    &FormatDescriptor::<F>(PhantomData)
-}
-
 /// Deserializes bytes which are either native bytes or encoded strings.
 struct EncodedSink<'a, T, E> {
     out: &'a mut Option<T>,
@@ -150,17 +131,13 @@ struct EncodedSink<'a, T, E> {
 }
 
 impl<'a, 'de, T: BytesBufImpl, E: BytesEncoding> Sink<'de> for EncodedSink<'a, T, E> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        format_descriptor::<E>()
-    }
-
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Owned(format!("bytes or {} string", E::NAME))
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let bytes = match atom {
-            Atom::Bytes(value) => value.into_owned(),
+            Atom::Bytes(value) => value.into_data().into_owned(),
             Atom::Str(value) => E::decode(&value)?,
             other => return self.unexpected_atom(other, state),
         };
@@ -195,15 +172,10 @@ macro_rules! encoding_adapter {
                 }
 
                 #[inline]
-                fn descriptor_as(_value: &$ty) -> &'static dyn Descriptor {
-                    format_descriptor::<E>()
-                }
-
-                #[inline]
                 fn __private_begin_as<'a>(value: &'a $ty, state: &mut State) -> Result<Begin<'a>, Error> {
                     Ok(Begin::chunk(
                         Self::serialize_as(value, state)?,
-                        Self::descriptor_as(value),
+                        ContainerShape::new(),
                         false,
                     ))
                 }
@@ -227,8 +199,8 @@ encoding_adapter!(
 
 /// Represents bytes as bytes, with a fallback for formats without native bytes.
 ///
-/// The bytes are serialized as bytes which request the format `F` (see
-/// [`Descriptor::bytes_format`]).  Formats with native bytes (like CBOR)
+/// The bytes are serialized as bytes which carry the format `F` as
+/// fallback (see [`Bytes::fallback`](crate::Bytes::fallback)).  Formats with native bytes (like CBOR)
 /// write them as bytes, formats without native bytes (like JSON and TOML)
 /// write them in `F`: strings in an [encoding](BytesEncoding) or sequences
 /// of integers for [`IntSeq`].  When deserializing native bytes and the
@@ -260,19 +232,16 @@ pub struct BytesFallback<F>(PhantomData<fn() -> F>);
 impl<T: BytesBuf, F: BytesFallbackFormat> SerializeAs<T> for BytesFallback<F> {
     #[inline]
     fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(value.bytes()))))
-    }
-
-    #[inline]
-    fn descriptor_as(_value: &T) -> &'static dyn Descriptor {
-        format_descriptor::<F>()
+        Ok(Chunk::Atom(Atom::Bytes(
+            Bytes::borrowed(value.bytes()).with_fallback(const { &F::FORMAT }),
+        )))
     }
 
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            Self::descriptor_as(value),
+            ContainerShape::new(),
             false,
         ))
     }

@@ -36,7 +36,7 @@ fn test_optional() {
 #[test]
 fn test_tuples() {
     let s: (u32, u32) = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         Event::SeqEnd,
@@ -49,7 +49,7 @@ fn test_tuples() {
 #[should_panic = "too many elements in tuple"]
 fn test_tuples_too_many_elements() {
     let _: (u32, u32) = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         "extra".into(),
@@ -60,13 +60,13 @@ fn test_tuples_too_many_elements() {
 #[test]
 #[should_panic = "not enough elements in tuple"]
 fn test_tuples_not_enough_elements() {
-    let _: (u32, u32) = deserialize(vec![Event::SeqStart, 1u64.into(), Event::SeqEnd]);
+    let _: (u32, u32) = deserialize(vec![Event::seq_start(), 1u64.into(), Event::SeqEnd]);
 }
 
 #[test]
 fn test_array_basic() {
     let arr: [u16; 4] = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         3u64.into(),
@@ -80,7 +80,7 @@ fn test_array_basic() {
 #[should_panic = "too many elements in array"]
 fn test_array_too_many_elements() {
     let _: [u16; 4] = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         3u64.into(),
@@ -94,7 +94,7 @@ fn test_array_too_many_elements() {
 #[should_panic = "not enough elements in array"]
 fn test_array_not_enough_elements() {
     let _: [u16; 4] = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         3u64.into(),
@@ -133,7 +133,7 @@ fn test_array_dropping_on_error() {
 
     std::panic::catch_unwind(|| {
         let _: [X; 4] = deserialize(vec![
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             3u64.into(),
@@ -148,7 +148,7 @@ fn test_array_dropping_on_error() {
 #[test]
 fn test_byte_array() {
     let x: [u8; 4] = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         0u64.into(),
         1u64.into(),
         2u64.into(),
@@ -157,8 +157,8 @@ fn test_byte_array() {
     ]);
     assert_eq!(x, [0, 1, 2, 3]);
 
-    let x: [u8; 4] = deserialize(vec![Event::Atom(Atom::Bytes(Cow::Borrowed(
-        &b"\x00\x01\x02\x03"[..],
+    let x: [u8; 4] = deserialize(vec![Event::Atom(Atom::Bytes(deser::Bytes::new(
+        Cow::Borrowed(&b"\x00\x01\x02\x03"[..]),
     )))]);
     assert_eq!(x, [0, 1, 2, 3]);
 }
@@ -166,7 +166,9 @@ fn test_byte_array() {
 #[test]
 #[should_panic = "byte array of wrong length"]
 fn test_byte_array_wrong_length() {
-    let _: [u8; 4] = deserialize(vec![Event::Atom(Atom::Bytes(Cow::Borrowed(&b"012"[..])))]);
+    let _: [u8; 4] = deserialize(vec![Event::Atom(Atom::Bytes(deser::Bytes::new(
+        Cow::Borrowed(&b"012"[..]),
+    )))]);
 }
 
 #[test]
@@ -192,7 +194,7 @@ fn test_box() {
 #[test]
 fn test_set() {
     let x: BTreeSet<String> = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         "foo".into(),
         "bar".into(),
         Event::SeqEnd,

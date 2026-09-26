@@ -1,7 +1,7 @@
 use crate::State;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
-use crate::event::{Atom, Event};
+use crate::event::{Atom, ContainerShape, Event};
 use crate::extensions::Snapshot;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 
@@ -28,7 +28,7 @@ use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 /// let mut recording = Recording::new();
 /// {
 ///     let mut driver = DeserializeDriver::from_sink(recording.recorder());
-///     driver.emit(Event::SeqStart).unwrap();
+///     driver.emit(Event::seq_start()).unwrap();
 ///     driver.emit(1u64).unwrap();
 ///     driver.emit(2u64).unwrap();
 ///     driver.emit(Event::SeqEnd).unwrap();
@@ -147,7 +147,7 @@ impl Recording {
     ///     let mut out = None;
     ///     {
     ///         let mut driver = deser::de::DeserializeDriver::new(&mut out);
-    ///         for event in [deser::Event::SeqStart, 42u64.into(), "x".into(), deser::Event::SeqEnd] {
+    ///         for event in [deser::Event::seq_start(), 42u64.into(), "x".into(), deser::Event::SeqEnd] {
     ///             driver.emit(event).unwrap();
     ///         }
     ///     }
@@ -271,13 +271,15 @@ impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        record(&mut self.recording, true, Event::MapStart, state);
+        let shape = state.container_shape();
+        record(&mut self.recording, true, Event::MapStart(shape), state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        record(&mut self.recording, true, Event::SeqStart, state);
+        let shape = state.container_shape();
+        record(&mut self.recording, true, Event::SeqStart(shape), state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
@@ -329,13 +331,13 @@ impl<'a, 'de> Sink<'de> for Recorder<'a> {
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.record(Event::MapStart, state);
+        self.record(Event::MapStart(state.container_shape()), state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.record(Event::SeqStart, state);
+        self.record(Event::SeqStart(state.container_shape()), state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
@@ -385,7 +387,7 @@ fn value_len(events: &[RecordedEvent]) -> usize {
     let mut depth = 0usize;
     for (index, recorded) in events.iter().enumerate() {
         match recorded.event {
-            Event::MapStart | Event::SeqStart => depth += 1,
+            Event::MapStart(_) | Event::SeqStart(_) => depth += 1,
             Event::MapEnd | Event::SeqEnd => depth = depth.saturating_sub(1),
             Event::Atom(_) => {}
         }
@@ -415,11 +417,11 @@ impl<'a> RecordedValue<'a> {
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {
             Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
-            Event::MapStart => Chunk::Map(Box::new(RecordedEmitter {
+            Event::MapStart(_) => Chunk::Map(Box::new(RecordedEmitter {
                 rest: inner,
                 current: RecordedValue(&[]),
             })),
-            Event::SeqStart => Chunk::Seq(Box::new(RecordedEmitter {
+            Event::SeqStart(_) => Chunk::Seq(Box::new(RecordedEmitter {
                 rest: inner,
                 current: RecordedValue(&[]),
             })),
@@ -430,9 +432,22 @@ impl<'a> RecordedValue<'a> {
     }
 }
 
+impl<'a> RecordedValue<'a> {
+    fn container_shape(&self) -> ContainerShape {
+        match self.0.first().map(|x| &x.event) {
+            Some(Event::MapStart(shape) | Event::SeqStart(shape)) => *shape,
+            _ => ContainerShape::new(),
+        }
+    }
+}
+
 impl<'a> Serialize for RecordedValue<'a> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.chunk(state)
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        RecordedValue::container_shape(self)
     }
 }
 
@@ -475,6 +490,10 @@ impl<'a> MapEmitter for RecordedEmitter<'a> {
 impl Serialize for Recording {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         RecordedValue(&self.events).chunk(state)
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        RecordedValue(&self.events).container_shape()
     }
 
     fn is_optional(&self) -> bool {

@@ -12,25 +12,20 @@
 //! the `PathLayer` of `deser-path` adds the path to errors.
 use deser::de::{Format, Limits};
 use deser::ser::{Layer, Next};
-use deser::{Atom, Descriptor, Deserialize, Error, Event, Serialize};
+use deser::{Atom, Deserialize, Error, Event, Serialize};
 use deser_path::PathLayer;
 
 /// Renames the string keys of maps.
 pub struct RenameKeys(pub fn(&str) -> String);
 
 impl Layer for RenameKeys {
-    fn event(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-        next: &mut Next<'_>,
-    ) -> Result<(), Error> {
+    fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
         match event {
             Event::Atom(Atom::Str(ref key)) if next.state().is_map_key() => {
                 let key = (self.0)(key);
-                next.emit(Event::from(key), descriptor)
+                next.emit(Event::from(key))
             }
-            event => next.emit(event, descriptor),
+            event => next.emit(event),
         }
     }
 }
@@ -57,26 +52,21 @@ fn camel_case(key: &str) -> String {
 /// The key of an entry is held back until the value is known.
 #[derive(Default)]
 pub struct SkipNulls {
-    key: Option<(Event<'static>, &'static dyn Descriptor)>,
+    key: Option<Event<'static>>,
 }
 
 impl Layer for SkipNulls {
-    fn event(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-        next: &mut Next<'_>,
-    ) -> Result<(), Error> {
-        if let Some((key, key_descriptor)) = self.key.take() {
+    fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+        if let Some(key) = self.key.take() {
             if event == Event::Atom(Atom::Null) {
                 return Ok(());
             }
-            next.emit_key(key, key_descriptor)?;
+            next.emit_key(key)?;
         } else if next.state().is_map_key() && matches!(event, Event::Atom(_)) {
-            self.key = Some((event.to_static(), descriptor));
+            self.key = Some(event.to_static());
             return Ok(());
         }
-        next.emit(event, descriptor)
+        next.emit(event)
     }
 }
 
@@ -107,12 +97,7 @@ impl Redact {
 }
 
 impl Layer for Redact {
-    fn event(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-        next: &mut Next<'_>,
-    ) -> Result<(), Error> {
+    fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
         match self.state {
             RedactState::Idle => {
                 if let Event::Atom(Atom::Str(ref key)) = event
@@ -121,18 +106,18 @@ impl Layer for Redact {
                 {
                     self.state = RedactState::Pending;
                 }
-                next.emit(event, descriptor)
+                next.emit(event)
             }
             RedactState::Pending => {
                 self.state = match event {
-                    Event::MapStart | Event::SeqStart => RedactState::Skipping(1),
+                    Event::MapStart(_) | Event::SeqStart(_) => RedactState::Skipping(1),
                     _ => RedactState::Idle,
                 };
-                next.emit(Event::from("[redacted]"), descriptor)
+                next.emit(Event::from("[redacted]"))
             }
             RedactState::Skipping(ref mut depth) => {
                 match event {
-                    Event::MapStart | Event::SeqStart => *depth += 1,
+                    Event::MapStart(_) | Event::SeqStart(_) => *depth += 1,
                     Event::MapEnd | Event::SeqEnd => {
                         *depth -= 1;
                         if *depth == 0 {

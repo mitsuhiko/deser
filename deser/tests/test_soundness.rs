@@ -66,7 +66,7 @@ fn outer_events() -> Vec<Event<'static>> {
     };
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -101,18 +101,18 @@ fn test_errors_at_every_point() {
 #[test]
 fn test_arrays() {
     let array: [String; 2] =
-        emit_partial(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd]).unwrap();
+        emit_partial(&[Event::seq_start(), "a".into(), "b".into(), Event::SeqEnd]).unwrap();
     assert_eq!(array, ["a", "b"]);
 
     // not enough elements
     assert!(
-        emit_partial::<[String; 3]>(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,])
+        emit_partial::<[String; 3]>(&[Event::seq_start(), "a".into(), "b".into(), Event::SeqEnd,])
             .is_none()
     );
 
     // too many elements
     assert!(
-        emit_partial::<[String; 1]>(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,])
+        emit_partial::<[String; 1]>(&[Event::seq_start(), "a".into(), "b".into(), Event::SeqEnd,])
             .is_none()
     );
 
@@ -127,12 +127,12 @@ fn test_arrays() {
 
     // nested arrays of arrays
     let nested: [[String; 2]; 2] = emit_partial(&[
-        Event::SeqStart,
-        Event::SeqStart,
+        Event::seq_start(),
+        Event::seq_start(),
         "a".into(),
         "b".into(),
         Event::SeqEnd,
-        Event::SeqStart,
+        Event::seq_start(),
         "c".into(),
         "d".into(),
         Event::SeqEnd,
@@ -245,7 +245,7 @@ fn test_child_sinks_dropped_before_parent_is_used() {
     };
     {
         let mut driver = DeserializeDriver::from_sink(SinkHandle::to(&mut sink));
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         driver.emit(1u64).unwrap();
         driver.emit(2u64).unwrap();
         driver.emit(Event::SeqEnd).unwrap();
@@ -345,7 +345,7 @@ fn test_deep_roundtrip_and_partial_drops() {
     let mut events = Vec::new();
     {
         let mut driver = SerializeDriver::new(&node);
-        while let Some((event, _, _)) = driver.next().unwrap() {
+        while let Some((event, _)) = driver.next().unwrap() {
             events.push(event.to_static());
         }
     }
@@ -414,7 +414,7 @@ fn test_borrowed_keys_across_reallocation() {
     let value = Nested(depth());
     let mut driver = SerializeDriver::new(&value);
     let mut keys = 0;
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         if let Event::Atom(Atom::Str(s)) = event
             && s.starts_with("key-")
         {
@@ -453,12 +453,12 @@ fn test_panics() {
     let mut out = None::<(Vec<String>, Vec<Vec<String>>)>;
     let rv = catch_unwind(AssertUnwindSafe(|| {
         let mut driver = DeserializeDriver::new(&mut out);
-        driver.emit(Event::SeqStart).unwrap();
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         driver.emit("a").unwrap();
         driver.emit(Event::SeqEnd).unwrap();
-        driver.emit(Event::SeqStart).unwrap();
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         // emitting an end for the wrong container panics
         driver.emit(Event::MapEnd).unwrap();
     }));
@@ -500,7 +500,7 @@ fn test_tagged_drop_and_errors_at_every_point() {
     let mut events = Vec::new();
     {
         let mut driver = SerializeDriver::new(&value);
-        while let Some((event, _, _)) = driver.next().unwrap() {
+        while let Some((event, _)) = driver.next().unwrap() {
             events.push(event.to_static());
         }
     }
@@ -567,7 +567,7 @@ fn test_enum_representations_drop_and_errors_at_every_point() {
         let mut events = Vec::new();
         {
             let mut driver = SerializeDriver::new(&value);
-            while let Some((event, _, _)) = driver.next().unwrap() {
+            while let Some((event, _)) = driver.next().unwrap() {
                 events.push(event.to_static());
             }
         }
@@ -603,11 +603,11 @@ fn drive_events(
     let mut driver = SerializeDriver::new(value);
     for _ in 0..skip {
         match driver.next()? {
-            Some((event, _, _)) => events.push(event.to_static()),
+            Some((event, _)) => events.push(event.to_static()),
             None => return Ok(events),
         }
     }
-    driver.drive(|event, _, _| {
+    driver.drive(|event, _| {
         if Some(events.len()) == abort {
             return Err(Error::new(deser::ErrorKind::Unexpected, "aborted"));
         }
@@ -651,7 +651,7 @@ fn test_drive() {
         let mut expected = Vec::new();
         {
             let mut driver = SerializeDriver::new(value);
-            while let Some((event, _, _)) = driver.next().unwrap() {
+            while let Some((event, _)) = driver.next().unwrap() {
                 expected.push(event.to_static());
             }
         }
@@ -732,7 +732,7 @@ fn test_adapters_and_forwarding() {
                 let mut out = None;
                 {
                     let mut driver = DeserializeDriver::new(&mut out);
-                    for event in [Event::MapStart, "k".into(), "v".into(), Event::MapEnd] {
+                    for event in [Event::map_start(), "k".into(), "v".into(), Event::MapEnd] {
                         driver.emit(event).unwrap();
                     }
                 }
@@ -744,7 +744,7 @@ fn test_adapters_and_forwarding() {
     let mut expected = Vec::new();
     {
         let mut driver = SerializeDriver::new(&value);
-        while let Some((event, _, _)) = driver.next().unwrap() {
+        while let Some((event, _)) = driver.next().unwrap() {
             expected.push(event.to_static());
         }
     }

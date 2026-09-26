@@ -7,7 +7,7 @@ use deser::{Atom, Event, Serialize};
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -28,7 +28,7 @@ fn test_tuples() {
     assert_eq!(
         events,
         vec![
-            Event::SeqStart,
+            Event::seq_start(),
             1i64.into(),
             2i64.into(),
             3i64.into(),
@@ -49,7 +49,7 @@ fn test_array() {
     assert_eq!(
         events,
         vec![
-            Event::SeqStart,
+            Event::seq_start(),
             1i64.into(),
             2i64.into(),
             3i64.into(),
@@ -61,7 +61,9 @@ fn test_array() {
     let events = capture_events(b"Hello");
     assert_eq!(
         events,
-        vec![Event::Atom(Atom::Bytes(Cow::Borrowed(b"Hello")))]
+        vec![Event::Atom(Atom::Bytes(deser::Bytes::new(Cow::Borrowed(
+            &b"Hello"[..]
+        ))))]
     );
 }
 
@@ -91,31 +93,34 @@ fn test_set() {
     let events = capture_events(&set);
     assert_eq!(
         events,
-        vec![Event::SeqStart, "bar".into(), "foo".into(), Event::SeqEnd]
+        vec![
+            Event::SeqStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            "bar".into(),
+            "foo".into(),
+            Event::SeqEnd
+        ]
     );
 }
 
 #[test]
-fn test_descriptor_forwarding() {
-    fn top_descriptor_name(s: &dyn Serialize) -> Option<String> {
+fn test_shape_forwarding() {
+    fn top_shape(s: &dyn Serialize) -> Option<deser::ContainerShape> {
         let mut driver = SerializeDriver::new(s);
-        driver
-            .next()
-            .unwrap()
-            .and_then(|(_, descriptor, _)| descriptor.name().map(|x| x.to_string()))
+        match driver.next().unwrap() {
+            Some((Event::MapStart(shape) | Event::SeqStart(shape), _)) => Some(shape),
+            _ => None,
+        }
     }
 
-    assert_eq!(top_descriptor_name(&42u32).as_deref(), Some("u32"));
-    assert_eq!(top_descriptor_name(&&42u32).as_deref(), Some("u32"));
-    assert_eq!(
-        top_descriptor_name(&Box::new(42u32)).as_deref(),
-        Some("u32")
-    );
-    assert_eq!(top_descriptor_name(&Some(42u32)).as_deref(), Some("u32"));
-    assert_eq!(
-        top_descriptor_name(&None::<u32>).as_deref(),
-        Some("optional")
-    );
+    let mut map = std::collections::HashMap::new();
+    map.insert(1u32, 2u32);
+    let arbitrary = deser::ContainerShape::new().with_order(deser::Order::Arbitrary);
+    assert_eq!(top_shape(&map), Some(arbitrary));
+    assert_eq!(top_shape(&&map), Some(arbitrary));
+    assert_eq!(top_shape(&Box::new(&map)), Some(arbitrary));
+    assert_eq!(top_shape(&Some(&map)), Some(arbitrary));
+    assert_eq!(top_shape(&None::<u32>), None);
+    assert_eq!(top_shape(&vec![1u32]), Some(deser::ContainerShape::new()));
 
     assert!(Serialize::is_optional(&&None::<u32>));
     assert!(Serialize::is_optional(&Box::new(None::<u32>)));
@@ -135,13 +140,16 @@ fn test_is_map_key() {
         tags: [(2, (3, 4))].into_iter().collect(),
     };
     let expected = vec![
-        (Event::MapStart, false),
+        (Event::map_start(), false),
         ("id".into(), true),
         (1u64.into(), false),
         ("tags".into(), true),
-        (Event::MapStart, false),
+        (
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            false,
+        ),
         (2u64.into(), true),
-        (Event::SeqStart, false),
+        (Event::seq_start(), false),
         (3u64.into(), false),
         (4u64.into(), false),
         (Event::SeqEnd, false),
@@ -151,14 +159,14 @@ fn test_is_map_key() {
 
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&item);
-    while let Some((event, _, state)) = driver.next().unwrap() {
+    while let Some((event, state)) = driver.next().unwrap() {
         events.push((event.to_static(), state.is_map_key()));
     }
     assert_eq!(events, expected);
 
     let mut events = Vec::new();
     SerializeDriver::new(&item)
-        .drive(|event, _, state| {
+        .drive(|event, state| {
             events.push((event.to_static(), state.is_map_key()));
             Ok(())
         })

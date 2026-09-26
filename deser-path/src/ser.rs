@@ -1,5 +1,5 @@
 use deser::ser::{Layer, Next};
-use deser::{Descriptor, Error, Event, State};
+use deser::{Error, Event, State};
 
 use crate::{Frame, Path, PathLayer, PathSegment};
 
@@ -10,12 +10,7 @@ use crate::{Frame, Path, PathLayer, PathSegment};
 /// the path is updated for the value that follows, so that its
 /// [`Serialize`](deser::Serialize) implementation can access it.
 impl Layer for PathLayer {
-    fn event(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-        next: &mut Next<'_>,
-    ) -> Result<(), Error> {
+    fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
         if !self.registered {
             self.register(next.state_mut(), false);
         }
@@ -24,12 +19,12 @@ impl Layer for PathLayer {
                 if let Some(Frame::Seq(_)) = self.frames.pop() {
                     next.state_mut().get_mut::<Path>().pop();
                 }
-                next.emit(event, descriptor)?;
+                next.emit(event)?;
                 self.complete_item(next.state_mut(), None);
             }
-            Event::MapStart | Event::SeqStart => {
-                let is_map = matches!(event, Event::MapStart);
-                next.emit(event, descriptor)?;
+            Event::MapStart(_) | Event::SeqStart(_) => {
+                let is_map = matches!(event, Event::MapStart(_));
+                next.emit(event)?;
                 if is_map {
                     self.frames.push(Frame::Map(false));
                 } else {
@@ -46,7 +41,7 @@ impl Layer for PathLayer {
                     }
                     _ => None,
                 };
-                next.emit(event, descriptor)?;
+                next.emit(event)?;
                 self.complete_item(next.state_mut(), key);
             }
         }

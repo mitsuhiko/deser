@@ -3,9 +3,8 @@ use std::fmt;
 
 use crate::State;
 use crate::de::{Deserialize, Sink, SinkHandle};
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
-use crate::event::Atom;
+use crate::event::{Atom, Float};
 use crate::ext::known::invalid;
 use crate::ext::{BorrowedExtension, ExtValue};
 use crate::ser::{Chunk, Serialize};
@@ -148,7 +147,7 @@ impl BorrowedExtension for Number<'static> {
     }
 
     fn fallback<'v>(value: &'v Number<'_>) -> Atom<'v> {
-        Atom::F64(value.value)
+        Atom::Float(Float::new(value.value))
     }
 
     fn to_static(value: &Number<'_>) -> Number<'static> {
@@ -160,17 +159,11 @@ impl BorrowedExtension for Number<'static> {
     }
 }
 
-static NUMBER_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Number" };
-
 impl<'a> Serialize for Number<'a> {
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed_value::<Number>(
             self,
         ))))
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &NUMBER_DESCRIPTOR
     }
 }
 
@@ -185,10 +178,6 @@ impl<'de, 'a> Deserialize<'de> for Number<'a> {
 struct NumberSink<'a, 'n>(&'a mut Option<Number<'n>>);
 
 impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &NUMBER_DESCRIPTOR
-    }
-
     fn expecting(&self) -> Cow<'_, str> {
         "number".into()
     }
@@ -201,7 +190,9 @@ impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
             },
             Atom::U64(value) => Number::new(value.to_string(), value as f64),
             Atom::I64(value) => Number::new(value.to_string(), value as f64),
-            Atom::F64(value) if value.is_finite() => Number::new(format!("{:?}", value), value),
+            Atom::Float(value) if value.value().is_finite() => {
+                Number::new(format!("{:?}", value.value()), value.value())
+            }
             Atom::Str(ref value) => Number::parse(value.to_string())?,
             other => return self.unexpected_atom(other, state),
         };
@@ -226,7 +217,7 @@ fn test_number() {
     }
 
     let ext = ExtValue::borrowed_value::<Number>(&number);
-    assert_eq!(ext.fallback(), Atom::F64(-12500.0));
+    assert_eq!(ext.fallback(), Atom::Float(Float::new(-12500.0)));
     assert_eq!(ext.name(), "number");
     assert_eq!(
         ext.downcast_value_ref::<Number>().unwrap().as_str(),

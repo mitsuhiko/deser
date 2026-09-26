@@ -4,7 +4,7 @@ use deser::{Event, Serialize};
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut rv = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         rv.push(event.to_static());
     }
     rv
@@ -25,7 +25,7 @@ fn test_skip_serializing_if() {
             optional: None
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "required".into(),
             42u64.into(),
             Event::MapEnd,
@@ -57,7 +57,7 @@ fn test_skip_serializing_if_qualified_path() {
             name: String::new(),
             count: 1,
         }),
-        vec![Event::MapStart, Event::MapEnd]
+        vec![Event::map_start(), Event::MapEnd]
     );
     assert_eq!(
         serialize(&Test {
@@ -66,7 +66,7 @@ fn test_skip_serializing_if_qualified_path() {
             count: 2,
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "name".into(),
             "x".into(),
             "count".into(),
@@ -93,7 +93,7 @@ fn test_skip_serializing_optionals_all() {
             c: Some(3),
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             "b".into(),
@@ -123,7 +123,7 @@ fn test_skip_serializing_optionals_some() {
             c: None,
             d: (),
         }),
-        vec![Event::MapStart, "b".into(), 2u64.into(), Event::MapEnd]
+        vec![Event::map_start(), "b".into(), 2u64.into(), Event::MapEnd]
     );
 }
 
@@ -167,7 +167,7 @@ fn test_flatten_basics() {
             },
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             "b".into(),
@@ -210,7 +210,7 @@ fn test_flatten_skip_optionals() {
             inner: Inner { second: None }
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "required".into(),
             true.into(),
             Event::MapEnd,
@@ -224,7 +224,7 @@ fn test_flatten_skip_optionals() {
             inner: Inner { second: Some(111) }
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "required".into(),
             true.into(),
             "second".into(),
@@ -258,7 +258,7 @@ fn test_flatten_skip_serializing_if() {
             inner: Inner { second: 42 }
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "required".into(),
             true.into(),
             Event::MapEnd,
@@ -271,7 +271,7 @@ fn test_flatten_skip_serializing_if() {
             inner: Inner { second: 23 }
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "required".into(),
             true.into(),
             "second".into(),

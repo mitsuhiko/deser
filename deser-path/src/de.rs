@@ -24,8 +24,8 @@ impl Layer for PathLayer {
                 next.state_mut().get_mut::<Path>().pop();
                 return next.emit(event);
             }
-            Event::MapStart => Some(true),
-            Event::SeqStart => Some(false),
+            Event::MapStart(_) => Some(true),
+            Event::SeqStart(_) => Some(false),
             Event::Atom(_) => None,
         };
 

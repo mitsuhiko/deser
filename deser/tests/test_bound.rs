@@ -16,7 +16,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut rv = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         rv.push(event.to_static());
     }
     rv
@@ -50,7 +50,12 @@ fn test_directional_bounds() {
     let events = serialize(&Holder::<Text> { value: "x".into() });
     assert_eq!(
         events,
-        vec![Event::MapStart, "value".into(), "x".into(), Event::MapEnd]
+        vec![
+            Event::map_start(),
+            "value".into(),
+            "x".into(),
+            Event::MapEnd
+        ]
     );
     assert_eq!(
         deserialize::<Holder<Text>>(events),

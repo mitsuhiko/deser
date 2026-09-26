@@ -9,9 +9,8 @@ use crate::State;
 use crate::adapters::{DeserializeAs, Same};
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
-use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
-use crate::event::Atom;
+use crate::event::{Atom, Bytes};
 use crate::ext::Number;
 
 make_slot_wrapper!(SlotWrapper);
@@ -55,9 +54,8 @@ macro_rules! __slot_wrapper_atom_into {
 }
 
 impl<'de> Sink<'de> for SlotWrapper<()> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("null")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -73,9 +71,8 @@ impl<'de> Sink<'de> for SlotWrapper<()> {
 deserialize!(());
 
 impl<'de> Sink<'de> for SlotWrapper<bool> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("bool")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -91,9 +88,8 @@ impl<'de> Sink<'de> for SlotWrapper<bool> {
 deserialize!(bool);
 
 impl<'de> Sink<'de> for SlotWrapper<String> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("string")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -153,11 +149,8 @@ fn copy_str(value: &str) -> String {
 macro_rules! int_sink {
     ($ty:ty) => {
         impl<'de> Sink<'de> for SlotWrapper<$ty> {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
-                    name: stringify!($ty),
-                };
-                &DESCRIPTOR
+            fn expecting(&self) -> Cow<'_, str> {
+                Cow::Borrowed(stringify!($ty))
             }
 
             #[allow(clippy::useless_conversion)]
@@ -238,9 +231,8 @@ int_sink!(i128);
 deserialize!(i128);
 
 impl<'de> Sink<'de> for SlotWrapper<char> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("char")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -268,11 +260,8 @@ deserialize!(char);
 macro_rules! float_sink {
     ($ty:ty) => {
         impl<'de> Sink<'de> for SlotWrapper<$ty> {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor {
-                    name: stringify!($ty),
-                };
-                &DESCRIPTOR
+            fn expecting(&self) -> Cow<'_, str> {
+                Cow::Borrowed(stringify!($ty))
             }
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -285,8 +274,8 @@ macro_rules! float_sink {
                         **self = Some(value as $ty);
                         Ok(())
                     }
-                    Atom::F64(value) => {
-                        **self = Some(value as $ty);
+                    Atom::Float(value) => {
+                        **self = Some(value.value() as $ty);
                         Ok(())
                     }
                     Atom::Ext(ref ext) if ext.is::<u128>() => {
@@ -360,14 +349,12 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
         }
 
         impl<'de, 'a, T, A: DeserializeAs<'de, T>> Sink<'de> for VecSink<'a, T, A> {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
-                static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-                if A::__private_is_bytes_as() {
-                    &BYTES_DESCRIPTOR
+            fn expecting(&self) -> Cow<'_, str> {
+                Cow::Borrowed(if A::__private_is_bytes_as() {
+                    "bytes"
                 } else {
-                    &SLICE_DESCRIPTOR
-                }
+                    "vec"
+                })
             }
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -497,15 +484,8 @@ where
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
-        fn descriptor(&self) -> &'static dyn Descriptor {
-            static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
-            static UNORDERED_DESCRIPTOR: UnorderedNamedDescriptor =
-                UnorderedNamedDescriptor { name: "HashMap" };
-            if M::UNORDERED {
-                &UNORDERED_DESCRIPTOR
-            } else {
-                &DESCRIPTOR
-            }
+        fn expecting(&self) -> Cow<'_, str> {
+            Cow::Borrowed(if M::UNORDERED { "HashMap" } else { "BTreeMap" })
         }
 
         fn map(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -648,15 +628,8 @@ where
     }
 
     impl<'de, 'a, S: SetTarget<T>, T, A: DeserializeAs<'de, T>> Sink<'de> for SetSink<'a, S, T, A> {
-        fn descriptor(&self) -> &'static dyn Descriptor {
-            static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
-            static UNORDERED_DESCRIPTOR: UnorderedNamedDescriptor =
-                UnorderedNamedDescriptor { name: "HashSet" };
-            if S::UNORDERED {
-                &UNORDERED_DESCRIPTOR
-            } else {
-                &DESCRIPTOR
-            }
+        fn expecting(&self) -> Cow<'_, str> {
+            Cow::Borrowed(if S::UNORDERED { "HashSet" } else { "BTreeSet" })
         }
 
         fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -836,9 +809,8 @@ macro_rules! deserialize_for_tuple {
                 }
 
                 impl<'de, 'a, $($name,)* $($adapter: DeserializeAs<'de, $name>,)*> Sink<'de> for TupleSink<'a, $($name,)* $($adapter,)*> {
-                    fn descriptor(&self) -> &'static dyn Descriptor {
-                        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
-                        &DESCRIPTOR
+                    fn expecting(&self) -> Cow<'_, str> {
+                        Cow::Borrowed("tuple")
                     }
 
                     fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -965,9 +937,8 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
         impl<'de, 'a, T: 'a, A: DeserializeAs<'de, T>, const N: usize> Sink<'de>
             for ArraySink<'a, T, A, N>
         {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
-                &DESCRIPTOR
+            fn expecting(&self) -> Cow<'_, str> {
+                Cow::Borrowed("array")
             }
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1158,9 +1129,8 @@ fn expected_borrowed(what: &str) -> Error {
 }
 
 impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("str")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1188,9 +1158,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a str {
 }
 
 impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, str>> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("string")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1220,9 +1189,8 @@ impl<'de, 'a> Deserialize<'de> for Cow<'a, str> {
 }
 
 impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("bytes")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1239,7 +1207,10 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Bytes(Cow::Borrowed(value)) => {
+            Atom::Bytes(Bytes {
+                data: Cow::Borrowed(value),
+                ..
+            }) => {
                 **self = Some(value);
                 Ok(())
             }
@@ -1255,9 +1226,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
 }
 
 impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, [u8]>> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("bytes")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {

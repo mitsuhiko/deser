@@ -3,19 +3,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 
 use crate::State;
-use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
-use crate::event::Atom;
+use crate::event::{Atom, Bytes, ContainerShape, Float, Order};
 use crate::ext::ExtValue;
 use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 
 impl Serialize for bool {
     __begin_without_finish!();
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bool" };
-        &DESCRIPTOR
-    }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Bool(*self)))
@@ -24,11 +18,6 @@ impl Serialize for bool {
 
 impl Serialize for () {
     __begin_without_finish!();
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "null" };
-        &DESCRIPTOR
-    }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Null))
@@ -42,14 +31,6 @@ impl Serialize for () {
 impl Serialize for u8 {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-            name: "u8",
-            precision: 8,
-        };
-        &DESCRIPTOR
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::U64(*self as u64)))
     }
@@ -62,11 +43,6 @@ impl Serialize for u8 {
 impl Serialize for char {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "char" };
-        &DESCRIPTOR
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Char(*self)))
     }
@@ -76,14 +52,6 @@ macro_rules! serialize_int {
     ($ty:ty, $atom:ident) => {
         impl Serialize for $ty {
             __begin_without_finish!();
-
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-                    name: stringify!($ty),
-                    precision: std::mem::size_of::<$ty>() * 8,
-                };
-                &DESCRIPTOR
-            }
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::$atom(*self as _)))
@@ -101,21 +69,27 @@ serialize_int!(i32, I64);
 serialize_int!(i64, I64);
 serialize_int!(isize, I64);
 serialize_int!(usize, U64);
-serialize_int!(f32, F64);
-serialize_int!(f64, F64);
+
+impl Serialize for f32 {
+    __begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::Atom(Atom::Float(Float::from_f32(*self))))
+    }
+}
+
+impl Serialize for f64 {
+    __begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::Atom(Atom::Float(Float::new(*self))))
+    }
+}
 
 macro_rules! serialize_ext_int {
     ($ty:ty) => {
         impl Serialize for $ty {
             __begin_without_finish!();
-
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NumberDescriptor = NumberDescriptor {
-                    name: stringify!($ty),
-                    precision: std::mem::size_of::<$ty>() * 8,
-                };
-                &DESCRIPTOR
-            }
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
@@ -130,11 +104,6 @@ serialize_ext_int!(i128);
 impl Serialize for String {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "String" };
-        &DESCRIPTOR
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
     }
@@ -143,11 +112,6 @@ impl Serialize for String {
 impl Serialize for &str {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
-        &DESCRIPTOR
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str((*self).into())))
     }
@@ -155,11 +119,6 @@ impl Serialize for &str {
 
 impl<'a> Serialize for Cow<'a, str> {
     __begin_without_finish!();
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
-        &DESCRIPTOR
-    }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self))))
@@ -172,26 +131,19 @@ where
 {
     #[inline]
     fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-        let descriptor = self.descriptor();
         Ok(match T::__private_slice_as_bytes(&self[..]) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
-            None => Begin::indexed_seq(self, descriptor),
+            Some(bytes) => Begin::chunk(
+                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                ContainerShape::new(),
+                false,
+            ),
+            None => Begin::indexed_seq(self, ContainerShape::new()),
         })
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
-        static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
-        if T::__private_slice_as_bytes(self).is_some() {
-            &BYTES_DESCRIPTOR
-        } else {
-            &SLICE_DESCRIPTOR
-        }
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
-            Ok(Chunk::Atom(Atom::Bytes(bytes)))
+            Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self[..].iter()))))
         }
@@ -204,26 +156,19 @@ where
 {
     #[inline]
     fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-        let descriptor = self.descriptor();
         Ok(match T::__private_slice_as_bytes(&self[..]) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
-            None => Begin::indexed_seq(self, descriptor),
+            Some(bytes) => Begin::chunk(
+                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                ContainerShape::new(),
+                false,
+            ),
+            None => Begin::indexed_seq(self, ContainerShape::new()),
         })
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "slice" };
-        static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-        if T::__private_slice_as_bytes(self).is_some() {
-            &BYTES_DESCRIPTOR
-        } else {
-            &SLICE_DESCRIPTOR
-        }
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
-            Ok(Chunk::Atom(Atom::Bytes(bytes)))
+            Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
@@ -264,9 +209,8 @@ where
 {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
-        &DESCRIPTOR
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Sorted)
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -304,9 +248,8 @@ where
 {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashMap" };
-        &DESCRIPTOR
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Arbitrary)
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -342,9 +285,8 @@ where
 {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
-        &DESCRIPTOR
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Sorted)
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -369,9 +311,8 @@ where
 {
     __begin_without_finish!();
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashSet" };
-        &DESCRIPTOR
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Arbitrary)
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -394,16 +335,15 @@ impl<T> Serialize for Option<T>
 where
     T: Serialize,
 {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
-        match self {
-            Some(value) => value.descriptor(),
-            None => &DESCRIPTOR,
-        }
-    }
-
     fn is_optional(&self) -> bool {
         self.is_none()
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        match self {
+            Some(value) => value.container_shape(),
+            None => ContainerShape::new(),
+        }
     }
 
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -426,7 +366,7 @@ where
             Some(value) => value.__private_begin(state),
             None => Ok(Begin::chunk(
                 Chunk::Atom(Atom::Null),
-                self.descriptor(),
+                ContainerShape::new(),
                 false,
             )),
         }
@@ -439,12 +379,7 @@ macro_rules! serialize_for_tuple {
         impl<$($name: Serialize),*> Serialize for ($($name,)*) {
             #[inline]
             fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-                Ok(Begin::indexed_seq(self, self.descriptor()))
-            }
-
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
-                &DESCRIPTOR
+                Ok(Begin::indexed_seq(self, ContainerShape::new()))
             }
 
             #[allow(non_snake_case)]
@@ -508,21 +443,19 @@ serialize_for_tuple! { T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, }
 impl<T: Serialize, const N: usize> Serialize for [T; N] {
     #[inline]
     fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-        let descriptor = self.descriptor();
         Ok(match T::__private_slice_as_bytes(&self[..]) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
-            None => Begin::indexed_seq(self, descriptor),
+            Some(bytes) => Begin::chunk(
+                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                ContainerShape::new(),
+                false,
+            ),
+            None => Begin::indexed_seq(self, ContainerShape::new()),
         })
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
-        &DESCRIPTOR
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
-            Ok(Chunk::Atom(Atom::Bytes(bytes)))
+            Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
@@ -550,9 +483,10 @@ macro_rules! forward_serialize {
                     Serialize::is_optional(&**self)
                 }
 
-                fn descriptor(&self) -> &'static dyn Descriptor {
-                    Serialize::descriptor(&**self)
+                fn container_shape(&self) -> ContainerShape {
+                    Serialize::container_shape(&**self)
                 }
+
             }
         )*
     };

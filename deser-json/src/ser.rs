@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Error, ErrorKind, Event, Float, FloatKind, Serialize};
 
 use crate::buf::Buffer;
 use crate::scan::{find_escape, skip_to_escape};
@@ -70,22 +70,17 @@ impl SerializerConfig {
     ///
     /// ```
     /// use deser::ser::{Layer, Next};
-    /// use deser::{Atom, Descriptor, Error, Event};
+    /// use deser::{Atom, Error, Event};
     /// use deser_json::SerializerConfig;
     ///
     /// /// Writes all numbers as strings.
     /// struct NumbersAsStrings;
     ///
     /// impl Layer for NumbersAsStrings {
-    ///     fn event(
-    ///         &mut self,
-    ///         event: Event<'_>,
-    ///         descriptor: &'static dyn Descriptor,
-    ///         next: &mut Next<'_>,
-    ///     ) -> Result<(), Error> {
+    ///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
     ///         match event {
-    ///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into(), descriptor),
-    ///             event => next.emit(event, descriptor),
+    ///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+    ///             event => next.emit(event),
     ///         }
     ///     }
     /// }
@@ -111,15 +106,10 @@ impl SerializerConfig {
         };
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        driver.drive(|event, descriptor, _| writer.event(event, descriptor))?;
+        driver.drive(|event, _| writer.event(event))?;
         Ok(writer.ser.out.into_string())
     }
 }
-
-/// A descriptor which does not request a bytes format.
-struct NoFormat;
-
-impl Descriptor for NoFormat {}
 
 /// The output of the serializer.
 struct Output {
@@ -147,11 +137,11 @@ struct Writer {
 
 impl Writer {
     #[inline(always)]
-    fn event(&mut self, event: Event, descriptor: &dyn Descriptor) -> Result<(), Error> {
+    fn event(&mut self, event: Event) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => {
                 if self.is_key {
-                    self.ser.write_key_atom(atom, descriptor, self.first)?;
+                    self.ser.write_key_atom(atom, self.first)?;
                     self.is_key = false;
                 } else {
                     match self.container {
@@ -163,13 +153,13 @@ impl Writer {
                         Container::Map => self.is_key = true,
                         Container::Top => {}
                     }
-                    self.ser.write_atom(atom, descriptor)?;
+                    self.ser.write_atom(atom)?;
                 }
                 self.first = false;
                 Ok(())
             }
-            Event::MapStart => self.start(true),
-            Event::SeqStart => self.start(false),
+            Event::MapStart(_) => self.start(true),
+            Event::SeqStart(_) => self.start(false),
             Event::MapEnd => self.end(true),
             Event::SeqEnd => self.end(false),
         }
@@ -224,12 +214,7 @@ impl Writer {
 impl Output {
     /// Writes an atom in key position including separator and colon.
     #[inline(always)]
-    fn write_key_atom(
-        &mut self,
-        atom: Atom,
-        descriptor: &dyn Descriptor,
-        first: bool,
-    ) -> Result<(), Error> {
+    fn write_key_atom(&mut self, atom: Atom, first: bool) -> Result<(), Error> {
         // borrowed strings do not need to be dropped, the atom is only
         // dropped for the other values.
         let atom = ManuallyDrop::new(atom);
@@ -239,17 +224,12 @@ impl Output {
                 self.write_key(val, first);
                 Ok(())
             }
-            _ => self.write_other_key_atom(ManuallyDrop::into_inner(atom), descriptor, first),
+            _ => self.write_other_key_atom(ManuallyDrop::into_inner(atom), first),
         }
     }
 
     #[inline(never)]
-    fn write_other_key_atom(
-        &mut self,
-        atom: Atom,
-        descriptor: &dyn Descriptor,
-        first: bool,
-    ) -> Result<(), Error> {
+    fn write_other_key_atom(&mut self, atom: Atom, first: bool) -> Result<(), Error> {
         if !first {
             self.write_char(',');
         }
@@ -267,7 +247,7 @@ impl Output {
                 self.write_char('"');
             }
             Atom::Ext(ref ext) => self.write_ext_key(ext)?,
-            Atom::Bytes(ref val) => self.write_bytes_str(val, descriptor),
+            Atom::Bytes(ref val) => self.write_bytes_str(val, val.fallback),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -281,7 +261,7 @@ impl Output {
 
     /// Writes an atom in value position.
     #[inline(always)]
-    fn write_atom(&mut self, atom: Atom, descriptor: &dyn Descriptor) -> Result<(), Error> {
+    fn write_atom(&mut self, atom: Atom) -> Result<(), Error> {
         // borrowed strings and scalars do not need to be dropped, the atom
         // is only dropped for the other values.
         let atom = ManuallyDrop::new(atom);
@@ -293,19 +273,19 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::F64(val) => self.write_float(val, descriptor),
-            _ => return self.write_other_atom(ManuallyDrop::into_inner(atom), descriptor),
+            Atom::Float(val) => self.write_float(val),
+            _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())
     }
 
     #[inline(never)]
-    fn write_other_atom(&mut self, atom: Atom, descriptor: &dyn Descriptor) -> Result<(), Error> {
+    fn write_other_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match atom {
             Atom::Str(ref val) => self.write_escaped_str(val),
             Atom::Ext(ref ext) => self.write_ext_value(ext)?,
             Atom::Bytes(ref val) => {
-                self.write_bytes(val, descriptor.bytes_format().unwrap_or(self.bytes))
+                self.write_bytes(val, val.fallback.copied().unwrap_or(self.bytes))
             }
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         }
@@ -332,8 +312,8 @@ impl Output {
     /// Writes bytes as string, for instance as map key.
     ///
     /// Bytes that would be sequences are base64.
-    fn write_bytes_str(&mut self, bytes: &[u8], descriptor: &dyn Descriptor) {
-        let format = descriptor.bytes_format().unwrap_or(self.bytes);
+    fn write_bytes_str(&mut self, bytes: &[u8], fallback: Option<&BytesFormat>) {
+        let format = fallback.copied().unwrap_or(self.bytes);
         let encoded = format
             .encode(bytes)
             .or_else(|| BytesFormat::BASE64.encode(bytes))
@@ -378,14 +358,14 @@ impl Output {
 
     /// Writes a float atom.
     ///
-    /// Floats are widened to f64 in the data model, the descriptor tells us
-    /// the original precision.
+    /// Floats are widened to f64 in the data model, the kind tells us the
+    /// original precision.
     #[inline(never)]
-    fn write_float(&mut self, val: f64, descriptor: &dyn Descriptor) {
-        if descriptor.precision() == Some(32) {
-            self.write_f32(val as f32);
+    fn write_float(&mut self, val: Float) {
+        if val.kind() == FloatKind::F32 {
+            self.write_f32(val.value() as f32);
         } else {
-            self.write_f64(val);
+            self.write_f64(val.value());
         }
     }
 
@@ -487,10 +467,10 @@ impl Output {
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::F64(val) => self.write_f64(val),
+            Atom::Float(val) => self.write_float(val),
             // like in TOML the fallbacks of extension values are never
             // sequences
-            Atom::Bytes(val) => self.write_bytes_str(&val, &NoFormat),
+            Atom::Bytes(val) => self.write_bytes_str(&val, val.fallback),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,

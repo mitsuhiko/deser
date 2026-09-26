@@ -32,8 +32,19 @@ fn deserialize_with<T: DeserializeOwned>(
 fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)> {
     let mut events = Vec::new();
     SerializeDriver::new(value)
-        .drive(|event, descriptor, _| {
-            events.push((event.to_static(), descriptor.bytes_format()));
+        .drive(|event, _| {
+            // the fallback is reported separately
+            let (event, format) = match event {
+                Event::Atom(Atom::Bytes(bytes)) => {
+                    let format = bytes.fallback.copied();
+                    (
+                        Event::Atom(Atom::Bytes(deser::Bytes::new(bytes.data))),
+                        format,
+                    )
+                }
+                event => (event, None),
+            };
+            events.push((event.to_static(), format));
             Ok(())
         })
         .unwrap();
@@ -41,7 +52,7 @@ fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)
 }
 
 fn bytes(value: &[u8]) -> Event<'static> {
-    Event::Atom(Atom::Bytes(Cow::Owned(value.to_vec())))
+    Event::Atom(Atom::Bytes(deser::Bytes::new(Cow::Owned(value.to_vec()))))
 }
 
 #[test]
@@ -59,7 +70,7 @@ fn test_bytes_from_strings() {
 
     // sequences still work
     let value: Vec<u8> = deserialize(vec![
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         255u64.into(),
         Event::SeqEnd,
@@ -157,7 +168,7 @@ fn test_adapters_serialize() {
     let seq = Some(BytesFormat::SEQ);
     let events = serialize(&blob());
     let expected = vec![
-        (Event::MapStart, None),
+        (Event::map_start(), None),
         ("plain".into(), None),
         (bytes(&[1]), None),
         ("hex".into(), None),
@@ -166,26 +177,29 @@ fn test_adapters_serialize() {
         (bytes(&[4]), hex),
         ("forced".into(), None),
         // forced strings are strings for all formats
-        ("05".into(), hex),
+        ("05".into(), None),
         ("seq".into(), None),
         (bytes(&[6]), seq),
         ("optional".into(), None),
         (bytes(&[7]), hex),
         ("many".into(), None),
-        (Event::SeqStart, None),
+        (Event::seq_start(), None),
         (bytes(&[8]), hex),
         (Event::SeqEnd, None),
         ("keys".into(), None),
-        (Event::MapStart, None),
+        (
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            None,
+        ),
         (bytes(&[9]), hex),
         (10u64.into(), None),
         (Event::MapEnd, None),
         ("cow".into(), None),
         (bytes(&[11]), hex),
         ("forced_optional".into(), None),
-        ("0c".into(), hex),
+        ("0c".into(), None),
         ("forced_cow".into(), None),
-        ("0d".into(), hex),
+        ("0d".into(), None),
         (Event::MapEnd, None),
     ];
     assert_eq!(events, expected);
@@ -202,7 +216,7 @@ fn test_adapters_deserialize() {
 
     // from strings
     let events = vec![
-        Event::MapStart,
+        Event::map_start(),
         "plain".into(),
         "AQ==".into(),
         "hex".into(),
@@ -212,17 +226,17 @@ fn test_adapters_deserialize() {
         "forced".into(),
         "05".into(),
         "seq".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         6u64.into(),
         Event::SeqEnd,
         "optional".into(),
         "07".into(),
         "many".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         "08".into(),
         Event::SeqEnd,
         "keys".into(),
-        Event::MapStart,
+        Event::map_start(),
         "09".into(),
         10u64.into(),
         Event::MapEnd,
@@ -288,7 +302,7 @@ fn test_custom_encoding() {
     assert_eq!(events[4].0, "3.4".into());
 
     let value: Custom = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "hint".into(),
         "1.2".into(),
         "forced".into(),
@@ -321,7 +335,7 @@ fn test_data_encoding_adapters() {
     assert_eq!(events[2].0, "MZXW6===".into());
     assert_eq!(events[4].1, Some(BytesFormat::encoded::<Base32>()));
     let value: Key = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
         "MZXW6===".into(),
         "b".into(),

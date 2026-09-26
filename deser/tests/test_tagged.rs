@@ -18,7 +18,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -48,7 +48,7 @@ enum Shape {
 #[test]
 fn test_tag_first() {
     let shape: Shape = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "circle".into(),
         "radius".into(),
@@ -62,11 +62,11 @@ fn test_tag_first() {
 #[test]
 fn test_tag_last() {
     let shape: Shape = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "height".into(),
         2u64.into(),
         "unknown".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         true.into(),
         Event::SeqEnd,
         "width".into(),
@@ -89,10 +89,10 @@ fn test_tag_last() {
 #[test]
 fn test_tag_in_the_middle_with_compound_values() {
     let shape: Shape = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "points".into(),
-        Event::SeqStart,
-        Event::SeqStart,
+        Event::seq_start(),
+        Event::seq_start(),
         1i64.into(),
         (-1i64).into(),
         Event::SeqEnd,
@@ -100,9 +100,9 @@ fn test_tag_in_the_middle_with_compound_values() {
         "type".into(),
         "polygon".into(),
         "attrs".into(),
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         "x".into(),
         Event::SeqEnd,
         Event::MapEnd,
@@ -123,7 +123,7 @@ fn test_tag_in_the_middle_with_compound_values() {
 #[test]
 fn test_unit_variant() {
     let shape: Shape = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "nothing".into(),
         Event::MapEnd,
@@ -135,7 +135,7 @@ fn test_unit_variant() {
 #[test]
 fn test_errors() {
     let err = deserialize::<Shape>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "radius".into(),
         1u64.into(),
         Event::MapEnd,
@@ -145,7 +145,7 @@ fn test_errors() {
     assert_eq!(err.to_string(), "MissingField: missing tag 'type'");
 
     let err = deserialize::<Shape>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "triangle".into(),
         Event::MapEnd,
@@ -157,7 +157,7 @@ fn test_errors() {
     );
 
     let err = deserialize::<Shape>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "circle".into(),
         Event::MapEnd,
@@ -170,7 +170,7 @@ fn test_errors() {
 
     // errors in buffered values are reported when they are replayed
     let err = deserialize::<Shape>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "radius".into(),
         "not a number".into(),
         "type".into(),
@@ -190,7 +190,7 @@ fn test_serialize() {
             label: "x".into()
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "rect".into(),
             "width".into(),
@@ -205,7 +205,7 @@ fn test_serialize() {
     assert_eq!(
         serialize(&Shape::Empty),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "empty".into(),
             Event::MapEnd
@@ -247,7 +247,7 @@ enum WithDefaults {
 fn test_variant_expression_defaults() {
     assert_eq!(
         deserialize::<WithDefaults>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "Server".into(),
             Event::MapEnd,
@@ -269,7 +269,7 @@ fn test_serialize_skipping() {
             count: 0,
         }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "Item".into(),
             "name".into(),
@@ -292,9 +292,9 @@ fn test_recording() {
     // recording again replaces the value
     {
         let mut driver = DeserializeDriver::from_sink(recording.recorder());
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit("a").unwrap();
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         driver.emit(Event::SeqEnd).unwrap();
         driver.emit(Event::MapEnd).unwrap();
     }
@@ -302,9 +302,9 @@ fn test_recording() {
     assert_eq!(
         recording.events().cloned().collect::<Vec<_>>(),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             Event::SeqEnd,
             Event::MapEnd
         ]
@@ -326,7 +326,7 @@ fn test_recording() {
 #[derive(Debug, PartialEq)]
 struct Probe {
     depth: usize,
-    parent: Option<String>,
+    shape: deser::ContainerShape,
 }
 
 deser::make_slot_wrapper!(ProbeSlot);
@@ -335,10 +335,7 @@ impl<'de> deser::de::Sink<'de> for ProbeSlot<Probe> {
     fn atom(&mut self, _atom: deser::Atom, state: &mut deser::State) -> Result<(), Error> {
         **self = Some(Probe {
             depth: state.depth(),
-            parent: state
-                .top_descriptor()
-                .and_then(|d| d.name())
-                .map(String::from),
+            shape: state.container_shape(),
         });
         Ok(())
     }
@@ -360,8 +357,8 @@ enum Probed {
 fn test_replay_keeps_state() {
     // the tag comes first, the value is not buffered
     let direct: Vec<Probed> = deserialize(vec![
-        Event::SeqStart,
-        Event::MapStart,
+        Event::seq_start(),
+        Event::map_start(),
         "type".into(),
         "Variant".into(),
         "value".into(),
@@ -372,8 +369,8 @@ fn test_replay_keeps_state() {
     .unwrap();
     // the tag comes last, the value is recorded and replayed
     let replayed: Vec<Probed> = deserialize(vec![
-        Event::SeqStart,
-        Event::MapStart,
+        Event::seq_start(),
+        Event::map_start(),
         "value".into(),
         1u64.into(),
         "type".into(),

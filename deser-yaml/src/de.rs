@@ -438,7 +438,7 @@ impl<'a> KeyId<'a> {
             Atom::Bool(value) => KeyId::Bool(value),
             Atom::U64(value) => KeyId::Int(false, value.into()),
             Atom::I64(value) => KeyId::Int(value < 0, value.unsigned_abs().into()),
-            Atom::F64(value) => KeyId::Float(value.to_bits()),
+            Atom::Float(value) => KeyId::Float(value.value().to_bits()),
             Atom::Str(value) => KeyId::Str(value),
             Atom::Bytes(value) => KeyId::Bytes(value.into_owned()),
             Atom::Ext(ref ext) => {
@@ -765,9 +765,9 @@ impl<'a> Deserializer<'a> {
                         });
                     }
                     let event = if is_map {
-                        Event::MapStart
+                        Event::map_start()
                     } else {
-                        Event::SeqStart
+                        Event::seq_start()
                     };
                     driver.state_mut().set_input_range(start.offset, end);
                     match tag {

@@ -2,11 +2,9 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::descriptors::Descriptor;
 use crate::error::Error;
+use crate::event::ContainerShape;
 use crate::extensions::Extensions;
-
-const STACK_CAPACITY: usize = 128;
 
 /// The input range of events without one.
 pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
@@ -42,7 +40,10 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// deserialization from moving between threads.
 pub struct State {
     extensions: Extensions,
-    pub(crate) descriptor_stack: Vec<&'static dyn Descriptor>,
+    // the number of open containers
+    pub(crate) depth: usize,
+    // the shape of the container that is currently started
+    pub(crate) container_shape: ContainerShape,
     pub(crate) is_map_key: bool,
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
@@ -59,7 +60,8 @@ impl State {
     pub(crate) fn new() -> State {
         State {
             extensions: Extensions::default(),
-            descriptor_stack: Vec::with_capacity(STACK_CAPACITY),
+            depth: 0,
+            container_shape: ContainerShape::new(),
             is_map_key: false,
             input_range: NO_RANGE,
             source: None,
@@ -73,7 +75,8 @@ impl State {
             self,
             State {
                 extensions: Extensions::default(),
-                descriptor_stack: Vec::new(),
+                depth: 0,
+                container_shape: ContainerShape::new(),
                 is_map_key: false,
                 input_range: NO_RANGE,
                 source: None,
@@ -194,15 +197,19 @@ impl State {
     /// This is the number of containers (maps and sequences) that are
     /// currently open.
     pub fn depth(&self) -> usize {
-        self.descriptor_stack.len()
+        self.depth
     }
 
-    /// Returns the topmost descriptor.
+    /// Returns the shape of the container that is started.
     ///
-    /// This descriptor always points to a container.  During serialization
-    /// the descriptor of a value itself is passed to the format explicitly.
-    pub fn top_descriptor(&self) -> Option<&'static dyn Descriptor> {
-        self.descriptor_stack.last().copied()
+    /// During deserialization this is the shape of the
+    /// [`MapStart`](crate::Event::MapStart) or
+    /// [`SeqStart`](crate::Event::SeqStart) event and is intended to be
+    /// called from [`Sink::map`](crate::de::Sink::map) and
+    /// [`Sink::seq`](crate::de::Sink::seq).  At other times it's the shape of
+    /// the container that was started last.
+    pub fn container_shape(&self) -> ContainerShape {
+        self.container_shape
     }
 
     /// Returns `true` if the value currently being processed is a map key.
@@ -289,8 +296,8 @@ impl State {
     /// let mut out = None::<Vec<Vec<u32>>>;
     /// let mut driver = DeserializeDriver::new(&mut out);
     /// driver.state_mut().add_error_context(add_depth);
-    /// driver.emit(Event::SeqStart).unwrap();
-    /// driver.emit(Event::SeqStart).unwrap();
+    /// driver.emit(Event::seq_start()).unwrap();
+    /// driver.emit(Event::seq_start()).unwrap();
     /// let err = driver.emit(true).unwrap_err();
     /// assert_eq!(err.path(), Some("<depth 2>"));
     /// ```
@@ -352,32 +359,9 @@ const _: () = {
 
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Stack<'a>(&'a [&'a dyn Descriptor]);
-        struct Entry<'a>(&'a dyn Descriptor);
-
-        impl<'a> fmt::Debug for Entry<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("Layer")
-                    .field("type_name", &self.0.name())
-                    .field("precision", &self.0.precision())
-                    .field("unordered", &self.0.unordered())
-                    .finish()
-            }
-        }
-
-        impl<'a> fmt::Debug for Stack<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let mut l = f.debug_list();
-                for item in self.0.iter() {
-                    l.entry(&Entry(*item));
-                }
-                l.finish()
-            }
-        }
-
         f.debug_struct("State")
             .field("extensions", &self.extensions)
-            .field("stack", &Stack(&self.descriptor_stack))
+            .field("depth", &self.depth)
             .field("is_map_key", &self.is_map_key)
             .field("input_range", &self.input_range())
             .field(

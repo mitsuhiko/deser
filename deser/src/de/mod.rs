@@ -44,7 +44,7 @@
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
 //!     // emit takes values that implement Into<Event>
-//!     driver.emit(Event::MapStart).unwrap();
+//!     driver.emit(Event::map_start()).unwrap();
 //!     driver.emit(1i64).unwrap();
 //!     driver.emit("Hello").unwrap();
 //!     driver.emit(2i64).unwrap();
@@ -213,7 +213,6 @@
 //! [`OwnedSink`].
 use std::borrow::Cow;
 
-use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
@@ -481,11 +480,6 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         self.sink_mut().finish(state)
     }
 
-    /// Forwards to [`Sink::descriptor`].
-    pub fn descriptor(&self) -> &'static dyn Descriptor {
-        self.sink().descriptor()
-    }
-
     /// Forwards to [`Sink::expecting`].
     pub fn expecting(&self) -> Cow<'_, str> {
         self.sink().expecting()
@@ -558,10 +552,6 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     #[inline]
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         SinkHandle::finish(self, state)
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        SinkHandle::descriptor(self)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
@@ -901,18 +891,11 @@ pub trait Sink<'de> {
         Ok(())
     }
 
-    /// Returns a descriptor for this type.
-    ///
-    /// Descriptors of sinks have to be `'static` as the deserializer state
-    /// holds on to them while the sink is in use.
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &NullDescriptor
-    }
-
     /// Utility method to return an expectation message that is used in error messages.
     ///
-    /// The default implementation returns the type name of the descriptor if available.
+    /// This is typically the name of the type.  The default implementation
+    /// returns `"compatible type"`.
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.descriptor().name().unwrap_or("compatible type"))
+        Cow::Borrowed("compatible type")
     }
 }

@@ -28,8 +28,9 @@ impl ToDebug {
     pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut events = Vec::new();
         SerializeDriver::new(value)
-            .drive(|event, descriptor, _| {
-                events.push((event.to_static(), descriptor.name()));
+            .drive(|event, _| {
+                // type names are not available without descriptors
+                events.push((event.to_static(), None));
                 Ok(())
             })
             .unwrap();
@@ -72,10 +73,10 @@ fn dump<'a>(
             Event::Atom(Atom::Char(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::U64(v)) => fmt::Debug::fmt(&v, f)?,
             Event::Atom(Atom::I64(v)) => fmt::Debug::fmt(&v, f)?,
-            Event::Atom(Atom::F64(v)) => fmt::Debug::fmt(&v, f)?,
+            Event::Atom(Atom::Float(v)) => fmt::Debug::fmt(&v.value(), f)?,
             Event::Atom(Atom::Ext(ref v)) => fmt::Debug::fmt(v, f)?,
             Event::Atom(..) => f.debug_struct("?").finish()?,
-            Event::MapStart => {
+            Event::MapStart(_) => {
                 if let Some(name) = first.1 {
                     write!(f, "{} ", name)?;
                 }
@@ -98,7 +99,7 @@ fn dump<'a>(
                 map.finish()?;
             }
             Event::MapEnd => unreachable!(),
-            Event::SeqStart => {
+            Event::SeqStart(_) => {
                 if let Some(name) = first.1
                     && name != "Vec"
                     && name != "slice"
@@ -144,7 +145,7 @@ fn test_debug_format() {
 
     assert_eq!(
         ToDebug::new(&m).to_string(),
-        "BTreeMap {false: [], true: [[b\"x\", b\"yyy\"], [b\"zzzz\\0\\x01\"]]}"
+        "{false: [], true: [[b\"x\", b\"yyy\"], [b\"zzzz\\0\\x01\"]]}"
     );
 }
 

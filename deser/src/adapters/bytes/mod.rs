@@ -152,9 +152,10 @@ pub trait BytesEncoding: 'static {
 /// * The serializers of formats without native bytes (JSON and TOML) can be
 ///   configured with a format.  It's used for all bytes that do not request
 ///   a format.  The default is [`BytesFormat::BASE64`].
-/// * Values request a format with [`Descriptor::bytes_format`](crate::Descriptor::bytes_format)
-///   which takes precedence over the configuration of the serializer.  The
-///   [`BytesFallback`] adapter does this.
+/// * Bytes can carry a format as fallback (see
+///   [`Bytes::fallback`](crate::Bytes::fallback)) which takes precedence
+///   over the configuration of the serializer.  The [`BytesFallback`]
+///   adapter does this.
 /// * The types that expect bytes decode strings with the format placed into
 ///   the [`State`].  The deserializers of formats without native bytes can
 ///   be configured to do this, otherwise lenient base64 is used.  Strings

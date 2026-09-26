@@ -13,7 +13,6 @@ use std::mem::take;
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
-use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
 
@@ -238,12 +237,12 @@ impl<'de, E> Variants<'de, E> {
     fn resolve(
         &self,
         tag: &Recording,
-        descriptor: &dyn Descriptor,
+        name: &str,
         state: &mut State,
     ) -> Result<BoxedVariant<'de, E>, Error> {
-        let name = tag_name(tag);
-        if let Some(ref name) = name
-            && let Some(variant) = (self.lookup)(name)
+        let tag_name = tag_name(tag);
+        if let Some(ref tag_name) = tag_name
+            && let Some(variant) = (self.lookup)(tag_name)
         {
             return Ok(variant);
         }
@@ -253,7 +252,7 @@ impl<'de, E> Variants<'de, E> {
                 variant.set_tag(Some(tag), state)?;
                 Ok(variant)
             }
-            None => Err(unknown_variant(name.as_deref(), descriptor)),
+            None => Err(unknown_variant(tag_name.as_deref(), name)),
         }
     }
 
@@ -292,8 +291,7 @@ fn tag_name(tag: &Recording) -> Option<Cow<'_, str>> {
     }
 }
 
-fn unknown_variant(tag: Option<&str>, descriptor: &dyn Descriptor) -> Error {
-    let name = descriptor.name().unwrap_or("enum");
+fn unknown_variant(tag: Option<&str>, name: &str) -> Error {
     Error::new(
         ErrorKind::Unexpected,
         match tag {
@@ -321,7 +319,7 @@ fn feed_null<'de, E>(
 /// content.
 pub struct ExternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
-    descriptor: &'static dyn Descriptor,
+    name: &'static str,
     variants: Variants<'de, E>,
     unit: UnitLookup<E>,
     key: Recording,
@@ -334,13 +332,13 @@ impl<'a, 'de, E: 'de> ExternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an externally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
-        descriptor: &'static dyn Descriptor,
+        name: &'static str,
         variants: Variants<'de, E>,
         unit: UnitLookup<E>,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(ExternallyTaggedSink {
             out,
-            descriptor,
+            name,
             variants,
             unit,
             key: Recording::new(),
@@ -389,7 +387,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             Some(variant) => variant,
             None => {
                 return match atom {
-                    Atom::Str(ref name) => Err(unknown_variant(Some(name), self.descriptor)),
+                    Atom::Str(ref name) => Err(unknown_variant(Some(name), self.name)),
                     other => self.unexpected_atom(other, state),
                 };
             }
@@ -420,7 +418,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        let variant = self.variants.resolve(&self.key, self.descriptor, state)?;
+        let variant = self.variants.resolve(&self.key, self.name, state)?;
         Ok(SinkHandle::to(self.variant.insert(variant).sink()))
     }
 
@@ -432,18 +430,15 @@ impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         let variant = self.variant.as_mut().ok_or_else(|| {
             Error::new(
                 ErrorKind::Unexpected,
-                format!(
-                    "expected a map with a single key for {}",
-                    self.descriptor.name().unwrap_or("enum")
-                ),
+                format!("expected a map with a single key for {}", self.name),
             )
         })?;
         *self.out = variant.build();
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.descriptor
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
     }
 }
 
@@ -456,7 +451,7 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
     tag: &'static str,
     content: &'static str,
-    descriptor: &'static dyn Descriptor,
+    name: &'static str,
     variants: Variants<'de, E>,
     key: Recording,
     tag_value: Option<Recording>,
@@ -471,14 +466,14 @@ impl<'a, 'de, E: 'de> AdjacentlyTaggedSink<'a, 'de, E> {
         out: &'a mut Option<E>,
         tag: &'static str,
         content: &'static str,
-        descriptor: &'static dyn Descriptor,
+        name: &'static str,
         variants: Variants<'de, E>,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(AdjacentlyTaggedSink {
             out,
             tag,
             content,
-            descriptor,
+            name,
             variants,
             key: Recording::new(),
             tag_value: None,
@@ -505,7 +500,7 @@ impl<'a, 'de, E: 'de> AdjacentlyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, self.descriptor, state)?,
+            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)
@@ -562,8 +557,8 @@ impl<'a, 'de, E: 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.descriptor
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
     }
 }
 
@@ -573,7 +568,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 /// of them accepts it.
 pub fn untagged_handle<'a, 'de, E>(
     out: &'a mut Option<E>,
-    descriptor: &'static dyn Descriptor,
+    name: &'static str,
     candidates: CandidateLookup<'de, E>,
 ) -> SinkHandle<'a, 'de> {
     Recording::capture(move |recording, state| {
@@ -593,10 +588,7 @@ pub fn untagged_handle<'a, 'de, E>(
         }
         Err(Error::new(
             ErrorKind::Unexpected,
-            format!(
-                "data did not match any variant of {}",
-                descriptor.name().unwrap_or("enum")
-            ),
+            format!("data did not match any variant of {}", name),
         ))
     })
 }
@@ -609,7 +601,7 @@ pub fn untagged_handle<'a, 'de, E>(
 pub struct InternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
     tag: &'static str,
-    descriptor: &'static dyn Descriptor,
+    name: &'static str,
     variants: Variants<'de, E>,
     key: Recording,
     pending: Vec<(Recording, Recording)>,
@@ -622,13 +614,13 @@ impl<'a, 'de, E: 'de> InternallyTaggedSink<'a, 'de, E> {
     pub fn handle(
         out: &'a mut Option<E>,
         tag: &'static str,
-        descriptor: &'static dyn Descriptor,
+        name: &'static str,
         variants: Variants<'de, E>,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(InternallyTaggedSink {
             out,
             tag,
-            descriptor,
+            name,
             variants,
             key: Recording::new(),
             pending: Vec::new(),
@@ -658,7 +650,7 @@ impl<'a, 'de, E: 'de> InternallyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, self.descriptor, state)?,
+            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)
@@ -708,7 +700,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.descriptor
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
     }
 }

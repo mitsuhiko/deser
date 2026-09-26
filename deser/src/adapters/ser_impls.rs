@@ -4,9 +4,8 @@ use std::hash::BuildHasher;
 
 use crate::State;
 use crate::adapters::{SerializeAs, SerializeAsRef};
-use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
-use crate::event::Atom;
+use crate::event::{Atom, Bytes, ContainerShape, Order};
 use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, SerializeHandle};
 
 /// Returns a handle to a value that serializes with an adapter.
@@ -90,11 +89,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
         value.is_none()
     }
 
-    fn descriptor_as(value: &Option<T>) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "optional" };
+    fn container_shape_as(value: &Option<T>) -> ContainerShape {
         match value {
-            Some(value) => A::descriptor_as(value),
-            None => &DESCRIPTOR,
+            Some(value) => A::container_shape_as(value),
+            None => ContainerShape::new(),
         }
     }
 
@@ -104,7 +102,7 @@ impl<T, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
             Some(value) => A::__private_begin_as(value, state),
             None => Ok(Begin::chunk(
                 Chunk::Atom(Atom::Null),
-                Self::descriptor_as(value),
+                ContainerShape::new(),
                 false,
             )),
         }
@@ -124,8 +122,8 @@ impl<T, A: SerializeAs<T>> SerializeAs<Box<T>> for Box<A> {
         A::is_optional_as(value)
     }
 
-    fn descriptor_as(value: &Box<T>) -> &'static dyn Descriptor {
-        A::descriptor_as(value)
+    fn container_shape_as(value: &Box<T>) -> ContainerShape {
+        A::container_shape_as(value)
     }
 
     #[inline]
@@ -148,7 +146,7 @@ impl<T, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
 impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
     fn serialize_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(bytes)),
+            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
             None => Chunk::Seq(Box::new(IndexedSeqEmitter {
                 seq: SerializeAsRef::<Vec<A>, Vec<T>>::new(value),
                 index: 0,
@@ -156,22 +154,12 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
         })
     }
 
-    fn descriptor_as(value: &Vec<T>) -> &'static dyn Descriptor {
-        static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Vec" };
-        static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "ByteVec" };
-        if A::__private_slice_as_bytes_as(value).is_some() {
-            &BYTES_DESCRIPTOR
-        } else {
-            &SLICE_DESCRIPTOR
-        }
-    }
-
     #[inline]
     fn __private_begin_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
-            None => Begin::indexed_seq(SerializeAsRef::<Vec<A>, Vec<T>>::new(value), descriptor),
+            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))), shape, false),
+            None => Begin::indexed_seq(SerializeAsRef::<Vec<A>, Vec<T>>::new(value), shape),
         })
     }
 }
@@ -190,7 +178,7 @@ impl<T, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[A; N],
 impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
     fn serialize_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(bytes)),
+            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
             None => Chunk::Seq(Box::new(IndexedSeqEmitter {
                 seq: SerializeAsRef::<[A; N], [T; N]>::new(value),
                 index: 0,
@@ -198,17 +186,12 @@ impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
         })
     }
 
-    fn descriptor_as(_value: &[T; N]) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "array" };
-        &DESCRIPTOR
-    }
-
     #[inline]
     fn __private_begin_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(bytes)), descriptor, false),
-            None => Begin::indexed_seq(SerializeAsRef::<[A; N], [T; N]>::new(value), descriptor),
+            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))), shape, false),
+            None => Begin::indexed_seq(SerializeAsRef::<[A; N], [T; N]>::new(value), shape),
         })
     }
 }
@@ -216,7 +199,7 @@ impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
 impl<T, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
     fn serialize_as<'a>(value: &'a [T], _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(bytes)),
+            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
             None => Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
                 value.iter(),
                 std::marker::PhantomData,
@@ -224,22 +207,12 @@ impl<T, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
         })
     }
 
-    fn descriptor_as(value: &[T]) -> &'static dyn Descriptor {
-        static SLICE_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "slice" };
-        static BYTES_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-        if A::__private_slice_as_bytes_as(value).is_some() {
-            &BYTES_DESCRIPTOR
-        } else {
-            &SLICE_DESCRIPTOR
-        }
-    }
-
     #[inline]
     fn __private_begin_as<'a>(value: &'a [T], state: &mut State) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            descriptor,
+            shape,
             false,
         ))
     }
@@ -258,9 +231,8 @@ where
         })))
     }
 
-    fn descriptor_as(_value: &BTreeMap<K, V>) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeMap" };
-        &DESCRIPTOR
+    fn container_shape_as(_value: &BTreeMap<K, V>) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Sorted)
     }
 
     #[inline]
@@ -268,10 +240,10 @@ where
         value: &'a BTreeMap<K, V>,
         state: &mut State,
     ) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            descriptor,
+            shape,
             false,
         ))
     }
@@ -294,9 +266,8 @@ where
         })))
     }
 
-    fn descriptor_as(_value: &HashMap<K, V, H>) -> &'static dyn Descriptor {
-        static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashMap" };
-        &DESCRIPTOR
+    fn container_shape_as(_value: &HashMap<K, V, H>) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Arbitrary)
     }
 
     #[inline]
@@ -304,10 +275,10 @@ where
         value: &'a HashMap<K, V, H>,
         state: &mut State,
     ) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            descriptor,
+            shape,
             false,
         ))
     }
@@ -321,9 +292,8 @@ impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
         ))))
     }
 
-    fn descriptor_as(_value: &BTreeSet<T>) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BTreeSet" };
-        &DESCRIPTOR
+    fn container_shape_as(_value: &BTreeSet<T>) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Sorted)
     }
 
     #[inline]
@@ -331,10 +301,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
         value: &'a BTreeSet<T>,
         state: &mut State,
     ) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            descriptor,
+            shape,
             false,
         ))
     }
@@ -348,9 +318,8 @@ impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSe
         ))))
     }
 
-    fn descriptor_as(_value: &HashSet<T, H>) -> &'static dyn Descriptor {
-        static DESCRIPTOR: UnorderedNamedDescriptor = UnorderedNamedDescriptor { name: "HashSet" };
-        &DESCRIPTOR
+    fn container_shape_as(_value: &HashSet<T, H>) -> ContainerShape {
+        ContainerShape::new().with_order(Order::Arbitrary)
     }
 
     #[inline]
@@ -358,10 +327,10 @@ impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSe
         value: &'a HashSet<T, H>,
         state: &mut State,
     ) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
+        let shape = Self::container_shape_as(value);
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            descriptor,
+            shape,
             false,
         ))
     }
@@ -396,16 +365,11 @@ macro_rules! serialize_as_for_tuple {
                 })))
             }
 
-            fn descriptor_as(_value: &($($name,)*)) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "tuple" };
-                &DESCRIPTOR
-            }
-
             #[inline]
             fn __private_begin_as<'a>(value: &'a ($($name,)*), _state: &mut State) -> Result<Begin<'a>, Error> {
                 Ok(Begin::indexed_seq(
                     SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value),
-                    Self::descriptor_as(value),
+                    ContainerShape::new(),
                 ))
             }
         }

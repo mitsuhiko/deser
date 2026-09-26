@@ -31,7 +31,7 @@
 //! | `null`, `~`, empty                    | `Null`                                  |
 //! | `true`, `false`                       | `Bool`                                  |
 //! | integers                              | `U64`, `I64` (`u128` / `i128` if wider) |
-//! | floats                                | `F64`                                   |
+//! | floats                                | `Float`                                 |
 //! | other scalars                         | `Str`                                   |
 //! | `!!binary`                            | `Bytes`                                 |
 //! | `!!timestamp`                         | [`Datetime`](deser::ext::Datetime)      |

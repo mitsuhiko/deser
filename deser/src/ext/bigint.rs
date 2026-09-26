@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
@@ -269,8 +268,6 @@ impl FromStr for BigInt {
     }
 }
 
-static BIGINT_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "BigInt" };
-
 impl Extension for BigInt {
     fn name(&self) -> &str {
         "big integer"
@@ -283,10 +280,6 @@ impl Extension for BigInt {
 
 impl WellKnown for BigInt {
     const EXPECTING: &'static str = "integer";
-
-    fn descriptor() -> &'static dyn Descriptor {
-        &BIGINT_DESCRIPTOR
-    }
 
     /// Accepts integers of all sizes and strings.
     fn from_atom(atom: &Atom) -> Result<Option<BigInt>, Error> {

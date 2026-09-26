@@ -86,7 +86,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
-    let type_name = container_attrs.container_name();
     let attrs = fields
         .named
         .iter()
@@ -219,9 +218,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             const _: () = {
                 #[automatically_derived]
                 impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                    fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                        &__Descriptor
-                    }
     __deser::__begin_without_finish!();
 
                     fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
@@ -239,13 +235,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #temp_emitter
                 }
 
-                struct __Descriptor;
-
-                impl __deser::Descriptor for __Descriptor {
-                    fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
-                        __deser::__derive::Some(#type_name)
-                    }
-                }
 
                 #[automatically_derived]
                 impl #wrapper_impl_generics __deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
@@ -279,7 +268,6 @@ fn derive_indexed_struct(
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-    let type_name = container_attrs.container_name();
 
     let field_arms = attrs
         .iter()
@@ -325,10 +313,6 @@ fn derive_indexed_struct(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    &__Descriptor
-                }
-
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
                         __deser::ser::IndexedStructEmitter::new(self)
@@ -339,7 +323,7 @@ fn derive_indexed_struct(
                 fn __private_begin(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Begin<'_>>
                 {
-                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, &__Descriptor))
+                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, __deser::ContainerShape::new()))
                 }
             }
 
@@ -357,13 +341,6 @@ fn derive_indexed_struct(
                 }
             }
 
-            struct __Descriptor;
-
-            impl __deser::Descriptor for __Descriptor {
-                fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
-                    __deser::__derive::Some(#type_name)
-                }
-            }
         };
     })
 }
@@ -421,10 +398,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
 
-    // TODO: we want to report the type name here but the current descriptor
-    // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
     let container_attrs = ContainerAttrs::of(input)?;
-    let _type_name = container_attrs.container_name();
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;
     if field_attrs.tag() {
@@ -460,8 +434,8 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    __deser::ser::Serialize::descriptor(#value)
+                fn container_shape(&self) -> __deser::ContainerShape {
+                    __deser::ser::Serialize::container_shape(#value)
                 }
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::ser::Serialize::serialize(#value, __state)

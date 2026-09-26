@@ -218,8 +218,9 @@ impl DeserializerConfig {
     ///
     /// Floats whose text is the shortest representation of their value (as
     /// formatted by `Debug`, for instance `0.5` or `3.14`) are emitted as
-    /// `F64` as the text can be recovered from the value.  This keeps the
-    /// common case fast.  When disabled, all floats are emitted as `F64`.
+    /// plain floats as the text can be recovered from the value.  This keeps
+    /// the common case fast.  When disabled, all floats are emitted as plain
+    /// floats.
     pub const fn exact_numbers(mut self, yes: bool) -> DeserializerConfig {
         self.exact_numbers = yes;
         self
@@ -566,11 +567,11 @@ impl<'a> Deserializer<'a> {
                     stack.push(container);
                     let close = if byte == b'{' {
                         container = Container::Map;
-                        emit!(start, Event::MapStart);
+                        emit!(start, Event::map_start());
                         b'}'
                     } else {
                         container = Container::Seq;
-                        emit!(start, Event::SeqStart);
+                        emit!(start, Event::seq_start());
                         b']'
                     };
                     // containers can close immediately, otherwise the first

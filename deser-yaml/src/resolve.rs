@@ -6,8 +6,8 @@
 //! strings unless they have an explicit tag.
 use std::borrow::Cow;
 
-use deser::Atom;
 use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
+use deser::{Atom, Bytes, Float};
 
 /// The YAML version that determines how plain scalars are resolved.
 ///
@@ -118,7 +118,7 @@ pub fn resolve_standard<'x>(
         }
         .ok_or("invalid !!float value"),
         "binary" => decode_base64(s)
-            .map(|bytes| Atom::Bytes(Cow::Owned(bytes)))
+            .map(|bytes| Atom::Bytes(Bytes::new(bytes)))
             .ok_or("invalid !!binary value"),
         "timestamp" => parse_timestamp(s)
             .map(|value| Atom::Ext(ExtValue::owned(value)))
@@ -282,17 +282,17 @@ fn test_parse_timestamp() {
 }
 
 fn int_to_float(atom: Atom) -> Atom<'static> {
-    Atom::F64(match atom {
+    Atom::Float(Float::new(match atom {
         Atom::U64(value) => value as f64,
         Atom::I64(value) => value as f64,
-        Atom::F64(value) => value,
+        Atom::Float(value) => value.value(),
         Atom::Ext(ref ext) => match (ext.downcast_ref::<u128>(), ext.downcast_ref::<i128>()) {
             (Some(&value), _) => value as f64,
             (_, Some(&value)) => value as f64,
             _ => unreachable!(),
         },
         _ => unreachable!(),
-    })
+    }))
 }
 
 fn parse_null(s: &str) -> Option<Atom<'static>> {
@@ -372,11 +372,11 @@ fn make_int(negative: bool, magnitude: Magnitude) -> Atom<'static> {
             Atom::Ext(ExtValue::owned((value as i128).wrapping_neg()))
         }
         // integers that do not even fit into 128 bits are approximated
-        _ => Atom::F64(if negative {
+        _ => Atom::Float(Float::new(if negative {
             -magnitude.approx
         } else {
             magnitude.approx
-        }),
+        })),
     }
 }
 
@@ -444,16 +444,16 @@ fn is_base60_digit(s: &str) -> bool {
 
 fn parse_special_float(s: &str) -> Option<Atom<'static>> {
     match s {
-        ".nan" | ".NaN" | ".NAN" => return Some(Atom::F64(f64::NAN)),
+        ".nan" | ".NaN" | ".NAN" => return Some(Atom::Float(Float::new(f64::NAN))),
         _ => {}
     }
     let (negative, rest) = split_sign(s);
     match rest {
-        ".inf" | ".Inf" | ".INF" => Some(Atom::F64(if negative {
+        ".inf" | ".Inf" | ".INF" => Some(Atom::Float(Float::new(if negative {
             f64::NEG_INFINITY
         } else {
             f64::INFINITY
-        })),
+        }))),
         _ => None,
     }
 }
@@ -494,7 +494,7 @@ fn parse_float_text(s: &str, underscores: bool) -> Option<Atom<'static>> {
     } else {
         s.parse()
     };
-    value.ok().map(Atom::F64)
+    value.ok().map(|value| Atom::Float(Float::new(value)))
 }
 
 /// YAML 1.2 core schema floats:
@@ -575,7 +575,11 @@ fn parse_base60_float(negative: bool, s: &str) -> Option<Atom<'static>> {
     }
     let frac: f64 = format!("0.{}", frac_part.replace('_', "")).parse().ok()?;
     value += frac;
-    Some(Atom::F64(if negative { -value } else { value }))
+    Some(Atom::Float(Float::new(if negative {
+        -value
+    } else {
+        value
+    })))
 }
 
 /// Decodes base64 as used by `!!binary`.  Whitespace is ignored.
@@ -654,6 +658,6 @@ fn test_big_ints() {
     );
     assert_eq!(
         parse_core_int("1000000000000000000000000000000000000000000"),
-        Some(Atom::F64(1e42))
+        Some(Atom::Float(Float::new(1e42)))
     );
 }

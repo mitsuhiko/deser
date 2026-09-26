@@ -21,7 +21,7 @@ fn events(value: &dyn Serialize) -> Vec<String> {
     let mut driver = SerializeDriver::new(value);
     driver.push_layer(PathLayer::new());
     driver
-        .drive(|event, _, state| {
+        .drive(|event, state| {
             events.push(format!(
                 "{:?}|{}",
                 event,
@@ -41,7 +41,7 @@ fn test_path() {
     assert_eq!(
         events(&map),
         vec![
-            "MapStart|",
+            "MapStart(ContainerShape { len: None, order: Sorted })|",
             "Atom(Str(\"key\"))|",
             "SeqStart|key",
             "Atom(Bool(false))|key[0]",
@@ -119,7 +119,7 @@ fn test_error_path() {
     map.insert("items", vec![None, Some(Fails)]);
     let mut driver = SerializeDriver::new(&map);
     driver.push_layer(PathLayer::new());
-    let err = driver.drive(|_, _, _| Ok(())).unwrap_err();
+    let err = driver.drive(|_, _| Ok(())).unwrap_err();
     assert_eq!(err.path(), Some("items[1]"));
     assert_eq!(
         err.to_string(),

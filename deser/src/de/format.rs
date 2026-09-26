@@ -21,7 +21,7 @@ use crate::error::{Error, ErrorKind};
 ///
 /// impl<'de> Format<'de> for Numbers<'de> {
 ///     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
-///         driver.emit(Event::SeqStart)?;
+///         driver.emit(Event::seq_start())?;
 ///         for item in self.0.split(',') {
 ///             let value: u64 = item.trim().parse().map_err(|_| {
 ///                 Error::new(deser::ErrorKind::Unexpected, "invalid number")

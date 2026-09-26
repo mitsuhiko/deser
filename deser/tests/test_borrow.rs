@@ -76,7 +76,7 @@ fn test_borrowed_containers() {
     let words: Vec<&str> = input.split(' ').collect();
 
     let events = vec![
-        Event::SeqStart,
+        Event::seq_start(),
         words[0].into(),
         words[1].into(),
         words[2].into(),
@@ -92,7 +92,7 @@ fn test_borrowed_containers() {
     assert_eq!(value, ["a", "b", "c"]);
 
     let events = vec![
-        Event::MapStart,
+        Event::map_start(),
         words[0].into(),
         words[1].into(),
         words[2].into(),
@@ -143,21 +143,21 @@ fn test_derive() {
     let input = String::from("name nick tag city note");
     let parts: Vec<&str> = input.split(' ').collect();
     let events = vec![
-        Event::MapStart,
+        Event::map_start(),
         "name".into(),
         parts[0].into(),
         "nick".into(),
         parts[1].into(),
         "tags".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         parts[2].into(),
         Event::SeqEnd,
         "aliases".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         parts[1].into(),
         Event::SeqEnd,
         "address".into(),
-        Event::MapStart,
+        Event::map_start(),
         "city".into(),
         parts[3].into(),
         Event::MapEnd,
@@ -186,7 +186,7 @@ fn test_derive() {
     assert_eq!(name, Name("name"));
 
     let value: Generic<'_, u32> = borrowed(vec![
-        Event::MapStart,
+        Event::map_start(),
         "key".into(),
         parts[0].into(),
         "value".into(),
@@ -248,7 +248,7 @@ fn test_deserialize_owned() {
 
     fn owned_map<T: deser::de::DeserializeOwned>(value: String) -> T {
         transient(vec![
-            Event::MapStart,
+            Event::map_start(),
             "name".into(),
             value.as_str().into(),
             Event::MapEnd,

@@ -162,7 +162,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             Atom::Char(value) => Value::Str(value.to_string()),
             Atom::U64(value) => Value::Int(value.into()),
             Atom::I64(value) => Value::Int(value.into()),
-            Atom::F64(value) => Value::Float(value),
+            Atom::Float(value) => Value::Float(value.value()),
             Atom::Ext(ref ext) if ext.is::<u128>() => {
                 Value::Int(*ext.downcast_ref::<u128>().unwrap() as i128)
             }

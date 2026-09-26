@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use crate::State;
 use crate::de::{OwnedSink, Sink, SinkHandle};
-use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Atom;
 
@@ -82,10 +81,6 @@ impl<'a, 'de, T, U> Sink<'de> for MappedSink<'a, 'de, T, U> {
             *self.out = Some((self.convert)(value)?);
         }
         Ok(())
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.sink.borrow().descriptor()
     }
 
     fn expecting(&self) -> Cow<'_, str> {

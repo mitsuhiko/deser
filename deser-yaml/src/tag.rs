@@ -17,12 +17,13 @@
 //! Tags are reported fully resolved: `!foo` stays `!foo` but `!!set`
 //! becomes `tag:yaml.org,2002:set` and tag handles declared with `%TAG`
 //! directives are expanded.
+use std::borrow::Cow;
 use std::fmt;
 
 use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::{Atom, Descriptor, Error};
+use deser::{Atom, ContainerShape, Error};
 
 /// The tag of the current node, attached as event data.
 #[derive(Debug, Default, Clone)]
@@ -120,8 +121,8 @@ impl<T: Serialize> Serialize for Tagged<T> {
         self.value.is_optional()
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.value.descriptor()
+    fn container_shape(&self) -> ContainerShape {
+        self.value.container_shape()
     }
 }
 
@@ -207,11 +208,11 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
+    fn expecting(&self) -> Cow<'_, str> {
         if let Some(ref compound) = self.compound {
-            return compound.borrow().descriptor();
+            return compound.borrow().expecting();
         }
         let mut slot = None;
-        T::deserialize_into(&mut slot).descriptor()
+        Cow::Owned(T::deserialize_into(&mut slot).expecting().into_owned())
     }
 }

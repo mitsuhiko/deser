@@ -123,9 +123,8 @@ use std::ops::{Deref, DerefMut};
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle};
-use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::event::Atom;
+use crate::event::{Atom, ContainerShape};
 use crate::ser::{Begin, Chunk, Serialize};
 
 pub mod bytes;
@@ -216,23 +215,19 @@ pub trait SerializeAs<T: ?Sized>: 'static {
         false
     }
 
-    /// Returns the descriptor of the value.
+    /// Returns the shape of the value if it's a map or sequence.
     ///
-    /// See [`Serialize::descriptor`].
-    fn descriptor_as(value: &T) -> &'static dyn Descriptor {
+    /// See [`Serialize::container_shape`].
+    fn container_shape_as(value: &T) -> ContainerShape {
         let _ = value;
-        &NullDescriptor
+        ContainerShape::new()
     }
 
     #[doc(hidden)]
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        let descriptor = Self::descriptor_as(value);
-        Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
-            descriptor,
-            true,
-        ))
+        let shape = Self::container_shape_as(value);
+        Ok(Begin::chunk(Self::serialize_as(value, state)?, shape, true))
     }
 
     #[doc(hidden)]
@@ -326,8 +321,8 @@ impl<T: Serialize + ?Sized> SerializeAs<T> for Same {
     }
 
     #[inline]
-    fn descriptor_as(value: &T) -> &'static dyn Descriptor {
-        value.descriptor()
+    fn container_shape_as(value: &T) -> ContainerShape {
+        value.container_shape()
     }
 
     #[inline]
@@ -397,8 +392,8 @@ impl<A: SerializeAs<T>, T: ?Sized> Serialize for SerializeAsRef<A, T> {
     }
 
     #[inline]
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        A::descriptor_as(&self.value)
+    fn container_shape(&self) -> ContainerShape {
+        A::container_shape_as(&self.value)
     }
 
     #[inline]
@@ -561,8 +556,8 @@ impl<T, A: SerializeAs<T>> Serialize for As<T, A> {
     }
 
     #[inline]
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        A::descriptor_as(&self.value)
+    fn container_shape(&self) -> ContainerShape {
+        A::container_shape_as(&self.value)
     }
 
     #[inline]

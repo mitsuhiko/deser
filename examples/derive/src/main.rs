@@ -31,7 +31,7 @@ fn main() {
     let mut user = None::<User>;
     {
         let mut driver = DeserializeDriver::new(&mut user);
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit("id").unwrap();
         driver.emit(23u64).unwrap();
         driver.emit("emailAddress").unwrap();

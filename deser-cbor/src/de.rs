@@ -4,7 +4,7 @@ use std::str;
 
 use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
-use deser::{Atom, Error, ErrorKind, Event};
+use deser::{Atom, Bytes, Error, ErrorKind, Event, Float};
 
 use crate::float::f16_to_f64;
 use crate::simple::Simple;
@@ -327,7 +327,7 @@ impl<'a> Deserializer<'a> {
                 self.emit_borrowed(
                     driver,
                     start,
-                    Event::Atom(Atom::Bytes(Cow::Borrowed(bytes))),
+                    Event::Atom(Atom::Bytes(Bytes::borrowed(bytes))),
                 )?
             }
             MAJOR_TEXT if !head.is_indefinite() => {
@@ -338,7 +338,7 @@ impl<'a> Deserializer<'a> {
             }
             MAJOR_BYTES => {
                 let bytes = self.read_string(head, buffer)?;
-                self.emit(driver, start, Atom::Bytes(Cow::Borrowed(bytes)))?
+                self.emit(driver, start, Atom::Bytes(Bytes::borrowed(bytes)))?
             }
             MAJOR_TEXT => {
                 let bytes = self.read_string(head, buffer)?;
@@ -352,9 +352,9 @@ impl<'a> Deserializer<'a> {
                     driver,
                     start,
                     if is_map {
-                        Event::MapStart
+                        Event::map_start()
                     } else {
-                        Event::SeqStart
+                        Event::seq_start()
                     },
                 )?;
                 return Ok(Some(Frame {
@@ -379,9 +379,9 @@ impl<'a> Deserializer<'a> {
                         }
                         Atom::Ext(ExtValue::owned(Simple::new(head.arg as u8).unwrap()))
                     }
-                    25 => Atom::F64(f16_to_f64(head.arg as u16)),
-                    26 => Atom::F64(f64::from(f32::from_bits(head.arg as u32))),
-                    27 => Atom::F64(f64::from_bits(head.arg)),
+                    25 => Atom::Float(Float::new(f16_to_f64(head.arg as u16))),
+                    26 => Atom::Float(Float::from_f32(f32::from_bits(head.arg as u32))),
+                    27 => Atom::Float(Float::new(f64::from_bits(head.arg))),
                     INDEFINITE => return Err(syntax_error(start, "unexpected break")),
                     info => Atom::Ext(ExtValue::owned(Simple::new(info).unwrap())),
                 };

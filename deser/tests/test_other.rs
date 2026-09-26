@@ -20,7 +20,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -78,9 +78,9 @@ fn test_external_tag_only() {
     // the content is ignored
     assert_eq!(
         deserialize::<ExternalTag>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "foo".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             Event::SeqEnd,
             Event::MapEnd,
@@ -115,13 +115,18 @@ enum ExternalCapture {
 fn test_external_capture() {
     check(
         ExternalCapture::Known(1),
-        vec![Event::MapStart, "Known".into(), 1u64.into(), Event::MapEnd],
+        vec![
+            Event::map_start(),
+            "Known".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
     );
 
     let value = deserialize::<ExternalCapture>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "foo".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         Event::SeqEnd,
@@ -134,7 +139,7 @@ fn test_external_capture() {
             assert_eq!(
                 events_of(content),
                 recorded(vec![
-                    Event::SeqStart,
+                    Event::seq_start(),
                     1u64.into(),
                     2u64.into(),
                     Event::SeqEnd
@@ -147,9 +152,9 @@ fn test_external_capture() {
     assert_eq!(
         serialize(&value),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "foo".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             Event::SeqEnd,
@@ -169,7 +174,7 @@ fn test_external_capture() {
 
     // known tags with bad content are errors
     let err = deserialize::<ExternalCapture>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "Known".into(),
         "x".into(),
         Event::MapEnd,
@@ -202,13 +207,23 @@ fn test_non_string_tags() {
     check(NumericTags::Other(2), vec![2u64.into()]);
     // as map key, strings are accepted as numbers
     assert_eq!(
-        deserialize::<NumericTags>(vec![Event::MapStart, "3".into(), ().into(), Event::MapEnd])
-            .unwrap(),
+        deserialize::<NumericTags>(vec![
+            Event::map_start(),
+            "3".into(),
+            ().into(),
+            Event::MapEnd
+        ])
+        .unwrap(),
         NumericTags::Other(3)
     );
     assert_eq!(
-        deserialize::<NumericTags>(vec![Event::MapStart, 4u64.into(), ().into(), Event::MapEnd])
-            .unwrap(),
+        deserialize::<NumericTags>(vec![
+            Event::map_start(),
+            4u64.into(),
+            ().into(),
+            Event::MapEnd
+        ])
+        .unwrap(),
         NumericTags::Other(4)
     );
 
@@ -218,9 +233,9 @@ fn test_non_string_tags() {
             value: "x".into(),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "42".into(),
-            Event::MapStart,
+            Event::map_start(),
             "value".into(),
             "x".into(),
             Event::MapEnd,
@@ -265,7 +280,7 @@ fn test_internally_tagged() {
     check(
         Event_::Click { x: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "click".into(),
             "x".into(),
@@ -279,7 +294,7 @@ fn test_internally_tagged() {
             x: Some(1),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "scroll".into(),
             "x".into(),
@@ -290,7 +305,7 @@ fn test_internally_tagged() {
     // the tag can come last
     assert_eq!(
         deserialize::<Event_>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "y".into(),
             1u64.into(),
             "type".into(),
@@ -310,7 +325,7 @@ fn test_internally_tagged() {
     check(
         InternalCapture::Other("foo".into(), map),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "foo".into(),
             "a".into(),
@@ -322,11 +337,11 @@ fn test_internally_tagged() {
     );
 
     let events = vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "foo".into(),
         "a".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         true.into(),
         Event::SeqEnd,
         Event::MapEnd,
@@ -360,7 +375,7 @@ enum OtherOrDefault {
 fn test_default_variant() {
     assert_eq!(
         deserialize::<Bind>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "address".into(),
             "0.0.0.0:80".into(),
             Event::MapEnd,
@@ -376,7 +391,7 @@ fn test_default_variant() {
             cert: "cert.pem".into(),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "tls".into(),
             "address".into(),
@@ -388,7 +403,7 @@ fn test_default_variant() {
     );
     // unknown tags are still errors
     let err = deserialize::<Bind>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "type".into(),
         "quic".into(),
         Event::MapEnd,
@@ -400,12 +415,12 @@ fn test_default_variant() {
     );
 
     assert_eq!(
-        deserialize::<OtherOrDefault>(vec![Event::MapStart, Event::MapEnd]).unwrap(),
+        deserialize::<OtherOrDefault>(vec![Event::map_start(), Event::MapEnd]).unwrap(),
         OtherOrDefault::Unknown(None)
     );
     check(
         OtherOrDefault::Unknown(Some("b".into())),
-        vec![Event::MapStart, "type".into(), "b".into(), Event::MapEnd],
+        vec![Event::map_start(), "type".into(), "b".into(), Event::MapEnd],
     );
 }
 
@@ -431,7 +446,7 @@ fn test_adjacently_tagged() {
     check(
         Adjacent::Known(1),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Known".into(),
             "c".into(),
@@ -440,13 +455,13 @@ fn test_adjacently_tagged() {
         ],
     );
     assert_eq!(
-        deserialize::<Adjacent>(vec![Event::MapStart, Event::MapEnd]).unwrap(),
+        deserialize::<Adjacent>(vec![Event::map_start(), Event::MapEnd]).unwrap(),
         Adjacent::Nothing
     );
     check(
         Adjacent::Other("foo".into(), None),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "foo".into(),
             "c".into(),
@@ -455,7 +470,7 @@ fn test_adjacently_tagged() {
         ],
     );
     let value = deserialize::<Adjacent>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "c".into(),
         "x".into(),
         "t".into(),
@@ -473,7 +488,7 @@ fn test_adjacently_tagged() {
     // missing content
     assert_eq!(
         deserialize::<Adjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "foo".into(),
             Event::MapEnd
@@ -484,7 +499,7 @@ fn test_adjacently_tagged() {
 
     assert_eq!(
         deserialize::<AdjacentDefaultContent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "c".into(),
             42u64.into(),
             Event::MapEnd
@@ -512,15 +527,15 @@ fn test_program_config() {
             Program::Other("vim".into(), config),
         ],
         vec![
-            Event::SeqStart,
-            Event::MapStart,
+            Event::seq_start(),
+            Event::map_start(),
             "bash".into(),
-            Event::MapStart,
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             Event::MapEnd,
             Event::MapEnd,
-            Event::MapStart,
+            Event::map_start(),
             "vim".into(),
-            Event::MapStart,
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             "theme".into(),
             "dark".into(),
             Event::MapEnd,

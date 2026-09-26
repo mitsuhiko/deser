@@ -4,7 +4,7 @@ use crate::State;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
-use crate::event::{Atom, Event};
+use crate::event::{Atom, ContainerShape, Event};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
@@ -29,7 +29,7 @@ use crate::event::{Atom, Event};
 /// let mut out = None::<Vec<u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
 /// driver.state_mut().set_input_range(0, 1);
-/// driver.emit(Event::SeqStart).unwrap();
+/// driver.emit(Event::seq_start()).unwrap();
 /// driver.state_mut().set_input_range(1, 3);
 /// driver.emit(42u64).unwrap();
 /// driver.state_mut().set_input_range(3, 4);
@@ -111,7 +111,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         is_map_key: bool,
         f: impl FnOnce(&mut DeserializeDriver<'_, 'de>) -> R,
     ) -> R {
-        let depth = state.descriptor_stack.len();
+        let depth = state.depth;
         let outer_is_map_key = state.is_map_key;
         let mut driver = DeserializeDriver::with_state(state.take(), sink);
         driver.core.state.is_map_key = is_map_key;
@@ -119,7 +119,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         *state = driver.core.state.take();
         drop(driver);
         // a failed replay can leave containers open
-        state.descriptor_stack.truncate(depth);
+        state.depth = depth;
         state.is_map_key = outer_is_map_key;
         rv
     }
@@ -199,8 +199,8 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     pub fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error> {
         match event.into() {
             Event::Atom(atom) => self.atom_event(atom),
-            Event::MapStart => self.start_event(true),
-            Event::SeqStart => self.start_event(false),
+            Event::MapStart(shape) => self.start_event(true, shape),
+            Event::SeqStart(shape) => self.start_event(false, shape),
             Event::MapEnd => self.end_event(true),
             Event::SeqEnd => self.end_event(false),
         }
@@ -227,8 +227,8 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     pub fn emit_borrowed<E: Into<Event<'de>>>(&mut self, event: E) -> Result<(), Error> {
         match event.into() {
             Event::Atom(atom) => self.borrowed_atom_event(atom),
-            Event::MapStart => self.start_event(true),
-            Event::SeqStart => self.start_event(false),
+            Event::MapStart(shape) => self.start_event(true, shape),
+            Event::SeqStart(shape) => self.start_event(false, shape),
             Event::MapEnd => self.end_event(true),
             Event::SeqEnd => self.end_event(false),
         }
@@ -257,16 +257,16 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     }
 
     #[inline(never)]
-    fn start_event(&mut self, is_map: bool) -> Result<(), Error> {
+    fn start_event(&mut self, is_map: bool, shape: ContainerShape) -> Result<(), Error> {
         if !self.layers.is_empty() {
             let event = if is_map {
-                Event::MapStart
+                Event::MapStart(shape)
             } else {
-                Event::SeqStart
+                Event::SeqStart(shape)
             };
             return self.emit_layered(LayerEvent::new(event));
         }
-        let rv = self.core.emit_start(is_map);
+        let rv = self.core.emit_start(is_map, shape);
         self.core.finish_event(rv)
     }
 
@@ -320,8 +320,8 @@ impl<'de> DriverCore<'de> {
     pub(crate) fn dispatch(&mut self, event: Event<'_>) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => self.emit_atom(atom),
-            Event::MapStart => self.emit_start(true),
-            Event::SeqStart => self.emit_start(false),
+            Event::MapStart(shape) => self.emit_start(true, shape),
+            Event::SeqStart(shape) => self.emit_start(false, shape),
             Event::MapEnd => self.emit_end(true),
             Event::SeqEnd => self.emit_end(false),
         }
@@ -332,8 +332,8 @@ impl<'de> DriverCore<'de> {
     pub(crate) fn dispatch_borrowed(&mut self, event: Event<'de>) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => self.emit_borrowed_atom(atom),
-            Event::MapStart => self.emit_start(true),
-            Event::SeqStart => self.emit_start(false),
+            Event::MapStart(shape) => self.emit_start(true, shape),
+            Event::SeqStart(shape) => self.emit_start(false, shape),
             Event::MapEnd => self.emit_end(true),
             Event::SeqEnd => self.emit_end(false),
         }
@@ -390,7 +390,7 @@ impl<'de> DriverCore<'de> {
     }
 
     #[inline(always)]
-    fn emit_start(&mut self, is_map: bool) -> Result<(), Error> {
+    fn emit_start(&mut self, is_map: bool, shape: ContainerShape) -> Result<(), Error> {
         let mut sink = match self.sink_stack.last_mut() {
             Some((parent, Container::Map(is_key))) => {
                 let key = *is_key;
@@ -414,6 +414,7 @@ impl<'de> DriverCore<'de> {
             }
             None => self.root.take().expect("no active sink"),
         };
+        self.state.container_shape = shape;
         let container = if is_map {
             sink.map(&mut self.state)?;
             Container::Map(true)
@@ -421,7 +422,7 @@ impl<'de> DriverCore<'de> {
             sink.seq(&mut self.state)?;
             Container::Seq
         };
-        self.state.descriptor_stack.push(sink.descriptor());
+        self.state.depth += 1;
         self.sink_stack.push((sink, container));
         Ok(())
     }
@@ -438,7 +439,7 @@ impl<'de> DriverCore<'de> {
         // can still produce values within it (for instance by replaying
         // recorded values).
         let rv = sink.finish(&mut self.state);
-        self.state.descriptor_stack.pop();
+        self.state.depth -= 1;
         if self.sink_stack.is_empty() {
             // the root sink is retained until the driver is dropped
             self.root = Some(sink);
@@ -459,7 +460,7 @@ fn test_driver() {
     let mut out: Option<std::collections::BTreeMap<u32, String>> = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit(1u64).unwrap();
         driver.emit("Hello").unwrap();
         driver.emit(2u64).unwrap();

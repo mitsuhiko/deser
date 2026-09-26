@@ -48,7 +48,7 @@ use crate::event::{Atom, Event};
 /// {
 ///     let mut driver = DeserializeDriver::new(&mut out);
 ///     driver.push_layer(Uppercase);
-///     driver.emit(Event::SeqStart).unwrap();
+///     driver.emit(Event::seq_start()).unwrap();
 ///     driver.emit("hello").unwrap();
 ///     driver.emit(Event::SeqEnd).unwrap();
 /// }
@@ -174,8 +174,8 @@ impl<'n, 'de> Next<'n, 'de> {
 /// let mut out = None::<Vec<Vec<u32>>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
 /// driver.push_layer(Limits::new().max_depth(1));
-/// driver.emit(Event::SeqStart).unwrap();
-/// let err = driver.emit(Event::SeqStart).unwrap_err();
+/// driver.emit(Event::seq_start()).unwrap();
+/// let err = driver.emit(Event::seq_start()).unwrap_err();
 /// assert_eq!(err.to_string(), "Unexpected: recursion limit exceeded");
 /// ```
 ///
@@ -267,7 +267,7 @@ impl Layer for Limits {
         }
         let is_map_key = next.state().is_map_key();
         match event.event() {
-            Event::MapStart | Event::SeqStart => {
+            Event::MapStart(_) | Event::SeqStart(_) => {
                 if self
                     .max_depth
                     .is_some_and(|max| next.state().depth() >= max)
@@ -277,7 +277,7 @@ impl Layer for Limits {
                 self.count_item(is_map_key)?;
                 if self.max_items.is_some() {
                     self.items
-                        .push((matches!(event.event(), Event::MapStart), 0));
+                        .push((matches!(event.event(), Event::MapStart(_)), 0));
                 }
             }
             Event::MapEnd | Event::SeqEnd => {

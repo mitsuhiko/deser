@@ -249,7 +249,7 @@ enum Frame {
 /// Emits the events of a document.
 fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
     let mut stack = vec![Frame::Table(ROOT, 0)];
-    emit_at(driver, Event::MapStart, doc.tables[ROOT].span)?;
+    emit_at(driver, Event::map_start(), doc.tables[ROOT].span)?;
 
     while let Some(frame) = stack.last_mut() {
         let item: &Item = match *frame {
@@ -286,11 +286,11 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
 
         match item.value {
             Value::Table(id) => {
-                emit_at(driver, Event::MapStart, doc.tables[id].span)?;
+                emit_at(driver, Event::map_start(), doc.tables[id].span)?;
                 stack.push(Frame::Table(id, 0));
             }
             Value::Array(id) => {
-                emit_at(driver, Event::SeqStart, doc.arrays[id].span)?;
+                emit_at(driver, Event::seq_start(), doc.arrays[id].span)?;
                 stack.push(Frame::Array(id, 0));
             }
             Value::Str(ref value) => emit_str(driver, value, item.span)?,
@@ -299,7 +299,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                     Value::Int(value) if value >= 0 => Atom::U64(value as u64),
                     Value::Int(value) => Atom::I64(value),
                     Value::UInt(value) => Atom::U64(value),
-                    Value::Float(value) => Atom::F64(value),
+                    Value::Float(value) => Atom::Float(value.into()),
                     Value::Bool(value) => Atom::Bool(value),
                     Value::Datetime(ref value) => Atom::Ext(ExtValue::borrowed(value)),
                     Value::Str(_) | Value::Table(_) | Value::Array(_) => unreachable!(),

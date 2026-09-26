@@ -21,12 +21,12 @@ fn test_container_defaults() {
         field2: bool,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field1, 0);
     assert!(!s.field2);
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "field1".into(),
         1usize.into(),
         "field2".into(),
@@ -47,12 +47,12 @@ fn test_field_defaults() {
         field2: bool,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field1, 0);
     assert!(!s.field2);
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "field1".into(),
         1usize.into(),
         "field2".into(),
@@ -70,11 +70,11 @@ fn test_option_defaults() {
         val: Option<String>,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.val, None);
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "val".into(),
         "foo".into(),
         Event::MapEnd,
@@ -91,7 +91,7 @@ fn test_option_defaults() {
         val: Option<String>,
     }
 
-    let s: MyOtherContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyOtherContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.val, Some("aha!".into()));
 }
 
@@ -105,7 +105,7 @@ fn test_nested_option_defaults() {
     }
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "first".into(),
         true.into(),
         "second".into(),
@@ -136,12 +136,12 @@ fn test_container_and_field_defaults() {
         }
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field1, 0);
     assert!(s.field2);
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "field1".into(),
         1usize.into(),
         "field2".into(),
@@ -163,7 +163,7 @@ fn test_container_no_defaults() {
         field2: bool,
     }
 
-    let _: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let _: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn test_container_explicit_defaults() {
         field2: usize,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field1, 1);
     assert_eq!(s.field2, 2);
 }
@@ -205,7 +205,7 @@ fn test_field_explicit_default() {
         field2: usize,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field1, 1);
     assert_eq!(s.field2, 2);
 }
@@ -253,7 +253,7 @@ fn test_field_expression_defaults() {
         flag: bool,
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.int, 42);
     assert_eq!(s.float, -1.5);
     assert_eq!(s.port, 8081);
@@ -267,7 +267,7 @@ fn test_field_expression_defaults() {
 
     // defaults are only used for missing values
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "int".into(),
         1u64.into(),
         "string".into(),
@@ -295,14 +295,14 @@ fn test_defaults_are_lazy() {
     }
 
     let s: MyContainer = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "field".into(),
         42u64.into(),
         Event::MapEnd,
     ]);
     assert_eq!(s.field, 42);
     assert_eq!(CALLS.load(Ordering::SeqCst), 0);
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.field, 0);
     assert_eq!(CALLS.load(Ordering::SeqCst), 1);
 }
@@ -326,7 +326,7 @@ fn test_container_expression_default() {
         }
     }
 
-    let s: MyContainer = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert_eq!(s.name, "x");
     assert_eq!(s.field, 7);
 }
@@ -341,7 +341,7 @@ fn test_generic_expression_default() {
         name: String,
     }
 
-    let s: MyContainer<u32> = deserialize(vec![Event::MapStart, Event::MapEnd]);
+    let s: MyContainer<u32> = deserialize(vec![Event::map_start(), Event::MapEnd]);
     assert!(s.items.is_empty());
     assert_eq!(s.name, "n/a");
 }
@@ -355,7 +355,7 @@ fn test_rename_all_camel_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "fooBarBaz".into(),
         true.into(),
         "dummy".into(),
@@ -374,7 +374,7 @@ fn test_rename_all_snake_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "foo_bar_baz".into(),
         true.into(),
         "dummy".into(),
@@ -393,7 +393,7 @@ fn test_rename_all_lowercase() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "foo_bar_baz".into(),
         true.into(),
         "dummy".into(),
@@ -412,7 +412,7 @@ fn test_rename_all_pascal_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "FooBarBaz".into(),
         true.into(),
         "dummy".into(),
@@ -431,7 +431,7 @@ fn test_rename_all_kebab_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "foo-bar-baz".into(),
         true.into(),
         "dummy".into(),
@@ -450,7 +450,7 @@ fn test_rename_all_uppercase() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "FOO_BAR_BAZ".into(),
         true.into(),
         "dummy".into(),
@@ -469,7 +469,7 @@ fn test_rename_all_screaming_snake_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "FOO_BAR_BAZ".into(),
         true.into(),
         "dummy".into(),
@@ -488,7 +488,7 @@ fn test_rename_all_screaming_kebab_case() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "FOO-BAR-BAZ".into(),
         true.into(),
         "dummy".into(),
@@ -509,7 +509,7 @@ fn test_rename() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "KIND".into(),
         1u64.into(),
         "VALUE".into(),
@@ -529,7 +529,7 @@ fn test_field_alias() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "ty".into(),
         1u64.into(),
         Event::MapEnd,
@@ -575,7 +575,7 @@ fn test_flatten_basics() {
     }
 
     let s: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
         1u64.into(),
         "b".into(),
@@ -627,7 +627,7 @@ fn test_flatten_incomplete_inner() {
     }
 
     let _: Test = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
         1u64.into(),
         Event::MapEnd,

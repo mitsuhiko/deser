@@ -75,10 +75,10 @@ macro_rules! __begin_without_finish {
             &self,
             state: &mut $crate::State,
         ) -> ::core::result::Result<$crate::ser::Begin<'_>, $crate::Error> {
-            let descriptor = $crate::ser::Serialize::descriptor(self);
+            let shape = $crate::ser::Serialize::container_shape(self);
             ::core::result::Result::Ok($crate::ser::Begin::chunk(
                 $crate::ser::Serialize::serialize(self, state)?,
-                descriptor,
+                shape,
                 false,
             ))
         }

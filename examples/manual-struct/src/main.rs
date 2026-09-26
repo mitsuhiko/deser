@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use deser::State;
 use deser::de::{DeserializeDriver, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, StructEmitter};
-use deser::{Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
 
 pub struct User {
@@ -12,23 +12,11 @@ pub struct User {
 }
 
 impl Serialize for User {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &UserDescriptor
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(UserEmitter {
             user: self,
             index: 0,
         })))
-    }
-}
-
-struct UserDescriptor;
-
-impl Descriptor for UserDescriptor {
-    fn name(&self) -> Option<&str> {
-        Some("User")
     }
 }
 
@@ -74,8 +62,8 @@ struct UserSink<'a> {
 }
 
 impl<'a, 'de> Sink<'de> for UserSink<'a> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &UserDescriptor
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("User")
     }
 
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -113,7 +101,7 @@ fn main() {
     let mut user = None::<User>;
     {
         let mut driver = DeserializeDriver::new(&mut user);
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit("id").unwrap();
         driver.emit(23u64).unwrap();
         driver.emit("emailAddress").unwrap();

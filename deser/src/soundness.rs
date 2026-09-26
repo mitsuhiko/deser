@@ -25,28 +25,6 @@
 /// *owned.borrow_mut() = Deserialize::deserialize_into(&mut local);
 /// ```
 ///
-/// Descriptors of sinks cannot borrow from the sink as the deserializer
-/// state holds on to them while the sink is mutated.
-///
-/// ```compile_fail
-/// use deser::de::Sink;
-/// use deser::Descriptor;
-///
-/// struct MyDescriptor(String);
-///
-/// impl Descriptor for MyDescriptor {}
-///
-/// struct MySink {
-///     descriptor: MyDescriptor,
-/// }
-///
-/// impl<'de> Sink<'de> for MySink {
-///     fn descriptor(&self) -> &'static dyn Descriptor {
-///         &self.descriptor
-///     }
-/// }
-/// ```
-///
 /// Borrowed extensions have to prove that their values can be shortened.
 /// For types that are not covariant, the trivial implementation does not
 /// compile.

@@ -48,7 +48,7 @@
 //! let serializable = vec![MyInt(42), MyInt(23)];
 //! let mut driver = SerializeDriver::new(&serializable);
 //! driver.push_layer(PathLayer::new());
-//! driver.drive(|_event, _descriptor, _state| Ok(())).unwrap();
+//! driver.drive(|_event, _state| Ok(())).unwrap();
 //! ```
 use std::fmt;
 

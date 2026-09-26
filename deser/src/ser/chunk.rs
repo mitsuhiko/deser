@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::event::Atom;
+use crate::event::{Atom, Bytes, Float};
 use crate::ser::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
 /// A chunk represents the minimum state necessary to serialize a value.
@@ -36,8 +36,9 @@ pub enum Chunk<'a> {
     /// }
     /// ```
     ///
-    /// The [`descriptor`](crate::ser::Serialize::descriptor) of the value that
-    /// returned the chunk is not used, the forwarded value provides its own.
+    /// The [`container_shape`](crate::ser::Serialize::container_shape) of the
+    /// value that returned the chunk is not used, the forwarded value provides
+    /// its own.
     /// [`finish`](crate::ser::Serialize::finish) is invoked on the forwarded
     /// value first and then on the value that returned the chunk.
     ///
@@ -63,11 +64,22 @@ macro_rules! impl_from {
 
 impl_from!(u64, U64);
 impl_from!(i64, I64);
-impl_from!(f64, F64);
 impl_from!(usize, U64);
 impl_from!(isize, I64);
 impl_from!(bool, Bool);
 impl_from!(char, Char);
+
+impl From<f64> for Chunk<'static> {
+    fn from(value: f64) -> Self {
+        Chunk::Atom(Atom::Float(Float::new(value)))
+    }
+}
+
+impl From<f32> for Chunk<'static> {
+    fn from(value: f32) -> Self {
+        Chunk::Atom(Atom::Float(Float::from_f32(value)))
+    }
+}
 
 impl From<()> for Chunk<'static> {
     fn from(_: ()) -> Chunk<'static> {
@@ -83,7 +95,7 @@ impl<'a> From<&'a str> for Chunk<'a> {
 
 impl<'a> From<&'a [u8]> for Chunk<'a> {
     fn from(value: &'a [u8]) -> Chunk<'a> {
-        Chunk::Atom(Atom::Bytes(Cow::Borrowed(value)))
+        Chunk::Atom(Atom::Bytes(Bytes::borrowed(value)))
     }
 }
 

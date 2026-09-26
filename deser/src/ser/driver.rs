@@ -2,11 +2,10 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, StructField};
-use crate::{Atom, Descriptor, Event, Serialize, State};
+use crate::{Atom, Event, Serialize, State};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -46,8 +45,6 @@ pub struct SerializeDriver<'a> {
     delivered: bool,
     _marker: PhantomData<&'a dyn Serialize>,
 }
-
-static STRUCT_KEY_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
 
 /// A compound value that is currently being serialized.
 struct Frame {
@@ -151,7 +148,7 @@ impl<'a> Drop for SerializeDriver<'a> {
 
 const STACK_CAPACITY: usize = 128;
 
-type NextEvent<'a> = Option<(Event<'a>, &'static dyn Descriptor)>;
+type NextEvent<'a> = Option<Event<'a>>;
 
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
@@ -199,9 +196,7 @@ impl<'a> SerializeDriver<'a> {
     /// panics if layers were added.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn next(
-        &mut self,
-    ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &mut State)>, Error> {
+    pub fn next(&mut self) -> Result<Option<(Event<'_>, &mut State)>, Error> {
         assert!(
             self.layers.is_empty(),
             "layers are only supported by SerializeDriver::drive"
@@ -214,7 +209,7 @@ impl<'a> SerializeDriver<'a> {
         // The event borrows from the values held by the driver but never
         // from the state (serializables cannot return chunks borrowing from
         // it), which is why the state can be handed out mutably.
-        Ok(rv.map(|(event, descriptor)| (event, descriptor, &mut self.state)))
+        Ok(rv.map(|event| (event, &mut self.state)))
     }
 
     /// Detaches the event data of an event returned by `next`.
@@ -239,7 +234,7 @@ impl<'a> SerializeDriver<'a> {
     /// # fn do_it() -> Result<(), deser::Error> {
     /// let serializable = vec!["foo", "bar", "baz"];
     /// let mut events = Vec::new();
-    /// SerializeDriver::new(&serializable).drive(|event, _descriptor, _state| {
+    /// SerializeDriver::new(&serializable).drive(|event, _state| {
     ///     events.push(event.to_static());
     ///     Ok(())
     /// })?;
@@ -249,7 +244,7 @@ impl<'a> SerializeDriver<'a> {
     #[inline]
     pub fn drive<F>(&mut self, f: F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         match self.drive_impl(f) {
             Ok(()) => Ok(()),
@@ -260,19 +255,14 @@ impl<'a> SerializeDriver<'a> {
     /// Delivers an event to the layers and the callback of
     /// [`drive`](Self::drive).
     #[inline(always)]
-    fn deliver<F>(
-        &mut self,
-        f: &mut F,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-    ) -> Result<(), Error>
+    fn deliver<F>(&mut self, f: &mut F, event: Event<'_>) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         if self.layers.is_empty() {
-            f(event, descriptor, &mut self.state)?;
+            f(event, &mut self.state)?;
         } else {
-            self.deliver_layered(f, event, descriptor)?;
+            self.deliver_layered(f, event)?;
         }
         self.state.clear_event_data();
         Ok(())
@@ -280,19 +270,14 @@ impl<'a> SerializeDriver<'a> {
 
     /// Passes an event through the layers.
     #[inline(never)]
-    fn deliver_layered(
-        &mut self,
-        f: &mut EventFn<'_>,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-    ) -> Result<(), Error> {
-        Next::new(&mut self.layers, &mut self.state, f).emit(event, descriptor)
+    fn deliver_layered(&mut self, f: &mut EventFn<'_>, event: Event<'_>) -> Result<(), Error> {
+        Next::new(&mut self.layers, &mut self.state, f).emit(event)
     }
 
     #[inline(always)]
     fn drive_impl<F>(&mut self, mut f: F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         // `next` might have been used before.
         self.detach_delivered_event_data();
@@ -319,11 +304,7 @@ impl<'a> SerializeDriver<'a> {
                     match field {
                         StructField::Field(key, value) => {
                             self.state.is_map_key = true;
-                            self.deliver(
-                                &mut f,
-                                Event::Atom(Atom::Str(Cow::Borrowed(key))),
-                                &STRUCT_KEY_DESCRIPTOR,
-                            )?;
+                            self.deliver(&mut f, Event::Atom(Atom::Str(Cow::Borrowed(key))))?;
                             (value, false)
                         }
                         StructField::Skip => continue,
@@ -347,7 +328,7 @@ impl<'a> SerializeDriver<'a> {
                 Emitter::Struct(emitter) => match emitter.next(&mut self.state)? {
                     Some((key, value)) => {
                         self.state.is_map_key = true;
-                        self.deliver(&mut f, Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR)?;
+                        self.deliver(&mut f, Event::Atom(Atom::Str(key)))?;
                         (value, false)
                     }
                     None => {
@@ -430,7 +411,7 @@ impl<'a> SerializeDriver<'a> {
     #[inline(never)]
     fn drive_forwarded<F>(&mut self, value: Held, is_key: bool, f: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         self.drive_value(value, is_key, f)
     }
@@ -439,7 +420,7 @@ impl<'a> SerializeDriver<'a> {
     #[inline(always)]
     fn drive_value<F>(&mut self, value: Held, is_key: bool, f: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         // SAFETY: the value is held until the event and the emitters derived
         // from it are dropped.
@@ -447,24 +428,30 @@ impl<'a> SerializeDriver<'a> {
         self.state.is_map_key = is_key;
         let Begin {
             kind,
-            descriptor,
+            shape,
             needs_finish,
         } = serializable.__private_begin(&mut self.state)?;
         let (emitter, event) = match kind {
             BeginKind::Chunk(Chunk::Atom(atom)) => {
-                self.deliver(f, Event::Atom(atom), descriptor)?;
+                self.deliver(f, Event::Atom(atom))?;
                 if needs_finish {
                     serializable.finish(&mut self.state)?;
                 }
                 return Ok(());
             }
-            BeginKind::Chunk(Chunk::Struct(emitter)) => (Emitter::Struct(emitter), Event::MapStart),
-            BeginKind::Chunk(Chunk::Map(emitter)) => {
-                (Emitter::Map(emitter, false), Event::MapStart)
+            BeginKind::Chunk(Chunk::Struct(emitter)) => {
+                (Emitter::Struct(emitter), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart),
-            BeginKind::Struct(fields) => (Emitter::IndexedStruct(fields, 0), Event::MapStart),
-            BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart),
+            BeginKind::Chunk(Chunk::Map(emitter)) => {
+                (Emitter::Map(emitter, false), Event::MapStart(shape))
+            }
+            BeginKind::Chunk(Chunk::Seq(emitter)) => {
+                (Emitter::Seq(emitter), Event::SeqStart(shape))
+            }
+            BeginKind::Struct(fields) => {
+                (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
+            }
+            BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
             BeginKind::Chunk(Chunk::Forward(forwarded)) => {
                 let forwarded = self.push_forward(value, needs_finish, forwarded);
                 return self.drive_forwarded(forwarded, is_key, f);
@@ -475,18 +462,18 @@ impl<'a> SerializeDriver<'a> {
             serializable: value,
             needs_finish,
         });
-        self.state.descriptor_stack.push(descriptor);
-        self.deliver(f, event, descriptor)
+        self.state.depth += 1;
+        self.deliver(f, event)
     }
 
     /// Ends the container on the top of the stack and emits the end event.
     #[inline]
     fn drive_end<F>(&mut self, f: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+        F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
-        let (event, descriptor) = self.end_container();
-        self.deliver(f, event, descriptor)?;
+        let event = self.end_container();
+        self.deliver(f, event)?;
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;
@@ -545,7 +532,7 @@ impl<'a> SerializeDriver<'a> {
                                 std::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
                             };
                             self.state.is_map_key = true;
-                            return Ok(Some((Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR)));
+                            return Ok(Some(Event::Atom(Atom::Str(key))));
                         }
                         None => None,
                     },
@@ -564,10 +551,7 @@ impl<'a> SerializeDriver<'a> {
                                 self.next_value = Some(unsafe { Held::new(value) });
                                 let key = Cow::Borrowed(key);
                                 self.state.is_map_key = true;
-                                return Ok(Some((
-                                    Event::Atom(Atom::Str(key)),
-                                    &STRUCT_KEY_DESCRIPTOR,
-                                )));
+                                return Ok(Some(Event::Atom(Atom::Str(key))));
                             }
                             StructField::Skip => continue,
                             StructField::End => break None,
@@ -587,7 +571,7 @@ impl<'a> SerializeDriver<'a> {
     }
 
     /// Ends the container on the top of the stack.
-    fn end_container(&mut self) -> (Event<'static>, &'static dyn Descriptor) {
+    fn end_container(&mut self) -> Event<'static> {
         let Frame {
             emitter,
             serializable,
@@ -600,7 +584,8 @@ impl<'a> SerializeDriver<'a> {
         // the emitter borrows from the serializable, drop it first.
         drop(emitter);
         self.needs_finish = Some((serializable, needs_finish));
-        (event, self.state.descriptor_stack.pop().unwrap())
+        self.state.depth -= 1;
+        event
     }
 
     /// Serializes a value and returns its first event.
@@ -613,21 +598,27 @@ impl<'a> SerializeDriver<'a> {
         self.state.is_map_key = is_key;
         let Begin {
             kind,
-            descriptor,
+            shape,
             needs_finish,
         } = serializable.__private_begin(&mut self.state)?;
         let (emitter, event) = match kind {
             BeginKind::Chunk(Chunk::Atom(atom)) => {
                 self.needs_finish = Some((value, needs_finish));
-                return Ok(Some((Event::Atom(atom), descriptor)));
+                return Ok(Some(Event::Atom(atom)));
             }
-            BeginKind::Chunk(Chunk::Struct(emitter)) => (Emitter::Struct(emitter), Event::MapStart),
+            BeginKind::Chunk(Chunk::Struct(emitter)) => {
+                (Emitter::Struct(emitter), Event::MapStart(shape))
+            }
             BeginKind::Chunk(Chunk::Map(emitter)) => {
-                (Emitter::Map(emitter, false), Event::MapStart)
+                (Emitter::Map(emitter, false), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart),
-            BeginKind::Struct(fields) => (Emitter::IndexedStruct(fields, 0), Event::MapStart),
-            BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart),
+            BeginKind::Chunk(Chunk::Seq(emitter)) => {
+                (Emitter::Seq(emitter), Event::SeqStart(shape))
+            }
+            BeginKind::Struct(fields) => {
+                (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
+            }
+            BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
             BeginKind::Chunk(Chunk::Forward(forwarded)) => {
                 let forwarded = self.push_forward(value, needs_finish, forwarded);
                 return self.serialize_forwarded(forwarded, is_key);
@@ -638,8 +629,8 @@ impl<'a> SerializeDriver<'a> {
             serializable: value,
             needs_finish,
         });
-        self.state.descriptor_stack.push(descriptor);
-        Ok(Some((event, descriptor)))
+        self.state.depth += 1;
+        Ok(Some(event))
     }
 
     /// Serializes a forwarded value and returns its first event.
@@ -659,19 +650,19 @@ fn test_seq_emitting() {
 
     let mut driver = SerializeDriver::new(&vec);
     let mut events = Vec::new();
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
 
     assert_eq!(
         events,
         vec![
-            Event::SeqStart,
-            Event::SeqStart,
+            Event::seq_start(),
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             Event::SeqEnd,
-            Event::SeqStart,
+            Event::seq_start(),
             3u64.into(),
             4u64.into(),
             Event::SeqEnd,
@@ -688,20 +679,20 @@ fn test_map_emitting() {
 
     let mut driver = SerializeDriver::new(&map);
     let mut events = Vec::new();
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
 
     assert_eq!(
         events,
         vec![
-            Event::MapStart,
-            Event::SeqStart,
+            Event::MapStart(crate::ContainerShape::new().with_order(crate::Order::Sorted)),
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             Event::SeqEnd,
             "first".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             2u64.into(),
             3u64.into(),
             Event::SeqEnd,
@@ -734,12 +725,17 @@ fn test_state_mut() {
     let mut driver = SerializeDriver::new(&names);
     driver.state_mut().get_mut::<Uppercase>().0 = true;
     let mut events = Vec::new();
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
 
     assert_eq!(
         events,
-        vec![Event::SeqStart, "FOO".into(), "BAR".into(), Event::SeqEnd],
+        vec![
+            Event::seq_start(),
+            "FOO".into(),
+            "BAR".into(),
+            Event::SeqEnd
+        ],
     );
 }

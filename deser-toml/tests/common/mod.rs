@@ -247,7 +247,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             Atom::Str(value) => Value::Str(value.into_owned()),
             Atom::U64(value) => Value::Int(value.into()),
             Atom::I64(value) => Value::Int(value.into()),
-            Atom::F64(value) => Value::Float(value),
+            Atom::Float(value) => Value::Float(value.value()),
             Atom::Ext(ref ext) if ext.is::<Datetime>() => {
                 Value::Datetime(*ext.downcast_ref::<Datetime>().unwrap())
             }
@@ -297,7 +297,7 @@ impl Serialize for Value {
                 Ok(value) => Chunk::Atom(Atom::I64(value)),
                 Err(_) => Chunk::Atom(Atom::U64(value as u64)),
             },
-            Value::Float(value) => Chunk::Atom(Atom::F64(value)),
+            Value::Float(value) => Chunk::Atom(Atom::Float(deser::Float::new(value))),
             Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
             Value::Datetime(ref value) => Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))),
             Value::Array(ref items) => Chunk::Seq(Box::new(ArrayEmitter(items.iter()))),

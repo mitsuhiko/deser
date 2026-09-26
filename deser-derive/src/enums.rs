@@ -407,16 +407,11 @@ fn collect_variants<'a>(
     Ok(rv)
 }
 
-fn descriptor(container_attrs: &ContainerAttrs) -> TokenStream {
+/// Defines the name of the type which is used in error messages.
+fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
     let type_name = container_attrs.container_name();
     quote! {
-        struct __Descriptor;
-
-        impl __deser::Descriptor for __Descriptor {
-            fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
-                __deser::__derive::Some(#type_name)
-            }
-        }
+        const __TYPE_NAME: &__deser::__derive::str = #type_name;
     }
 }
 
@@ -612,7 +607,7 @@ pub fn derive_deserialize(
         builders.push(builder);
     }
 
-    let descriptor = descriptor(container_attrs);
+    let type_name_const = type_name_const(container_attrs);
     let builder_ty = quote! {
         __deser::__derive::BoxedVariant<'de, #enum_ty>
     };
@@ -706,7 +701,7 @@ pub fn derive_deserialize(
                 quote! {
                     __deser::__derive::ExternallyTaggedSink::handle(
                         __slot,
-                        &__Descriptor,
+                        __TYPE_NAME,
                         #table,
                         __unit #turbofish,
                     )
@@ -721,7 +716,7 @@ pub fn derive_deserialize(
                     __deser::__derive::InternallyTaggedSink::handle(
                         __slot,
                         #tag,
-                        &__Descriptor,
+                        __TYPE_NAME,
                         #table,
                     )
                 },
@@ -736,7 +731,7 @@ pub fn derive_deserialize(
                         __slot,
                         #tag,
                         #content,
-                        &__Descriptor,
+                        __TYPE_NAME,
                         #table,
                     )
                 },
@@ -757,7 +752,7 @@ pub fn derive_deserialize(
                     }
                 },
                 quote! {
-                    __deser::__derive::untagged_handle(__slot, &__Descriptor, __candidate #turbofish)
+                    __deser::__derive::untagged_handle(__slot, __TYPE_NAME, __candidate #turbofish)
                 },
             )
         }
@@ -767,7 +762,7 @@ pub fn derive_deserialize(
         const _: () = {
             #(#helpers)*
 
-            #descriptor
+            #type_name_const
 
             #support
 
@@ -962,18 +957,10 @@ pub fn derive_serialize(
         arms.push(quote! { #pattern => #chunk, });
     }
 
-    let descriptor = descriptor(container_attrs);
-
     Ok(quote! {
         const _: () = {
-            #descriptor
-
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
-                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    &__Descriptor
-                }
-
                 fn serialize(
                     &self,
                     __state: &mut __deser::State,

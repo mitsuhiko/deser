@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::known::{WellKnown, impl_well_known, invalid};
@@ -176,8 +175,6 @@ impl TryFrom<f64> for Decimal {
     }
 }
 
-static DECIMAL_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Decimal" };
-
 impl Extension for Decimal {
     fn name(&self) -> &str {
         "decimal"
@@ -190,10 +187,6 @@ impl Extension for Decimal {
 
 impl WellKnown for Decimal {
     const EXPECTING: &'static str = "decimal";
-
-    fn descriptor() -> &'static dyn Descriptor {
-        &DECIMAL_DESCRIPTOR
-    }
 
     /// Accepts decimals, strings, integers and floats.
     fn from_atom(atom: &Atom) -> Result<Option<Decimal>, Error> {
@@ -213,7 +206,7 @@ impl WellKnown for Decimal {
             Atom::Str(ref value) => value.parse()?,
             Atom::U64(value) => Decimal::from(value),
             Atom::I64(value) => Decimal::from(value),
-            Atom::F64(value) => Decimal::try_from(value)?,
+            Atom::Float(value) => Decimal::try_from(value.value())?,
             _ => return Ok(None),
         }))
     }

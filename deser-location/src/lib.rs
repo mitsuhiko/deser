@@ -49,6 +49,7 @@
 //! [`Recording`](deser::de::Recording) (as some enum representations do)
 //! retain their locations when they are replayed as recordings capture the
 //! input range of every event.
+use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -57,7 +58,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::{Atom, Descriptor, Error};
+use deser::{Atom, ContainerShape, Error};
 
 /// A position in the input.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -424,12 +425,12 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
         Ok(())
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
+    fn expecting(&self) -> Cow<'_, str> {
         if let Some(ref compound) = self.compound {
-            return compound.borrow().descriptor();
+            return compound.borrow().expecting();
         }
         let mut slot = None;
-        T::deserialize_into(&mut slot).descriptor()
+        Cow::Owned(T::deserialize_into(&mut slot).expecting().into_owned())
     }
 }
 
@@ -446,8 +447,8 @@ impl<T: Serialize> Serialize for Spanned<T> {
         self.value.is_optional()
     }
 
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.value.descriptor()
+    fn container_shape(&self) -> ContainerShape {
+        self.value.container_shape()
     }
 }
 

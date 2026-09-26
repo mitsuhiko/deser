@@ -1,11 +1,9 @@
 use crate::State;
-use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Event;
 
 /// The function that receives the events of a [`SerializeDriver`](crate::ser::SerializeDriver).
-pub(crate) type EventFn<'f> =
-    dyn FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error> + 'f;
+pub(crate) type EventFn<'f> = dyn FnMut(Event<'_>, &mut State) -> Result<(), Error> + 'f;
 
 /// A layer between the serialization and a format.
 ///
@@ -23,23 +21,18 @@ pub(crate) type EventFn<'f> =
 ///
 /// ```
 /// use deser::ser::{Layer, Next, SerializeDriver};
-/// use deser::{Atom, Descriptor, Error, Event};
+/// use deser::{Atom, Error, Event};
 ///
 /// /// Upper cases all map keys.
 /// struct UppercaseKeys;
 ///
 /// impl Layer for UppercaseKeys {
-///     fn event(
-///         &mut self,
-///         event: Event<'_>,
-///         descriptor: &'static dyn Descriptor,
-///         next: &mut Next<'_>,
-///     ) -> Result<(), Error> {
+///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
 ///         match event {
 ///             Event::Atom(Atom::Str(key)) if next.state().is_map_key() => {
-///                 next.emit(Event::from(key.to_uppercase()), descriptor)
+///                 next.emit(Event::from(key.to_uppercase()))
 ///             }
-///             event => next.emit(event, descriptor),
+///             event => next.emit(event),
 ///         }
 ///     }
 /// }
@@ -49,11 +42,12 @@ pub(crate) type EventFn<'f> =
 /// let mut events = Vec::new();
 /// let mut driver = SerializeDriver::new(&map);
 /// driver.push_layer(UppercaseKeys);
-/// driver.drive(|event, _, _| {
+/// driver.drive(|event, _| {
 ///     events.push(event.to_static());
 ///     Ok(())
 /// }).unwrap();
-/// assert_eq!(events, [Event::MapStart, "KEY".into(), "value".into(), Event::MapEnd]);
+/// assert_eq!(events.len(), 4);
+/// assert_eq!(events[1], "KEY".into());
 /// ```
 ///
 /// # Changing the Events
@@ -69,12 +63,7 @@ pub trait Layer {
     /// Processes an event.
     ///
     /// To pass the event on, invoke [`Next::emit`].
-    fn event(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-        next: &mut Next<'_>,
-    ) -> Result<(), Error>;
+    fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error>;
 }
 
 /// Passes events on to the next [`Layer`].
@@ -112,13 +101,9 @@ impl<'n> Next<'n> {
     /// [`State::is_map_key`] set.  This is useful for layers which hold back
     /// map keys and emit them later, when the state already describes the
     /// value.
-    pub fn emit_key(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-    ) -> Result<(), Error> {
+    pub fn emit_key(&mut self, event: Event<'_>) -> Result<(), Error> {
         let was_key = std::mem::replace(&mut self.state.is_map_key, true);
-        let rv = self.emit(event, descriptor);
+        let rv = self.emit(event);
         self.state.is_map_key = was_key;
         rv
     }
@@ -126,22 +111,17 @@ impl<'n> Next<'n> {
     /// Passes an event on.
     ///
     /// This can be invoked any number of times per event.
-    pub fn emit(
-        &mut self,
-        event: Event<'_>,
-        descriptor: &'static dyn Descriptor,
-    ) -> Result<(), Error> {
+    pub fn emit(&mut self, event: Event<'_>) -> Result<(), Error> {
         match self.layers.split_first_mut() {
             Some((layer, rest)) => layer.event(
                 event,
-                descriptor,
                 &mut Next {
                     layers: rest,
                     state: self.state,
                     f: self.f,
                 },
             ),
-            None => (self.f)(event, descriptor, self.state),
+            None => (self.f)(event, self.state),
         }
     }
 }

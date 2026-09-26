@@ -12,9 +12,8 @@ use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::{Error, ErrorKind};
-use crate::event::Atom;
+use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Serialize, SerializeHandle};
 
 /// Deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the data.
@@ -43,9 +42,8 @@ pub struct Borrowed;
 make_slot_wrapper!(BorrowedSlot);
 
 impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "string" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("string")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -74,9 +72,8 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
 }
 
 impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "bytes" };
-        &DESCRIPTOR
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("bytes")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -99,7 +96,7 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bytes(value) => {
-                **self = Some(value);
+                **self = Some(value.data);
                 Ok(())
             }
             other => self.atom(other, state),
@@ -127,7 +124,7 @@ impl<'a> SerializeAs<Cow<'a, str>> for Borrowed {
 
 impl<'a> SerializeAs<Cow<'a, [u8]>> for Borrowed {
     fn serialize_as<'b>(value: &'b Cow<'a, [u8]>, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(Cow::Borrowed(value))))
+        Ok(Chunk::Atom(Atom::Bytes(Bytes::borrowed(value))))
     }
 }
 
@@ -213,16 +210,11 @@ impl<T: Display + ?Sized> SerializeAs<T> for DisplayFromStr {
         Ok(Chunk::Atom(Atom::Str(Cow::Owned(value.to_string()))))
     }
 
-    fn descriptor_as(_value: &T) -> &'static dyn Descriptor {
-        static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "str" };
-        &DESCRIPTOR
-    }
-
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(Begin::chunk(
             Self::serialize_as(value, state)?,
-            Self::descriptor_as(value),
+            ContainerShape::new(),
             false,
         ))
     }
@@ -507,8 +499,8 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
         A::is_optional_as(value)
     }
 
-    fn descriptor_as(value: &T) -> &'static dyn Descriptor {
-        A::descriptor_as(value)
+    fn container_shape_as(value: &T) -> ContainerShape {
+        A::container_shape_as(value)
     }
 
     #[inline]
@@ -593,9 +585,8 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipErr
         }
 
         impl<'a, 'de, T, A: DeserializeAs<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
-            fn descriptor(&self) -> &'static dyn Descriptor {
-                static DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "vec" };
-                &DESCRIPTOR
+            fn expecting(&self) -> Cow<'_, str> {
+                Cow::Borrowed("vec")
             }
 
             fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -644,8 +635,8 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
         <Vec<A> as SerializeAs<Vec<T>>>::serialize_as(value, state)
     }
 
-    fn descriptor_as(value: &Vec<T>) -> &'static dyn Descriptor {
-        <Vec<A> as SerializeAs<Vec<T>>>::descriptor_as(value)
+    fn container_shape_as(value: &Vec<T>) -> ContainerShape {
+        <Vec<A> as SerializeAs<Vec<T>>>::container_shape_as(value)
     }
 
     #[inline]
@@ -800,8 +791,8 @@ where
         <BTreeMap<KA, VA> as SerializeAs<BTreeMap<K, V>>>::serialize_as(value, state)
     }
 
-    fn descriptor_as(value: &BTreeMap<K, V>) -> &'static dyn Descriptor {
-        <BTreeMap<KA, VA> as SerializeAs<BTreeMap<K, V>>>::descriptor_as(value)
+    fn container_shape_as(value: &BTreeMap<K, V>) -> ContainerShape {
+        <BTreeMap<KA, VA> as SerializeAs<BTreeMap<K, V>>>::container_shape_as(value)
     }
 }
 
@@ -818,7 +809,7 @@ where
         <HashMap<KA, VA> as SerializeAs<HashMap<K, V, H>>>::serialize_as(value, state)
     }
 
-    fn descriptor_as(value: &HashMap<K, V, H>) -> &'static dyn Descriptor {
-        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, H>>>::descriptor_as(value)
+    fn container_shape_as(value: &HashMap<K, V, H>) -> ContainerShape {
+        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, H>>>::container_shape_as(value)
     }
 }

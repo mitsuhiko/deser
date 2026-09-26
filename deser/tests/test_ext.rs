@@ -7,7 +7,7 @@ use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, make_slot_wra
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -74,7 +74,7 @@ fn test_custom_extension_roundtrip() {
     assert_eq!(
         events,
         vec![
-            Event::SeqStart,
+            Event::seq_start(),
             Event::Atom(Atom::Ext(ExtValue::owned(Timestamp(42)))),
             Event::SeqEnd,
         ]
@@ -175,7 +175,7 @@ fn test_optional_null_extension() {
     assert_eq!(deserialize::<Option<u32>>(vec![null()]).unwrap(), None);
     assert_eq!(
         deserialize::<Vec<Option<String>>>(vec![
-            Event::SeqStart,
+            Event::seq_start(),
             null(),
             "x".into(),
             Event::SeqEnd
@@ -208,7 +208,7 @@ mod borrowed {
         }
 
         fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> {
-            Atom::F64(value.value)
+            Atom::Float(deser::Float::new(value.value))
         }
 
         fn to_static(value: &Literal<'_>) -> Literal<'static> {
@@ -243,7 +243,7 @@ fn test_borrowed_extension() {
         assert!(ext.is::<Literal>());
         assert!(!ext.is::<u128>());
         assert_eq!(ext.name(), "literal");
-        assert_eq!(ext.fallback(), Atom::F64(1.5));
+        assert_eq!(ext.fallback(), Atom::Float(deser::Float::new(1.5)));
         assert_eq!(ext.downcast_value_ref::<Literal>().unwrap().text, "1.50");
         assert!(ext.downcast_ref::<u128>().is_none());
         assert_eq!(format!("{:?}", ext), format!("{:?}", literal));

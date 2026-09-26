@@ -37,7 +37,7 @@ fn test_path() {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         driver.push_layer(PathLayer::new());
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit("foo").unwrap();
         driver.emit(true).unwrap();
         driver.emit("bar").unwrap();
@@ -89,9 +89,9 @@ fn test_segments() {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         driver.push_layer(PathLayer::new());
-        driver.emit(Event::MapStart).unwrap();
+        driver.emit(Event::map_start()).unwrap();
         driver.emit(42u64).unwrap();
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         driver.emit(true).unwrap();
         let path = driver.state().get::<Path>().unwrap();
         assert_eq!(

@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
@@ -76,8 +75,6 @@ impl FromStr for Uuid {
     }
 }
 
-static UUID_DESCRIPTOR: NamedDescriptor = NamedDescriptor { name: "Uuid" };
-
 impl Extension for Uuid {
     fn name(&self) -> &str {
         "uuid"
@@ -90,10 +87,6 @@ impl Extension for Uuid {
 
 impl WellKnown for Uuid {
     const EXPECTING: &'static str = "uuid";
-
-    fn descriptor() -> &'static dyn Descriptor {
-        &UUID_DESCRIPTOR
-    }
 
     /// Accepts UUIDs, strings and 16 bytes.
     fn from_atom(atom: &Atom) -> Result<Option<Uuid>, Error> {

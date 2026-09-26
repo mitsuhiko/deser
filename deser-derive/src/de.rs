@@ -407,8 +407,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             #[automatically_derived]
             impl #wrapper_impl_generics __deser::de::Sink<'de> for __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    &__Descriptor
+                fn expecting(&self) -> __deser::__derive::StrCow<'_> {
+                    __deser::__derive::StrCow::Borrowed(#type_name)
                 }
 
                 fn map(&mut self, __state: &mut __deser::State)
@@ -514,13 +514,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
 
-            struct __Descriptor;
-
-            impl __deser::Descriptor for __Descriptor {
-                fn name(&self) -> __deser::__derive::Option<&__deser::__derive::str> {
-                    __deser::__derive::Some(#type_name)
-                }
-            }
         };
     })
 }
@@ -705,10 +698,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let de_generics = with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
-    // TODO: we want to report the type name here but the current descriptor
-    // interface does not let us.  https://github.com/mitsuhiko/deser/issues/8
     let container_attrs = ContainerAttrs::of(input)?;
-    let _type_name = container_attrs.container_name();
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;
     if field_attrs.tag() {
@@ -854,10 +844,6 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     self.sink.borrow_mut().finish(__state)?;
                     *self.slot = self.sink.take().map(#ident);
                     Ok(())
-                }
-
-                fn descriptor(&self) -> &'static dyn __deser::Descriptor {
-                    self.sink.borrow().descriptor()
                 }
 
                 fn expecting(&self) -> __deser::__derive::StrCow<'_> {

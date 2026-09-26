@@ -25,7 +25,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -34,7 +34,7 @@ fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
 fn serialize_drive(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     SerializeDriver::new(value)
-        .drive(|event, _, _| {
+        .drive(|event, _| {
             events.push(event.to_static());
             Ok(())
         })
@@ -72,15 +72,15 @@ fn test_display_from_str() {
             aliases,
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "addr".into(),
             "127.0.0.1".into(),
             "fallback".into(),
             "::1".into(),
             "aliases".into(),
-            Event::MapStart,
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             "a".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             "1".into(),
             "2".into(),
             Event::SeqEnd,
@@ -91,24 +91,24 @@ fn test_display_from_str() {
 
     // optional adapters make missing fields optional
     let server: Server = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "addr".into(),
         "127.0.0.1".into(),
         "fallback".into(),
         ().into(),
         "aliases".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::MapEnd,
     ])
     .unwrap();
     assert_eq!(server.fallback, None);
     let server: Server = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "addr".into(),
         "127.0.0.1".into(),
         "aliases".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::MapEnd,
     ])
@@ -117,9 +117,9 @@ fn test_display_from_str() {
 
     // required fields are still required
     let err = deserialize::<Server>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "aliases".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::MapEnd,
     ])
@@ -128,7 +128,7 @@ fn test_display_from_str() {
 
     // only strings are accepted
     let err = deserialize::<Server>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "addr".into(),
         42u64.into(),
         Event::MapEnd,
@@ -139,7 +139,7 @@ fn test_display_from_str() {
         "Unexpected: unexpected unsigned integer, expected string"
     );
     let err = deserialize::<Server>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "addr".into(),
         "nope".into(),
         Event::MapEnd,
@@ -184,25 +184,25 @@ fn test_containers() {
             byte_array: [4, 5],
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "tuple".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             "1".into(),
             2u64.into(),
             Event::SeqEnd,
             "array".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             "3".into(),
             "4".into(),
             Event::SeqEnd,
             "boxed".into(),
             "5".into(),
             "set".into(),
-            Event::SeqStart,
+            Event::SeqStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             "6".into(),
             Event::SeqEnd,
             "map".into(),
-            Event::MapStart,
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Arbitrary)),
             "1".into(),
             true.into(),
             Event::MapEnd,
@@ -276,16 +276,16 @@ fn test_conversions() {
             done: Percent(50),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "color".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             3u64.into(),
             Event::SeqEnd,
             "colors".into(),
-            Event::SeqStart,
-            Event::SeqStart,
+            Event::seq_start(),
+            Event::seq_start(),
             4u64.into(),
             5u64.into(),
             6u64.into(),
@@ -298,7 +298,7 @@ fn test_conversions() {
     );
 
     let err = deserialize::<Conversions>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "done".into(),
         101u64.into(),
         Event::MapEnd,
@@ -312,7 +312,7 @@ fn test_conversions() {
         done: Percent(101),
     };
     let err = SerializeDriver::new(&value)
-        .drive(|_, _, _| Ok(()))
+        .drive(|_, _| Ok(()))
         .unwrap_err();
     assert_eq!(err.to_string(), "Unexpected: invalid value: bad percent");
 }
@@ -350,35 +350,35 @@ struct Lenient {
 #[test]
 fn test_error_recovery() {
     let value: Lenient = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "kind".into(),
         "C".into(),
         "point".into(),
-        Event::MapStart,
+        Event::map_start(),
         "x".into(),
         "wrong".into(),
         Event::MapEnd,
         "kinds".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         "A".into(),
         "C".into(),
         "B".into(),
         Event::SeqEnd,
         "points".into(),
-        Event::SeqStart,
-        Event::MapStart,
+        Event::seq_start(),
+        Event::map_start(),
         "x".into(),
         1u64.into(),
         "y".into(),
         2u64.into(),
         Event::MapEnd,
-        Event::MapStart,
+        Event::map_start(),
         "x".into(),
         1u64.into(),
         Event::MapEnd,
-        Event::SeqStart,
+        Event::seq_start(),
         Event::SeqEnd,
-        Event::MapStart,
+        Event::map_start(),
         "x".into(),
         3u64.into(),
         "y".into(),
@@ -386,7 +386,7 @@ fn test_error_recovery() {
         Event::MapEnd,
         Event::SeqEnd,
         "weights".into(),
-        Event::MapStart,
+        Event::map_start(),
         "A".into(),
         1u64.into(),
         "C".into(),
@@ -394,24 +394,24 @@ fn test_error_recovery() {
         "B".into(),
         "x".into(),
         "B".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::MapEnd,
         "named".into(),
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
         "1".into(),
         "b".into(),
         "x".into(),
         Event::MapEnd,
         "keyed".into(),
-        Event::MapStart,
-        Event::SeqStart,
+        Event::map_start(),
+        Event::seq_start(),
         1u64.into(),
         2u64.into(),
         Event::SeqEnd,
         3u64.into(),
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
         Event::SeqEnd,
         4u64.into(),
@@ -437,30 +437,30 @@ fn test_error_recovery() {
     assert_eq!(value.keyed.into_iter().collect::<Vec<_>>(), [((1, 2), 3)]);
 
     let value: Lenient = deserialize(vec![
-        Event::MapStart,
+        Event::map_start(),
         "kind".into(),
         "B".into(),
         "point".into(),
-        Event::MapStart,
+        Event::map_start(),
         "x".into(),
         1u64.into(),
         "y".into(),
         2u64.into(),
         Event::MapEnd,
         "kinds".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         Event::SeqEnd,
         "points".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         Event::SeqEnd,
         "weights".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         "named".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         "keyed".into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::MapEnd,
     ])
@@ -522,11 +522,11 @@ fn test_custom_adapter() {
             parts,
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "data".into(),
             "0102ab".into(),
             "parts".into(),
-            Event::MapStart,
+            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             "a".into(),
             "ff".into(),
             Event::MapEnd,
@@ -548,7 +548,7 @@ fn test_newtype_struct() {
     check(OptionalPort(None), vec![().into()]);
     check(
         vec![Port(1), Port(2)],
-        vec![Event::SeqStart, "1".into(), "2".into(), Event::SeqEnd],
+        vec![Event::seq_start(), "1".into(), "2".into(), Event::SeqEnd],
     );
 }
 
@@ -590,9 +590,9 @@ fn test_generics() {
             other: 42u32,
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "codes".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             "C1".into(),
             "C2".into(),
             Event::SeqEnd,
@@ -628,7 +628,7 @@ fn test_skip_serializing_optionals() {
             a: Some(1),
             b: None,
         },
-        vec![Event::MapStart, "a".into(), "1".into(), Event::MapEnd],
+        vec![Event::map_start(), "a".into(), "1".into(), Event::MapEnd],
     );
     check(
         SkipOptionalsFlatten {
@@ -638,7 +638,7 @@ fn test_skip_serializing_optionals() {
                 b: Some(2),
             },
         },
-        vec![Event::MapStart, "b".into(), "2".into(), Event::MapEnd],
+        vec![Event::map_start(), "b".into(), "2".into(), Event::MapEnd],
     );
 }
 
@@ -688,14 +688,19 @@ enum UntaggedAdapters {
 fn test_enum_variants() {
     check(
         ExternalAdapters::Newtype(1),
-        vec![Event::MapStart, "Newtype".into(), "1".into(), Event::MapEnd],
+        vec![
+            Event::map_start(),
+            "Newtype".into(),
+            "1".into(),
+            Event::MapEnd,
+        ],
     );
     check(
         ExternalAdapters::Tuple(1, 2),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "Tuple".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             "1".into(),
             2u64.into(),
             Event::SeqEnd,
@@ -705,9 +710,9 @@ fn test_enum_variants() {
     check(
         ExternalAdapters::Struct { a: Some(1) },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "Struct".into(),
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             "1".into(),
             Event::MapEnd,
@@ -716,9 +721,9 @@ fn test_enum_variants() {
     );
     assert_eq!(
         deserialize::<ExternalAdapters>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "Struct".into(),
-            Event::MapStart,
+            Event::map_start(),
             Event::MapEnd,
             Event::MapEnd,
         ])
@@ -731,7 +736,7 @@ fn test_enum_variants() {
     check(
         InternalAdapters::Newtype(Wrapped(map)),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Newtype".into(),
             "x".into(),
@@ -742,7 +747,7 @@ fn test_enum_variants() {
     check(
         InternalAdapters::Struct { a: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Struct".into(),
             "a".into(),
@@ -762,10 +767,15 @@ fn test_enum_variants() {
 fn test_as_wrapper() {
     check(
         vec![As::<u32, DisplayFromStr>::new(1), As::new(2)],
-        vec![Event::SeqStart, "1".into(), "2".into(), Event::SeqEnd],
+        vec![Event::seq_start(), "1".into(), "2".into(), Event::SeqEnd],
     );
-    let values: Vec<As<Option<u32>, Option<DisplayFromStr>>> =
-        deserialize(vec![Event::SeqStart, "1".into(), ().into(), Event::SeqEnd]).unwrap();
+    let values: Vec<As<Option<u32>, Option<DisplayFromStr>>> = deserialize(vec![
+        Event::seq_start(),
+        "1".into(),
+        ().into(),
+        Event::SeqEnd,
+    ])
+    .unwrap();
     assert_eq!(
         values.into_iter().map(As::into_inner).collect::<Vec<_>>(),
         [Some(1), None]
@@ -833,7 +843,7 @@ fn test_forward() {
 
         // within containers
         let values = vec![&outer as &dyn Serialize, &outer];
-        let mut expected_seq = vec![Event::SeqStart];
+        let mut expected_seq = vec![Event::seq_start()];
         expected_seq.extend(expected.iter().cloned());
         expected_seq.extend(expected.iter().cloned());
         expected_seq.push(Event::SeqEnd);
@@ -849,11 +859,11 @@ struct Tag(u64);
 #[test]
 fn test_recording_raw_value() {
     let events = vec![
-        Event::MapStart,
+        Event::map_start(),
         "a".into(),
-        Event::SeqStart,
+        Event::seq_start(),
         1u64.into(),
-        Event::MapStart,
+        Event::map_start(),
         Event::MapEnd,
         Event::SeqEnd,
         "b".into(),
@@ -871,7 +881,7 @@ fn test_recording_raw_value() {
     let mut out = None::<Recording>;
     {
         let mut driver = DeserializeDriver::new(&mut out);
-        driver.emit(Event::SeqStart).unwrap();
+        driver.emit(Event::seq_start()).unwrap();
         driver.state_mut().event_mut::<Tag>().0 = 42;
         driver.emit(1u64).unwrap();
         driver.emit(2u64).unwrap();
@@ -880,7 +890,7 @@ fn test_recording_raw_value() {
     let recording = out.unwrap();
     let mut tags = Vec::new();
     SerializeDriver::new(&recording)
-        .drive(|event, _, state| {
+        .drive(|event, state| {
             tags.push((event.to_static(), state.event::<Tag>().cloned()));
             Ok(())
         })
@@ -888,7 +898,7 @@ fn test_recording_raw_value() {
     assert_eq!(
         tags,
         vec![
-            (Event::SeqStart, None),
+            (Event::seq_start(), None),
             (1u64.into(), Some(Tag(42))),
             (2u64.into(), None),
             (Event::SeqEnd, None),

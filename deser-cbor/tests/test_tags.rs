@@ -196,7 +196,7 @@ fn other_formats_ignore_tags() {
     let value = vec![Tagged::new(1, 1u32), Tagged::untagged(2)];
     let mut events = Vec::new();
     deser::ser::SerializeDriver::new(&value)
-        .drive(|event, _, _| {
+        .drive(|event, _| {
             events.push(format!("{:?}", event));
             Ok(())
         })

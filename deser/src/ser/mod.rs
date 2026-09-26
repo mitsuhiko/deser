@@ -16,7 +16,7 @@
 //! # fn do_it() -> Result<(), deser::Error> {
 //! let serializable = vec!["foo", "bar", "baz"];
 //! let mut driver = SerializeDriver::new(&serializable);
-//! while let Some((_event, _descriptor, _state)) = driver.next()? {
+//! while let Some((_event, _state)) = driver.next()? {
 //!     // serialize each event for the target format such as JSON
 //! }
 //! # Ok(()) } do_it().unwrap();
@@ -28,33 +28,15 @@
 //!
 //! Primitive values such as integers are trivial to serialize as you just
 //! directly return the right type of [`Chunk`] from the serialization method.
-//! In this example we also provide an optional [`Descriptor`] which can help
-//! serializers make better decisions.
 //!
 //! ```rust
 //! use deser::ser::{Serialize, Chunk};
 //! use deser::State;
-//! use deser::{Atom, Descriptor, Error};
+//! use deser::{Atom, Error};
 //!
 //! struct MyInt(u32);
 //!
-//! struct MyIntDescriptor;
-//!
-//! impl Descriptor for MyIntDescriptor {
-//!     fn name(&self) -> Option<&str> {
-//!         Some("MyInt")
-//!     }
-//!
-//!     fn precision(&self) -> Option<usize> {
-//!         Some(32)
-//!     }
-//! }
-//!
 //! impl Serialize for MyInt {
-//!     fn descriptor(&self) -> &'static dyn Descriptor {
-//!         &MyIntDescriptor
-//!     }
-//!
 //!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
 //!         // one can also just do `self.0.serialize(state)`
 //!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
@@ -111,8 +93,8 @@ use std::borrow::Cow;
 use std::ops::Deref;
 
 use crate::State;
-use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
+use crate::event::ContainerShape;
 
 mod chunk;
 mod driver;
@@ -169,7 +151,7 @@ impl<'a> SerializeHandle<'a> {
 #[doc(hidden)]
 pub struct Begin<'a> {
     pub(crate) kind: BeginKind<'a>,
-    pub(crate) descriptor: &'static dyn Descriptor,
+    pub(crate) shape: ContainerShape,
     pub(crate) needs_finish: bool,
 }
 
@@ -182,14 +164,10 @@ pub(crate) enum BeginKind<'a> {
 impl<'a> Begin<'a> {
     /// Begins a value with a chunk.
     #[inline]
-    pub fn chunk(
-        chunk: Chunk<'a>,
-        descriptor: &'static dyn Descriptor,
-        needs_finish: bool,
-    ) -> Begin<'a> {
+    pub fn chunk(chunk: Chunk<'a>, shape: ContainerShape, needs_finish: bool) -> Begin<'a> {
         Begin {
             kind: BeginKind::Chunk(chunk),
-            descriptor,
+            shape,
             needs_finish,
         }
     }
@@ -199,13 +177,10 @@ impl<'a> Begin<'a> {
     /// This is equivalent to a [`Chunk::Struct`] but does not require an
     /// emitter to be allocated.  `finish` is not invoked.
     #[inline]
-    pub fn indexed_struct(
-        value: &'a dyn IndexedStruct,
-        descriptor: &'static dyn Descriptor,
-    ) -> Begin<'a> {
+    pub fn indexed_struct(value: &'a dyn IndexedStruct, shape: ContainerShape) -> Begin<'a> {
         Begin {
             kind: BeginKind::Struct(value),
-            descriptor,
+            shape,
             needs_finish: false,
         }
     }
@@ -215,13 +190,10 @@ impl<'a> Begin<'a> {
     /// This is equivalent to a [`Chunk::Seq`] but does not require an
     /// emitter to be allocated.  `finish` is not invoked.
     #[inline]
-    pub fn indexed_seq(
-        value: &'a dyn IndexedSeq,
-        descriptor: &'static dyn Descriptor,
-    ) -> Begin<'a> {
+    pub fn indexed_seq(value: &'a dyn IndexedSeq, shape: ContainerShape) -> Begin<'a> {
         Begin {
             kind: BeginKind::Seq(value),
-            descriptor,
+            shape,
             needs_finish: false,
         }
     }
@@ -329,14 +301,11 @@ pub trait SeqEmitter {
 
 /// A data structure that can be serialized into any data format supported by Deser.
 ///
-/// This trait provides two things:
-///
-/// * [`descriptor`](Self::descriptor) returns a reference to the closest descriptor
-///   of this value.  The descriptor provides auxiliary information about the value
-///   that the serialization system does not expose.
-/// * [`serialize`](Self::serialize) serializes the value into a [`Chunk`].  For
-///   compound values like lists or similar, the piece contains a boxed emitter
-///   which can be further processed to walk the embedded compound value.
+/// [`serialize`](Self::serialize) serializes the value into a [`Chunk`].  For
+/// compound values like lists or similar, the piece contains a boxed emitter
+/// which can be further processed to walk the embedded compound value.  The
+/// [`container_shape`](Self::container_shape) of such values is passed on
+/// with the start event of the container.
 pub trait Serialize {
     /// Serializes this serializable.
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
@@ -361,17 +330,18 @@ pub trait Serialize {
         false
     }
 
-    /// Returns the descriptor of this serializable if it exists.
+    /// Returns the shape of this value if it's a map or sequence.
     ///
-    /// Descriptors have to be `'static` as the serializer state holds on to
-    /// them while the value is serialized.
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &NullDescriptor
+    /// The shape is passed on with the [`MapStart`](crate::Event::MapStart)
+    /// or [`SeqStart`](crate::Event::SeqStart) event, it's ignored for other
+    /// values.  The default is [`ContainerShape::new`].
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new()
     }
 
     /// Begins the serialization of this value.
     ///
-    /// Returns the [`descriptor`](Self::descriptor), the result of
+    /// Returns the [`container_shape`](Self::container_shape), the result of
     /// [`serialize`](Self::serialize) and a flag that indicates if
     /// [`finish`](Self::finish) needs to be invoked.  The default
     /// implementation calls both methods (in this order) and always requests
@@ -380,8 +350,8 @@ pub trait Serialize {
     #[doc(hidden)]
     #[inline]
     fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        let descriptor = self.descriptor();
-        Ok(Begin::chunk(self.serialize(state)?, descriptor, true))
+        let shape = self.container_shape();
+        Ok(Begin::chunk(self.serialize(state)?, shape, true))
     }
 
     /// Hidden internal trait method to allow specializations of bytes.
@@ -406,14 +376,14 @@ fn test_serialize() {
     m.insert(false, vec![]);
 
     let mut driver = SerializeDriver::new(&m);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         v.push(format!("{:?}", event));
     }
 
     assert_eq!(
         &v[..],
         [
-            "MapStart",
+            "MapStart(ContainerShape { len: None, order: Sorted })",
             "Atom(Bool(false))",
             "SeqStart",
             "SeqEnd",

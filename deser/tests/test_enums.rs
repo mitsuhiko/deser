@@ -19,7 +19,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _, _)) = driver.next().unwrap() {
+    while let Some((event, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -53,7 +53,7 @@ fn test_externally_tagged() {
     check(
         External::Newtype(1),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "Newtype".into(),
             1u64.into(),
             Event::MapEnd,
@@ -62,9 +62,9 @@ fn test_externally_tagged() {
     check(
         External::Tuple(1, "x".into()),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "Tuple".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             "x".into(),
             Event::SeqEnd,
@@ -77,9 +77,9 @@ fn test_externally_tagged() {
             b: Some("x".into()),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "Struct".into(),
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             "bee".into(),
@@ -92,7 +92,7 @@ fn test_externally_tagged() {
     // unit variants can also be maps with null content
     assert_eq!(
         deserialize::<External>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "Unit".into(),
             ().into(),
             Event::MapEnd
@@ -108,7 +108,7 @@ fn test_externally_tagged() {
         "Unexpected: unknown variant 'Nope' for External"
     );
     let err = deserialize::<External>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "Newtype".into(),
         1u64.into(),
         "Unit".into(),
@@ -120,7 +120,7 @@ fn test_externally_tagged() {
         err.to_string(),
         "Unexpected: expected a map with a single key for External"
     );
-    assert!(deserialize::<External>(vec![Event::MapStart, Event::MapEnd]).is_err());
+    assert!(deserialize::<External>(vec![Event::map_start(), Event::MapEnd]).is_err());
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -142,12 +142,17 @@ struct Inner {
 fn test_internally_tagged() {
     check(
         Internal::Unit,
-        vec![Event::MapStart, "type".into(), "Unit".into(), Event::MapEnd],
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Unit".into(),
+            Event::MapEnd,
+        ],
     );
     check(
         Internal::Newtype(Inner { x: 1, y: 2 }),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "Newtype".into(),
             "x".into(),
@@ -160,7 +165,7 @@ fn test_internally_tagged() {
     check(
         Internal::Struct { a: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "Struct".into(),
             "a".into(),
@@ -175,7 +180,7 @@ fn test_internally_tagged() {
     map.insert("a".to_string(), 1);
     assert_eq!(
         deserialize::<Internal>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             "type".into(),
@@ -189,7 +194,7 @@ fn test_internally_tagged() {
     check(
         Internal::Map(map),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "Map".into(),
             "a".into(),
@@ -201,7 +206,7 @@ fn test_internally_tagged() {
     // tag last
     assert_eq!(
         deserialize::<Internal>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "y".into(),
             2u64.into(),
             "x".into(),
@@ -228,12 +233,12 @@ enum Adjacent {
 fn test_adjacently_tagged() {
     check(
         Adjacent::Unit,
-        vec![Event::MapStart, "t".into(), "Unit".into(), Event::MapEnd],
+        vec![Event::map_start(), "t".into(), "Unit".into(), Event::MapEnd],
     );
     check(
         Adjacent::Newtype(1),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Newtype".into(),
             "c".into(),
@@ -244,11 +249,11 @@ fn test_adjacently_tagged() {
     check(
         Adjacent::Tuple(1, 2),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Tuple".into(),
             "c".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             Event::SeqEnd,
@@ -258,11 +263,11 @@ fn test_adjacently_tagged() {
     check(
         Adjacent::Struct { a: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Struct".into(),
             "c".into(),
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             Event::MapEnd,
@@ -273,9 +278,9 @@ fn test_adjacently_tagged() {
     // content before the tag is buffered, unknown keys are ignored
     assert_eq!(
         deserialize::<Adjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "c".into(),
-            Event::MapStart,
+            Event::map_start(),
             "a".into(),
             1u64.into(),
             Event::MapEnd,
@@ -292,7 +297,7 @@ fn test_adjacently_tagged() {
     // unit variants may have null content
     assert_eq!(
         deserialize::<Adjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "c".into(),
             ().into(),
             "t".into(),
@@ -305,7 +310,7 @@ fn test_adjacently_tagged() {
 
     // errors
     let err = deserialize::<Adjacent>(vec![
-        Event::MapStart,
+        Event::map_start(),
         "c".into(),
         1u64.into(),
         Event::MapEnd,
@@ -314,7 +319,7 @@ fn test_adjacently_tagged() {
     assert_eq!(err.to_string(), "MissingField: missing tag 't'");
     assert!(
         deserialize::<Adjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Newtype".into(),
             Event::MapEnd
@@ -323,7 +328,7 @@ fn test_adjacently_tagged() {
     );
     assert!(
         deserialize::<Adjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Newtype".into(),
             "c".into(),
@@ -353,17 +358,17 @@ fn test_untagged() {
     check(Untagged::Text("x".into()), vec!["x".into()]);
     check(
         Untagged::Pair(1, 2),
-        vec![Event::SeqStart, 1u64.into(), 2u64.into(), Event::SeqEnd],
+        vec![Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd],
     );
     check(
         Untagged::Struct { a: 1 },
-        vec![Event::MapStart, "a".into(), 1u64.into(), Event::MapEnd],
+        vec![Event::map_start(), "a".into(), 1u64.into(), Event::MapEnd],
     );
 
     // variants are tried in order
     assert_eq!(
         deserialize::<Vec<Untagged>>(vec![
-            Event::SeqStart,
+            Event::seq_start(),
             42u64.into(),
             "42".into(),
             Event::SeqEnd
@@ -425,9 +430,9 @@ fn test_other() {
     );
     assert_eq!(
         deserialize::<WithOtherExternal>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "B".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             Event::SeqEnd,
             Event::MapEnd
@@ -438,7 +443,7 @@ fn test_other() {
 
     assert_eq!(
         deserialize::<WithOtherInternal>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "b".into(),
             1u64.into(),
             "type".into(),
@@ -451,9 +456,9 @@ fn test_other() {
 
     assert_eq!(
         deserialize::<WithOtherAdjacent>(vec![
-            Event::MapStart,
+            Event::map_start(),
             "c".into(),
-            Event::MapStart,
+            Event::map_start(),
             Event::MapEnd,
             "t".into(),
             "B".into(),
@@ -482,29 +487,29 @@ fn test_nesting() {
             Nested::Opt(Some(2)),
         ]),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "branch".into(),
             "data".into(),
-            Event::SeqStart,
-            Event::MapStart,
+            Event::seq_start(),
+            Event::map_start(),
             "kind".into(),
             "leaf".into(),
             "data".into(),
             1u64.into(),
             Event::MapEnd,
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "boxed".into(),
             "data".into(),
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "opt".into(),
             "data".into(),
             ().into(),
             Event::MapEnd,
             Event::MapEnd,
-            Event::MapStart,
+            Event::map_start(),
             "kind".into(),
             "opt".into(),
             "data".into(),
@@ -552,12 +557,17 @@ where
 fn test_generics() {
     check(
         Either::<u32, String>::Right("x".into()),
-        vec![Event::MapStart, "Right".into(), "x".into(), Event::MapEnd],
+        vec![
+            Event::map_start(),
+            "Right".into(),
+            "x".into(),
+            Event::MapEnd,
+        ],
     );
     check(
         GenericInternal::<u32, bool>::First { value: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "First".into(),
             "value".into(),
@@ -571,11 +581,11 @@ fn test_generics() {
             b: Some(true),
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "Both".into(),
             "a".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             Event::SeqEnd,
             "b".into(),
@@ -586,7 +596,7 @@ fn test_generics() {
     check(
         GenericInternal::<u32, bool>::Nothing,
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "type".into(),
             "Nothing".into(),
             Event::MapEnd,
@@ -595,16 +605,16 @@ fn test_generics() {
     check(GenericUntagged::One(1u32), vec![1u64.into()]);
     check(
         GenericUntagged::Many(vec![1u32]),
-        vec![Event::SeqStart, 1u64.into(), Event::SeqEnd],
+        vec![Event::seq_start(), 1u64.into(), Event::SeqEnd],
     );
     check(
         GenericAdjacent::Pair(1u32, 2),
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Pair".into(),
             "c".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             2u64.into(),
             Event::SeqEnd,
@@ -641,9 +651,9 @@ fn test_generic_helper_bounds() {
             children: vec![Box::new(Tree::Leaf(1u32))],
         },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "children".into(),
-            Event::SeqStart,
+            Event::seq_start(),
             1u64.into(),
             Event::SeqEnd,
             Event::MapEnd,
@@ -652,7 +662,7 @@ fn test_generic_helper_bounds() {
     check(
         Bounded::<u32, u32>::Only { value: 1 },
         vec![
-            Event::MapStart,
+            Event::map_start(),
             "t".into(),
             "Only".into(),
             "value".into(),

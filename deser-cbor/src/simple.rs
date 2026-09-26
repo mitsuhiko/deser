@@ -1,8 +1,10 @@
+use std::borrow::Cow;
+
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, Serialize};
-use deser::{Atom, Descriptor, Error, ErrorKind};
+use deser::{Atom, Error, ErrorKind};
 
 /// A CBOR simple value.
 ///
@@ -52,20 +54,8 @@ impl Extension for Simple {
 }
 
 impl Serialize for Simple {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &SimpleDescriptor
-    }
-
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
-    }
-}
-
-struct SimpleDescriptor;
-
-impl Descriptor for SimpleDescriptor {
-    fn name(&self) -> Option<&str> {
-        Some("simple")
     }
 }
 
@@ -78,8 +68,8 @@ impl<'de> Deserialize<'de> for Simple {
 struct SimpleSink<'a>(&'a mut Option<Simple>);
 
 impl<'a, 'de> Sink<'de> for SimpleSink<'a> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        &SimpleDescriptor
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("simple")
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {

@@ -44,7 +44,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<(Event<'_>, Option<u32>)>) -> T 
 #[test]
 fn test_event_data_is_attached_to_one_event() {
     let probes: Vec<Probe> = deserialize(vec![
-        (Event::SeqStart, None),
+        (Event::seq_start(), None),
         (1u64.into(), Some(1)),
         (2u64.into(), None),
         (3u64.into(), Some(3)),
@@ -64,7 +64,7 @@ fn test_event_data_is_replayed() {
     // the tag comes last which means that the fields are recorded and
     // replayed once the tag is known.
     let value: Probed = deserialize(vec![
-        (Event::MapStart, None),
+        (Event::map_start(), None),
         ("first".into(), None),
         (1u64.into(), Some(1)),
         ("second".into(), Some(99)),
@@ -98,7 +98,7 @@ impl Serialize for Marked {
 fn test_event_data_when_serializing() {
     let values = vec![Marked(1, Some(10)), Marked(2, None), Marked(3, Some(30))];
     let expected = vec![
-        (Event::SeqStart, None),
+        (Event::seq_start(), None),
         (1u64.into(), Some(10)),
         (2u64.into(), None),
         (3u64.into(), Some(30)),
@@ -107,14 +107,14 @@ fn test_event_data_when_serializing() {
 
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&values);
-    while let Some((event, _, state)) = driver.next().unwrap() {
+    while let Some((event, state)) = driver.next().unwrap() {
         events.push((event.to_static(), state.event::<Marker>().map(|x| x.0)));
     }
     assert_eq!(events, expected);
 
     let mut events = Vec::new();
     SerializeDriver::new(&values)
-        .drive(|event, _, state| {
+        .drive(|event, state| {
             events.push((event.to_static(), state.event::<Marker>().map(|x| x.0)));
             Ok(())
         })

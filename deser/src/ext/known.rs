@@ -4,7 +4,6 @@ use std::borrow::Cow;
 
 use crate::State;
 use crate::de::Sink;
-use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{ExtValue, Extension};
@@ -13,9 +12,6 @@ use crate::ext::{ExtValue, Extension};
 pub(crate) trait WellKnown: Extension + Sized {
     /// What the type expects, for error messages.
     const EXPECTING: &'static str;
-
-    /// The descriptor of the type.
-    fn descriptor() -> &'static dyn Descriptor;
 
     /// Converts an atom into the type.
     ///
@@ -71,10 +67,6 @@ pub(crate) fn out_of_range(msg: impl Into<Cow<'static, str>>) -> Error {
 pub(crate) struct KnownSink<'a, T>(pub(crate) &'a mut Option<T>);
 
 impl<'a, 'de, T: WellKnown> Sink<'de> for KnownSink<'a, T> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        T::descriptor()
-    }
-
     fn expecting(&self) -> Cow<'_, str> {
         T::EXPECTING.into()
     }
@@ -94,10 +86,6 @@ impl<'a, 'de, T: WellKnown> Sink<'de> for KnownSink<'a, T> {
 pub(crate) struct BridgeSink<'a, T>(pub(crate) &'a mut Option<T>);
 
 impl<'a, 'de, T: Bridge> Sink<'de> for BridgeSink<'a, T> {
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        <T::Known as WellKnown>::descriptor()
-    }
-
     fn expecting(&self) -> Cow<'_, str> {
         T::EXPECTING.into()
     }
@@ -128,10 +116,6 @@ macro_rules! impl_well_known {
                     $crate::ext::ExtValue::borrowed(self),
                 )))
             }
-
-            fn descriptor(&self) -> &'static dyn $crate::Descriptor {
-                <$ty as $crate::ext::known::WellKnown>::descriptor()
-            }
         }
 
         impl<'de> $crate::de::Deserialize<'de> for $ty {
@@ -155,9 +139,6 @@ macro_rules! impl_bridge {
                     $crate::ext::known::Bridge::serialize_atom(self).map($crate::ser::Chunk::Atom)
                 }
 
-                fn descriptor(&self) -> &'static dyn $crate::Descriptor {
-                    <<$ty as $crate::ext::known::Bridge>::Known as $crate::ext::known::WellKnown>::descriptor()
-                }
             }
 
             impl<'de> $crate::de::Deserialize<'de> for $ty {

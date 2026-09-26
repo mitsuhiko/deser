@@ -4,7 +4,7 @@ use std::fmt::Write;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
-use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Error, ErrorKind, Event, FloatKind, Serialize};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
 use deser::ext::{Datetime, Number, Timestamp};
@@ -85,7 +85,7 @@ impl SerializerConfig {
         };
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        driver.drive(|event, descriptor, _state| builder.event(event, descriptor))?;
+        driver.drive(|event, _state| builder.event(event))?;
         if !builder.done {
             return Err(Error::new(ErrorKind::Unexpected, "no value was serialized"));
         }
@@ -136,13 +136,13 @@ enum Converted {
 }
 
 impl Builder {
-    fn event(&mut self, event: Event, descriptor: &dyn Descriptor) -> Result<(), Error> {
+    fn event(&mut self, event: Event) -> Result<(), Error> {
         let Some(frame) = self.stack.last_mut() else {
             if self.done {
                 return Err(Error::new(ErrorKind::Unexpected, "unexpected event"));
             }
             return match event {
-                Event::MapStart => {
+                Event::MapStart(_) => {
                     let id = self.doc.new_table(TableKind::Header, Span::default());
                     self.stack.push(Frame::Table(id, None));
                     Ok(())
@@ -157,7 +157,7 @@ impl Builder {
         match *frame {
             Frame::Table(_, ref mut key @ None) => match event {
                 Event::Atom(atom) => {
-                    *key = Some(key_to_string(atom, descriptor, self.bytes)?);
+                    *key = Some(key_to_string(atom, self.bytes)?);
                     Ok(())
                 }
                 Event::MapEnd => {
@@ -172,7 +172,7 @@ impl Builder {
             },
             Frame::Table(id, ref mut key @ Some(_)) => {
                 let key = key.take().unwrap();
-                let value = match self.value(event, descriptor)? {
+                let value = match self.value(event)? {
                     Converted::Value(value) => value,
                     // map entries with null values are skipped
                     Converted::Null => return Ok(()),
@@ -201,7 +201,7 @@ impl Builder {
                     self.stack.pop();
                     return Ok(());
                 }
-                match self.value(event, descriptor)? {
+                match self.value(event)? {
                     Converted::Value(value) => {
                         self.doc.arrays[id].items.push(Item {
                             value,
@@ -220,18 +220,18 @@ impl Builder {
 
     /// Converts the first event of a value.  Maps and sequences are pushed
     /// to the stack.
-    fn value(&mut self, event: Event, descriptor: &dyn Descriptor) -> Result<Converted, Error> {
+    fn value(&mut self, event: Event) -> Result<Converted, Error> {
         match event {
             Event::Atom(Atom::Bytes(ref bytes)) => Ok(Converted::Value(
-                self.bytes_value(bytes, descriptor.bytes_format().unwrap_or(self.bytes)),
+                self.bytes_value(bytes, bytes.fallback.copied().unwrap_or(self.bytes)),
             )),
-            Event::Atom(atom) => convert_atom(atom, descriptor, self.bytes),
-            Event::MapStart => {
+            Event::Atom(atom) => convert_atom(atom, self.bytes),
+            Event::MapStart(_) => {
                 let id = self.doc.new_table(TableKind::Header, Span::default());
                 self.stack.push(Frame::Table(id, None));
                 Ok(Converted::Value(Value::Table(id)))
             }
-            Event::SeqStart => {
+            Event::SeqStart(_) => {
                 let id = self.doc.new_array(false, Span::default());
                 self.stack.push(Frame::Array(id));
                 Ok(Converted::Value(Value::Array(id)))
@@ -260,11 +260,7 @@ impl Builder {
     }
 }
 
-fn convert_atom(
-    atom: Atom,
-    descriptor: &dyn Descriptor,
-    bytes: BytesFormat,
-) -> Result<Converted, Error> {
+fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
     Ok(Converted::Value(match atom {
         Atom::Null => return Ok(Converted::Null),
         Atom::Bool(value) => Value::Bool(value),
@@ -275,28 +271,29 @@ fn convert_atom(
             Err(_) => Value::UInt(value),
         },
         Atom::I64(value) => Value::Int(value),
-        Atom::F64(value) => {
-            if descriptor.precision() == Some(32) {
+        Atom::Float(value) => {
+            let value_f64 = value.value();
+            if value.kind() == FloatKind::F32 {
                 // keep the shortest representation of the f32
-                Value::Float(format!("{:?}", value as f32).parse().unwrap_or(value))
+                Value::Float(
+                    format!("{:?}", value_f64 as f32)
+                        .parse()
+                        .unwrap_or(value_f64),
+                )
             } else {
-                Value::Float(value)
+                Value::Float(value_f64)
             }
         }
         // bytes are converted by the builder, this is reached for the
         // fallbacks of extension values which cannot be arrays.
-        Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, descriptor, bytes))),
-        Atom::Ext(ref ext) => return convert_ext(ext, descriptor, bytes),
+        Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, value.fallback, bytes))),
+        Atom::Ext(ref ext) => return convert_ext(ext, bytes),
         _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
     }))
 }
 
 #[cold]
-fn convert_ext(
-    ext: &ExtValue,
-    descriptor: &dyn Descriptor,
-    bytes: BytesFormat,
-) -> Result<Converted, Error> {
+fn convert_ext(ext: &ExtValue, bytes: BytesFormat) -> Result<Converted, Error> {
     if let Some(value) = ext.downcast_ref::<Datetime>() {
         if !value.is_valid() {
             return Err(Error::new(ErrorKind::Unexpected, "invalid datetime"));
@@ -322,14 +319,14 @@ fn convert_ext(
     let out_of_range = || Error::new(ErrorKind::OutOfRange, "integer out of range for TOML");
     if let Some(&value) = ext.downcast_ref::<u128>() {
         let value = u64::try_from(value).map_err(|_| out_of_range())?;
-        return convert_atom(Atom::U64(value), descriptor, bytes);
+        return convert_atom(Atom::U64(value), bytes);
     }
     if let Some(&value) = ext.downcast_ref::<i128>() {
         return if let Ok(value) = i64::try_from(value) {
-            convert_atom(Atom::I64(value), descriptor, bytes)
+            convert_atom(Atom::I64(value), bytes)
         } else {
             let value = u64::try_from(value).map_err(|_| out_of_range())?;
-            convert_atom(Atom::U64(value), descriptor, bytes)
+            convert_atom(Atom::U64(value), bytes)
         };
     }
     match ext.fallback() {
@@ -337,33 +334,29 @@ fn convert_ext(
             ErrorKind::UnsupportedType,
             format!("TOML does not support {}", ext.name()),
         )),
-        fallback => convert_atom(fallback, descriptor, bytes),
+        fallback => convert_atom(fallback, bytes),
     }
 }
 
 /// Encodes bytes as string.
 ///
 /// Strings are required (for keys), so bytes that would be arrays are base64.
-fn encode_str(value: &[u8], descriptor: &dyn Descriptor, bytes: BytesFormat) -> String {
-    descriptor
-        .bytes_format()
+fn encode_str(value: &[u8], fallback: Option<&BytesFormat>, bytes: BytesFormat) -> String {
+    fallback
+        .copied()
         .unwrap_or(bytes)
         .encode(value)
         .or_else(|| BytesFormat::BASE64.encode(value))
         .unwrap_or_default()
 }
 
-fn key_to_string(
-    atom: Atom,
-    descriptor: &dyn Descriptor,
-    bytes: BytesFormat,
-) -> Result<String, Error> {
+fn key_to_string(atom: Atom, bytes: BytesFormat) -> Result<String, Error> {
     Ok(match atom {
         Atom::Str(value) => value.into_owned(),
         Atom::Char(value) => value.to_string(),
         Atom::U64(value) => value.to_string(),
         Atom::I64(value) => value.to_string(),
-        Atom::Bytes(value) => encode_str(&value, descriptor, bytes),
+        Atom::Bytes(value) => encode_str(&value, value.fallback, bytes),
         Atom::Ext(ref ext) => {
             if let Some(value) = ext.downcast_ref::<u128>() {
                 value.to_string()
@@ -372,7 +365,7 @@ fn key_to_string(
             } else {
                 match ext.fallback() {
                     Atom::Ext(_) => return Err(unsupported_key()),
-                    fallback => return key_to_string(fallback, descriptor, bytes),
+                    fallback => return key_to_string(fallback, bytes),
                 }
             }
         }

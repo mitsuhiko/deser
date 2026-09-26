@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use deser::State;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Bytes, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
 use crate::float::f64_to_f16;
@@ -87,8 +87,8 @@ impl Writer {
                 self.begin_item(state);
                 self.write_atom(atom)
             }
-            Event::MapStart => self.start(true, state),
-            Event::SeqStart => self.start(false, state),
+            Event::MapStart(_) => self.start(true, state),
+            Event::SeqStart(_) => self.start(false, state),
             Event::MapEnd | Event::SeqEnd => self.end(),
         }
     }
@@ -266,11 +266,14 @@ impl Writer {
             Atom::Bool(false) => self.out.push(0xf4),
             Atom::Bool(true) => self.out.push(0xf5),
             Atom::Str(Cow::Borrowed(val)) => self.write_str(val),
-            Atom::Bytes(Cow::Borrowed(val)) => self.write_bytes(val),
+            Atom::Bytes(Bytes {
+                data: Cow::Borrowed(val),
+                ..
+            }) => self.write_bytes(val),
             Atom::Char(c) => self.write_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_head(MAJOR_UNSIGNED, val),
             Atom::I64(val) => self.write_i64(val),
-            Atom::F64(val) => self.write_f64(val),
+            Atom::Float(val) => self.write_f64(val.value()),
             _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
         }
         Ok(())
@@ -508,7 +511,7 @@ impl SerializerConfig {
             offsets: Vec::new(),
             insertions: Vec::new(),
         };
-        driver.drive(|event, _, state| writer.event(event, state))?;
+        driver.drive(|event, state| writer.event(event, state))?;
         if !writer.insertions.is_empty() {
             writer.apply_insertions();
         }
