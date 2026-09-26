@@ -1,9 +1,9 @@
-//! Parse YAML compatible with deser.
+//! Parse and write YAML compatible with deser.
 //!
 //! ```rust
-//! use deser::Deserialize;
+//! use deser::{Deserialize, Serialize};
 //!
-//! #[derive(Deserialize, Debug)]
+//! #[derive(Deserialize, Serialize, Debug)]
 //! struct Config {
 //!     name: String,
 //!     ports: Vec<u16>,
@@ -15,10 +15,12 @@
 //! ").unwrap();
 //! assert_eq!(config.name, "web");
 //! assert_eq!(config.ports, [80, 443]);
-//! ```
 //!
-//! **This crate is work in progress.**  It can deserialize but not yet
-//! serialize.
+//! assert_eq!(
+//!     deser_yaml::to_string(&config).unwrap(),
+//!     "name: web\nports:\n  - 80\n  - 443\n"
+//! );
+//! ```
 //!
 //! # Data Model
 //!
@@ -51,6 +53,28 @@
 //! Aliases are expanded: every alias produces the events of the node it
 //! refers to (see [`DeserializerConfig::alias_limit`]).
 //!
+//! # Serialization
+//!
+//! [`to_string`] writes values as block collections: sequences with `-`,
+//! mappings with `key: value`, empty collections as `{}` and `[]`.  How the
+//! output looks can be configured with [`SerializerConfig`] (indentation,
+//! quoting, null, bytes, ...).  Values are always written so that they read
+//! back as the same values, also by readers of YAML 1.1 (such as PyYAML)
+//! unless configured otherwise with [`SerializerConfig::compat`]:
+//!
+//! | deser                                   | YAML                                          |
+//! |-----------------------------------------|-----------------------------------------------|
+//! | `Null`                                  | `null` (see [`NullStyle`])                    |
+//! | `Bool`, integers                        | `true`, `false`, `42`                         |
+//! | `F64`                                   | `1.5`, `1.0e+20`, `.inf`, `.nan`               |
+//! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
+//! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
+//! | [`Datetime`](deser::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
+//! | maps and sequences                      | block mappings and sequences, keys that are collections or long use `? key` |
+//!
+//! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
+//! multiple documents are written with [`Serializer`].
+//!
 //! # Documents
 //!
 //! A YAML stream can contain multiple documents.  [`from_str`] expects at
@@ -66,15 +90,21 @@
 //!
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 mod de;
+mod emit;
 mod event;
 mod parser;
+mod quote;
 mod resolve;
 mod scanner;
+mod ser;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 pub use self::resolve::Version;
-pub use self::tag::{Tagged, take_tag};
+pub use self::ser::{
+    MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, to_string,
+};
+pub use self::tag::{Tagged, set_tag, take_tag};
 
 #[doc(hidden)]
 #[path = "private.rs"]

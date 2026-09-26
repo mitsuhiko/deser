@@ -76,6 +76,113 @@ pub fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
     }
 }
 
+/// Returns `true` if a plain scalar is a string in the given version.
+pub fn is_plain_str(s: &str, version: Version) -> bool {
+    resolve_plain_str(s, version).is_none()
+}
+
+/// Returns `true` if YAML 1.1 readers resolve a plain scalar implicitly to
+/// something that the resolution of this crate does not cover.
+///
+/// Common YAML 1.1 readers (such as PyYAML) resolve timestamps without a
+/// tag and treat `=` as the value key.  The syntax of timestamps is matched
+/// without validating the date as these readers fail on invalid dates.
+pub fn is_yaml11_implicit(s: &str) -> bool {
+    s == "=" || is_yaml11_timestamp_syntax(s)
+}
+
+/// Matches the regular expression of YAML 1.1 timestamps.
+fn is_yaml11_timestamp_syntax(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut pos = 0;
+    let digits = |pos: &mut usize, min: usize, max: usize| -> bool {
+        let len = bytes[*pos..]
+            .iter()
+            .take(max)
+            .take_while(|x| x.is_ascii_digit())
+            .count();
+        *pos += len;
+        len >= min
+    };
+    let expect = |pos: &mut usize, c: u8| -> bool {
+        let rv = bytes.get(*pos) == Some(&c);
+        *pos += rv as usize;
+        rv
+    };
+    if !digits(&mut pos, 4, 4) || !expect(&mut pos, b'-') {
+        return false;
+    }
+    // `YYYY-MM-DD` or `YYYY-M-D` followed by a time
+    let date_start = pos;
+    if !digits(&mut pos, 1, 2) || !expect(&mut pos, b'-') || !digits(&mut pos, 1, 2) {
+        return false;
+    }
+    if pos == bytes.len() {
+        return pos - date_start == 5;
+    }
+    match bytes[pos] {
+        b'T' | b't' => pos += 1,
+        b' ' | b'\t' => {
+            while matches!(bytes.get(pos), Some(b' ' | b'\t')) {
+                pos += 1;
+            }
+        }
+        _ => return false,
+    }
+    if !digits(&mut pos, 1, 2)
+        || !expect(&mut pos, b':')
+        || !digits(&mut pos, 2, 2)
+        || !expect(&mut pos, b':')
+        || !digits(&mut pos, 2, 2)
+    {
+        return false;
+    }
+    if expect(&mut pos, b'.') {
+        digits(&mut pos, 0, usize::MAX);
+    }
+    while matches!(bytes.get(pos), Some(b' ' | b'\t')) {
+        pos += 1;
+    }
+    match bytes.get(pos) {
+        None => true,
+        Some(b'Z') => pos + 1 == bytes.len(),
+        Some(b'+' | b'-') => {
+            pos += 1;
+            if !digits(&mut pos, 1, 2) {
+                return false;
+            }
+            if expect(&mut pos, b':') && !digits(&mut pos, 2, 2) {
+                return false;
+            }
+            pos == bytes.len()
+        }
+        _ => false,
+    }
+}
+
+#[test]
+fn test_yaml11_timestamp_syntax() {
+    for s in [
+        "2001-12-14",
+        "2001-12-14t21:59:43.10-05:00",
+        "2001-12-14 21:59:43.10 -5",
+        "2001-12-15 2:59:43.10",
+        "2002-12-14T21:59:43Z",
+        "2001-02-30",
+    ] {
+        assert!(is_yaml11_timestamp_syntax(s), "{}", s);
+    }
+    for s in [
+        "2001-12",
+        "2001-1-1",
+        "20011-12-14",
+        "2001-12-14 foo",
+        "hello",
+    ] {
+        assert!(!is_yaml11_timestamp_syntax(s), "{}", s);
+    }
+}
+
 fn resolve_plain_str(s: &str, version: Version) -> Option<Atom<'static>> {
     let first = match s.as_bytes().first() {
         Some(&first) => first,

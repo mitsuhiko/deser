@@ -23,7 +23,9 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use deser_yaml::__private::parse_to_test_events;
-use deser_yaml::Deserializer;
+use deser_yaml::{
+    Deserializer, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, Version,
+};
 
 mod common;
 
@@ -155,9 +157,90 @@ fn run_case(case: &Case) -> Outcome {
         fail => return fail,
     }
     match case.json {
-        Some(ref json) if !case.is_error => check_json(case, json),
-        _ => Outcome::Pass,
+        Some(ref json) if !case.is_error => match check_json(case, json) {
+            Outcome::Pass => {}
+            fail => return fail,
+        },
+        _ => {}
     }
+    if case.is_error {
+        Outcome::Pass
+    } else {
+        check_roundtrip(case)
+    }
+}
+
+/// The configurations the documents are serialized with.
+fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
+    vec![
+        ("default", SerializerConfig::new()),
+        (
+            "indentless",
+            SerializerConfig::new().indent_sequences(false).indent(4),
+        ),
+        (
+            "quoted",
+            SerializerConfig::new()
+                .quote_all(true)
+                .quote_style(QuoteStyle::Double)
+                .multiline(MultilineStyle::Quoted),
+        ),
+        (
+            "compact",
+            SerializerConfig::new()
+                .indent(1)
+                .compat(Version::V1_2)
+                .null_style(NullStyle::Empty),
+        ),
+    ]
+}
+
+/// Serializes the documents with all configurations and reads them back.
+fn check_roundtrip(case: &Case) -> Outcome {
+    let docs = match panic::catch_unwind(|| {
+        Deserializer::from_str(&case.input)
+            .iter::<Value>()
+            .collect::<Result<Vec<_>, _>>()
+    }) {
+        Ok(Ok(docs)) => docs,
+        // documents that cannot be represented as test values are skipped
+        _ => return Outcome::Pass,
+    };
+    for (name, config) in roundtrip_configs() {
+        let rv = panic::catch_unwind(|| {
+            let mut serializer = Serializer::new(config.clone());
+            for doc in &docs {
+                serializer.serialize(doc).map_err(|err| err.to_string())?;
+            }
+            Ok::<_, String>(serializer.finish())
+        });
+        let output = match rv {
+            Ok(Ok(output)) => output,
+            Ok(Err(err)) => {
+                return Outcome::Fail(format!("[{}] serialization failed: {}", name, err));
+            }
+            Err(_) => return Outcome::Fail(format!("[{}] serializer panicked", name)),
+        };
+        let reparsed = Deserializer::from_str(&output)
+            .iter::<Value>()
+            .collect::<Result<Vec<_>, _>>();
+        match reparsed {
+            Ok(reparsed) if reparsed == docs => {}
+            Ok(reparsed) => {
+                return Outcome::Fail(format!(
+                    "[{}] roundtrip changed the value\n  output:\n{}\n  expected: {:?}\n  actual:   {:?}",
+                    name, output, docs, reparsed
+                ));
+            }
+            Err(err) => {
+                return Outcome::Fail(format!(
+                    "[{}] output does not parse: {}\n  output:\n{}",
+                    name, err, output
+                ));
+            }
+        }
+    }
+    Outcome::Pass
 }
 
 /// Deserializes all documents and compares them with the JSON.

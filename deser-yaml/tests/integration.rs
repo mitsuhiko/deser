@@ -7,3 +7,4 @@ mod test_de;
 mod test_locations;
 mod test_parser;
 mod test_schema;
+mod test_ser;

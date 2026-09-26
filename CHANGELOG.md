@@ -34,6 +34,15 @@ All notable changes to deser are documented here.
   `SerializeDriver::drive_described` which passes the value of every event.
   `deser-debug` uses it and formats values like `#[derive(Debug)]` (including
   struct and newtype names).
+- `deser-yaml` can serialize: `to_string`, `SerializerConfig` (indentation,
+  indented or indentless sequences, quote style, multi-line strings as
+  literal block scalars or quoted, null style, `!!binary` or a bytes
+  format, timestamps, document markers) and `Serializer` for streams of
+  documents.  Strings are quoted if readers of YAML 1.1 or 1.2 would read
+  them as something else (`SerializerConfig::compat`).  `Tagged` writes its
+  tag, `set_tag` sets the tag of a value and tags survive a `Recording`.
+  `DeserializerConfig::bytes` configures how strings are decoded into
+  bytes.
 - Added `deser::hints` with well-known formatting hints.  `Layout` asks
   formats to lay out a map or sequence compact (inline) or expanded, the
   `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and

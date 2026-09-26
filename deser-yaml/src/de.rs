@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deser::adapters::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::{Atom, Error, ErrorKind, Event};
 
@@ -10,7 +11,7 @@ use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};
 use crate::resolve::{ScalarTag, Version};
 use crate::resolve::{classify_tag, is_collection_tag, resolve_plain, resolve_standard};
-use crate::tag::CurrentTag;
+use crate::tag::NodeTag;
 
 /// The default for [`DeserializerConfig::alias_limit`].
 const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
@@ -41,6 +42,7 @@ pub struct DeserializerConfig {
     alias_limit: usize,
     merge_keys: bool,
     track_locations: bool,
+    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -58,6 +60,7 @@ impl DeserializerConfig {
             alias_limit: DEFAULT_ALIAS_LIMIT,
             merge_keys: true,
             track_locations: false,
+            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -144,6 +147,30 @@ impl DeserializerConfig {
     /// Values produced by aliases report the location of the anchored node.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
+        self
+    }
+
+    /// Sets how strings are decoded into bytes.
+    ///
+    /// Bytes are native in YAML (`!!binary`).  Strings that types which
+    /// expect bytes (like `Vec<u8>`) receive are decoded as base64 by
+    /// default.  This is only needed to read bytes written with
+    /// [`SerializerConfig::binary`](crate::SerializerConfig::binary) off and
+    /// another format.
+    ///
+    /// ```
+    /// use deser::adapters::bytes::{BytesFormat, Hex};
+    /// use deser_yaml::DeserializerConfig;
+    ///
+    /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    /// let bytes: Vec<u8> = HEX.from_str("01ff").unwrap();
+    /// assert_eq!(bytes, [1, 255]);
+    /// ```
+    ///
+    /// The format is placed into the state (see [`deser::adapters::bytes`]).
+    /// Values that use an adapter for bytes are not affected.
+    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
+        self.bytes = format;
         self
     }
 
@@ -632,6 +659,9 @@ impl<'a> Deserializer<'a> {
         if let Some(max_depth) = self.config.max_depth {
             driver.push_layer(Limits::new().max_depth(max_depth));
         }
+        if self.config.bytes != BytesFormat::BASE64 {
+            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
+        }
         let input = self.input;
         let rv = self
             .drive_document(driver)
@@ -1007,7 +1037,7 @@ fn emit_tagged<'a, E: Into<Event<'a>>>(
     tag: &str,
     event: E,
 ) -> Result<(), Error> {
-    driver.state_mut().event_mut::<CurrentTag>().0 = Some(tag.to_string());
+    driver.state_mut().event_mut::<NodeTag>().0 = Some(tag.to_string());
     driver.emit_borrowed(event)
 }
 

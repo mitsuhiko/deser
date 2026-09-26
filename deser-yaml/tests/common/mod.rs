@@ -3,7 +3,9 @@
 
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle};
-use deser::{Atom, Error};
+use deser::ext::ExtValue;
+use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser::{Atom, Bytes, Error};
 
 /// A dynamic YAML value.
 ///
@@ -205,6 +207,54 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             None => {}
         }
         Ok(())
+    }
+}
+
+impl Serialize for Value {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(match *self {
+            Value::Null => Chunk::Atom(Atom::Null),
+            Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
+            Value::Int(ref value) => Chunk::Atom(if let Ok(value) = u64::try_from(*value) {
+                Atom::U64(value)
+            } else if let Ok(value) = i64::try_from(*value) {
+                Atom::I64(value)
+            } else {
+                Atom::Ext(ExtValue::borrowed(value))
+            }),
+            Value::Float(value) => Chunk::Atom(Atom::F64(value)),
+            Value::Str(ref value) => Chunk::Atom(Atom::Str(value.as_str().into())),
+            Value::Bytes(ref value) => Chunk::Atom(Atom::Bytes(Bytes::borrowed(value))),
+            Value::Seq(ref items) => Chunk::Seq(Box::new(ValueSeqEmitter(items.iter()))),
+            Value::Map(ref items) => Chunk::Map(Box::new(ValueMapEmitter(items.iter(), None))),
+            Value::Tagged(ref tag, ref value) => {
+                deser_yaml::set_tag(state, tag.as_str());
+                return value.serialize(state);
+            }
+        })
+    }
+}
+
+struct ValueSeqEmitter<'a>(std::slice::Iter<'a, Value>);
+
+impl<'a> SeqEmitter for ValueSeqEmitter<'a> {
+    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.0.next().map(SerializeHandle::to))
+    }
+}
+
+struct ValueMapEmitter<'a>(std::slice::Iter<'a, (Value, Value)>, Option<&'a Value>);
+
+impl<'a> MapEmitter for ValueMapEmitter<'a> {
+    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.0.next().map(|(key, value)| {
+            self.1 = Some(value);
+            SerializeHandle::to(key)
+        }))
+    }
+
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
+        Ok(SerializeHandle::to(self.1.take().unwrap()))
     }
 }
 

@@ -12,7 +12,12 @@
 //!   Types which do not care about tags never see them, which means that
 //!   unknown tags are transparent: the value of `!color red` is the string
 //!   `red`.
-//! * [`Tagged`] captures the tag of a value.
+//! * When serializing, [`set_tag`] registers the tag of a value in the state
+//!   and the serializer writes it in front of the node.
+//! * [`Tagged`] captures the tag of a value and writes it.
+//!
+//! Both directions use the same event data, so values which capture event
+//! data (such as [`Recording`](deser::de::Recording)) keep the tags.
 //!
 //! Tags are reported fully resolved: `!foo` stays `!foo` but `!!set`
 //! becomes `tag:yaml.org,2002:set` and tag handles declared with `%TAG`
@@ -25,9 +30,12 @@ use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Describe, Serialize};
 use deser::{Atom, ContainerShape, Error};
 
-/// The tag of the current node, attached as event data.
+/// The tag of a node, attached as event data to its first event.
+///
+/// The deserializer publishes the tags it reads, the serializer writes the
+/// tags in front of the nodes.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CurrentTag(pub(crate) Option<String>);
+pub(crate) struct NodeTag(pub(crate) Option<String>);
 
 /// Takes the tag of the current node from the state.
 ///
@@ -43,19 +51,29 @@ pub(crate) struct CurrentTag(pub(crate) Option<String>);
 /// }
 /// ```
 pub fn take_tag(state: &mut State) -> Option<String> {
-    if state
-        .event::<CurrentTag>()
-        .is_some_and(|tag| tag.0.is_some())
-    {
-        state.event_mut::<CurrentTag>().0.take()
+    if state.event::<NodeTag>().is_some_and(|tag| tag.0.is_some()) {
+        state.event_mut::<NodeTag>().0.take()
     } else {
         None
     }
 }
 
+/// Sets the tag of the node that is serialized.
+///
+/// This is what [`Tagged`] uses internally.  It must be called from
+/// [`Serialize::serialize`] and applies to the value serialized from that
+/// call.  The tag is attached to the first event of the value (see
+/// [`State::event`]), serializers which do not support tags ignore it.
+/// Tags are given fully resolved: `!foo` for local tags and
+/// `tag:yaml.org,2002:set` for `!!set`.
+pub fn set_tag<S: Into<String>>(state: &mut State, tag: S) {
+    state.event_mut::<NodeTag>().0 = Some(tag.into());
+}
+
 /// A value with an optional YAML tag.
 ///
-/// When deserialized the tag of the node (if there is one) is captured:
+/// When deserialized the tag of the node (if there is one) is captured,
+/// when serialized it's written in front of the value:
 ///
 /// ```
 /// use deser_yaml::Tagged;
@@ -64,10 +82,11 @@ pub fn take_tag(state: &mut State) -> Option<String> {
 /// assert_eq!(value[0].tag.as_deref(), Some("!color"));
 /// assert_eq!(value[0].value, "red");
 /// assert_eq!(value[1].tag, None);
+/// assert_eq!(deser_yaml::to_string(&value).unwrap(), "- !color red\n- blue\n");
 /// ```
 ///
 /// Other formats do not support tags.  When deserializing from such
-/// formats, the tag is `None`.
+/// formats, the tag is `None`, when serializing it's ignored.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Tagged<T> {
     /// The tag of the value.
@@ -110,6 +129,9 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 
 impl<T: Serialize> Serialize for Tagged<T> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        if let Some(ref tag) = self.tag {
+            set_tag(state, tag.as_str());
+        }
         self.value.serialize(state)
     }
 

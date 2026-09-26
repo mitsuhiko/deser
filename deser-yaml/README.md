@@ -2,9 +2,12 @@
 
 YAML support for deser.
 
-**Work in progress.**  The parser is written from scratch against the
-official [YAML test suite](https://github.com/yaml/yaml-test-suite) and
-the [YAML schema tests](https://github.com/perlpunk/yaml-test-schema).
+The parser is written from scratch against the official
+[YAML test suite](https://github.com/yaml/yaml-test-suite) and the
+[YAML schema tests](https://github.com/perlpunk/yaml-test-schema).  The
+serializer writes block style YAML that reads back as the same values,
+also for YAML 1.1 readers.  The conformance tests serialize every valid
+document of the test suite with several configurations and read it back.
 
 ## Conformance tests
 
