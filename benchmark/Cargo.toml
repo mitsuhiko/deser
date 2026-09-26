@@ -13,6 +13,7 @@ count-allocs = []
 
 [dependencies]
 deser = { path = "../deser", features = ["derive"] }
+deser-cbor = { path = "../deser-cbor", features = ["speedups"] }
 deser-json = { path = "../deser-json", features = ["speedups"] }
 miniserde = "0.1.21"
 serde = { version = "1.0.136", features = ["derive"] }
