@@ -6,6 +6,7 @@
 //! building nor dropping a document recurses.
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::hash::{BuildHasher, BuildHasherDefault, Hasher, RandomState};
 
 use deser::ext::Datetime;
 
@@ -77,7 +78,74 @@ pub(crate) struct Table<'a> {
     pub entries: Vec<Entry<'a>>,
     pub kind: TableKind,
     pub span: Span,
-    index: Option<HashMap<Cow<'a, str>, usize>>,
+    index: Option<Box<KeyIndex>>,
+}
+
+/// An index of the keys of a table.
+///
+/// Keys are hashed with a random key (so that inputs cannot provoke
+/// collisions) and the hash is mapped to the last entry with the hash.
+/// Entries with the same hash are chained.  This does not need to copy the
+/// keys.
+#[derive(Debug)]
+struct KeyIndex {
+    state: RandomState,
+    heads: HashMap<u64, usize, BuildHasherDefault<HashIsKey>>,
+    /// For every entry the previous entry with the same hash.
+    chain: Vec<usize>,
+}
+
+/// The end of a chain in a [`KeyIndex`].
+const NO_ENTRY: usize = usize::MAX;
+
+/// A hasher for keys that are hashes already.
+#[derive(Debug, Default)]
+struct HashIsKey(u64);
+
+impl Hasher for HashIsKey {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, _bytes: &[u8]) {
+        unreachable!("only hashes are hashed")
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
+
+impl KeyIndex {
+    fn new(entries: &[Entry<'_>]) -> KeyIndex {
+        let mut index = KeyIndex {
+            state: RandomState::new(),
+            heads: HashMap::with_capacity_and_hasher(entries.len() * 2, Default::default()),
+            chain: Vec::with_capacity(entries.len() * 2),
+        };
+        for (idx, entry) in entries.iter().enumerate() {
+            index.insert(&entry.key, idx);
+        }
+        index
+    }
+
+    fn insert(&mut self, key: &str, idx: usize) {
+        debug_assert_eq!(idx, self.chain.len());
+        let hash = self.state.hash_one(key);
+        let prev = self.heads.insert(hash, idx).unwrap_or(NO_ENTRY);
+        self.chain.push(prev);
+    }
+
+    fn find(&self, entries: &[Entry<'_>], key: &str) -> Option<usize> {
+        let mut idx = *self.heads.get(&self.state.hash_one(key))?;
+        while idx != NO_ENTRY {
+            if entries[idx].key == key {
+                return Some(idx);
+            }
+            idx = self.chain[idx];
+        }
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -119,7 +187,9 @@ impl<'a> Document<'a> {
     pub fn find(&self, table: usize, key: &str) -> Option<&Entry<'a>> {
         let table = &self.tables[table];
         match table.index {
-            Some(ref index) => index.get(key).map(|&idx| &table.entries[idx]),
+            Some(ref index) => index
+                .find(&table.entries, key)
+                .map(|idx| &table.entries[idx]),
             None => table.entries.iter().find(|x| x.key == key),
         }
     }
@@ -130,16 +200,9 @@ impl<'a> Document<'a> {
         table.entries.push(entry);
         let len = table.entries.len();
         if let Some(ref mut index) = table.index {
-            index.insert(table.entries[len - 1].key.clone(), len - 1);
+            index.insert(&table.entries[len - 1].key, len - 1);
         } else if len > INDEX_THRESHOLD {
-            table.index = Some(
-                table
-                    .entries
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, entry)| (entry.key.clone(), idx))
-                    .collect(),
-            );
+            table.index = Some(Box::new(KeyIndex::new(&table.entries)));
         }
     }
 }
