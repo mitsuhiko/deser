@@ -1,0 +1,37 @@
+[package]
+name = "deser-serde"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Adapters to use serde types with deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "serde"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-serde"
+autotests = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Adds the `SerdeCoroutine` adapter which runs serde on a stackful
+# coroutine instead of buffering.
+coroutine = ["dep:corosensei"]
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+serde = { version = "1.0.200", default-features = false, features = ["std"] }
+corosensei = { version = "0.3.4", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-json = { path = "../deser-json" }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.100"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

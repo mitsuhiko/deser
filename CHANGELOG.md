@@ -187,6 +187,11 @@ All notable changes to deser are documented here.
   128 bits are passed on as `BigInt` instead of tagged byte strings.
 - `deser-json` writes `BigInt` and `Decimal` as numbers.
 - `deser-yaml` supports the `!!timestamp` tag (as `Datetime`).
+- Added `deser-serde` with the `Serde` adapter which serializes and
+  deserializes values with their serde implementations
+  (`#[deser(as = Serde)]`).  Compound values are buffered.  With the
+  `coroutine` feature the `SerdeCoroutine` adapter streams them instead by
+  running serde on a stackful coroutine (corosensei).
 - Added `deser-toml` which implements TOML 1.1 from scratch.  It passes the
   toml-test suite, supports date-times through the well-known `Datetime`
   type, writes maps as tables and sequences of maps as arrays of tables and

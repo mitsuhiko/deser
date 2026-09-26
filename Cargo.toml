@@ -7,6 +7,7 @@ members = [
   "deser-json",
   "deser-location",
   "deser-path",
+  "deser-serde",
   "deser-yaml",
   "deser-toml",
   "examples/adapters",
