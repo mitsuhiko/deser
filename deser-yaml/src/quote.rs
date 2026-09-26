@@ -305,22 +305,26 @@ fn write_folded_line(out: &mut String, line: &str, indent: usize, width: usize) 
 
 /// Writes spaces for an indentation.
 pub fn push_indent(out: &mut String, indent: usize) {
-    out.extend(std::iter::repeat_n(' ', indent));
+    const SPACES: &str = "                                                                ";
+    match SPACES.get(..indent) {
+        Some(spaces) => out.push_small(spaces),
+        None => out.extend(std::iter::repeat_n(' ', indent)),
+    }
 }
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-pub trait Float: zmij::Float + deser::__float::Float {}
+pub trait Float: zmij::Float + deser::__format::Float {}
 
 #[cfg(feature = "speedups")]
-impl<F: zmij::Float + deser::__float::Float> Float for F {}
+impl<F: zmij::Float + deser::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-pub trait Float: deser::__float::Float {}
+pub trait Float: deser::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
-impl<F: deser::__float::Float> Float for F {}
+impl<F: deser::__format::Float> Float for F {}
 
 /// Writes a float so that readers of YAML 1.1 and 1.2 read it as float.
 ///
@@ -340,7 +344,7 @@ pub fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
         #[cfg(feature = "speedups")]
         let formatted = buffer.format_finite(value);
         #[cfg(not(feature = "speedups"))]
-        let formatted = &deser::__float::format_finite(value);
+        let formatted = &deser::__format::format_finite(value);
         // the exponent always has a sign, the mantissa needs a `.`
         match formatted.split_once('e') {
             Some((mantissa, exponent)) if !mantissa.contains('.') => {
@@ -394,6 +398,18 @@ pub fn write_tag(out: &mut String, tag: &str) {
             }
         }
         out.push('>');
+    }
+}
+
+/// Appends short strings without calling into `memcpy`.
+pub trait PushSmall {
+    fn push_small(&mut self, s: &str);
+}
+
+impl PushSmall for String {
+    #[inline(always)]
+    fn push_small(&mut self, s: &str) {
+        deser::__format::push_str(self, s);
     }
 }
 

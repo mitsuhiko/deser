@@ -726,7 +726,7 @@ impl Output {
             }
             #[cfg(not(feature = "speedups"))]
             {
-                self.write_str(&deser::__float::format_finite(val))
+                self.write_str(&deser::__format::format_finite(val))
             }
         } else {
             self.write_str("null")
@@ -940,17 +940,17 @@ static ESCAPE: [u8; 256] = [
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-trait Float: zmij::Float + deser::__float::Float {}
+trait Float: zmij::Float + deser::__format::Float {}
 
 #[cfg(feature = "speedups")]
-impl<F: zmij::Float + deser::__float::Float> Float for F {}
+impl<F: zmij::Float + deser::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-trait Float: deser::__float::Float {}
+trait Float: deser::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
-impl<F: deser::__float::Float> Float for F {}
+impl<F: deser::__format::Float> Float for F {}
 
 /// Serializes a value to JSON.
 ///

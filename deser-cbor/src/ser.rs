@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
+use deser::__format::extend;
 use deser::State;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 
-use crate::buf::extend;
 use crate::float::f32_to_f16;
 use crate::simple::Simple;
 use crate::tag::Tags;

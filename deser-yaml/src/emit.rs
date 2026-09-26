@@ -11,13 +11,14 @@
 use std::borrow::Cow;
 use std::fmt::{self, Write};
 
+use deser::__format::IntBuffer;
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event, State};
 
 use crate::quote::{
-    BlockScalar, MAX_SIMPLE_KEY_LEN, is_plain_safe, is_single_quote_safe, push_indent,
+    BlockScalar, MAX_SIMPLE_KEY_LEN, PushSmall, is_plain_safe, is_single_quote_safe, push_indent,
     write_double_quoted, write_float, write_single_quoted, write_tag,
 };
 use crate::resolve::{Version, is_plain_str};
@@ -169,6 +170,13 @@ impl<'a> Scalar<'a> {
             Scalar::Short(text) => Some(text.as_str()),
             _ => None,
         }
+    }
+
+    /// Renders a short text.
+    fn short_text(value: &str) -> Scalar<'a> {
+        let mut text = ShortText::new();
+        text.write_str(value).expect("short text");
+        Scalar::Short(text)
     }
 
     /// Renders a number (or other short text) with its `Display`.
@@ -387,7 +395,8 @@ impl<'c> Emitter<'c> {
     /// Writes an empty collection.
     fn write_empty(&mut self, pending: Pending) -> Result<(), Error> {
         self.write_inline_start(pending.hints.tag.as_deref());
-        self.out.push_str(if pending.is_map { "{}" } else { "[]" });
+        self.out
+            .push_small(if pending.is_map { "{}" } else { "[]" });
         self.complete();
         Ok(())
     }
@@ -613,11 +622,11 @@ impl<'c> Emitter<'c> {
             }
             Scalar::Empty => {
                 self.write_inline_start(tag);
-                self.out.push_str("null");
+                self.out.push_small("null");
             }
             Scalar::Text(_) | Scalar::Short(_) => {
                 self.write_inline_start(tag);
-                self.out.push_str(scalar.text().unwrap());
+                self.out.push_small(scalar.text().unwrap());
             }
             Scalar::Block(block) => {
                 self.write_inline_start(tag);
@@ -656,11 +665,11 @@ impl<'c> Emitter<'c> {
         if text.len() > MAX_SIMPLE_KEY_LEN {
             self.begin_explicit_key();
             self.write_inline_start(tag);
-            self.out.push_str(text);
+            self.out.push_small(text);
         } else {
             self.begin_entry();
             self.write_inline_start(tag);
-            self.out.push_str(text);
+            self.out.push_small(text);
             self.out.push(':');
             self.space = true;
         }
@@ -688,8 +697,8 @@ impl<'c> Emitter<'c> {
                 Scalar::Text(if value { "true" } else { "false" }.into()),
                 None,
             ),
-            Atom::U64(value) => (Scalar::short(value), None),
-            Atom::I64(value) => (Scalar::short(value), None),
+            Atom::U64(value) => (Scalar::short_text(IntBuffer::new().format_u64(value)), None),
+            Atom::I64(value) => (Scalar::short_text(IntBuffer::new().format_i64(value)), None),
             Atom::F64(value) => {
                 let mut text = ShortText::new();
                 write_float(&mut text, value);

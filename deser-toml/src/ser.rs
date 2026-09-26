@@ -8,6 +8,7 @@ use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
+use deser::__format::IntBuffer;
 use deser::ext::{Datetime, Number, Timestamp};
 
 /// Configures how values are serialized to TOML.
@@ -193,7 +194,7 @@ impl ser::Serializer for Serializer {
             ));
         }
         let toml = self.config.serialize_driver(driver)?;
-        self.out.push_str(&toml);
+        self.out.push_small(&toml);
         self.written += 1;
         Ok(())
     }
@@ -552,21 +553,21 @@ impl<'d> Writer<'d> {
                 if !self.out.is_empty() {
                     self.out.push('\n');
                 }
-                self.out.push_str(open);
+                self.out.push_small(open);
                 for (idx, key) in section.path.iter().enumerate() {
                     if idx > 0 {
                         self.out.push('.');
                     }
                     write_key(&mut self.out, key);
                 }
-                self.out.push_str(close);
+                self.out.push_small(close);
                 self.out.push('\n');
             }
 
             for entry in &table.entries {
                 if !self.is_section(&entry.item.value) {
                     write_key(&mut self.out, &entry.key);
-                    self.out.push_str(" = ");
+                    self.out.push_small(" = ");
                     self.write_value(&entry.item.value)?;
                     self.out.push('\n');
                 }
@@ -620,15 +621,15 @@ impl<'d> Writer<'d> {
                     let table = &doc.tables[id];
                     match table.entries.get(*index) {
                         Some(entry) => {
-                            self.out.push_str(if *index == 0 { " " } else { ", " });
+                            self.out.push_small(if *index == 0 { " " } else { ", " });
                             *index += 1;
                             write_key(&mut self.out, &entry.key);
-                            self.out.push_str(" = ");
+                            self.out.push_small(" = ");
                             &entry.item.value
                         }
                         None => {
                             self.out
-                                .push_str(if table.entries.is_empty() { "}" } else { " }" });
+                                .push_small(if table.entries.is_empty() { "}" } else { " }" });
                             stack.pop();
                             continue;
                         }
@@ -637,7 +638,7 @@ impl<'d> Writer<'d> {
                 InlineFrame::Array(id, ref mut index) => match doc.arrays[id].items.get(*index) {
                     Some(item) => {
                         if *index > 0 {
-                            self.out.push_str(", ");
+                            self.out.push_small(", ");
                         }
                         *index += 1;
                         &item.value
@@ -659,12 +660,12 @@ impl<'d> Writer<'d> {
     fn write_value_start(&mut self, value: &Value, stack: &mut Vec<InlineFrame>) {
         match *value {
             Value::Str(ref value) => write_string(&mut self.out, value),
-            Value::Int(value) => write!(self.out, "{}", value).unwrap(),
-            Value::UInt(value) => write!(self.out, "{}", value).unwrap(),
+            Value::Int(value) => self.out.push_small(IntBuffer::new().format_i64(value)),
+            Value::UInt(value) => self.out.push_small(IntBuffer::new().format_u64(value)),
             Value::Float(value) => write_float(&mut self.out, value),
             Value::Float32(value) => write_float(&mut self.out, value),
-            Value::FloatText(ref value) => self.out.push_str(value),
-            Value::Bool(value) => self.out.push_str(if value { "true" } else { "false" }),
+            Value::FloatText(ref value) => self.out.push_small(value),
+            Value::Bool(value) => self.out.push_small(if value { "true" } else { "false" }),
             Value::Datetime(ref value) => write!(self.out, "{}", value).unwrap(),
             Value::Table(id) => {
                 self.out.push('{');
@@ -680,17 +681,17 @@ impl<'d> Writer<'d> {
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-trait Float: zmij::Float + deser::__float::Float {}
+trait Float: zmij::Float + deser::__format::Float {}
 
 #[cfg(feature = "speedups")]
-impl<F: zmij::Float + deser::__float::Float> Float for F {}
+impl<F: zmij::Float + deser::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-trait Float: deser::__float::Float {}
+trait Float: deser::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
-impl<F: deser::__float::Float> Float for F {}
+impl<F: deser::__format::Float> Float for F {}
 
 /// Writes a float with the shortest text that reads back as the same value
 /// of its type (`f32` or `f64`).  The text always has a fractional part or
@@ -698,14 +699,14 @@ impl<F: deser::__float::Float> Float for F {}
 fn write_float<F: Float>(out: &mut String, value: F) {
     let wide = value.to_f64();
     if wide.is_nan() {
-        out.push_str("nan");
+        out.push_small("nan");
     } else if wide.is_infinite() {
-        out.push_str(if wide > 0.0 { "inf" } else { "-inf" });
+        out.push_small(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
         #[cfg(feature = "speedups")]
-        out.push_str(zmij::Buffer::new().format_finite(value));
+        out.push_small(zmij::Buffer::new().format_finite(value));
         #[cfg(not(feature = "speedups"))]
-        out.push_str(&deser::__float::format_finite(value));
+        out.push_small(&deser::__format::format_finite(value));
     }
 }
 
@@ -718,7 +719,7 @@ fn is_bare_key(key: &str) -> bool {
 
 fn write_key(out: &mut String, key: &str) {
     if is_bare_key(key) {
-        out.push_str(key);
+        out.push_small(key);
     } else {
         write_basic_string(out, key);
     }
@@ -735,7 +736,7 @@ fn write_string(out: &mut String, value: &str) {
     {
         // literal strings do not need escaping for quotes and backslashes
         out.push('\'');
-        out.push_str(value);
+        out.push_small(value);
         out.push('\'');
     } else {
         write_basic_string(out, value);
@@ -747,11 +748,11 @@ fn write_string(out: &mut String, value: &str) {
 /// Only escapes that exist in TOML 1.0 are used.
 fn write_control_escape(out: &mut String, c: char) {
     match c {
-        '\x08' => out.push_str("\\b"),
-        '\t' => out.push_str("\\t"),
-        '\n' => out.push_str("\\n"),
-        '\x0c' => out.push_str("\\f"),
-        '\r' => out.push_str("\\r"),
+        '\x08' => out.push_small("\\b"),
+        '\t' => out.push_small("\\t"),
+        '\n' => out.push_small("\\n"),
+        '\x0c' => out.push_small("\\f"),
+        '\r' => out.push_small("\\r"),
         c => write!(out, "\\u{:04X}", c as u32).unwrap(),
     }
 }
@@ -764,8 +765,8 @@ fn write_basic_string(out: &mut String, value: &str) {
     out.push('"');
     for c in value.chars() {
         match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
+            '"' => out.push_small("\\\""),
+            '\\' => out.push_small("\\\\"),
             c if is_escaped_control(c) => write_control_escape(out, c),
             c => out.push(c),
         }
@@ -775,23 +776,35 @@ fn write_basic_string(out: &mut String, value: &str) {
 
 fn write_multiline_string(out: &mut String, value: &str) {
     // the newline after the opening delimiter is trimmed by parsers
-    out.push_str("\"\"\"\n");
+    out.push_small("\"\"\"\n");
     let mut quotes = 0;
     for c in value.chars() {
         match c {
             // three quotes in a row would end the string
             '"' if quotes == 2 => {
-                out.push_str("\\\"");
+                out.push_small("\\\"");
                 quotes = 0;
                 continue;
             }
             '"' => out.push('"'),
-            '\\' => out.push_str("\\\\"),
+            '\\' => out.push_small("\\\\"),
             '\n' | '\t' => out.push(c),
             c if is_escaped_control(c) => write_control_escape(out, c),
             c => out.push(c),
         }
         quotes = if c == '"' { quotes + 1 } else { 0 };
     }
-    out.push_str("\"\"\"");
+    out.push_small("\"\"\"");
+}
+
+/// Appends short strings without calling into `memcpy`.
+trait PushSmall {
+    fn push_small(&mut self, s: &str);
+}
+
+impl PushSmall for String {
+    #[inline(always)]
+    fn push_small(&mut self, s: &str) {
+        deser::__format::push_str(self, s);
+    }
 }
