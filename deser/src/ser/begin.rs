@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 use crate::State;
 use crate::error::Error;
-use crate::event::ContainerShape;
+use crate::event::{Atom, ContainerShape};
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
 use crate::ser::{Chunk, SerializeHandle};
@@ -124,4 +124,53 @@ pub trait IndexedSeq: Sync {
         index: usize,
         state: &mut State,
     ) -> Result<Option<SerializeHandle<'_>>, Error>;
+
+    /// Emits all elements if they are plain (see [`PlainSink`]).
+    ///
+    /// Returns `false` without emitting anything if they are not.
+    #[inline]
+    fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
+        let _ = sink;
+        Ok(false)
+    }
 }
+
+/// Receives the events of plain values.
+///
+/// Plain values are atoms and sequences of plain values which do not use
+/// the state (they do not read it, attach event data or add error
+/// context) and do not need [`finish`](crate::ser::Serialize::finish).
+/// The events they produce do not depend on anything but the value, which
+/// allows the driver to hand out their events directly instead of driving
+/// every value on its own.  See
+/// [`Serialize::__private_is_plain`](crate::ser::Serialize::__private_is_plain).
+pub trait PlainSink {
+    fn atom(&mut self, atom: Atom<'_>) -> Result<(), Error>;
+    fn seq_start(&mut self, shape: ContainerShape) -> Result<(), Error>;
+    fn seq_end(&mut self) -> Result<(), Error>;
+}
+
+/// Implements the plain methods of `Serialize` for a value that serializes
+/// as a single atom.
+macro_rules! plain_atom {
+    (|$this:ident| $atom:expr) => {
+        #[inline]
+        fn __private_is_plain() -> bool
+        where
+            Self: Sized,
+        {
+            true
+        }
+
+        #[inline]
+        fn __private_emit_plain(
+            &self,
+            sink: &mut dyn crate::ser::PlainSink,
+        ) -> Result<(), crate::Error> {
+            let $this = self;
+            sink.atom($atom)
+        }
+    };
+}
+
+pub(crate) use plain_atom;

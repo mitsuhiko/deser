@@ -280,3 +280,46 @@ fn test_describe_through_layers() {
         .unwrap();
     assert_eq!(count, 4);
 }
+
+/// `drive` emits sequences of plain values (atoms and sequences of atoms)
+/// on a fast path, the events and the state have to be the same as with
+/// `next`.
+#[test]
+fn test_drive_like_next() {
+    use std::collections::{BTreeMap, VecDeque};
+
+    fn check(value: &dyn Serialize) {
+        type Seen = (Event<'static>, bool, usize);
+        let mut expected: Vec<Seen> = Vec::new();
+        let mut driver = SerializeDriver::new(value);
+        while let Some((event, _, state)) = driver.next().unwrap() {
+            expected.push((event.to_static(), state.is_map_key(), state.depth()));
+        }
+        let mut events: Vec<Seen> = Vec::new();
+        SerializeDriver::new(value)
+            .drive(|event, state| {
+                events.push((event.to_static(), state.is_map_key(), state.depth()));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(events, expected);
+    }
+
+    check(&vec![1u32, 2, 3]);
+    check(&vec![(1u8, -2i64), (3, 4)]);
+    check(&vec![vec![0.5f32, 1.5], vec![]]);
+    check(&[Some("a".to_string()), None]);
+    check(&vec![vec![1u8, 2], vec![3]]);
+    check(&vec![[1u8, 2]]);
+    check(&(1u32, "x".to_string(), [true, false], ('c', ())));
+    check(&VecDeque::from(vec![(1u64, 2.5f64)]));
+    check(&vec![u128::MAX, 1]);
+    // not plain: maps and strings by reference
+    check(&vec![BTreeMap::from([(1u32, vec![1u32])])]);
+    check(&vec![(vec!["a"], 1u32)]);
+    // sequences as map keys
+    check(&BTreeMap::from([
+        ((1u32, 2u32), vec![3u32]),
+        ((4, 5), vec![]),
+    ]));
+}

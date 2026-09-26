@@ -4,7 +4,9 @@ use std::ptr::NonNull;
 
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
-use crate::ser::{Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, StructField};
+use crate::ser::{
+    Begin, BeginKind, Chunk, ContainerShape, IndexedSeq, IndexedStruct, PlainSink, StructField,
+};
 use crate::{Atom, Event, Serialize, State};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
@@ -215,6 +217,34 @@ impl<F: FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error>> Callb
 
 /// The value of the keys of structs, it describes nothing.
 static FIELD_KEY: () = ();
+
+/// Delivers the events of plain values (see [`PlainSink`]).
+struct PlainDelivery<'d, 'a, C> {
+    driver: &'d mut SerializeDriver<'a>,
+    f: &'d mut C,
+}
+
+impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
+    #[inline]
+    fn atom(&mut self, atom: Atom<'_>) -> Result<(), Error> {
+        self.driver.state.is_map_key = false;
+        self.driver.deliver(self.f, Event::Atom(atom), &FIELD_KEY)
+    }
+
+    #[inline]
+    fn seq_start(&mut self, shape: ContainerShape) -> Result<(), Error> {
+        self.driver.state.is_map_key = false;
+        self.driver.state.depth += 1;
+        self.driver
+            .deliver(self.f, Event::SeqStart(shape), &FIELD_KEY)
+    }
+
+    #[inline]
+    fn seq_end(&mut self) -> Result<(), Error> {
+        self.driver.state.depth -= 1;
+        self.driver.deliver(self.f, Event::SeqEnd, &FIELD_KEY)
+    }
+}
 
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
@@ -575,6 +605,10 @@ impl<'a> SerializeDriver<'a> {
             BeginKind::Struct(fields) => {
                 (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
             }
+            // callbacks that describe values need to see every value
+            BeginKind::Seq(seq) if !C::DESCRIBED => {
+                return self.drive_indexed_seq(value, seq, shape, f);
+            }
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
             BeginKind::Chunk(Chunk::Forward(forwarded)) => {
                 let forwarded = self.push_forward(value, needs_finish, forwarded);
@@ -588,6 +622,38 @@ impl<'a> SerializeDriver<'a> {
         });
         self.state.depth += 1;
         self.deliver(f, event, serializable)
+    }
+
+    /// Starts an indexed sequence.
+    ///
+    /// If its elements are plain, they are emitted right away and the
+    /// sequence is ended.  Otherwise it's placed on the stack.
+    #[inline(always)]
+    fn drive_indexed_seq<C: Callback>(
+        &mut self,
+        value: Held,
+        seq: &'static dyn IndexedSeq,
+        shape: ContainerShape,
+        f: &mut C,
+    ) -> Result<(), Error> {
+        // SAFETY: the value is held until the end of this function or by
+        // the frame.
+        let serializable = unsafe { value.get() };
+        self.state.depth += 1;
+        self.deliver(f, Event::SeqStart(shape), serializable)?;
+        let emitted = seq.emit_plain(&mut PlainDelivery { driver: self, f })?;
+        if emitted {
+            self.state.depth -= 1;
+            self.deliver(f, Event::SeqEnd, serializable)
+        } else {
+            self.stack.push(Frame {
+                emitter: Emitter::IndexedSeq(seq, 0),
+                serializable: value,
+                // indexed sequences do not need `finish`
+                needs_finish: false,
+            });
+            Ok(())
+        }
     }
 
     /// Ends the container on the top of the stack and emits the end event.

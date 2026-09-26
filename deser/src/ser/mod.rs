@@ -115,7 +115,9 @@ pub use self::serializer::Serializer;
 
 pub use driver::SerializeDriver;
 
-pub(crate) use self::begin::{Begin, BeginKind, IndexedSeq, IndexedStruct, StructField};
+pub(crate) use self::begin::{
+    Begin, BeginKind, IndexedSeq, IndexedStruct, PlainSink, StructField, plain_atom,
+};
 
 /// A handle to a [`Serialize`] type.
 ///
@@ -267,6 +269,33 @@ pub trait Serialize: Sync {
     fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
         let shape = self.container_shape();
         Ok(Begin::chunk(self.serialize(state)?, shape, true))
+    }
+
+    /// Returns `true` if the values of this type are plain.
+    ///
+    /// Plain values serialize as an atom or a sequence of plain values,
+    /// independent of the state and without `finish`.  The driver emits
+    /// sequences of plain values without driving every value on its own
+    /// (see [`PlainSink`]).  Types which are plain implement
+    /// [`__private_emit_plain`](Self::__private_emit_plain) which has to
+    /// produce the same events as serializing the value.
+    #[doc(hidden)]
+    #[inline]
+    fn __private_is_plain() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    /// Emits the events of a plain value.
+    ///
+    /// This is only invoked if [`__private_is_plain`](Self::__private_is_plain)
+    /// returns `true`.
+    #[doc(hidden)]
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        let _ = sink;
+        unreachable!("not a plain value")
     }
 
     /// Hidden internal trait method to allow specializations of bytes.

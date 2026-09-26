@@ -9,11 +9,13 @@ use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape, Order};
 use crate::ext::ExtValue;
 use crate::ser::{
-    Begin, Chunk, Describe, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle,
+    Begin, Chunk, Describe, IndexedSeq, MapEmitter, PlainSink, SeqEmitter, Serialize,
+    SerializeHandle, plain_atom,
 };
 
 impl Serialize for bool {
     begin_without_finish!();
+    plain_atom!(|v| Atom::Bool(*v));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Bool(*self)))
@@ -22,6 +24,7 @@ impl Serialize for bool {
 
 impl Serialize for () {
     begin_without_finish!();
+    plain_atom!(|_v| Atom::Null);
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Null))
@@ -34,6 +37,7 @@ impl Serialize for () {
 
 impl Serialize for u8 {
     begin_without_finish!();
+    plain_atom!(|v| Atom::U64(u64::from(*v)));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::U64(*self as u64)))
@@ -46,6 +50,7 @@ impl Serialize for u8 {
 
 impl Serialize for char {
     begin_without_finish!();
+    plain_atom!(|v| Atom::Char(*v));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Char(*self)))
@@ -56,6 +61,7 @@ macro_rules! serialize_int {
     ($ty:ty, $atom:ident) => {
         impl Serialize for $ty {
             begin_without_finish!();
+            plain_atom!(|v| Atom::$atom(*v as _));
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::$atom(*self as _)))
@@ -76,6 +82,7 @@ serialize_int!(usize, U64);
 
 impl Serialize for f32 {
     begin_without_finish!();
+    plain_atom!(|v| Atom::F32(*v));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::F32(*self)))
@@ -84,6 +91,7 @@ impl Serialize for f32 {
 
 impl Serialize for f64 {
     begin_without_finish!();
+    plain_atom!(|v| Atom::F64(*v));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::F64(*self)))
@@ -94,6 +102,7 @@ macro_rules! serialize_ext_int {
     ($ty:ty) => {
         impl Serialize for $ty {
             begin_without_finish!();
+            plain_atom!(|v| Atom::Ext(ExtValue::borrowed(v)));
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
@@ -107,6 +116,7 @@ serialize_ext_int!(i128);
 
 impl Serialize for String {
     begin_without_finish!();
+    plain_atom!(|v| Atom::Str(Cow::Borrowed(v.as_str())));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
@@ -185,6 +195,15 @@ macro_rules! serialize_slice {
                         Ok(Chunk::Seq(Box::new(SliceEmitter(self[..].iter()))))
                     }
                 }
+
+                #[inline]
+                fn __private_is_plain() -> bool {
+                    T::__private_is_plain()
+                }
+
+                fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+                    emit_plain_slice(&self[..], self.container_shape(), sink)
+                }
             }
 
             impl<$($gen)*> IndexedSeq for $ty {
@@ -195,6 +214,10 @@ macro_rules! serialize_slice {
                     _state: &mut State,
                 ) -> Result<Option<SerializeHandle<'_>>, Error> {
                     Ok(self[..].get(index).map(SerializeHandle::to))
+                }
+
+                fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
+                    emit_plain_elements(self[..].iter(), sink)
                 }
             }
         )*
@@ -218,6 +241,44 @@ impl<T: Serialize, const N: usize> IndexedSeq for [T; N] {
     ) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.get(index).map(SerializeHandle::to))
     }
+
+    fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
+        emit_plain_elements(self.iter(), sink)
+    }
+}
+
+/// Emits a slice of plain values, as bytes or as sequence.
+#[inline]
+fn emit_plain_slice<T: Serialize>(
+    slice: &[T],
+    shape: ContainerShape,
+    sink: &mut dyn PlainSink,
+) -> Result<(), Error> {
+    match T::__private_slice_as_bytes(slice) {
+        Some(bytes) => sink.atom(Atom::Bytes(Bytes::new(bytes))),
+        None => {
+            sink.seq_start(shape)?;
+            for value in slice {
+                value.__private_emit_plain(sink)?;
+            }
+            sink.seq_end()
+        }
+    }
+}
+
+/// Emits the elements of a sequence if they are plain.
+#[inline]
+fn emit_plain_elements<'a, T: Serialize + 'a>(
+    values: impl Iterator<Item = &'a T>,
+    sink: &mut dyn PlainSink,
+) -> Result<bool, Error> {
+    if !T::__private_is_plain() {
+        return Ok(false);
+    }
+    for value in values {
+        value.__private_emit_plain(sink)?;
+    }
+    Ok(true)
 }
 
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
@@ -264,6 +325,22 @@ impl<T: Serialize> Serialize for VecDeque<T> {
             None => Chunk::Seq(Box::new(IterEmitter(self.iter(), PhantomData))),
         })
     }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        match self.as_bytes() {
+            Some(bytes) => sink.atom(Atom::Bytes(Bytes::new(bytes))),
+            None => {
+                sink.seq_start(self.container_shape())?;
+                emit_plain_elements(self.iter(), sink)?;
+                sink.seq_end()
+            }
+        }
+    }
 }
 
 impl<T: Serialize> IndexedSeq for VecDeque<T> {
@@ -274,6 +351,10 @@ impl<T: Serialize> IndexedSeq for VecDeque<T> {
         _state: &mut State,
     ) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.get(index).map(SerializeHandle::to))
+    }
+
+    fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
+        emit_plain_elements(self.iter(), sink)
     }
 }
 
@@ -542,6 +623,19 @@ where
             )),
         }
     }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        match self {
+            Some(value) => value.__private_emit_plain(sink),
+            None => sink.atom(Atom::Null),
+        }
+    }
 }
 
 /// Counts as one, used to count repetitions.
@@ -566,6 +660,19 @@ macro_rules! serialize_for_tuple {
 
             fn describe(&self, d: &mut dyn Describe) {
                 d.tuple();
+            }
+
+            #[inline]
+            fn __private_is_plain() -> bool {
+                true $(&& $name::__private_is_plain())*
+            }
+
+            #[allow(non_snake_case)]
+            fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+                let ($($name,)*) = self;
+                sink.seq_start(self.container_shape())?;
+                $($name.__private_emit_plain(sink)?;)*
+                sink.seq_end()
             }
 
             #[allow(non_snake_case)]
@@ -614,6 +721,16 @@ macro_rules! serialize_for_tuple {
                 let _ = __counter;
                 Ok(None)
             }
+
+            #[allow(non_snake_case)]
+            fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
+                if !<Self as Serialize>::__private_is_plain() {
+                    return Ok(false);
+                }
+                let ($($name,)*) = self;
+                $($name.__private_emit_plain(sink)?;)*
+                Ok(true)
+            }
         }
 
         serialize_for_tuple_peel!($($name,)*);
@@ -649,6 +766,15 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
         } else {
             Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
         }
+    }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        emit_plain_slice(self, self.container_shape(), sink)
     }
 }
 
