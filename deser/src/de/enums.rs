@@ -282,7 +282,7 @@ fn tag_name(tag: &Recording) -> Option<Cow<'_, str>> {
         _ => return None,
     };
     match atom {
-        Atom::Str(name) => Some(Cow::Borrowed(name)),
+        Atom::Str(name) | Atom::Lexical(name) => Some(Cow::Borrowed(name)),
         Atom::Ext(ext) => match ext.fallback() {
             Atom::Str(name) => Some(Cow::Owned(name.into_owned())),
             _ => None,
@@ -364,7 +364,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let mut variant = match atom {
             Atom::Ext(_) => return self.unexpected_atom(atom, state),
-            Atom::Str(ref name) => {
+            Atom::Str(ref name) | Atom::Lexical(ref name) => {
                 if let Some(value) = (self.unit)(name) {
                     *self.out = Some(value);
                     self.done = true;
@@ -387,7 +387,9 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             Some(variant) => variant,
             None => {
                 return match atom {
-                    Atom::Str(ref name) => Err(unknown_variant(Some(name), self.name)),
+                    Atom::Str(ref name) | Atom::Lexical(ref name) => {
+                        Err(unknown_variant(Some(name), self.name))
+                    }
                     other => self.unexpected_atom(other, state),
                 };
             }

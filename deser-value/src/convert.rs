@@ -167,6 +167,7 @@ fn leaf_atom(kind: &Kind) -> Atom<'_> {
         Kind::F64(value) => Atom::F64(*value),
         Kind::Char(value) => Atom::Char(*value),
         Kind::Str(value) => Atom::Str(Cow::Borrowed(value)),
+        Kind::Lexical(value) => Atom::Lexical(Cow::Borrowed(value)),
         Kind::Bytes(value) => Atom::Bytes(value.as_borrowed()),
         Kind::Ext(value) => Atom::Ext(value.as_borrowed()),
         Kind::Seq(_) | Kind::Map(_) => unreachable!("containers are not atoms"),

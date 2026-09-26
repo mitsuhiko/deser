@@ -48,7 +48,7 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(value) => {
+            Atom::Str(value) | Atom::Lexical(value) => {
                 **self = Some(Cow::Owned(value.into_owned()));
                 Ok(())
             }
@@ -62,7 +62,7 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(value) => {
+            Atom::Str(value) | Atom::Lexical(value) => {
                 **self = Some(value);
                 Ok(())
             }

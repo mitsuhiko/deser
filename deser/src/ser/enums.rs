@@ -191,7 +191,7 @@ struct TaggedNewtypeEmitter<'a> {
 /// Returns the string of a map key.
 fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
     let rv = match key.serialize(state)? {
-        Chunk::Atom(Atom::Str(key)) => key.into_owned(),
+        Chunk::Atom(Atom::Str(key) | Atom::Lexical(key)) => key.into_owned(),
         _ => {
             return Err(Error::new(
                 ErrorKind::UnsupportedType,

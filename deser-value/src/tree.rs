@@ -50,6 +50,7 @@ fn clone_leaf(kind: &Kind) -> Kind {
         Kind::F64(value) => Kind::F64(*value),
         Kind::Char(value) => Kind::Char(*value),
         Kind::Str(value) => Kind::Str(value.clone()),
+        Kind::Lexical(value) => Kind::Lexical(value.clone()),
         Kind::Bytes(value) => Kind::Bytes(value.clone()),
         Kind::Ext(value) => Kind::Ext(value.clone()),
         Kind::Seq(seq) => {
@@ -204,7 +205,7 @@ fn eq_leaf(a: &Kind, b: &Kind) -> bool {
             f64::from(*a).to_bits() == b.to_bits()
         }
         (Kind::Char(a), Kind::Char(b)) => a == b,
-        (Kind::Str(a), Kind::Str(b)) => a == b,
+        (Kind::Str(a) | Kind::Lexical(a), Kind::Str(b) | Kind::Lexical(b)) => a == b,
         (Kind::Bytes(a), Kind::Bytes(b)) => a.data() == b.data(),
         (Kind::Ext(a), Kind::Ext(b)) => a == b,
         (Kind::Seq(a), Kind::Seq(b)) => a.is_empty() && b.is_empty(),
@@ -338,7 +339,7 @@ fn hash_fallback<H: Hasher>(atom: &Atom<'_>, state: &mut H) {
     match atom {
         Atom::Null => state.write_u8(TAG_NULL),
         Atom::Bool(value) => hash_bool(*value, state),
-        Atom::Str(value) => hash_str(value, state),
+        Atom::Str(value) | Atom::Lexical(value) => hash_str(value, state),
         Atom::Bytes(value) => {
             state.write_u8(TAG_BYTES);
             value.data().hash(state);
@@ -369,7 +370,7 @@ fn hash_node<'a, H: Hasher>(
         Kind::F64(value) => hash_f64(*value, state),
         Kind::F32(value) => hash_f64(f64::from(*value), state),
         Kind::Char(value) => hash_char(*value, state),
-        Kind::Str(value) => hash_str(value, state),
+        Kind::Str(value) | Kind::Lexical(value) => hash_str(value, state),
         Kind::Bytes(value) => {
             state.write_u8(TAG_BYTES);
             value.data().hash(state);
@@ -428,7 +429,7 @@ fn fmt_leaf(kind: &Kind, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Kind::F32(value) => write!(f, "{:?}", value),
         Kind::F64(value) => write!(f, "{:?}", value),
         Kind::Char(value) => write!(f, "{:?}", value),
-        Kind::Str(value) => write!(f, "{:?}", value),
+        Kind::Str(value) | Kind::Lexical(value) => write!(f, "{:?}", value),
         Kind::Bytes(value) => write!(f, "b\"{}\"", value.data().escape_ascii()),
         Kind::Ext(value) => write!(f, "{:?}", value),
         Kind::Seq(_) => f.write_str("[]"),

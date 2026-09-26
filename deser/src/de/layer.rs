@@ -286,7 +286,7 @@ impl Layer for Limits {
             Event::Atom(atom) => {
                 if let Some(max) = self.max_len {
                     let len = match atom {
-                        Atom::Str(s) => s.len(),
+                        Atom::Str(s) | Atom::Lexical(s) => s.len(),
                         Atom::Bytes(b) => b.len(),
                         _ => 0,
                     };

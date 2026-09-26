@@ -191,10 +191,10 @@ impl Recording {
         match self.events.as_slice() {
             [
                 RecordedEvent {
-                    event: Event::Atom(Atom::Str(value)),
+                    event: Event::Atom(atom),
                     ..
                 },
-            ] => Some(value),
+            ] => atom.as_str(),
             _ => None,
         }
     }

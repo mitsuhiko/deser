@@ -168,3 +168,59 @@ fn test_event_data_is_attached() {
     drop(driver);
     assert_eq!(probe.0, Some(Marker(42)));
 }
+
+#[test]
+fn test_lexical() {
+    use deser_value::{Kind, Map};
+
+    let mut map = Map::new();
+    map.insert(Kind::Lexical("port".into()), Kind::Lexical("8080".into()));
+    map.insert(Kind::Lexical("debug".into()), Kind::Lexical("true".into()));
+    let value = Value::from(Kind::Map(map));
+
+    // lexical values compare and hash like strings and are found with them
+    assert_eq!(value["port"], "8080");
+    assert!(value["port"].is_str() && value["port"].is_lexical());
+    assert_eq!(value["port"], Value::from("8080"));
+
+    // they remain lexical and parse into other types
+    #[derive(Debug, deser::Deserialize, PartialEq)]
+    struct Config {
+        port: u16,
+        debug: bool,
+    }
+    assert_eq!(
+        from_value::<Config>(&value).unwrap(),
+        Config {
+            port: 8080,
+            debug: true
+        }
+    );
+    assert_eq!(
+        from_value::<Config>(&value.clone()).unwrap(),
+        Config {
+            port: 8080,
+            debug: true
+        }
+    );
+    assert!(to_value(&value).unwrap()["port"].is_lexical());
+
+    // the formats write them as strings, YAML quotes what it would read
+    // as another type
+    assert_eq!(
+        deser_json::to_string(&value).unwrap(),
+        r#"{"port":"8080","debug":"true"}"#
+    );
+    assert_eq!(
+        deser_yaml::to_string(&value).unwrap(),
+        "port: '8080'\ndebug: 'true'\n"
+    );
+    assert_eq!(
+        deser_toml::to_string(&value).unwrap(),
+        "port = \"8080\"\ndebug = \"true\"\n"
+    );
+    let cbor = deser_cbor::to_vec(&value).unwrap();
+    let back: Value = deser_cbor::from_slice(&cbor).unwrap();
+    assert_eq!(back, value);
+    assert!(!back["port"].is_lexical());
+}

@@ -226,6 +226,7 @@ fn atom_value(atom: Atom, state: &State) -> Result<Value, Error> {
         Atom::Null => Kind::Null,
         Atom::Bool(value) => Kind::Bool(value),
         Atom::Str(value) => Kind::Str(value.into_owned()),
+        Atom::Lexical(value) => Kind::Lexical(value.into_owned()),
         Atom::Bytes(value) => Kind::Bytes(owned_bytes(value)),
         Atom::Char(value) => Kind::Char(value),
         Atom::U64(value) => Kind::U64(value),

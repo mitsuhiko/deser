@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same};
+use crate::de::lexical;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::{Error, ErrorKind};
@@ -65,6 +66,10 @@ impl<'de> Sink<'de> for SlotWrapper<()> {
                 **self = Some(());
                 Ok(())
             }
+            Atom::Lexical(ref value) if value.is_empty() => {
+                **self = Some(());
+                Ok(())
+            }
             other => self.unexpected_atom(other, state),
         }
     }
@@ -82,6 +87,10 @@ impl<'de> Sink<'de> for SlotWrapper<bool> {
                 **self = Some(value);
                 Ok(())
             }
+            Atom::Lexical(ref value) => {
+                **self = Some(lexical::parse_bool(value)?);
+                Ok(())
+            }
             other => self.unexpected_atom(other, state),
         }
     }
@@ -95,7 +104,7 @@ impl<'de> Sink<'de> for SlotWrapper<String> {
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(value) => {
+            Atom::Str(value) | Atom::Lexical(value) => {
                 **self = Some(match value {
                     Cow::Borrowed(value) => copy_str(value),
                     Cow::Owned(value) => value,
@@ -169,6 +178,10 @@ macro_rules! int_sink {
                     Atom::Ext(ref ext) if ext.is::<i128>() => {
                         <$ty>::try_from(*ext.downcast_ref::<i128>().unwrap()).ok()
                     }
+                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
+                        Ok(value) => Some(value),
+                        Err(err) => return Err(lexical::int_error(value, err, stringify!($ty))),
+                    },
                     Atom::Str(ref value) if state.is_map_key() => match value.parse::<$ty>() {
                         Ok(value) => Some(value),
                         Err(_) => return Err(atom.unexpected_error(&self.expecting())),
@@ -295,6 +308,13 @@ macro_rules! float_sink {
                         **self = Some(*ext.downcast_ref::<i128>().unwrap() as $ty);
                         Ok(())
                     }
+                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
+                        Ok(value) => {
+                            **self = Some(value);
+                            Ok(())
+                        }
+                        Err(_) => Err(lexical::invalid(value, stringify!($ty))),
+                    },
                     other => {
                         // text formats emit floats as numbers, these are
                         // handled out of line to keep the common case small.
@@ -1426,14 +1446,14 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(_) => Err(expected_borrowed("string")),
+            Atom::Str(_) | Atom::Lexical(_) => Err(expected_borrowed("string")),
             other => self.unexpected_atom(other, state),
         }
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(Cow::Borrowed(value)) => {
+            Atom::Str(Cow::Borrowed(value)) | Atom::Lexical(Cow::Borrowed(value)) => {
                 **self = Some(value);
                 Ok(())
             }

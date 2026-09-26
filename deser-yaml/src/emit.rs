@@ -704,7 +704,11 @@ impl<'c> Emitter<'c> {
                 self.render_owned_str(value.to_string(), context, style),
                 None,
             ),
-            Atom::Str(ref value) => (self.render_str(value, context, style), None),
+            // lexical atoms are strings, they are quoted where YAML would
+            // read them as another type
+            Atom::Str(ref value) | Atom::Lexical(ref value) => {
+                (self.render_str(value, context, style), None)
+            }
             Atom::Bytes(ref bytes) => {
                 let format = if self.config.binary {
                     BytesFormat::BASE64
@@ -775,7 +779,7 @@ impl<'c> Emitter<'c> {
             )),
             // strings of fallbacks are always on a single line as they do
             // not outlive this call
-            Atom::Str(value) => Ok((
+            Atom::Str(value) | Atom::Lexical(value) => Ok((
                 self.render_owned_str(value.into_owned(), context, style),
                 None,
             )),

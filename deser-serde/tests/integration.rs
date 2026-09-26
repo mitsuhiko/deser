@@ -245,6 +245,45 @@ macro_rules! adapter_tests {
             }
 
             #[test]
+            fn test_lexical() {
+                // serde types parse lexical atoms with the type they ask for
+                let lexical = |s: &'static str| deser::Event::Atom(deser::Atom::Lexical(s.into()));
+                let mut out = None::<As<Point, A>>;
+                {
+                    let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                    for event in [
+                        deser::Event::map_start(),
+                        lexical("x"),
+                        lexical("1"),
+                        lexical("y"),
+                        lexical("-2"),
+                        deser::Event::MapEnd,
+                    ] {
+                        driver.emit(event).unwrap();
+                    }
+                }
+                assert_eq!(*out.unwrap(), Point { x: 1, y: -2 });
+
+                let mut out = None::<As<(bool, String, IpAddr), A>>;
+                {
+                    let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                    for event in [
+                        deser::Event::seq_start(),
+                        lexical("on"),
+                        lexical("42"),
+                        lexical("::1"),
+                        deser::Event::SeqEnd,
+                    ] {
+                        driver.emit(event).unwrap();
+                    }
+                }
+                let (flag, s, addr) = out.unwrap().into_inner();
+                assert!(flag);
+                assert_eq!(s, "42");
+                assert_eq!(addr, "::1".parse::<IpAddr>().unwrap());
+            }
+
+            #[test]
             fn test_keys() {
                 let value: As<BTreeMap<u32, BTreeMap<bool, String>>, A> =
                     deser_json::from_str(r#"{"1": {"true": "a"}, "2": {}}"#).unwrap();

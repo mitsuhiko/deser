@@ -564,7 +564,7 @@ impl Output {
         let atom = ManuallyDrop::new(atom);
         match *atom {
             // fast path for the common case of string keys
-            Atom::Str(Cow::Borrowed(val)) => {
+            Atom::Str(Cow::Borrowed(val)) | Atom::Lexical(Cow::Borrowed(val)) => {
                 self.write_key(val, first);
                 Ok(())
             }
@@ -585,7 +585,7 @@ impl Output {
     /// Writes an atom as map key without separator and colon.
     pub(crate) fn write_key_text(&mut self, atom: Atom) -> Result<(), Error> {
         match atom {
-            Atom::Str(ref val) => self.write_escaped_str(val),
+            Atom::Str(ref val) | Atom::Lexical(ref val) => self.write_escaped_str(val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => {
                 self.write_char('"');
@@ -633,7 +633,7 @@ impl Output {
     #[inline(never)]
     fn write_other_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match atom {
-            Atom::Str(ref val) => self.write_escaped_str(val),
+            Atom::Str(ref val) | Atom::Lexical(ref val) => self.write_escaped_str(val),
             Atom::Ext(ref ext) => self.write_ext_value(ext)?,
             Atom::Bytes(ref val) => {
                 self.write_bytes(val, val.fallback.copied().unwrap_or(self.bytes))
@@ -738,7 +738,7 @@ impl Output {
             return Ok(());
         }
         match ext.fallback() {
-            Atom::Str(val) => self.write_escaped_str(&val),
+            Atom::Str(val) | Atom::Lexical(val) => self.write_escaped_str(&val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => {
                 self.write_char('"');
@@ -789,7 +789,7 @@ impl Output {
         match ext.fallback() {
             Atom::Null => self.write_str("null"),
             Atom::Bool(val) => self.write_str(if val { "true" } else { "false" }),
-            Atom::Str(val) => self.write_escaped_str(&val),
+            Atom::Str(val) | Atom::Lexical(val) => self.write_escaped_str(&val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),

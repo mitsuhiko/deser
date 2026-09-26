@@ -11,6 +11,20 @@ All notable changes to deser are documented here.
   `1e13` for `f32`) are written without exponent.  The output does not
   depend on the feature.
 - `deser-yaml` no longer allocates for every scalar it writes.
+- Added `Atom::Lexical` for text whose type the format cannot express
+  (like the values of query strings).  The sink decides what it means:
+  integers and floats parse it, `bool` accepts `true`, `yes`, `on`, `1`,
+  `false`, `no`, `off` and `0` (ignoring ASCII case), `()` the empty
+  string, and all types that accept strings take it as string.  The
+  default `Sink::unexpected_atom` passes it on as `Atom::Str`, so sinks
+  that only handle strings keep working, sinks that borrow strings have
+  to handle it themselves.  Serializers write it as string.  Lexical atoms
+  are retained when values are buffered, so they also parse in flattened
+  structs and internally tagged and untagged enums (which is where serde
+  loses this information).  `Atom::as_str` returns the text of both.
+  `deser-value` has `Kind::Lexical` (which compares and hashes like the
+  same `Str`) and `deser-serde` parses lexical atoms with the type that
+  serde asks for.
 - Added `Atom::F32` for single precision floats.  `f32` values are no
   longer widened to `f64` when serialized, so the text formats write them
   with the shortest text for their precision (`0.1f32` as `0.1` instead of

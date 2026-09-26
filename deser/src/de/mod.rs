@@ -224,6 +224,7 @@ pub(crate) mod enums;
 mod ignore;
 pub(crate) mod impls;
 mod layer;
+pub(crate) mod lexical;
 pub(crate) mod mapped;
 mod owned;
 mod recording;
@@ -732,11 +733,15 @@ pub trait Sink<'de>: Send {
     /// with [`fallback`](crate::ext::ExtValue::fallback) and passed to
     /// [`atom`](Self::atom) again.  [`Atom::F32`] is widened into an
     /// [`Atom::F64`] and passed on the same way, so sinks that accept floats
-    /// only need to handle `F64`.  For all other atoms an error is returned.
+    /// only need to handle `F64`.  [`Atom::Lexical`] is passed on as
+    /// [`Atom::Str`], so sinks that accept strings accept lexical atoms
+    /// too.  For all other atoms an error is returned.
     fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        if let Atom::F32(value) = atom {
-            return self.atom(Atom::F64(f64::from(value)), state);
-        }
+        let atom = match atom {
+            Atom::F32(value) => return self.atom(Atom::F64(f64::from(value)), state),
+            Atom::Lexical(value) => return self.atom(Atom::Str(value), state),
+            atom => atom,
+        };
         if let Atom::Ext(ref ext) = atom {
             let fallback = ext.fallback();
             debug_assert!(

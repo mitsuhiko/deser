@@ -164,7 +164,7 @@ impl Node {
 
     fn as_str(&self) -> Option<&str> {
         match self.kind {
-            NodeKind::Atom(Atom::Str(ref s)) => Some(s),
+            NodeKind::Atom(ref atom) => atom.as_str(),
             _ => None,
         }
     }
@@ -298,7 +298,7 @@ fn render_atom(atom: &Atom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match *atom {
         Atom::Null => f.write_str("()"),
         Atom::Bool(v) => fmt::Debug::fmt(&v, f),
-        Atom::Str(ref v) => fmt::Debug::fmt(v, f),
+        Atom::Str(ref v) | Atom::Lexical(ref v) => fmt::Debug::fmt(v, f),
         Atom::Bytes(ref v) => fmt::Debug::fmt(&v.data[..], f),
         Atom::Char(v) => fmt::Debug::fmt(&v, f),
         Atom::U64(v) => fmt::Debug::fmt(&v, f),

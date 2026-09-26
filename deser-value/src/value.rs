@@ -95,6 +95,15 @@ pub enum Kind {
     F64(f64),
     Char(char),
     Str(String),
+    /// The lexical form of a value whose type the format cannot express.
+    ///
+    /// This is created from [`Atom::Lexical`], for instance for the keys of
+    /// JSON objects.  It's serialized as lexical atom again, so types that
+    /// parse lexical atoms (like numbers) can be deserialized from it.
+    /// Otherwise it behaves like a string: it compares equal to and hashes
+    /// like the same [`Str`](Kind::Str) and the accessors for strings
+    /// return it.
+    Lexical(String),
     Bytes(Bytes<'static>),
     /// A value extending the data model.
     Ext(ExtValue<'static>),
@@ -416,7 +425,7 @@ impl Kind {
             Kind::I64(_) => "signed integer",
             Kind::F32(_) | Kind::F64(_) => "float",
             Kind::Char(_) => "char",
-            Kind::Str(_) => "string",
+            Kind::Str(_) | Kind::Lexical(_) => "string",
             Kind::Bytes(_) => "bytes",
             Kind::Ext(ext) => ext.name(),
             Kind::Seq(_) => "sequence",
@@ -521,7 +530,7 @@ impl Kind {
     /// that borrows from the value.
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Kind::Str(value) => Some(value),
+            Kind::Str(value) | Kind::Lexical(value) => Some(value),
             Kind::Ext(ext) => match ext.fallback() {
                 Atom::Str(Cow::Borrowed(value)) => Some(value),
                 _ => None,
@@ -603,8 +612,15 @@ impl Kind {
     }
 
     /// Returns `true` if this is a string.
+    ///
+    /// This is also `true` for [lexical](Kind::Lexical) values.
     pub fn is_str(&self) -> bool {
-        matches!(self, Kind::Str(_))
+        matches!(self, Kind::Str(_) | Kind::Lexical(_))
+    }
+
+    /// Returns `true` if this is a [lexical](Kind::Lexical) value.
+    pub fn is_lexical(&self) -> bool {
+        matches!(self, Kind::Lexical(_))
     }
 
     /// Returns `true` if this is a sequence.
@@ -877,7 +893,7 @@ pub(crate) fn owned_bytes(bytes: Bytes<'_>) -> Bytes<'static> {
 
 impl PartialEq<str> for Value {
     fn eq(&self, other: &str) -> bool {
-        matches!(self.kind, Kind::Str(ref value) if value == other)
+        matches!(self.kind, Kind::Str(ref value) | Kind::Lexical(ref value) if value == other)
     }
 }
 

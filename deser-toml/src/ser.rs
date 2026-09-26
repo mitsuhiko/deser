@@ -372,7 +372,7 @@ fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
     Ok(Converted::Value(match atom {
         Atom::Null => return Ok(Converted::Null),
         Atom::Bool(value) => Value::Bool(value),
-        Atom::Str(value) => Value::Str(Cow::Owned(value.into_owned())),
+        Atom::Str(value) | Atom::Lexical(value) => Value::Str(Cow::Owned(value.into_owned())),
         Atom::Char(value) => Value::Str(Cow::Owned(value.to_string())),
         Atom::U64(value) => match i64::try_from(value) {
             Ok(value) => Value::Int(value),
@@ -449,7 +449,7 @@ fn encode_str(value: &[u8], fallback: Option<&BytesFormat>, bytes: BytesFormat) 
 
 fn key_to_string(atom: Atom, bytes: BytesFormat) -> Result<String, Error> {
     Ok(match atom {
-        Atom::Str(value) => value.into_owned(),
+        Atom::Str(value) | Atom::Lexical(value) => value.into_owned(),
         Atom::Char(value) => value.to_string(),
         Atom::U64(value) => value.to_string(),
         Atom::I64(value) => value.to_string(),

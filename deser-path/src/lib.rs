@@ -141,7 +141,9 @@ impl Path {
     ///
     /// This reuses the allocation of the previous key if possible.
     fn set_last_key(&mut self, atom: &Atom) {
-        if let (Some(PathSegment::Key(buf)), Atom::Str(key)) = (self.segments.last_mut(), atom) {
+        if let (Some(PathSegment::Key(buf)), Atom::Str(key) | Atom::Lexical(key)) =
+            (self.segments.last_mut(), atom)
+        {
             buf.clear();
             buf.push_str(key);
             return;
@@ -157,7 +159,7 @@ impl Path {
     /// Returns the segment for a key.
     fn key_segment(&mut self, atom: &Atom) -> PathSegment {
         match *atom {
-            Atom::Str(ref key) => {
+            Atom::Str(ref key) | Atom::Lexical(ref key) => {
                 let mut buf = self.spare_keys.pop().unwrap_or_default();
                 buf.clear();
                 buf.push_str(key);

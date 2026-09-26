@@ -365,7 +365,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
                     match __atom {
-                        __deser::Atom::Str(__other) => {
+                        __deser::Atom::Str(__other) | __deser::Atom::Lexical(__other) => {
                             self.key = match &__other as &__deser::__derive::str {
                                 #(
                                     #key_matcher
@@ -680,7 +680,7 @@ pub fn derive_enum(
                     __state: &mut __deser::State
                 ) -> __deser::__derive::Result<()> {
                     let s = match __atom {
-                        __deser::Atom::Str(ref s) => &s as &__deser::__derive::str,
+                        __deser::Atom::Str(ref s) | __deser::Atom::Lexical(ref s) => &s as &__deser::__derive::str,
                         #non_str_fallback
                     };
                     let value = match s {

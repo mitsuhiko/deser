@@ -307,7 +307,7 @@ impl Writer {
     #[inline(never)]
     fn write_other_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match atom {
-            Atom::Str(ref val) => self.write_str(val),
+            Atom::Str(ref val) | Atom::Lexical(ref val) => self.write_str(val),
             Atom::Bytes(ref val) => self.write_bytes(val),
             Atom::Ext(ref ext) => return self.write_ext(ext),
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),

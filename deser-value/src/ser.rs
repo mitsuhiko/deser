@@ -37,6 +37,7 @@ impl Serialize for Kind {
             Kind::F64(value) => Chunk::Atom(Atom::F64(*value)),
             Kind::Char(value) => Chunk::Atom(Atom::Char(*value)),
             Kind::Str(value) => Chunk::Atom(Atom::Str(Cow::Borrowed(value))),
+            Kind::Lexical(value) => Chunk::Atom(Atom::Lexical(Cow::Borrowed(value))),
             Kind::Bytes(value) => Chunk::Atom(Atom::Bytes(value.as_borrowed())),
             Kind::Ext(value) => Chunk::Atom(Atom::Ext(value.as_borrowed())),
             Kind::Seq(seq) => return seq.serialize(state),

@@ -28,12 +28,41 @@ use crate::ext::ExtValue;
 /// shortest text differs from the one of the same value as `f64` (`0.1f32`
 /// is `0.1`, as `f64` it's `0.10000000149011612`).  Consumers that do not
 /// care about the precision can [widen](Atom::widen_float) it.
+///
+/// Text whose type the format cannot express is [`Lexical`](Atom::Lexical).
+/// It's a string for everybody who does not care, see there for more
+/// information.
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Atom<'a> {
     Null,
     Bool(bool),
     Str(Cow<'a, str>),
+    /// The lexical form of a value whose type the format cannot express.
+    ///
+    /// Some formats cannot say what type a piece of text is: everything in
+    /// a query string is text, and so are the keys of JSON objects.  Such
+    /// text is emitted as a lexical atom and the sink it's delivered to
+    /// decides what it means: numbers and booleans parse it, strings take
+    /// it as it is.  Text that is known to be a string (like a string value
+    /// in JSON, where the number `42` could have been written instead of
+    /// `"42"`) is [`Str`](Atom::Str).
+    ///
+    /// Sinks receive it as [`Str`](Atom::Str) unless they handle it (see
+    /// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).  Sinks
+    /// that borrow strings have to handle it themselves, the fallback does
+    /// not borrow for the lifetime of the input.  Serializers write it as
+    /// string.
+    ///
+    /// The following types parse lexical atoms:
+    ///
+    /// * integers and floats with [`str::parse`]
+    /// * `bool` from `true`, `yes`, `on` and `1` and `false`, `no`, `off`
+    ///   and `0` (ignoring ASCII case)
+    /// * `()` from the empty string
+    ///
+    /// All other types that accept strings accept lexical atoms as string.
+    Lexical(Cow<'a, str>),
     Bytes(Bytes<'a>),
     Char(char),
     U64(u64),
@@ -62,6 +91,7 @@ impl<'a> Atom<'a> {
             Atom::Null => Atom::Null,
             Atom::Bool(v) => Atom::Bool(v),
             Atom::Str(ref v) => Atom::Str(Cow::Owned(v.to_string())),
+            Atom::Lexical(ref v) => Atom::Lexical(Cow::Owned(v.to_string())),
             Atom::Bytes(ref v) => Atom::Bytes(v.to_static()),
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
@@ -80,6 +110,7 @@ impl<'a> Atom<'a> {
             Atom::Null => Atom::Null,
             Atom::Bool(v) => Atom::Bool(v),
             Atom::Str(ref v) => Atom::Str(Cow::Borrowed(v)),
+            Atom::Lexical(ref v) => Atom::Lexical(Cow::Borrowed(v)),
             Atom::Bytes(ref v) => Atom::Bytes(v.as_borrowed()),
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
@@ -109,12 +140,30 @@ impl<'a> Atom<'a> {
         }
     }
 
+    /// Returns the text of a [`Str`](Atom::Str) or [`Lexical`](Atom::Lexical)
+    /// atom.
+    ///
+    /// ```
+    /// use deser::Atom;
+    ///
+    /// assert_eq!(Atom::Lexical("42".into()).as_str(), Some("42"));
+    /// assert_eq!(Atom::Str("42".into()).as_str(), Some("42"));
+    /// assert_eq!(Atom::U64(42).as_str(), None);
+    /// ```
+    #[inline]
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Atom::Str(v) | Atom::Lexical(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// Returns the human readable name of the atom.
     pub fn name(&self) -> &str {
         match *self {
             Atom::Null => "null",
             Atom::Bool(_) => "bool",
-            Atom::Str(_) => "string",
+            Atom::Str(_) | Atom::Lexical(_) => "string",
             Atom::Bytes(_) => "bytes",
             Atom::Char(_) => "char",
             Atom::U64(_) => "unsigned integer",

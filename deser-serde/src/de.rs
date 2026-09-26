@@ -66,8 +66,10 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
     match atom {
         Atom::Null => visitor.visit_unit(),
         Atom::Bool(v) => visitor.visit_bool(v),
-        Atom::Str(Cow::Borrowed(v)) => visitor.visit_borrowed_str(v),
-        Atom::Str(Cow::Owned(v)) => visitor.visit_string(v),
+        Atom::Str(Cow::Borrowed(v)) | Atom::Lexical(Cow::Borrowed(v)) => {
+            visitor.visit_borrowed_str(v)
+        }
+        Atom::Str(Cow::Owned(v)) | Atom::Lexical(Cow::Owned(v)) => visitor.visit_string(v),
         Atom::Bytes(v) => match v.into_data() {
             Cow::Borrowed(v) => visitor.visit_borrowed_bytes(v),
             Cow::Owned(v) => visitor.visit_byte_buf(v),
@@ -109,11 +111,25 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
     }
 }
 
+/// Parses a lexical atom into a type with the rules of deser.
+fn parse_lexical<T: deser::de::DeserializeOwned>(value: &str) -> Result<T, Error> {
+    let mut out = None;
+    let mut state = deser::State::new();
+    {
+        let mut sink = T::deserialize_into(&mut out);
+        sink.atom(Atom::Lexical(Cow::Borrowed(value)), &mut state)?;
+        sink.finish(&mut state)?;
+    }
+    out.ok_or_else(|| Error::new(ErrorKind::Unexpected, "lexical value was not parsed"))
+}
+
 /// Deserializes a value from a [`Source`].
 ///
-/// Map keys are deserialized with `key` set.  In that case numbers and
-/// booleans are also parsed from strings as formats like JSON only have
-/// string keys (this matches what deser does).
+/// Numbers and booleans are parsed from lexical atoms (see
+/// [`Atom::Lexical`]) with the rules of deser.  Map keys are deserialized
+/// with `key` set.  In that case numbers and booleans are also parsed from
+/// strings as formats like JSON only have string keys (this matches what
+/// deser does).
 pub(crate) struct ValueDe<'s, S> {
     src: &'s mut S,
     key: bool,
@@ -129,15 +145,14 @@ macro_rules! parse_key {
     ($($method:ident => $ty:ty, $visit:ident;)*) => {
         $(
             fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-                if self.key {
-                    let parsed = match self.src.peek()? {
-                        Event::Atom(Atom::Str(s)) => s.parse::<$ty>().ok(),
-                        _ => None,
-                    };
-                    if let Some(value) = parsed {
-                        self.src.next()?;
-                        return visitor.$visit(value);
-                    }
+                let parsed = match self.src.peek()? {
+                    Event::Atom(Atom::Lexical(s)) => Some(parse_lexical::<$ty>(s)?),
+                    Event::Atom(Atom::Str(s)) if self.key => s.parse::<$ty>().ok(),
+                    _ => None,
+                };
+                if let Some(value) = parsed {
+                    self.src.next()?;
+                    return visitor.$visit(value);
                 }
                 self.deserialize_any(visitor)
             }
