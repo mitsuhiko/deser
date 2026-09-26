@@ -138,6 +138,7 @@
 mod buf;
 mod de;
 mod io;
+mod parser;
 mod pretty;
 mod scan;
 mod ser;
