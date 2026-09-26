@@ -4,16 +4,19 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
-- Added the `deser::de::Decoder` and `deser::ser::Encoder` traits for data
-  formats which deserialize from and serialize into bytes.  The
+- Added the `io` feature (enabled by default in `deser` and the formats)
+  for everything related to streams (`deser::io`).  Without it the formats
+  have deserializers and serializers for in-memory data only.
+- Added the `deser::io::Decoder` and `deser::io::Encoder` traits for data
+  formats which deserialize from and serialize into streams of bytes.  The
   configurations of the formats implement them, which makes them usable in
   generic code: `Decoder::from_slice` and `Decoder::from_reader`,
   `Encoder::to_vec` and `Encoder::to_writer`.
-- Added `deser::io::Streamed<T>`, a sequence whose elements are handed out
-  while a value is read with `Reader::read_next` (as `Next::Element`,
-  followed by the value as `Next::Done`) instead of being collected.
-  Otherwise it behaves like a `Vec<T>`.  `ElementReader` implements this
-  without IO, `deser-tokio` has `Reader::read_next` and
+- Added `deser::Streamed<T>`, a sequence whose elements are handed out
+  while a value is read with `deser::io::Reader::read_next` (as
+  `Next::Element`, followed by the value as `Next::Done`) instead of being
+  collected.  Otherwise it behaves like a `Vec<T>`.  `ElementReader`
+  implements this without IO, `deser-tokio` has `Reader::read_next` and
   `Reader::into_element_stream`.
 - Added `OwnedDriver`, a `DeserializeDriver` which owns the value it
   deserializes.  It can be held across calls, for instance to deserialize

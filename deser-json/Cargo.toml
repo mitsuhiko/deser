@@ -13,6 +13,9 @@ documentation = "https://docs.rs/deser-json"
 autotests = false
 
 [features]
+default = ["io"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["deser/io"]
 speedups = ["itoa", "ryu", "simdutf8"]
 
 [dependencies]

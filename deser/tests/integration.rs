@@ -12,6 +12,7 @@ mod test_derive_unscoped;
 mod test_enums;
 mod test_event_data;
 mod test_ext;
+#[cfg(feature = "io")]
 mod test_io;
 mod test_layers;
 mod test_other;

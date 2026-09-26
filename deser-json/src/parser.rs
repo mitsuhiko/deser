@@ -84,12 +84,14 @@ impl<'i> Out<'i> for Borrowing<'_, '_, 'i> {
     }
 }
 
+#[cfg(any(test, feature = "io"))]
 /// Passes strings of the input on as data that is only valid for the call.
 ///
 /// This is used when the input does not outlive the deserialization (for
 /// instance a buffer that is refilled).
 pub(crate) struct Copying<'a, 'd, 'de>(pub &'a mut DeserializeDriver<'d, 'de>);
 
+#[cfg(any(test, feature = "io"))]
 impl<'i> Out<'i> for Copying<'_, '_, '_> {
     #[inline(always)]
     fn state_mut(&mut self) -> &mut State {
@@ -107,11 +109,13 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
     }
 }
 
+#[cfg(feature = "io")]
 /// Discards the events.
 ///
 /// This is used to skip the rest of a value after an error.
 pub(crate) struct Discard(pub State);
 
+#[cfg(feature = "io")]
 impl<'i> Out<'i> for Discard {
     #[inline(always)]
     fn state_mut(&mut self) -> &mut State {
@@ -220,6 +224,7 @@ macro_rules! emit {
 }
 
 impl Parser {
+    #[cfg(feature = "io")]
     /// Returns `true` if the parser is between values.
     pub(crate) fn is_idle(&self) -> bool {
         self.expect == Expect::Value && self.container == Container::Top && self.partial.is_none()
@@ -236,6 +241,7 @@ impl Parser {
         self.recoverable = None;
     }
 
+    #[cfg(feature = "io")]
     /// Returns where the rest of the value continues if the last error was
     /// an error of a sink.
     ///

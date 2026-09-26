@@ -2,10 +2,8 @@ use std::marker::PhantomData;
 
 use bytes::BytesMut;
 use deser::Error;
-use deser::de::Decoder;
 use deser::de::{DeserializeOwned, OwnedDriver};
-use deser::io::{DecodeBuffer, Status};
-use deser::ser::Encoder;
+use deser::io::{DecodeBuffer, Decoder, Encoder, Status};
 use deser::ser::Serialize;
 
 /// Implements the codec traits of [`tokio-util`](https://docs.rs/tokio-util).

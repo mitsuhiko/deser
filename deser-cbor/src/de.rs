@@ -43,6 +43,7 @@ impl DeserializerConfig {
         self
     }
 
+    #[cfg(feature = "io")]
     /// Returns the maximum depth.
     pub(crate) fn max_depth_limit(&self) -> Option<usize> {
         self.max_depth

@@ -1,9 +1,7 @@
 use std::io::Read;
 
 use deser::de::DeserializeDriver;
-use deser::de::{Decoder, Frame};
-use deser::io::{DecodeBuffer, Reader, Status, Writer};
-use deser::ser::Encoder;
+use deser::io::{DecodeBuffer, Decoder, Encoder, Frame, Reader, Status, Writer};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event};
 

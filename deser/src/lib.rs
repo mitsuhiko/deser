@@ -40,8 +40,10 @@ pub struct Account {
 //! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML serialization and
 //!   deserialization.
 //!
-//! Values can be read from and written to streams (such as files or
-//! sockets) with the decoders and encoders of the formats, see [`io`].
+//! The data formats have a deserializer (which deserializes values from a
+//! slice) and a serializer (which serializes values into a buffer).  Values
+//! can also be read from and written to streams (such as files or sockets),
+//! see [`io`][io-module].
 //!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
@@ -61,8 +63,15 @@ pub struct Account {
 //!   formats can support natively.
 //! * `bytes-encoding` adds more encodings for bytes (such as base32) to
 //!   [`adapters::bytes`].
+//! * `io` (enabled by default) adds [`io`][io-module] to read values from and
+//!   write values to streams.
 //!
 #![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
+#![cfg_attr(feature = "io", doc = "[io-module]: crate::io")]
+#![cfg_attr(
+    not(feature = "io"),
+    doc = "[io-module]: https://docs.rs/deser/latest/deser/io/"
+)]
 #![cfg_attr(
     not(feature = "derive"),
     doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
@@ -78,12 +87,14 @@ pub mod de;
 mod error;
 pub mod ext;
 pub mod hints;
+#[cfg(feature = "io")]
 pub mod io;
 pub mod ser;
 
 mod extensions;
 mod state;
 mod std_impls;
+mod streamed;
 
 #[cfg(doctest)]
 mod soundness;
@@ -95,6 +106,7 @@ pub use self::error::{Error, ErrorAttachment, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
 pub use self::extensions::EventData;
 pub use self::state::{ErrorContext, State};
+pub use self::streamed::Streamed;
 
 // common re-exports
 

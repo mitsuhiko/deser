@@ -15,6 +15,9 @@ exclude = ["tests/data"]
 autotests = false
 
 [features]
+default = ["io"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["deser/io"]
 speedups = ["simdutf8"]
 
 [dependencies]

@@ -74,10 +74,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
-use deser::de::Decoder;
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
-use deser::io::{DecodeBuffer, ElementReader, ElementStatus, Next, Status};
-use deser::ser::Encoder;
+use deser::io::{DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoder, Next, Status};
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 use futures_core::Stream;
@@ -239,7 +237,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         poll_fn(|cx| self.poll_read_setup(cx, &mut setup)).await
     }
 
-    /// Polls for the next element of the [`Streamed`](deser::io::Streamed) sequence of a value or
+    /// Polls for the next element of the [`Streamed`](deser::Streamed) sequence of a value or
     /// the value.
     ///
     /// This is the poll based version of [`read_next`](Self::read_next).
@@ -285,11 +283,11 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         }
     }
 
-    /// Reads the next element of the [`Streamed`](deser::io::Streamed) sequence of a value or
+    /// Reads the next element of the [`Streamed`](deser::Streamed) sequence of a value or
     /// the value.
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
-    /// [`Streamed<E>`](deser::io::Streamed) sequence within it.  The elements are
+    /// [`Streamed<E>`](deser::Streamed) sequence within it.  The elements are
     /// handed out as they are read ([`Next::Element`]), the value once it's
     /// complete ([`Next::Done`]).  The next call continues with the next
     /// value.  Resolves to `None` if there are no more values.  This is
@@ -304,7 +302,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     }
 
     /// Converts the reader into a [`Stream`] of the elements of the
-    /// [`Streamed`](deser::io::Streamed) sequence of values and the values.
+    /// [`Streamed`](deser::Streamed) sequence of values and the values.
     ///
     /// See [`read_next`](Self::read_next).  The stream ends after the first
     /// error.
@@ -415,7 +413,7 @@ impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
     }
 }
 
-/// A [`Stream`] of the elements of the [`Streamed`](deser::io::Streamed) sequence of values and
+/// A [`Stream`] of the elements of the [`Streamed`](deser::Streamed) sequence of values and
 /// the values.
 ///
 /// Created with [`Reader::into_element_stream`].

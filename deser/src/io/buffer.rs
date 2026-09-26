@@ -1,6 +1,6 @@
-use crate::de::{Decoder, Frame, Progress};
 use crate::de::{Deserialize, DeserializeDriver};
 use crate::error::{Error, ErrorKind};
+use crate::io::{Decoder, Frame, Progress};
 
 /// The minimum number of bytes offered to read into.
 const READ_SIZE: usize = 8 * 1024;
@@ -66,7 +66,7 @@ impl Position {
 /// [`deserialize`](Self::deserialize):
 ///
 /// ```
-/// # use deser::de::{Decoder, Frame};
+/// # use deser::io::{Decoder, Frame};
 /// # use deser::de::DeserializeDriver;
 /// # use deser::Error;
 /// # struct LinesConfig;
@@ -278,7 +278,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// value depends on the decoder.
     ///
     /// ```
-    /// # use deser::de::{Decoder, Frame, Progress};
+    /// # use deser::io::{Decoder, Frame, Progress};
     /// # use deser::Error;
     /// # /// A format with sequences of digits (without separators).
     /// # struct DigitsConfig;

@@ -17,7 +17,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+default = ["io"]
 derive = ["deser-derive"]
+# reading and writing values from and to streams (`deser::io`)
+io = []
 # more encodings for bytes.  data-encoding is an implementation detail and
 # not part of the public API.
 bytes-encoding = ["dep:data-encoding"]

@@ -58,6 +58,7 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-json -p deser-cbor -p deser-yaml -p deser-toml --all-targets --no-default-features"
 
 # uses its own target directory so it does not invalidate the regular builds
 msrv:

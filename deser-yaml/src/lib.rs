@@ -104,6 +104,7 @@
 //! `deser-tokio`).  The reader only buffers until a document is complete:
 //!
 //! ```rust
+//! # #[cfg(feature = "io")] {
 //! use deser::io::{Reader, Writer};
 //! use deser_yaml::{DeserializerConfig, SerializerConfig};
 //!
@@ -118,14 +119,18 @@
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("done"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
+//! # }
 //! ```
 //!
 //! # Features
 //!
+//! * `io` (enabled by default): reading and writing streams, see
+//!   [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 mod de;
 mod emit;
 mod event;
+#[cfg(feature = "io")]
 mod io;
 mod parser;
 mod quote;
@@ -136,6 +141,7 @@ pub mod style;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+#[cfg(feature = "io")]
 pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::resolve::Version;
 pub use self::ser::{

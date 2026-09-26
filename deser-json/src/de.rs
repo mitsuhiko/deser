@@ -142,16 +142,19 @@ impl DeserializerConfig {
         self
     }
 
+    #[cfg(feature = "io")]
     /// Returns what may follow a value.
     pub(crate) fn trailing_mode(&self) -> Trailing {
         self.trailing
     }
 
+    #[cfg(feature = "io")]
     /// Returns how strings are decoded into bytes.
     pub(crate) fn bytes_format(&self) -> BytesFormat {
         self.bytes
     }
 
+    #[cfg(feature = "io")]
     /// Returns `true` if exact numbers are enabled.
     pub(crate) fn exact_numbers_enabled(&self) -> bool {
         self.exact_numbers
@@ -303,6 +306,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
+    #[cfg(feature = "io")]
     /// Creates a deserializer for the frame of a value in a stream.
     ///
     /// Only whitespace may follow the value in the frame.

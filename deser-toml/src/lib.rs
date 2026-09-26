@@ -89,15 +89,19 @@
 //!
 //! # Features
 //!
+//! * `io` (enabled by default): reading and writing streams, see
+//!   [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 mod datetime;
 mod de;
 mod document;
+#[cfg(feature = "io")]
 mod io;
 mod parser;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+#[cfg(feature = "io")]
 pub use self::io::{from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_string};
 /// Re-exported from [`deser::ext`] for convenience.

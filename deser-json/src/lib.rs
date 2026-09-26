@@ -86,19 +86,18 @@
 //!
 //! Errors only discard their line, so the remaining lines can still be
 //! read.  [`Trailing::Stop`] stops after the value without looking at what
-//! follows.  JSON Lines are written with a [`deser::io::Writer`] and
+//! follows.  JSON Lines are written with a [`Serializer`] and
 //! [`SerializerConfig::trailing`]:
 //!
 //! ```rust
-//! use deser::io::Writer;
-//! use deser_json::{SerializerConfig, Trailing};
+//! use deser_json::{Serializer, SerializerConfig, Trailing};
 //!
 //! const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
-//! let mut writer = Writer::new(Vec::new(), LINES);
+//! let mut serializer = Serializer::with_config(&LINES);
 //! for value in [vec![1, 2], vec![3]] {
-//!     writer.write(&value).unwrap();
+//!     serializer.serialize(&value).unwrap();
 //! }
-//! assert_eq!(writer.into_inner(), b"[1,2]\n[3]\n");
+//! assert_eq!(serializer.finish(), "[1,2]\n[3]\n");
 //! ```
 //!
 //! # Streams
@@ -113,6 +112,7 @@
 //! [`Trailing`]).  The reader only buffers until a value is complete:
 //!
 //! ```rust
+//! # #[cfg(feature = "io")] {
 //! use std::collections::BTreeMap;
 //! use deser::io::{Reader, Writer};
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
@@ -127,16 +127,19 @@
 //!     writer.write(&value).unwrap();
 //! }
 //! assert_eq!(writer.into_inner(), b"{\"id\":1}\n{\"id\":2}\n");
+//! # }
 //! ```
 //!
 //! # Features
 //!
-//! By default this crate has no dependency crates other than `deser`, but optionally
-//! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
-//! used for number formatting and `simdutf8` is used to validate UTF-8 when parsing
-//! byte slices.
+//! * `io` (enabled by default): reading and writing streams, see
+//!   [streams](#streams).
+//! * `speedups`: uses the `ryu` and `itoa` crates for number formatting and
+//!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
+//!   crate has no dependencies other than `deser`.
 mod buf;
 mod de;
+#[cfg(feature = "io")]
 mod io;
 mod parser;
 mod pretty;
@@ -144,5 +147,6 @@ mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
+#[cfg(feature = "io")]
 pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};

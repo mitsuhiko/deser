@@ -367,21 +367,20 @@ impl SerializerConfig {
 
     /// Ends documents with a document end marker (`...`).
     ///
-    /// When a stream of documents is read (see [`deser::io`]), a document
+    /// When a stream of documents is read (see `deser::io`), a document
     /// is complete once the next document starts or once it's ended with
     /// `...`.  For streams that stay open (like sockets) this allows the
     /// reader to see the end of a document without waiting for the next
     /// one.
     ///
     /// ```
-    /// use deser::io::Writer;
-    /// use deser_yaml::SerializerConfig;
+    /// use deser_yaml::{Serializer, SerializerConfig};
     ///
     /// const ENDED: SerializerConfig = SerializerConfig::new().end_documents(true);
-    /// let mut writer = Writer::new(Vec::new(), ENDED);
-    /// writer.write(&"a").unwrap();
-    /// writer.write(&"b").unwrap();
-    /// assert_eq!(writer.into_inner(), b"a\n...\n---\nb\n...\n");
+    /// let mut serializer = Serializer::with_config(&ENDED);
+    /// serializer.serialize(&"a").unwrap();
+    /// serializer.serialize(&"b").unwrap();
+    /// assert_eq!(serializer.finish(), "a\n...\n---\nb\n...\n");
     /// ```
     pub const fn end_documents(mut self, yes: bool) -> SerializerConfig {
         self.end_documents = yes;

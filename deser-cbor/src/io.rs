@@ -1,9 +1,10 @@
 //! Reading and writing CBOR streams.
 use std::io::{Read, Write};
 
-use deser::de::{Decoder, Frame, Limits, Progress};
+use deser::de::Limits;
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::ser::Encoder;
+use deser::io::Encoder;
+use deser::io::{Decoder, Frame, Progress};
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind, State};
 

@@ -105,8 +105,8 @@ impl SerializerConfig {
     ///
     /// This is the counterpart of
     /// [`DeserializerConfig::trailing`](crate::DeserializerConfig::trailing)
-    /// for writing streams (see [`deser::io`]), it does not affect
-    /// [`to_string`](Self::to_string):
+    /// for writing more than one value (with a [`Serializer`] or a stream
+    /// writer), it does not affect [`to_string`](Self::to_string):
     ///
     /// * [`Trailing::Strict`]: the stream holds a single value, writing a
     ///   second one fails.  This is the default.
@@ -116,14 +116,13 @@ impl SerializerConfig {
     /// * [`Trailing::Stop`]: values are separated by line breaks.
     ///
     /// ```
-    /// use deser::io::Writer;
-    /// use deser_json::{SerializerConfig, Trailing};
+    /// use deser_json::{Serializer, SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
-    /// let mut writer = Writer::new(Vec::new(), LINES);
-    /// writer.write(&vec![1, 2]).unwrap();
-    /// writer.write(&vec![3]).unwrap();
-    /// assert_eq!(writer.into_inner(), b"[1,2]\n[3]\n");
+    /// let mut serializer = Serializer::with_config(&LINES);
+    /// serializer.serialize(&vec![1, 2]).unwrap();
+    /// serializer.serialize(&vec![3]).unwrap();
+    /// assert_eq!(serializer.finish(), "[1,2]\n[3]\n");
     /// ```
     pub const fn trailing(mut self, trailing: Trailing) -> SerializerConfig {
         self.trailing = trailing;

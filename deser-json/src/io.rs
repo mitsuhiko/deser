@@ -2,9 +2,9 @@
 use std::io::{Read, Write};
 
 use deser::adapters::bytes::BytesFormat;
-use deser::de::{Decoder, Frame, Progress};
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::ser::Encoder;
+use deser::io::Encoder;
+use deser::io::{Decoder, Frame, Progress};
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind, State};
 

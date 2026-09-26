@@ -303,8 +303,10 @@ fn test_writer_strict_and_layers() {
 
 #[test]
 fn test_generic_formats() {
-    use deser::de::{Decoder, DeserializeOwned};
-    use deser::ser::{Encoder, Serialize};
+    use deser::de::DeserializeOwned;
+    use deser::io::Decoder;
+    use deser::io::Encoder;
+    use deser::ser::Serialize;
 
     /// Roundtrips a value through any format.
     fn roundtrip<T, D, E>(decoder: &D, encoder: &E, value: &T) -> T
@@ -402,7 +404,8 @@ fn test_feeding_with_layers() {
 }
 
 mod streamed {
-    use deser::io::{Next, Reader, Streamed};
+    use deser::Streamed;
+    use deser::io::{Next, Reader};
     use deser::{Deserialize, Serialize};
     use deser_json::{DeserializerConfig, Trailing};
 

@@ -12,7 +12,7 @@ pub enum ErrorKind {
     OutOfRange,
     WrongLength,
     EndOfFile,
-    /// Reading or writing failed (see [`io`](crate::io)).  The IO error is
+    /// Reading or writing failed (see `deser::io`).  The IO error is
     /// the [`source`](std::error::Error::source) of the error.
     Io,
 }
@@ -204,6 +204,7 @@ impl Error {
     /// This is used for errors of inputs which are part of a larger input,
     /// the base is the position (offset, line and column) of the start of
     /// the part.
+    #[cfg(feature = "io")]
     pub(crate) fn shift_position(mut self, offset: usize, line: usize, column: usize) -> Self {
         if let Some(ref mut error_offset) = self.inner.offset {
             *error_offset += offset;

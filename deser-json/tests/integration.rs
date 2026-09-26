@@ -3,6 +3,7 @@
 //! is slow, so separate binaries make the tests slower.
 mod test_bytes;
 mod test_de;
+#[cfg(feature = "io")]
 mod test_io;
 mod test_locations;
 mod test_nesting;

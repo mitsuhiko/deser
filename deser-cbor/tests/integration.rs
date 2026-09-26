@@ -5,6 +5,7 @@
 mod common;
 mod test_bytes;
 mod test_de;
+#[cfg(feature = "io")]
 mod test_io;
 mod test_nesting;
 mod test_rfc8949;

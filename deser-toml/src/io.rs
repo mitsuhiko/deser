@@ -1,9 +1,9 @@
 //! Reading and writing TOML from and to streams.
 use std::io::{Read, Write};
 
-use deser::de::{Decoder, Frame};
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::ser::Encoder;
+use deser::io::Encoder;
+use deser::io::{Decoder, Frame};
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 

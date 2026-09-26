@@ -13,8 +13,7 @@
 //! ```
 //! # fn example() -> Result<(), deser::Error> {
 //! use deser::io::{Reader, Writer};
-//! # use deser::de::{Decoder, Frame};
-//! # use deser::ser::Encoder;
+//! # use deser::io::{Decoder, Encoder, Frame};
 //! # use deser::de::DeserializeDriver;
 //! # use deser::ser::SerializeDriver;
 //! # use deser::Error;
@@ -74,7 +73,7 @@
 //! # Large Sequences
 //!
 //! Values which contain a large (or unbounded) sequence can be processed
-//! while they are read: a [`Streamed`] sequence hands out its elements as
+//! while they are read: a [`Streamed`](crate::Streamed) sequence hands out its elements as
 //! they are read with [`Reader::read_next`] (and behaves like a `Vec`
 //! otherwise).
 //!
@@ -98,16 +97,20 @@ use std::any::Any;
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 
-use crate::de::{Decoder, Deserialize, DeserializeDriver, DeserializeOwned, Frame};
+use crate::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use crate::error::{Error, ErrorKind};
-use crate::ser::{Encoder, Serialize, SerializeDriver};
+use crate::ser::{Serialize, SerializeDriver};
 
 mod buffer;
-mod streamed;
+mod decoder;
+mod elements;
+mod encoder;
 
 use self::buffer::Position;
 pub use self::buffer::{DecodeBuffer, Status};
-pub use self::streamed::{ElementReader, ElementStatus, Next, Streamed};
+pub use self::decoder::{Decoder, Frame, Progress};
+pub use self::elements::{ElementReader, ElementStatus, Next};
+pub use self::encoder::Encoder;
 
 /// Serializes a value into a buffer with an encoder.
 ///
@@ -115,7 +118,7 @@ pub use self::streamed::{ElementReader, ElementStatus, Next, Streamed};
 /// and of adapters for other kinds of IO.
 ///
 /// ```
-/// # use deser::ser::Encoder;
+/// # use deser::io::Encoder;
 /// # use deser::ser::SerializeDriver;
 /// # use deser::Error;
 /// # struct Debug;
@@ -262,8 +265,7 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// The complete value is buffered first.
     ///
     /// ```
-    /// # use deser::de::{Decoder, Frame};
-    /// # use deser::io::Reader;
+    /// # use deser::io::{Decoder, Frame, Reader};
     /// # use deser::de::DeserializeDriver;
     /// # use deser::Error;
     /// # struct LinesConfig;
@@ -294,14 +296,14 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         self.buffer.deserialize().map(Some)
     }
 
-    /// Reads the next element of the [`Streamed`] sequence of a value or
+    /// Reads the next element of the [`Streamed`](crate::Streamed) sequence of a value or
     /// the value.
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
-    /// [`Streamed<E>`](Streamed) sequence within it.  The elements are
+    /// [`Streamed<E>`](crate::Streamed) sequence within it.  The elements are
     /// handed out as they are read ([`Next::Element`]), the value once it's
     /// complete ([`Next::Done`]).  The next call continues with the next
-    /// value.  Returns `None` if there are no more values.  See [`Streamed`]
+    /// value.  Returns `None` if there are no more values.  See [`Streamed`](crate::Streamed)
     /// for an example.
     ///
     /// Until the value is complete, the reader can only be used to read the

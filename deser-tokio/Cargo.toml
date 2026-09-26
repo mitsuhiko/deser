@@ -21,7 +21,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 codec = ["dep:tokio-util", "dep:bytes"]
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser = { version = "0.8.0", path = "../deser", default-features = false, features = ["io"] }
 tokio = { version = "1.38", default-features = false, features = ["io-util"] }
 futures-core = { version = "0.3.30", default-features = false }
 tokio-util = { version = "0.7.11", default-features = false, features = ["codec"], optional = true }

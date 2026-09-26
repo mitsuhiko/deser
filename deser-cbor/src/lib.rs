@@ -58,6 +58,8 @@
 //!
 //! # Features
 //!
+//! * `io` (enabled by default): reading and writing streams, see
+//!   [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 //!
 //! # Streams
@@ -71,6 +73,7 @@
 //! is complete:
 //!
 //! ```rust
+//! # #[cfg(feature = "io")] {
 //! use deser::io::{Reader, Writer};
 //! use deser_cbor::{DeserializerConfig, SerializerConfig};
 //!
@@ -83,6 +86,7 @@
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("three"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
+//! # }
 //! ```
 //!
 //! # Tags
@@ -93,6 +97,7 @@
 mod buf;
 mod de;
 mod float;
+#[cfg(feature = "io")]
 mod io;
 mod parser;
 mod ser;
@@ -100,6 +105,7 @@ mod simple;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
+#[cfg(feature = "io")]
 pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_vec};
 pub use self::simple::Simple;

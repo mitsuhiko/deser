@@ -222,11 +222,11 @@ fn check_roundtrip(case: &Case) -> Outcome {
     };
     for (name, config) in roundtrip_configs() {
         let rv = panic::catch_unwind(|| {
-            let mut writer = deser::io::Writer::new(Vec::new(), config.clone());
+            let mut serializer = deser_yaml::Serializer::with_config(&config);
             for doc in &docs {
-                writer.write(doc).map_err(|err| err.to_string())?;
+                serializer.serialize(doc).map_err(|err| err.to_string())?;
             }
-            Ok::<_, String>(String::from_utf8(writer.into_inner()).unwrap())
+            Ok::<_, String>(serializer.finish())
         });
         let output = match rv {
             Ok(Ok(output)) => output,
