@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use deser::adapters::DisplayFromStr;
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording};
 use deser::ser::SerializeDriver;
-use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -218,11 +218,11 @@ enum NumericTagsWithContent {
 fn test_non_string_tags() {
     check(NumericTags::One, vec!["1".into()]);
     check(NumericTags::Other(2), vec![2u64.into()]);
-    // as map key, strings are accepted as numbers
+    // lexical keys (like in JSON) are accepted as numbers
     assert_eq!(
         deserialize::<NumericTags>(vec![
             Event::map_start(),
-            "3".into(),
+            Atom::Lexical("3".into()).into(),
             ().into(),
             Event::MapEnd
         ])

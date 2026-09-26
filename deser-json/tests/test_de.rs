@@ -149,7 +149,7 @@ fn test_numeric_keys() {
         vec![(-1, true), (2, false)]
     );
 
-    // strings are only coerced in key position
+    // only keys are lexical, strings are not parsed as numbers
     assert!(from_str::<u32>(r#""42""#).is_err());
     assert!(from_str::<Vec<u32>>(r#"["42"]"#).is_err());
     assert!(from_str::<HashMap<u32, u32>>(r#"{"x": 1}"#).is_err());
@@ -304,8 +304,8 @@ fn test_internally_tagged_buffering() {
     #[deser(tag = "type")]
     enum Message {
         Stats {
-            // integer keys only work because the buffered keys are replayed
-            // as map keys.
+            // integer keys work because the keys are lexical atoms which
+            // are retained when buffered.
             counts: HashMap<u32, u32>,
             // extension values are retained when buffered
             total: u128,
@@ -654,4 +654,30 @@ fn test_limits() {
         parse(Limits::new().max_len(4)),
         Err("Unexpected: string or bytes too long at line 1 column 19".into())
     );
+}
+
+#[test]
+fn test_lexical_keys() {
+    use std::collections::{BTreeMap, HashMap};
+
+    // keys are lexical, they parse into the type of the key
+    let map: BTreeMap<u16, bool> = from_str(r#"{"80": true, "443": false}"#).unwrap();
+    assert_eq!(map, BTreeMap::from([(80, true), (443, false)]));
+    let map: BTreeMap<bool, u8> = from_str(r#"{"true": 1, "no": 0}"#).unwrap();
+    assert_eq!(map, BTreeMap::from([(true, 1), (false, 0)]));
+
+    // keys without escapes are borrowed
+    let input = String::from(r#"{"a": 1, "b": 2}"#);
+    let map: HashMap<&str, u8> = from_str(&input).unwrap();
+    assert_eq!(map["a"], 1);
+    let key = *map.keys().find(|x| **x == "a").unwrap();
+    assert!(input.as_bytes().as_ptr_range().contains(&key.as_ptr()));
+    let map: HashMap<String, u8> = from_str(r#"{"b\u0020c": 2}"#).unwrap();
+    assert_eq!(map["b c"], 2);
+
+    // string values are strings, they are not parsed
+    let err = from_str::<BTreeMap<String, u16>>(r#"{"port": "42"}"#).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected u16");
+    let err = from_str::<BTreeMap<u16, u16>>(r#"{"http": 80}"#).unwrap_err();
+    assert_eq!(err.message(), "invalid value \"http\", expected u16");
 }

@@ -249,7 +249,7 @@ fn test_non_zero() {
     map.insert(NonZero::new(1u16).unwrap(), true);
     let rv: std::collections::BTreeMap<NonZero<u16>, bool> = deserialize(vec![
         Event::map_start(),
-        "1".into(),
+        Atom::Lexical("1".into()).into(),
         true.into(),
         Event::MapEnd,
     ])

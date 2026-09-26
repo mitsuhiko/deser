@@ -18,7 +18,6 @@ struct Recorded<'de> {
 #[derive(Default)]
 pub(crate) struct Buffer<'de> {
     events: Vec<Recorded<'de>>,
-    key: bool,
 }
 
 impl<'de> Push<'de> for Buffer<'de> {
@@ -32,8 +31,7 @@ impl<'de> Push<'de> for Buffer<'de> {
 }
 
 impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
-    fn begin(&mut self, event: Event<'de>, key: bool, state: &State) -> Result<(), deser::Error> {
-        self.key = key;
+    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error> {
         self.push(event, state)
     }
 
@@ -42,7 +40,7 @@ impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
             events: std::mem::take(&mut self.events).into_iter().peekable(),
             offset: None,
         };
-        T::deserialize(ValueDe::new(&mut src, self.key)).map_err(|err| {
+        T::deserialize(ValueDe::new(&mut src)).map_err(|err| {
             // the error refers to the event that was consumed last.  The
             // driver would attach the location of the end of the value.
             let err = err.into_deser();

@@ -82,9 +82,21 @@ containing numeric string keys (`HashMap<u32, u32>`) under normal circumstances
 in the form ``{"42": 23}`` but it fails to do so, when internal buffering is
 used (it will report `invalid type: string "42", expected u32`).
 
+Formats where all values are text (like query strings) are hit the hardest:
+`limit=10` deserializes into a `u64` field until the struct is flattened or
+becomes the variant of an internally tagged enum, then it fails with the same
+error.
+
+Deser represents text whose type the format cannot express (the keys of JSON
+objects, the values of query strings) as lexical atoms which the sinks parse
+(`Atom::Lexical`).  They are atoms like all others and retained when values
+are buffered.
+
 **Related issues:**
 
 * [serde: Internal buffering disrupts format-specific deserialization features #1183 ](https://github.com/serde-rs/serde/issues/1183)
+* [serde_urlencoded: using `#[serde(flatten)]` breaks deserializing #33](https://github.com/nox/serde_urlencoded/issues/33)
+* [serde_qs: Improper deserialization for #[serde(flatten)] field #159](https://github.com/samscott89/serde_qs/issues/159)
 
 ## Internal Data Format
 

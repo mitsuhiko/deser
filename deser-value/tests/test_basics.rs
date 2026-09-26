@@ -320,9 +320,12 @@ fn test_conversions() {
     let borrowed: Borrowed = from_value(&value).unwrap();
     assert!(std::ptr::eq(borrowed.name, value["name"].as_str().unwrap()));
 
-    // keys as strings are parsed in key position
-    let value = value!({"42": "answer"});
+    // keys of JSON are lexical and parse as numbers, strings do not
+    let value: Value = deser_json::from_str(r#"{"42": "answer"}"#).unwrap();
     let map: HashMap<u32, String> = from_value(&value).unwrap();
+    assert_eq!(map[&42], "answer");
+    assert!(from_value::<HashMap<u32, String>>(&value!({"42": "answer"})).is_err());
+    let map: HashMap<u32, String> = from_value(&value!({42: "answer"})).unwrap();
     assert_eq!(map[&42], "answer");
 
     // maps and sequences

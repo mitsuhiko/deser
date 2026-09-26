@@ -7,6 +7,7 @@
 //! parses a value in one go.  The state of the current container is held
 //! in locals while parsing and only stored in the parser when it's
 //! suspended.
+use std::borrow::Cow;
 use std::str;
 
 use deser::de::DeserializeDriver;
@@ -55,13 +56,22 @@ macro_rules! overflow {
 
 /// Receives the events of the parser.
 ///
-/// Strings which are slices of the input are passed to
-/// [`emit_input`](Self::emit_input), which can pass them on borrowed if the
-/// input lives long enough.
+/// Atoms of strings which are slices of the input (strings and map keys) are
+/// passed to [`emit_input`](Self::emit_input), which can pass them on
+/// borrowed if the input lives long enough.
 pub(crate) trait Out<'i> {
     fn state_mut(&mut self) -> &mut State;
     fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error>;
-    fn emit_input(&mut self, value: &'i str) -> Result<(), Error>;
+    fn emit_input(&mut self, atom: Atom<'i>) -> Result<(), Error>;
+}
+
+/// Creates the atom of a map key.
+///
+/// JSON only has strings as keys, which are lexical: they can stand for
+/// values of other types (like integers).
+#[inline(always)]
+fn key_atom(key: &str) -> Atom<'_> {
+    Atom::Lexical(Cow::Borrowed(key))
 }
 
 /// Passes strings of the input on borrowed.
@@ -79,8 +89,8 @@ impl<'i> Out<'i> for Borrowing<'_, '_, 'i> {
     }
 
     #[inline(always)]
-    fn emit_input(&mut self, value: &'i str) -> Result<(), Error> {
-        self.0.emit_borrowed(value)
+    fn emit_input(&mut self, atom: Atom<'i>) -> Result<(), Error> {
+        self.0.emit_borrowed(atom)
     }
 }
 
@@ -104,8 +114,8 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
     }
 
     #[inline(always)]
-    fn emit_input(&mut self, value: &'i str) -> Result<(), Error> {
-        self.0.emit(value)
+    fn emit_input(&mut self, atom: Atom<'i>) -> Result<(), Error> {
+        self.0.emit(atom)
     }
 }
 
@@ -128,7 +138,7 @@ impl<'i> Out<'i> for Discard {
     }
 
     #[inline(always)]
-    fn emit_input(&mut self, _value: &'i str) -> Result<(), Error> {
+    fn emit_input(&mut self, _atom: Atom<'i>) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -372,10 +382,10 @@ impl Parser {
                     Str::Borrowed(key) => {
                         out.state_mut()
                             .set_input_range(base + start, base + cur.pos);
-                        sink!(out.emit_input(key), Expect::Colon)
+                        sink!(out.emit_input(key_atom(key)), Expect::Colon)
                     }
                     Str::Scratch(key) => sink!(
-                        emit!(out, base, start, cur.pos, Event::from(key)),
+                        emit!(out, base, start, cur.pos, key_atom(key)),
                         Expect::Colon
                     ),
                 }
@@ -464,7 +474,10 @@ impl Parser {
                         Str::Borrowed(val) => {
                             out.state_mut()
                                 .set_input_range(base + start, base + cur.pos);
-                            sink!(out.emit_input(val), Expect::AfterValue)
+                            sink!(
+                                out.emit_input(Atom::Str(Cow::Borrowed(val))),
+                                Expect::AfterValue
+                            )
                         }
                         Str::Scratch(val) => sink!(
                             emit!(out, base, start, cur.pos, Event::from(val)),

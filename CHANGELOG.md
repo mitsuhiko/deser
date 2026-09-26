@@ -25,6 +25,14 @@ All notable changes to deser are documented here.
   `deser-value` has `Kind::Lexical` (which compares and hashes like the
   same `Str`) and `deser-serde` parses lexical atoms with the type that
   serde asks for.
+- The keys of JSON objects and TOML tables are lexical atoms.  Keys parse
+  into the type of the key (`{"80": true}` into `HashMap<u16, bool>` like
+  before, now also `bool` and other types that parse lexical atoms).
+  Strings in key position are no longer parsed as integers
+  (`State::is_map_key` is no longer consulted for this), which matters
+  for maps built by hand (for instance `deser_value::value!` with string
+  keys).  `deser-serde` parses lexical atoms instead of strings in key
+  position.
 - Added `Atom::F32` for single precision floats.  `f32` values are no
   longer widened to `f64` when serialized, so the text formats write them
   with the shortest text for their precision (`0.1f32` as `0.1` instead of

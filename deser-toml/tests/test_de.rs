@@ -859,3 +859,14 @@ fn test_borrowing() {
     let err = from_str::<BTreeMap<String, &str>>("a = \"\\n\"").unwrap_err();
     assert!(err.to_string().contains("expected a borrowed string"));
 }
+
+#[test]
+fn test_lexical_keys() {
+    // keys are lexical, they parse into the type of the key
+    let map: BTreeMap<String, BTreeMap<u16, String>> =
+        from_str("[ports]\n80 = \"http\"\n\"443\" = \"https\"\n").unwrap();
+    assert_eq!(map["ports"][&80], "http");
+    assert_eq!(map["ports"][&443], "https");
+    let map: HashMap<bool, u8> = from_str("true = 1\nfalse = 0\n").unwrap();
+    assert_eq!(map[&true], 1);
+}

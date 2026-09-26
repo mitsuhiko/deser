@@ -258,10 +258,9 @@ impl State {
 
     /// Returns `true` if the value currently being processed is a map key.
     ///
-    /// Many formats (such as JSON) can only represent string keys.  During
-    /// deserialization sinks can use this to accept a stringified
-    /// representation of their value when it's used as a key.  For instance
-    /// the integer sinks will parse `"42"` as a number when in key position.
+    /// Formats which can only represent string keys (such as JSON) emit
+    /// them as [`Atom::Lexical`](crate::Atom::Lexical), which the sinks of
+    /// the keys parse, so sinks rarely need this.
     ///
     /// During serialization this is `true` while a map key (including the
     /// keys of structs) is serialized and emitted.

@@ -182,10 +182,6 @@ macro_rules! int_sink {
                         Ok(value) => Some(value),
                         Err(err) => return Err(lexical::int_error(value, err, stringify!($ty))),
                     },
-                    Atom::Str(ref value) if state.is_map_key() => match value.parse::<$ty>() {
-                        Ok(value) => Some(value),
-                        Err(_) => return Err(atom.unexpected_error(&self.expecting())),
-                    },
                     other => return self.unexpected_atom(other, state),
                 };
                 match value {

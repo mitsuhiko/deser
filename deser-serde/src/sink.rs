@@ -15,7 +15,7 @@ pub(crate) trait Push<'de>: Send {
 /// Turns the events of a map or sequence into a serde value.
 pub(crate) trait Collector<'de, T>: Push<'de> {
     /// Begins the value with its first event.
-    fn begin(&mut self, event: Event<'de>, key: bool, state: &State) -> Result<(), deser::Error>;
+    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error>;
 
     /// Returns the value after the last event.
     fn finish(&mut self) -> Result<T, deser::Error>;
@@ -25,12 +25,9 @@ pub(crate) trait Collector<'de, T>: Push<'de> {
 ///
 /// Most serde values that are used with deser are atoms (like `Url` or
 /// `IpAddr`), these are deserialized directly.
-fn deserialize_atom<'de, T: serde::Deserialize<'de>>(
-    atom: Atom<'de>,
-    key: bool,
-) -> Result<T, deser::Error> {
+fn deserialize_atom<'de, T: serde::Deserialize<'de>>(atom: Atom<'de>) -> Result<T, deser::Error> {
     let mut src = Single(Some(Event::Atom(atom)));
-    T::deserialize(ValueDe::new(&mut src, key)).map_err(Error::into_deser)
+    T::deserialize(ValueDe::new(&mut src)).map_err(Error::into_deser)
 }
 
 /// The sink for a serde value.
@@ -55,26 +52,26 @@ where
     T: serde::Deserialize<'de> + Send,
     C: Collector<'de, T>,
 {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
-        *self.out = Some(deserialize_atom(atom.to_static(), state.is_map_key())?);
+    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), deser::Error> {
+        *self.out = Some(deserialize_atom(atom.to_static())?);
         Ok(())
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), deser::Error> {
-        *self.out = Some(deserialize_atom(atom, state.is_map_key())?);
+    fn borrowed_atom(&mut self, atom: Atom<'de>, _state: &mut State) -> Result<(), deser::Error> {
+        *self.out = Some(deserialize_atom(atom)?);
         Ok(())
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), deser::Error> {
         let event = Event::MapStart(state.container_shape());
-        self.collector.begin(event, state.is_map_key(), state)?;
+        self.collector.begin(event, state)?;
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), deser::Error> {
         let event = Event::SeqStart(state.container_shape());
-        self.collector.begin(event, state.is_map_key(), state)?;
+        self.collector.begin(event, state)?;
         self.end = Some(Event::SeqEnd);
         Ok(())
     }

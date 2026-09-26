@@ -18,8 +18,9 @@ use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 /// state (see [`State::set_replayable`]) at the time of each event.  When
 /// replaying, these values are restored for every event.  This means that
 /// information such as source locations or paths remains correct for replayed
-/// values.  Map keys are also replayed as map keys, so format specific key
-/// handling (like integer keys in JSON) continues to work.
+/// values.  Map keys are also replayed as map keys and atoms are recorded as
+/// they are (lexical atoms remain lexical), so format specific handling (like
+/// integer keys in JSON) continues to work.
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Recording};

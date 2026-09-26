@@ -253,6 +253,24 @@ fn emit_str<'a>(
     }
 }
 
+/// Emits a key.
+///
+/// Keys are always strings in TOML, they are lexical: they can stand for
+/// values of other types (like integers).
+// the key is a `Cow` as borrowed keys are passed on for `'a`
+#[allow(clippy::ptr_arg)]
+fn emit_key<'a>(
+    driver: &mut DeserializeDriver<'_, 'a>,
+    key: &Cow<'a, str>,
+    span: Span,
+) -> Result<(), Error> {
+    driver.state_mut().set_input_range(span.start, span.end);
+    match *key {
+        Cow::Borrowed(key) => driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(key))),
+        Cow::Owned(ref key) => driver.emit(Atom::Lexical(Cow::Borrowed(key.as_str()))),
+    }
+}
+
 /// A container whose events are emitted, with the index of the next child.
 enum Frame {
     Table(usize, usize),
@@ -272,7 +290,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                 match table.entries.get(*index) {
                     Some(entry) => {
                         *index += 1;
-                        emit_str(driver, &entry.key, entry.key_span)?;
+                        emit_key(driver, &entry.key, entry.key_span)?;
                         &entry.item
                     }
                     None => {

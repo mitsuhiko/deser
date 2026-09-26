@@ -126,31 +126,23 @@ fn parse_lexical<T: deser::de::DeserializeOwned>(value: &str) -> Result<T, Error
 /// Deserializes a value from a [`Source`].
 ///
 /// Numbers and booleans are parsed from lexical atoms (see
-/// [`Atom::Lexical`]) with the rules of deser.  Map keys are deserialized
-/// with `key` set.  In that case numbers and booleans are also parsed from
-/// strings as formats like JSON only have string keys (this matches what
-/// deser does).
+/// [`Atom::Lexical`]) with the rules of deser.
 pub(crate) struct ValueDe<'s, S> {
     src: &'s mut S,
-    key: bool,
 }
 
 impl<'s, S> ValueDe<'s, S> {
-    pub(crate) fn new(src: &'s mut S, key: bool) -> ValueDe<'s, S> {
-        ValueDe { src, key }
+    pub(crate) fn new(src: &'s mut S) -> ValueDe<'s, S> {
+        ValueDe { src }
     }
 }
 
-macro_rules! parse_key {
+macro_rules! parse_lexical {
     ($($method:ident => $ty:ty, $visit:ident;)*) => {
         $(
             fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-                let parsed = match self.src.peek()? {
-                    Event::Atom(Atom::Lexical(s)) => Some(parse_lexical::<$ty>(s)?),
-                    Event::Atom(Atom::Str(s)) if self.key => s.parse::<$ty>().ok(),
-                    _ => None,
-                };
-                if let Some(value) = parsed {
+                if let Event::Atom(Atom::Lexical(s)) = self.src.peek()? {
+                    let value = parse_lexical::<$ty>(s)?;
                     self.src.next()?;
                     return visitor.$visit(value);
                 }
@@ -190,7 +182,7 @@ impl<'de, 's, S: Source<'de>> de::Deserializer<'de> for ValueDe<'s, S> {
         }
     }
 
-    parse_key! {
+    parse_lexical! {
         deserialize_bool => bool, visit_bool;
         deserialize_i8 => i8, visit_i8;
         deserialize_i16 => i16, visit_i16;
@@ -321,12 +313,11 @@ impl<'de, 's, S: Source<'de>> de::MapAccess<'de> for MapAccess<'s, S> {
             return Ok(None);
         }
         self.len = self.len.map(|x| x.saturating_sub(1));
-        seed.deserialize(ValueDe::new(&mut *self.src, true))
-            .map(Some)
+        seed.deserialize(ValueDe::new(&mut *self.src)).map(Some)
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
-        seed.deserialize(ValueDe::new(&mut *self.src, false))
+        seed.deserialize(ValueDe::new(&mut *self.src))
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -371,8 +362,7 @@ impl<'de, 's, S: Source<'de>> de::SeqAccess<'de> for SeqAccess<'s, S> {
             return Ok(None);
         }
         self.len = self.len.map(|x| x.saturating_sub(1));
-        seed.deserialize(ValueDe::new(&mut *self.src, false))
-            .map(Some)
+        seed.deserialize(ValueDe::new(&mut *self.src)).map(Some)
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -395,7 +385,7 @@ impl<'de, 's, S: Source<'de>> de::EnumAccess<'de> for EnumAccess<'s, 'de, S> {
         seed: V,
     ) -> Result<(V::Value, Self::Variant), Error> {
         let mut variant = Single(Some(Event::Atom(self.variant)));
-        let value = seed.deserialize(ValueDe::new(&mut variant, true))?;
+        let value = seed.deserialize(ValueDe::new(&mut variant))?;
         Ok((
             value,
             VariantAccess {
@@ -429,19 +419,19 @@ impl<'de, 's, S: Source<'de>> de::VariantAccess<'de> for VariantAccess<'s, S> {
 
     fn unit_variant(self) -> Result<(), Error> {
         if self.has_content {
-            <() as de::Deserialize>::deserialize(ValueDe::new(self.src, false))?;
+            <() as de::Deserialize>::deserialize(ValueDe::new(self.src))?;
         }
         Ok(())
     }
 
     fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, Error> {
         self.require_content("newtype variant")?;
-        seed.deserialize(ValueDe::new(self.src, false))
+        seed.deserialize(ValueDe::new(self.src))
     }
 
     fn tuple_variant<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, Error> {
         self.require_content("tuple variant")?;
-        de::Deserializer::deserialize_seq(ValueDe::new(self.src, false), visitor)
+        de::Deserializer::deserialize_seq(ValueDe::new(self.src), visitor)
     }
 
     fn struct_variant<V: Visitor<'de>>(
@@ -450,7 +440,7 @@ impl<'de, 's, S: Source<'de>> de::VariantAccess<'de> for VariantAccess<'s, S> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         self.require_content("struct variant")?;
-        de::Deserializer::deserialize_map(ValueDe::new(self.src, false), visitor)
+        de::Deserializer::deserialize_map(ValueDe::new(self.src), visitor)
     }
 }
 
