@@ -310,14 +310,17 @@ All notable changes to deser are documented here.
   them as base64 strings and types that expect bytes (`Vec<u8>`, `[u8; N]`
   and `Cow<[u8]>`) accept strings which are decoded as lenient base64 (both
   alphabets, optional padding) in addition to sequences of integers.  The
-  new `deser::bytes` module has the encodings (`Base64`, `Base64Url`, `Hex`
-  and more, base32 with the new `bytes-encoding` feature) and
-  `BytesFormat`, which the serializer and deserializer configurations of
+  new `deser::adapters::bytes` module has the encodings (`Base64`,
+  `Base64Url`, `Hex` and more, base32 with the new `bytes-encoding` feature)
+  and `BytesFormat`, which the serializer and deserializer configurations of
   `deser-json` and `deser-toml` accept with `bytes`.  Values can request a
   format with the new `Descriptor::bytes_format` which formats with native
-  bytes (like CBOR) ignore.  The adapters `Encoded<E>` (and the encodings
-  themselves, for instance `#[deser(as = Hex)]`) and `ByteSeq` request a
-  format, `EncodedStr<E>` writes strings in all formats.
+  bytes (like CBOR) ignore.  The encodings are adapters which write strings
+  in all formats (for instance `#[deser(as = Hex)]`) and the new
+  `BytesFallback<F>` adapter keeps bytes in formats with native bytes and
+  requests `F` otherwise (for instance `BytesFallback<Hex>` or
+  `BytesFallback<IntSeq>` for sequences of integers).  Custom encodings
+  implement `BytesEncoding`.
 
 ## 0.8.0
 

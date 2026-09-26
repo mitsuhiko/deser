@@ -52,20 +52,20 @@ pub struct Account {
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
 //! * `bytes-encoding` adds more encodings for bytes (such as base32) to
-//!   [`bytes`].
+//!   [`adapters::bytes`].
 //!
 #![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
 #![cfg_attr(
     not(feature = "derive"),
     doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
 )]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[macro_use]
 mod macros;
 mod event;
 
 pub mod adapters;
-pub mod bytes;
 pub mod de;
 mod error;
 pub mod ext;

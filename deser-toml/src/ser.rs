@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use deser::bytes::BytesFormat;
+use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
@@ -39,12 +39,12 @@ impl SerializerConfig {
     ///
     /// TOML has no bytes, by default they are written as base64 strings
     /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [`deser::bytes`]) which takes precedence.  Keys cannot be
+    /// (see [`deser::adapters::bytes`]) which takes precedence.  Keys cannot be
     /// arrays, bytes in keys are always strings.
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::bytes::{BytesFormat, Hex};
     /// use deser_toml::SerializerConfig;
     ///
     /// let mut value = BTreeMap::new();

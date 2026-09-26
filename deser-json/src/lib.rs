@@ -26,7 +26,7 @@
 //! well-known types (such as date-times and UUIDs) are written as strings.
 //! JSON has no bytes, they are written as base64 strings by default and
 //! types that expect bytes accept strings and arrays of integers (see
-//! [`deser::bytes`] and [`SerializerConfig::bytes`]).
+//! [`deser::adapters::bytes`] and [`SerializerConfig::bytes`]).
 //!
 //! When parsing, floats whose text cannot be recovered from their value as
 //! `f64` (like `0.10` or `1e5`) and integers that do not fit into 128 bits

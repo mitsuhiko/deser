@@ -386,7 +386,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
                     }
                     // formats without native bytes represent them as strings
                     Atom::Str(ref value) if A::__private_is_bytes_as() => {
-                        let bytes = crate::bytes::decode_str(value, state)?;
+                        let bytes = crate::adapters::bytes::decode_str(value, state)?;
                         match A::__private_vec_from_bytes_as(bytes) {
                             Some(vec) => {
                                 *self.slot = Some(vec);
@@ -988,7 +988,7 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
                     },
                     // formats without native bytes represent them as strings
                     Atom::Str(ref value) if A::__private_is_bytes_as() => {
-                        let bytes = crate::bytes::decode_str(value, state)?;
+                        let bytes = crate::adapters::bytes::decode_str(value, state)?;
                         match A::__private_array_from_bytes_as::<N>(&bytes) {
                             Some(array) => {
                                 *self.slot = Some(array);
@@ -1268,7 +1268,9 @@ impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, [u8]>> {
             }
             // formats without native bytes represent them as strings
             Atom::Str(ref value) => {
-                **self = Some(Cow::Owned(crate::bytes::decode_str(value, state)?));
+                **self = Some(Cow::Owned(crate::adapters::bytes::decode_str(
+                    value, state,
+                )?));
                 Ok(())
             }
             other => self.unexpected_atom(other, state),

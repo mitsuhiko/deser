@@ -76,7 +76,8 @@
 //! (such as UUIDs and decimals) are written as strings.  TOML has no null value: map entries with null values
 //! are skipped and null values in sequences are an error.  TOML has no
 //! bytes either, they are written as base64 strings by default (see
-//! [`deser::bytes`]).  See [`SerializerConfig`] for more information.
+//! [`deser::adapters::bytes`]).  See [`SerializerConfig`] for more
+//! information.
 //!
 //! # Features
 //!

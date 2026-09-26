@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::bytes::BytesFormat;
+use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
@@ -15,7 +15,7 @@ use crate::scan::{find_escape, skip_to_escape};
 /// [`to_string`](crate::to_string) function.
 ///
 /// ```
-/// use deser::bytes::BytesFormat;
+/// use deser::adapters::bytes::BytesFormat;
 /// use deser_json::SerializerConfig;
 ///
 /// const CONFIG: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
@@ -38,11 +38,11 @@ impl SerializerConfig {
     ///
     /// JSON has no bytes, by default they are written as base64 strings
     /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [`deser::bytes`]) which takes precedence.  Map keys cannot be
+    /// (see [`deser::adapters::bytes`]) which takes precedence.  Map keys cannot be
     /// sequences, bytes in keys are always strings.
     ///
     /// ```
-    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::bytes::{BytesFormat, Hex};
     /// use deser_json::SerializerConfig;
     ///
     /// assert_eq!(deser_json::to_string(&b"\x01\xff").unwrap(), r#""Af8=""#);

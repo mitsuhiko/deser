@@ -50,9 +50,8 @@
 //!   cannot be deserialized.
 //! * [`Borrowed`]: deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the
 //!   data if possible.
-//! * [`Encoded`], [`EncodedStr`] and [`ByteSeq`]: change how bytes are
-//!   represented.  The encodings of [`bytes`](crate::bytes) (for instance
-//!   [`Hex`](crate::bytes::Hex)) are adapters too.
+//! * The adapters for bytes are in [`bytes`]: the encodings (for instance
+//!   [`Hex`](bytes::Hex)) and [`BytesFallback`](bytes::BytesFallback).
 //! * The standard containers: `Option<U>`, `Box<U>`, `Vec<U>`, `[U]`,
 //!   `[U; N]`, `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<U>`,
 //!   `HashSet<U>` and tuples.
@@ -62,7 +61,7 @@
 //! Adapters are implemented like [`Deserialize`] and [`Serialize`] except
 //! that the value is not `Self`.  This example serializes a byte vector
 //! into a hex string (deser provides this as
-//! [`EncodedStr<Hex>`](EncodedStr)):
+//! [`bytes::Hex`]):
 //!
 //! ```
 //! use deser::adapters::{DeserializeAs, SerializeAs};
@@ -129,11 +128,10 @@ use crate::error::Error;
 use crate::event::Atom;
 use crate::ser::{Begin, Chunk, Serialize};
 
-mod bytes;
+pub mod bytes;
 mod ser_impls;
 mod stock;
 
-pub use self::bytes::{ByteSeq, Encoded, EncodedStr};
 pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
 };

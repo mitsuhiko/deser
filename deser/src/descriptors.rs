@@ -1,4 +1,4 @@
-use crate::bytes::BytesFormat;
+use crate::adapters::bytes::BytesFormat;
 
 /// The default null descriptor.
 pub(crate) struct NullDescriptor;
@@ -63,7 +63,7 @@ pub trait Descriptor: Sync {
     /// [`Atom::Bytes`](crate::Atom::Bytes).  Formats without native bytes
     /// (such as JSON and TOML) use the returned format instead of the one
     /// they are configured with.  Formats with native bytes ignore it.  See
-    /// [`bytes`](crate::bytes) for more information.
+    /// [`bytes`](crate::adapters::bytes) for more information.
     fn bytes_format(&self) -> Option<BytesFormat> {
         None
     }

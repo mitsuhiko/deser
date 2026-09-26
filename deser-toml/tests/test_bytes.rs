@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::adapters::{ByteSeq, EncodedStr};
-use deser::bytes::{Base64UrlNoPad, BytesFormat, Hex};
+use deser::adapters::bytes::{Base64UrlNoPad, BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::{Deserialize, Serialize};
 use deser_toml::{DeserializerConfig, SerializerConfig, from_str, to_string};
 
@@ -13,11 +12,11 @@ use common::Value;
 struct Blob {
     plain: Vec<u8>,
     array: [u8; 3],
-    #[deser(as = Hex)]
+    #[deser(as = BytesFallback<Hex>)]
     hex: Vec<u8>,
-    #[deser(as = EncodedStr<Base64UrlNoPad>)]
+    #[deser(as = Base64UrlNoPad)]
     url: Vec<u8>,
-    #[deser(as = ByteSeq)]
+    #[deser(as = BytesFallback<IntSeq>)]
     seq: Vec<u8>,
     keys: BTreeMap<Vec<u8>, u32>,
     #[deser(as = BTreeMap<Hex, _>)]

@@ -2,17 +2,16 @@
 mod common;
 
 use common::{de, ser};
-use deser::adapters::{ByteSeq, EncodedStr};
-use deser::bytes::Hex;
+use deser::adapters::bytes::{BytesFallback, Hex, IntSeq};
 use deser::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {
-    #[deser(as = Hex)]
+    #[deser(as = BytesFallback<Hex>)]
     hint: Vec<u8>,
-    #[deser(as = ByteSeq)]
+    #[deser(as = BytesFallback<IntSeq>)]
     seq: [u8; 2],
-    #[deser(as = EncodedStr<Hex>)]
+    #[deser(as = Hex)]
     forced: Vec<u8>,
 }
 

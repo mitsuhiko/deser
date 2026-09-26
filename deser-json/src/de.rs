@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use deser::Atom;
 use deser::Event;
-use deser::bytes::BytesFormat;
+use deser::adapters::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::{ExtValue, Number as ExactNumber};
 use deser::{Error, ErrorKind};
@@ -126,7 +126,7 @@ impl DeserializerConfig {
     /// for [`BytesFormat::SEQ`] they are still decoded as base64.
     ///
     /// ```
-    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::bytes::{BytesFormat, Hex};
     /// use deser_json::DeserializerConfig;
     ///
     /// let value: Vec<u8> = deser_json::from_str(r#""Af8=""#).unwrap();
@@ -139,7 +139,7 @@ impl DeserializerConfig {
     /// assert_eq!(value, [1, 255]);
     /// ```
     ///
-    /// The format is placed into the state (see [`deser::bytes`]).  Values
+    /// The format is placed into the state (see [`deser::adapters::bytes`]).  Values
     /// that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;

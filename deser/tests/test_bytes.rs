@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use deser::adapters::{As, Borrowed, ByteSeq, Encoded, EncodedStr};
-use deser::bytes::{Base64Url, BytesEncoding, BytesFormat, Hex};
+use deser::adapters::bytes::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{As, Borrowed};
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
@@ -113,22 +113,26 @@ fn test_bytes_format_in_state() {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {
     plain: Vec<u8>,
-    #[deser(as = Hex)]
+    #[deser(as = BytesFallback<Hex>)]
     hex: [u8; 2],
-    #[deser(as = Encoded<Hex>)]
+    #[deser(as = BytesFallback<Hex>)]
     encoded: Vec<u8>,
-    #[deser(as = EncodedStr<Hex>)]
-    forced: Vec<u8>,
-    #[deser(as = ByteSeq)]
-    seq: Vec<u8>,
-    #[deser(as = Option<Hex>)]
-    optional: Option<Vec<u8>>,
-    #[deser(as = Vec<Hex>)]
-    many: Vec<Vec<u8>>,
-    #[deser(as = BTreeMap<Hex, _>)]
-    keys: BTreeMap<Vec<u8>, u32>,
     #[deser(as = Hex)]
+    forced: Vec<u8>,
+    #[deser(as = BytesFallback<IntSeq>)]
+    seq: Vec<u8>,
+    #[deser(as = Option<BytesFallback<Hex>>)]
+    optional: Option<Vec<u8>>,
+    #[deser(as = Vec<BytesFallback<Hex>>)]
+    many: Vec<Vec<u8>>,
+    #[deser(as = BTreeMap<BytesFallback<Hex>, _>)]
+    keys: BTreeMap<Vec<u8>, u32>,
+    #[deser(as = BytesFallback<Hex>)]
     cow: Cow<'static, [u8]>,
+    #[deser(as = Option<Hex>)]
+    forced_optional: Option<[u8; 1]>,
+    #[deser(as = Hex)]
+    forced_cow: Cow<'static, [u8]>,
 }
 
 fn blob() -> Blob {
@@ -142,6 +146,8 @@ fn blob() -> Blob {
         many: vec![vec![8]],
         keys: [(vec![9], 10)].into_iter().collect(),
         cow: Cow::Borrowed(&[11]),
+        forced_optional: Some([12]),
+        forced_cow: Cow::Borrowed(&[13]),
     }
 }
 
@@ -176,6 +182,10 @@ fn test_adapters_serialize() {
         (Event::MapEnd, None),
         ("cow".into(), None),
         (bytes(&[11]), hex),
+        ("forced_optional".into(), None),
+        ("0c".into(), hex),
+        ("forced_cow".into(), None),
+        ("0d".into(), hex),
         (Event::MapEnd, None),
     ];
     assert_eq!(events, expected);
@@ -218,6 +228,10 @@ fn test_adapters_deserialize() {
         Event::MapEnd,
         "cow".into(),
         "0B".into(),
+        "forced_optional".into(),
+        "0C".into(),
+        "forced_cow".into(),
+        "0d".into(),
         Event::MapEnd,
     ];
     assert_eq!(deserialize::<Blob>(events).unwrap(), blob());
@@ -256,9 +270,9 @@ impl BytesEncoding for Dotted {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Custom {
-    #[deser(as = Encoded<Dotted>)]
+    #[deser(as = BytesFallback<Dotted>)]
     hint: Vec<u8>,
-    #[deser(as = EncodedStr<Dotted>)]
+    #[deser(as = Dotted)]
     forced: Vec<u8>,
 }
 
@@ -289,13 +303,13 @@ fn test_custom_encoding() {
 #[cfg(feature = "bytes-encoding")]
 #[test]
 fn test_data_encoding_adapters() {
-    use deser::bytes::Base32;
+    use deser::adapters::bytes::Base32;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Key {
-        #[deser(as = EncodedStr<Base32>)]
-        a: Vec<u8>,
         #[deser(as = Base32)]
+        a: Vec<u8>,
+        #[deser(as = BytesFallback<Base32>)]
         b: Vec<u8>,
     }
 

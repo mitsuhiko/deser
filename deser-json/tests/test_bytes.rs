@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::adapters::{ByteSeq, EncodedStr};
-use deser::bytes::{Base64UrlNoPad, BytesFormat, Hex};
+use deser::adapters::bytes::{Base64UrlNoPad, BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::{Deserialize, Serialize};
 use deser_json::{DeserializerConfig, SerializerConfig, from_str, to_string};
 
@@ -9,11 +8,11 @@ use deser_json::{DeserializerConfig, SerializerConfig, from_str, to_string};
 struct Blob {
     plain: Vec<u8>,
     array: [u8; 3],
-    #[deser(as = Hex)]
+    #[deser(as = BytesFallback<Hex>)]
     hex: Vec<u8>,
-    #[deser(as = EncodedStr<Base64UrlNoPad>)]
+    #[deser(as = Base64UrlNoPad)]
     url: Vec<u8>,
-    #[deser(as = ByteSeq)]
+    #[deser(as = BytesFallback<IntSeq>)]
     seq: Vec<u8>,
     #[deser(as = Option<Hex>)]
     missing: Option<Vec<u8>>,
