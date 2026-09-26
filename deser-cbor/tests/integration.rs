@@ -5,6 +5,7 @@
 mod common;
 mod test_bytes;
 mod test_de;
+mod test_io;
 mod test_nesting;
 mod test_rfc8949;
 mod test_roundtrip;

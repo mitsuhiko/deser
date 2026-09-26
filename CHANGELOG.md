@@ -17,6 +17,10 @@ All notable changes to deser are documented here.
   `SerializerConfig::encoder`) for `deser::io`.  The decoder splits the
   stream according to `Trailing`: a single value, JSON Lines or
   concatenated values.  `Encoder::lines` writes JSON Lines.
+- `deser-cbor` reads and writes streams: `from_reader` and `to_writer`
+  (also on the configurations) and the `Decoder` and `Encoder` for
+  `deser::io` which read and write CBOR sequences.  Items are split by
+  scanning their heads.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:
