@@ -4,10 +4,10 @@
 //! collections can be written as `{}` and `[]` and the layout never needs to
 //! be patched afterwards.  Collections are written in block style unless
 //! they are compact (see [`Layout`]), the flow policy allows them to be
-//! written in flow style or there is no indentation ([`Indent::None`]).  For the flow policy the events of a collection
-//! are recorded while it's written in flow style.  If it turns out not to
-//! fit, the output is rolled back and the recorded events are written in
-//! block style.
+//! written in flow style or there is no indentation ([`Indent::None`]).
+//! For the flow policy the events of a collection are recorded while it's
+//! written in flow style.  If it turns out not to fit, the output is rolled
+//! back and the recorded events are written in block style.
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser::hints::Layout;
@@ -138,6 +138,14 @@ pub(crate) struct Emitter<'c> {
     /// `true` if the current line was already terminated (after block
     /// scalars).
     line_done: bool,
+    /// The column at `column_offset` in the output.  The column is only
+    /// needed for the flow policy, it's updated from the output written
+    /// since it was last computed.
+    column: usize,
+    column_offset: usize,
+    /// The buffer for the events of the next attempt (reused to not
+    /// allocate for every attempt).
+    spare_events: Vec<(Event<'static>, Hints)>,
 }
 
 impl<'c> Emitter<'c> {
@@ -151,6 +159,9 @@ impl<'c> Emitter<'c> {
             space: false,
             done: false,
             line_done: false,
+            column: 0,
+            column_offset: 0,
+            spare_events: Vec::new(),
         }
     }
 
@@ -208,10 +219,13 @@ impl<'c> Emitter<'c> {
             Event::SeqEnd => self.end(false)?,
         }
         if let Some(ref attempt) = self.attempt {
+            let width = attempt.width;
             if self.stack.len() <= attempt.depth {
                 // the collection ended and fits
-                self.attempt = None;
-            } else if self.column() > attempt.width {
+                let mut events = self.attempt.take().unwrap().events;
+                events.clear();
+                self.spare_events = events;
+            } else if self.column() > width {
                 return self.abort_attempt();
             }
         }
@@ -238,7 +252,11 @@ impl<'c> Emitter<'c> {
             depth: self.stack.len(),
             space: self.space,
             line_done: self.line_done,
-            events: vec![(event.to_static(), hints.clone())],
+            events: {
+                let mut events = std::mem::take(&mut self.spare_events);
+                events.push((event.to_static(), hints.clone()));
+                events
+            },
             width,
         });
         self.open_flow(pending);
@@ -250,21 +268,36 @@ impl<'c> Emitter<'c> {
     fn abort_attempt(&mut self) -> Result<(), Error> {
         let attempt = self.attempt.take().unwrap();
         self.out.truncate(attempt.out_len);
+        if self.column_offset > attempt.out_len {
+            // the column was computed for output that is gone, count the
+            // line again
+            self.column = 0;
+            self.column_offset = self.out.rfind('\n').map_or(0, |x| x + 1);
+        }
         self.stack.truncate(attempt.depth);
         self.space = attempt.space;
         self.line_done = attempt.line_done;
         self.pending = None;
         self.open_block(attempt.pending);
-        for (event, hints) in attempt.events {
+        let mut events = attempt.events;
+        for (event, hints) in events.drain(..) {
             self.emit(event, hints)?;
+        }
+        if events.capacity() > self.spare_events.capacity() {
+            self.spare_events = events;
         }
         Ok(())
     }
 
     /// Returns the current column.
-    fn column(&self) -> usize {
-        let line_start = self.out.rfind('\n').map_or(0, |x| x + 1);
-        self.out[line_start..].chars().count()
+    fn column(&mut self) -> usize {
+        let new = &self.out[self.column_offset..];
+        match new.rfind('\n') {
+            Some(idx) => self.column = new[idx + 1..].chars().count(),
+            None => self.column += new.chars().count(),
+        }
+        self.column_offset = self.out.len();
+        self.column
     }
 
     /// Returns `true` if the current node is in a flow collection.
