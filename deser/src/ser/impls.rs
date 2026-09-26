@@ -13,7 +13,7 @@ use crate::ser::{
 };
 
 impl Serialize for bool {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Bool(*self)))
@@ -21,7 +21,7 @@ impl Serialize for bool {
 }
 
 impl Serialize for () {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Null))
@@ -33,7 +33,7 @@ impl Serialize for () {
 }
 
 impl Serialize for u8 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::U64(*self as u64)))
@@ -45,7 +45,7 @@ impl Serialize for u8 {
 }
 
 impl Serialize for char {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Char(*self)))
@@ -55,7 +55,7 @@ impl Serialize for char {
 macro_rules! serialize_int {
     ($ty:ty, $atom:ident) => {
         impl Serialize for $ty {
-            __begin_without_finish!();
+            begin_without_finish!();
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::$atom(*self as _)))
@@ -75,7 +75,7 @@ serialize_int!(isize, I64);
 serialize_int!(usize, U64);
 
 impl Serialize for f32 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::F64(f64::from(*self))))
@@ -83,7 +83,7 @@ impl Serialize for f32 {
 }
 
 impl Serialize for f64 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::F64(*self)))
@@ -93,7 +93,7 @@ impl Serialize for f64 {
 macro_rules! serialize_ext_int {
     ($ty:ty) => {
         impl Serialize for $ty {
-            __begin_without_finish!();
+            begin_without_finish!();
 
             fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                 Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
@@ -106,7 +106,7 @@ serialize_ext_int!(u128);
 serialize_ext_int!(i128);
 
 impl Serialize for String {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
@@ -114,7 +114,7 @@ impl Serialize for String {
 }
 
 impl Serialize for str {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self))))
@@ -297,7 +297,7 @@ impl<T: Serialize> DequeBytes for VecDeque<T> {
 }
 
 impl<T: Serialize> Serialize for LinkedList<T> {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new().with_len(self.len())
@@ -350,7 +350,7 @@ where
     K: Serialize,
     V: Serialize,
 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -392,7 +392,7 @@ where
     H: Sync,
     H: BuildHasher,
 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -431,7 +431,7 @@ impl<T> Serialize for BTreeSet<T>
 where
     T: Serialize,
 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()
@@ -464,7 +464,7 @@ where
     T: Serialize,
     H: BuildHasher + Sync,
 {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new()

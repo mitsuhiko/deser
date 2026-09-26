@@ -61,8 +61,8 @@
 //!
 //! Map keys are unique.  If a map with duplicate keys is deserialized into
 //! a value, the deserialization fails.
+mod convert;
 mod de;
-mod format;
 mod index;
 mod macros;
 mod map;
@@ -71,7 +71,7 @@ mod ser;
 mod tree;
 mod value;
 
-pub use self::format::{Deserializer, Serializer, from_value, to_value};
+pub use self::convert::{Deserializer, Serializer, from_value, to_value};
 pub use self::index::ValueIndex;
 pub use self::map::{IntoIter, Iter, IterMut, Keys, Map, MapKey, Values, ValuesMut};
 pub use self::seq::Seq;

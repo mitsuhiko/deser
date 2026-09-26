@@ -148,10 +148,11 @@ quality of errors.  To see more practical examples have a look at the
   produces bloat the compiler needs to churn through.
 * **Simple Data Model:** deser simplifies the data model on the serialization
   and deserialization interface.  For instance instead of making a distinction
-  between `u8` and `u64` they are represented the same in the model.  To compensate
-  for this, it provides type descriptors that provide auxiliary information for
-  when a serializer wants to process it.  This helps with compile times and makes
-  using the crate easier.
+  between `u8` and `u64` they are represented the same in the model.  Formats
+  that need more information can get it: maps and sequences carry their shape
+  (the order and number of elements) and values can describe their Rust shape
+  (such as struct and variant names, which `deser-debug` uses).  This helps
+  with compile times and makes using the crate easier.
 * **Native Bytes Support:** deser has built-in specialization for serializing
   bytes and byte vectors.  A `Vec<u8>` is serialized as bytes in formats which
   support them (such as CBOR) and as base64 in text-only formats such as JSON
@@ -184,12 +185,12 @@ quality of errors.  To see more practical examples have a look at the
   instance `deser-json` supports 128 bit integers this way), everybody else
   transparently gets the fallback.  This avoids in-band signalling.  (See
   [ext](https://docs.rs/deser/latest/deser/ext/) for more information)
-* **Stateful Processing:** deser compensates the simplified data model with providing
-  a space to hold meta information.  Out of the box it provides information
-  about the types that are being serialized.  The additional space can be used
-  to keep track of the "path" to the current structure during serialization and
-  deserialization.  (See [deser-path](https://docs.rs/deser-path/) for a
-  practical example)
+* **Stateful Processing:** serialization and deserialization carry a state
+  in which formats, layers and types keep information.  Formats publish the
+  location of every event in it, and data attached to events (such as tags or
+  formatting hints) travels with the events through the state.  Layers can use
+  it to keep track of the "path" to the current value.  (See
+  [deser-path](https://docs.rs/deser-path/) for a practical example)
 * **Layers:** layers sit between the data format and the types and see all
   events.  They can observe, reject and rewrite events without support by
   the format or the types, for instance to track the path, to limit the size

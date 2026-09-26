@@ -48,7 +48,8 @@ fn test_spans() {
     let value = json(input);
     let span = value["name"].span().unwrap();
     assert_eq!(span.text(), Some("\"app\""));
-    assert_eq!(span.line_column(), (2, 11));
+    assert_eq!((span.start().line, span.start().column), (2, 11));
+    assert_eq!(span.end().to_string(), "2:16");
     let span = value["servers"][0].span().unwrap();
     assert_eq!(span.text(), Some("{\"host\": \"a\", \"port\": 80}"));
     assert_eq!(value.span().unwrap().text(), Some(input));

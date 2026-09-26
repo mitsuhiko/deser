@@ -216,6 +216,7 @@ use std::borrow::Cow;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
+pub(crate) mod atoms;
 mod deserializer;
 mod driver;
 #[cfg(feature = "derive")]
@@ -228,6 +229,7 @@ mod owned;
 mod recording;
 mod sinkbox;
 
+pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
@@ -682,61 +684,6 @@ pub trait Deserialize<'de>: Sized + Send {
 pub trait DeserializeOwned: for<'de> Deserialize<'de> {}
 
 impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
-
-/// Deserializes an atom into a slot.
-///
-/// This is equivalent to what the default implementation of
-/// [`Sink::value_atom`] does with the sink of the slot.
-#[doc(hidden)]
-#[inline]
-pub fn atom_into<'de, T: Deserialize<'de>>(
-    slot: &mut Option<T>,
-    atom: Atom,
-    state: &mut State,
-) -> Result<(), Error> {
-    T::__private_atom_into(slot, atom, state)
-}
-
-/// Deserializes a borrowed atom into a slot.
-///
-/// This is equivalent to what the default implementation of
-/// [`Sink::borrowed_value_atom`] does with the sink of the slot.
-#[doc(hidden)]
-#[inline]
-pub fn borrowed_atom_into<'de, T: Deserialize<'de>>(
-    slot: &mut Option<T>,
-    atom: Atom<'de>,
-    state: &mut State,
-) -> Result<(), Error> {
-    T::__private_borrowed_atom_into(slot, atom, state)
-}
-
-/// Deserializes an atom into a sink handle.
-///
-/// This is intentionally not inlined as it's used by the default
-/// implementations of the sink methods which exist for every sink.
-#[doc(hidden)]
-#[inline(never)]
-pub fn atom_into_handle(
-    mut sink: SinkHandle<'_, '_>,
-    atom: Atom,
-    state: &mut State,
-) -> Result<(), Error> {
-    sink.atom(atom, state)?;
-    sink.finish(state)
-}
-
-/// Deserializes a borrowed atom into a sink handle.
-#[doc(hidden)]
-#[inline(never)]
-pub fn borrowed_atom_into_handle<'de>(
-    mut sink: SinkHandle<'_, 'de>,
-    atom: Atom<'de>,
-    state: &mut State,
-) -> Result<(), Error> {
-    sink.borrowed_atom(atom, state)?;
-    sink.finish(state)
-}
 
 /// Generates the default error for unexpected maps and sequences.
 fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {

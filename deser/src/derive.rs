@@ -359,11 +359,3 @@
 //!     tags: Vec<String>,
 //! }
 //! ```
-
-// these exist as explicit aliases only
-
-/// Provides automatic deriving for [`Serialize`](crate::Serialize).
-pub use deser_derive::Serialize;
-
-/// Provides automatic deriving for [`Deserialize`](crate::Deserialize).
-pub use deser_derive::Deserialize;

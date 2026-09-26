@@ -346,7 +346,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
 }
 
 fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
-    #[cfg(feature = "simdutf8")]
+    #[cfg(feature = "speedups")]
     {
         if simdutf8::basic::from_utf8(bytes).is_ok() {
             // SAFETY: validated above

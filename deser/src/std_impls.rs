@@ -30,7 +30,7 @@ make_slot_wrapper!(SlotWrapper);
 
 /// Serializes as null like `()`.
 impl<T: ?Sized + Sync> Serialize for PhantomData<T> {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Null))
@@ -124,7 +124,7 @@ macro_rules! non_zero {
     ($($ty:ty => $atom:ident),* $(,)?) => {
         $(
             impl Serialize for NonZero<$ty> {
-                __begin_without_finish!();
+                begin_without_finish!();
 
                 fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                     Ok(Chunk::Atom(non_zero!(@atom $atom, self.get())))
@@ -172,7 +172,7 @@ macro_rules! atomic {
             /// The value is loaded with relaxed ordering.
             #[cfg(target_has_atomic = $cfg)]
             impl Serialize for std::sync::atomic::$ty {
-                __begin_without_finish!();
+                begin_without_finish!();
 
                 fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                     let value = self.load(std::sync::atomic::Ordering::Relaxed);
@@ -249,7 +249,7 @@ fn result_name<T, E>(value: &Result<T, E>) -> &'static str {
 
 /// Serializes externally tagged: `{"Ok": value}` or `{"Err": error}`.
 impl<T: Serialize, E: Serialize> Serialize for Result<T, E> {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn describe(&self, d: &mut dyn Describe) {
         describe_result(self, d);
@@ -488,7 +488,7 @@ macro_rules! parse_from_str {
 
             /// Serializes as a string (with `Display`).
             impl Serialize for $ty {
-                __begin_without_finish!();
+                begin_without_finish!();
 
                 fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
                     Ok(Chunk::Atom(Atom::Str(Cow::Owned(self.to_string()))))
@@ -538,7 +538,7 @@ parse_from_str! {
 /// Serializes as a string.  Paths which are not valid UTF-8 fail to
 /// serialize.
 impl Serialize for Path {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         match self.to_str() {
@@ -552,7 +552,7 @@ impl Serialize for Path {
 }
 
 impl Serialize for PathBuf {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.as_path().serialize(state)
@@ -616,7 +616,7 @@ deserialize_via! {
 
 /// Serializes as bytes (without the nul terminator).
 impl Serialize for CStr {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Bytes(Bytes::new(self.to_bytes()))))
@@ -624,7 +624,7 @@ impl Serialize for CStr {
 }
 
 impl Serialize for CString {
-    __begin_without_finish!();
+    begin_without_finish!();
 
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.as_c_str().serialize(state)

@@ -1,3 +1,4 @@
+use crate::Position;
 use crate::de::{Deserialize, DeserializeDriver};
 use crate::error::{Error, ErrorKind};
 use crate::io::{Decoder, Frame, Progress};
@@ -14,44 +15,6 @@ pub enum Status {
     NeedInput,
     /// There are no more values.
     End,
-}
-
-/// A position in the stream.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Position {
-    pub(crate) offset: usize,
-    // 1-based
-    pub(crate) line: usize,
-    pub(crate) column: usize,
-}
-
-impl Position {
-    /// The start of a stream.
-    pub(crate) fn start() -> Position {
-        Position {
-            offset: 0,
-            line: 1,
-            column: 1,
-        }
-    }
-
-    /// Advances the position over the given bytes.
-    pub(crate) fn advance(&mut self, bytes: &[u8]) {
-        self.offset += bytes.len();
-        let line_start = match bytes.iter().rposition(|&b| b == b'\n') {
-            Some(index) => {
-                self.line += bytes.iter().filter(|&&b| b == b'\n').count();
-                self.column = 1;
-                index + 1
-            }
-            None => 0,
-        };
-        // columns are counted in characters
-        self.column += bytes[line_start..]
-            .iter()
-            .filter(|&&b| b & 0xc0 != 0x80)
-            .count();
-    }
 }
 
 /// Splits a stream into values without doing IO.
@@ -212,7 +175,7 @@ impl<D: Decoder> DecodeBuffer<D> {
                     } else {
                         err
                     };
-                    return Err(err.shift_position(base.offset, base.line, base.column));
+                    return Err(err.shift_position(base));
                 }
             };
             match frame {
@@ -239,11 +202,7 @@ impl<D: Decoder> DecodeBuffer<D> {
                         // the decoder cannot get more input
                         self.failed = true;
                         return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of input")
-                            .shift_position(
-                                self.position.offset,
-                                self.position.line,
-                                self.position.column,
-                            ));
+                            .shift_position(self.position));
                     }
                     return Ok(Status::NeedInput);
                 }
@@ -514,7 +473,7 @@ impl<D: Decoder> DecodeBuffer<D> {
         let frame = &self.data[range];
         self.decoder
             .drive(frame, driver)
-            .map_err(|err| err.shift_position(position.offset, position.line, position.column))
+            .map_err(|err| err.shift_position(position))
     }
 
     /// Creates the error for a value where none is expected.
@@ -532,7 +491,7 @@ impl<D: Decoder> DecodeBuffer<D> {
         position.advance(&self.data[self.start..self.start + start]);
         Error::new(ErrorKind::Unexpected, "unexpected value after the end")
             .with_position(0, 1, 1)
-            .shift_position(position.offset, position.line, position.column)
+            .shift_position(position)
     }
 }
 

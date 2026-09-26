@@ -16,7 +16,8 @@ autotests = false
 default = ["io"]
 # reading and writing values from and to streams (with `deser::io`)
 io = ["deser/io"]
-speedups = ["itoa", "ryu", "simdutf8"]
+# faster number formatting (itoa and ryu) and UTF-8 validation (simdutf8)
+speedups = ["dep:itoa", "dep:ryu", "dep:simdutf8"]
 
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }

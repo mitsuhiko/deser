@@ -111,11 +111,11 @@ mod decoder;
 mod elements;
 mod encoder;
 
-use self::buffer::Position;
 pub use self::buffer::{DecodeBuffer, Status};
 pub use self::decoder::{Decoder, Frame, Progress};
 pub use self::elements::{ElementReader, ElementStatus, Next};
 pub use self::encoder::Encoder;
+use crate::Position;
 
 /// Serializes a value into a buffer with an encoder.
 ///
@@ -511,11 +511,7 @@ where
 {
     // moves the position of an error by the position of the part of the
     // input it refers to
-    let locate = |err: Error, offset: usize| {
-        let mut position = Position::start();
-        position.advance(&input[..offset]);
-        err.shift_position(position.offset, position.line, position.column)
-    };
+    let locate = |err: Error, offset: usize| err.shift_position(Position::of(input, offset));
 
     let mut state = D::State::default();
 

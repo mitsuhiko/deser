@@ -66,18 +66,18 @@ macro_rules! __make_slot_wrapper {
 }
 
 /// Implements `__private_begin` for types which do not implement `finish`.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __begin_without_finish {
+///
+/// The derive generates the same code.
+macro_rules! begin_without_finish {
     () => {
         #[inline]
         fn __private_begin(
             &self,
-            state: &mut $crate::State,
-        ) -> ::core::result::Result<$crate::ser::Begin<'_>, $crate::Error> {
-            let shape = $crate::ser::Serialize::container_shape(self);
-            ::core::result::Result::Ok($crate::ser::Begin::chunk(
-                $crate::ser::Serialize::serialize(self, state)?,
+            state: &mut crate::State,
+        ) -> Result<crate::ser::Begin<'_>, crate::Error> {
+            let shape = crate::ser::Serialize::container_shape(self);
+            Ok(crate::ser::Begin::chunk(
+                crate::ser::Serialize::serialize(self, state)?,
                 shape,
                 false,
             ))

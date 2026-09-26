@@ -60,38 +60,8 @@ use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Describe, Serialize};
 use deser::{Atom, ContainerShape, Error};
 
-/// A position in the input.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Position {
-    /// The byte offset from the start of the input.
-    pub offset: usize,
-    /// The line number (1-based).
-    pub line: usize,
-    /// The column number in characters (1-based).
-    pub column: usize,
-}
-
-impl Default for Position {
-    fn default() -> Position {
-        Position {
-            offset: 0,
-            line: 1,
-            column: 1,
-        }
-    }
-}
-
-impl fmt::Debug for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.column)
-    }
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.column)
-    }
-}
+/// Re-exported from deser, which counts positions the same way for errors.
+pub use deser::Position;
 
 /// A range in the input.
 ///
@@ -154,7 +124,7 @@ impl SourceMap {
     fn line_starts(&self) -> &[usize] {
         self.line_starts.get_or_init(|| {
             let mut rv = vec![0];
-            find_newlines(self.source.as_bytes(), |idx| rv.push(idx + 1));
+            rv.extend(self.source.match_indices('\n').map(|(idx, _)| idx + 1));
             rv
         })
     }
@@ -185,11 +155,13 @@ impl SourceMap {
         let offset = offset.min(self.source.len());
         let idx = self.line_index(offset);
         let line_start = self.line_starts()[idx];
-        Position {
-            offset,
+        let mut rv = Position {
+            offset: line_start,
             line: idx + 1,
-            column: 1 + count_chars(&self.source.as_bytes()[line_start..offset]),
-        }
+            column: 1,
+        };
+        rv.advance(&self.source.as_bytes()[line_start..offset]);
+        rv
     }
 
     /// Resolves a range of byte offsets into a span.
@@ -202,11 +174,9 @@ impl SourceMap {
         let end = if bytes.contains(&b'\n') {
             self.position(end)
         } else {
-            Position {
-                offset: end,
-                line: start.line,
-                column: start.column + count_chars(bytes),
-            }
+            let mut rv = start;
+            rv.advance(bytes);
+            rv
         };
         Span { start, end }
     }
@@ -252,49 +222,6 @@ impl Locations {
         }
         state.get::<Locations>()?.source_map.as_ref()
     }
-}
-
-// The helpers below process the input a word at a time as the tracker is
-// invoked for every event.
-
-const LO7: u64 = 0x7f7f_7f7f_7f7f_7f7f;
-const HI: u64 = 0x8080_8080_8080_8080;
-const NEWLINES: u64 = 0x0a0a_0a0a_0a0a_0a0a;
-
-/// Sets the high bit of every byte that is zero (exact, no false positives).
-fn zero_bytes(x: u64) -> u64 {
-    !(((x & LO7).wrapping_add(LO7)) | x | LO7)
-}
-
-/// Invokes the callback with the index of every newline.
-fn find_newlines<F: FnMut(usize)>(bytes: &[u8], mut f: F) {
-    let (chunks, rest) = bytes.as_chunks::<8>();
-    for (idx, &chunk) in chunks.iter().enumerate() {
-        let mut mask = zero_bytes(u64::from_le_bytes(chunk) ^ NEWLINES);
-        while mask != 0 {
-            f(idx * 8 + mask.trailing_zeros() as usize / 8);
-            mask &= mask - 1;
-        }
-    }
-    let offset = bytes.len() - rest.len();
-    for (idx, &byte) in rest.iter().enumerate() {
-        if byte == b'\n' {
-            f(offset + idx);
-        }
-    }
-}
-
-/// Counts the characters (bytes that are not utf-8 continuation bytes).
-fn count_chars(bytes: &[u8]) -> usize {
-    let (chunks, rest) = bytes.as_chunks::<8>();
-    let mut continuation = 0;
-    for &chunk in chunks {
-        let w = u64::from_le_bytes(chunk);
-        // high bit set and the bit below it cleared
-        continuation += (w & !(w << 1) & HI).count_ones() as usize;
-    }
-    continuation += rest.iter().filter(|&&b| b & 0xc0 == 0x80).count();
-    bytes.len() - continuation
 }
 
 /// A value together with its location in the input.
@@ -453,38 +380,6 @@ impl<T: Serialize> Serialize for Spanned<T> {
 
     fn describe(&self, d: &mut dyn Describe) {
         self.value.describe(d)
-    }
-}
-
-#[test]
-fn test_helpers() {
-    let mut state = 0x2545f4914f6cdd1du64;
-    let alphabet = "ab\n\u{e4}\u{1f600}x\n".as_bytes();
-    let rounds = if cfg!(miri) { 1 } else { 50 };
-    for len in 0..64 {
-        for _ in 0..rounds {
-            let input: Vec<u8> = (0..len)
-                .map(|_| {
-                    state ^= state << 13;
-                    state ^= state >> 7;
-                    state ^= state << 17;
-                    alphabet[(state % alphabet.len() as u64) as usize]
-                })
-                .collect();
-            let mut newlines = Vec::new();
-            find_newlines(&input, |idx| newlines.push(idx));
-            let expected: Vec<usize> = input
-                .iter()
-                .enumerate()
-                .filter(|&(_, &b)| b == b'\n')
-                .map(|(idx, _)| idx)
-                .collect();
-            assert_eq!(newlines, expected);
-            assert_eq!(
-                count_chars(&input),
-                input.iter().filter(|&&b| b & 0xc0 != 0x80).count()
-            );
-        }
     }
 }
 

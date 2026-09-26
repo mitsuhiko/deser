@@ -6,6 +6,26 @@ use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttr
 use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
 
 /// Returns an expression that creates a serialize handle for a value.
+/// Implements `__private_begin` for types which do not implement `finish`.
+///
+/// This is the same as the `begin_without_finish!` macro of deser.
+fn begin_without_finish() -> TokenStream {
+    quote! {
+        #[inline]
+        fn __private_begin(
+            &self,
+            __state: &mut __deser::State,
+        ) -> __deser::__derive::Result<__deser::__derive::Begin<'_>> {
+            let __shape = __deser::ser::Serialize::container_shape(self);
+            __deser::__derive::Ok(__deser::__derive::Begin::chunk(
+                __deser::ser::Serialize::serialize(self, __state)?,
+                __shape,
+                false,
+            ))
+        }
+    }
+}
+
 pub fn serialize_handle(
     ty: &syn::Type,
     adapter: Option<&syn::Type>,
@@ -214,52 +234,53 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
     let bounded_where_clause = struct_where_clause(input, &container_attrs, &attrs);
+    let begin_without_finish = begin_without_finish();
 
     Ok(quote! {
-            const _: () = {
-                #[automatically_derived]
-                impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
-    __deser::__begin_without_finish!();
+        const _: () = {
+            #[automatically_derived]
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                #begin_without_finish
 
-                    fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                        __d.structure(#type_name);
-                    }
-
-                    fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                        __deser::__derive::Ok(__deser::ser::Chunk::Struct(Box::new(__StructEmitter {
-                            data: self,
-                            index: 0,
-                            #temp_emitter_init
-                        })))
-                    }
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.structure(#type_name);
                 }
 
-                struct __StructEmitter #wrapper_impl_generics #where_clause {
-                    data: &'__a #ident #ty_generics,
-                    index: usize,
-                    #temp_emitter
+                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(__StructEmitter {
+                        data: self,
+                        index: 0,
+                        #temp_emitter_init
+                    })))
                 }
+            }
+
+            struct __StructEmitter #wrapper_impl_generics #where_clause {
+                data: &'__a #ident #ty_generics,
+                index: usize,
+                #temp_emitter
+            }
 
 
-                #[automatically_derived]
-                impl #wrapper_impl_generics __deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
-                    fn next(&mut self, __state: &mut __deser::State)
-                        -> __deser::__derive::Result<__deser::__derive::Option<(__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>)>>
-                    {
-                        #[allow(clippy::never_loop)]
-                        loop {
-                            let __index = self.index;
-                            match __index {
-                                #(
-                                    #state_handler
-                                )*
-                                _ => return __deser::__derive::Ok(__deser::__derive::None),
-                            }
+            #[automatically_derived]
+            impl #wrapper_impl_generics __deser::ser::StructEmitter for __StructEmitter #wrapper_ty_generics #bounded_where_clause {
+                fn next(&mut self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Option<(__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>)>>
+                {
+                    #[allow(clippy::never_loop)]
+                    loop {
+                        let __index = self.index;
+                        match __index {
+                            #(
+                                #state_handler
+                            )*
+                            _ => return __deser::__derive::Ok(__deser::__derive::None),
                         }
                     }
                 }
-            };
-        })
+            }
+        };
+    })
 }
 
 /// Derives a struct without flattened fields.
@@ -284,7 +305,7 @@ fn derive_indexed_struct(
             let field_skip = attrs.skip_serializing_if().map(|path| {
                 quote! {
                     if #path(&self.#name) {
-                        return __deser::__derive::Ok(__deser::ser::StructField::Skip);
+                        return __deser::__derive::Ok(__deser::__derive::StructField::Skip);
                     }
                 }
             });
@@ -293,7 +314,7 @@ fn derive_indexed_struct(
                 let is_optional = is_optional(ty, attrs.adapter(), quote! { &self.#name });
                 Some(quote! {
                     if #is_optional {
-                        return __deser::__derive::Ok(__deser::ser::StructField::Skip);
+                        return __deser::__derive::Ok(__deser::__derive::StructField::Skip);
                     }
                 })
             } else {
@@ -304,7 +325,7 @@ fn derive_indexed_struct(
                 #index => {
                     #field_skip
                     #optional_skip
-                    __deser::ser::StructField::Field(
+                    __deser::__derive::StructField::Field(
                         #fieldstr,
                         #handle,
                     )
@@ -339,28 +360,28 @@ fn derive_indexed_struct(
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
-                        __deser::ser::IndexedStructEmitter::new(self)
+                        __deser::__derive::IndexedStructEmitter::new(self)
                     )))
                 }
 
                 #[inline]
                 fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Begin<'_>>
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
                 {
-                    __deser::__derive::Ok(__deser::ser::Begin::indexed_struct(self, #shape))
+                    __deser::__derive::Ok(__deser::__derive::Begin::indexed_struct(self, #shape))
                 }
             }
 
             #[automatically_derived]
-            impl #impl_generics __deser::ser::IndexedStruct for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics __deser::__derive::IndexedStruct for #ident #ty_generics #bounded_where_clause {
                 fn field(&self, __index: usize, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::StructField<'_>>
+                    -> __deser::__derive::Result<__deser::__derive::StructField<'_>>
                 {
                     __deser::__derive::Ok(match __index {
                         #(
                             #field_arms
                         )*
-                        _ => __deser::ser::StructField::End,
+                        _ => __deser::__derive::StructField::End,
                     })
                 }
             }
@@ -396,40 +417,41 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .map(|x| x.name(&container_attrs))
         .collect::<Vec<_>>();
     let type_name = container_attrs.container_name();
+    let begin_without_finish = begin_without_finish();
 
     Ok(quote! {
-            const _: () = {
-                #[automatically_derived]
-                impl __deser::Serialize for #ident {
-    __deser::__begin_without_finish!();
+        const _: () = {
+            #[automatically_derived]
+            impl __deser::Serialize for #ident {
+                #begin_without_finish
 
-                    fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                        __d.variant(&__deser::ser::Variant::new(
-                            #type_name,
-                            match *self {
-                                #(
-                                    #ident::#var_idents => #names,
-                                )*
-                            },
-                            __deser::ser::VariantKind::Unit,
-                            __deser::ser::VariantRepr::External,
-                        ));
-                    }
-
-                    fn serialize(&self, __state: &mut __deser::State)
-                        -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
-                    {
-                        __deser::__derive::Ok(match *self {
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.variant(&__deser::ser::Variant::new(
+                        #type_name,
+                        match *self {
                             #(
-                                #ident::#var_idents => {
-                                    __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#names)))
-                                }
+                                #ident::#var_idents => #names,
                             )*
-                        })
-                    }
+                        },
+                        __deser::ser::VariantKind::Unit,
+                        __deser::ser::VariantRepr::External,
+                    ));
                 }
-            };
-        })
+
+                fn serialize(&self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
+                {
+                    __deser::__derive::Ok(match *self {
+                        #(
+                            #ident::#var_idents => {
+                                __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#names)))
+                            }
+                        )*
+                    })
+                }
+            }
+        };
+    })
 }
 
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
@@ -491,7 +513,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                 }
                 #[inline]
                 fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Begin<'_>>
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
                 {
                     __deser::ser::Serialize::__private_begin(#value, __state)
                 }

@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 
 use deser::ext::{BorrowedExtension, ExtValue, Extension};
-use deser::{Atom, Bytes, EventData};
+use deser::{Atom, Bytes, EventData, Position};
 
 use crate::index::ValueIndex;
 use crate::map::Map;
@@ -185,22 +185,16 @@ impl Span {
         self.source.get(self.range.clone())
     }
 
-    /// Returns the line and column (both 1-based) of the start of the span.
+    /// Returns the position (with line and column) of the start of the span.
+    pub fn start(&self) -> Position {
+        Position::of(self.source.as_bytes(), self.range.start)
+    }
+
+    /// Returns the position (with line and column) of the end of the span.
     ///
-    /// Columns are counted in characters.
-    pub fn line_column(&self) -> (usize, usize) {
-        let before = &self.source.as_bytes()[..self.range.start.min(self.source.len())];
-        let line_start = before
-            .iter()
-            .rposition(|&b| b == b'\n')
-            .map_or(0, |x| x + 1);
-        let line = before.iter().filter(|&&b| b == b'\n').count() + 1;
-        let column = before[line_start..]
-            .iter()
-            .filter(|&&b| b & 0xc0 != 0x80)
-            .count()
-            + 1;
-        (line, column)
+    /// The end is exclusive.
+    pub fn end(&self) -> Position {
+        Position::of(self.source.as_bytes(), self.range.end)
     }
 
     pub(crate) fn start_range(&self) -> (usize, usize) {

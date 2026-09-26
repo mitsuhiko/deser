@@ -3,6 +3,8 @@ use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::Position;
+
 /// Describes the kind of error.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ErrorKind {
@@ -182,18 +184,8 @@ impl Error {
     /// ```
     pub fn resolve_position(mut self, source: &[u8]) -> Self {
         if let (Some(offset), None) = (self.inner.offset, self.inner.line_column) {
-            let before = &source[..offset.min(source.len())];
-            let line_start = before
-                .iter()
-                .rposition(|&b| b == b'\n')
-                .map_or(0, |x| x + 1);
-            let line = before.iter().filter(|&&b| b == b'\n').count() + 1;
-            let column = before[line_start..]
-                .iter()
-                .filter(|&&b| b & 0xc0 != 0x80)
-                .count()
-                + 1;
-            self.inner.line_column = Some((line, column));
+            let pos = Position::of(source, offset);
+            self.inner.line_column = Some((pos.line, pos.column));
         }
         self
     }
@@ -202,18 +194,17 @@ impl Error {
     /// refers to.
     ///
     /// This is used for errors of inputs which are part of a larger input,
-    /// the base is the position (offset, line and column) of the start of
-    /// the part.
+    /// the base is the position of the start of the part.
     #[cfg(feature = "io")]
-    pub(crate) fn shift_position(mut self, offset: usize, line: usize, column: usize) -> Self {
+    pub(crate) fn shift_position(mut self, base: Position) -> Self {
         if let Some(ref mut error_offset) = self.inner.offset {
-            *error_offset += offset;
+            *error_offset += base.offset;
         }
         if let Some((ref mut error_line, ref mut error_column)) = self.inner.line_column {
             if *error_line == 1 {
-                *error_column += column - 1;
+                *error_column += base.column - 1;
             }
-            *error_line += line - 1;
+            *error_line += base.line - 1;
         }
         self
     }

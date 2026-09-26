@@ -828,11 +828,11 @@ fn is_ascii(bytes: &[u8]) -> bool {
 /// Checks if the bytes are valid UTF-8.
 #[inline]
 fn is_utf8(bytes: &[u8]) -> bool {
-    #[cfg(feature = "simdutf8")]
+    #[cfg(feature = "speedups")]
     {
         simdutf8::basic::from_utf8(bytes).is_ok()
     }
-    #[cfg(not(feature = "simdutf8"))]
+    #[cfg(not(feature = "speedups"))]
     {
         str::from_utf8(bytes).is_ok()
     }

@@ -530,6 +530,16 @@ All notable changes to deser are documented here.
   - The new containers are adapters as well: `Arc<U>`, `Box<[U]>`,
     `Arc<[U]>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>` and
     `Result<U, V>`.
+- The `speedups` feature of the formats no longer exposes the optional
+  dependencies as features: `simdutf8`, `itoa` and `ryu` cannot be enabled
+  on their own anymore, enable `speedups` instead.
+- Added `deser::Position` (offset, line and column) with `Position::of` and
+  `Position::advance`, which counts positions the same way as errors do.
+  `deser_location::Position` is a re-export of it and the spans of
+  `deser-value` return it from `Span::start` and `Span::end`.
+- The derive macros are no longer re-exported from `deser::derive` (which
+  only holds their documentation), use `deser::Serialize` and
+  `deser::Deserialize`.
 
 ## 0.8.0
 

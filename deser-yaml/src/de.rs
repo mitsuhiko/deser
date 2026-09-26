@@ -1064,7 +1064,7 @@ fn emit_tagged<'a, E: Into<Event<'a>>>(
 }
 
 fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
-    #[cfg(feature = "simdutf8")]
+    #[cfg(feature = "speedups")]
     {
         if simdutf8::basic::from_utf8(bytes).is_ok() {
             // SAFETY: validated above

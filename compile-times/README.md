@@ -1,38 +1,38 @@
 # Compile Times
 
 This folder contains the same code for serde, deser and miniserde to compare the
-impact on compile times.  Both use JSON and deriving for a comparison.
+impact on compile times.  All use JSON and deriving for a comparison.
 
 Current results:
 
 ```
 serde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 5.76s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.43s
   check again
-    Finished dev [unoptimized + debuginfo] target(s) in 0.10s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 6.26s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.83s
   build --release
-    Finished release [optimized] target(s) in 7.43s
+    Finished `release` profile [optimized] target(s) in 4.00s
 
 miniserde
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 3.37s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.64s
   check again
-    Finished dev [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 3.04s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.05s
   build --release
-    Finished release [optimized] target(s) in 3.36s
+    Finished `release` profile [optimized] target(s) in 2.82s
 
 deser
   check
-    Finished dev [unoptimized + debuginfo] target(s) in 3.60s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.82s
   check again
-    Finished dev [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
   build
-    Finished dev [unoptimized + debuginfo] target(s) in 3.85s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.10s
   build --release
-    Finished release [optimized] target(s) in 3.63s
+    Finished `release` profile [optimized] target(s) in 3.31s
 ```
