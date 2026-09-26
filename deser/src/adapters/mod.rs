@@ -125,7 +125,7 @@ use crate::State;
 use crate::de::{Deserialize, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Serialize};
+use crate::ser::{Begin, Chunk, Describe, Serialize};
 
 pub mod bytes;
 mod ser_impls;
@@ -221,6 +221,14 @@ pub trait SerializeAs<T: ?Sized>: 'static {
     fn container_shape_as(value: &T) -> ContainerShape {
         let _ = value;
         ContainerShape::new()
+    }
+
+    /// Describes the Rust shape of the value.
+    ///
+    /// See [`Serialize::describe`].
+    fn describe_as(value: &T, d: &mut dyn Describe) {
+        let _ = value;
+        let _ = d;
     }
 
     #[doc(hidden)]
@@ -325,6 +333,10 @@ impl<T: Serialize + ?Sized> SerializeAs<T> for Same {
         value.container_shape()
     }
 
+    fn describe_as(value: &T, d: &mut dyn Describe) {
+        value.describe(d)
+    }
+
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         value.__private_begin(state)
@@ -394,6 +406,11 @@ impl<A: SerializeAs<T>, T: ?Sized> Serialize for SerializeAsRef<A, T> {
     #[inline]
     fn container_shape(&self) -> ContainerShape {
         A::container_shape_as(&self.value)
+    }
+
+    #[inline]
+    fn describe(&self, d: &mut dyn Describe) {
+        A::describe_as(&self.value, d)
     }
 
     #[inline]
@@ -558,6 +575,11 @@ impl<T, A: SerializeAs<T>> Serialize for As<T, A> {
     #[inline]
     fn container_shape(&self) -> ContainerShape {
         A::container_shape_as(&self.value)
+    }
+
+    #[inline]
+    fn describe(&self, d: &mut dyn Describe) {
+        A::describe_as(&self.value, d)
     }
 
     #[inline]

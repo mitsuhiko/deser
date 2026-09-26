@@ -7,7 +7,7 @@ use deser::{Atom, Event, Serialize};
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(s);
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -107,7 +107,7 @@ fn test_shape_forwarding() {
     fn top_shape(s: &dyn Serialize) -> Option<deser::ContainerShape> {
         let mut driver = SerializeDriver::new(s);
         match driver.next().unwrap() {
-            Some((Event::MapStart(shape) | Event::SeqStart(shape), _)) => Some(shape),
+            Some((Event::MapStart(shape) | Event::SeqStart(shape), _, _)) => Some(shape),
             _ => None,
         }
     }
@@ -159,7 +159,7 @@ fn test_is_map_key() {
 
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&item);
-    while let Some((event, state)) = driver.next().unwrap() {
+    while let Some((event, _, state)) = driver.next().unwrap() {
         events.push((event.to_static(), state.is_map_key()));
     }
     assert_eq!(events, expected);
@@ -172,4 +172,60 @@ fn test_is_map_key() {
         })
         .unwrap();
     assert_eq!(events, expected);
+}
+
+#[test]
+fn test_describe_through_layers() {
+    use deser::ser::{Describe, Layer, Next};
+
+    struct Passthrough;
+
+    impl Layer for Passthrough {
+        fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), deser::Error> {
+            next.emit(event)
+        }
+    }
+
+    #[derive(Default)]
+    struct Names(Vec<String>);
+
+    impl Describe for Names {
+        fn structure(&mut self, name: &str) {
+            self.0.push(name.into());
+        }
+
+        fn some(&mut self) {
+            self.0.push("Some".into());
+        }
+    }
+
+    #[derive(deser::Serialize)]
+    struct Point {
+        x: Option<u32>,
+    }
+
+    let mut names = Names::default();
+    let mut driver = SerializeDriver::new(&Point { x: Some(1) });
+    driver.push_layer(Passthrough);
+    driver
+        .drive_described(|_event, value, state| {
+            if !state.is_map_key() {
+                value.describe(&mut names);
+            }
+            Ok(())
+        })
+        .unwrap();
+    // the map start (and end) describe the struct, the value the option
+    assert_eq!(names.0, ["Point", "Some", "Point"]);
+
+    // without values nothing is described
+    let mut driver = SerializeDriver::new(&Point { x: Some(1) });
+    let mut count = 0;
+    driver
+        .drive(|_event, _state| {
+            count += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(count, 4);
 }

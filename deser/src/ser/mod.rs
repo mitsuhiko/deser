@@ -16,7 +16,7 @@
 //! # fn do_it() -> Result<(), deser::Error> {
 //! let serializable = vec!["foo", "bar", "baz"];
 //! let mut driver = SerializeDriver::new(&serializable);
-//! while let Some((_event, _state)) = driver.next()? {
+//! while let Some((_event, _value, _state)) = driver.next()? {
 //!     // serialize each event for the target format such as JSON
 //! }
 //! # Ok(()) } do_it().unwrap();
@@ -97,6 +97,7 @@ use crate::error::Error;
 use crate::event::ContainerShape;
 
 mod chunk;
+mod describe;
 mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
@@ -104,6 +105,7 @@ mod impls;
 mod layer;
 
 pub use self::chunk::Chunk;
+pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
 
 pub use driver::SerializeDriver;
@@ -330,6 +332,16 @@ pub trait Serialize {
         false
     }
 
+    /// Describes the Rust shape of this value.
+    ///
+    /// This is only invoked by formats which want to reflect the Rust shape
+    /// of values, see [`Describe`].  The default implementation describes
+    /// nothing.  Wrappers which serialize as the value they wrap should
+    /// describe themselves and then delegate to the wrapped value.
+    fn describe(&self, d: &mut dyn Describe) {
+        let _ = d;
+    }
+
     /// Returns the shape of this value if it's a map or sequence.
     ///
     /// The shape is passed on with the [`MapStart`](crate::Event::MapStart)
@@ -376,7 +388,7 @@ fn test_serialize() {
     m.insert(false, vec![]);
 
     let mut driver = SerializeDriver::new(&m);
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         v.push(format!("{:?}", event));
     }
 

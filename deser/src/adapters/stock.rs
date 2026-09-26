@@ -14,7 +14,7 @@ use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes, ContainerShape};
-use crate::ser::{Begin, Chunk, Serialize, SerializeHandle};
+use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
 
 /// Deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the data.
 ///
@@ -503,6 +503,10 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
         A::container_shape_as(value)
     }
 
+    fn describe_as(value: &T, d: &mut dyn Describe) {
+        A::describe_as(value, d)
+    }
+
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         A::__private_begin_as(value, state)
@@ -637,6 +641,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 
     fn container_shape_as(value: &Vec<T>) -> ContainerShape {
         <Vec<A> as SerializeAs<Vec<T>>>::container_shape_as(value)
+    }
+
+    fn describe_as(value: &Vec<T>, d: &mut dyn Describe) {
+        <Vec<A> as SerializeAs<Vec<T>>>::describe_as(value, d)
     }
 
     #[inline]
@@ -794,6 +802,10 @@ where
     fn container_shape_as(value: &BTreeMap<K, V>) -> ContainerShape {
         <BTreeMap<KA, VA> as SerializeAs<BTreeMap<K, V>>>::container_shape_as(value)
     }
+
+    fn describe_as(value: &BTreeMap<K, V>, d: &mut dyn Describe) {
+        <BTreeMap<KA, VA> as SerializeAs<BTreeMap<K, V>>>::describe_as(value, d)
+    }
 }
 
 impl<K, V, H, KA, VA> SerializeAs<HashMap<K, V, H>> for MapSkipError<KA, VA>
@@ -811,5 +823,9 @@ where
 
     fn container_shape_as(value: &HashMap<K, V, H>) -> ContainerShape {
         <HashMap<KA, VA> as SerializeAs<HashMap<K, V, H>>>::container_shape_as(value)
+    }
+
+    fn describe_as(value: &HashMap<K, V, H>, d: &mut dyn Describe) {
+        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, H>>>::describe_as(value, d)
     }
 }

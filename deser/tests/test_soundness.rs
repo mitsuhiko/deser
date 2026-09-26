@@ -66,7 +66,7 @@ fn outer_events() -> Vec<Event<'static>> {
     };
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&value);
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events
@@ -345,7 +345,7 @@ fn test_deep_roundtrip_and_partial_drops() {
     let mut events = Vec::new();
     {
         let mut driver = SerializeDriver::new(&node);
-        while let Some((event, _)) = driver.next().unwrap() {
+        while let Some((event, _, _)) = driver.next().unwrap() {
             events.push(event.to_static());
         }
     }
@@ -414,7 +414,7 @@ fn test_borrowed_keys_across_reallocation() {
     let value = Nested(depth());
     let mut driver = SerializeDriver::new(&value);
     let mut keys = 0;
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         if let Event::Atom(Atom::Str(s)) = event
             && s.starts_with("key-")
         {
@@ -500,7 +500,7 @@ fn test_tagged_drop_and_errors_at_every_point() {
     let mut events = Vec::new();
     {
         let mut driver = SerializeDriver::new(&value);
-        while let Some((event, _)) = driver.next().unwrap() {
+        while let Some((event, _, _)) = driver.next().unwrap() {
             events.push(event.to_static());
         }
     }
@@ -567,7 +567,7 @@ fn test_enum_representations_drop_and_errors_at_every_point() {
         let mut events = Vec::new();
         {
             let mut driver = SerializeDriver::new(&value);
-            while let Some((event, _)) = driver.next().unwrap() {
+            while let Some((event, _, _)) = driver.next().unwrap() {
                 events.push(event.to_static());
             }
         }
@@ -603,7 +603,7 @@ fn drive_events(
     let mut driver = SerializeDriver::new(value);
     for _ in 0..skip {
         match driver.next()? {
-            Some((event, _)) => events.push(event.to_static()),
+            Some((event, _, _)) => events.push(event.to_static()),
             None => return Ok(events),
         }
     }
@@ -651,7 +651,7 @@ fn test_drive() {
         let mut expected = Vec::new();
         {
             let mut driver = SerializeDriver::new(value);
-            while let Some((event, _)) = driver.next().unwrap() {
+            while let Some((event, _, _)) = driver.next().unwrap() {
                 expected.push(event.to_static());
             }
         }
@@ -744,7 +744,7 @@ fn test_adapters_and_forwarding() {
     let mut expected = Vec::new();
     {
         let mut driver = SerializeDriver::new(&value);
-        while let Some((event, _)) = driver.next().unwrap() {
+        while let Some((event, _, _)) = driver.next().unwrap() {
             expected.push(event.to_static());
         }
     }

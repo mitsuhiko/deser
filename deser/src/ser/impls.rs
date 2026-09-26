@@ -6,7 +6,9 @@ use crate::State;
 use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape, Order};
 use crate::ext::ExtValue;
-use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use crate::ser::{
+    Begin, Chunk, Describe, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle,
+};
 
 impl Serialize for bool {
     __begin_without_finish!();
@@ -289,6 +291,10 @@ where
         ContainerShape::new().with_order(Order::Sorted)
     }
 
+    fn describe(&self, d: &mut dyn Describe) {
+        d.set();
+    }
+
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         struct Emitter<'a, T>(std::collections::btree_set::Iter<'a, T>);
 
@@ -313,6 +319,10 @@ where
 
     fn container_shape(&self) -> ContainerShape {
         ContainerShape::new().with_order(Order::Arbitrary)
+    }
+
+    fn describe(&self, d: &mut dyn Describe) {
+        d.set();
     }
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -343,6 +353,16 @@ where
         match self {
             Some(value) => value.container_shape(),
             None => ContainerShape::new(),
+        }
+    }
+
+    fn describe(&self, d: &mut dyn Describe) {
+        match self {
+            Some(value) => {
+                d.some();
+                value.describe(d);
+            }
+            None => d.none(),
         }
     }
 
@@ -380,6 +400,10 @@ macro_rules! serialize_for_tuple {
             #[inline]
             fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
                 Ok(Begin::indexed_seq(self, ContainerShape::new()))
+            }
+
+            fn describe(&self, d: &mut dyn Describe) {
+                d.tuple();
             }
 
             #[allow(non_snake_case)]
@@ -485,6 +509,10 @@ macro_rules! forward_serialize {
 
                 fn container_shape(&self) -> ContainerShape {
                     Serialize::container_shape(&**self)
+                }
+
+                fn describe(&self, d: &mut dyn Describe) {
+                    Serialize::describe(&**self, d)
                 }
 
             }

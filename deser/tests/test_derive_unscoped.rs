@@ -32,7 +32,7 @@ fn test_unscoped() {
     // works without deser being imported.
     let mut events = Vec::new();
     let mut driver = deser::ser::SerializeDriver::new(&root);
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     assert_eq!(

@@ -107,7 +107,7 @@ fn test_event_data_when_serializing() {
 
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(&values);
-    while let Some((event, state)) = driver.next().unwrap() {
+    while let Some((event, _, state)) = driver.next().unwrap() {
         events.push((event.to_static(), state.event::<Marker>().map(|x| x.0)));
     }
     assert_eq!(events, expected);

@@ -874,6 +874,53 @@ pub fn derive_serialize(
         &bound_fields(&variants),
     );
 
+    let type_name = container_attrs.container_name();
+    let repr_tokens = match repr {
+        Repr::External => quote! { __deser::ser::VariantRepr::External },
+        Repr::Internal { tag } => quote! { __deser::ser::VariantRepr::Internal { tag: #tag } },
+        Repr::Adjacent { tag, content } => quote! {
+            __deser::ser::VariantRepr::Adjacent { tag: #tag, content: #content }
+        },
+        Repr::Untagged => quote! { __deser::ser::VariantRepr::Untagged },
+    };
+    let mut describe_arms = Vec::new();
+    for info in &variants {
+        let name = &info.name;
+        let var_ident = info.ident;
+        let kind = match info.content {
+            Content::Unit => quote! { __deser::ser::VariantKind::Unit },
+            Content::Newtype(_) => quote! { __deser::ser::VariantKind::Newtype },
+            Content::Tuple(_) => quote! { __deser::ser::VariantKind::Tuple },
+            Content::Struct(_) => quote! { __deser::ser::VariantKind::Struct },
+        };
+        let describe_variant = quote! {
+            __d.variant(&__deser::ser::Variant::new(#type_name, #name, #kind, #repr_tokens));
+        };
+        describe_arms.push(match (&repr, &info.content) {
+            // untagged newtype variants serialize as their content and
+            // internally tagged ones merge its fields with the tag, the
+            // content describes itself as well
+            (Repr::Untagged | Repr::Internal { .. }, Content::Newtype(idx)) => {
+                let pattern = info.pattern(ident);
+                let value = info.fields[*idx].ser_value();
+                quote! {
+                    #pattern => {
+                        #describe_variant
+                        __deser::ser::Serialize::describe(#value, __d);
+                    }
+                }
+            }
+            _ => {
+                let pattern = match info.shape {
+                    Shape::Unit => quote! { #ident::#var_ident },
+                    Shape::Tuple => quote! { #ident::#var_ident(..) },
+                    Shape::Named => quote! { #ident::#var_ident { .. } },
+                };
+                quote! { #pattern => { #describe_variant } }
+            }
+        });
+    }
+
     let mut arms = Vec::new();
     for info in &variants {
         let name = &info.name;
@@ -961,6 +1008,12 @@ pub fn derive_serialize(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    match *self {
+                        #(#describe_arms)*
+                    }
+                }
+
                 fn serialize(
                     &self,
                     __state: &mut __deser::State,

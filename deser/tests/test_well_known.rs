@@ -18,7 +18,7 @@ fn deserialize<'a, 'de, T: Deserialize<'de>, E: Into<Event<'a>>>(event: E) -> Re
 
 fn serialize(value: &dyn Serialize) -> Atom<'static> {
     let mut driver = SerializeDriver::new(value);
-    let (event, _) = driver.next().unwrap().unwrap();
+    let (event, _, _) = driver.next().unwrap().unwrap();
     match event {
         Event::Atom(atom) => atom.to_static(),
         other => panic!("unexpected event {:?}", other),

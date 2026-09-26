@@ -57,7 +57,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, Serialize};
+use deser::ser::{Chunk, Describe, Serialize};
 use deser::{Atom, ContainerShape, Error};
 
 /// A position in the input.
@@ -449,6 +449,10 @@ impl<T: Serialize> Serialize for Spanned<T> {
 
     fn container_shape(&self) -> ContainerShape {
         self.value.container_shape()
+    }
+
+    fn describe(&self, d: &mut dyn Describe) {
+        self.value.describe(d)
     }
 }
 

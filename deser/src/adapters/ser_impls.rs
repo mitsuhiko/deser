@@ -6,7 +6,7 @@ use crate::State;
 use crate::adapters::{SerializeAs, SerializeAsRef};
 use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape, Order};
-use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, SerializeHandle};
+use crate::ser::{Begin, Chunk, Describe, IndexedSeq, MapEmitter, SeqEmitter, SerializeHandle};
 
 /// Returns a handle to a value that serializes with an adapter.
 #[inline(always)]
@@ -96,6 +96,16 @@ impl<T, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
         }
     }
 
+    fn describe_as(value: &Option<T>, d: &mut dyn Describe) {
+        match value {
+            Some(value) => {
+                d.some();
+                A::describe_as(value, d);
+            }
+            None => d.none(),
+        }
+    }
+
     #[inline]
     fn __private_begin_as<'a>(value: &'a Option<T>, state: &mut State) -> Result<Begin<'a>, Error> {
         match value {
@@ -124,6 +134,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<Box<T>> for Box<A> {
 
     fn container_shape_as(value: &Box<T>) -> ContainerShape {
         A::container_shape_as(value)
+    }
+
+    fn describe_as(value: &Box<T>, d: &mut dyn Describe) {
+        A::describe_as(value, d)
     }
 
     #[inline]
@@ -296,6 +310,10 @@ impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
         ContainerShape::new().with_order(Order::Sorted)
     }
 
+    fn describe_as(_value: &BTreeSet<T>, d: &mut dyn Describe) {
+        d.set();
+    }
+
     #[inline]
     fn __private_begin_as<'a>(
         value: &'a BTreeSet<T>,
@@ -320,6 +338,10 @@ impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSe
 
     fn container_shape_as(_value: &HashSet<T, H>) -> ContainerShape {
         ContainerShape::new().with_order(Order::Arbitrary)
+    }
+
+    fn describe_as(_value: &HashSet<T, H>, d: &mut dyn Describe) {
+        d.set();
     }
 
     #[inline]
@@ -363,6 +385,10 @@ macro_rules! serialize_as_for_tuple {
                     seq: SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value),
                     index: 0,
                 })))
+            }
+
+            fn describe_as(_value: &($($name,)*), d: &mut dyn Describe) {
+                d.tuple();
             }
 
             #[inline]

@@ -86,6 +86,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
+    let type_name = container_attrs.container_name();
     let attrs = fields
         .named
         .iter()
@@ -220,6 +221,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
     __deser::__begin_without_finish!();
 
+                    fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                        __d.structure(#type_name);
+                    }
+
                     fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                         __deser::__derive::Ok(__deser::ser::Chunk::Struct(Box::new(__StructEmitter {
                             data: self,
@@ -268,6 +273,7 @@ fn derive_indexed_struct(
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+    let type_name = container_attrs.container_name();
 
     let field_arms = attrs
         .iter()
@@ -313,6 +319,10 @@ fn derive_indexed_struct(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.structure(#type_name);
+                }
+
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
                         __deser::ser::IndexedStructEmitter::new(self)
@@ -371,12 +381,26 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .iter()
         .map(|x| x.name(&container_attrs))
         .collect::<Vec<_>>();
+    let type_name = container_attrs.container_name();
 
     Ok(quote! {
             const _: () = {
                 #[automatically_derived]
                 impl __deser::Serialize for #ident {
     __deser::__begin_without_finish!();
+
+                    fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                        __d.variant(&__deser::ser::Variant::new(
+                            #type_name,
+                            match *self {
+                                #(
+                                    #ident::#var_idents => #names,
+                                )*
+                            },
+                            __deser::ser::VariantKind::Unit,
+                            __deser::ser::VariantRepr::External,
+                        ));
+                    }
 
                     fn serialize(&self, __state: &mut __deser::State)
                         -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
@@ -399,6 +423,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
+    let type_name = container_attrs.container_name();
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;
     if field_attrs.tag() {
@@ -436,6 +461,10 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
             impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
                 fn container_shape(&self) -> __deser::ContainerShape {
                     __deser::ser::Serialize::container_shape(#value)
+                }
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.newtype(#type_name);
+                    __deser::ser::Serialize::describe(#value, __d)
                 }
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
                     __deser::ser::Serialize::serialize(#value, __state)

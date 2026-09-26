@@ -25,7 +25,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
-    while let Some((event, _)) = driver.next().unwrap() {
+    while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
     events

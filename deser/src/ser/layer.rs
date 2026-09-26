@@ -1,9 +1,11 @@
 use crate::State;
 use crate::error::Error;
 use crate::event::Event;
+use crate::ser::Serialize;
 
 /// The function that receives the events of a [`SerializeDriver`](crate::ser::SerializeDriver).
-pub(crate) type EventFn<'f> = dyn FnMut(Event<'_>, &mut State) -> Result<(), Error> + 'f;
+pub(crate) type EventFn<'f> =
+    dyn FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error> + 'f;
 
 /// A layer between the serialization and a format.
 ///
@@ -59,6 +61,11 @@ pub(crate) type EventFn<'f> = dyn FnMut(Event<'_>, &mut State) -> Result<(), Err
 /// current when it's emitted.  Map keys that are emitted at another time
 /// have to be emitted with [`Next::emit_key`] so that they are recognized
 /// as map keys (see [`State::is_map_key`]).
+///
+/// All events a layer emits are passed on with the value of the event the
+/// layer received (see [`Next::value`]), so that formats that
+/// [describe](crate::ser::Describe) values see the description of the
+/// original value.
 pub trait Layer {
     /// Processes an event.
     ///
@@ -73,6 +80,7 @@ pub struct Next<'n> {
     layers: &'n mut [Box<dyn Layer>],
     state: &'n mut State,
     f: &'n mut EventFn<'n>,
+    value: &'n dyn Serialize,
 }
 
 impl<'n> Next<'n> {
@@ -81,8 +89,24 @@ impl<'n> Next<'n> {
         layers: &'n mut [Box<dyn Layer>],
         state: &'n mut State,
         f: &'n mut EventFn<'n>,
+        value: &'n dyn Serialize,
     ) -> Next<'n> {
-        Next { layers, state, f }
+        Next {
+            layers,
+            state,
+            f,
+            value,
+        }
+    }
+
+    /// Returns the value of the current event.
+    ///
+    /// This is only useful to [describe](crate::ser::Describe) the value.
+    /// If the driver does not pass on values (see
+    /// [`drive_described`](crate::ser::SerializeDriver::drive_described)),
+    /// this is a value that describes nothing.
+    pub fn value(&self) -> &dyn Serialize {
+        self.value
     }
 
     /// Returns the state.
@@ -119,9 +143,10 @@ impl<'n> Next<'n> {
                     layers: rest,
                     state: self.state,
                     f: self.f,
+                    value: self.value,
                 },
             ),
-            None => (self.f)(event, self.state),
+            None => (self.f)(event, self.value, self.state),
         }
     }
 }
