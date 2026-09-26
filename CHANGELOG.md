@@ -289,7 +289,6 @@ All notable changes to deser are documented here.
 - `deser-json` now serializes `f32` values with `f32` precision.
 - Fixed integer range checks which accepted `u64::MAX` as `-1` for `i64`
   and `-1` as `u64::MAX` for `u64`.
-- Made `derive` a default feature.
 - Removed number serialization support in JSON serializer.
 - Fixed `Option<T>` silently dropping structs, vectors, maps and boxes.
 - Fixed `HashMap` deserialization.

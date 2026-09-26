@@ -9,8 +9,8 @@
 
 Deser is an experimental serialization system for Rust.  It wants to explore the
 possibilities of serialization and deserialization of structural formats such as
-JSON or msgpack.  It intentionally does not desire to support non self
-describing formats such as bincode.
+JSON or CBOR.  It intentionally does not desire to support non self describing
+formats such as bincode.
 
 **This is not a production ready yet.**
 
@@ -29,7 +29,13 @@ pub struct Account {
 This generates out the necessary
 [`Serialize`](https://docs.rs/deser/latest/deser/ser/trait.Serialize.html) and
 [`Deserialize`](https://docs.rs/deser/latest/deser/de/trait.Deserialize.html)
-implementations.
+implementations.  Deriving requires the `derive` feature, which is not
+enabled by default:
+
+```toml
+[dependencies]
+deser = { version = "0.8", features = ["derive"] }
+```
 
 To see some practical examples of this have a look at the
 [examples](https://github.com/mitsuhiko/deser/tree/main/examples).

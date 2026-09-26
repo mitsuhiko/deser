@@ -14,7 +14,6 @@ documentation = "https://docs.rs/deser"
 all-features = true
 
 [features]
-default = ["derive"]
 derive = ["deser-derive"]
 
 [dependencies]
@@ -29,4 +28,6 @@ time = { version = "0.3.40", optional = true, default-features = false }
 uuid = { version = "1", optional = true, default-features = false }
 
 [dev-dependencies]
+# the tests use derive
+deser = { path = ".", features = ["derive"] }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }

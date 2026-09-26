@@ -1,6 +1,6 @@
 //! Support for automatic serializer and deserializer deriving.
 //!
-//! When the `derive` feature is enabled (which is the default) basic automatic
+//! When the `derive` feature is enabled basic automatic
 //! deriving of [`Serialize`](crate::Serialize) and
 //! [`Deserialize`](crate::Deserialize) is provided.  This feature is modelled
 //! after [`serde`](https://serde.rs/) so if you are coming from there you

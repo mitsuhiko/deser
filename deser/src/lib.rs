@@ -8,8 +8,8 @@
 //! such as JSON or msgpack.  It intentionally does not desire to support non
 //! self describing formats such as bincode.
 //!
-//! It supports deriving structures that can be serialized and derserialized
-//! automatically:
+//! With the `derive` feature it supports deriving structures that can be
+//! serialized and derserialized automatically:
 //!
 #![cfg_attr(
     feature = "derive",
@@ -46,11 +46,17 @@ pub struct Account {
 //! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
-//!   information see [`derive`](crate::derive).  This feature is enabled by default.
+//!   information see [`derive`][derive-module].
 //! * `jiff`, `chrono`, `time`, `uuid`, `rust_decimal`, `bigdecimal` and `num-bigint`
 //!   implement [`Serialize`] and [`Deserialize`] for the types of these crates.  They
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
+//!
+#![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
+#![cfg_attr(
+    not(feature = "derive"),
+    doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
+)]
 
 #[macro_use]
 mod macros;

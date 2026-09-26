@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-deser = { path = "../../deser" }
+deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
 deser-location = { path = "../../deser-location" }
 deser-path = { path = "../../deser-path" }
