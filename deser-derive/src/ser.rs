@@ -69,7 +69,7 @@ fn struct_where_clause(
             .iter()
             .map(|x| BoundField {
                 ty: &x.field().ty,
-                adapter: x.adapter(),
+                adapter: x.adapters().ser(),
             })
             .collect::<Vec<_>>(),
     )
@@ -87,6 +87,9 @@ fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
 }
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
+    if let Some(rv) = crate::forward::derive_serialize(input)? {
+        return Ok(rv);
+    }
     match &input.data {
         syn::Data::Struct(syn::DataStruct {
             fields: syn::Fields::Named(fields),
@@ -120,7 +123,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
         Some(quote! {
-            nested_emitter: __deser::__derive::Option<__deser::__derive::Box<dyn __deser::ser::StructEmitter + '__a>>,
+            nested_emitter: __deser::__derive::Option<__deser::__derive::FlattenedStruct<'__a>>,
             nested_emitter_exhausted: bool,
         })
     } else {
@@ -160,7 +163,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     quote! {}
                 };
                 let handle =
-                    serialize_handle(&attrs.field().ty, attrs.adapter(), quote! { &self.data.#name });
+                    serialize_handle(&attrs.field().ty, attrs.adapters().ser(), quote! { &self.data.#name });
                 quote! {
                     #index => {
                         self.index = __index + 1;
@@ -188,21 +191,19 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #index => {
                         #field_skip
                         if self.nested_emitter_exhausted {
-                            self.nested_emitter = match __deser::ser::Serialize::serialize(&self.data.#name, __state)? {
-                                __deser::ser::Chunk::Struct(__inner) => {
-                                    Some(__inner)
-                                }
-                                _ => return __deser::__derive::Err(__deser::Error::new(
-                                    __deser::ErrorKind::Unexpected,
-                                    "unable to flatten on struct into struct"
-                                ))
-                            };
+                            // values that forward (for instance because of
+                            // an adapter on their type) are followed
+                            self.nested_emitter = __deser::__derive::Some(
+                                __deser::__derive::FlattenedStruct::new(&self.data.#name, __state)?
+                            );
                             self.nested_emitter_exhausted = false;
                         }
                         match self.nested_emitter.as_mut().unwrap().next(__state)? {
                             __deser::__derive::None => {
                                 self.index += 1;
                                 self.nested_emitter_exhausted = true;
+                                // the values it forwarded to were finished
+                                // with the last field, now the value itself
                                 __deser::ser::Serialize::finish(&self.data.#name, __state)?;
                                 continue;
                             }
@@ -311,7 +312,7 @@ fn derive_indexed_struct(
             });
             let ty = &attrs.field().ty;
             let optional_skip = if container_attrs.skip_serializing_optionals() {
-                let is_optional = is_optional(ty, attrs.adapter(), quote! { &self.#name });
+                let is_optional = is_optional(ty, attrs.adapters().ser(), quote! { &self.#name });
                 Some(quote! {
                     if #is_optional {
                         return __deser::__derive::Ok(__deser::__derive::StructField::Skip);
@@ -320,7 +321,7 @@ fn derive_indexed_struct(
             } else {
                 None
             };
-            let handle = serialize_handle(ty, attrs.adapter(), quote! { &self.#name });
+            let handle = serialize_handle(ty, attrs.adapters().ser(), quote! { &self.#name });
             quote! {
                 #index => {
                     #field_skip
@@ -468,7 +469,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
             "tag fields are only supported in other variants of enums",
         ));
     }
-    let adapter = field_attrs.adapter();
+    let adapter = field_attrs.adapters().ser();
     let field_type = &field.ty;
     // the value serializes through the adapter or the regular implementation
     let value = match adapter {

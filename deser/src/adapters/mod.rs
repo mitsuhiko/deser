@@ -35,6 +35,11 @@
 //! [`DeserializeAs::initial_value_as`]) so in the example above `upstream` is
 //! optional as `Option<U>` makes missing values `None`.
 //!
+//! `serialize_as` and `deserialize_as` select an adapter for one direction
+//! only.  All three attributes can also be placed on structs, enums and
+//! unions to serialize and deserialize the type itself with an adapter (see
+//! [container adapters](crate::derive#container-adapters)).
+//!
 //! To use an adapter outside of the derive, the [`As`] wrapper can be used.
 //! It holds a value and serializes and deserializes it with an adapter.
 //!
@@ -555,6 +560,19 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
         *out = inner.map(As::new);
         Ok(())
     }
+
+    #[inline]
+    fn __private_is_bytes() -> bool {
+        A::__private_is_bytes_as()
+    }
+
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {
+        A::__private_vec_from_bytes_as(bytes).map(|x| x.into_iter().map(As::new).collect())
+    }
+
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
+        A::__private_array_from_bytes_as::<N>(bytes).map(|x| x.map(As::new))
+    }
 }
 
 impl<T: Sync, A: SerializeAs<T>> Serialize for As<T, A> {
@@ -586,5 +604,13 @@ impl<T: Sync, A: SerializeAs<T>> Serialize for As<T, A> {
     #[inline]
     fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
         A::__private_begin_as(&self.value, state)
+    }
+
+    #[inline]
+    fn __private_slice_as_bytes(val: &[Self]) -> Option<Cow<'_, [u8]>> {
+        // SAFETY: the wrapper is transparent over `T` (the marker is zero
+        // sized and has an alignment of one).
+        let val = unsafe { &*(val as *const [Self] as *const [T]) };
+        A::__private_slice_as_bytes_as(val)
     }
 }

@@ -1,8 +1,111 @@
 use std::borrow::Cow;
 
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use syn::meta::ParseNestedMeta;
+
+/// The direction of a derive.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum Direction {
+    Serialize,
+    Deserialize,
+}
+
+/// An attribute that was used on an item.
+pub struct SeenAttr {
+    pub name: String,
+    pub span: Span,
+}
+
+/// The adapters of an item for serialization and deserialization.
+///
+/// `as` sets both, `serialize_as` and `deserialize_as` one of them.
+#[derive(Default, Clone)]
+pub struct Adapters {
+    ser: Option<syn::Type>,
+    de: Option<syn::Type>,
+}
+
+impl Adapters {
+    /// Returns the adapter used for serialization.
+    pub fn ser(&self) -> Option<&syn::Type> {
+        self.ser.as_ref()
+    }
+
+    /// Returns the adapter used for deserialization.
+    pub fn de(&self) -> Option<&syn::Type> {
+        self.de.as_ref()
+    }
+
+    /// Returns the adapter for a direction.
+    pub fn get(&self, direction: Direction) -> Option<&syn::Type> {
+        match direction {
+            Direction::Serialize => self.ser(),
+            Direction::Deserialize => self.de(),
+        }
+    }
+
+    /// Returns `true` if there is an adapter for any direction.
+    pub fn any(&self) -> bool {
+        self.ser.is_some() || self.de.is_some()
+    }
+}
+
+/// Collects the `as`, `serialize_as` and `deserialize_as` attributes.
+#[derive(Default)]
+struct AdapterAttrs {
+    both: Option<syn::Type>,
+    ser: Option<syn::Type>,
+    de: Option<syn::Type>,
+}
+
+impl AdapterAttrs {
+    /// Parses the attribute if it's one of the adapter attributes.
+    ///
+    /// Returns `false` if the attribute is not an adapter attribute.
+    fn parse(
+        &mut self,
+        name: &str,
+        meta: &ParseNestedMeta,
+        parse: impl FnOnce(&ParseNestedMeta) -> syn::Result<syn::Type>,
+    ) -> syn::Result<bool> {
+        let slot = match name {
+            "as" => &mut self.both,
+            "serialize_as" => &mut self.ser,
+            "deserialize_as" => &mut self.de,
+            _ => return Ok(false),
+        };
+        let value = parse(meta)?;
+        set_once(meta, name, slot, value)?;
+        Ok(true)
+    }
+
+    /// Resolves the adapters for both directions.
+    fn finish(self, seen: &[SeenAttr]) -> syn::Result<Adapters> {
+        match self.both {
+            Some(both) => {
+                if self.ser.is_some() || self.de.is_some() {
+                    let span = seen
+                        .iter()
+                        .find(|x| x.name == "serialize_as" || x.name == "deserialize_as")
+                        .map_or_else(Span::call_site, |x| x.span);
+                    return Err(syn::Error::new(
+                        span,
+                        "`as` cannot be combined with `serialize_as` or `deserialize_as`",
+                    ));
+                }
+                Ok(Adapters {
+                    ser: Some(both.clone()),
+                    de: Some(both),
+                })
+            }
+            None => Ok(Adapters {
+                ser: self.ser,
+                de: self.de,
+            }),
+        }
+    }
+}
 
 #[derive(Copy, Clone)]
 #[allow(clippy::enum_variant_names)]
@@ -42,6 +145,8 @@ pub enum TypeDefault {
 
 pub struct ContainerAttrs<'a> {
     ident: &'a syn::Ident,
+    seen: Vec<SeenAttr>,
+    adapters: Adapters,
     rename: Option<String>,
     rename_all: Option<RenameAll>,
     default: Option<TypeDefault>,
@@ -58,21 +163,29 @@ pub struct ContainerAttrs<'a> {
 /// Invokes `logic` for every item in all `#[deser(...)]` attributes.
 ///
 /// The callback is passed the name of the item.  Items with paths that are
-/// not plain identifiers are rejected.
+/// not plain identifiers are rejected.  Returns the items that were seen.
 fn parse_deser_attrs(
     attrs: &[syn::Attribute],
     mut logic: impl FnMut(&str, &ParseNestedMeta) -> syn::Result<()>,
-) -> syn::Result<()> {
+) -> syn::Result<Vec<SeenAttr>> {
+    let mut seen = Vec::new();
     for attr in attrs {
         if !attr.path().is_ident("deser") {
             continue;
         }
         attr.parse_nested_meta(|meta| match meta.path.get_ident() {
-            Some(ident) => logic(&ident.to_string(), &meta),
+            Some(ident) => {
+                let name = ident.to_string();
+                seen.push(SeenAttr {
+                    name: name.clone(),
+                    span: ident.span(),
+                });
+                logic(&name, &meta)
+            }
             None => Err(meta.error("unsupported attribute")),
         })?;
     }
-    Ok(())
+    Ok(seen)
 }
 
 /// Stores a value in a slot that must not have been filled before.
@@ -181,6 +294,63 @@ fn parse_adapter(meta: &ParseNestedMeta) -> syn::Result<syn::Type> {
     syn::parse2(replace_infer(ty.to_token_stream()))
 }
 
+/// Parses the value of `as = Type` on a container.
+///
+/// The implementations of the container forward to the adapter.  Adapters
+/// that use the implementation of the container would recurse forever: `_`
+/// and `Same` (which stand for the type's own implementation) and the type
+/// itself are rejected as adapter and as direct type argument of the
+/// adapter (as in `FromInto<Self>` or `DefaultOnError<_>`).  Nested uses
+/// such as `FromInto<Vec<Node>>` are fine.
+fn parse_container_adapter(meta: &ParseNestedMeta, ident: &syn::Ident) -> syn::Result<syn::Type> {
+    fn is_own_impl(ty: &syn::Type, ident: &syn::Ident) -> bool {
+        match ty {
+            syn::Type::Infer(_) => true,
+            syn::Type::Paren(ty) => is_own_impl(&ty.elem, ident),
+            syn::Type::Group(ty) => is_own_impl(&ty.elem, ident),
+            syn::Type::Path(ty) if ty.qself.is_none() => ty
+                .path
+                .segments
+                .last()
+                .is_some_and(|x| x.ident == "Same" || x.ident == *ident),
+            _ => false,
+        }
+    }
+
+    let ty: syn::Type = meta
+        .value()?
+        .parse()
+        .map_err(|err| syn::Error::new(err.span(), "expected an adapter type"))?;
+    reject_self(ty.to_token_stream())?;
+
+    let mut candidates = vec![&ty];
+    if let syn::Type::Path(ref path) = ty
+        && let Some(segment) = path.path.segments.last()
+        && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
+    {
+        candidates.extend(args.args.iter().filter_map(|arg| match arg {
+            syn::GenericArgument::Type(ty) => Some(ty),
+            _ => None,
+        }));
+    }
+    if let Some(bad) = candidates.into_iter().find(|x| is_own_impl(x, ident)) {
+        let what = match bad {
+            syn::Type::Infer(_) => "`_`".to_string(),
+            _ => format!("`{}`", bad.to_token_stream()).replace(' ', ""),
+        };
+        return Err(syn::Error::new_spanned(
+            bad,
+            format!(
+                "{} refers to the implementation of `{}` which forwards to this adapter, \
+                 this would recurse forever",
+                what, ident
+            ),
+        ));
+    }
+
+    syn::parse2(replace_infer(ty.to_token_stream()))
+}
+
 /// Parses `bound(T: Trait, U: Other)` into where predicates.
 fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<Vec<syn::WherePredicate>> {
     if !meta.input.peek(syn::token::Paren) {
@@ -224,6 +394,8 @@ impl<'a> ContainerAttrs<'a> {
     pub fn of(input: &'a syn::DeriveInput) -> syn::Result<ContainerAttrs<'a>> {
         let mut rv = ContainerAttrs {
             ident: &input.ident,
+            seen: Vec::new(),
+            adapters: Adapters::default(),
             rename: None,
             rename_all: None,
             default: None,
@@ -237,8 +409,15 @@ impl<'a> ContainerAttrs<'a> {
             deserialize_bound: None,
         };
         let is_enum = matches!(input.data, syn::Data::Enum(_));
+        let mut adapters = AdapterAttrs::default();
 
-        parse_deser_attrs(&input.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&input.attrs, |name, meta| match name {
+            "as" | "serialize_as" | "deserialize_as" => {
+                adapters.parse(name, meta, |meta| {
+                    parse_container_adapter(meta, &input.ident)
+                })?;
+                Ok(())
+            }
             "rename_all" => {
                 let value = RenameAll::parse(&parse_lit_str(meta)?)?;
                 set_once(meta, name, &mut rv.rename_all, value)
@@ -294,6 +473,7 @@ impl<'a> ContainerAttrs<'a> {
             }
             _ => Err(meta.error("unsupported attribute")),
         })?;
+        rv.seen = seen;
 
         if rv.content.is_some() && rv.tag.is_none() {
             return Err(syn::Error::new(
@@ -307,8 +487,20 @@ impl<'a> ContainerAttrs<'a> {
                 "untagged cannot be combined with tag",
             ));
         }
+        rv.adapters = adapters.finish(&rv.seen)?;
 
         Ok(rv)
+    }
+
+    /// Returns the attributes that were used on the container.
+    pub fn into_seen(self) -> Vec<SeenAttr> {
+        self.seen
+    }
+
+    /// Returns the adapters the container is serialized and deserialized
+    /// with.
+    pub fn adapters(&self) -> &Adapters {
+        &self.adapters
     }
 
     pub fn container_name(&self) -> String {
@@ -453,30 +645,39 @@ impl<'a> ContainerAttrs<'a> {
 
 /// The attributes of unnamed fields (of newtype structs and tuple variants).
 pub struct UnnamedFieldAttrs {
-    adapter: Option<syn::Type>,
+    seen: Vec<SeenAttr>,
+    adapters: Adapters,
     tag: bool,
 }
 
 impl UnnamedFieldAttrs {
     pub fn of(field: &syn::Field) -> syn::Result<UnnamedFieldAttrs> {
-        let mut rv = UnnamedFieldAttrs {
-            adapter: None,
-            tag: false,
-        };
-        parse_deser_attrs(&field.attrs, |name, meta| match name {
-            "as" => {
-                let value = parse_adapter(meta)?;
-                set_once(meta, name, &mut rv.adapter, value)
+        let mut tag = false;
+        let mut adapters = AdapterAttrs::default();
+        let seen = parse_deser_attrs(&field.attrs, |name, meta| {
+            if adapters.parse(name, meta, parse_adapter)? {
+                return Ok(());
             }
-            "tag" => set_flag(meta, name, &mut rv.tag),
-            _ => Err(meta.error("unsupported attribute")),
+            match name {
+                "tag" => set_flag(meta, name, &mut tag),
+                _ => Err(meta.error("unsupported attribute")),
+            }
         })?;
-        Ok(rv)
+        Ok(UnnamedFieldAttrs {
+            adapters: adapters.finish(&seen)?,
+            seen,
+            tag,
+        })
     }
 
-    /// Returns the adapter of the field.
-    pub fn adapter(&self) -> Option<&syn::Type> {
-        self.adapter.as_ref()
+    /// Returns the attributes that were used on the field.
+    pub fn into_seen(self) -> Vec<SeenAttr> {
+        self.seen
+    }
+
+    /// Returns the adapters of the field.
+    pub fn adapters(&self) -> &Adapters {
+        &self.adapters
     }
 
     /// Returns `true` if the field receives the tag of the variant.
@@ -487,12 +688,13 @@ impl UnnamedFieldAttrs {
 
 pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
+    seen: Vec<SeenAttr>,
     rename: Option<String>,
     aliases: Vec<String>,
     default: Option<TypeDefault>,
     flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
-    adapter: Option<syn::Type>,
+    adapters: Adapters,
     tag: bool,
 }
 
@@ -500,16 +702,22 @@ impl<'a> FieldAttrs<'a> {
     pub fn of(field: &'a syn::Field) -> syn::Result<FieldAttrs<'a>> {
         let mut rv = FieldAttrs {
             field,
+            seen: Vec::new(),
             rename: None,
             aliases: Vec::new(),
             default: None,
             flatten: false,
             skip_serializing_if: None,
-            adapter: None,
+            adapters: Adapters::default(),
             tag: false,
         };
+        let mut adapters = AdapterAttrs::default();
 
-        parse_deser_attrs(&field.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&field.attrs, |name, meta| match name {
+            "as" | "serialize_as" | "deserialize_as" => {
+                adapters.parse(name, meta, parse_adapter)?;
+                Ok(())
+            }
             "rename" => {
                 let value = parse_str(meta)?;
                 set_once(meta, name, &mut rv.rename, value)
@@ -527,13 +735,11 @@ impl<'a> FieldAttrs<'a> {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.skip_serializing_if, value)
             }
-            "as" => {
-                let value = parse_adapter(meta)?;
-                set_once(meta, name, &mut rv.adapter, value)
-            }
             "tag" => set_flag(meta, name, &mut rv.tag),
             _ => Err(meta.error("unsupported attribute")),
         })?;
+        rv.seen = seen;
+        rv.adapters = adapters.finish(&rv.seen)?;
 
         if rv.flatten && rv.default.is_some() {
             return Err(syn::Error::new_spanned(
@@ -541,10 +747,10 @@ impl<'a> FieldAttrs<'a> {
                 "cannot combine flatten and default",
             ));
         }
-        if rv.flatten && rv.adapter.is_some() {
+        if rv.flatten && rv.adapters.any() {
             return Err(syn::Error::new_spanned(
                 field,
-                "cannot combine flatten and as",
+                "cannot combine flatten with as, serialize_as or deserialize_as",
             ));
         }
         if rv.tag
@@ -556,7 +762,7 @@ impl<'a> FieldAttrs<'a> {
         {
             return Err(syn::Error::new_spanned(
                 field,
-                "tag fields only support the as attribute",
+                "tag fields only support the as, serialize_as and deserialize_as attributes",
             ));
         }
 
@@ -565,6 +771,11 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn field(&self) -> &syn::Field {
         self.field
+    }
+
+    /// Returns the attributes that were used on the field.
+    pub fn into_seen(self) -> Vec<SeenAttr> {
+        self.seen
     }
 
     pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
@@ -598,9 +809,9 @@ impl<'a> FieldAttrs<'a> {
         self.skip_serializing_if.as_ref()
     }
 
-    /// Returns the adapter of the field.
-    pub fn adapter(&self) -> Option<&syn::Type> {
-        self.adapter.as_ref()
+    /// Returns the adapters of the field.
+    pub fn adapters(&self) -> &Adapters {
+        &self.adapters
     }
 
     /// Returns `true` if the field receives the tag of the variant.
@@ -611,6 +822,7 @@ impl<'a> FieldAttrs<'a> {
 
 pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
+    seen: Vec<SeenAttr>,
     rename: Option<String>,
     aliases: Vec<String>,
     other: bool,
@@ -621,13 +833,14 @@ impl<'a> EnumVariantAttrs<'a> {
     pub fn of(variant: &'a syn::Variant) -> syn::Result<EnumVariantAttrs<'a>> {
         let mut rv = EnumVariantAttrs {
             variant,
+            seen: Vec::new(),
             rename: None,
             aliases: Vec::new(),
             other: false,
             default: false,
         };
 
-        parse_deser_attrs(&variant.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
             "rename" => {
                 let value = parse_str(meta)?;
                 set_once(meta, name, &mut rv.rename, value)
@@ -640,8 +853,14 @@ impl<'a> EnumVariantAttrs<'a> {
             "default" => set_flag(meta, name, &mut rv.default),
             _ => Err(meta.error("unsupported attribute")),
         })?;
+        rv.seen = seen;
 
         Ok(rv)
+    }
+
+    /// Returns the attributes that were used on the variant.
+    pub fn into_seen(self) -> Vec<SeenAttr> {
+        self.seen
     }
 
     /// Returns `true` if this is the catch-all variant for unknown tags.

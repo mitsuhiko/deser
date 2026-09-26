@@ -102,6 +102,8 @@ mod describe;
 mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
+#[cfg(feature = "derive")]
+pub(crate) mod flatten;
 mod impls;
 mod layer;
 mod serializer;

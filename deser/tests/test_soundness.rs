@@ -770,6 +770,121 @@ fn test_adapters_and_forwarding() {
     }
 }
 
+/// Forwards to an owned `Inner` when serialized.
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[deser(as = deser::adapters::FromInto<Inner>)]
+struct FlatConverted(String, Vec<String>);
+
+impl From<Inner> for FlatConverted {
+    fn from(value: Inner) -> FlatConverted {
+        FlatConverted(value.name, value.tags)
+    }
+}
+
+impl From<FlatConverted> for Inner {
+    fn from(value: FlatConverted) -> Inner {
+        Inner {
+            name: value.0,
+            tags: value.1,
+        }
+    }
+}
+
+/// Forwards to an owned `FlatConverted` which forwards again.
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[deser(as = deser::adapters::FromInto<FlatConverted>)]
+struct FlatTwice(FlatConverted);
+
+impl From<FlatConverted> for FlatTwice {
+    fn from(value: FlatConverted) -> FlatTwice {
+        FlatTwice(value)
+    }
+}
+
+impl From<FlatTwice> for FlatConverted {
+    fn from(value: FlatTwice) -> FlatConverted {
+        value.0
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+struct WithFlattenedForwarding {
+    before: String,
+    #[deser(flatten)]
+    flat: FlatTwice,
+    after: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PanickingInner {
+    value: Panicking,
+}
+
+/// Forwards to an owned value that panics when serialized.
+#[derive(Clone, Serialize)]
+#[deser(as = deser::adapters::FromInto<PanickingInner>)]
+struct PanickingFlat;
+
+impl From<PanickingFlat> for PanickingInner {
+    fn from(_: PanickingFlat) -> PanickingInner {
+        PanickingInner { value: Panicking }
+    }
+}
+
+#[derive(Serialize)]
+struct WithPanickingFlattened {
+    before: String,
+    #[deser(flatten)]
+    flat: PanickingFlat,
+}
+
+#[test]
+fn test_flattened_forwarding() {
+    let value = WithFlattenedForwarding {
+        before: "a".into(),
+        flat: FlatTwice(FlatConverted("b".into(), vec!["x".into(), "y".into()])),
+        after: vec!["c".into()],
+    };
+
+    let mut expected = Vec::new();
+    {
+        let mut driver = SerializeDriver::new(&value);
+        while let Some((event, _, _)) = driver.next().unwrap() {
+            expected.push(event.to_static());
+        }
+    }
+    // stop at every point and continue with drive, or abort at every point
+    for skip in 0..=expected.len() {
+        assert_eq!(drive_events(&value, skip, None).unwrap(), expected);
+    }
+    for abort in 0..expected.len() {
+        assert!(drive_events(&value, 0, Some(abort)).is_err());
+    }
+    // drop the driver at every point
+    for cut in 0..expected.len() {
+        let mut driver = SerializeDriver::new(&value);
+        for _ in 0..cut {
+            driver.next().unwrap();
+        }
+    }
+    assert_eq!(
+        emit_partial::<WithFlattenedForwarding>(&expected).unwrap(),
+        value
+    );
+
+    let value = WithPanickingFlattened {
+        before: "a".into(),
+        flat: PanickingFlat,
+    };
+    let rv = catch_unwind(AssertUnwindSafe(|| {
+        let mut driver = SerializeDriver::new(&value);
+        while driver.next().unwrap().is_some() {}
+    }));
+    assert!(rv.is_err());
+    let rv = catch_unwind(AssertUnwindSafe(|| drive_events(&value, 0, None)));
+    assert!(rv.is_err());
+}
+
 #[test]
 fn test_drivers_move_between_threads() {
     let events = outer_events();

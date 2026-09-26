@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use crate::State;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
-use crate::ser::driver::Held;
+use crate::ser::flatten::Forwarded;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
 
 /// Serializes a map with a single entry.
@@ -164,7 +164,7 @@ impl<'a> TaggedNewtype<'a> {
         Chunk::Struct(Box::new(TaggedNewtypeEmitter {
             value: self,
             emitter: None,
-            forwarded: Vec::new(),
+            forwarded: Forwarded::new(),
             started: false,
             done: false,
         }))
@@ -183,7 +183,7 @@ struct TaggedNewtypeEmitter<'a> {
     // can borrow from the forwarded values.
     emitter: Option<TaggedContent<'a>>,
     // values the inner value forwarded to (see `Chunk::Forward`)
-    forwarded: Vec<Held>,
+    forwarded: Forwarded,
     started: bool,
     done: bool,
 }
@@ -219,25 +219,16 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             return Ok(None);
         }
         if self.emitter.is_none() {
-            let mut chunk = self.value.inner.serialize(state)?;
-            self.emitter = Some(loop {
-                match chunk {
-                    Chunk::Struct(emitter) => break TaggedContent::Struct(emitter),
-                    Chunk::Map(emitter) => break TaggedContent::Map(emitter),
-                    Chunk::Forward(handle) => {
-                        // SAFETY: the held value is dropped after the emitter
-                        // which borrows from it.
-                        let held = unsafe { Held::new(handle) };
-                        let value: &'a dyn Serialize = unsafe { held.get() };
-                        self.forwarded.push(held);
-                        chunk = value.serialize(state)?;
-                    }
-                    Chunk::Atom(_) | Chunk::Seq(_) => {
-                        return Err(Error::new(
-                            ErrorKind::UnsupportedType,
-                            "newtype variants of internally tagged enums must contain structs or maps",
-                        ));
-                    }
+            // SAFETY: the emitter is dropped before the forwarded values.
+            let chunk = unsafe { self.forwarded.serialize(self.value.inner, state)? };
+            self.emitter = Some(match chunk {
+                Chunk::Struct(emitter) => TaggedContent::Struct(emitter),
+                Chunk::Map(emitter) => TaggedContent::Map(emitter),
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedType,
+                        "newtype variants of internally tagged enums must contain structs or maps",
+                    ));
                 }
             });
         }
@@ -260,10 +251,7 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             Some(item) => Ok(Some(item)),
             None => {
                 self.done = true;
-                for held in self.forwarded.iter().rev() {
-                    // SAFETY: the value is held by the emitter
-                    unsafe { held.get() }.finish(state)?;
-                }
+                self.forwarded.finish(state)?;
                 self.value.inner.finish(state)?;
                 Ok(None)
             }

@@ -5,6 +5,7 @@ mod test_adapters;
 mod test_borrow;
 mod test_bound;
 mod test_bytes;
+mod test_container_as;
 mod test_custom_map;
 mod test_de;
 mod test_de_derive;

@@ -4,6 +4,7 @@ mod attr;
 mod bound;
 mod de;
 mod enums;
+mod forward;
 mod ser;
 
 use proc_macro::TokenStream;

@@ -84,6 +84,10 @@
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
 //!   a field is optional.  At the moment only `None` and `()` are considered optional.
+//! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
+//!   `#[deser(deserialize_as = Adapter)]`: serializes and deserializes the
+//!   struct with an adapter instead of its fields.  See [container
+//!   adapters](#container-adapters).
 //! * `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
 //!   `#[deser(deserialize_bound(...))]`: see [bounds](#bounds).
 //! * `#[deser(crate = path)]`: see [crate path](#crate-path).
@@ -145,6 +149,10 @@
 //! * `#[deser(untagged)]`: makes the enum untagged.
 //! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
 //!   set in struct variants when serializing.
+//! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
+//!   `#[deser(deserialize_as = Adapter)]`: serializes and deserializes the
+//!   enum with an adapter instead of its variants.  See [container
+//!   adapters](#container-adapters).
 //! * `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
 //!   `#[deser(deserialize_bound(...))]`: see [bounds](#bounds).
 //! * `#[deser(crate = path)]`: see [crate path](#crate-path).
@@ -171,9 +179,13 @@
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See
 //!   [adapters](#adapters).
+//! * `#[deser(serialize_as = Adapter)]` and `#[deser(deserialize_as = Adapter)]`:
+//!   like `as` but only for serialization or deserialization, the other
+//!   direction uses the field type's own implementation.  Both can be used
+//!   together to use different adapters, but not together with `as`.
 //!
 //! The field of newtype structs and the fields of newtype and tuple variants
-//! support `as` as well.
+//! support `as`, `serialize_as` and `deserialize_as` as well.
 //!
 //! ## Enum Variant Attributes
 //!
@@ -219,6 +231,120 @@
 //! fields with adapters do not need to implement [`Serialize`](crate::Serialize)
 //! or [`Deserialize`](crate::Deserialize), instead the adapter needs to
 //! support the field type.
+//!
+//! `serialize_as` and `deserialize_as` use an adapter for one direction only,
+//! for instance to read values in a legacy format which are written in the
+//! regular one.  Nothing checks that the two directions agree: values that
+//! are written with one representation and read with another might not
+//! round trip.
+//!
+//! ## Container Adapters
+//!
+//! Adapters can also be placed on structs, enums and unions.  The derived
+//! implementations then forward to the adapter and the fields and variants
+//! are not used at all.  This works for all shapes of types (including tuple
+//! structs and unit structs) and neither the fields nor the type parameters
+//! need to be serializable, only the adapter has to support the type:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::TryFromInto;
+//!
+//! #[derive(Clone, Serialize, Deserialize)]
+//! #[deser(as = TryFromInto<String>)]
+//! pub struct Email {
+//!     user: String,
+//!     domain: String,
+//! }
+//!
+//! impl TryFrom<String> for Email {
+//!     type Error = &'static str;
+//!
+//!     fn try_from(value: String) -> Result<Email, Self::Error> {
+//!         match value.split_once('@') {
+//!             Some((user, domain)) => Ok(Email { user: user.into(), domain: domain.into() }),
+//!             None => Err("missing @"),
+//!         }
+//!     }
+//! }
+//!
+//! impl From<Email> for String {
+//!     fn from(value: Email) -> String {
+//!         format!("{}@{}", value.user, value.domain)
+//!     }
+//! }
+//! ```
+//!
+//! `serialize_as` and `deserialize_as` forward only one direction, the other
+//! one is derived as usual.  A common use is to validate values when they are
+//! read while writing them with the derived implementation:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::TryFromInto;
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(deserialize_as = TryFromInto<RawPorts>)]
+//! pub struct Ports {
+//!     min: u16,
+//!     max: u16,
+//! }
+//!
+//! #[derive(Deserialize)]
+//! struct RawPorts {
+//!     min: u16,
+//!     max: u16,
+//! }
+//!
+//! impl TryFrom<RawPorts> for Ports {
+//!     type Error = &'static str;
+//!
+//!     fn try_from(value: RawPorts) -> Result<Ports, Self::Error> {
+//!         if value.min > value.max {
+//!             return Err("min is larger than max");
+//!         }
+//!         Ok(Ports { min: value.min, max: value.max })
+//!     }
+//! }
+//! ```
+//!
+//! Some things to be aware of:
+//!
+//! * Attributes that only affect the directions which forward to the adapter
+//!   would have no effect and are rejected.  With `as` this is every attribute
+//!   on fields and variants and all attributes on the container except for
+//!   `rename` (which renames the type in its description), the bounds and the
+//!   crate path.  With `deserialize_as` for instance `alias` and `default`
+//!   are rejected but `rename` and `skip_serializing_if` are fine.
+//! * The adapter cannot use the implementation of the type itself as that
+//!   implementation forwards to the adapter: `_`, `Same` and the type are
+//!   rejected as adapter and as its direct type arguments (as in
+//!   `FromInto<Self>`).  Adapters with a default for the inner adapter such
+//!   as a plain [`DefaultOnError`](crate::adapters::DefaultOnError) use
+//!   `Same` implicitly which is not detected.  The type can be used indirectly,
+//!   for instance a tree can be `FromInto<Vec<Tree>>`.
+//! * Missing values and optional values are handled by the adapter, as for
+//!   fields with adapters.
+//! * Values can be flattened if the adapter serializes them as a struct, for
+//!   instance with `TryFromInto<RawStruct>`.
+//! * Adapters are `'static` which means that type parameters used in the
+//!   adapter need to be `'static` and adapters cannot convert from borrowed
+//!   data.  For types with type parameters the derive requires the adapter
+//!   to support the type.  For recursive types this cannot be proven by the
+//!   compiler, custom [bounds](#bounds) are needed there.
+//!
+//! Serde's container attributes map to adapters like this:
+//!
+//! | serde | deser |
+//! |---|---|
+//! | `#[serde(from = "U")]` | `#[deser(deserialize_as = FromInto<U>)]` |
+//! | `#[serde(try_from = "U")]` | `#[deser(deserialize_as = TryFromInto<U>)]` |
+//! | `#[serde(into = "U")]` | `#[deser(serialize_as = FromInto<U>)]` |
+//! | `#[serde(from = "U", into = "U")]` | `#[deser(as = FromInto<U>)]` |
+//! | `#[serde(transparent)]` | newtype structs are transparent |
+//!
+//! The field attributes `serialize_with` and `deserialize_with` correspond
+//! to `serialize_as` and `deserialize_as` with an adapter.
 //!
 //! ## Other Variants
 //!
@@ -278,7 +404,9 @@
 //! `T: 'static` when deserializing).  Type parameters which only appear in
 //! fields with adapters instead need to be `Sync` for `Serialize` and
 //! `Send` for `Deserialize` (serializables are `Sync` and deserializables
-//! are `Send`).  This is wrong when a type parameter is not serialized
+//! are `Send`).  Types with [container adapters](#container-adapters)
+//! instead require the adapter to support the type and the type to be
+//! `Sync` or `Send`.  This is wrong when a type parameter is not serialized
 //! itself, for instance when only an associated type is.  The bounds can
 //! be replaced with a list of where predicates:
 //!

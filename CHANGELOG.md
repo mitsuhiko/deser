@@ -540,6 +540,22 @@ All notable changes to deser are documented here.
 - The derive macros are no longer re-exported from `deser::derive` (which
   only holds their documentation), use `deser::Serialize` and
   `deser::Deserialize`.
+- Added adapters on containers: `#[deser(as = Adapter)]` on structs, enums
+  and unions forwards the derived implementations to the adapter instead of
+  using the fields and variants, which also works for tuple structs, unit
+  structs and unions.  This covers serde's `from`, `try_from` and `into`,
+  for instance `#[deser(as = TryFromInto<String>)]`.  Attributes which have
+  no effect because of the adapter are rejected, as are adapters that would
+  use the type's own implementation (`_`, `Same` or the type itself).
+- Added `serialize_as` and `deserialize_as` to use an adapter for one
+  direction only, on containers (the other direction is derived as usual,
+  for instance to validate values with `deserialize_as = TryFromInto<Raw>`
+  while serializing the fields) and on fields.
+- Flattened fields can hold values that forward to other values
+  (`Chunk::Forward`) when serializing, for instance types with container
+  adapters that serialize as a struct.
+- `As` forwards the specialization for bytes to its adapter, so for
+  instance a `Vec<As<u8, Same>>` serializes as bytes.
 
 ## 0.8.0
 

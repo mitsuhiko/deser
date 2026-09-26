@@ -19,7 +19,9 @@ use std::collections::HashSet;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
+use crate::attr::{
+    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs,
+};
 use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
 
 #[derive(Copy, Clone)]
@@ -47,7 +49,7 @@ enum Content {
 
 struct FieldInfo<'a> {
     field: &'a syn::Field,
-    adapter: Option<syn::Type>,
+    adapters: Adapters,
     tag: bool,
     binding: syn::Ident,
 }
@@ -60,15 +62,15 @@ impl<'a> FieldInfo<'a> {
     /// Returns the type the field is deserialized as.
     fn de_ty(&self) -> TokenStream {
         let ty = self.ty();
-        match self.adapter {
-            Some(ref adapter) => quote! { __deser::adapters::As<#ty, #adapter> },
+        match self.adapters.de() {
+            Some(adapter) => quote! { __deser::adapters::As<#ty, #adapter> },
             None => quote! { #ty },
         }
     }
 
     /// Converts a value of the type returned by `de_ty` into the field value.
     fn unwrap(&self, value: TokenStream) -> TokenStream {
-        if self.adapter.is_some() {
+        if self.adapters.de().is_some() {
             quote! { #value.into_inner() }
         } else {
             value
@@ -78,15 +80,15 @@ impl<'a> FieldInfo<'a> {
     /// Returns a serialize handle for the bound field.
     fn ser_handle(&self) -> TokenStream {
         let binding = &self.binding;
-        crate::ser::serialize_handle(self.ty(), self.adapter.as_ref(), quote! { #binding })
+        crate::ser::serialize_handle(self.ty(), self.adapters.ser(), quote! { #binding })
     }
 
     /// Returns a reference to a serializable for the bound field.
     fn ser_value(&self) -> TokenStream {
         let binding = &self.binding;
         let ty = self.ty();
-        match self.adapter {
-            Some(ref adapter) => quote! {
+        match self.adapters.ser() {
+            Some(adapter) => quote! {
                 __deser::adapters::SerializeAsRef::<#adapter, #ty>::new(#binding)
             },
             None => quote! { #binding },
@@ -96,7 +98,7 @@ impl<'a> FieldInfo<'a> {
     /// Returns an expression that checks if the bound field is optional.
     fn is_optional(&self) -> TokenStream {
         let binding = &self.binding;
-        crate::ser::is_optional(self.ty(), self.adapter.as_ref(), quote! { #binding })
+        crate::ser::is_optional(self.ty(), self.adapters.ser(), quote! { #binding })
     }
 }
 
@@ -266,7 +268,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                 let attrs = UnnamedFieldAttrs::of(field)?;
                 fields.push(FieldInfo {
                     field,
-                    adapter: attrs.adapter().cloned(),
+                    adapters: attrs.adapters().clone(),
                     tag: attrs.tag(),
                     binding: syn::Ident::new(&format!("__f{}", idx), Span::call_site()),
                 });
@@ -278,7 +280,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                 let attrs = FieldAttrs::of(field)?;
                 fields.push(FieldInfo {
                     field,
-                    adapter: attrs.adapter().cloned(),
+                    adapters: attrs.adapters().clone(),
                     tag: attrs.tag(),
                     binding: syn::Ident::new(
                         &format!("__field_{}", field.ident.as_ref().unwrap()),
@@ -416,13 +418,13 @@ fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
 }
 
 /// Returns the fields of all variants for the purpose of bound inference.
-fn bound_fields<'b>(variants: &'b [VariantInfo]) -> Vec<BoundField<'b>> {
+fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<BoundField<'b>> {
     variants
         .iter()
         .flat_map(|info| info.fields.iter())
         .map(|field| BoundField {
             ty: field.ty(),
-            adapter: field.adapter.as_ref(),
+            adapter: field.adapters.get(direction),
         })
         .collect()
 }
@@ -447,7 +449,7 @@ pub fn derive_deserialize(
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
-        &bound_fields(&variants),
+        &bound_fields(&variants, Direction::Deserialize),
     );
     // the deserializer boxes variant builders so the type parameters must
     // be 'static even with custom bounds.
@@ -484,7 +486,7 @@ pub fn derive_deserialize(
                     .iter()
                     .map(|x| {
                         let ty = x.ty();
-                        let adapter = &x.adapter;
+                        let adapter = x.adapters.de();
                         quote! { #ty #adapter }
                     })
                     .collect::<Vec<_>>(),
@@ -871,7 +873,7 @@ pub fn derive_serialize(
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),
-        &bound_fields(&variants),
+        &bound_fields(&variants, Direction::Serialize),
     );
 
     let type_name = container_attrs.container_name();

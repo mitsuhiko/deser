@@ -43,6 +43,9 @@ fn borrowed_atom_into(
 }
 
 pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
+    if let Some(rv) = crate::forward::derive_deserialize(input)? {
+        return Ok(rv);
+    }
     match &input.data {
         syn::Data::Struct(syn::DataStruct {
             fields: syn::Fields::Named(fields),
@@ -112,7 +115,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     __deser::__derive::None
                 }
-            } else if let Some(adapter) = f.adapter() {
+            } else if let Some(adapter) = f.adapters().de() {
                 let ty = &f.field().ty;
                 quote! {
                     <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::initial_value_as()
@@ -156,10 +159,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 rv = quote! { #rv | #alias };
             }
             let ty = &x.field().ty;
-            let sink = deserialize_into(ty, x.adapter(), quote! { &mut self.#fieldname });
-            let atom = atom_into(ty, x.adapter(), quote! { &mut self.#fieldname });
+            let sink = deserialize_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+            let atom = atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
             let borrowed_atom =
-                borrowed_atom_into(ty, x.adapter(), quote! { &mut self.#fieldname });
+                borrowed_atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
             key_matcher.push(quote! {
                 #rv => __Key::Field(#index),
             });
@@ -198,7 +201,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             .iter()
             .map(|x| BoundField {
                 ty: &x.field().ty,
-                adapter: x.adapter(),
+                adapter: x.adapters().de(),
             })
             .collect::<Vec<_>>(),
     );
@@ -707,7 +710,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
             "tag fields are only supported in other variants of enums",
         ));
     }
-    let adapter = field_attrs.adapter();
+    let adapter = field_attrs.adapters().de();
 
     let field_type = &field.ty;
     let make_sink = match adapter {

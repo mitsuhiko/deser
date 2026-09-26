@@ -135,7 +135,7 @@ pub mod __derive {
     pub use std::marker::{PhantomData, Send, Sync};
     pub use std::mem::replace;
     pub use std::option::Option::{self, None, Some};
-    pub use std::primitive::str;
+    pub use std::primitive::{str, u8};
     pub use std::result::Result::{Err, Ok};
     pub use std::string::String;
     pub use std::vec::Vec;
@@ -151,6 +151,7 @@ pub mod __derive {
     };
     pub use crate::ser::begin::{Begin, IndexedStruct, IndexedStructEmitter, StructField};
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
+    pub use crate::ser::flatten::FlattenedStruct;
 
     #[cold]
     pub fn new_missing_field_error(name: &str) -> super::Error {

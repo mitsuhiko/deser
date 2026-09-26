@@ -226,6 +226,191 @@
 /// }
 /// ```
 ///
+/// Adapters on containers cannot use the implementation of the container
+/// itself (`_`, `Same` or the type) as it forwards to the adapter.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = _)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::Same)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deserialize_as = deser::adapters::DefaultOnError<_>)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(Clone, deser::Serialize)]
+/// #[deser(serialize_as = deser::adapters::FromInto<Test>)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// The positive case for the above: the type can be used in the adapter if
+/// it's not used directly.
+///
+/// ```
+/// #[derive(Clone, deser::Serialize)]
+/// #[deser(serialize_as = deser::adapters::FromInto<Vec<Node>>)]
+/// struct Node {
+///     children: Vec<Node>,
+/// }
+///
+/// impl From<Node> for Vec<Node> {
+///     fn from(value: Node) -> Vec<Node> {
+///         value.children
+///     }
+/// }
+/// ```
+///
+/// `as` cannot be combined with `serialize_as` or `deserialize_as`.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::DisplayFromStr, serialize_as = deser::adapters::DisplayFromStr)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(as = deser::adapters::DisplayFromStr, deserialize_as = deser::adapters::DisplayFromStr)]
+///     field: u32,
+/// }
+/// ```
+///
+/// Attributes that have no effect because the container forwards to an
+/// adapter are rejected.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::DisplayFromStr)]
+/// struct Test {
+///     #[deser(rename = "x")]
+///     field: u32,
+/// }
+/// # impl std::fmt::Display for Test {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::DisplayFromStr, rename_all = "camelCase")]
+/// struct Test {
+///     field: u32,
+/// }
+/// # impl std::fmt::Display for Test {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::DisplayFromStr)]
+/// enum Test {
+///     #[deser(rename = "a")]
+///     A,
+/// }
+/// # impl std::fmt::Display for Test {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deserialize_as = deser::adapters::DisplayFromStr, default)]
+/// struct Test {
+///     field: u32,
+/// }
+/// # impl std::str::FromStr for Test {
+/// #     type Err = String;
+/// #     fn from_str(s: &str) -> Result<Test, String> { Err(s.into()) }
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deserialize_as = deser::adapters::DisplayFromStr)]
+/// struct Test {
+///     #[deser(alias = "x")]
+///     field: u32,
+/// }
+/// # impl std::str::FromStr for Test {
+/// #     type Err = String;
+/// #     fn from_str(s: &str) -> Result<Test, String> { Err(s.into()) }
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(serialize_as = deser::adapters::DisplayFromStr, skip_serializing_optionals)]
+/// struct Test {
+///     field: Option<u32>,
+/// }
+/// # impl std::fmt::Display for Test {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
+/// # }
+/// ```
+///
+/// The positive case for the above: attributes that affect the direction
+/// which is derived are fine.
+///
+/// ```
+/// #[derive(deser::Serialize, deser::Deserialize)]
+/// #[deser(deserialize_as = deser::adapters::DisplayFromStr, rename_all = "camelCase")]
+/// struct Test {
+///     #[deser(skip_serializing_if = Option::is_none)]
+///     some_field: Option<u32>,
+/// }
+/// # impl std::str::FromStr for Test {
+/// #     type Err = String;
+/// #     fn from_str(s: &str) -> Result<Test, String> { Err(s.into()) }
+/// # }
+/// ```
+///
+/// Adapters cannot be combined with flatten, also for one direction.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Inner {
+///     field: u32,
+/// }
+///
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(flatten, serialize_as = deser::adapters::Same)]
+///     inner: Inner,
+/// }
+/// ```
+///
+/// Adapters on containers must support the type.
+///
+/// ```compile_fail,E0277
+/// #[derive(deser::Serialize)]
+/// #[deser(as = deser::adapters::DisplayFromStr)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
 /// The lifetime `'de` is reserved for the lifetime of `Deserialize`.
 ///
 /// ```compile_fail
