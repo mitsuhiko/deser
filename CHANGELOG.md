@@ -401,6 +401,38 @@ All notable changes to deser are documented here.
   requests `F` otherwise (for instance `BytesFallback<Hex>` or
   `BytesFallback<IntSeq>` for sequences of integers).  Custom encodings
   implement `BytesEncoding`.
+- Added support for more standard library types:
+  - `str`, `CStr` and `Path` implement `Serialize` which makes `Box<str>`,
+    `Rc<str>`, `Arc<str>`, `Box<CStr>` and `Box<Path>` serializable.
+    `Box<str>`, `Rc<str>`, `Arc<str>`, `Box<[T]>`, `Rc<[T]>` and `Arc<[T]>`
+    serialize and deserialize.
+  - `Rc<T>` and `Arc<T>` serialize and deserialize like `Box<T>`.  Shared
+    values are serialized once per reference and deserialized into separate
+    allocations.
+  - `Cow<'a, T>` is supported for all `T: ToOwned` (for instance
+    `Cow<Path>` and `Cow<[T]>`), deserialization goes through `T::Owned`.
+    `String` and `Cow<str>` accept `Atom::Char`, `Cow<[u8]>` also accepts
+    sequences of integers.
+  - `VecDeque`, `LinkedList` and `BinaryHeap` serialize as sequences.
+    `VecDeque<u8>` and `BinaryHeap<u8>` are bytes like `Vec<u8>`.
+  - `PhantomData<T>` serializes as null and is optional.
+  - `NonZero<T>` of all integer types (zero is rejected with
+    `ErrorKind::OutOfRange`), `Wrapping<T>`, `Saturating<T>` and
+    `Reverse<T>` serialize as the value they wrap.
+  - `Result<T, E>` is externally tagged: `{"Ok": value}` or
+    `{"Err": error}`.
+  - `IpAddr`, `Ipv4Addr`, `Ipv6Addr`, `SocketAddr`, `SocketAddrV4` and
+    `SocketAddrV6` are strings.
+  - `PathBuf` and `Box<Path>` are strings.  Paths that are not valid UTF-8
+    fail to serialize.
+  - The atomic integers and `AtomicBool` serialize their value (loaded with
+    relaxed ordering).
+  - `CString` and `Box<CStr>` are bytes (without the nul terminator).
+    Interior nul bytes fail to deserialize.
+  - `HashSet<T, H>` serializes with custom hashers.
+  - The new containers are adapters as well: `Rc<U>`, `Arc<U>`,
+    `Box<[U]>`, `Rc<[U]>`, `Arc<[U]>`, `VecDeque<U>`, `LinkedList<U>`,
+    `BinaryHeap<U>` and `Result<U, V>`.
 
 ## 0.8.0
 

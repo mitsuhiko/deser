@@ -1,6 +1,8 @@
 //! Serialization adapters for the standard containers.
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::hash::BuildHasher;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::State;
 use crate::adapters::{SerializeAs, SerializeAsRef};
@@ -119,32 +121,76 @@ impl<T, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<Box<T>> for Box<A> {
-    fn serialize_as<'a>(value: &'a Box<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
-        A::serialize_as(value, state)
-    }
+/// Implements `SerializeAs` for pointers by forwarding to the pointee.
+macro_rules! serialize_as_pointer {
+    ($([$($gen:tt)*] $ty:ty => $adapter:ty, $inner:ty, $inner_adapter:ty;)*) => {
+        $(
+            impl<$($gen)*> SerializeAs<$ty> for $adapter {
+                fn serialize_as<'a>(value: &'a $ty, state: &mut State) -> Result<Chunk<'a>, Error> {
+                    <$inner_adapter as SerializeAs<$inner>>::serialize_as(value, state)
+                }
 
-    fn finish_as(value: &Box<T>, state: &mut State) -> Result<(), Error> {
-        A::finish_as(value, state)
-    }
+                fn finish_as(value: &$ty, state: &mut State) -> Result<(), Error> {
+                    <$inner_adapter as SerializeAs<$inner>>::finish_as(value, state)
+                }
 
-    fn is_optional_as(value: &Box<T>) -> bool {
-        A::is_optional_as(value)
-    }
+                fn is_optional_as(value: &$ty) -> bool {
+                    <$inner_adapter as SerializeAs<$inner>>::is_optional_as(value)
+                }
 
-    fn container_shape_as(value: &Box<T>) -> ContainerShape {
-        A::container_shape_as(value)
-    }
+                fn container_shape_as(value: &$ty) -> ContainerShape {
+                    <$inner_adapter as SerializeAs<$inner>>::container_shape_as(value)
+                }
 
-    fn describe_as(value: &Box<T>, d: &mut dyn Describe) {
-        A::describe_as(value, d)
-    }
+                fn describe_as(value: &$ty, d: &mut dyn Describe) {
+                    <$inner_adapter as SerializeAs<$inner>>::describe_as(value, d)
+                }
 
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a Box<T>, state: &mut State) -> Result<Begin<'a>, Error> {
-        A::__private_begin_as(value, state)
-    }
+                #[inline]
+                fn __private_begin_as<'a>(value: &'a $ty, state: &mut State) -> Result<Begin<'a>, Error> {
+                    <$inner_adapter as SerializeAs<$inner>>::__private_begin_as(value, state)
+                }
+            }
+        )*
+    };
 }
+
+serialize_as_pointer! {
+    [T, A: SerializeAs<T>] Box<T> => Box<A>, T, A;
+    [T, A: SerializeAs<T>] Rc<T> => Rc<A>, T, A;
+    [T, A: SerializeAs<T>] Arc<T> => Arc<A>, T, A;
+    [T, A: SerializeAs<T>] Box<[T]> => Box<[A]>, [T], [A];
+    [T, A: SerializeAs<T>] Rc<[T]> => Rc<[A]>, [T], [A];
+    [T, A: SerializeAs<T>] Arc<[T]> => Arc<[A]>, [T], [A];
+}
+
+/// Implements `SerializeAs` for sequences which are serialized by iterating.
+macro_rules! serialize_as_iter_seq {
+    ($($ty:ident),*) => {
+        $(
+            impl<T, A: SerializeAs<T>> SerializeAs<$ty<T>> for $ty<A> {
+                fn serialize_as<'a>(value: &'a $ty<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                    Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
+                        value.iter(),
+                        std::marker::PhantomData,
+                    ))))
+                }
+
+                fn container_shape_as(value: &$ty<T>) -> ContainerShape {
+                    ContainerShape::new().with_len(value.len())
+                }
+
+                #[inline]
+                fn __private_begin_as<'a>(value: &'a $ty<T>, state: &mut State) -> Result<Begin<'a>, Error> {
+                    let shape = Self::container_shape_as(value);
+                    Ok(Begin::chunk(Self::serialize_as(value, state)?, shape, false))
+                }
+            }
+        )*
+    };
+}
+
+serialize_as_iter_seq!(VecDeque, LinkedList, BinaryHeap);
 
 impl<T, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
     #[inline]

@@ -1,6 +1,9 @@
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::hash::BuildHasher;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::State;
 use crate::error::Error;
@@ -111,15 +114,7 @@ impl Serialize for String {
     }
 }
 
-impl Serialize for &str {
-    __begin_without_finish!();
-
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Str((*self).into())))
-    }
-}
-
-impl<'a> Serialize for Cow<'a, str> {
+impl Serialize for str {
     __begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -127,88 +122,227 @@ impl<'a> Serialize for Cow<'a, str> {
     }
 }
 
-impl<T> Serialize for Vec<T>
+/// `Cow<[T]>` is implemented separately as slices are serialized by the
+/// containers holding them (see `serialize_slice`).
+impl<'a, T> Serialize for Cow<'a, T>
 where
-    T: Serialize,
+    T: Serialize + ToOwned + ?Sized,
 {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Serialize::serialize(&**self, state)
+    }
+
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
+        Serialize::finish(&**self, state)
+    }
+
     #[inline]
-    fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-        Ok(match T::__private_slice_as_bytes(&self[..]) {
-            Some(bytes) => Begin::chunk(
-                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-                ContainerShape::new(),
-                false,
-            ),
-            None => Begin::indexed_seq(self, self.container_shape()),
-        })
+    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
+        Serialize::__private_begin(&**self, state)
+    }
+
+    fn is_optional(&self) -> bool {
+        Serialize::is_optional(&**self)
     }
 
     fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_len(self.len())
+        Serialize::container_shape(&**self)
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
-            Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
-        } else {
-            Ok(Chunk::Seq(Box::new(SliceEmitter(self[..].iter()))))
-        }
+    fn describe(&self, d: &mut dyn Describe) {
+        Serialize::describe(&**self, d)
     }
 }
 
-impl<T> Serialize for &[T]
-where
-    T: Serialize,
-{
-    #[inline]
-    fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
-        Ok(match T::__private_slice_as_bytes(&self[..]) {
-            Some(bytes) => Begin::chunk(
-                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-                ContainerShape::new(),
-                false,
-            ),
-            None => Begin::indexed_seq(self, self.container_shape()),
-        })
-    }
+/// Implements `Serialize` for the containers of slices.
+///
+/// `[T]` itself does not implement `Serialize` as the containers provide
+/// the elements by index which requires a sized value.
+macro_rules! serialize_slice {
+    ($([$($gen:tt)*] $ty:ty),* $(,)?) => {
+        $(
+            impl<$($gen)*> Serialize for $ty {
+                #[inline]
+                fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
+                    Ok(match T::__private_slice_as_bytes(&self[..]) {
+                        Some(bytes) => Begin::chunk(
+                            Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                            ContainerShape::new(),
+                            false,
+                        ),
+                        None => Begin::indexed_seq(self, self.container_shape()),
+                    })
+                }
 
-    fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new().with_len(self.len())
-    }
+                fn container_shape(&self) -> ContainerShape {
+                    ContainerShape::new().with_len(self.len())
+                }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        if let Some(bytes) = T::__private_slice_as_bytes(self) {
-            Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
-        } else {
-            Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
-        }
-    }
-}
-
-macro_rules! indexed_slice {
-    ($ty:ty $(, $param:ident)*) => {
-        impl<T: Serialize $(, const $param: usize)*> IndexedSeq for $ty {
-            #[inline]
-            fn element(
-                &self,
-                index: usize,
-                _state: &mut State,
-            ) -> Result<Option<SerializeHandle<'_>>, Error> {
-                Ok(self.get(index).map(SerializeHandle::to))
+                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+                    if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
+                        Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
+                    } else {
+                        Ok(Chunk::Seq(Box::new(SliceEmitter(self[..].iter()))))
+                    }
+                }
             }
-        }
+
+            impl<$($gen)*> IndexedSeq for $ty {
+                #[inline]
+                fn element(
+                    &self,
+                    index: usize,
+                    _state: &mut State,
+                ) -> Result<Option<SerializeHandle<'_>>, Error> {
+                    Ok(self[..].get(index).map(SerializeHandle::to))
+                }
+            }
+        )*
     };
 }
 
-indexed_slice!(Vec<T>);
-indexed_slice!(&[T]);
-indexed_slice!([T; N], N);
+serialize_slice!(
+    [T: Serialize] Vec<T>,
+    ['a, T: Serialize] &'a [T],
+    [T: Serialize] Box<[T]>,
+    [T: Serialize] Rc<[T]>,
+    [T: Serialize] Arc<[T]>,
+    ['a, T: Serialize + Clone] Cow<'a, [T]>,
+);
+
+impl<T: Serialize, const N: usize> IndexedSeq for [T; N] {
+    #[inline]
+    fn element(
+        &self,
+        index: usize,
+        _state: &mut State,
+    ) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.get(index).map(SerializeHandle::to))
+    }
+}
 
 struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
 
 impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.0.next().map(SerializeHandle::to))
+    }
+}
+
+/// Emits the elements of an iterator.
+struct IterEmitter<'a, I>(I, PhantomData<&'a ()>);
+
+impl<'a, I, T> SeqEmitter for IterEmitter<'a, I>
+where
+    I: Iterator<Item = &'a T>,
+    T: Serialize + 'a,
+{
+    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.0.next().map(SerializeHandle::to))
+    }
+}
+
+impl<T: Serialize> Serialize for VecDeque<T> {
+    #[inline]
+    fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
+        Ok(match self.as_bytes() {
+            Some(bytes) => Begin::chunk(
+                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                ContainerShape::new(),
+                false,
+            ),
+            None => Begin::indexed_seq(self, self.container_shape()),
+        })
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
+    }
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(match self.as_bytes() {
+            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+            None => Chunk::Seq(Box::new(IterEmitter(self.iter(), PhantomData))),
+        })
+    }
+}
+
+impl<T: Serialize> IndexedSeq for VecDeque<T> {
+    #[inline]
+    fn element(
+        &self,
+        index: usize,
+        _state: &mut State,
+    ) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.get(index).map(SerializeHandle::to))
+    }
+}
+
+/// Returns the bytes of a deque of `u8`.
+trait DequeBytes {
+    fn as_bytes(&self) -> Option<Cow<'_, [u8]>>;
+}
+
+impl<T: Serialize> DequeBytes for VecDeque<T> {
+    fn as_bytes(&self) -> Option<Cow<'_, [u8]>> {
+        let (front, back) = self.as_slices();
+        let front = T::__private_slice_as_bytes(front)?;
+        if back.is_empty() {
+            return Some(front);
+        }
+        let back = T::__private_slice_as_bytes(back)?;
+        let mut rv = front.into_owned();
+        rv.extend_from_slice(&back);
+        Some(Cow::Owned(rv))
+    }
+}
+
+impl<T: Serialize> Serialize for LinkedList<T> {
+    __begin_without_finish!();
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
+    }
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::Seq(Box::new(IterEmitter(self.iter(), PhantomData))))
+    }
+}
+
+/// The elements are emitted in the (arbitrary) order of the heap.
+impl<T: Serialize> Serialize for BinaryHeap<T> {
+    #[inline]
+    fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
+        Ok(match T::__private_slice_as_bytes(self.as_slice()) {
+            Some(bytes) => Begin::chunk(
+                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+                ContainerShape::new(),
+                false,
+            ),
+            None => Begin::indexed_seq(self, self.container_shape()),
+        })
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        ContainerShape::new().with_len(self.len())
+    }
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(match T::__private_slice_as_bytes(self.as_slice()) {
+            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+            None => Chunk::Seq(Box::new(SliceEmitter(self.as_slice().iter()))),
+        })
+    }
+}
+
+impl<T: Serialize> IndexedSeq for BinaryHeap<T> {
+    #[inline]
+    fn element(
+        &self,
+        index: usize,
+        _state: &mut State,
+    ) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.as_slice().get(index).map(SerializeHandle::to))
     }
 }
 
@@ -325,9 +459,10 @@ where
     }
 }
 
-impl<T> Serialize for HashSet<T>
+impl<T, H> Serialize for HashSet<T, H>
 where
     T: Serialize,
+    H: BuildHasher,
 {
     __begin_without_finish!();
 
@@ -551,4 +686,4 @@ macro_rules! forward_serialize {
     };
 }
 
-forward_serialize!(&'a T, &'a mut T, Box<T>);
+forward_serialize!(&'a T, &'a mut T, Box<T>, Rc<T>, Arc<T>);

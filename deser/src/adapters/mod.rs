@@ -52,9 +52,11 @@
 //!   data if possible.
 //! * The adapters for bytes are in [`bytes`]: the encodings (for instance
 //!   [`Hex`](bytes::Hex)) and [`BytesFallback`](bytes::BytesFallback).
-//! * The standard containers: `Option<U>`, `Box<U>`, `Vec<U>`, `[U]`,
-//!   `[U; N]`, `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<U>`,
-//!   `HashSet<U>` and tuples.
+//! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
+//!   `Rc<U>`, `Arc<U>`, `Vec<U>`, `VecDeque<U>`, `LinkedList<U>`,
+//!   `BinaryHeap<U>`, `[U]`, `[U; N]`, `Box<[U]>`, `Rc<[U]>`, `Arc<[U]>`,
+//!   `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<U>`, `HashSet<U>` and
+//!   tuples.
 //!
 //! # Implementing Adapters
 //!

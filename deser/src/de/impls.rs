@@ -1,9 +1,11 @@
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem::{MaybeUninit, take};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same};
@@ -99,6 +101,10 @@ impl<'de> Sink<'de> for SlotWrapper<String> {
                     Cow::Borrowed(value) => copy_str(value),
                     Cow::Owned(value) => value,
                 });
+                Ok(())
+            }
+            Atom::Char(value) => {
+                **self = Some(value.to_string());
                 Ok(())
             }
             other => self.unexpected_atom(other, state),
@@ -323,111 +329,210 @@ deserialize!(f64);
 // implementations use the containers with `Same` as element adapter which
 // compiles to the same code as a direct implementation.
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Vec<T> {
-    #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        <Vec<Same> as DeserializeAs<'de, Vec<T>>>::deserialize_into_as(out)
+/// Sequences that are collected into a vector and then converted.
+pub(crate) trait SeqTarget<T>: Sized {
+    /// The name of the type for error messages.
+    const NAME: &'static str;
+
+    /// Converts the vector into the sequence.
+    fn from_vec(vec: Vec<T>) -> Self;
+}
+
+impl<T> SeqTarget<T> for Vec<T> {
+    const NAME: &'static str = "vec";
+
+    #[inline(always)]
+    fn from_vec(vec: Vec<T>) -> Self {
+        vec
     }
 }
 
-impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
-    fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_, 'de> {
-        struct VecSink<'a, T, A> {
-            slot: &'a mut Option<Vec<T>>,
-            vec: Vec<T>,
-            element: Option<T>,
-            is_seq: bool,
-            _marker: PhantomData<fn() -> A>,
-        }
+impl<T> SeqTarget<T> for VecDeque<T> {
+    const NAME: &'static str = "VecDeque";
 
-        impl<'a, T: 'a, A> VecSink<'a, T, A> {
-            fn flush(&mut self) {
-                if let Some(element) = self.element.take() {
-                    self.vec.push(element);
-                }
-            }
-        }
-
-        impl<'de, 'a, T, A: DeserializeAs<'de, T>> Sink<'de> for VecSink<'a, T, A> {
-            fn expecting(&self) -> Cow<'_, str> {
-                Cow::Borrowed(if A::__private_is_bytes_as() {
-                    "bytes"
-                } else {
-                    "vec"
-                })
-            }
-
-            fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                match atom {
-                    Atom::Bytes(value) => {
-                        match A::__private_vec_from_bytes_as(value.into_owned()) {
-                            Some(vec) => {
-                                *self.slot = Some(vec);
-                                Ok(())
-                            }
-                            None => Err(Error::new(
-                                ErrorKind::Unexpected,
-                                format!("unexpected bytes, expected {}", self.expecting()),
-                            )),
-                        }
-                    }
-                    // formats without native bytes represent them as strings
-                    Atom::Str(ref value) if A::__private_is_bytes_as() => {
-                        let bytes = crate::adapters::bytes::decode_str(value, state)?;
-                        match A::__private_vec_from_bytes_as(bytes) {
-                            Some(vec) => {
-                                *self.slot = Some(vec);
-                                Ok(())
-                            }
-                            None => self.unexpected_atom(atom, state),
-                        }
-                    }
-                    other => self.unexpected_atom(other, state),
-                }
-            }
-
-            fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-                self.is_seq = true;
-                self.vec.reserve(cautious_capacity::<T>(state));
-                Ok(())
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-                self.flush();
-                Ok(A::deserialize_into_as(&mut self.element))
-            }
-
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                self.flush();
-                A::__private_atom_into_as(&mut self.element, atom, state)
-            }
-
-            fn borrowed_value_atom(
-                &mut self,
-                atom: Atom<'de>,
-                state: &mut State,
-            ) -> Result<(), Error> {
-                self.flush();
-                A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
-            }
-
-            fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-                if self.is_seq {
-                    self.flush();
-                    *self.slot = Some(take(&mut self.vec));
-                }
-                Ok(())
-            }
-        }
-
-        SinkHandle::boxed(VecSink::<T, A> {
-            slot: out,
-            vec: Vec::new(),
-            element: None,
-            is_seq: false,
-            _marker: PhantomData,
-        })
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        VecDeque::from(vec)
     }
+}
+
+impl<T> SeqTarget<T> for LinkedList<T> {
+    const NAME: &'static str = "LinkedList";
+
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        vec.into_iter().collect()
+    }
+}
+
+impl<T: Ord> SeqTarget<T> for BinaryHeap<T> {
+    const NAME: &'static str = "BinaryHeap";
+
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        BinaryHeap::from(vec)
+    }
+}
+
+impl<T> SeqTarget<T> for Box<[T]> {
+    const NAME: &'static str = "slice";
+
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        vec.into_boxed_slice()
+    }
+}
+
+impl<T> SeqTarget<T> for Rc<[T]> {
+    const NAME: &'static str = "slice";
+
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        Rc::from(vec)
+    }
+}
+
+impl<T> SeqTarget<T> for Arc<[T]> {
+    const NAME: &'static str = "slice";
+
+    #[inline]
+    fn from_vec(vec: Vec<T>) -> Self {
+        Arc::from(vec)
+    }
+}
+
+/// Creates the sink for a sequence with an element adapter.
+///
+/// The elements are collected into a vector which is converted into the
+/// sequence at the end.  For elements of type `u8` bytes are accepted.
+fn seq_sink<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
+where
+    C: SeqTarget<T> + 'a,
+    T: 'a,
+    A: DeserializeAs<'de, T>,
+{
+    struct SeqSink<'a, C, T, A> {
+        slot: &'a mut Option<C>,
+        vec: Vec<T>,
+        element: Option<T>,
+        is_seq: bool,
+        _marker: PhantomData<fn() -> A>,
+    }
+
+    impl<'a, C, T, A> SeqSink<'a, C, T, A> {
+        fn flush(&mut self) {
+            if let Some(element) = self.element.take() {
+                self.vec.push(element);
+            }
+        }
+    }
+
+    impl<'de, 'a, C: SeqTarget<T>, T, A: DeserializeAs<'de, T>> Sink<'de> for SeqSink<'a, C, T, A> {
+        fn expecting(&self) -> Cow<'_, str> {
+            Cow::Borrowed(if A::__private_is_bytes_as() {
+                "bytes"
+            } else {
+                C::NAME
+            })
+        }
+
+        fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            match atom {
+                Atom::Bytes(value) => match A::__private_vec_from_bytes_as(value.into_owned()) {
+                    Some(vec) => {
+                        *self.slot = Some(C::from_vec(vec));
+                        Ok(())
+                    }
+                    None => Err(Error::new(
+                        ErrorKind::Unexpected,
+                        format!("unexpected bytes, expected {}", self.expecting()),
+                    )),
+                },
+                // formats without native bytes represent them as strings
+                Atom::Str(ref value) if A::__private_is_bytes_as() => {
+                    let bytes = crate::adapters::bytes::decode_str(value, state)?;
+                    match A::__private_vec_from_bytes_as(bytes) {
+                        Some(vec) => {
+                            *self.slot = Some(C::from_vec(vec));
+                            Ok(())
+                        }
+                        None => self.unexpected_atom(atom, state),
+                    }
+                }
+                other => self.unexpected_atom(other, state),
+            }
+        }
+
+        fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+            self.is_seq = true;
+            self.vec.reserve(cautious_capacity::<T>(state));
+            Ok(())
+        }
+
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            self.flush();
+            Ok(A::deserialize_into_as(&mut self.element))
+        }
+
+        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            self.flush();
+            A::__private_atom_into_as(&mut self.element, atom, state)
+        }
+
+        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+            self.flush();
+            A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
+        }
+
+        fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            if self.is_seq {
+                self.flush();
+                *self.slot = Some(C::from_vec(take(&mut self.vec)));
+            }
+            Ok(())
+        }
+    }
+
+    SinkHandle::boxed(SeqSink::<C, T, A> {
+        slot: out,
+        vec: Vec::new(),
+        element: None,
+        is_seq: false,
+        _marker: PhantomData,
+    })
+}
+
+/// Implements `Deserialize` and `DeserializeAs` for sequences.
+macro_rules! deserialize_seq {
+    ($([$($bound:tt)*] $target:ty => $adapter:ty;)*) => {
+        $(
+            impl<'de, $($bound)*> Deserialize<'de> for $target
+            where
+                T: Deserialize<'de>,
+            {
+                #[inline]
+                fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+                    seq_sink::<Self, T, Same>(out)
+                }
+            }
+
+            impl<'de, $($bound)*, A: DeserializeAs<'de, T>> DeserializeAs<'de, $target> for $adapter {
+                fn deserialize_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
+                    seq_sink::<$target, T, A>(out)
+                }
+            }
+        )*
+    };
+}
+
+deserialize_seq! {
+    [T] Vec<T> => Vec<A>;
+    [T] VecDeque<T> => VecDeque<A>;
+    [T] LinkedList<T> => LinkedList<A>;
+    [T: Ord] BinaryHeap<T> => BinaryHeap<A>;
+    [T] Box<[T]> => Box<[A]>;
+    [T] Rc<[T]> => Rc<[A]>;
+    [T] Arc<[T]> => Arc<[A]>;
 }
 
 /// Maps that can be deserialized.
@@ -1093,10 +1198,204 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
+/// A type that is deserialized as `T` and converted.
+pub(crate) trait Via<T>: Sized {
+    /// Converts the deserialized value.
+    fn convert(value: T) -> Result<Self, Error>;
+}
+
+/// Creates the sink for a type that is deserialized as `T` with an adapter.
+#[inline]
+pub(crate) fn via_handle<'a, 'de, T, U, A>(out: &'a mut Option<U>) -> SinkHandle<'a, 'de>
+where
+    T: 'a,
+    U: Via<T> + 'a,
+    A: DeserializeAs<'de, T>,
+{
+    MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), U::convert)
+}
+
+/// Deserializes an atom into a type that is deserialized as `T`.
+#[inline]
+pub(crate) fn via_atom_into<'de, T, U, A>(
+    out: &mut Option<U>,
+    atom: Atom,
+    state: &mut State,
+) -> Result<(), Error>
+where
+    U: Via<T>,
+    A: DeserializeAs<'de, T>,
+{
+    let mut inner = None;
+    A::__private_atom_into_as(&mut inner, atom, state)?;
+    if let Some(value) = inner {
+        *out = Some(U::convert(value)?);
+    }
+    Ok(())
+}
+
+/// Deserializes a borrowed atom into a type that is deserialized as `T`.
+#[inline]
+pub(crate) fn via_borrowed_atom_into<'de, T, U, A>(
+    out: &mut Option<U>,
+    atom: Atom<'de>,
+    state: &mut State,
+) -> Result<(), Error>
+where
+    U: Via<T>,
+    A: DeserializeAs<'de, T>,
+{
+    let mut inner = None;
+    A::__private_borrowed_atom_into_as(&mut inner, atom, state)?;
+    if let Some(value) = inner {
+        *out = Some(U::convert(value)?);
+    }
+    Ok(())
+}
+
+/// Implements `Deserialize` for types that implement [`Via`].
+macro_rules! deserialize_via {
+    ($([$($gen:tt)*] $ty:ty => $via:ty;)*) => {
+        $(
+            impl<'de, $($gen)*> $crate::de::Deserialize<'de> for $ty {
+                #[inline]
+                fn deserialize_into(
+                    out: &mut Option<Self>,
+                ) -> $crate::de::SinkHandle<'_, 'de> {
+                    $crate::de::impls::via_handle::<$via, Self, $crate::adapters::Same>(out)
+                }
+
+                #[inline]
+                fn __private_atom_into(
+                    out: &mut Option<Self>,
+                    atom: $crate::Atom,
+                    state: &mut $crate::State,
+                ) -> Result<(), $crate::Error> {
+                    $crate::de::impls::via_atom_into::<$via, Self, $crate::adapters::Same>(
+                        out, atom, state,
+                    )
+                }
+
+                #[inline]
+                fn __private_borrowed_atom_into(
+                    out: &mut Option<Self>,
+                    atom: $crate::Atom<'de>,
+                    state: &mut $crate::State,
+                ) -> Result<(), $crate::Error> {
+                    $crate::de::impls::via_borrowed_atom_into::<$via, Self, $crate::adapters::Same>(
+                        out, atom, state,
+                    )
+                }
+            }
+        )*
+    };
+}
+
+pub(crate) use deserialize_via;
+
+/// Implements `DeserializeAs` for wrappers of a single value.
+macro_rules! deserialize_as_via {
+    ($($wrapper:ident),*) => {
+        $(
+            impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, $wrapper<T>> for $wrapper<A> {
+                #[inline]
+                fn deserialize_into_as(out: &mut Option<$wrapper<T>>) -> SinkHandle<'_, 'de> {
+                    via_handle::<T, $wrapper<T>, A>(out)
+                }
+
+                #[inline]
+                fn __private_atom_into_as(
+                    out: &mut Option<$wrapper<T>>,
+                    atom: Atom,
+                    state: &mut State,
+                ) -> Result<(), Error> {
+                    via_atom_into::<T, $wrapper<T>, A>(out, atom, state)
+                }
+
+                #[inline]
+                fn __private_borrowed_atom_into_as(
+                    out: &mut Option<$wrapper<T>>,
+                    atom: Atom<'de>,
+                    state: &mut State,
+                ) -> Result<(), Error> {
+                    via_borrowed_atom_into::<T, $wrapper<T>, A>(out, atom, state)
+                }
+            }
+        )*
+    };
+}
+
+impl<T> Via<T> for Box<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(Box::new(value))
+    }
+}
+
+impl<T> Via<T> for Rc<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(Rc::new(value))
+    }
+}
+
+impl<T> Via<T> for Arc<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(Arc::new(value))
+    }
+}
+
+impl Via<String> for Box<str> {
+    #[inline]
+    fn convert(value: String) -> Result<Self, Error> {
+        Ok(value.into_boxed_str())
+    }
+}
+
+impl Via<String> for Rc<str> {
+    #[inline]
+    fn convert(value: String) -> Result<Self, Error> {
+        Ok(Rc::from(value))
+    }
+}
+
+impl Via<String> for Arc<str> {
+    #[inline]
+    fn convert(value: String) -> Result<Self, Error> {
+        Ok(Arc::from(value))
+    }
+}
+
+deserialize_via! {
+    [T: Deserialize<'de>] Box<T> => T;
+    [T: Deserialize<'de>] Rc<T> => T;
+    [T: Deserialize<'de>] Arc<T> => T;
+    [] Box<str> => String;
+    [] Rc<str> => String;
+    [] Arc<str> => String;
+}
+
+deserialize_as_via!(Box, Rc, Arc);
+
+impl<'a, T: ToOwned + ?Sized> Via<T::Owned> for Cow<'a, T> {
+    #[inline]
+    fn convert(value: T::Owned) -> Result<Self, Error> {
+        Ok(Cow::Owned(value))
+    }
+}
+
+/// `Cow` is always deserialized owned so that for instance
+/// `Cow<'static, str>` can be deserialized from any data.  To borrow use
+/// the [`Borrowed`](crate::adapters::Borrowed) adapter.
+impl<'de, 'a, T> Deserialize<'de> for Cow<'a, T>
+where
+    T: ToOwned + ?Sized,
+    T::Owned: Deserialize<'de>,
+{
     #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        <Box<Same> as DeserializeAs<'de, Box<T>>>::deserialize_into_as(out)
+        via_handle::<T::Owned, Self, Same>(out)
     }
 
     #[inline]
@@ -1105,7 +1404,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        <Box<Same> as DeserializeAs<'de, Box<T>>>::__private_atom_into_as(out, atom, state)
+        via_atom_into::<T::Owned, Self, Same>(out, atom, state)
     }
 
     #[inline]
@@ -1114,39 +1413,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        <Box<Same> as DeserializeAs<'de, Box<T>>>::__private_borrowed_atom_into_as(out, atom, state)
-    }
-}
-
-impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Box<T>> for Box<A> {
-    fn deserialize_into_as(out: &mut Option<Box<T>>) -> SinkHandle<'_, 'de> {
-        MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), |value| {
-            Ok(Box::new(value))
-        })
-    }
-
-    #[inline]
-    fn __private_atom_into_as(
-        out: &mut Option<Box<T>>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let mut inner = None;
-        A::__private_atom_into_as(&mut inner, atom, state)?;
-        *out = inner.map(Box::new);
-        Ok(())
-    }
-
-    #[inline]
-    fn __private_borrowed_atom_into_as(
-        out: &mut Option<Box<T>>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let mut inner = None;
-        A::__private_borrowed_atom_into_as(&mut inner, atom, state)?;
-        *out = inner.map(Box::new);
-        Ok(())
+        via_atom_into::<T::Owned, Self, Same>(out, atom, state)
     }
 }
 
@@ -1191,37 +1458,6 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a str {
     }
 }
 
-impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, str>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("string")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Str(value) => {
-                **self = Some(Cow::Owned(value.into_owned()));
-                Ok(())
-            }
-            Atom::Char(value) => {
-                **self = Some(Cow::Owned(value.to_string()));
-                Ok(())
-            }
-            other => self.unexpected_atom(other, state),
-        }
-    }
-}
-
-/// `Cow` is always deserialized owned so that `Cow<'static, str>` can be
-/// deserialized from any data.  To borrow use the
-/// [`Borrowed`](crate::adapters::Borrowed) adapter.
-impl<'de, 'a> Deserialize<'de> for Cow<'a, str> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-
-    __slot_wrapper_atom_into!();
-}
-
 impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed("bytes")
@@ -1257,36 +1493,4 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SlotWrapper::make_handle(out)
     }
-}
-
-impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, [u8]>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("bytes")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Bytes(value) => {
-                **self = Some(Cow::Owned(value.into_owned()));
-                Ok(())
-            }
-            // formats without native bytes represent them as strings
-            Atom::Str(ref value) => {
-                **self = Some(Cow::Owned(crate::adapters::bytes::decode_str(
-                    value, state,
-                )?));
-                Ok(())
-            }
-            other => self.unexpected_atom(other, state),
-        }
-    }
-}
-
-/// See the implementation for `Cow<str>`.
-impl<'de, 'a> Deserialize<'de> for Cow<'a, [u8]> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-
-    __slot_wrapper_atom_into!();
 }

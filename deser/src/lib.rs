@@ -79,6 +79,7 @@ pub mod ser;
 
 mod extensions;
 mod state;
+mod std_impls;
 
 #[cfg(doctest)]
 mod soundness;
