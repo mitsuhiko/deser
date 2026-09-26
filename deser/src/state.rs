@@ -1,4 +1,5 @@
 //! The state shared between data formats and the types they process.
+use std::any::TypeId;
 use std::fmt;
 use std::sync::Arc;
 
@@ -32,7 +33,7 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///
 /// Additionally formats can publish the byte range in the input of every
 /// event (see [`input_range`](Self::input_range)) and extensions can
-/// register functions that add context to errors (see
+/// register types that add context to errors (see
 /// [`add_error_context`](Self::add_error_context)).
 ///
 /// Extension values have to be [`Send`] and [`Sync`] so that the state is
@@ -51,11 +52,25 @@ pub struct State {
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
     source: Option<Arc<str>>,
-    error_context: Vec<ErrorContextFn>,
+    // keyed by type as function pointers cannot be compared reliably
+    error_context: Vec<(TypeId, AddContextFn)>,
 }
 
-/// A function that adds context to an error, see [`State::add_error_context`].
-pub type ErrorContextFn = fn(Error, &State) -> Error;
+/// The function of an [`ErrorContext`].
+type AddContextFn = fn(Error, &State) -> Error;
+
+/// Adds context to errors, see [`State::add_error_context`].
+///
+/// This is typically implemented by the extension type which holds the
+/// information that is attached to errors.
+pub trait ErrorContext: 'static {
+    /// Adds context to an error.
+    ///
+    /// This is invoked with the state as it was when the error happened.
+    /// Context that is already attached to the error should not be
+    /// replaced.
+    fn add_context(err: Error, state: &State) -> Error;
+}
 
 impl State {
     /// Creates a new state for a driver.
@@ -294,50 +309,50 @@ impl State {
         self.extensions.clear_event_data();
     }
 
-    /// Registers a function that adds context to errors.
+    /// Registers a type that adds context to errors.
     ///
     /// When an event fails (for instance because a sink rejects a value)
-    /// the drivers invoke the registered functions with the error and the
+    /// the drivers invoke [`ErrorContext::add_context`] of the registered
+    /// types in the order they were registered with the error and the
     /// state as it was when the error happened.  This means that the
     /// context is also correct for errors in values which are replayed from
     /// a [`Recording`](crate::de::Recording).  The drivers only do this
     /// once for an error: the outer containers which the error passes
-    /// through do not add their context.  Functions should not replace
-    /// context that is already there.
+    /// through do not add their context.
     ///
-    /// Registering the same function again has no effect.
+    /// Registering the same type again has no effect, so this can be
+    /// called for every event.
     ///
     /// ```
     /// use deser::de::DeserializeDriver;
-    /// use deser::{Error, ErrorAttachment, Event, State};
+    /// use deser::{Error, ErrorAttachment, ErrorContext, Event, State};
     ///
     /// #[derive(Debug)]
     /// struct Depth(usize);
     ///
     /// impl ErrorAttachment for Depth {}
     ///
-    /// fn add_depth(err: Error, state: &State) -> Error {
-    ///     match err.attachment::<Depth>() {
-    ///         Some(_) => err,
-    ///         None => err.with_attachment(Depth(state.depth())),
+    /// impl ErrorContext for Depth {
+    ///     fn add_context(err: Error, state: &State) -> Error {
+    ///         match err.attachment::<Depth>() {
+    ///             Some(_) => err,
+    ///             None => err.with_attachment(Depth(state.depth())),
+    ///         }
     ///     }
     /// }
     ///
     /// let mut out = None::<Vec<Vec<u32>>>;
     /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver.state_mut().add_error_context(add_depth);
+    /// driver.state_mut().add_error_context::<Depth>();
     /// driver.emit(Event::seq_start()).unwrap();
     /// driver.emit(Event::seq_start()).unwrap();
     /// let err = driver.emit(true).unwrap_err();
     /// assert_eq!(err.attachment::<Depth>().unwrap().0, 2);
     /// ```
-    pub fn add_error_context(&mut self, f: ErrorContextFn) {
-        if !self
-            .error_context
-            .iter()
-            .any(|&other| other as usize == f as usize)
-        {
-            self.error_context.push(f);
+    pub fn add_error_context<T: ErrorContext>(&mut self) {
+        let key = TypeId::of::<T>();
+        if !self.error_context.iter().any(|&(other, _)| other == key) {
+            self.error_context.push((key, T::add_context));
         }
     }
 
@@ -354,7 +369,7 @@ impl State {
         {
             err = err.with_offset(range.start);
         }
-        for f in self.error_context.iter() {
+        for (_, f) in self.error_context.iter() {
             err = f(err, self);
         }
         err

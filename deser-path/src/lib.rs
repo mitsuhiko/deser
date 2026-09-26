@@ -58,7 +58,7 @@
 //! ```
 use std::fmt;
 
-use deser::{Atom, Error, ErrorAttachment, State};
+use deser::{Atom, Error, ErrorAttachment, ErrorContext, State};
 
 mod de;
 mod ser;
@@ -284,17 +284,21 @@ impl PathLayer {
         if replayable {
             state.set_replayable::<Path>();
         }
-        state.add_error_context(add_path_to_error);
+        state.add_error_context::<PathContext>();
     }
 }
 
-/// Attaches the current path to an error.
-fn add_path_to_error(err: Error, state: &State) -> Error {
-    if err.attachment::<Path>().is_some() {
-        return err;
-    }
-    match state.get::<Path>() {
-        Some(path) if !path.segments.is_empty() => err.with_attachment(path.clone()),
-        _ => err,
+/// Attaches the current path to errors.
+struct PathContext;
+
+impl ErrorContext for PathContext {
+    fn add_context(err: Error, state: &State) -> Error {
+        if err.attachment::<Path>().is_some() {
+            return err;
+        }
+        match state.get::<Path>() {
+            Some(path) if !path.segments.is_empty() => err.with_attachment(path.clone()),
+            _ => err,
+        }
     }
 }

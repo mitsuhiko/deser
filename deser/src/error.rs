@@ -86,7 +86,7 @@ pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
 /// [`Sink`](crate::de::Sink)) get the context attached by the
 /// [`DeserializeDriver`](crate::de::DeserializeDriver): the start of the
 /// input range of the event (see [`State::input_range`](crate::State::input_range))
-/// and the context of the functions registered with
+/// and the context of the types registered with
 /// [`State::add_error_context`](crate::State::add_error_context).  Formats
 /// resolve the offsets into lines and columns.
 pub struct Error {

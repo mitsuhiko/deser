@@ -94,7 +94,7 @@ mod derive_errors;
 pub use self::error::{Error, ErrorAttachment, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
 pub use self::extensions::EventData;
-pub use self::state::State;
+pub use self::state::{ErrorContext, State};
 
 // common re-exports
 

@@ -168,9 +168,9 @@ All notable changes to deser are documented here.
   (`Error::offset`, `Error::line`, `Error::column`) and the path of the value
   (`Error::path`), which are part of the `Display` output.  The deserialize
   driver attaches the start of the input range of an event to the errors of
-  that event, also for replayed values, and functions registered with the new
-  `State::add_error_context` add further context (the serialize driver runs
-  them as well).  The formats resolve offsets into lines and columns (except
+  that event, also for replayed values, and types implementing the new
+  `ErrorContext` trait registered with `State::add_error_context` add further
+  context (the serialize driver runs them as well).  The formats resolve offsets into lines and columns (except
   CBOR which reports offsets), so errors of values (for instance type errors)
   now report their location in all formats.  Syntax errors of `deser-json`
   now have locations too.  The syntax errors of `deser-yaml` and
