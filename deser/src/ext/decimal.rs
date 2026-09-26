@@ -4,7 +4,7 @@ use std::str::FromStr;
 use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
-use crate::ext::known::{impl_well_known, invalid, WellKnown};
+use crate::ext::known::{WellKnown, impl_well_known, invalid};
 use crate::ext::{BigInt, Extension, Number};
 
 /// An exact decimal number of arbitrary precision.

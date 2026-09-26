@@ -18,4 +18,8 @@ members = [
   "examples/located",
   "examples/manual-struct",
 ]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"

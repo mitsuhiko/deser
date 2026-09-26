@@ -1,8 +1,8 @@
+use deser::State;
 use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, SerializeDriver};
-use deser::State;
-use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, make_slot_wrapper};
 
 fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
@@ -191,8 +191,8 @@ fn test_optional_null_extension() {
 mod borrowed {
     use std::borrow::Cow;
 
-    use deser::ext::BorrowedExtension;
     use deser::Atom;
+    use deser::ext::BorrowedExtension;
 
     #[derive(Debug, Clone, PartialEq)]
     pub struct Literal<'a> {

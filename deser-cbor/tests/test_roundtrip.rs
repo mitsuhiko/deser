@@ -6,7 +6,7 @@ mod common;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
-use common::{de, hex, ser, Value};
+use common::{Value, de, hex, ser};
 use deser::de::DeserializeOwned;
 use deser::{Deserialize, Serialize};
 use deser_cbor::SerializerConfig;

@@ -342,11 +342,11 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// In that case the handle turned into a null handle.
     #[inline(always)]
     fn skip_null(&mut self, atom: &Atom) -> bool {
-        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0 {
-            if is_null_atom(atom) {
-                *self = SinkHandle::null();
-                return true;
-            }
+        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0
+            && is_null_atom(atom)
+        {
+            *self = SinkHandle::null();
+            return true;
         }
         false
     }
@@ -386,7 +386,7 @@ pub(crate) fn is_null_atom(atom: &Atom) -> bool {
         Atom::Null => true,
         // an extension value that falls back to null (for instance a
         // null with additional information attached) is a null too.
-        Atom::Ext(ref ext) => is_null_ext(ext),
+        Atom::Ext(ext) => is_null_ext(ext),
         _ => false,
     }
 }

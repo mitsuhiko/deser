@@ -20,7 +20,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
 use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
-use crate::bound::{collect_idents, where_clause_for_fields, BoundField};
+use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
 
 #[derive(Copy, Clone)]
 enum Repr<'a> {

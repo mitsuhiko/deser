@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use deser::adapters::{ByteSeq, EncodedStr};
 use deser::bytes::{Base64UrlNoPad, BytesFormat, Hex};
 use deser::{Deserialize, Serialize};
-use deser_json::{from_str, to_string, DeserializerConfig, SerializerConfig};
+use deser_json::{DeserializerConfig, SerializerConfig, from_str, to_string};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {

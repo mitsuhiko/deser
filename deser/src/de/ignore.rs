@@ -1,7 +1,7 @@
-use crate::de::{Sink, SinkHandle};
-use crate::error::Error;
 use crate::Atom;
 use crate::State;
+use crate::de::{Sink, SinkHandle};
+use crate::error::Error;
 
 pub struct Ignore;
 

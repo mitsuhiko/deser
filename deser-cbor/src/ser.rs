@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
+use deser::State;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser::ser::SerializeDriver;
-use deser::State;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::extend;
@@ -377,7 +377,7 @@ impl Writer {
                     return Err(Error::new(
                         ErrorKind::UnsupportedType,
                         "unsupported extension value",
-                    ))
+                    ));
                 }
                 fallback => return self.write_atom(fallback),
             }

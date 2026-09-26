@@ -148,7 +148,7 @@ fn run_case(case: &Case) -> Outcome {
             return Outcome::Fail(format!(
                 "expected an error, but parsing succeeded\n  value: {:?}",
                 value
-            ))
+            ));
         }
         (None, Err(_)) => return Outcome::Pass,
         (Some(_), Err(err)) => return Outcome::Fail(format!("unexpected error: {}", err)),

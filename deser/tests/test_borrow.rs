@@ -222,9 +222,11 @@ fn test_recordings_do_not_borrow() {
     let mut out = None::<&str>;
     let mut driver_out = None::<()>;
     let mut driver = DeserializeDriver::new(&mut driver_out);
-    assert!(recording
-        .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
-        .is_err());
+    assert!(
+        recording
+            .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
+            .is_err()
+    );
 }
 
 #[test]

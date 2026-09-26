@@ -1,7 +1,7 @@
 //! Tests for the well-known types of deser.
 mod common;
 
-use common::{de, ser, Value};
+use common::{Value, de, ser};
 use deser::ext::{BigInt, Datetime, Decimal, Duration, Timestamp, Uuid};
 
 fn datetime(s: &str) -> Datetime {

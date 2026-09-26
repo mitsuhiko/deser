@@ -122,12 +122,12 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use crate::de::{atom_into_handle, borrowed_atom_into_handle, Deserialize, OwnedSink, SinkHandle};
+use crate::State;
+use crate::de::{Deserialize, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle};
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ser::{Begin, Chunk, Serialize};
-use crate::State;
 
 mod bytes;
 mod ser_impls;

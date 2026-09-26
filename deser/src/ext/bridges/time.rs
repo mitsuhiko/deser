@@ -1,7 +1,7 @@
 use ::time::{Month, OffsetDateTime, PrimitiveDateTime, UtcDateTime, UtcOffset};
 
 use crate::error::Error;
-use crate::ext::known::{impl_bridge, invalid, out_of_range, Bridge};
+use crate::ext::known::{Bridge, impl_bridge, invalid, out_of_range};
 use crate::ext::{Date, Datetime, Duration, Offset, Time, Timestamp};
 
 #[cold]

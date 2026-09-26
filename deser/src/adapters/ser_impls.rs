@@ -2,12 +2,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 
+use crate::State;
 use crate::adapters::{SerializeAs, SerializeAsRef};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, SerializeHandle};
-use crate::State;
 
 /// Returns a handle to a value that serializes with an adapter.
 #[inline(always)]

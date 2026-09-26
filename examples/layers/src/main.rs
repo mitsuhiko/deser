@@ -115,10 +115,11 @@ impl Layer for Redact {
     ) -> Result<(), Error> {
         match self.state {
             RedactState::Idle => {
-                if let Event::Atom(Atom::Str(ref key)) = event {
-                    if next.state().is_map_key() && self.keys.contains(&&**key) {
-                        self.state = RedactState::Pending;
-                    }
+                if let Event::Atom(Atom::Str(ref key)) = event
+                    && next.state().is_map_key()
+                    && self.keys.contains(&&**key)
+                {
+                    self.state = RedactState::Pending;
                 }
                 next.emit(event, descriptor)
             }

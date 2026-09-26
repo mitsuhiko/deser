@@ -2,20 +2,16 @@
 //! useful when run under miri.
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use deser::State;
 use deser::de::{DeserializeDriver, DeserializeOwned, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle, StructEmitter};
-use deser::State;
 use deser::{Atom, Deserialize, Error, Event, Serialize};
 
 fn depth() -> usize {
     // deeper than the preallocated stacks of the drivers
-    if cfg!(miri) {
-        200
-    } else {
-        1000
-    }
+    if cfg!(miri) { 200 } else { 1000 }
 }
 
 /// Emits the given events and drops the driver afterwards, no matter if the
@@ -109,16 +105,16 @@ fn test_arrays() {
     assert_eq!(array, ["a", "b"]);
 
     // not enough elements
-    assert!(emit_partial::<[String; 3]>(
-        &[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,]
-    )
-    .is_none());
+    assert!(
+        emit_partial::<[String; 3]>(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,])
+            .is_none()
+    );
 
     // too many elements
-    assert!(emit_partial::<[String; 1]>(
-        &[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,]
-    )
-    .is_none());
+    assert!(
+        emit_partial::<[String; 1]>(&[Event::SeqStart, "a".into(), "b".into(), Event::SeqEnd,])
+            .is_none()
+    );
 
     // bytes
     let bytes: [u8; 3] = emit_partial(&[Event::Atom(Atom::Bytes(b"abc"[..].into()))]).unwrap();
@@ -419,10 +415,10 @@ fn test_borrowed_keys_across_reallocation() {
     let mut driver = SerializeDriver::new(&value);
     let mut keys = 0;
     while let Some((event, _, _)) = driver.next().unwrap() {
-        if let Event::Atom(Atom::Str(s)) = event {
-            if s.starts_with("key-") {
-                keys += 1;
-            }
+        if let Event::Atom(Atom::Str(s)) = event
+            && s.starts_with("key-")
+        {
+            keys += 1;
         }
     }
     // two keys per level (one on the last) plus the value of the first key

@@ -12,7 +12,7 @@ use deser_yaml::{DeserializerConfig, Version};
 
 mod common;
 
-use common::{parse_json_stream, Value};
+use common::{Value, parse_json_stream};
 
 const DATA: &str = "tests/data/yaml-test-schema";
 

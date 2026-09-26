@@ -1,8 +1,8 @@
 use ::bigdecimal::BigDecimal;
 
 use crate::error::Error;
-use crate::ext::known::{impl_bridge, out_of_range, Bridge};
 use crate::ext::Decimal;
+use crate::ext::known::{Bridge, impl_bridge, out_of_range};
 
 super::num_bigint_conversions!(::bigdecimal::num_bigint);
 

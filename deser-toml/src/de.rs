@@ -6,7 +6,7 @@ use deser::ext::ExtValue;
 use deser::{Atom, Error, ErrorKind, Event};
 
 use crate::document::{Document, Item, Span, Value};
-use crate::parser::{parse, ROOT};
+use crate::parser::{ROOT, parse};
 
 /// Configures how TOML is deserialized.
 ///

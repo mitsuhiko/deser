@@ -9,7 +9,7 @@ use deser::adapters::{
 };
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle};
-use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;

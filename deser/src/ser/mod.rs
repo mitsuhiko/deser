@@ -110,9 +110,9 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
+use crate::State;
 use crate::descriptors::{Descriptor, NullDescriptor};
 use crate::error::Error;
-use crate::State;
 
 mod chunk;
 mod driver;

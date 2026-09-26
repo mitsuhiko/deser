@@ -3,11 +3,11 @@
 //! These are used by the derive.
 use std::borrow::Cow;
 
+use crate::State;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::driver::Held;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
-use crate::State;
 
 /// Serializes a map with a single entry.
 ///
@@ -190,14 +190,15 @@ struct TaggedNewtypeEmitter<'a> {
 
 /// Returns the string of a map key.
 fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
-    let rv =
-        match key.serialize(state)? {
-            Chunk::Atom(Atom::Str(key)) => key.into_owned(),
-            _ => return Err(Error::new(
+    let rv = match key.serialize(state)? {
+        Chunk::Atom(Atom::Str(key)) => key.into_owned(),
+        _ => {
+            return Err(Error::new(
                 ErrorKind::UnsupportedType,
                 "newtype variants of internally tagged enums must contain maps with string keys",
-            )),
-        };
+            ));
+        }
+    };
     key.finish(state)?;
     Ok(rv)
 }
@@ -231,10 +232,12 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
                         self.forwarded.push(held);
                         chunk = value.serialize(state)?;
                     }
-                    Chunk::Atom(_) | Chunk::Seq(_) => return Err(Error::new(
-                        ErrorKind::UnsupportedType,
-                        "newtype variants of internally tagged enums must contain structs or maps",
-                    )),
+                    Chunk::Atom(_) | Chunk::Seq(_) => {
+                        return Err(Error::new(
+                            ErrorKind::UnsupportedType,
+                            "newtype variants of internally tagged enums must contain structs or maps",
+                        ));
+                    }
                 }
             });
         }

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
 use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
-use deser::{make_slot_wrapper, Atom, Deserialize, Event};
+use deser::{Atom, Deserialize, Event, make_slot_wrapper};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;

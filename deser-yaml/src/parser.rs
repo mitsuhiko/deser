@@ -281,7 +281,7 @@ impl<'a> Parser<'a> {
                 TokenType::VersionDirective
                 | TokenType::TagDirective
                 | TokenType::ReservedDirective => {
-                    return self.error("missing document end marker before directive")
+                    return self.error("missing document end marker before directive");
                 }
                 _ => return self.error("did not find expected <document start>"),
             }

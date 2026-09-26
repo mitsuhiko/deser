@@ -117,9 +117,9 @@ pub mod __derive {
     pub type StrCow<'a> = Cow<'a, str>;
 
     pub use crate::de::enums::{
-        untagged_handle, AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent,
-        IgnoredVariant, InternallyTaggedSink, OtherVariant, Variant, VariantBuilder, VariantMaker,
-        Variants,
+        AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
+        InternallyTaggedSink, OtherVariant, Variant, VariantBuilder, VariantMaker, Variants,
+        untagged_handle,
     };
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
     pub use std::vec::Vec;

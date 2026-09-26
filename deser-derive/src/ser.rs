@@ -3,7 +3,7 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
 use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
-use crate::bound::{where_clause_for_fields, with_lifetime_bound, BoundField};
+use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
 
 /// Returns an expression that creates a serialize handle for a value.
 pub fn serialize_handle(

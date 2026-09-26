@@ -6,7 +6,7 @@ mod common;
 use deser::de::DeserializeOwned;
 use std::collections::HashMap;
 
-use common::{de, hex, Value};
+use common::{Value, de, hex};
 use deser::ext::BigInt;
 use deser::{Deserialize, ErrorKind};
 

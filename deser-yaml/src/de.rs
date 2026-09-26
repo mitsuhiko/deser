@@ -7,9 +7,9 @@ use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::{Atom, Error, ErrorKind, Event};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
-use crate::parser::{error_at, Parser};
-use crate::resolve::{classify_tag, is_collection_tag, resolve_plain, resolve_standard};
+use crate::parser::{Parser, error_at};
 use crate::resolve::{ScalarTag, Version};
+use crate::resolve::{classify_tag, is_collection_tag, resolve_plain, resolve_standard};
 use crate::tag::CurrentTag;
 
 /// The default for [`DeserializerConfig::alias_limit`].
@@ -712,34 +712,30 @@ impl<'a> Deserializer<'a> {
                 continue;
             }
 
-            if track_merges {
-                if let Some(frame) = frames.last_mut() {
-                    if frame.is_map {
-                        if frame.expect_key {
-                            if let Node::Scalar {
-                                ref tag,
-                                style,
-                                ref value,
-                                ..
-                            } = node
-                            {
-                                if is_merge_key(tag, style, value) {
-                                    frame.expect_key = false;
-                                    merge_value_follows = true;
-                                    continue;
-                                }
-                                if let Some(id) =
-                                    KeyId::of_scalar(tag, style, value, self.doc.version)
-                                {
-                                    frame.keys.insert(id);
-                                }
-                            }
-                        }
-                        // aliases are replayed, their nodes are counted
-                        if !matches!(node, Node::Alias { .. } | Node::End { .. }) {
-                            frame.expect_key = !frame.expect_key;
-                        }
+            if track_merges
+                && let Some(frame) = frames.last_mut()
+                && frame.is_map
+            {
+                if frame.expect_key
+                    && let Node::Scalar {
+                        ref tag,
+                        style,
+                        ref value,
+                        ..
+                    } = node
+                {
+                    if is_merge_key(tag, style, value) {
+                        frame.expect_key = false;
+                        merge_value_follows = true;
+                        continue;
                     }
+                    if let Some(id) = KeyId::of_scalar(tag, style, value, self.doc.version) {
+                        frame.keys.insert(id);
+                    }
+                }
+                // aliases are replayed, their nodes are counted
+                if !matches!(node, Node::Alias { .. } | Node::End { .. }) {
+                    frame.expect_key = !frame.expect_key;
                 }
             }
 
@@ -918,7 +914,7 @@ impl<'a> Deserializer<'a> {
                     return Err(error_at(
                         start,
                         "merge keys can only merge mappings or sequences of mappings",
-                    ))
+                    ));
                 }
                 _ => unreachable!(),
             }
@@ -939,11 +935,11 @@ impl<'a> Deserializer<'a> {
                         continue;
                     }
                     let version = self.doc.version;
-                    if let Some(id) = KeyId::of_scalar(key_tag, style, key_value, version) {
-                        if !keys.insert(id) {
-                            // the map (or an earlier source) has the key
-                            continue;
-                        }
+                    if let Some(id) = KeyId::of_scalar(key_tag, style, key_value, version)
+                        && !keys.insert(id)
+                    {
+                        // the map (or an earlier source) has the key
+                        continue;
                     }
                 }
                 entries.push((key, value));

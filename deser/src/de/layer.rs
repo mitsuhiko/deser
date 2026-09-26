@@ -1,7 +1,7 @@
+use crate::State;
 use crate::de::driver::DriverCore;
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
-use crate::State;
 
 /// A layer between a format and the sinks.
 ///
@@ -236,12 +236,12 @@ impl Limits {
 
     /// Accounts for an item in the current container.
     fn count_item(&mut self, is_map_key: bool) -> Result<(), Error> {
-        if let (Some(max), Some((is_map, count))) = (self.max_items, self.items.last_mut()) {
-            if !*is_map || is_map_key {
-                *count += 1;
-                if *count > max {
-                    return Err(limit_error("too many items"));
-                }
+        if let (Some(max), Some((is_map, count))) = (self.max_items, self.items.last_mut())
+            && (!*is_map || is_map_key)
+        {
+            *count += 1;
+            if *count > max {
+                return Err(limit_error("too many items"));
             }
         }
         Ok(())

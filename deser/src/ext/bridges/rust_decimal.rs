@@ -1,6 +1,6 @@
 use crate::error::Error;
-use crate::ext::known::{impl_bridge, invalid, Bridge};
 use crate::ext::Decimal;
+use crate::ext::known::{Bridge, impl_bridge, invalid};
 
 impl Bridge for ::rust_decimal::Decimal {
     type Known = Decimal;

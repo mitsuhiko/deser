@@ -6,8 +6,8 @@
 //! strings unless they have an explicit tag.
 use std::borrow::Cow;
 
-use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
 use deser::Atom;
+use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
 
 /// The YAML version that determines how plain scalars are resolved.
 ///

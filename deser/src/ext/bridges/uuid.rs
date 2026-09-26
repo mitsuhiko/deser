@@ -1,6 +1,6 @@
 use crate::error::Error;
-use crate::ext::known::{impl_bridge, Bridge};
 use crate::ext::Uuid;
+use crate::ext::known::{Bridge, impl_bridge};
 
 impl Bridge for ::uuid::Uuid {
     type Known = Uuid;

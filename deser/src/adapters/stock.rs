@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use std::mem::take;
 use std::str::FromStr;
 
+use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::mapped::MappedSink;
@@ -15,7 +16,6 @@ use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::{Begin, Chunk, Serialize, SerializeHandle};
-use crate::State;
 
 /// Deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the data.
 ///
@@ -527,10 +527,9 @@ fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
         if recording
             .replay(A::deserialize_into_as(&mut value), state)
             .is_ok()
+            && let Some(value) = value
         {
-            if let Some(value) = value {
-                then(value);
-            }
+            then(value);
         }
         Ok(())
     })
@@ -736,19 +735,19 @@ where
         }
 
         fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            if let Some(key) = self.key.take() {
-                if let Some(value) = try_atom::<V, VA>(atom, state) {
-                    self.map.insert_entry(key, value);
-                }
+            if let Some(key) = self.key.take()
+                && let Some(value) = try_atom::<V, VA>(atom, state)
+            {
+                self.map.insert_entry(key, value);
             }
             Ok(())
         }
 
         fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-            if let Some(key) = self.key.take() {
-                if let Some(value) = try_borrowed_atom::<V, VA>(atom, state) {
-                    self.map.insert_entry(key, value);
-                }
+            if let Some(key) = self.key.take()
+                && let Some(value) = try_borrowed_atom::<V, VA>(atom, state)
+            {
+                self.map.insert_entry(key, value);
             }
             Ok(())
         }

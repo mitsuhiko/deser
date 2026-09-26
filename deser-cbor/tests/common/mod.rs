@@ -1,10 +1,10 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
+use deser::State;
 use deser::de::{Deserialize, DeserializeOwned, Sink, SinkHandle};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use deser::State;
 use deser::{Atom, Error};
 use deser_cbor::Simple;
 
@@ -140,7 +140,7 @@ impl Serialize for Value {
             Value::Ext(ref value) => Atom::Ext(value.as_borrowed()),
             Value::Array(ref items) => return Ok(Chunk::Seq(Box::new(ArrayEmitter(items.iter())))),
             Value::Map(ref items) => {
-                return Ok(Chunk::Map(Box::new(MapEntryEmitter(items.iter(), None))))
+                return Ok(Chunk::Map(Box::new(MapEntryEmitter(items.iter(), None))));
             }
             Value::Tag(tag, ref value) => {
                 deser_cbor::tag::push_tag(state, tag);

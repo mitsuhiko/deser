@@ -11,11 +11,11 @@
 use std::borrow::Cow;
 use std::mem::take;
 
+use crate::State;
 use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
 use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
-use crate::State;
 
 /// Builds the value of an enum variant.
 pub trait VariantBuilder<'de, E> {
@@ -242,10 +242,10 @@ impl<'de, E> Variants<'de, E> {
         state: &mut State,
     ) -> Result<BoxedVariant<'de, E>, Error> {
         let name = tag_name(tag);
-        if let Some(ref name) = name {
-            if let Some(variant) = (self.lookup)(name) {
-                return Ok(variant);
-            }
+        if let Some(ref name) = name
+            && let Some(variant) = (self.lookup)(name)
+        {
+            return Ok(variant);
         }
         match self.other {
             Some(other) => {
@@ -376,14 +376,14 @@ impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             }
             _ => None,
         };
-        if variant.is_none() {
-            if let Some(other) = self.variants.other {
-                let mut tag = Recording::new();
-                tag.set_atom(&atom, state);
-                let mut other = other();
-                other.set_tag(Some(&tag), state)?;
-                variant = Some(other);
-            }
+        if variant.is_none()
+            && let Some(other) = self.variants.other
+        {
+            let mut tag = Recording::new();
+            tag.set_atom(&atom, state);
+            let mut other = other();
+            other.set_tag(Some(&tag), state)?;
+            variant = Some(other);
         }
         let mut variant = match variant {
             Some(variant) => variant,
@@ -391,7 +391,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
                 return match atom {
                     Atom::Str(ref name) => Err(unknown_variant(Some(name), self.descriptor)),
                     other => self.unexpected_atom(other, state),
-                }
+                };
             }
         };
         feed_null(&mut *variant, state)?;
@@ -585,11 +585,10 @@ pub fn untagged_handle<'a, 'de, E>(
             if recording
                 .replay(SinkHandle::to(variant.sink()), state)
                 .is_ok()
+                && let Some(value) = variant.build()
             {
-                if let Some(value) = variant.build() {
-                    *out = Some(value);
-                    return Ok(());
-                }
+                *out = Some(value);
+                return Ok(());
             }
         }
         Err(Error::new(

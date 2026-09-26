@@ -2,12 +2,12 @@
 //! are bridged onto them.
 use std::borrow::Cow;
 
+use crate::State;
 use crate::de::Sink;
 use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{ExtValue, Extension};
-use crate::State;
 
 /// Implemented by the well-known extension types.
 pub(crate) trait WellKnown: Extension + Sized {

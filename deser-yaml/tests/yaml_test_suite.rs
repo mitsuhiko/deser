@@ -27,7 +27,7 @@ use deser_yaml::Deserializer;
 
 mod common;
 
-use common::{parse_json_stream, Value};
+use common::{Value, parse_json_stream};
 
 const KNOWN_FAILURES: &str = "tests/yaml_test_suite_known_failures.txt";
 const SUITE: &str = "tests/data/yaml-test-suite";

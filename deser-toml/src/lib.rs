@@ -87,7 +87,7 @@ mod document;
 mod parser;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig};
-pub use self::ser::{to_string, SerializerConfig};
+pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+pub use self::ser::{SerializerConfig, to_string};
 /// Re-exported from [`deser::ext`] for convenience.
 pub use deser::ext::{Date, Datetime, Offset, Time};

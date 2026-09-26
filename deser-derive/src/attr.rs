@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use proc_macro2::{TokenStream, TokenTree};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::meta::ParseNestedMeta;
 
 #[derive(Copy, Clone)]

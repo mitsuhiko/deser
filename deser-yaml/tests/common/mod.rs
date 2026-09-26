@@ -1,8 +1,8 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::State;
+use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::{Atom, Error};
 
 /// A dynamic YAML value.

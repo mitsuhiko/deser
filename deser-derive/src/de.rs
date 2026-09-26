@@ -5,7 +5,7 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
 use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault, UnnamedFieldAttrs};
-use crate::bound::{where_clause_for_fields, with_de_lifetime, with_lifetime_bound, BoundField};
+use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
 
 /// Returns an expression that creates a sink handle for a slot.
 fn deserialize_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
@@ -251,11 +251,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .zip(attrs.iter())
         .filter_map(
             |(name, attrs)| {
-                if attrs.flatten() {
-                    Some(name)
-                } else {
-                    None
-                }
+                if attrs.flatten() { Some(name) } else { None }
             },
         )
         .collect::<Vec<_>>();

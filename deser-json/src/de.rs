@@ -2,11 +2,11 @@ use std::marker::PhantomData;
 use std::str;
 use std::sync::Arc;
 
+use deser::Atom;
+use deser::Event;
 use deser::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::{ExtValue, Number as ExactNumber};
-use deser::Atom;
-use deser::Event;
 use deser::{Error, ErrorKind};
 
 use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};

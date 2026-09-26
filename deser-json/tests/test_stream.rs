@@ -43,9 +43,11 @@ fn test_default_is_strict() {
             format!("Unexpected: garbage after input at line {column}")
         );
         // the deserializer checks it too
-        assert!(Deserializer::from_str(input)
-            .deserialize::<Recording>()
-            .is_err());
+        assert!(
+            Deserializer::from_str(input)
+                .deserialize::<Recording>()
+                .is_err()
+        );
     }
     assert!(deser_json::from_slice::<u32>(b"1 x").is_err());
 

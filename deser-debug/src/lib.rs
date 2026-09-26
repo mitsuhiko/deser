@@ -99,10 +99,11 @@ fn dump<'a>(
             }
             Event::MapEnd => unreachable!(),
             Event::SeqStart => {
-                if let Some(name) = first.1 {
-                    if name != "Vec" && name != "slice" {
-                        write!(f, "{} ", name)?;
-                    }
+                if let Some(name) = first.1
+                    && name != "Vec"
+                    && name != "slice"
+                {
+                    write!(f, "{} ", name)?;
                 }
                 let mut list = f.debug_list();
                 loop {

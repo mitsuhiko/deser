@@ -3,16 +3,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::mem::{take, MaybeUninit};
+use std::mem::{MaybeUninit, take};
 
+use crate::State;
 use crate::adapters::{DeserializeAs, Same};
 use crate::de::mapped::MappedSink;
-use crate::de::{is_null_atom, Deserialize, OwnedSink, Sink, SinkHandle};
+use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::descriptors::{Descriptor, NamedDescriptor, UnorderedNamedDescriptor};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::Number;
-use crate::State;
 
 make_slot_wrapper!(SlotWrapper);
 
@@ -251,11 +251,11 @@ impl<'de> Sink<'de> for SlotWrapper<char> {
             }
             Atom::Str(ref s) => {
                 let mut chars = s.chars();
-                if let Some(first_char) = chars.next() {
-                    if chars.next().is_none() {
-                        **self = Some(first_char);
-                        return Ok(());
-                    }
+                if let Some(first_char) = chars.next()
+                    && chars.next().is_none()
+                {
+                    **self = Some(first_char);
+                    return Ok(());
                 }
                 Err(atom.unexpected_error(&self.expecting()))
             }

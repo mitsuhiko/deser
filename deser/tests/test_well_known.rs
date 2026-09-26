@@ -264,7 +264,7 @@ fn test_std() {
 #[cfg(feature = "jiff")]
 #[test]
 fn test_jiff() {
-    use jiff::civil::{date, time, Date as JDate, DateTime, Time as JTime};
+    use jiff::civil::{Date as JDate, DateTime, Time as JTime, date, time};
     use jiff::{SignedDuration, Timestamp as JTimestamp, Zoned};
 
     let check = |atom: Atom, expected: &str| match atom {

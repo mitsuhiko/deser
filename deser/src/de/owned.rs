@@ -120,7 +120,7 @@ impl<'de, T> OwnedSink<'de, T> {
     fn with(make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>) -> OwnedSink<'de, T> {
         /// Creates a reference with an unbounded lifetime.
         unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
-            &mut *ptr
+            unsafe { &mut *ptr }
         }
 
         let storage = NonuniqueBox::new(None);

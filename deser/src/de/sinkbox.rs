@@ -4,7 +4,7 @@
 //! containers.  These sinks are short lived and are typically created and
 //! destroyed in quick succession with the same sizes, so freed blocks are
 //! cached per thread and size class and reused for the next sinks.
-use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
+use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
@@ -126,30 +126,32 @@ fn alloc_block(layout: Layout) -> NonNull<u8> {
 /// layout.
 #[inline]
 unsafe fn free_block(block: NonNull<u8>, layout: Layout) {
-    let layout = match size_class(layout) {
-        Some(class) => {
-            let cached = CACHE
-                .try_with(|cache| {
-                    let list = &mut (*cache.lists.get())[class];
-                    if list.len < MAX_PER_CLASS {
-                        let block = block.as_ptr().cast::<FreeBlock>();
-                        (*block).next = list.head;
-                        list.head = block;
-                        list.len += 1;
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-            if cached {
-                return;
+    unsafe {
+        let layout = match size_class(layout) {
+            Some(class) => {
+                let cached = CACHE
+                    .try_with(|cache| {
+                        let list = &mut (*cache.lists.get())[class];
+                        if list.len < MAX_PER_CLASS {
+                            let block = block.as_ptr().cast::<FreeBlock>();
+                            (*block).next = list.head;
+                            list.head = block;
+                            list.len += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+                if cached {
+                    return;
+                }
+                class_layout(class)
             }
-            class_layout(class)
-        }
-        None => layout,
-    };
-    dealloc(block.as_ptr(), layout);
+            None => layout,
+        };
+        dealloc(block.as_ptr(), layout);
+    }
 }
 
 /// An owned, heap allocated sink.
@@ -220,8 +222,8 @@ impl<'a, 'de> Drop for SinkBox<'a, 'de> {
 
 #[test]
 fn test_sink_box() {
-    use crate::de::SinkHandle;
     use crate::State;
+    use crate::de::SinkHandle;
     use crate::{Atom, Error};
     use std::rc::Rc;
 

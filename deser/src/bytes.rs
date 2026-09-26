@@ -66,8 +66,8 @@
 //! Other encodings can be added by implementing [`BytesEncoding`].
 use std::fmt;
 
-use crate::error::{Error, ErrorKind};
 use crate::State;
+use crate::error::{Error, ErrorKind};
 
 /// An encoding of bytes as string.
 ///
@@ -271,20 +271,18 @@ static BASE64_VALUES: [u8; 256] = {
     table
 };
 
-// `as_chunks` would be nicer but requires Rust 1.88
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn encode_base64(bytes: &[u8], alphabet: &[u8; 64], pad: bool, out: &mut String) {
     let char_at = |value: u32| alphabet[(value & 0x3f) as usize] as char;
     out.reserve(bytes.len().div_ceil(3) * 4);
-    let mut chunks = bytes.chunks_exact(3);
-    for chunk in &mut chunks {
-        let n = (chunk[0] as u32) << 16 | (chunk[1] as u32) << 8 | chunk[2] as u32;
+    let (chunks, remainder) = bytes.as_chunks::<3>();
+    for &[a, b, c] in chunks {
+        let n = (a as u32) << 16 | (b as u32) << 8 | c as u32;
         out.push(char_at(n >> 18));
         out.push(char_at(n >> 12));
         out.push(char_at(n >> 6));
         out.push(char_at(n));
     }
-    match *chunks.remainder() {
+    match *remainder {
         [a] => {
             let n = (a as u32) << 16;
             out.push(char_at(n >> 18));
@@ -310,8 +308,6 @@ fn encode_base64(bytes: &[u8], alphabet: &[u8; 64], pad: bool, out: &mut String)
 ///
 /// Both alphabets are accepted (also mixed) and the padding is optional.
 /// If there is padding it has to be complete.  Unused bits have to be zero.
-// `as_chunks` would be nicer but requires Rust 1.88
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 pub(crate) fn decode_base64(s: &str) -> Result<Vec<u8>, Error> {
     let input = s.as_bytes();
     let padding = input
@@ -330,15 +326,12 @@ pub(crate) fn decode_base64(s: &str) -> Result<Vec<u8>, Error> {
         value => Ok(value as u32),
     };
     let mut out = Vec::with_capacity(data.len() / 4 * 3 + 2);
-    let mut chunks = data.chunks_exact(4);
-    for chunk in &mut chunks {
-        let n = value(chunk[0])? << 18
-            | value(chunk[1])? << 12
-            | value(chunk[2])? << 6
-            | value(chunk[3])?;
+    let (chunks, remainder) = data.as_chunks::<4>();
+    for &[a, b, c, d] in chunks {
+        let n = value(a)? << 18 | value(b)? << 12 | value(c)? << 6 | value(d)?;
         out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
     }
-    match *chunks.remainder() {
+    match *remainder {
         [a, b] => {
             let n = value(a)? << 18 | value(b)? << 12;
             if n & 0xffff != 0 {
@@ -366,8 +359,6 @@ fn encode_hex(bytes: &[u8], digits: &[u8; 16], out: &mut String) {
     }
 }
 
-// `as_chunks` would be nicer but requires Rust 1.88
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
     fn value(b: u8) -> Result<u8, Error> {
         match b {
@@ -377,13 +368,12 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
             _ => Err(invalid("hex")),
         }
     }
-    let input = s.as_bytes();
-    if !input.len().is_multiple_of(2) {
+    let (pairs, []) = s.as_bytes().as_chunks::<2>() else {
         return Err(invalid("hex"));
-    }
-    input
-        .chunks_exact(2)
-        .map(|pair| Ok(value(pair[0])? << 4 | value(pair[1])?))
+    };
+    pairs
+        .iter()
+        .map(|&[hi, lo]| Ok(value(hi)? << 4 | value(lo)?))
         .collect()
 }
 

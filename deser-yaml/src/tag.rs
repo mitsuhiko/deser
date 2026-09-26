@@ -19,9 +19,9 @@
 //! directives are expanded.
 use std::fmt;
 
+use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// The tag of the current node, attached as event data.
@@ -212,7 +212,6 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
             return compound.borrow().descriptor();
         }
         let mut slot = None;
-        let descriptor = T::deserialize_into(&mut slot).descriptor();
-        descriptor
+        T::deserialize_into(&mut slot).descriptor()
     }
 }

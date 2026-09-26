@@ -4,6 +4,9 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Raised the minimum supported Rust version to 1.88 and moved all crates to
+  the 2024 edition.  The minimum version is now declared as `rust-version`
+  and tested on CI.
 - Added layers: `deser::de::Layer` and `deser::ser::Layer` sit between a
   format and the types and see every event.  They are added to the drivers
   with `push_layer` and can observe, reject, change, drop and insert events.

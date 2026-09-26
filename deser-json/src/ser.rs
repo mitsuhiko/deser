@@ -272,7 +272,7 @@ impl Output {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "JSON does not support this value for map keys",
-                ))
+                ));
             }
         }
         self.write_char(':');
@@ -448,7 +448,7 @@ impl Output {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "JSON does not support this value for map keys",
-                ))
+                ));
             }
         }
         Ok(())
@@ -495,7 +495,7 @@ impl Output {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "JSON does not support this value",
-                ))
+                ));
             }
         }
         Ok(())

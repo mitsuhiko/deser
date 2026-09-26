@@ -1,6 +1,6 @@
 use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize, SerializeDriver};
-use deser::{make_slot_wrapper, Atom, Deserialize, Error, Event, State};
+use deser::{Atom, Deserialize, Error, Event, State, make_slot_wrapper};
 
 /// Event data used by the tests.
 #[derive(Debug, Default, Clone, PartialEq)]

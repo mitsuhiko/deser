@@ -3,10 +3,10 @@
 
 use std::borrow::Cow;
 
+use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use deser::State;
 use deser::{Atom, Error};
 use deser_toml::{Datetime, Offset};
 

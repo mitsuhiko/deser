@@ -38,14 +38,17 @@ mod counting {
     unsafe impl GlobalAlloc for Counting {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             ALLOCS.fetch_add(1, Ordering::Relaxed);
-            System.alloc(layout)
+            // SAFETY: forwarded with the caller's guarantees
+            unsafe { System.alloc(layout) }
         }
         unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-            System.dealloc(ptr, layout)
+            // SAFETY: forwarded with the caller's guarantees
+            unsafe { System.dealloc(ptr, layout) }
         }
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
             ALLOCS.fetch_add(1, Ordering::Relaxed);
-            System.realloc(ptr, layout, new_size)
+            // SAFETY: forwarded with the caller's guarantees
+            unsafe { System.realloc(ptr, layout, new_size) }
         }
     }
 
@@ -55,7 +58,11 @@ mod counting {
     pub fn count<F: FnOnce()>(name: &str, f: F) {
         let before = ALLOCS.load(Ordering::Relaxed);
         f();
-        println!("{:<20} {:>10} allocs", name, ALLOCS.load(Ordering::Relaxed) - before);
+        println!(
+            "{:<20} {:>10} allocs",
+            name,
+            ALLOCS.load(Ordering::Relaxed) - before
+        );
     }
 }
 

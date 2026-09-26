@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
+use deser::State;
 use deser::de::{DeserializeDriver, Sink, SinkHandle};
 use deser::ser::{Chunk, SerializeHandle, StructEmitter};
-use deser::State;
 use deser::{Descriptor, Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
 

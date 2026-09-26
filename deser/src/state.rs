@@ -312,10 +312,10 @@ impl State {
             return err;
         }
         err.set_has_context();
-        if err.offset().is_none() {
-            if let Some(range) = self.input_range() {
-                err = err.with_offset(range.start);
-            }
+        if err.offset().is_none()
+            && let Some(range) = self.input_range()
+        {
+            err = err.with_offset(range.start);
         }
         for f in self.error_context.iter() {
             err = f(err, self);

@@ -5,7 +5,7 @@
 //! serialization are also encoded back byte for byte.
 mod common;
 
-use common::{hex, to_hex, Value};
+use common::{Value, hex, to_hex};
 
 struct Vector {
     hex: &'static str,

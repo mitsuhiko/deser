@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasher;
 
+use crate::State;
 use crate::descriptors::{Descriptor, NamedDescriptor, NumberDescriptor, UnorderedNamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::ExtValue;
 use crate::ser::{Begin, Chunk, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use crate::State;
 
 impl Serialize for bool {
     __begin_without_finish!();
@@ -459,7 +459,7 @@ macro_rules! serialize_for_tuple {
                     $($name: Serialize,)*
                 {
                     fn next(&mut self,_state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-                        let ($(ref $name,)*) = self.tuple;
+                        let ($($name,)*) = self.tuple;
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -482,7 +482,7 @@ macro_rules! serialize_for_tuple {
         impl<$($name: Serialize),*> IndexedSeq for ($($name,)*) {
             #[allow(non_snake_case)]
             fn element(&self, index: usize, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-                let ($(ref $name,)*) = self;
+                let ($($name,)*) = self;
                 let mut __counter = 0;
                 $(
                     if index == __counter {

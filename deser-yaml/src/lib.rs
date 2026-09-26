@@ -72,9 +72,9 @@ mod resolve;
 mod scanner;
 pub mod tag;
 
-pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig, Iter};
+pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 pub use self::resolve::Version;
-pub use self::tag::{take_tag, Tagged};
+pub use self::tag::{Tagged, take_tag};
 
 #[doc(hidden)]
 #[path = "private.rs"]

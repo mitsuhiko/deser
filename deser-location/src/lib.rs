@@ -50,13 +50,13 @@
 //! retain their locations when they are replayed as recordings capture the
 //! input range of every event.
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// A position in the input.
@@ -260,25 +260,16 @@ const LO7: u64 = 0x7f7f_7f7f_7f7f_7f7f;
 const HI: u64 = 0x8080_8080_8080_8080;
 const NEWLINES: u64 = 0x0a0a_0a0a_0a0a_0a0a;
 
-fn word(bytes: &[u8]) -> u64 {
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(bytes);
-    u64::from_le_bytes(buf)
-}
-
 /// Sets the high bit of every byte that is zero (exact, no false positives).
 fn zero_bytes(x: u64) -> u64 {
     !(((x & LO7).wrapping_add(LO7)) | x | LO7)
 }
 
 /// Invokes the callback with the index of every newline.
-// `as_chunks` would be nicer but requires Rust 1.88
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn find_newlines<F: FnMut(usize)>(bytes: &[u8], mut f: F) {
-    let chunks = bytes.chunks_exact(8);
-    let rest = chunks.remainder();
-    for (idx, chunk) in chunks.enumerate() {
-        let mut mask = zero_bytes(word(chunk) ^ NEWLINES);
+    let (chunks, rest) = bytes.as_chunks::<8>();
+    for (idx, &chunk) in chunks.iter().enumerate() {
+        let mut mask = zero_bytes(u64::from_le_bytes(chunk) ^ NEWLINES);
         while mask != 0 {
             f(idx * 8 + mask.trailing_zeros() as usize / 8);
             mask &= mask - 1;
@@ -293,14 +284,11 @@ fn find_newlines<F: FnMut(usize)>(bytes: &[u8], mut f: F) {
 }
 
 /// Counts the characters (bytes that are not utf-8 continuation bytes).
-// `as_chunks` would be nicer but requires Rust 1.88
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn count_chars(bytes: &[u8]) -> usize {
-    let chunks = bytes.chunks_exact(8);
-    let rest = chunks.remainder();
+    let (chunks, rest) = bytes.as_chunks::<8>();
     let mut continuation = 0;
-    for chunk in chunks {
-        let w = word(chunk);
+    for &chunk in chunks {
+        let w = u64::from_le_bytes(chunk);
         // high bit set and the bit below it cleared
         continuation += (w & !(w << 1) & HI).count_ones() as usize;
     }
@@ -441,8 +429,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
             return compound.borrow().descriptor();
         }
         let mut slot = None;
-        let descriptor = T::deserialize_into(&mut slot).descriptor();
-        descriptor
+        T::deserialize_into(&mut slot).descriptor()
     }
 }
 
@@ -484,7 +471,7 @@ fn test_helpers() {
             let expected: Vec<usize> = input
                 .iter()
                 .enumerate()
-                .filter(|(_, &b)| b == b'\n')
+                .filter(|&(_, &b)| b == b'\n')
                 .map(|(idx, _)| idx)
                 .collect();
             assert_eq!(newlines, expected);

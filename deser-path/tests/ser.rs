@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use deser::ser::{Chunk, Serialize, SerializeDriver};
 use deser::State;
+use deser::ser::{Chunk, Serialize, SerializeDriver};
 use deser::{Atom, Error, ErrorKind};
 use deser_path::{Path, PathLayer};
 

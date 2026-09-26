@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use deser::{Deserialize, ErrorKind};
-use deser_toml::{from_slice, from_str, Date, Datetime, Offset, Time};
+use deser_toml::{Date, Datetime, Offset, Time, from_slice, from_str};
 
 mod common;
 
@@ -589,7 +589,9 @@ fn test_tables() {
     );
     // headers can define sub-tables of tables defined by dotted keys
     assert_eq!(
-        parse("[fruit]\napple.color = 'red'\napple.taste.sweet = true\n[fruit.apple.texture]\nsmooth = true"),
+        parse(
+            "[fruit]\napple.color = 'red'\napple.taste.sweet = true\n[fruit.apple.texture]\nsmooth = true"
+        ),
         table! {
             "fruit" => table! {
                 "apple" => table! {
@@ -807,9 +809,11 @@ fn test_deep_nesting() {
 
     let input = format!("a = {}{}", "{b = ".repeat(depth), "}".repeat(depth));
     let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());
-    assert!(deser_toml::Deserializer::from_str(&input)
-        .drive(&mut driver)
-        .is_err());
+    assert!(
+        deser_toml::Deserializer::from_str(&input)
+            .drive(&mut driver)
+            .is_err()
+    );
 
     let input = format!("a = {}1{}", "{b = ".repeat(depth), "}".repeat(depth));
     let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());

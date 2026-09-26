@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use deser::{Deserialize, ErrorKind};
-use deser_yaml::{from_slice, from_str, Deserializer, DeserializerConfig, Tagged, Version};
+use deser_yaml::{Deserializer, DeserializerConfig, Tagged, Version, from_slice, from_str};
 
 mod common;
 
@@ -263,10 +263,12 @@ fn test_alias_limit() {
 #[test]
 fn test_max_depth() {
     let input = "[[[[1]]]]";
-    assert!(DeserializerConfig::new()
-        .max_depth(4)
-        .from_str::<Value>(input)
-        .is_ok());
+    assert!(
+        DeserializerConfig::new()
+            .max_depth(4)
+            .from_str::<Value>(input)
+            .is_ok()
+    );
     let err = DeserializerConfig::new()
         .max_depth(3)
         .from_str::<Value>(input)
@@ -396,7 +398,9 @@ fn test_versions() {
     let value: Value = Deserializer::from_str(input).deserialize().unwrap();
     assert_eq!(
         value,
-        seq!["yes", "No", "on", 777, 511, "1_000", "1:30", "0b101", 3000.0]
+        seq![
+            "yes", "No", "on", 777, 511, "1_000", "1:30", "0b101", 3000.0
+        ]
     );
     let value: Value = DeserializerConfig::new()
         .version(Version::V1_1)
@@ -434,8 +438,8 @@ fn test_from_slice() {
 fn test_borrowed_strings() {
     use std::borrow::Cow;
 
-    use deser::de::{DeserializeDriver, Sink, SinkHandle};
     use deser::State;
+    use deser::de::{DeserializeDriver, Sink, SinkHandle};
     use deser::{Atom, Error};
 
     // records whether strings are borrowed from the input

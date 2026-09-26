@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::State;
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
@@ -8,7 +9,6 @@ use crate::event::Atom;
 use crate::ext::known::invalid;
 use crate::ext::{BorrowedExtension, ExtValue};
 use crate::ser::{Chunk, Serialize};
-use crate::State;
 
 /// A number literal from a text format.
 ///
@@ -216,9 +216,11 @@ fn test_number() {
     assert_eq!(number.as_str(), "-12.50e3");
     assert_eq!(number.value(), -12500.0);
     assert!(!number.is_integer());
-    assert!(Number::parse("12345678901234567890123456789")
-        .unwrap()
-        .is_integer());
+    assert!(
+        Number::parse("12345678901234567890123456789")
+            .unwrap()
+            .is_integer()
+    );
     for invalid in ["", "1.", ".1", "+1", "01", "1e", "NaN", "inf", "0x10"] {
         assert!(Number::parse(invalid).is_err(), "{}", invalid);
     }

@@ -72,7 +72,7 @@ mod ser;
 mod simple;
 pub mod tag;
 
-pub use self::de::{from_slice, Deserializer, DeserializerConfig, Iter};
-pub use self::ser::{to_vec, SerializerConfig};
+pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
+pub use self::ser::{SerializerConfig, to_vec};
 pub use self::simple::Simple;
-pub use self::tag::{take_tag, Tagged};
+pub use self::tag::{Tagged, take_tag};

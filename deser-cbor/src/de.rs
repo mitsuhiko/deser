@@ -243,10 +243,10 @@ impl<'a> Deserializer<'a> {
                 };
                 if !done {
                     if current.is_map {
-                        if !current.in_value {
-                            if let Some(ref mut remaining) = current.remaining {
-                                *remaining -= 1;
-                            }
+                        if !current.in_value
+                            && let Some(ref mut remaining) = current.remaining
+                        {
+                            *remaining -= 1;
                         }
                         current.in_value = !current.in_value;
                     } else if let Some(ref mut remaining) = current.remaining {

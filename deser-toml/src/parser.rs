@@ -291,7 +291,7 @@ impl<'a> Parser<'a> {
                 None => self.add_table(table, key, TableKind::Implicit, key.span),
                 Some(Found::Table(id)) if self.doc.tables[id].kind != TableKind::Inline => id,
                 Some(Found::Table(_)) => {
-                    return Err(self.error(key.span.start, "cannot extend an inline table"))
+                    return Err(self.error(key.span.start, "cannot extend an inline table"));
                 }
                 Some(Found::Array(id)) if self.doc.arrays[id].of_tables => {
                     match self.doc.arrays[id].items.last().map(|x| &x.value) {
@@ -300,13 +300,13 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Some(Found::Array(_)) => {
-                    return Err(self.error(key.span.start, "cannot extend a static array"))
+                    return Err(self.error(key.span.start, "cannot extend a static array"));
                 }
                 Some(Found::Other) => {
                     return Err(self.error(
                         key.span.start,
                         &format!("key '{}' is not a table", key.name),
-                    ))
+                    ));
                 }
             };
         }
@@ -458,14 +458,14 @@ impl<'a> Parser<'a> {
                                 "cannot add keys to table '{}' which is defined elsewhere",
                                 key.name
                             ),
-                        ))
+                        ));
                     }
                 },
                 Some(_) => {
                     return Err(self.error(
                         key.span.start,
                         &format!("key '{}' is already defined", key.name),
-                    ))
+                    ));
                 }
             };
         }
@@ -591,7 +591,7 @@ impl<'a> Parser<'a> {
                             "a key or '}'"
                         } else {
                             "a value or ']'"
-                        }))
+                        }));
                     }
                     Some(_) => {
                         frame.state = FrameState::AfterValue;
@@ -751,7 +751,7 @@ impl<'a> Parser<'a> {
                 }
                 b'\t' | 0x20..=0x7e | 0x80.. => self.pos += 1,
                 b'\n' | b'\r' if !multiline => {
-                    return Err(self.error(self.pos, "newline in single-line string"))
+                    return Err(self.error(self.pos, "newline in single-line string"));
                 }
                 _ => return Err(self.control_char_error("string")),
             }
@@ -872,7 +872,7 @@ impl<'a> Parser<'a> {
                 }
                 b'\t' | 0x20..=0x7e | 0x80.. => self.pos += 1,
                 b'\n' | b'\r' if !multiline => {
-                    return Err(self.error(self.pos, "newline in single-line string"))
+                    return Err(self.error(self.pos, "newline in single-line string"));
                 }
                 _ => return Err(self.control_char_error("string")),
             }
@@ -938,7 +938,7 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
                 -f64::INFINITY
             } else {
                 f64::INFINITY
-            }))
+            }));
         }
         "nan" => return Ok(Value::Float(if negative { -f64::NAN } else { f64::NAN })),
         _ => {}

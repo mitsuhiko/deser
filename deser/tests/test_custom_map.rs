@@ -1,7 +1,7 @@
-use deser::ser::{Chunk, MapEmitter, Serialize, SerializeDriver, SerializeHandle};
 use deser::Error;
 use deser::State;
-use std::collections::{btree_map, BTreeMap};
+use deser::ser::{Chunk, MapEmitter, Serialize, SerializeDriver, SerializeHandle};
+use std::collections::{BTreeMap, btree_map};
 
 struct Flags(BTreeMap<u64, bool>);
 

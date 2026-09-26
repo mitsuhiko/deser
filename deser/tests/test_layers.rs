@@ -45,7 +45,7 @@ impl Layer for Observer {
         event: LayerEvent<'_, 'de>,
         next: &mut Next<'_, 'de>,
     ) -> Result<(), Error> {
-        self.1 .0.lock().unwrap().push(format!(
+        self.1.0.lock().unwrap().push(format!(
             "{}: {:?} key={} depth={} borrowed={}",
             self.0,
             event.event(),
@@ -318,10 +318,10 @@ impl Layer for MarkKeys {
         let state = next.state_mut();
         state.set_replayable::<Marker>();
         state.add_error_context(add_marker);
-        if let Event::Atom(Atom::U64(value)) = event.event() {
-            if state.is_map_key() {
-                state.get_mut::<Marker>().0 = *value as u32;
-            }
+        if let Event::Atom(Atom::U64(value)) = event.event()
+            && state.is_map_key()
+        {
+            state.get_mut::<Marker>().0 = *value as u32;
         }
         next.emit(event)
     }

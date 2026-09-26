@@ -312,24 +312,28 @@ fn test_adjacently_tagged() {
     ])
     .unwrap_err();
     assert_eq!(err.to_string(), "MissingField: missing tag 't'");
-    assert!(deserialize::<Adjacent>(vec![
-        Event::MapStart,
-        "t".into(),
-        "Newtype".into(),
-        Event::MapEnd
-    ])
-    .is_err());
-    assert!(deserialize::<Adjacent>(vec![
-        Event::MapStart,
-        "t".into(),
-        "Newtype".into(),
-        "c".into(),
-        1u64.into(),
-        "c".into(),
-        2u64.into(),
-        Event::MapEnd
-    ])
-    .is_err());
+    assert!(
+        deserialize::<Adjacent>(vec![
+            Event::MapStart,
+            "t".into(),
+            "Newtype".into(),
+            Event::MapEnd
+        ])
+        .is_err()
+    );
+    assert!(
+        deserialize::<Adjacent>(vec![
+            Event::MapStart,
+            "t".into(),
+            "Newtype".into(),
+            "c".into(),
+            1u64.into(),
+            "c".into(),
+            2u64.into(),
+            Event::MapEnd
+        ])
+        .is_err()
+    );
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

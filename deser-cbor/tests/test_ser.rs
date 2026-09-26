@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::{BTreeMap, HashMap};
 
-use common::{de, hex, ser, to_hex, Value};
+use common::{Value, de, hex, ser, to_hex};
 use deser::Serialize;
 use deser_cbor::SerializerConfig;
 
@@ -150,9 +150,9 @@ fn test_simple_values() {
 
 #[test]
 fn test_extension_fallback() {
+    use deser::State;
     use deser::ext::{ExtValue, Extension};
     use deser::ser::Chunk;
-    use deser::State;
     use deser::{Atom, Error};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -320,12 +320,16 @@ fn canonical_duplicate_keys_are_rejected() {
     // Nested failures propagate.
     assert!(CANONICAL.to_vec(&array![dup()]).is_err());
     assert!(CANONICAL.to_vec(&Value::tag(9, dup())).is_err());
-    assert!(CANONICAL
-        .to_vec(&Value::Map(vec![(dup(), Value::Null)]))
-        .is_err());
-    assert!(CANONICAL
-        .to_vec(&Value::Map(vec![(Value::Null, dup())]))
-        .is_err());
+    assert!(
+        CANONICAL
+            .to_vec(&Value::Map(vec![(dup(), Value::Null)]))
+            .is_err()
+    );
+    assert!(
+        CANONICAL
+            .to_vec(&Value::Map(vec![(Value::Null, dup())]))
+            .is_err()
+    );
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
 use crate::error::Error;
-use crate::ext::known::{impl_bridge, out_of_range, Bridge};
+use crate::ext::known::{Bridge, impl_bridge, out_of_range};
 use crate::ext::{Duration, Timestamp};
 
 impl Bridge for StdDuration {

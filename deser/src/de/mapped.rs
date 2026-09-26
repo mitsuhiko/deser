@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
+use crate::State;
 use crate::de::{OwnedSink, Sink, SinkHandle};
 use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Atom;
-use crate::State;
 
 /// A sink that deserializes a value into an owned sink and converts it.
 ///

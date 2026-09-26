@@ -1,7 +1,7 @@
+use crate::State;
 use crate::descriptors::Descriptor;
 use crate::error::Error;
 use crate::event::Event;
-use crate::State;
 
 /// The function that receives the events of a [`SerializeDriver`](crate::ser::SerializeDriver).
 pub(crate) type EventFn<'f> =

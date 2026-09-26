@@ -220,9 +220,9 @@ fn test_well_known_types() {
 
 #[test]
 fn test_extension_fallback() {
+    use deser::State;
     use deser::ext::{ExtValue, Extension};
     use deser::ser::Chunk;
-    use deser::State;
     use deser::{Atom, Error};
 
     #[derive(Debug, Clone, PartialEq)]

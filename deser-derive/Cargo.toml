@@ -2,7 +2,8 @@
 name = "deser-derive"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 version = "0.8.0"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 description = "Derive extension for deser"
 repository = "https://github.com/mitsuhiko/deser"
 keywords = ["serialization", "deserialization"]

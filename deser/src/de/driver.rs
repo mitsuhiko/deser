@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
+use crate::State;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, Event};
-use crate::State;
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
@@ -82,7 +82,7 @@ enum Container {
 /// The caller must ensure that the handle is dropped before the data it
 /// borrows from.
 unsafe fn erase_lifetime<'de>(handle: SinkHandle<'_, 'de>) -> SinkHandle<'de, 'de> {
-    std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle)
+    unsafe { std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle) }
 }
 
 impl<'a, 'de> DeserializeDriver<'a, 'de> {
@@ -342,7 +342,7 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     fn emit_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
-            Some((sink, Container::Map(ref mut is_key))) => {
+            Some((sink, Container::Map(is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;
@@ -367,7 +367,7 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     fn emit_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
-            Some((sink, Container::Map(ref mut is_key))) => {
+            Some((sink, Container::Map(is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;
@@ -392,7 +392,7 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     fn emit_start(&mut self, is_map: bool) -> Result<(), Error> {
         let mut sink = match self.sink_stack.last_mut() {
-            Some((parent, Container::Map(ref mut is_key))) => {
+            Some((parent, Container::Map(is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;

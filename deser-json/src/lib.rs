@@ -88,5 +88,5 @@ mod de;
 mod scan;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig, Iter, Trailing};
-pub use self::ser::{to_string, SerializerConfig};
+pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
+pub use self::ser::{SerializerConfig, to_string};

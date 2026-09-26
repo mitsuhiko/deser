@@ -2,8 +2,8 @@ use ::num_bigint::BigUint;
 
 use crate::error::Error;
 use crate::event::Atom;
-use crate::ext::known::{impl_bridge, out_of_range, Bridge};
 use crate::ext::BigInt;
+use crate::ext::known::{Bridge, impl_bridge, out_of_range};
 
 super::num_bigint_conversions!(::num_bigint);
 

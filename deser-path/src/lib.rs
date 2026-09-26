@@ -132,18 +132,16 @@ impl Path {
     ///
     /// This reuses the allocation of the previous key if possible.
     fn set_last_key(&mut self, atom: &Atom) {
-        if let (Some(PathSegment::Key(ref mut buf)), Atom::Str(ref key)) =
-            (self.segments.last_mut(), atom)
-        {
+        if let (Some(PathSegment::Key(buf)), Atom::Str(key)) = (self.segments.last_mut(), atom) {
             buf.clear();
             buf.push_str(key);
             return;
         }
         let segment = self.key_segment(atom);
-        if let Some(last) = self.segments.last_mut() {
-            if let PathSegment::Key(buf) = std::mem::replace(last, segment) {
-                self.recycle(buf);
-            }
+        if let Some(last) = self.segments.last_mut()
+            && let PathSegment::Key(buf) = std::mem::replace(last, segment)
+        {
+            self.recycle(buf);
         }
     }
 

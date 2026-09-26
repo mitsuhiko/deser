@@ -93,13 +93,19 @@ impl Held {
     /// The held value must be dropped before the data the handle borrows.
     #[inline]
     pub(crate) unsafe fn new(handle: SerializeHandle<'_>) -> Held {
-        let (ptr, owned) = match handle {
-            SerializeHandle::Borrowed(value) => (NonNull::from(value), false),
-            SerializeHandle::Owned(value) => (NonNull::new_unchecked(Box::into_raw(value)), true),
-        };
-        Held {
-            ptr: std::mem::transmute::<NonNull<dyn Serialize + '_>, NonNull<dyn Serialize>>(ptr),
-            owned,
+        unsafe {
+            let (ptr, owned) = match handle {
+                SerializeHandle::Borrowed(value) => (NonNull::from(value), false),
+                SerializeHandle::Owned(value) => {
+                    (NonNull::new_unchecked(Box::into_raw(value)), true)
+                }
+            };
+            Held {
+                ptr: std::mem::transmute::<NonNull<dyn Serialize + '_>, NonNull<dyn Serialize>>(
+                    ptr,
+                ),
+                owned,
+            }
         }
     }
 
@@ -111,7 +117,7 @@ impl Held {
     /// dropped.
     #[inline(always)]
     pub(crate) unsafe fn get<'x>(&self) -> &'x dyn Serialize {
-        &*self.ptr.as_ptr()
+        unsafe { &*self.ptr.as_ptr() }
     }
 }
 
@@ -121,7 +127,9 @@ impl Drop for Held {
         #[cold]
         #[inline(never)]
         unsafe fn drop_owned(ptr: NonNull<dyn Serialize>) {
-            drop(Box::from_raw(ptr.as_ptr()));
+            unsafe {
+                drop(Box::from_raw(ptr.as_ptr()));
+            }
         }
 
         if self.owned {

@@ -22,9 +22,9 @@
 //! valid.  Otherwise they are passed on as tagged values.
 use std::fmt;
 
+use deser::State;
 use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser::ser::{Chunk, Serialize};
-use deser::State;
 use deser::{Atom, Descriptor, Error};
 
 /// The tags of the current data item, attached as event data when
@@ -264,7 +264,6 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
             return compound.borrow().descriptor();
         }
         let mut slot = None;
-        let descriptor = T::deserialize_into(&mut slot).descriptor();
-        descriptor
+        T::deserialize_into(&mut slot).descriptor()
     }
 }

@@ -1,9 +1,9 @@
+use crate::State;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
 use crate::extensions::Snapshot;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use crate::State;
 
 /// A recorded value that can be replayed into a sink later.
 ///
@@ -189,10 +189,12 @@ impl Recording {
     /// This is useful to look at recorded map keys.
     pub fn as_str(&self) -> Option<&str> {
         match self.events.as_slice() {
-            [RecordedEvent {
-                event: Event::Atom(Atom::Str(value)),
-                ..
-            }] => Some(value),
+            [
+                RecordedEvent {
+                    event: Event::Atom(Atom::Str(value)),
+                    ..
+                },
+            ] => Some(value),
             _ => None,
         }
     }
@@ -406,7 +408,7 @@ impl<'a> RecordedValue<'a> {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
                     "cannot serialize an empty recording",
-                ))
+                ));
             }
         };
         state.extensions_mut().restore_event_data(snapshot);
@@ -422,7 +424,7 @@ impl<'a> RecordedValue<'a> {
                 current: RecordedValue(&[]),
             })),
             Event::MapEnd | Event::SeqEnd => {
-                return Err(Error::new(ErrorKind::Unexpected, "malformed recording"))
+                return Err(Error::new(ErrorKind::Unexpected, "malformed recording"));
             }
         })
     }

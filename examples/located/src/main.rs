@@ -35,9 +35,9 @@
 //! The path layer also attaches the path to errors, see the end of `main`.
 use std::fmt;
 
+use deser::State;
 use deser::de::{Format, Layer, LayerEvent, Next, OwnedSink, Recording, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
-use deser::State;
 use deser::{Atom, Descriptor, Deserialize, Error, Event};
 use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathLayer};

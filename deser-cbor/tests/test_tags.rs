@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use common::{de, hex, ser, Value};
+use common::{Value, de, hex, ser};
 use deser::{Deserialize, Serialize};
 use deser_cbor::Tagged;
 

@@ -1,7 +1,7 @@
+use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, Serialize};
-use deser::State;
 use deser::{Atom, Descriptor, Error, ErrorKind};
 
 /// A CBOR simple value.
@@ -94,7 +94,7 @@ impl<'a, 'de> Sink<'de> for SimpleSink<'a> {
                     return Err(Error::new(
                         ErrorKind::OutOfRange,
                         "value out of range for simple value",
-                    ))
+                    ));
                 }
             },
             other => return self.unexpected_atom(other, state),

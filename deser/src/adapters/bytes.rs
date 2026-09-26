@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+use crate::State;
 use crate::adapters::{DeserializeAs, SerializeAs};
 use crate::bytes::{
     Base64, Base64NoPad, Base64Url, Base64UrlNoPad, BytesEncoding, BytesFormat, Hex, HexUpper,
@@ -11,7 +12,6 @@ use crate::descriptors::Descriptor;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::{Begin, Chunk};
-use crate::State;
 
 mod sealed {
     use super::*;

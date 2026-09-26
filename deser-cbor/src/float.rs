@@ -26,11 +26,7 @@ pub fn f16_to_f64(half: u16) -> f64 {
         }
         _ => (1024.0 + mantissa) * pow2(i32::from(exponent) - 25),
     };
-    if half & 0x8000 != 0 {
-        -value
-    } else {
-        value
-    }
+    if half & 0x8000 != 0 { -value } else { value }
 }
 
 /// Encodes a float as half precision float if that is lossless.

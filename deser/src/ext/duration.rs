@@ -4,9 +4,9 @@ use std::str::FromStr;
 use crate::descriptors::{Descriptor, NamedDescriptor};
 use crate::error::Error;
 use crate::event::Atom;
-use crate::ext::datetime::write_fraction;
-use crate::ext::known::{impl_well_known, invalid, out_of_range, WellKnown};
 use crate::ext::Extension;
+use crate::ext::datetime::write_fraction;
+use crate::ext::known::{WellKnown, impl_well_known, invalid, out_of_range};
 
 /// A signed, exact length of time.
 ///
