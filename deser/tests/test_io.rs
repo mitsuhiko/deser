@@ -112,11 +112,19 @@ impl Read for Chunked<'_> {
     }
 }
 
+/// Returns the chunk sizes to read an input of `len` bytes in.
+///
+/// Miri is too slow for all sizes, it checks small sizes (which split the
+/// input at every position), powers of two and the whole input.
+fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+    (1..=len).filter(move |&size| !cfg!(miri) || size <= 3 || size.is_power_of_two() || size == len)
+}
+
 const INPUT: &[u8] = b"1\n\n22\nhello\n\n333";
 
 #[test]
 fn test_read_in_chunks() {
-    for size in 1..=INPUT.len() {
+    for size in chunk_sizes(INPUT.len()) {
         let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines);
         assert_eq!(reader.read::<u64>().unwrap(), Some(1));
         assert_eq!(reader.read::<u64>().unwrap(), Some(22));
@@ -232,7 +240,8 @@ fn test_decode_buffer() {
 
 #[test]
 fn test_large_values() {
-    let long = "x".repeat(100_000);
+    // larger than a few reads, miri needs smaller values
+    let long = "x".repeat(if cfg!(miri) { 20_000 } else { 100_000 });
     let input = format!("{long}\n{long}\n");
     let mut reader = Reader::new(input.as_bytes(), Lines);
     assert_eq!(reader.read::<String>().unwrap().unwrap(), long);

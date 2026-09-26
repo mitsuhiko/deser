@@ -24,6 +24,14 @@ impl Read for Chunked<'_> {
     }
 }
 
+/// Returns the chunk sizes to read an input of `len` bytes in.
+///
+/// Miri is too slow for all sizes, it checks small sizes (which split the
+/// input at every position), powers of two and the whole input.
+fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+    (1..=len).filter(move |&size| !cfg!(miri) || size <= 3 || size.is_power_of_two() || size == len)
+}
+
 /// A reader that returns its input at once and then blocks forever.
 ///
 /// Blocking is simulated by a panic: the reader must not read while a
@@ -77,7 +85,7 @@ const VALUES: &str = r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
 fn test_stop_in_chunks() {
     let expected = read_in_memory(&STOP, VALUES);
     assert_eq!(expected.len(), 11);
-    for size in 1..=VALUES.len() {
+    for size in chunk_sizes(VALUES.len()) {
         assert_eq!(read_chunked(&STOP, VALUES, size), expected, "size {size}");
     }
 }
@@ -87,7 +95,7 @@ fn test_values_without_whitespace() {
     let input = r#"[1]{"a":2}"x"3"#;
     let expected = read_in_memory(&STOP, input);
     assert_eq!(expected.len(), 4);
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         assert_eq!(read_chunked(&STOP, input, size), expected);
     }
 }
@@ -97,7 +105,7 @@ fn test_newline_in_chunks() {
     let input = "[1, 2]\n\n  {\"a\": \"b\"}  \r\n\"x\"\n   \n3";
     let expected = read_in_memory(&NEWLINE, input);
     assert_eq!(expected.len(), 4);
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         assert_eq!(read_chunked(&NEWLINE, input, size), expected);
     }
 }
@@ -106,7 +114,7 @@ fn test_newline_in_chunks() {
 fn test_strict_in_chunks() {
     let input = " [1, {\"a\": [true]}] \n";
     let expected = read_in_memory(&STRICT, input);
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         assert_eq!(read_chunked(&STRICT, input, size), expected);
     }
     assert_eq!(read_chunked(&STRICT, "  \n", 1), Vec::<Vec<Event>>::new());

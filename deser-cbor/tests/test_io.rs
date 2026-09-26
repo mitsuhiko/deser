@@ -20,6 +20,14 @@ impl Read for Chunked<'_> {
     }
 }
 
+/// Returns the chunk sizes to read an input of `len` bytes in.
+///
+/// Miri is too slow for all sizes, it checks small sizes (which split the
+/// input at every position), powers of two and the whole input.
+fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+    (1..=len).filter(move |&size| !cfg!(miri) || size <= 3 || size.is_power_of_two() || size == len)
+}
+
 /// A reader that panics when it's read after its input was returned.
 struct Blocking<'a>(&'a [u8]);
 
@@ -64,7 +72,7 @@ fn test_sequence_in_chunks() {
         .map(|x| events(x.unwrap()))
         .collect::<Vec<_>>();
     assert_eq!(expected.len(), 10);
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         let mut reader = Reader::new(
             Chunked {
                 input: &input,
