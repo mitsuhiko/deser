@@ -14,3 +14,4 @@ jiff = "0.2.14"
 name = "json-numbers"
 path = "src/main.rs"
 test = false
+doc = false

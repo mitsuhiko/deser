@@ -13,3 +13,4 @@ deser-json = { path = "../../deser-json" }
 name = "json-lines"
 path = "src/main.rs"
 test = false
+doc = false

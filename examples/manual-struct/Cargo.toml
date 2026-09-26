@@ -14,3 +14,4 @@ deser-debug = { path = "../../deser-debug" }
 name = "manual-struct"
 path = "src/main.rs"
 test = false
+doc = false

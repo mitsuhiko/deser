@@ -18,3 +18,4 @@ uuid = "1"
 name = "formats"
 path = "src/main.rs"
 test = false
+doc = false

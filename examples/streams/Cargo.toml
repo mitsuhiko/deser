@@ -16,3 +16,4 @@ deser-yaml = { path = "../../deser-yaml" }
 name = "streams"
 path = "src/main.rs"
 test = false
+doc = false

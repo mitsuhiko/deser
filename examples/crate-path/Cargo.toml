@@ -9,3 +9,9 @@ publish = false
 # deser under a different name, so `::deser` does not exist in this crate
 serialization = { package = "deser", path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "crate-path"
+path = "src/main.rs"
+test = false
+doc = false

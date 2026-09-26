@@ -14,3 +14,4 @@ deser-path = { path = "../../deser-path" }
 name = "layers"
 path = "src/main.rs"
 test = false
+doc = false
