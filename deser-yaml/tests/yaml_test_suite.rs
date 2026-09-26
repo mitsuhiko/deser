@@ -24,7 +24,8 @@ use std::process::ExitCode;
 
 use deser_yaml::__private::parse_to_test_events;
 use deser_yaml::{
-    Deserializer, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, Version,
+    Deserializer, FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
+    Version,
 };
 
 mod common;
@@ -191,6 +192,16 @@ fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
                 .indent(1)
                 .compat(Version::V1_2)
                 .null_style(NullStyle::Empty),
+        ),
+        (
+            "flow",
+            SerializerConfig::new().flow(FlowPolicy::LeafIfFits(60)),
+        ),
+        (
+            "folded",
+            SerializerConfig::new()
+                .flow(FlowPolicy::LeafIfFits(8))
+                .fold_width(Some(4)),
         ),
     ]
 }

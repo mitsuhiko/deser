@@ -38,8 +38,9 @@ fn is_block_safe(s: &str) -> bool {
 ///
 /// It must not contain anything that has a meaning in YAML, and it must be
 /// resolved as string by readers of YAML 1.2 and, if the compatibility
-/// version is YAML 1.1, by readers of YAML 1.1.
-pub fn is_plain_safe(s: &str, compat: Version) -> bool {
+/// version is YAML 1.1, by readers of YAML 1.1.  In flow collections the
+/// flow indicators are not allowed either.
+pub fn is_plain_safe(s: &str, compat: Version, flow: bool) -> bool {
     let bytes = s.as_bytes();
     let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
         return false;
@@ -59,6 +60,14 @@ pub fn is_plain_safe(s: &str, compat: Version) -> bool {
         _ => {}
     }
     if s.chars().any(needs_escape) {
+        return false;
+    }
+    if flow && s.contains([',', '[', ']', '{', '}']) {
+        return false;
+    }
+    // YAML 1.1 readers (like PyYAML) end plain scalars in flow collections
+    // at `:` and `?`
+    if flow && compat == Version::V1_1 && s.contains([':', '?']) {
         return false;
     }
     // mapping values and comments, `a:b` and `a#b` are fine
@@ -131,20 +140,27 @@ pub fn write_double_quoted(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// A literal block scalar.
-pub struct Literal<'a> {
-    /// The lines of the content without the trailing line breaks.
+/// The smallest width that folded lines are wrapped to, regardless of the
+/// indentation.
+const MIN_FOLD_WIDTH: usize = 20;
+
+/// A block scalar (literal `|` or folded `>`).
+pub struct BlockScalar<'a> {
+    /// The content without the trailing line breaks.
     content: Cow<'a, str>,
     /// The number of trailing line breaks.
     trailing: usize,
     /// `true` if an indentation indicator is required.
     needs_indicator: bool,
+    /// The width to fold lines at, `None` for literal block scalars.
+    fold: Option<usize>,
 }
 
-impl<'a> Literal<'a> {
-    /// Returns the literal block for a string if it can be written as one.
-    pub fn new(s: &'a str) -> Option<Literal<'a>> {
-        if !s.contains('\n') || !is_block_safe(s) {
+impl<'a> BlockScalar<'a> {
+    /// Returns a literal block scalar for a string if it can be written as
+    /// one.
+    pub fn literal(s: &'a str) -> Option<BlockScalar<'a>> {
+        if s.is_empty() || !is_block_safe(s) {
             return None;
         }
         let content = s.trim_end_matches('\n');
@@ -154,28 +170,56 @@ impl<'a> Literal<'a> {
             .split('\n')
             .find(|line| !line.is_empty())
             .is_some_and(|line| line.starts_with(' '));
-        Some(Literal {
+        Some(BlockScalar {
             content: Cow::Borrowed(content),
             trailing: s.len() - content.len(),
             needs_indicator,
+            fold: None,
         })
     }
 
+    /// Returns a folded block scalar for a string if it can be written as
+    /// one.
+    ///
+    /// Folding only changes the layout if the reader restores the string
+    /// exactly: lines are only broken at single spaces between other
+    /// characters, lines must not start or end with whitespace (these are not
+    /// folded by readers) and the string must not start with a line break.
+    pub fn folded(s: &'a str, width: usize) -> Option<BlockScalar<'a>> {
+        let mut rv = BlockScalar::literal(s)?;
+        let foldable = !s.starts_with('\n')
+            && rv
+                .content
+                .split('\n')
+                .all(|line| !line.starts_with([' ', '\t']) && !line.ends_with([' ', '\t']));
+        if !foldable {
+            return None;
+        }
+        rv.fold = Some(width);
+        Some(rv)
+    }
+
+    /// Returns `true` if a single-line string is worth folding at the width.
+    pub fn should_fold(s: &str, width: usize) -> bool {
+        s.len() > width && fold_points(s).next().is_some()
+    }
+
     /// Creates a literal block from lines without leading spaces.
-    pub fn from_lines(lines: String) -> Literal<'static> {
-        Literal {
+    pub fn from_lines(lines: String) -> BlockScalar<'static> {
+        BlockScalar {
             content: Cow::Owned(lines),
             trailing: 1,
             needs_indicator: false,
+            fold: None,
         }
     }
 
-    /// Writes the header (`|` with indicators).
+    /// Writes the header (`|` or `>` with indicators).
     ///
     /// `indicator` is the indentation of the content relative to the parent
     /// node, it's only written if required.
     pub fn write_header(&self, out: &mut String, indicator: usize) {
-        out.push('|');
+        out.push(if self.fold.is_some() { '>' } else { '|' });
         if self.needs_indicator {
             write!(out, "{}", indicator).unwrap();
         }
@@ -196,10 +240,20 @@ impl<'a> Literal<'a> {
             }
             return;
         }
-        for line in self.content.split('\n') {
+        let mut prev_empty = true;
+        for (idx, line) in self.content.split('\n').enumerate() {
+            // in folded scalars a line break between two lines is folded
+            // into a space, a line break needs an additional empty line.
+            if idx > 0 && self.fold.is_some() && !prev_empty {
+                out.push('\n');
+            }
+            prev_empty = line.is_empty();
             if !line.is_empty() {
                 push_indent(out, indent);
-                out.push_str(line);
+                match self.fold {
+                    Some(width) => write_folded_line(out, line, indent, width),
+                    None => out.push_str(line),
+                }
             }
             out.push('\n');
         }
@@ -207,6 +261,46 @@ impl<'a> Literal<'a> {
             out.push('\n');
         }
     }
+}
+
+/// Returns the positions of the spaces a line can be folded at: single
+/// spaces between other characters.
+fn fold_points(line: &str) -> impl Iterator<Item = usize> + '_ {
+    let bytes = line.as_bytes();
+    (1..bytes.len().saturating_sub(1)).filter(move |&idx| {
+        bytes[idx] == b' '
+            && !bytes[idx - 1].is_ascii_whitespace()
+            && !bytes[idx + 1].is_ascii_whitespace()
+    })
+}
+
+/// Writes a line of a folded scalar, broken at spaces so that the lines do
+/// not exceed the width if possible.
+fn write_folded_line(out: &mut String, line: &str, indent: usize, width: usize) {
+    let available = width.saturating_sub(indent).max(MIN_FOLD_WIDTH);
+    let mut start = 0;
+    let mut last_point = None;
+    for point in fold_points(line) {
+        if point - start > available
+            && let Some(last) = last_point
+        {
+            out.push_str(&line[start..last]);
+            out.push('\n');
+            push_indent(out, indent);
+            start = last + 1;
+        }
+        last_point = Some(point);
+    }
+    if line.len() - start > available
+        && let Some(last) = last_point
+        && last > start
+    {
+        out.push_str(&line[start..last]);
+        out.push('\n');
+        push_indent(out, indent);
+        start = last + 1;
+    }
+    out.push_str(&line[start..]);
 }
 
 /// Writes spaces for an indentation.
@@ -294,14 +388,14 @@ mod tests {
         for s in [
             "hello", "a b", "-a", "?a", "::1", "a:b", "a#b", "a,b", "yes!", "2001-1",
         ] {
-            assert!(is_plain_safe(s, Version::V1_2), "{}", s);
+            assert!(is_plain_safe(s, Version::V1_2, false), "{}", s);
         }
         for s in [
             "", " a", "a ", "- a", "-", "a: b", "a:", "a #b", "#a", "---", "...", "--- a", "<<",
             "true", "null", "~", "1", "1.5", "0x10", ".inf", "a\nb", "a\tb", "'a", "!a", "&a",
             "*a", "%a", "@a", "`a", "|", ">",
         ] {
-            assert!(!is_plain_safe(s, Version::V1_2), "{:?}", s);
+            assert!(!is_plain_safe(s, Version::V1_2, false), "{:?}", s);
         }
         // strings that are only special in YAML 1.1
         for s in [
@@ -315,8 +409,20 @@ mod tests {
             "2001-12-14",
             "=",
         ] {
-            assert!(is_plain_safe(s, Version::V1_2), "{}", s);
-            assert!(!is_plain_safe(s, Version::V1_1), "{}", s);
+            assert!(is_plain_safe(s, Version::V1_2, false), "{}", s);
+            assert!(!is_plain_safe(s, Version::V1_1, false), "{}", s);
+        }
+    }
+
+    #[test]
+    fn test_plain_in_flow() {
+        for s in ["a,b", "a[b", "a]", "a{", "a}"] {
+            assert!(is_plain_safe(s, Version::V1_2, false), "{}", s);
+            assert!(!is_plain_safe(s, Version::V1_2, true), "{}", s);
+        }
+        for s in [":a", "?a", "a?", "a:b"] {
+            assert!(is_plain_safe(s, Version::V1_2, true), "{}", s);
+            assert!(!is_plain_safe(s, Version::V1_1, true), "{}", s);
         }
     }
 

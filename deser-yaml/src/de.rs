@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use deser::adapters::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
+use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
@@ -244,6 +245,8 @@ enum Node<'a> {
     Start {
         tag: Option<Cow<'a, str>>,
         is_map: bool,
+        /// `true` for flow collections (`[a]` and `{a: b}`).
+        flow: bool,
         start: Mark,
         end: usize,
     },
@@ -319,12 +322,13 @@ impl<'a> Document<'a> {
                 },
                 props.anchor,
             ),
-            EventKind::SequenceStart { props, .. } | EventKind::MappingStart { props, .. } => {
+            EventKind::SequenceStart { props, flow } | EventKind::MappingStart { props, flow } => {
                 self.depth += 1;
                 (
                     Node::Start {
                         tag: props.tag,
                         is_map,
+                        flow,
                         start,
                         end,
                     },
@@ -783,9 +787,15 @@ impl<'a> Deserializer<'a> {
                 Node::Start {
                     tag,
                     is_map,
+                    flow,
                     start,
                     end,
                 } => {
+                    // flow collections are compact so that they stay flow
+                    // collections when they are serialized again
+                    if flow {
+                        Layout::Compact.set(driver.state_mut());
+                    }
                     if track_merges {
                         frames.push(Frame {
                             is_map,

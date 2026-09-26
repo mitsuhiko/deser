@@ -2,10 +2,13 @@ use std::collections::BTreeMap;
 
 use deser::adapters::bytes::{BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::ext::Datetime;
+use deser::hints::{Compact, Expanded, Layout};
+use deser::ser::{Layer, Next};
 use deser::{Deserialize, Serialize};
+use deser_yaml::style::{DoubleQuoted, Folded, Literal, Plain, ScalarStyle, SingleQuoted};
 use deser_yaml::{
-    DeserializerConfig, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
-    Tagged, Version, from_str, to_string,
+    DeserializerConfig, FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer,
+    SerializerConfig, Tagged, Version, from_str, to_string,
 };
 
 use crate::common::Value;
@@ -356,13 +359,13 @@ fn test_tags() {
     let parsed: Vec<Tagged<Value>> = from_str(&yaml).unwrap();
     assert_eq!(parsed, value);
 
-    // tags survive a recording
+    // tags (and flow collections) survive a recording
     let input = "a: !foo {x: 1}\nb: !bar [1, !baz 2]\n";
     let recording: deser::de::Recording = from_str(input).unwrap();
     assert_eq!(
         to_string(&recording).unwrap(),
         // the custom tag makes the scalar a string, it's quoted
-        "a: !foo\n  x: 1\nb: !bar\n  - 1\n  - !baz '2'\n"
+        "a: !foo {x: 1}\nb: !bar [1, !baz '2']\n"
     );
 }
 
@@ -504,15 +507,35 @@ fn test_quoting_fuzz() {
         SerializerConfig::new().compat(Version::V1_2),
         SerializerConfig::new().quote_style(QuoteStyle::Double),
         SerializerConfig::new().multiline(MultilineStyle::Quoted),
+        SerializerConfig::new()
+            .flow(FlowPolicy::LeafIfFits(200))
+            .fold_width(Some(2)),
     ];
-    for config in &configs {
+    let styles = [
+        None,
+        Some(ScalarStyle::Plain),
+        Some(ScalarStyle::SingleQuoted),
+        Some(ScalarStyle::DoubleQuoted),
+        Some(ScalarStyle::Literal),
+        Some(ScalarStyle::Folded),
+    ];
+    for (config, style) in configs
+        .iter()
+        .flat_map(|config| styles.iter().map(move |style| (config, *style)))
+    {
         for s in &strings {
             let doc = Value::Seq(vec![
                 Value::from(s.as_str()),
                 Value::Map(vec![(Value::from(s.as_str()), Value::from(s.as_str()))]),
             ]);
-            let yaml = config.to_string(&doc).unwrap();
-            let versions: &[Version] = if config == &configs[1] {
+            let yaml = config
+                .to_string_with(&doc, |driver| {
+                    if let Some(style) = style {
+                        driver.push_layer(ForceStyle(style));
+                    }
+                })
+                .unwrap();
+            let versions: &[Version] = if config.to_string(&"yes").unwrap() == "yes\n" {
                 &[Version::V1_2]
             } else {
                 &[Version::V1_1, Version::V1_2]
@@ -532,5 +555,255 @@ fn test_quoting_fuzz() {
                 );
             }
         }
+    }
+}
+
+/// Requests a style for all strings.
+struct ForceStyle(ScalarStyle);
+
+impl Layer for ForceStyle {
+    fn event(&mut self, event: deser::Event<'_>, next: &mut Next<'_>) -> Result<(), deser::Error> {
+        self.0.set(next.state_mut());
+        next.emit(event)
+    }
+}
+
+#[test]
+fn test_layout_hints() {
+    #[derive(Serialize)]
+    struct Config {
+        #[deser(as = Compact)]
+        point: Point,
+        #[deser(as = Compact)]
+        ports: Vec<u16>,
+        #[deser(as = Compact)]
+        matrix: Vec<Vec<u16>>,
+        #[deser(as = Expanded)]
+        tags: Vec<String>,
+        #[deser(as = Compact)]
+        empty: Vec<u16>,
+        other: Vec<u16>,
+    }
+
+    let config = Config {
+        point: Point { x: 1, y: 2 },
+        ports: vec![80, 443],
+        matrix: vec![vec![1, 2], vec![]],
+        tags: vec!["a".into(), "b, c".into()],
+        empty: vec![],
+        other: vec![3],
+    };
+    const V1_2: SerializerConfig = SerializerConfig::new().compat(Version::V1_2);
+    let yaml = V1_2.to_string(&config).unwrap();
+    assert_eq!(
+        yaml,
+        "\
+point: {x: 1, y: 2}
+ports: [80, 443]
+matrix: [[1, 2], []]
+tags:
+  - a
+  - b, c
+empty: []
+other:
+  - 3
+"
+    );
+
+    // the leaf policy writes collections of scalars in flow style if they fit
+    const LEAF: SerializerConfig = SerializerConfig::new()
+        .compat(Version::V1_2)
+        .flow(FlowPolicy::LeafIfFits(20));
+    let yaml = LEAF.to_string(&config).unwrap();
+    assert_eq!(
+        yaml,
+        "\
+point: {x: 1, y: 2}
+ports: [80, 443]
+matrix: [[1, 2], []]
+tags:
+  - a
+  - b, c
+empty: []
+other: [3]
+"
+    );
+    let value = BTreeMap::from([
+        ("short", vec!["a", "b"]),
+        ("long", vec!["aaaaaaaaaa", "bbbbbbbbbb"]),
+        ("quoted", vec!["a,b", "c"]),
+    ]);
+    assert_eq!(
+        LEAF.to_string(&value).unwrap(),
+        "long:\n  - aaaaaaaaaa\n  - bbbbbbbbbb\nquoted: ['a,b', c]\nshort: [a, b]\n"
+    );
+
+    // keys, tags, nulls and multi-line strings in flow collections
+    let value = Value::Tagged(
+        "!t".into(),
+        Box::new(Value::Map(vec![
+            (Value::Seq(vec![1i64.into()]), Value::Null),
+            ("k".into(), "a\nb".into()),
+            (
+                Value::Null,
+                Value::Tagged("!u".into(), Box::new("x".into())),
+            ),
+        ])),
+    );
+    const EMPTY: SerializerConfig = SerializerConfig::new()
+        .null_style(NullStyle::Empty)
+        .flow(FlowPolicy::LeafIfFits(80));
+    let yaml = to_string_compact(&EMPTY, &value);
+    assert_eq!(yaml, "!t {? [1]: null, k: \"a\\nb\", null: !u x}\n");
+    assert_eq!(from_str::<Value>(&yaml).unwrap(), value);
+
+    // layers can set the layout by path, here for the root
+    struct CompactRoot;
+    impl Layer for CompactRoot {
+        fn event(
+            &mut self,
+            event: deser::Event<'_>,
+            next: &mut Next<'_>,
+        ) -> Result<(), deser::Error> {
+            // the start event of the root is at depth 1
+            if next.state().depth() == 1
+                && matches!(event, deser::Event::MapStart(_) | deser::Event::SeqStart(_))
+            {
+                Layout::Compact.set(next.state_mut());
+            }
+            next.emit(event)
+        }
+    }
+    let yaml = SerializerConfig::new()
+        .to_string_with(&service(), |driver| driver.push_layer(CompactRoot))
+        .unwrap();
+    assert!(
+        yaml.starts_with("{image: nginx, ports: [80, 443], "),
+        "{}",
+        yaml
+    );
+    assert_eq!(from_str::<Service>(&yaml).unwrap(), service());
+}
+
+/// Serializes with the root compact.
+fn to_string_compact(config: &SerializerConfig, value: &Value) -> String {
+    struct CompactRoot;
+    impl Layer for CompactRoot {
+        fn event(
+            &mut self,
+            event: deser::Event<'_>,
+            next: &mut Next<'_>,
+        ) -> Result<(), deser::Error> {
+            // the start event of the root is at depth 1
+            if next.state().depth() == 1
+                && matches!(event, deser::Event::MapStart(_) | deser::Event::SeqStart(_))
+            {
+                Layout::Compact.set(next.state_mut());
+            }
+            next.emit(event)
+        }
+    }
+    config
+        .to_string_with(value, |driver| driver.push_layer(CompactRoot))
+        .unwrap()
+}
+
+#[test]
+fn test_scalar_styles() {
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct Strings {
+        #[deser(as = Plain)]
+        plain: String,
+        #[deser(as = Plain)]
+        not_plain: String,
+        #[deser(as = SingleQuoted)]
+        single: String,
+        #[deser(as = SingleQuoted)]
+        not_single: String,
+        #[deser(as = DoubleQuoted)]
+        double: String,
+        #[deser(as = Literal)]
+        literal: String,
+        #[deser(as = Literal)]
+        not_literal: String,
+        #[deser(as = Folded)]
+        folded: String,
+        #[deser(as = Folded)]
+        not_folded: String,
+        #[deser(as = Vec<DoubleQuoted>)]
+        list: Vec<String>,
+    }
+
+    let value = Strings {
+        plain: "a".into(),
+        not_plain: "yes".into(),
+        single: "a".into(),
+        not_single: "a\tb".into(),
+        double: "a".into(),
+        literal: "a b".into(),
+        not_literal: "a\rb".into(),
+        folded: "one two three four five six seven eight nine ten eleven twelve".into(),
+        not_folded: " leading\nspace".into(),
+        list: vec!["a".into(), "b".into()],
+    };
+    const WIDTH: SerializerConfig = SerializerConfig::new().fold_width(Some(30));
+    let yaml = WIDTH.to_string(&value).unwrap();
+    assert_eq!(
+        yaml,
+        "\
+plain: a
+not_plain: 'yes'
+single: 'a'
+not_single: \"a\\tb\"
+double: \"a\"
+literal: |-
+  a b
+not_literal: \"a\\rb\"
+folded: >-
+  one two three four five six
+  seven eight nine ten eleven
+  twelve
+not_folded: |2-
+   leading
+  space
+list:
+  - \"a\"
+  - \"b\"
+"
+    );
+    assert_eq!(from_str::<Strings>(&yaml).unwrap(), value);
+}
+
+#[test]
+fn test_folding() {
+    const FOLD: SerializerConfig = SerializerConfig::new().fold_width(Some(20));
+    let long = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod";
+    let yaml = FOLD.to_string(&BTreeMap::from([("text", long)])).unwrap();
+    assert_eq!(
+        yaml,
+        "text: >-\n  Lorem ipsum dolor\n  sit amet,\n  consectetur\n  adipiscing elit, sed\n  do eiusmod\n"
+    );
+    assert_eq!(
+        from_str::<BTreeMap<String, String>>(&yaml).unwrap()["text"],
+        long
+    );
+    // strings without spaces to fold at are not folded
+    let word = "x".repeat(50);
+    assert_eq!(FOLD.to_string(&word).unwrap(), format!("{}\n", word));
+    // multi-line strings with the hint keep their line breaks
+    for value in [
+        "a b c d e f g h i j k l m n o p q r s t u v w x y z\nsecond line\n\nthird\n",
+        "a  b\n\n\nc",
+        "trailing\n\n",
+        "x",
+    ] {
+        let yaml = SerializerConfig::new()
+            .fold_width(Some(10))
+            .to_string_with(&value, |driver| {
+                driver.push_layer(ForceStyle(ScalarStyle::Folded))
+            })
+            .unwrap();
+        assert!(yaml.starts_with('>'), "{}", yaml);
+        assert_eq!(from_str::<String>(&yaml).unwrap(), value, "{}", yaml);
     }
 }

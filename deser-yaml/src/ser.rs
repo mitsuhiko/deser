@@ -28,6 +28,23 @@ pub enum MultilineStyle {
     Quoted,
 }
 
+/// When collections are written in flow style (`[a, b]`, `{a: 1}`).
+///
+/// Collections with the [`Layout::Compact`](deser::hints::Layout) hint are
+/// always written in flow style, collections with
+/// [`Layout::Expanded`](deser::hints::Layout) never (unless they are in a
+/// flow collection, which can only contain flow collections).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum FlowPolicy {
+    /// Only compact collections are written in flow style.
+    #[default]
+    Never,
+    /// Collections which only contain scalars are written in flow style if
+    /// they end before the given column.
+    LeafIfFits(usize),
+}
+
 /// How null is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
@@ -49,12 +66,15 @@ pub enum NullStyle {
 ///
 /// * block collections, sequences in mappings are indented
 ///   ([`indent_sequences`](Self::indent_sequences)), empty collections are
-///   written as `{}` and `[]`.
+///   written as `{}` and `[]`.  Compact collections (see
+///   [`hints`](deser::hints)) are written in flow style, see
+///   [`flow`](Self::flow).
 /// * strings are plain if possible, otherwise single-quoted (double-quoted if
 ///   they need escapes).  Strings are quoted if readers of YAML 1.1 would
 ///   read them as something else (`yes`, `0777`, timestamps, see
 ///   [`compat`](Self::compat)).
-/// * strings with line breaks are literal block scalars (`|`).
+/// * strings with line breaks are literal block scalars (`|`), the style of
+///   individual strings can be requested (see [`style`](crate::style)).
 /// * bytes are written as `!!binary` (see [`binary`](Self::binary)).
 ///
 /// ```
@@ -75,6 +95,8 @@ pub enum NullStyle {
 pub struct SerializerConfig {
     pub(crate) indent: usize,
     pub(crate) indent_sequences: bool,
+    pub(crate) flow: FlowPolicy,
+    pub(crate) fold_width: Option<usize>,
     pub(crate) quote_style: QuoteStyle,
     pub(crate) quote_all: bool,
     pub(crate) multiline: MultilineStyle,
@@ -99,6 +121,8 @@ impl SerializerConfig {
         SerializerConfig {
             indent: 2,
             indent_sequences: true,
+            flow: FlowPolicy::Never,
+            fold_width: None,
             quote_style: QuoteStyle::Single,
             quote_all: false,
             multiline: MultilineStyle::Literal,
@@ -134,6 +158,46 @@ impl SerializerConfig {
     /// `kubectl` write YAML.
     pub const fn indent_sequences(mut self, yes: bool) -> SerializerConfig {
         self.indent_sequences = yes;
+        self
+    }
+
+    /// Sets when collections are written in flow style.
+    ///
+    /// ```
+    /// use deser::Serialize;
+    /// use deser_yaml::{FlowPolicy, SerializerConfig};
+    ///
+    /// #[derive(Serialize)]
+    /// struct Config {
+    ///     ports: Vec<u16>,
+    ///     groups: Vec<Vec<u16>>,
+    /// }
+    ///
+    /// let config = Config {
+    ///     ports: vec![80, 443],
+    ///     groups: vec![vec![1], vec![2, 3]],
+    /// };
+    /// const FLOW: SerializerConfig = SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80));
+    /// assert_eq!(
+    ///     FLOW.to_string(&config).unwrap(),
+    ///     "ports: [80, 443]\ngroups:\n  - [1]\n  - [2, 3]\n"
+    /// );
+    /// ```
+    pub const fn flow(mut self, policy: FlowPolicy) -> SerializerConfig {
+        self.flow = policy;
+        self
+    }
+
+    /// Folds long strings at the given width.
+    ///
+    /// Strings without line breaks that are longer than the width are
+    /// written as folded block scalars (`>`) with lines that do not exceed
+    /// the width if possible.  Strings are only folded if they read back
+    /// unchanged.  By default strings are not folded.  The width is also used
+    /// for strings with the [`Folded`](crate::style::Folded) hint (80 if not
+    /// set).
+    pub const fn fold_width(mut self, width: Option<usize>) -> SerializerConfig {
+        self.fold_width = width;
         self
     }
 

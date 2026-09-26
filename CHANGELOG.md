@@ -43,10 +43,19 @@ All notable changes to deser are documented here.
   tag, `set_tag` sets the tag of a value and tags survive a `Recording`.
   `DeserializerConfig::bytes` configures how strings are decoded into
   bytes.
+- `deser-yaml` writes collections in flow style if they have the
+  `Layout::Compact` hint or, with `FlowPolicy::LeafIfFits`, if they only
+  contain scalars and fit into the width.  The style of strings can be
+  requested with the `ScalarStyle` hint of the new `deser_yaml::style`
+  module (and its adapters `Plain`, `SingleQuoted`, `DoubleQuoted`,
+  `Literal` and `Folded`), long strings can be folded
+  (`SerializerConfig::fold_width`).  Flow collections are reported as
+  compact when reading.
 - Added `deser::hints` with well-known formatting hints.  `Layout` asks
   formats to lay out a map or sequence compact (inline) or expanded, the
   `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and
-  layers can set it by path.  `deser-toml` writes compact tables and arrays
+  layers can set it by path.  `Hint` and `Hinted` allow formats to define
+  adapters for their own hints.  `deser-toml` writes compact tables and arrays
   of tables inline and reports inline tables as compact when reading, so
   they stay inline through a `Recording`.  It also reports the lengths of
   tables and arrays.

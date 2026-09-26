@@ -1,25 +1,35 @@
 //! Writes serialization events as YAML.
 //!
-//! The emitter writes block collections.  Containers are held back until
-//! their first item is known so that empty containers can be written as
-//! `{}` and `[]` and the layout does not need to be patched afterwards.
+//! Collections are held back until their first item is known so that empty
+//! collections can be written as `{}` and `[]` and the layout never needs to
+//! be patched afterwards.  Collections are written in block style unless
+//! they are compact (see [`Layout`]) or the flow policy allows them to be
+//! written in flow style.  For the flow policy the events of a collection
+//! are recorded while it's written in flow style.  If it turns out not to
+//! fit, the output is rolled back and the recorded events are written in
+//! block style.
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
+use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event, State};
 
 use crate::quote::{
-    Literal, MAX_SIMPLE_KEY_LEN, is_plain_safe, is_single_quote_safe, push_indent,
+    BlockScalar, MAX_SIMPLE_KEY_LEN, is_plain_safe, is_single_quote_safe, push_indent,
     write_double_quoted, write_float, write_single_quoted, write_tag,
 };
 use crate::resolve::{Version, is_plain_str};
-use crate::ser::{MultilineStyle, NullStyle, QuoteStyle, SerializerConfig};
+use crate::ser::{FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig};
+use crate::style::{ScalarStyle, StyleHint};
 use crate::tag::NodeTag;
 
 /// The length of the lines of long `!!binary` values.
 const BINARY_LINE_LEN: usize = 76;
 
+/// The width folded scalars use if no width is configured.
+const DEFAULT_FOLD_WIDTH: usize = 80;
+
 /// Wraps base64 into a literal block of lines.
-fn wrap_binary(encoded: &str) -> Literal<'static> {
+fn wrap_binary(encoded: &str) -> BlockScalar<'static> {
     let mut lines = String::with_capacity(encoded.len() + encoded.len() / BINARY_LINE_LEN + 1);
     for (idx, chunk) in encoded.as_bytes().chunks(BINARY_LINE_LEN).enumerate() {
         if idx > 0 {
@@ -28,7 +38,15 @@ fn wrap_binary(encoded: &str) -> Literal<'static> {
         // base64 is ASCII
         lines.push_str(std::str::from_utf8(chunk).unwrap());
     }
-    Literal::from_lines(lines)
+    BlockScalar::from_lines(lines)
+}
+
+/// The hints of an event.
+#[derive(Debug, Clone, Default)]
+struct Hints {
+    tag: Option<String>,
+    layout: Layout,
+    style: Option<ScalarStyle>,
 }
 
 /// Where the next node is written.
@@ -39,18 +57,34 @@ enum Pos {
     /// After an indicator (`-`, `?` or the `:` of an explicit key), the
     /// content of the node starts at the given column.
     Inline(usize),
-    /// The value of a simple key of a mapping at the given column.
+    /// The value of a simple key of a block mapping at the given column.
     Value(usize),
+    /// Inside a flow collection.
+    Flow,
 }
 
-/// An open block collection.
+/// Where a scalar is written, which restricts its styles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Context {
+    /// Block scalars are allowed.
+    Block,
+    /// A key: on a single line.
+    Key,
+    /// In a flow collection: on a single line, no flow indicators.
+    Flow,
+}
+
+/// An open collection.
 struct Frame {
     is_map: bool,
-    /// The column of the keys or dashes.
+    flow: bool,
+    /// The column of the keys or dashes (block collections).
     indent: usize,
-    /// `true` if the next entry continues the current line (the first entry
-    /// of a collection that follows an indicator or starts the document).
-    inline: bool,
+    /// For block collections `true` if the next entry continues the current
+    /// line (the first entry of a collection that follows an indicator or
+    /// starts the document).  For flow collections `true` for the first
+    /// entry.
+    first: bool,
     /// For maps: `true` if the next node is a value.
     value: bool,
     /// For maps: `true` if the key of the current entry is explicit (`?`).
@@ -58,18 +92,34 @@ struct Frame {
 }
 
 /// A collection whose first event was seen but that was not written yet.
+#[derive(Clone)]
 struct Pending {
     is_map: bool,
-    tag: Option<String>,
+    hints: Hints,
     pos: Pos,
+}
+
+/// A collection that is tentatively written in flow style.
+struct Attempt {
+    /// The collection, to write it in block style instead.
+    pending: Pending,
+    /// The state before the collection was written.
+    out_len: usize,
+    depth: usize,
+    space: bool,
+    line_done: bool,
+    /// The events of the collection after its start.
+    events: Vec<(Event<'static>, Hints)>,
+    /// The column the collection has to end before.
+    width: usize,
 }
 
 /// A scalar that was rendered for a position.
 enum Scalar<'a> {
     /// Text that is written as is.
     Text(String),
-    /// A literal block scalar.
-    Literal(Literal<'a>),
+    /// A block scalar.
+    Block(BlockScalar<'a>),
     /// Nothing (a null with [`NullStyle::Empty`]).
     Empty,
 }
@@ -79,6 +129,7 @@ pub(crate) struct Emitter<'c> {
     out: String,
     stack: Vec<Frame>,
     pending: Option<Pending>,
+    attempt: Option<Attempt>,
     /// `true` if a space has to be written before the next inline content
     /// (after an indicator).
     space: bool,
@@ -96,6 +147,7 @@ impl<'c> Emitter<'c> {
             out,
             stack: Vec::new(),
             pending: None,
+            attempt: None,
             space: false,
             done: false,
             line_done: false,
@@ -114,45 +166,129 @@ impl<'c> Emitter<'c> {
     }
 
     pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
-        let tag = if state.has_event_data() {
-            state.event::<NodeTag>().and_then(|x| x.0.clone())
+        let hints = if state.has_event_data() {
+            Hints {
+                tag: state.event::<NodeTag>().and_then(|x| x.0.clone()),
+                layout: Layout::of(state),
+                style: state.event::<StyleHint>().and_then(|x| x.0),
+            }
         } else {
-            None
+            Hints::default()
         };
-        self.emit(event, tag)
+        self.emit(event, hints)
     }
 
-    fn emit(&mut self, event: Event, tag: Option<String>) -> Result<(), Error> {
+    fn emit(&mut self, event: Event, hints: Hints) -> Result<(), Error> {
+        if let Some(ref mut attempt) = self.attempt {
+            attempt.events.push((event.to_static(), hints.clone()));
+            // only collections of scalars are written in flow style
+            if matches!(event, Event::MapStart(_) | Event::SeqStart(_)) {
+                return self.abort_attempt();
+            }
+        }
         if let Some(pending) = self.pending.take() {
             match event {
                 Event::MapEnd if pending.is_map => return self.write_empty(pending),
                 Event::SeqEnd if !pending.is_map => return self.write_empty(pending),
-                _ => self.open(pending),
+                ref event => {
+                    let is_start = matches!(event, Event::MapStart(_) | Event::SeqStart(_));
+                    if !is_start && self.may_attempt(&pending) {
+                        self.start_attempt(pending, event, &hints);
+                    } else {
+                        self.open(pending);
+                    }
+                }
             }
         }
         match event {
-            Event::Atom(atom) => self.atom(atom, tag),
-            Event::MapStart(_) => self.start(true, tag),
-            Event::SeqStart(_) => self.start(false, tag),
-            Event::MapEnd => self.end(true),
-            Event::SeqEnd => self.end(false),
+            Event::Atom(atom) => self.atom(atom, hints)?,
+            Event::MapStart(_) => self.start(true, hints)?,
+            Event::SeqStart(_) => self.start(false, hints)?,
+            Event::MapEnd => self.end(true)?,
+            Event::SeqEnd => self.end(false)?,
         }
+        if let Some(ref attempt) = self.attempt {
+            if self.stack.len() <= attempt.depth {
+                // the collection ended and fits
+                self.attempt = None;
+            } else if self.column() > attempt.width {
+                return self.abort_attempt();
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `true` if the collection may be written in flow style if it
+    /// fits.
+    fn may_attempt(&self, pending: &Pending) -> bool {
+        matches!(self.config.flow, FlowPolicy::LeafIfFits(_))
+            && pending.hints.layout == Layout::Auto
+            && !matches!(pending.pos, Pos::Flow)
+    }
+
+    /// Starts writing a collection in flow style tentatively.
+    fn start_attempt(&mut self, pending: Pending, event: &Event, hints: &Hints) {
+        let FlowPolicy::LeafIfFits(width) = self.config.flow else {
+            unreachable!();
+        };
+        self.attempt = Some(Attempt {
+            pending: pending.clone(),
+            out_len: self.out.len(),
+            depth: self.stack.len(),
+            space: self.space,
+            line_done: self.line_done,
+            events: vec![(event.to_static(), hints.clone())],
+            width,
+        });
+        self.open_flow(pending);
+    }
+
+    /// Rolls back a collection written in flow style and writes it in block
+    /// style.
+    #[cold]
+    fn abort_attempt(&mut self) -> Result<(), Error> {
+        let attempt = self.attempt.take().unwrap();
+        self.out.truncate(attempt.out_len);
+        self.stack.truncate(attempt.depth);
+        self.space = attempt.space;
+        self.line_done = attempt.line_done;
+        self.pending = None;
+        self.open_block(attempt.pending);
+        for (event, hints) in attempt.events {
+            self.emit(event, hints)?;
+        }
+        Ok(())
+    }
+
+    /// Returns the current column.
+    fn column(&self) -> usize {
+        let line_start = self.out.rfind('\n').map_or(0, |x| x + 1);
+        self.out[line_start..].chars().count()
+    }
+
+    /// Returns `true` if the current node is in a flow collection.
+    fn in_flow(&self) -> bool {
+        self.stack.last().is_some_and(|x| x.flow)
     }
 
     /// Starts a map or sequence, it's written once the next event is known.
-    fn start(&mut self, is_map: bool, tag: Option<String>) -> Result<(), Error> {
+    fn start(&mut self, is_map: bool, hints: Hints) -> Result<(), Error> {
         let pos = match self.begin_node()? {
             Some(pos) => pos,
             // collections as keys are explicit
             None => self.begin_explicit_key(),
         };
-        self.pending = Some(Pending { is_map, tag, pos });
+        self.pending = Some(Pending { is_map, hints, pos });
         Ok(())
     }
 
     fn end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.stack.pop() {
-            Some(frame) if frame.is_map == is_map && (!is_map || !frame.value) => {}
+            Some(frame) if frame.is_map == is_map && (!is_map || !frame.value) => {
+                if frame.flow {
+                    self.out.push(if is_map { '}' } else { ']' });
+                }
+            }
             _ => return Err(Error::new(ErrorKind::Unexpected, "unexpected end event")),
         }
         self.complete();
@@ -161,7 +297,7 @@ impl<'c> Emitter<'c> {
 
     /// Writes an empty collection.
     fn write_empty(&mut self, pending: Pending) -> Result<(), Error> {
-        self.write_inline_start(pending.tag.as_deref());
+        self.write_inline_start(pending.hints.tag.as_deref());
         self.out.push_str(if pending.is_map { "{}" } else { "[]" });
         self.complete();
         Ok(())
@@ -169,15 +305,36 @@ impl<'c> Emitter<'c> {
 
     /// Writes the start of a non-empty collection.
     fn open(&mut self, pending: Pending) {
-        let (indent, inline) = match pending.pos {
+        if matches!(pending.pos, Pos::Flow) || pending.hints.layout == Layout::Compact {
+            self.open_flow(pending);
+        } else {
+            self.open_block(pending);
+        }
+    }
+
+    fn open_flow(&mut self, pending: Pending) {
+        self.write_inline_start(pending.hints.tag.as_deref());
+        self.out.push(if pending.is_map { '{' } else { '[' });
+        self.stack.push(Frame {
+            is_map: pending.is_map,
+            flow: true,
+            indent: 0,
+            first: true,
+            value: false,
+            explicit: false,
+        });
+    }
+
+    fn open_block(&mut self, pending: Pending) {
+        let (indent, first) = match pending.pos {
             Pos::Root => {
-                if let Some(ref tag) = pending.tag {
+                if let Some(ref tag) = pending.hints.tag {
                     write_tag(&mut self.out, tag);
                     self.out.push('\n');
                 }
                 (0, true)
             }
-            Pos::Inline(column) => match pending.tag {
+            Pos::Inline(column) => match pending.hints.tag {
                 Some(ref tag) => {
                     self.flush_space();
                     write_tag(&mut self.out, tag);
@@ -186,7 +343,7 @@ impl<'c> Emitter<'c> {
                 None => (column, true),
             },
             Pos::Value(key_column) => {
-                if let Some(ref tag) = pending.tag {
+                if let Some(ref tag) = pending.hints.tag {
                     self.flush_space();
                     write_tag(&mut self.out, tag);
                 }
@@ -198,11 +355,13 @@ impl<'c> Emitter<'c> {
                 };
                 (indent, false)
             }
+            Pos::Flow => unreachable!("collections in flow collections are flow"),
         };
         self.stack.push(Frame {
             is_map: pending.is_map,
+            flow: false,
             indent,
-            inline,
+            first,
             value: false,
             explicit: false,
         });
@@ -220,6 +379,20 @@ impl<'c> Emitter<'c> {
             }
             return Ok(Some(Pos::Root));
         };
+        if frame.flow {
+            if frame.is_map && frame.value {
+                if frame.explicit {
+                    self.out.push(':');
+                    self.space = true;
+                }
+                return Ok(Some(Pos::Flow));
+            }
+            if !std::mem::replace(&mut frame.first, false) {
+                self.out.push(',');
+                self.space = true;
+            }
+            return Ok(if frame.is_map { None } else { Some(Pos::Flow) });
+        }
         let indent = frame.indent;
         if !frame.is_map {
             self.begin_entry();
@@ -240,12 +413,16 @@ impl<'c> Emitter<'c> {
         }
     }
 
-    /// Moves to the start of the next entry of the current collection.
+    /// Moves to the start of the next entry of the current block collection.
     fn begin_entry(&mut self) {
         let frame = self.stack.last_mut().unwrap();
+        if frame.flow {
+            // the separator was written by `begin_node`
+            self.flush_space();
+            return;
+        }
         let indent = frame.indent;
-        if frame.inline {
-            frame.inline = false;
+        if std::mem::replace(&mut frame.first, false) {
             self.flush_space();
         } else {
             self.newline(indent);
@@ -257,10 +434,14 @@ impl<'c> Emitter<'c> {
         self.begin_entry();
         let frame = self.stack.last_mut().unwrap();
         frame.explicit = true;
-        let indent = frame.indent;
+        let pos = if frame.flow {
+            Pos::Flow
+        } else {
+            Pos::Inline(frame.indent + 2)
+        };
         self.out.push('?');
         self.space = true;
-        Pos::Inline(indent + 2)
+        pos
     }
 
     /// Records that a node was completed.
@@ -301,26 +482,36 @@ impl<'c> Emitter<'c> {
         }
     }
 
-    fn atom(&mut self, atom: Atom, tag: Option<String>) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, hints: Hints) -> Result<(), Error> {
         // bytes that are sequences are written as sequences of integers
         if let Atom::Bytes(ref bytes) = atom
             && !self.config.binary
             && bytes.fallback.copied().unwrap_or(self.config.bytes) == BytesFormat::SEQ
         {
-            self.emit(Event::seq_start(), tag)?;
+            self.emit(
+                Event::seq_start(),
+                Hints {
+                    layout: hints.layout,
+                    tag: hints.tag,
+                    style: None,
+                },
+            )?;
             for &byte in bytes.iter() {
-                self.emit(Event::Atom(Atom::U64(byte.into())), None)?;
+                self.emit(Event::Atom(Atom::U64(byte.into())), Hints::default())?;
             }
-            return self.emit(Event::SeqEnd, None);
+            return self.emit(Event::SeqEnd, Hints::default());
         }
 
         let pos = match self.begin_node()? {
             Some(pos) => pos,
-            None => return self.key(atom, tag),
+            None => return self.key(atom, hints),
         };
-        let mut rendered = String::new();
-        let (scalar, implicit_tag) = self.render(&atom, false, &mut rendered)?;
-        let tag = tag.as_deref().or(implicit_tag);
+        let context = match pos {
+            Pos::Flow => Context::Flow,
+            _ => Context::Block,
+        };
+        let (scalar, implicit_tag) = self.render(&atom, context, hints.style)?;
+        let tag = hints.tag.as_deref().or(implicit_tag);
         match scalar {
             // nothing to write, the indicator or key stands on its own
             Scalar::Empty if !matches!(pos, Pos::Root) && tag.is_none() => {
@@ -334,20 +525,19 @@ impl<'c> Emitter<'c> {
                 self.write_inline_start(tag);
                 self.out.push_str(&text);
             }
-            Scalar::Literal(literal) => {
+            Scalar::Block(block) => {
                 self.write_inline_start(tag);
                 // the indentation indicator is relative to the parent node
                 let (column, parent) = match pos {
                     // the document is at indentation 0 for indicators
                     Pos::Root => (self.config.indent, 0),
-                    Pos::Inline(column) => (column, column as isize - 2),
-                    Pos::Value(key_column) => {
-                        (key_column + self.config.indent, key_column as isize)
-                    }
+                    Pos::Inline(column) => (column, column - 2),
+                    Pos::Value(key_column) => (key_column + self.config.indent, key_column),
+                    Pos::Flow => unreachable!("no block scalars in flow collections"),
                 };
-                literal.write_header(&mut self.out, (column as isize - parent) as usize);
+                block.write_header(&mut self.out, column - parent);
                 self.out.push('\n');
-                literal.write_body(&mut self.out, column);
+                block.write_body(&mut self.out, column);
                 self.line_done = true;
             }
         }
@@ -356,14 +546,18 @@ impl<'c> Emitter<'c> {
     }
 
     /// Writes a scalar key.
-    fn key(&mut self, atom: Atom, tag: Option<String>) -> Result<(), Error> {
-        let mut rendered = String::new();
-        let (scalar, implicit_tag) = self.render(&atom, true, &mut rendered)?;
-        let tag = tag.as_deref().or(implicit_tag);
+    fn key(&mut self, atom: Atom, hints: Hints) -> Result<(), Error> {
+        let context = if self.in_flow() {
+            Context::Flow
+        } else {
+            Context::Key
+        };
+        let (scalar, implicit_tag) = self.render(&atom, context, hints.style)?;
+        let tag = hints.tag.as_deref().or(implicit_tag);
         let text = match scalar {
             Scalar::Text(text) => text,
             Scalar::Empty => "null".into(),
-            Scalar::Literal(_) => unreachable!("keys are never block scalars"),
+            Scalar::Block(_) => unreachable!("keys are never block scalars"),
         };
         if text.len() > MAX_SIMPLE_KEY_LEN {
             self.begin_explicit_key();
@@ -383,18 +577,17 @@ impl<'c> Emitter<'c> {
     /// Renders an atom as scalar.
     ///
     /// Returns the scalar and a tag that is implied by the value (such as
-    /// `!!binary`).  Keys are always on a single line.
+    /// `!!binary`).
     fn render<'a>(
         &self,
         atom: &'a Atom,
-        is_key: bool,
-        buf: &mut String,
+        context: Context,
+        style: Option<ScalarStyle>,
     ) -> Result<(Scalar<'a>, Option<&'static str>), Error> {
-        buf.clear();
         Ok(match *atom {
-            Atom::Null => match (self.config.null_style, is_key) {
+            Atom::Null => match (self.config.null_style, context) {
                 (NullStyle::Tilde, _) => (Scalar::Text("~".into()), None),
-                (NullStyle::Empty, false) => (Scalar::Empty, None),
+                (NullStyle::Empty, Context::Block) => (Scalar::Empty, None),
                 _ => (Scalar::Text("null".into()), None),
             },
             Atom::Bool(value) => (
@@ -404,11 +597,15 @@ impl<'c> Emitter<'c> {
             Atom::U64(value) => (Scalar::Text(value.to_string()), None),
             Atom::I64(value) => (Scalar::Text(value.to_string()), None),
             Atom::F64(value) => {
-                write_float(buf, value);
-                (Scalar::Text(std::mem::take(buf)), None)
+                let mut out = String::new();
+                write_float(&mut out, value);
+                (Scalar::Text(out), None)
             }
-            Atom::Char(value) => (self.render_owned_str(value.to_string()), None),
-            Atom::Str(ref value) => (self.render_str(value, is_key), None),
+            Atom::Char(value) => (
+                self.render_owned_str(value.to_string(), context, style),
+                None,
+            ),
+            Atom::Str(ref value) => (self.render_str(value, context, style), None),
             Atom::Bytes(ref bytes) => {
                 let format = if self.config.binary {
                     BytesFormat::BASE64
@@ -424,16 +621,16 @@ impl<'c> Emitter<'c> {
                     let tag = Some("tag:yaml.org,2002:binary");
                     if encoded.is_empty() {
                         (Scalar::Text("\"\"".into()), tag)
-                    } else if encoded.len() > BINARY_LINE_LEN && !is_key {
-                        (Scalar::Literal(wrap_binary(&encoded)), tag)
+                    } else if encoded.len() > BINARY_LINE_LEN && context == Context::Block {
+                        (Scalar::Block(wrap_binary(&encoded)), tag)
                     } else {
                         (Scalar::Text(encoded), tag)
                     }
                 } else {
-                    (self.render_owned_str(encoded), None)
+                    (self.render_owned_str(encoded, context, style), None)
                 }
             }
-            Atom::Ext(ref ext) => return self.render_ext(ext, is_key, buf),
+            Atom::Ext(ref ext) => return self.render_ext(ext, context, style),
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         })
     }
@@ -442,8 +639,8 @@ impl<'c> Emitter<'c> {
     fn render_ext<'a>(
         &self,
         ext: &'a ExtValue,
-        is_key: bool,
-        buf: &mut String,
+        context: Context,
+        style: Option<ScalarStyle>,
     ) -> Result<(Scalar<'a>, Option<&'static str>), Error> {
         if let Some(value) = ext.downcast_ref::<u128>() {
             return Ok((Scalar::Text(value.to_string()), None));
@@ -470,7 +667,7 @@ impl<'c> Emitter<'c> {
                 .and_then(|x| x.to_datetime())
         });
         if let Some(value) = datetime {
-            return Ok(self.render_datetime(value));
+            return Ok(self.render_datetime(value, context, style));
         }
         match ext.fallback() {
             Atom::Ext(_) => Err(Error::new(
@@ -479,14 +676,17 @@ impl<'c> Emitter<'c> {
             )),
             // strings of fallbacks are always on a single line as they do
             // not outlive this call
-            Atom::Str(value) => Ok((self.render_owned_str(value.into_owned()), None)),
+            Atom::Str(value) => Ok((
+                self.render_owned_str(value.into_owned(), context, style),
+                None,
+            )),
             fallback => {
-                let (scalar, tag) = self.render(&fallback, is_key, buf)?;
+                let (scalar, tag) = self.render(&fallback, context, style)?;
                 Ok((
                     match scalar {
                         Scalar::Text(text) => Scalar::Text(text),
                         Scalar::Empty => Scalar::Empty,
-                        Scalar::Literal(_) => unreachable!("only strings are block scalars"),
+                        Scalar::Block(_) => unreachable!("only strings are block scalars"),
                     },
                     tag,
                 ))
@@ -499,11 +699,16 @@ impl<'c> Emitter<'c> {
     /// Timestamps (dates and date-times with offset) are written plain (or
     /// tagged), other values (local date-times and times) as strings as YAML
     /// has no representation for them.
-    fn render_datetime<'a>(&self, value: Datetime) -> (Scalar<'a>, Option<&'static str>) {
+    fn render_datetime<'a>(
+        &self,
+        value: Datetime,
+        context: Context,
+        style: Option<ScalarStyle>,
+    ) -> (Scalar<'a>, Option<&'static str>) {
         let text = value.to_string();
         let is_timestamp = value.date.is_some() && (value.time.is_none() || value.offset.is_some());
         if !is_timestamp {
-            return (self.render_owned_str(text), None);
+            return (self.render_owned_str(text, context, style), None);
         }
         let tag = self
             .config
@@ -519,25 +724,81 @@ impl<'c> Emitter<'c> {
             && s.parse::<f64>().is_ok()
     }
 
-    /// Renders an owned string, always on a single line.
-    fn render_owned_str<'a>(&self, value: String) -> Scalar<'a> {
-        match self.render_str(&value, true) {
+    /// Renders an owned string, never as block scalar.
+    fn render_owned_str<'a>(
+        &self,
+        value: String,
+        context: Context,
+        style: Option<ScalarStyle>,
+    ) -> Scalar<'a> {
+        let context = match context {
+            Context::Block => Context::Key,
+            other => other,
+        };
+        match self.render_str(&value, context, style) {
             Scalar::Text(text) => Scalar::Text(text),
-            _ => unreachable!("single line strings are text"),
+            _ => unreachable!("strings outside of blocks are text"),
         }
     }
 
     /// Renders a string.
-    fn render_str<'a>(&self, value: &'a str, single_line: bool) -> Scalar<'a> {
-        if !single_line
-            && self.config.multiline == MultilineStyle::Literal
-            && !self.config.quote_all
-            && let Some(literal) = Literal::new(value)
-        {
-            return Scalar::Literal(literal);
+    ///
+    /// The requested style is used if the string can be written in it,
+    /// otherwise the style that the configuration asks for (if possible).
+    fn render_str<'a>(
+        &self,
+        value: &'a str,
+        context: Context,
+        style: Option<ScalarStyle>,
+    ) -> Scalar<'a> {
+        let block = context == Context::Block;
+        let flow = context == Context::Flow;
+        let fold_width = self.config.fold_width.unwrap_or(DEFAULT_FOLD_WIDTH);
+        match style {
+            Some(ScalarStyle::Plain) if is_plain_safe(value, self.config.compat, flow) => {
+                return Scalar::Text(value.into());
+            }
+            Some(ScalarStyle::SingleQuoted) if is_single_quote_safe(value) => {
+                let mut out = String::with_capacity(value.len() + 2);
+                write_single_quoted(&mut out, value);
+                return Scalar::Text(out);
+            }
+            Some(ScalarStyle::DoubleQuoted) => {
+                let mut out = String::with_capacity(value.len() + 2);
+                write_double_quoted(&mut out, value);
+                return Scalar::Text(out);
+            }
+            Some(ScalarStyle::Literal) if block => {
+                if let Some(block) = BlockScalar::literal(value) {
+                    return Scalar::Block(block);
+                }
+            }
+            Some(ScalarStyle::Folded) if block => {
+                if let Some(block) =
+                    BlockScalar::folded(value, fold_width).or_else(|| BlockScalar::literal(value))
+                {
+                    return Scalar::Block(block);
+                }
+            }
+            _ => {}
+        }
+
+        if block && !self.config.quote_all {
+            if value.contains('\n') {
+                if self.config.multiline == MultilineStyle::Literal
+                    && let Some(block) = BlockScalar::literal(value)
+                {
+                    return Scalar::Block(block);
+                }
+            } else if let Some(width) = self.config.fold_width
+                && BlockScalar::should_fold(value, width)
+                && let Some(block) = BlockScalar::folded(value, width)
+            {
+                return Scalar::Block(block);
+            }
         }
         let mut out = String::with_capacity(value.len() + 2);
-        if !self.config.quote_all && is_plain_safe(value, self.config.compat) {
+        if !self.config.quote_all && is_plain_safe(value, self.config.compat, flow) {
             out.push_str(value);
         } else if self.config.quote_style == QuoteStyle::Single && is_single_quote_safe(value) {
             write_single_quoted(&mut out, value);

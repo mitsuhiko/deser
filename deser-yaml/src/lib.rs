@@ -70,7 +70,16 @@
 //! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
 //! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
 //! | [`Datetime`](deser::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
-//! | maps and sequences                      | block mappings and sequences, keys that are collections or long use `? key` |
+//! | maps and sequences                      | block mappings and sequences, flow style (`[a, b]`, `{a: 1}`) if compact (see [`FlowPolicy`]), keys that are collections or long use `? key` |
+//!
+//! The style of individual values can be requested with hints: the
+//! well-known [`Layout`](deser::hints::Layout) for collections (flow or
+//! block) and [`ScalarStyle`](style::ScalarStyle) for strings (see
+//! [`style`]).  Values set them with adapters, layers can set them for
+//! instance by path.  Hints are preferences: a value is written in another
+//! style if the requested one cannot represent it.  When reading, flow
+//! collections are reported as compact so that they stay flow collections
+//! through a [`Recording`](deser::de::Recording).
 //!
 //! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
 //! multiple documents are written with [`Serializer`].
@@ -97,12 +106,13 @@ mod quote;
 mod resolve;
 mod scanner;
 mod ser;
+pub mod style;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 pub use self::resolve::Version;
 pub use self::ser::{
-    MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, to_string,
+    FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, to_string,
 };
 pub use self::tag::{Tagged, set_tag, take_tag};
 

@@ -9,9 +9,12 @@
 //! by path.  The last hint set wins, so hints set by layers take precedence
 //! over the ones of the values.
 //!
-//! | Hint       | Honored by                                          |
-//! |------------|-----------------------------------------------------|
-//! | [`Layout`] | TOML (inline tables and arrays of tables)            |
+//! | Hint       | Honored by                                                  |
+//! |------------|-------------------------------------------------------------|
+//! | [`Layout`] | TOML (inline tables and arrays of tables), YAML (flow style) |
+//!
+//! Formats can define their own hints and adapters for them with [`Hint`]
+//! and [`Hinted`].
 //!
 //! ```
 //! use std::collections::BTreeMap;
@@ -80,115 +83,159 @@ impl Layout {
     }
 }
 
-macro_rules! layout_adapter {
-    ($(#[$meta:meta])* $name:ident, $layout:expr) => {
-        $(#[$meta])*
-        pub struct $name<A = Same>(PhantomData<fn() -> A>);
-
-        impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for $name<A> {
-            #[inline]
-            fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-                $layout.set(state);
-                A::serialize_as(value, state)
-            }
-
-            #[inline]
-            fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-                A::finish_as(value, state)
-            }
-
-            #[inline]
-            fn is_optional_as(value: &T) -> bool {
-                A::is_optional_as(value)
-            }
-
-            #[inline]
-            fn container_shape_as(value: &T) -> ContainerShape {
-                A::container_shape_as(value)
-            }
-
-            fn describe_as(value: &T, d: &mut dyn Describe) {
-                A::describe_as(value, d)
-            }
-
-            #[inline]
-            fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-                $layout.set(state);
-                A::__private_begin_as(value, state)
-            }
-
-            #[inline]
-            fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
-            where
-                T: Sized,
-            {
-                A::__private_slice_as_bytes_as(val)
-            }
-        }
-
-        impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for $name<A> {
-            #[inline]
-            fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-                A::deserialize_into_as(out)
-            }
-
-            #[inline]
-            fn initial_value_as() -> Option<T> {
-                A::initial_value_as()
-            }
-
-            #[inline]
-            fn __private_atom_into_as(
-                out: &mut Option<T>,
-                atom: Atom,
-                state: &mut State,
-            ) -> Result<(), Error> {
-                A::__private_atom_into_as(out, atom, state)
-            }
-
-            #[inline]
-            fn __private_borrowed_atom_into_as(
-                out: &mut Option<T>,
-                atom: Atom<'de>,
-                state: &mut State,
-            ) -> Result<(), Error> {
-                A::__private_borrowed_atom_into_as(out, atom, state)
-            }
-
-            #[inline]
-            fn __private_is_bytes_as() -> bool {
-                A::__private_is_bytes_as()
-            }
-
-            #[inline]
-            fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
-                A::__private_vec_from_bytes_as(bytes)
-            }
-
-            #[inline]
-            fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
-                A::__private_array_from_bytes_as(bytes)
-            }
-        }
-    };
+/// A hint that can be set by the [`Hinted`] adapter.
+///
+/// Hints are types which set some [event data](crate::State::event) for
+/// the value that is serialized.  Formats that define their own hints can
+/// use this to provide adapters for them:
+///
+/// ```
+/// use deser::State;
+/// use deser::hints::{Hint, Hinted};
+///
+/// #[derive(Debug, Default, Clone)]
+/// pub struct Emphasis(pub bool);
+///
+/// /// Sets the emphasis hint.
+/// pub struct Emphasized;
+///
+/// impl Hint for Emphasized {
+///     fn set(state: &mut State) {
+///         state.event_mut::<Emphasis>().0 = true;
+///     }
+/// }
+///
+/// /// The adapter: `#[deser(as = Emphasize)]`.
+/// pub type Emphasize<A = deser::adapters::Same> = Hinted<Emphasized, A>;
+/// ```
+pub trait Hint: 'static {
+    /// Sets the hint for the value that is serialized.
+    fn set(state: &mut State);
 }
 
-layout_adapter!(
-    /// Serializes a value with [`Layout::Compact`].
-    ///
-    /// This is an adapter (see [`adapters`](crate::adapters)) for all types,
-    /// by default it serializes the value with its own
-    /// [`Serialize`](crate::Serialize) implementation.  Another adapter can
-    /// be given as parameter (`Compact<Vec<Hex>>`).  It's transparent when
-    /// deserializing.
-    Compact,
-    Layout::Compact
-);
+/// An adapter which sets a [`Hint`] and serializes the value with another
+/// adapter.
+///
+/// This is an adapter (see [`adapters`](crate::adapters)) for all types
+/// that the adapter `A` supports, by default ([`Same`]) the value is
+/// serialized with its own [`Serialize`](crate::Serialize) implementation.
+/// It's transparent when deserializing.  [`Compact`] and [`Expanded`] are
+/// such adapters: `Compact<Vec<Hex>>` serializes a `Vec<Vec<u8>>` as hex
+/// strings with [`Layout::Compact`].
+pub struct Hinted<H, A = Same>(PhantomData<fn() -> (H, A)>);
 
-layout_adapter!(
-    /// Serializes a value with [`Layout::Expanded`].
-    ///
-    /// This works like [`Compact`].
-    Expanded,
-    Layout::Expanded
-);
+impl<T: ?Sized, H: Hint, A: SerializeAs<T>> SerializeAs<T> for Hinted<H, A> {
+    #[inline]
+    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        H::set(state);
+        A::serialize_as(value, state)
+    }
+
+    #[inline]
+    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish_as(value, state)
+    }
+
+    #[inline]
+    fn is_optional_as(value: &T) -> bool {
+        A::is_optional_as(value)
+    }
+
+    #[inline]
+    fn container_shape_as(value: &T) -> ContainerShape {
+        A::container_shape_as(value)
+    }
+
+    fn describe_as(value: &T, d: &mut dyn Describe) {
+        A::describe_as(value, d)
+    }
+
+    #[inline]
+    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        H::set(state);
+        A::__private_begin_as(value, state)
+    }
+
+    #[inline]
+    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    where
+        T: Sized,
+    {
+        A::__private_slice_as_bytes_as(val)
+    }
+}
+
+impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted<H, A> {
+    #[inline]
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        A::deserialize_into_as(out)
+    }
+
+    #[inline]
+    fn initial_value_as() -> Option<T> {
+        A::initial_value_as()
+    }
+
+    #[inline]
+    fn __private_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        A::__private_atom_into_as(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        A::__private_borrowed_atom_into_as(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_is_bytes_as() -> bool {
+        A::__private_is_bytes_as()
+    }
+
+    #[inline]
+    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes_as(bytes)
+    }
+
+    #[inline]
+    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes_as(bytes)
+    }
+}
+
+/// The [`Hint`] for [`Layout::Compact`].
+pub struct CompactLayout;
+
+impl Hint for CompactLayout {
+    #[inline]
+    fn set(state: &mut State) {
+        Layout::Compact.set(state);
+    }
+}
+
+/// The [`Hint`] for [`Layout::Expanded`].
+pub struct ExpandedLayout;
+
+impl Hint for ExpandedLayout {
+    #[inline]
+    fn set(state: &mut State) {
+        Layout::Expanded.set(state);
+    }
+}
+
+/// Serializes a value with [`Layout::Compact`].
+///
+/// See [`Hinted`], `Compact<A>` uses the adapter `A` for the value.
+pub type Compact<A = Same> = Hinted<CompactLayout, A>;
+
+/// Serializes a value with [`Layout::Expanded`].
+///
+/// See [`Hinted`], `Expanded<A>` uses the adapter `A` for the value.
+pub type Expanded<A = Same> = Hinted<ExpandedLayout, A>;
