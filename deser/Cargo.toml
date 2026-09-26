@@ -15,9 +15,13 @@ all-features = true
 
 [features]
 derive = ["deser-derive"]
+# more encodings for bytes.  data-encoding is an implementation detail and
+# not part of the public API.
+bytes-encoding = ["dep:data-encoding"]
 
 [dependencies]
 deser-derive = { version = "0.8.0", path = "../deser-derive", optional = true }
+data-encoding = { version = "2.6", optional = true }
 # types of these crates serialize as well-known extension types
 bigdecimal = { version = "0.4", optional = true, default-features = false, features = ["std"] }
 chrono = { version = "0.4.38", optional = true, default-features = false }

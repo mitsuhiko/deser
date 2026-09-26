@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
+use deser::bytes::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
@@ -10,24 +11,51 @@ use crate::scan::{find_escape, skip_to_escape};
 
 /// Configures how values are serialized to JSON.
 ///
-/// There are no options yet.  [`to_string`](Self::to_string) works like
-/// the [`to_string`](crate::to_string) function.
+/// [`to_string`](Self::to_string) works like the
+/// [`to_string`](crate::to_string) function.
 ///
 /// ```
+/// use deser::bytes::BytesFormat;
 /// use deser_json::SerializerConfig;
 ///
-/// const CONFIG: SerializerConfig = SerializerConfig::new();
-/// assert_eq!(CONFIG.to_string(&vec![1, 2]).unwrap(), "[1,2]");
+/// const CONFIG: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
+/// assert_eq!(CONFIG.to_string(&vec![1u8, 2]).unwrap(), "[1,2]");
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SerializerConfig {
-    _private: (),
+    bytes: BytesFormat,
 }
 
 impl SerializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> SerializerConfig {
-        SerializerConfig { _private: () }
+        SerializerConfig {
+            bytes: BytesFormat::BASE64,
+        }
+    }
+
+    /// Sets how bytes are represented.
+    ///
+    /// JSON has no bytes, by default they are written as base64 strings
+    /// ([`BytesFormat::BASE64`]).  Values can request a different format
+    /// (see [`deser::bytes`]) which takes precedence.  Map keys cannot be
+    /// sequences, bytes in keys are always strings.
+    ///
+    /// ```
+    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser_json::SerializerConfig;
+    ///
+    /// assert_eq!(deser_json::to_string(&b"\x01\xff").unwrap(), r#""Af8=""#);
+    /// const HEX: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    /// assert_eq!(HEX.to_string(&b"\x01\xff").unwrap(), r#""01ff""#);
+    /// ```
+    ///
+    /// Bytes in other formats than base64 (or sequences) need to be
+    /// deserialized with the same format (see
+    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
+    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
+        self.bytes = format;
+        self
     }
 
     /// Serializes the given value.
@@ -74,6 +102,7 @@ impl SerializerConfig {
         let mut writer = Writer {
             ser: Output {
                 out: Buffer::with_capacity(128),
+                bytes: self.bytes,
             },
             stack: Vec::new(),
             container: Container::Top,
@@ -87,9 +116,15 @@ impl SerializerConfig {
     }
 }
 
+/// A descriptor which does not request a bytes format.
+struct NoFormat;
+
+impl Descriptor for NoFormat {}
+
 /// The output of the serializer.
 struct Output {
     out: Buffer,
+    bytes: BytesFormat,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -116,7 +151,7 @@ impl Writer {
         match event {
             Event::Atom(atom) => {
                 if self.is_key {
-                    self.ser.write_key_atom(atom, self.first)?;
+                    self.ser.write_key_atom(atom, descriptor, self.first)?;
                     self.is_key = false;
                 } else {
                     match self.container {
@@ -189,7 +224,12 @@ impl Writer {
 impl Output {
     /// Writes an atom in key position including separator and colon.
     #[inline(always)]
-    fn write_key_atom(&mut self, atom: Atom, first: bool) -> Result<(), Error> {
+    fn write_key_atom(
+        &mut self,
+        atom: Atom,
+        descriptor: &dyn Descriptor,
+        first: bool,
+    ) -> Result<(), Error> {
         // borrowed strings do not need to be dropped, the atom is only
         // dropped for the other values.
         let atom = ManuallyDrop::new(atom);
@@ -199,12 +239,17 @@ impl Output {
                 self.write_key(val, first);
                 Ok(())
             }
-            _ => self.write_other_key_atom(ManuallyDrop::into_inner(atom), first),
+            _ => self.write_other_key_atom(ManuallyDrop::into_inner(atom), descriptor, first),
         }
     }
 
     #[inline(never)]
-    fn write_other_key_atom(&mut self, atom: Atom, first: bool) -> Result<(), Error> {
+    fn write_other_key_atom(
+        &mut self,
+        atom: Atom,
+        descriptor: &dyn Descriptor,
+        first: bool,
+    ) -> Result<(), Error> {
         if !first {
             self.write_char(',');
         }
@@ -222,6 +267,7 @@ impl Output {
                 self.write_char('"');
             }
             Atom::Ext(ref ext) => self.write_ext_key(ext)?,
+            Atom::Bytes(ref val) => self.write_bytes_str(val, descriptor),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -248,25 +294,51 @@ impl Output {
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
             Atom::F64(val) => self.write_float(val, descriptor),
-            _ => return self.write_other_atom(ManuallyDrop::into_inner(atom)),
+            _ => return self.write_other_atom(ManuallyDrop::into_inner(atom), descriptor),
         }
         Ok(())
     }
 
     #[inline(never)]
-    fn write_other_atom(&mut self, atom: Atom) -> Result<(), Error> {
+    fn write_other_atom(&mut self, atom: Atom, descriptor: &dyn Descriptor) -> Result<(), Error> {
         match atom {
             Atom::Str(ref val) => self.write_escaped_str(val),
             Atom::Ext(ref ext) => self.write_ext_value(ext)?,
-            Atom::Bytes(_) => {
-                return Err(Error::new(
-                    ErrorKind::UnsupportedType,
-                    "JSON doesn't support bytes",
-                ))
+            Atom::Bytes(ref val) => {
+                self.write_bytes(val, descriptor.bytes_format().unwrap_or(self.bytes))
             }
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         }
         Ok(())
+    }
+
+    /// Writes bytes in the given format.
+    fn write_bytes(&mut self, bytes: &[u8], format: BytesFormat) {
+        match format.encode(bytes) {
+            Some(encoded) => self.write_escaped_str(&encoded),
+            None => {
+                self.write_char('[');
+                for (idx, &byte) in bytes.iter().enumerate() {
+                    if idx > 0 {
+                        self.write_char(',');
+                    }
+                    self.write_u64(byte.into());
+                }
+                self.write_char(']');
+            }
+        }
+    }
+
+    /// Writes bytes as string, for instance as map key.
+    ///
+    /// Bytes that would be sequences are base64.
+    fn write_bytes_str(&mut self, bytes: &[u8], descriptor: &dyn Descriptor) {
+        let format = descriptor.bytes_format().unwrap_or(self.bytes);
+        let encoded = format
+            .encode(bytes)
+            .or_else(|| BytesFormat::BASE64.encode(bytes))
+            .unwrap_or_default();
+        self.write_escaped_str(&encoded);
     }
 
     #[inline(always)]
@@ -416,6 +488,9 @@ impl Output {
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),
             Atom::F64(val) => self.write_f64(val),
+            // like in TOML the fallbacks of extension values are never
+            // sequences
+            Atom::Bytes(val) => self.write_bytes_str(&val, &NoFormat),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,

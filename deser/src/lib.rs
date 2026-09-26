@@ -51,6 +51,8 @@ pub struct Account {
 //!   implement [`Serialize`] and [`Deserialize`] for the types of these crates.  They
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
+//! * `bytes-encoding` adds more encodings for bytes (such as base32) to
+//!   [`bytes`].
 //!
 #![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
 #![cfg_attr(
@@ -63,6 +65,7 @@ mod macros;
 mod event;
 
 pub mod adapters;
+pub mod bytes;
 pub mod de;
 mod error;
 pub mod ext;

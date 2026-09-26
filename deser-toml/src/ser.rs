@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
+use deser::bytes::BytesFormat;
 use deser::ext::ExtValue;
 use deser::ser::SerializeDriver;
 use deser::{Atom, Descriptor, Error, ErrorKind, Event, Serialize};
@@ -19,17 +20,48 @@ use deser::ext::{Datetime, Number, Timestamp};
 /// maps as `[[array]]` sections unless they are nested in other sequences.
 /// The output is compatible with TOML 1.0.
 ///
-/// There are no options yet.  [`to_string`](Self::to_string) works like
-/// the [`to_string`](crate::to_string) function.
+/// [`to_string`](Self::to_string) works like the
+/// [`to_string`](crate::to_string) function.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SerializerConfig {
-    _private: (),
+    bytes: BytesFormat,
 }
 
 impl SerializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> SerializerConfig {
-        SerializerConfig { _private: () }
+        SerializerConfig {
+            bytes: BytesFormat::BASE64,
+        }
+    }
+
+    /// Sets how bytes are represented.
+    ///
+    /// TOML has no bytes, by default they are written as base64 strings
+    /// ([`BytesFormat::BASE64`]).  Values can request a different format
+    /// (see [`deser::bytes`]) which takes precedence.  Keys cannot be
+    /// arrays, bytes in keys are always strings.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser_toml::SerializerConfig;
+    ///
+    /// let mut value = BTreeMap::new();
+    /// value.insert("a", vec![1u8, 255]);
+    /// assert_eq!(deser_toml::to_string(&value).unwrap(), "a = \"Af8=\"\n");
+    /// const HEX: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    /// assert_eq!(HEX.to_string(&value).unwrap(), "a = \"01ff\"\n");
+    /// const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
+    /// assert_eq!(SEQ.to_string(&value).unwrap(), "a = [1, 255]\n");
+    /// ```
+    ///
+    /// Bytes in other formats than base64 (or arrays) need to be
+    /// deserialized with the same format (see
+    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
+    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
+        self.bytes = format;
+        self
     }
 
     /// Serializes the given value.
@@ -49,6 +81,7 @@ impl SerializerConfig {
             doc: Document::default(),
             stack: Vec::new(),
             done: false,
+            bytes: self.bytes,
         };
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
@@ -93,6 +126,7 @@ struct Builder {
     doc: Document<'static>,
     stack: Vec<Frame>,
     done: bool,
+    bytes: BytesFormat,
 }
 
 /// A value converted from an atom.
@@ -123,7 +157,7 @@ impl Builder {
         match *frame {
             Frame::Table(_, ref mut key @ None) => match event {
                 Event::Atom(atom) => {
-                    *key = Some(key_to_string(atom)?);
+                    *key = Some(key_to_string(atom, descriptor, self.bytes)?);
                     Ok(())
                 }
                 Event::MapEnd => {
@@ -188,7 +222,10 @@ impl Builder {
     /// to the stack.
     fn value(&mut self, event: Event, descriptor: &dyn Descriptor) -> Result<Converted, Error> {
         match event {
-            Event::Atom(atom) => convert_atom(atom, descriptor),
+            Event::Atom(Atom::Bytes(ref bytes)) => Ok(Converted::Value(
+                self.bytes_value(bytes, descriptor.bytes_format().unwrap_or(self.bytes)),
+            )),
+            Event::Atom(atom) => convert_atom(atom, descriptor, self.bytes),
             Event::MapStart => {
                 let id = self.doc.new_table(TableKind::Header, Span::default());
                 self.stack.push(Frame::Table(id, None));
@@ -204,9 +241,30 @@ impl Builder {
             }
         }
     }
+
+    /// Converts bytes into a string or an array of integers.
+    fn bytes_value(&mut self, bytes: &[u8], format: BytesFormat) -> Value<'static> {
+        match format.encode(bytes) {
+            Some(encoded) => Value::Str(Cow::Owned(encoded)),
+            None => {
+                let id = self.doc.new_array(false, Span::default());
+                self.doc.arrays[id]
+                    .items
+                    .extend(bytes.iter().map(|&byte| Item {
+                        value: Value::Int(byte.into()),
+                        span: Span::default(),
+                    }));
+                Value::Array(id)
+            }
+        }
+    }
 }
 
-fn convert_atom(atom: Atom, descriptor: &dyn Descriptor) -> Result<Converted, Error> {
+fn convert_atom(
+    atom: Atom,
+    descriptor: &dyn Descriptor,
+    bytes: BytesFormat,
+) -> Result<Converted, Error> {
     Ok(Converted::Value(match atom {
         Atom::Null => return Ok(Converted::Null),
         Atom::Bool(value) => Value::Bool(value),
@@ -225,19 +283,20 @@ fn convert_atom(atom: Atom, descriptor: &dyn Descriptor) -> Result<Converted, Er
                 Value::Float(value)
             }
         }
-        Atom::Bytes(_) => {
-            return Err(Error::new(
-                ErrorKind::UnsupportedType,
-                "TOML does not support bytes",
-            ))
-        }
-        Atom::Ext(ref ext) => return convert_ext(ext, descriptor),
+        // bytes are converted by the builder, this is reached for the
+        // fallbacks of extension values which cannot be arrays.
+        Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, descriptor, bytes))),
+        Atom::Ext(ref ext) => return convert_ext(ext, descriptor, bytes),
         _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
     }))
 }
 
 #[cold]
-fn convert_ext(ext: &ExtValue, descriptor: &dyn Descriptor) -> Result<Converted, Error> {
+fn convert_ext(
+    ext: &ExtValue,
+    descriptor: &dyn Descriptor,
+    bytes: BytesFormat,
+) -> Result<Converted, Error> {
     if let Some(value) = ext.downcast_ref::<Datetime>() {
         if !value.is_valid() {
             return Err(Error::new(ErrorKind::Unexpected, "invalid datetime"));
@@ -263,14 +322,14 @@ fn convert_ext(ext: &ExtValue, descriptor: &dyn Descriptor) -> Result<Converted,
     let out_of_range = || Error::new(ErrorKind::OutOfRange, "integer out of range for TOML");
     if let Some(&value) = ext.downcast_ref::<u128>() {
         let value = u64::try_from(value).map_err(|_| out_of_range())?;
-        return convert_atom(Atom::U64(value), descriptor);
+        return convert_atom(Atom::U64(value), descriptor, bytes);
     }
     if let Some(&value) = ext.downcast_ref::<i128>() {
         return if let Ok(value) = i64::try_from(value) {
-            convert_atom(Atom::I64(value), descriptor)
+            convert_atom(Atom::I64(value), descriptor, bytes)
         } else {
             let value = u64::try_from(value).map_err(|_| out_of_range())?;
-            convert_atom(Atom::U64(value), descriptor)
+            convert_atom(Atom::U64(value), descriptor, bytes)
         };
     }
     match ext.fallback() {
@@ -278,16 +337,33 @@ fn convert_ext(ext: &ExtValue, descriptor: &dyn Descriptor) -> Result<Converted,
             ErrorKind::UnsupportedType,
             format!("TOML does not support {}", ext.name()),
         )),
-        fallback => convert_atom(fallback, descriptor),
+        fallback => convert_atom(fallback, descriptor, bytes),
     }
 }
 
-fn key_to_string(atom: Atom) -> Result<String, Error> {
+/// Encodes bytes as string.
+///
+/// Strings are required (for keys), so bytes that would be arrays are base64.
+fn encode_str(value: &[u8], descriptor: &dyn Descriptor, bytes: BytesFormat) -> String {
+    descriptor
+        .bytes_format()
+        .unwrap_or(bytes)
+        .encode(value)
+        .or_else(|| BytesFormat::BASE64.encode(value))
+        .unwrap_or_default()
+}
+
+fn key_to_string(
+    atom: Atom,
+    descriptor: &dyn Descriptor,
+    bytes: BytesFormat,
+) -> Result<String, Error> {
     Ok(match atom {
         Atom::Str(value) => value.into_owned(),
         Atom::Char(value) => value.to_string(),
         Atom::U64(value) => value.to_string(),
         Atom::I64(value) => value.to_string(),
+        Atom::Bytes(value) => encode_str(&value, descriptor, bytes),
         Atom::Ext(ref ext) => {
             if let Some(value) = ext.downcast_ref::<u128>() {
                 value.to_string()
@@ -296,7 +372,7 @@ fn key_to_string(atom: Atom) -> Result<String, Error> {
             } else {
                 match ext.fallback() {
                     Atom::Ext(_) => return Err(unsupported_key()),
-                    fallback => return key_to_string(fallback),
+                    fallback => return key_to_string(fallback, descriptor, bytes),
                 }
             }
         }

@@ -384,6 +384,17 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for Vec<A> {
                             )),
                         }
                     }
+                    // formats without native bytes represent them as strings
+                    Atom::Str(ref value) if A::__private_is_bytes_as() => {
+                        let bytes = crate::bytes::decode_str(value, state)?;
+                        match A::__private_vec_from_bytes_as(bytes) {
+                            Some(vec) => {
+                                *self.slot = Some(vec);
+                                Ok(())
+                            }
+                            None => self.unexpected_atom(atom, state),
+                        }
+                    }
                     other => self.unexpected_atom(other, state),
                 }
             }
@@ -975,6 +986,20 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
                             format!("unexpected bytes, expected {}", self.expecting()),
                         )),
                     },
+                    // formats without native bytes represent them as strings
+                    Atom::Str(ref value) if A::__private_is_bytes_as() => {
+                        let bytes = crate::bytes::decode_str(value, state)?;
+                        match A::__private_array_from_bytes_as::<N>(&bytes) {
+                            Some(array) => {
+                                *self.slot = Some(array);
+                                Ok(())
+                            }
+                            None => Err(Error::new(
+                                ErrorKind::WrongLength,
+                                "byte array of wrong length",
+                            )),
+                        }
+                    }
                     other => self.unexpected_atom(other, state),
                 }
             }
@@ -1203,6 +1228,11 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bytes(_) => Err(expected_borrowed("bytes")),
+            Atom::Str(_) => Err(Error::new(
+                ErrorKind::Unexpected,
+                "unexpected string, expected borrowed bytes (bytes cannot be borrowed \
+                 from strings, use Vec<u8> or Cow<[u8]> instead)",
+            )),
             other => self.unexpected_atom(other, state),
         }
     }
@@ -1234,6 +1264,11 @@ impl<'de, 'a> Sink<'de> for SlotWrapper<Cow<'a, [u8]>> {
         match atom {
             Atom::Bytes(value) => {
                 **self = Some(Cow::Owned(value.into_owned()));
+                Ok(())
+            }
+            // formats without native bytes represent them as strings
+            Atom::Str(ref value) => {
+                **self = Some(Cow::Owned(crate::bytes::decode_str(value, state)?));
                 Ok(())
             }
             other => self.unexpected_atom(other, state),

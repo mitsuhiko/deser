@@ -85,6 +85,11 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
                 **self = Some(Cow::Owned(value.into_owned()));
                 Ok(())
             }
+            // formats without native bytes represent them as strings
+            Atom::Str(ref value) => {
+                **self = Some(Cow::Owned(crate::bytes::decode_str(value, state)?));
+                Ok(())
+            }
             other => self.unexpected_atom(other, state),
         }
     }

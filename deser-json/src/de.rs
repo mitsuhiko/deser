@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::str;
 use std::sync::Arc;
 
+use deser::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::{ExtValue, Number as ExactNumber};
 use deser::Atom;
@@ -96,6 +97,7 @@ pub struct DeserializerConfig {
     track_locations: bool,
     exact_numbers: bool,
     trailing: Trailing,
+    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -111,7 +113,37 @@ impl DeserializerConfig {
             track_locations: false,
             exact_numbers: true,
             trailing: Trailing::Strict,
+            bytes: BytesFormat::BASE64,
         }
+    }
+
+    /// Sets how strings are decoded into bytes.
+    ///
+    /// JSON has no bytes, types that expect bytes (like `Vec<u8>`) accept
+    /// strings and sequences of integers instead.  By default strings are
+    /// decoded as base64, both with the standard and the URL-safe alphabet
+    /// and with or without padding.  This changes how strings are decoded,
+    /// for [`BytesFormat::SEQ`] they are still decoded as base64.
+    ///
+    /// ```
+    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser_json::DeserializerConfig;
+    ///
+    /// let value: Vec<u8> = deser_json::from_str(r#""Af8=""#).unwrap();
+    /// assert_eq!(value, [1, 255]);
+    /// let value: Vec<u8> = deser_json::from_str("[1, 255]").unwrap();
+    /// assert_eq!(value, [1, 255]);
+    ///
+    /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    /// let value: Vec<u8> = HEX.from_str(r#""01ff""#).unwrap();
+    /// assert_eq!(value, [1, 255]);
+    /// ```
+    ///
+    /// The format is placed into the state (see [`deser::bytes`]).  Values
+    /// that use an adapter for bytes are not affected.
+    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
+        self.bytes = format;
+        self
     }
 
     /// Controls what may follow a value.
@@ -415,6 +447,9 @@ impl<'a> Deserializer<'a> {
                 }
             };
             driver.state_mut().set_source(source);
+        }
+        if self.config.bytes != BytesFormat::BASE64 {
+            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
         }
 
         // for JSON Lines the input is cut off at the end of the line.  The

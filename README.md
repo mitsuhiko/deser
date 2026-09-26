@@ -52,8 +52,10 @@ To see some practical examples of this have a look at the
   when a serializer wants to process it.  This helps with compile times and makes
   using the crate easier.
 * **Native Bytes Support:** deser has built-in specialization for serializing
-  bytes and byte vectors.  A `Vec<u8>` is serialized as bytes and does not need
-  special handling for text-only formats such as JSON.
+  bytes and byte vectors.  A `Vec<u8>` is serialized as bytes in formats which
+  support them (such as CBOR) and as base64 in text-only formats such as JSON
+  without special handling.  Other encodings (such as hex) can be picked per
+  field or per format.
 * **Borrowing:** types can borrow strings and bytes from the data they are
   deserialized from (for instance `&str` fields), formats pass on slices of
   their input without copying them.

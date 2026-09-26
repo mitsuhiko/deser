@@ -313,13 +313,6 @@ fn test_unsupported() {
     );
 
     let mut map = BTreeMap::new();
-    map.insert("a", vec![1u8, 2, 3]);
-    assert_eq!(
-        to_string(&map).unwrap_err().kind(),
-        ErrorKind::UnsupportedType
-    );
-
-    let mut map = BTreeMap::new();
     map.insert(vec![1u32], 1);
     assert_eq!(
         to_string(&map).unwrap_err().kind(),

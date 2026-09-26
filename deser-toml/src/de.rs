@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use deser::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::ExtValue;
 use deser::{Atom, Error, ErrorKind, Event};
@@ -27,6 +28,7 @@ use crate::parser::{parse, ROOT};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
     track_locations: bool,
+    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -40,7 +42,36 @@ impl DeserializerConfig {
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
             track_locations: false,
+            bytes: BytesFormat::BASE64,
         }
+    }
+
+    /// Sets how strings are decoded into bytes.
+    ///
+    /// TOML has no bytes, types that expect bytes (like `Vec<u8>`) accept
+    /// strings and arrays of integers instead.  By default strings are
+    /// decoded as base64, both with the standard and the URL-safe alphabet
+    /// and with or without padding.  This changes how strings are decoded,
+    /// for [`BytesFormat::SEQ`] they are still decoded as base64.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser::bytes::{BytesFormat, Hex};
+    /// use deser_toml::DeserializerConfig;
+    ///
+    /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = \"Af8=\"").unwrap();
+    /// assert_eq!(value["a"], [1, 255]);
+    ///
+    /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    /// let value: BTreeMap<String, Vec<u8>> = HEX.from_str("a = \"01ff\"").unwrap();
+    /// assert_eq!(value["a"], [1, 255]);
+    /// ```
+    ///
+    /// The format is placed into the state (see [`deser::bytes`]).  Values
+    /// that use an adapter for bytes are not affected.
+    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
+        self.bytes = format;
+        self
     }
 
     /// Enables or disables location tracking.
@@ -168,6 +199,9 @@ impl<'a> Deserializer<'a> {
 
         if self.config.track_locations {
             driver.state_mut().set_source(self.input);
+        }
+        if self.config.bytes != BytesFormat::BASE64 {
+            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
         }
         emit(&doc, driver).map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

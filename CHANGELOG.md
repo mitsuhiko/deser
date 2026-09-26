@@ -303,6 +303,18 @@ All notable changes to deser are documented here.
 - Added `DeserializerState::is_map_key`.  Integer sinks now accept
   stringified integers in map key position which enables integer keyed
   maps in JSON in both directions.
+- Bytes are supported in JSON and TOML.  Formats without native bytes write
+  them as base64 strings and types that expect bytes (`Vec<u8>`, `[u8; N]`
+  and `Cow<[u8]>`) accept strings which are decoded as lenient base64 (both
+  alphabets, optional padding) in addition to sequences of integers.  The
+  new `deser::bytes` module has the encodings (`Base64`, `Base64Url`, `Hex`
+  and more, base32 with the new `bytes-encoding` feature) and
+  `BytesFormat`, which the serializer and deserializer configurations of
+  `deser-json` and `deser-toml` accept with `bytes`.  Values can request a
+  format with the new `Descriptor::bytes_format` which formats with native
+  bytes (like CBOR) ignore.  The adapters `Encoded<E>` (and the encodings
+  themselves, for instance `#[deser(as = Hex)]`) and `ByteSeq` request a
+  format, `EncodedStr<E>` writes strings in all formats.
 
 ## 0.8.0
 
