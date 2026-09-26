@@ -7,12 +7,29 @@
 [![License](https://img.shields.io/github/license/mitsuhiko/deser)](https://github.com/mitsuhiko/deser/blob/main/LICENSE)
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
-Deser is an experimental serialization system for Rust.  It wants to explore the
-possibilities of serialization and deserialization of structural formats such as
-JSON or CBOR.  It intentionally does not desire to support non self describing
-formats such as bincode.
+Deser is an experimental serialization system for Rust for self describing
+formats such as JSON, YAML, TOML and CBOR.  If you know serde you will feel at
+home: you derive `Serialize` and `Deserialize` on your types and pick a format
+crate.  What deser does differently is what happens when data gets messy:
 
-**This is not a production ready yet.**
+* **Errors point at the problem:** with line, column and the path to the
+  value (`servers[1].timeout`), also inside internally tagged and untagged
+  enums which have to buffer.
+* **No stack overflows:** deeply nested (or hostile) input does not recurse
+  on the call stack, and limits for untrusted input are a layer away.
+* **Bytes, dates, UUIDs and big numbers just work:** they are native where
+  the format supports them (CBOR byte strings, TOML date-times) and fall
+  back to strings everywhere else, without in-band signalling.
+* **Hooks between format and types:** layers see every value and can track
+  paths, rename keys, redact values or reject input, without support from
+  the format or your types.
+* **Fast to compile:** the derive generates little code and relies on
+  dynamic dispatch instead of monomorphizing everything.
+
+It intentionally does not support non self describing formats such as
+bincode.
+
+**This is not production ready yet.**
 
 ```rust
 use deser::{Serialize, Deserialize};
@@ -20,24 +37,79 @@ use deser::{Serialize, Deserialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[deser(rename_all = "camelCase")]
 pub struct Account {
-    id: usize,
+    id: u64,
     account_holder: String,
+    #[deser(default)]
     is_deactivated: bool,
 }
+
+let account: Account = deser_json::from_str(r#"{"id": 42, "accountHolder": "Jane"}"#).unwrap();
+assert_eq!(account.account_holder, "Jane");
+assert_eq!(
+    deser_json::to_string(&account).unwrap(),
+    r#"{"id":42,"accountHolder":"Jane","isDeactivated":false}"#
+);
 ```
 
-This generates out the necessary
-[`Serialize`](https://docs.rs/deser/latest/deser/ser/trait.Serialize.html) and
-[`Deserialize`](https://docs.rs/deser/latest/deser/de/trait.Deserialize.html)
-implementations.  Deriving requires the `derive` feature, which is not
-enabled by default:
+The same type works unchanged with
+[`deser-yaml`](https://docs.rs/deser-yaml),
+[`deser-toml`](https://docs.rs/deser-toml) and
+[`deser-cbor`](https://docs.rs/deser-cbor).  Deriving requires the `derive`
+feature, which is not enabled by default:
 
 ```toml
 [dependencies]
 deser = { version = "0.8", features = ["derive"] }
+deser-json = "0.8"
 ```
 
-To see some practical examples of this have a look at the
+## Errors That Help
+
+Consider a config file with an internally tagged enum where the tag comes
+last.  To deserialize it the values have to be buffered until the tag is
+known.  In serde this is where locations and paths get lost, in deser they
+are retained:
+
+```rust
+use deser::Deserialize;
+use deser::de::Format;
+use deser_path::PathLayer;
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    servers: Vec<Server>,
+}
+
+#[derive(Debug, Deserialize)]
+#[deser(tag = "type", rename_all = "lowercase")]
+enum Server {
+    Http { url: String, timeout: u32 },
+    File { path: String },
+}
+
+let toml = r#"
+[[servers]]
+type = "file"
+path = "/srv/www"
+
+[[servers]]
+url = "https://example.com/"
+timeout = "30s"
+type = "http"
+"#;
+
+let err = deser_toml::Deserializer::from_str(toml)
+    .deserialize_with::<Config, _>(|driver| driver.push_layer(PathLayer::new()))
+    .unwrap_err();
+assert_eq!(err.path(), Some("servers[1].timeout"));
+assert_eq!((err.line(), err.column()), (Some(8), Some(11)));
+
+// Unexpected: unexpected string, expected u32 at line 8 column 11 (path: servers[1].timeout)
+println!("{err}");
+```
+
+Swap `deser_toml` for `deser_yaml` or `deser_json` and you get the same
+quality of errors.  To see more practical examples have a look at the
 [examples](https://github.com/mitsuhiko/deser/tree/main/examples).
 
 ## Design Goals
@@ -96,7 +168,7 @@ To see some practical examples of this have a look at the
   location in the input and (with the path layer) the path of the value
   they refer to, also for values which are buffered.
 
-Deser does not intend on replacing serde but it attempts to address some if it's
+Deser does not intend on replacing serde but it attempts to address some of its
 shortcomings.  For more information there is a document about [Serde
 Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) with
 more details.
@@ -115,8 +187,10 @@ included benchmark.
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
   providing the base functionality
-* [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): basic
-  JSON implementation for deser
+* [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive):
+  the derive macros, use them through the `derive` feature of `deser`
+* [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): JSON
+  implementation for deser
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
   implementation for deser with support for tags
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
