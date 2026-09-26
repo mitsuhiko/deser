@@ -123,6 +123,7 @@ fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
 const INPUT: &[u8] = b"1\n\n22\nhello\n\n333";
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_read_in_chunks() {
     for size in chunk_sizes(INPUT.len()) {
         let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines);
@@ -154,6 +155,7 @@ fn test_iter() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_errors_refer_to_the_stream() {
     for size in 1..=8 {
         // errors of values continue with the next value
@@ -239,6 +241,7 @@ fn test_decode_buffer() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_large_values() {
     // larger than a few reads, miri needs smaller values
     let long = "x".repeat(if cfg!(miri) { 20_000 } else { 100_000 });

@@ -82,6 +82,7 @@ const VALUES: &str = r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
 {"a": {"b": "}]"}, "c": [false]} "\u00e4ä" 42"#;
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_stop_in_chunks() {
     let expected = read_in_memory(&STOP, VALUES);
     assert_eq!(expected.len(), 11);
@@ -91,6 +92,7 @@ fn test_stop_in_chunks() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_values_without_whitespace() {
     let input = r#"[1]{"a":2}"x"3"#;
     let expected = read_in_memory(&STOP, input);
@@ -101,6 +103,7 @@ fn test_values_without_whitespace() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_newline_in_chunks() {
     let input = "[1, 2]\n\n  {\"a\": \"b\"}  \r\n\"x\"\n   \n3";
     let expected = read_in_memory(&NEWLINE, input);
@@ -111,6 +114,7 @@ fn test_newline_in_chunks() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_strict_in_chunks() {
     let input = " [1, {\"a\": [true]}] \n";
     let expected = read_in_memory(&STRICT, input);

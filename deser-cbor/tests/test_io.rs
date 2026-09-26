@@ -64,6 +64,7 @@ fn sequence() -> Vec<u8> {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_sequence_in_chunks() {
     let input = sequence();
     let mut de = Deserializer::from_slice(&input);

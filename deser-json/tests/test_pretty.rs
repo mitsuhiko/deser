@@ -313,6 +313,7 @@ fn test_inline_layout_hints() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_inline_widths() {
     let value = (
         service(),

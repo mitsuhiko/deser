@@ -54,6 +54,7 @@ fn test_flatten() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_container_lengths() {
     // The length of containers is not known upfront, the header is patched
     // when the container ends.  Check all header sizes.
@@ -86,6 +87,7 @@ fn test_container_lengths() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_nested_container_lengths() {
     // nested containers which grow their headers move the contents of the
     // outer containers.  In miri only just past the first header growth.
@@ -230,6 +232,7 @@ fn canonical_rfc_key_order_example() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn canonical_hash_maps() {
     let map: HashMap<i64, bool> = [(100, true), (-1, false)].into_iter().collect();
     assert_eq!(to_hex(&CANONICAL.to_vec(&map).unwrap()), "a21864f520f4");

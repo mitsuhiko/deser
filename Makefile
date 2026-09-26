@@ -22,6 +22,11 @@ endif
 MIRI_CRATES := deser-cbor deser deser-json deser-path deser-location deser-debug
 # every miri run is single threaded
 MIRI_JOBS ?= 6
+# Tests that are slow in miri and do not test unsafe code opt out with
+# `#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]`.  Tests
+# with unsafe code under test should rather do less work in miri (see the
+# uses of `cfg!(miri)`).  `make miri-test-full` also runs the ignored tests.
+MIRI_TEST_ARGS ?=
 
 # keep in sync with `rust-version` in Cargo.toml
 MSRV := 1.88
@@ -39,8 +44,11 @@ test:
 miri-test:
 	@$(RUN) "miri:setup" "cargo +nightly miri setup"
 	@$(RUN) -j $(MIRI_JOBS) $(foreach crate,$(MIRI_CRATES), \
-		"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features" \
-		"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features")
+		"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)" \
+		"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)")
+
+miri-test-full:
+	@$(MAKE) --no-print-directory miri-test MIRI_TEST_ARGS=--include-ignored
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
@@ -79,4 +87,4 @@ bench:
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test check msrv doc format format-check lint bench bench-compile-times
+.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint bench bench-compile-times
