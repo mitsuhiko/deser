@@ -535,7 +535,7 @@ impl Output {
             }
             #[cfg(not(feature = "speedups"))]
             {
-                self.write_str(val.to_string().as_str())
+                self.write_str(&format_finite(val))
             }
         } else {
             self.write_str("null")
@@ -742,6 +742,128 @@ static ESCAPE: [u8; 256] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // E
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
 ];
+
+/// Formats a finite float like `ryu::Buffer::format_finite`.
+///
+/// This is used without the `speedups` feature so that the output does not
+/// depend on the feature: the shortest digits that read back as the value,
+/// in scientific notation only for very large and very small values and
+/// always with a `.` or an exponent (`1.0`, `0.001`, `1e16`, `1.5e-7`).
+#[cfg_attr(feature = "speedups", allow(dead_code))]
+fn format_finite(val: f64) -> String {
+    // the standard library formats the shortest digits that read back
+    let scientific = format!("{:e}", val);
+    let (mantissa, exp) = scientific.split_once('e').unwrap();
+    let exp: i32 = exp.parse().unwrap();
+    let (sign, mantissa) = match mantissa.strip_prefix('-') {
+        Some(mantissa) => ("-", mantissa),
+        None => ("", mantissa),
+    };
+    let mut digits = mantissa.replace('.', "");
+    // if the value is exactly between two candidates, the standard library
+    // rounds up and ryu to the even one
+    let last = digits.as_bytes()[digits.len() - 1];
+    if (last - b'0') % 2 == 1 && is_tie(val.abs(), &digits, exp) {
+        digits.pop();
+        digits.push((last - 1) as char);
+    }
+    let len = digits.len() as i32;
+    // the value is digits * 10^k and 10^(kk - 1) <= value < 10^kk
+    let kk = exp + 1;
+    let k = kk - len;
+    let mut out = String::with_capacity(len as usize + 8);
+    out.push_str(sign);
+    if 0 <= k && kk <= 16 {
+        // 1234e7 -> 12340000000.0
+        out.push_str(&digits);
+        out.extend(std::iter::repeat_n('0', k as usize));
+        out.push_str(".0");
+    } else if 0 < kk && kk <= 16 {
+        // 1234e-2 -> 12.34
+        out.push_str(&digits[..kk as usize]);
+        out.push('.');
+        out.push_str(&digits[kk as usize..]);
+    } else if -5 < kk && kk <= 0 {
+        // 1234e-6 -> 0.001234
+        out.push_str("0.");
+        out.extend(std::iter::repeat_n('0', -kk as usize));
+        out.push_str(&digits);
+    } else {
+        // 1e30, 1234e30 -> 1.234e33
+        out.push_str(&digits[..1]);
+        if len > 1 {
+            out.push('.');
+            out.push_str(&digits[1..]);
+        }
+        out.push('e');
+        out.push_str(&(kk - 1).to_string());
+    }
+    out
+}
+
+/// Returns `true` if the value is exactly between the digits and the digits
+/// with the last one decremented (with the same exponent).
+#[cfg_attr(feature = "speedups", allow(dead_code))]
+#[cold]
+fn is_tie(val: f64, digits: &str, exp: i32) -> bool {
+    let mut middle = digits.to_string();
+    let last = middle.pop().unwrap();
+    middle.push((last as u8 - 1) as char);
+    middle.push('5');
+    let matches = |precision: usize| {
+        let formatted = format!("{:.*e}", precision, val);
+        let (mantissa, formatted_exp) = formatted.split_once('e').unwrap();
+        formatted_exp.parse() == Ok(exp)
+            && mantissa.replace('.', "").trim_end_matches('0') == middle
+    };
+    // the rounded digits are cheap to check, the exact ones are only
+    // formatted if they match.  The exact expansion of a double has at
+    // most 767 significant digits.
+    matches(digits.len()) && matches(800)
+}
+
+#[cfg(all(test, feature = "speedups"))]
+#[test]
+fn test_format_finite_like_ryu() {
+    let check = |val: f64| {
+        assert_eq!(
+            format_finite(val),
+            ryu::Buffer::new().format_finite(val),
+            "{:e}",
+            val
+        );
+    };
+    for val in [
+        0.0,
+        -0.0,
+        1.0,
+        0.1,
+        1e15,
+        1e16,
+        1.5e16,
+        123456789012345.6,
+        1e-5,
+        1e-4,
+        1.5e-5,
+        f64::MAX,
+        f64::MIN,
+        f64::MIN_POSITIVE,
+        f64::EPSILON,
+        5e-324,
+    ] {
+        check(val);
+    }
+    let mut x: u64 = 0x2545_f491_4f6c_dd1d;
+    for _ in 0..100_000 {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        let val = f64::from_bits(x);
+        if val.is_finite() {
+            check(val);
+        }
+    }
+}
 
 /// Serializes a value to JSON.
 ///

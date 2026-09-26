@@ -59,6 +59,9 @@ All notable changes to deser are documented here.
   sequences with the `Layout::Compact` hint are written on a single line,
   with `SerializerConfig::inline(InlinePolicy::LeafIfFits(width))` also
   the ones that only contain scalars and fit into the width.
+- `deser-json` writes floats the same way with and without the `speedups`
+  feature.  Without it floats were written like `Display` does, without
+  exponent and without fraction (`1.0` as `1`, `1e300` with 301 digits).
 - Added `deser::hints` with well-known formatting hints.  `Layout` asks
   formats to lay out a map or sequence compact (inline) or expanded, the
   `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and

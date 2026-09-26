@@ -260,3 +260,32 @@ fn test_float_precision() {
     );
     assert_eq!(to_string(&f32::NAN).unwrap(), "null");
 }
+
+#[test]
+fn test_float_format() {
+    // the output does not depend on the speedups feature
+    for (value, expected) in [
+        (0.0, "0.0"),
+        (-0.0, "-0.0"),
+        (1.0, "1.0"),
+        (-1.5, "-1.5"),
+        (0.1, "0.1"),
+        (123.0, "123.0"),
+        (1e15, "1000000000000000.0"),
+        (1e16, "1e16"),
+        (1.5e16, "1.5e16"),
+        (1e300, "1e300"),
+        (0.001, "0.001"),
+        (1e-5, "0.00001"),
+        (1.5e-5, "0.000015"),
+        (1e-7, "1e-7"),
+        (1.25e-7, "1.25e-7"),
+        (f64::MAX, "1.7976931348623157e308"),
+        (5e-324, "5e-324"),
+        // exactly between two shortest candidates, the even one is used
+        (-(1149636667324797.0 + 0.25), "-1149636667324797.2"),
+        (165793407361858.0 + 0.125, "165793407361858.12"),
+    ] {
+        assert_eq!(to_string(&value).unwrap(), expected);
+    }
+}
