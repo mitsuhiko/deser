@@ -341,6 +341,15 @@ impl<'a> Deserializer<'a> {
         }
     }
 
+    /// Creates a deserializer for the frame of a value in a stream.
+    ///
+    /// Only whitespace may follow the value in the frame.
+    pub(crate) fn from_frame(input: &'a [u8], config: &DeserializerConfig) -> Deserializer<'a> {
+        let mut de = Deserializer::from_slice_with_config(input, config);
+        de.config.trailing = Trailing::Strict;
+        de
+    }
+
     /// Returns the configuration.
     pub fn config(&self) -> &DeserializerConfig {
         &self.config

@@ -47,9 +47,9 @@ Features:
   (also per value through hints), literal block scalars.
 * Source locations in errors and through `deser_location::Spanned`.
 * Deeply nested input does not overflow the stack.
-* `from_reader` and `to_writer` work with `std::io`, and the `Decoder` and
-  `Encoder` read and write streams of documents with `deser::io` or async
-  runtimes (`deser-tokio`) while only buffering one document at a time.
+* `from_reader` and `to_writer` work with `std::io`, and the configurations
+  read and write streams of documents with `deser::io` or async runtimes
+  (`deser-tokio`) while only buffering one document at a time.
 
 ## Conformance
 

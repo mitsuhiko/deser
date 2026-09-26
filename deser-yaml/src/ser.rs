@@ -131,6 +131,7 @@ pub struct SerializerConfig {
     pub(crate) timestamp_tag: bool,
     pub(crate) document_start: bool,
     pub(crate) version_directive: bool,
+    pub(crate) end_documents: bool,
 }
 
 impl Default for SerializerConfig {
@@ -157,6 +158,7 @@ impl SerializerConfig {
             timestamp_tag: false,
             document_start: false,
             version_directive: false,
+            end_documents: false,
         }
     }
 
@@ -363,6 +365,56 @@ impl SerializerConfig {
         self
     }
 
+    /// Ends documents with a document end marker (`...`).
+    ///
+    /// When a stream of documents is read (see [`deser::io`]), a document
+    /// is complete once the next document starts or once it's ended with
+    /// `...`.  For streams that stay open (like sockets) this allows the
+    /// reader to see the end of a document without waiting for the next
+    /// one.
+    ///
+    /// ```
+    /// use deser::io::Writer;
+    /// use deser_yaml::SerializerConfig;
+    ///
+    /// const ENDED: SerializerConfig = SerializerConfig::new().end_documents(true);
+    /// let mut writer = Writer::new(Vec::new(), ENDED);
+    /// writer.write(&"a").unwrap();
+    /// writer.write(&"b").unwrap();
+    /// assert_eq!(writer.into_inner(), b"a\n...\n---\nb\n...\n");
+    /// ```
+    pub const fn end_documents(mut self, yes: bool) -> SerializerConfig {
+        self.end_documents = yes;
+        self
+    }
+
+    /// Serializes the value of a driver as a document of a stream.
+    ///
+    /// `index` is the number of documents written before.
+    pub(crate) fn document(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        index: usize,
+    ) -> Result<String, Error> {
+        let mut out = String::new();
+        if self.version_directive {
+            // directives can only follow the end of a document
+            if index > 0 && !self.end_documents {
+                out.push_str("...\n");
+            }
+            out.push_str("%YAML 1.2\n---\n");
+        } else if self.document_start || index > 0 {
+            out.push_str("---\n");
+        }
+        let mut emitter = Emitter::new(self, out);
+        driver.drive(|event, state| emitter.event(event, state))?;
+        let mut document = emitter.finish()?;
+        if self.end_documents {
+            document.push_str("...\n");
+        }
+        Ok(document)
+    }
+
     /// Serializes the given value.
     pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
         self.to_string_with(value, |_| {})
@@ -468,17 +520,9 @@ impl Serializer {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut out = String::new();
-        if self.config.version_directive {
-            out.push_str("%YAML 1.2\n---\n");
-        } else if self.config.document_start || self.documents > 0 {
-            out.push_str("---\n");
-        }
-        let mut emitter = Emitter::new(&self.config, out);
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        driver.drive(|event, state| emitter.event(event, state))?;
-        let document = emitter.finish()?;
+        let document = self.config.document(&mut driver, self.documents)?;
         self.documents += 1;
         Ok(document)
     }

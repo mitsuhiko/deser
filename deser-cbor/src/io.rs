@@ -2,8 +2,8 @@
 use std::io::{Read, Write};
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
-use deser::io::Frame;
-use deser::ser::Serialize;
+use deser::io::{Decoder, Encoder, Frame};
+use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
@@ -17,26 +17,11 @@ const MAJOR_TAG: u8 = 6;
 const MAJOR_SIMPLE: u8 = 7;
 const INDEFINITE: u8 = 31;
 
-/// Splits a stream of CBOR data items into items (see [`deser::io`]).
+/// The state of a CBOR stream that is read.
 ///
-/// The stream is a [CBOR sequence](https://www.rfc-editor.org/rfc/rfc8742)
-/// of data items that follow each other.  An item is complete once its last
-/// byte was read.  Reading continues after items that fail to deserialize,
-/// items that are not well-formed end the stream.
-///
-/// ```
-/// use deser::io::Reader;
-///
-/// let mut reader = Reader::new(&[0x01, 0x62, b'h', b'i'][..], deser_cbor::Decoder::default());
-/// assert_eq!(reader.read::<u32>().unwrap(), Some(1));
-/// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hi"));
-/// assert_eq!(reader.read::<u32>().unwrap(), None);
-/// ```
-///
-/// Items are parsed like with a [`Deserializer`], so they can borrow from
-/// the stream's buffer (see [`deser::io::Reader::read_borrowed`]).
-pub struct Decoder {
-    config: DeserializerConfig,
+/// See [`Decoder::State`].
+#[derive(Debug, Default)]
+pub struct StreamState {
     // the position up to which the item was scanned
     pos: usize,
     // the number of items the open containers (and tags) still need, `None`
@@ -44,12 +29,6 @@ pub struct Decoder {
     stack: Vec<Option<u64>>,
     // an item was not well-formed
     failed: bool,
-}
-
-impl Default for Decoder {
-    fn default() -> Decoder {
-        Decoder::new(&DeserializerConfig::new())
-    }
 }
 
 /// The result of scanning an item.
@@ -62,17 +41,7 @@ enum Scan {
     Malformed(usize),
 }
 
-impl Decoder {
-    /// Creates a decoder with the given configuration.
-    pub fn new(config: &DeserializerConfig) -> Decoder {
-        Decoder {
-            config: config.clone(),
-            pos: 0,
-            stack: Vec::new(),
-            failed: false,
-        }
-    }
-
+impl StreamState {
     /// Scans the item from the current position.
     fn scan(&mut self, input: &[u8]) -> Scan {
         loop {
@@ -170,9 +139,30 @@ impl Decoder {
     }
 }
 
-impl deser::io::Decoder for Decoder {
-    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
-        if self.failed {
+/// Splits a stream of CBOR data items into items (see [`deser::io`]).
+///
+/// The stream is a [CBOR sequence](https://www.rfc-editor.org/rfc/rfc8742)
+/// of data items that follow each other.  An item is complete once its last
+/// byte was read.  Reading continues after items that fail to deserialize,
+/// items that are not well-formed end the stream.
+///
+/// ```
+/// use deser::io::Reader;
+/// use deser_cbor::DeserializerConfig;
+///
+/// let mut reader = Reader::new(&[0x01, 0x62, b'h', b'i'][..], DeserializerConfig::new());
+/// assert_eq!(reader.read::<u32>().unwrap(), Some(1));
+/// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hi"));
+/// assert_eq!(reader.read::<u32>().unwrap(), None);
+/// ```
+///
+/// Items are parsed like with a [`Deserializer`], so they can borrow from
+/// the stream's buffer (see [`deser::io::Reader::read_borrowed`]).
+impl Decoder for DeserializerConfig {
+    type State = StreamState;
+
+    fn frame(&self, state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        if state.failed {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "cannot continue after an item that is not well-formed",
@@ -181,18 +171,18 @@ impl deser::io::Decoder for Decoder {
         if input.is_empty() && eof {
             return Ok(Frame::End);
         }
-        let end = match self.scan(input) {
+        let end = match state.scan(input) {
             Scan::Complete(end) => end,
             Scan::Incomplete if !eof => return Ok(Frame::Incomplete { consumed: 0 }),
             // the parser reports the error
             Scan::Incomplete => input.len(),
             Scan::Malformed(offset) => {
-                self.failed = true;
+                state.failed = true;
                 offset + 1
             }
         };
-        self.pos = 0;
-        self.stack.clear();
+        state.pos = 0;
+        state.stack.clear();
         Ok(Frame::Value {
             start: 0,
             end,
@@ -201,11 +191,11 @@ impl deser::io::Decoder for Decoder {
     }
 
     fn drive<'de>(
-        &mut self,
+        &self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(frame, &self.config);
+        let mut de = Deserializer::from_slice_with_config(frame, self);
         de.drive(driver)?;
         de.end()
     }
@@ -218,64 +208,41 @@ impl deser::io::Decoder for Decoder {
 ///
 /// ```
 /// use deser::io::Writer;
+/// use deser_cbor::SerializerConfig;
 ///
-/// let mut writer = Writer::new(Vec::new(), deser_cbor::Encoder::default());
+/// let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
 /// writer.write(&1u32).unwrap();
 /// writer.write(&"hi").unwrap();
 /// assert_eq!(writer.into_inner(), [0x01, 0x62, b'h', b'i']);
 /// ```
-pub struct Encoder {
-    config: SerializerConfig,
-}
-
-impl Default for Encoder {
-    fn default() -> Encoder {
-        Encoder::new(&SerializerConfig::new())
-    }
-}
-
-impl Encoder {
-    /// Creates an encoder with the given configuration.
-    pub fn new(config: &SerializerConfig) -> Encoder {
-        Encoder {
-            config: config.clone(),
-        }
-    }
-}
-
-impl deser::io::Encoder for Encoder {
-    fn encode(&mut self, value: &dyn Serialize, out: &mut Vec<u8>) -> Result<(), Error> {
-        let bytes = self.config.to_vec(value)?;
+impl Encoder for SerializerConfig {
+    fn encode(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        _index: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let bytes = self.serialize_driver(driver)?;
         out.extend_from_slice(&bytes);
         Ok(())
     }
 }
 
 impl DeserializerConfig {
-    /// Creates a [`Decoder`] to read a stream with this configuration.
-    pub fn decoder(&self) -> Decoder {
-        Decoder::new(self)
-    }
-
     /// Deserializes a data item from a reader.
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser::io::from_reader(reader, self.decoder())
+        deser::io::from_reader(reader, self)
     }
 }
 
 impl SerializerConfig {
-    /// Creates an [`Encoder`] to write a stream with this configuration.
-    pub fn encoder(&self) -> Encoder {
-        Encoder::new(self)
-    }
-
     /// Serializes a value to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self.encoder(), value)
+        deser::io::to_writer(writer, self, value)
     }
 }
 
@@ -283,7 +250,7 @@ impl SerializerConfig {
 ///
 /// The reader is read to the end, no data may follow the item.  The reader
 /// does not need to be buffered.  To read more than one item (a CBOR
-/// sequence) use a [`deser::io::Reader`] with a [`Decoder`].
+/// sequence) use a [`deser::io::Reader`] with a [`DeserializerConfig`].
 ///
 /// ```
 /// let value: Vec<u32> = deser_cbor::from_reader(&[0x82, 0x01, 0x02][..]).unwrap();

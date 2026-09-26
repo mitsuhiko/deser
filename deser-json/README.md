@@ -43,7 +43,7 @@ Why use it:
 * **JSON Lines:** a `Deserializer` can read one value per line and
   recovers from errors in individual lines.
 * **Streams:** `from_reader` and `to_writer` work with `std::io`, and the
-  `Decoder` and `Encoder` read and write streams of values (JSON Lines or
+  configurations read and write streams of values (JSON Lines or
   concatenated JSON) with `deser::io` or async runtimes (`deser-tokio`)
   while only buffering one value at a time.
 * **Source locations:** errors carry line and column and with

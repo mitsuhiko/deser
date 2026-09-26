@@ -1,8 +1,9 @@
 //! Read and write [deser](https://docs.rs/deser) values with
 //! [tokio](https://tokio.rs).
 //!
-//! This crate connects the decoders and encoders of the data formats (see
-//! [`deser::io`]) to tokio's [`AsyncRead`] and [`AsyncWrite`].  It works
+//! This crate connects the configurations of the data formats (which
+//! implement [`Decoder`] and [`Encoder`], see [`deser::io`]) to tokio's
+//! [`AsyncRead`] and [`AsyncWrite`].  It works
 //! with every format and only buffers until a value is complete, so
 //! streams of values (like JSON Lines, CBOR sequences or YAML documents)
 //! can be read from sockets with bounded memory:
@@ -14,6 +15,9 @@
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //! use deser_tokio::{Reader, Writer};
 //!
+//! const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+//! const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//!
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct Request {
 //!     id: u64,
@@ -23,19 +27,17 @@
 //! # let (client, server) = tokio::io::duplex(1024);
 //! # let client = tokio::spawn(async move {
 //! #     let (input, output) = tokio::io::split(client);
-//! #     let mut requests = Writer::new(output, SerializerConfig::new().encoder().lines());
+//! #     let mut requests = Writer::new(output, WRITE_LINES);
 //! #     requests.write(&Request { id: 1, method: "ping".into() }).await.unwrap();
 //! #     requests.shutdown().await.unwrap();
-//! #     let config = DeserializerConfig::new().trailing(Trailing::Newline);
-//! #     let mut responses = Reader::new(input, config.decoder());
+//! #     let mut responses = Reader::new(input, READ_LINES);
 //! #     assert_eq!(responses.read::<u64>().await.unwrap(), Some(1));
 //! # });
 //! let (input, output) = tokio::io::split(server);
 //!
 //! // JSON Lines in, JSON Lines out
-//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
-//! let mut requests = Reader::new(input, config.decoder());
-//! let mut responses = Writer::new(output, SerializerConfig::new().encoder().lines());
+//! let mut requests = Reader::new(input, READ_LINES);
+//! let mut responses = Writer::new(output, WRITE_LINES);
 //! while let Some(request) = requests.read::<Request>().await? {
 //!     responses.write(&request.id).await?;
 //! }
@@ -72,7 +74,7 @@ use std::task::{Context, Poll, ready};
 
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser::io::{DecodeBuffer, Decoder, Encoder, Status};
-use deser::ser::Serialize;
+use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
 use futures_core::Stream;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
@@ -85,16 +87,16 @@ pub use self::codec::Codec;
 
 /// Reads values from an [`AsyncRead`].
 ///
-/// The values are split and deserialized with a [`Decoder`] of a data
-/// format.  The reader buffers the input so it does not need to be
+/// The values are split and deserialized with a [`Decoder`] (the
+/// deserializer configuration of a data format).  The reader buffers the input so it does not need to be
 /// buffered.
-pub struct Reader<R, D> {
+pub struct Reader<R, D: Decoder> {
     reader: R,
     buffer: DecodeBuffer<D>,
 }
 
 // the reader is never pinned structurally
-impl<R, D> Unpin for Reader<R, D> {}
+impl<R, D: Decoder> Unpin for Reader<R, D> {}
 
 impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Creates a reader.
@@ -224,15 +226,15 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
 /// A [`Stream`] of the values of a [`Reader`].
 ///
 /// Created with [`Reader::into_stream`].
-pub struct ReaderStream<R, D, T> {
+pub struct ReaderStream<R, D: Decoder, T> {
     reader: Reader<R, D>,
     failed: bool,
     _marker: PhantomData<fn() -> T>,
 }
 
-impl<R, D, T> Unpin for ReaderStream<R, D, T> {}
+impl<R, D: Decoder, T> Unpin for ReaderStream<R, D, T> {}
 
-impl<R, D, T> ReaderStream<R, D, T> {
+impl<R, D: Decoder, T> ReaderStream<R, D, T> {
     /// Returns the reader.
     pub fn into_inner(self) -> Reader<R, D> {
         self.reader
@@ -258,7 +260,8 @@ impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned> Stream for ReaderStr
 
 /// Writes values to an [`AsyncWrite`].
 ///
-/// The values are serialized with an [`Encoder`] of a data format.  Every
+/// The values are serialized with an [`Encoder`] (the serializer
+/// configuration of a data format).  Every
 /// value is written with a single
 /// [`write_all`](tokio::io::AsyncWriteExt::write_all), wrap the writer in a
 /// [`BufWriter`](tokio::io::BufWriter) when writing many small values (and
@@ -267,6 +270,7 @@ pub struct Writer<W, E> {
     writer: W,
     encoder: E,
     buffer: Vec<u8>,
+    written: usize,
 }
 
 impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
@@ -276,6 +280,7 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
             writer,
             encoder,
             buffer: Vec::new(),
+            written: 0,
         }
     }
 
@@ -284,9 +289,20 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     /// The value is serialized before anything is written.  If it fails to
     /// serialize, nothing is written.
     pub async fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
-        self.buffer.clear();
-        self.encoder.encode(value, &mut self.buffer)?;
+        self.write_with(value, |_| {}).await
+    }
+
+    /// Serializes a value with a configured driver and writes it.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub async fn write_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        deser::io::encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
         self.writer.write_all(&self.buffer).await?;
+        self.written += 1;
         Ok(())
     }
 
@@ -333,7 +349,8 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let input = &b"[1, 2, 3]"[..];
-/// let value: Vec<u32> = deser_tokio::from_reader(input, deser_json::Decoder::default())
+/// let config = deser_json::DeserializerConfig::new();
+/// let value: Vec<u32> = deser_tokio::from_reader(input, config)
 ///     .await
 ///     .unwrap();
 /// assert_eq!(value, [1, 2, 3]);
@@ -360,7 +377,7 @@ where
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let mut out = Vec::new();
-/// deser_tokio::to_writer(&mut out, deser_json::Encoder::default(), &vec![1, 2])
+/// deser_tokio::to_writer(&mut out, deser_json::SerializerConfig::new(), &vec![1, 2])
 ///     .await
 ///     .unwrap();
 /// assert_eq!(out, b"[1,2]");

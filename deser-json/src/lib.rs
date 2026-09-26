@@ -86,41 +86,50 @@
 //!
 //! Errors only discard their line, so the remaining lines can still be
 //! read.  [`Trailing::Stop`] stops after the value without looking at what
-//! follows.  The serializer never writes line breaks, so JSON Lines are
-//! written by adding a newline after every value:
+//! follows.  JSON Lines are written with a [`deser::io::Writer`] and
+//! [`SerializerConfig::trailing`]:
 //!
 //! ```rust
-//! let mut out = String::new();
+//! use deser::io::Writer;
+//! use deser_json::{SerializerConfig, Trailing};
+//!
+//! const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//! let mut writer = Writer::new(Vec::new(), LINES);
 //! for value in [vec![1, 2], vec![3]] {
-//!     out.push_str(&deser_json::to_string(&value).unwrap());
-//!     out.push('\n');
+//!     writer.write(&value).unwrap();
 //! }
-//! assert_eq!(out, "[1,2]\n[3]\n");
+//! assert_eq!(writer.into_inner(), b"[1,2]\n[3]\n");
 //! ```
 //!
 //! # Streams
 //!
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
-//! or write more than one value (for instance JSON Lines from a socket) use
-//! the [`Decoder`] and [`Encoder`] with [`deser::io`] (or an adapter for an
-//! async runtime such as `deser-tokio`).  How values are split depends on
-//! [`DeserializerConfig::trailing`], the reader only buffers until a value
-//! is complete:
+//! or write more than one value (for instance JSON Lines from a socket) the
+//! configurations are used with [`deser::io`] (or an adapter for an async
+//! runtime such as `deser-tokio`): [`DeserializerConfig`] splits streams
+//! into values and [`SerializerConfig`] writes them.  How values are
+//! separated depends on the `trailing` setting of the configurations (see
+//! [`Trailing`]).  The reader only buffers until a value is complete:
 //!
 //! ```rust
+//! use std::collections::BTreeMap;
 //! use deser::io::{Reader, Writer};
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //!
+//! const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+//! const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//!
 //! let input = &b"{\"id\": 1}\n{\"id\": 2}\n"[..];
-//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
-//! let mut reader = Reader::new(input, config.decoder());
-//! let mut writer = Writer::new(Vec::new(), SerializerConfig::new().encoder().lines());
-//! while let Some(value) = reader.read::<std::collections::BTreeMap<String, u32>>().unwrap() {
+//! let mut reader = Reader::new(input, READ_LINES);
+//! let mut writer = Writer::new(Vec::new(), WRITE_LINES);
+//! while let Some(value) = reader.read::<BTreeMap<String, u32>>().unwrap() {
 //!     writer.write(&value).unwrap();
 //! }
 //! assert_eq!(writer.into_inner(), b"{\"id\":1}\n{\"id\":2}\n");
 //! ```
+//!
+//! # Features
 //!
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
@@ -134,5 +143,5 @@ mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
-pub use self::io::{Decoder, Encoder, from_reader, to_writer};
+pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::ser::{Indent, InlinePolicy, SerializerConfig, to_string};

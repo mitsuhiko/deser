@@ -3,7 +3,7 @@
 //! Single values are read with the `from_reader` and written with the
 //! `to_writer` functions of the formats.  Streams of values (JSON Lines,
 //! CBOR sequences, YAML documents) are read with a `deser::io::Reader` and
-//! written with a `deser::io::Writer` using the decoder and encoder of a
+//! written with a `deser::io::Writer` using the configurations of a
 //! format.  Only one value is buffered at a time.
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -11,6 +11,9 @@ use std::io::{BufWriter, Write};
 use deser::io::{Reader, Writer};
 use deser::{Deserialize, Serialize};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
+
+const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Config {
@@ -45,7 +48,7 @@ fn main() -> Result<(), deser::Error> {
     let path = dir.join("deser-streams-events.jsonl");
     {
         let file = BufWriter::new(File::create(&path)?);
-        let mut log = Writer::new(file, SerializerConfig::new().encoder().lines());
+        let mut log = Writer::new(file, WRITE_LINES);
         log.write(&Event::Login {
             user: "jane".into(),
         })?;
@@ -63,9 +66,8 @@ fn main() -> Result<(), deser::Error> {
 
     // read it back line by line, errors only discard their line.  The
     // events are converted into a CBOR sequence on the way.
-    let lines = DeserializerConfig::new().trailing(Trailing::Newline);
-    let mut events = Reader::new(File::open(&path)?, lines.decoder());
-    let mut cbor = Writer::new(Vec::new(), deser_cbor::Encoder::default());
+    let mut events = Reader::new(File::open(&path)?, READ_LINES);
+    let mut cbor = Writer::new(Vec::new(), deser_cbor::SerializerConfig::new());
     while let Some(event) = events.read::<Event>().transpose() {
         match event {
             Ok(event) => cbor.write(&event)?,
@@ -76,14 +78,14 @@ fn main() -> Result<(), deser::Error> {
     println!("{} bytes of CBOR", cbor.len());
 
     // and the CBOR sequence as YAML documents
-    let mut yaml = Writer::new(Vec::new(), deser_yaml::Encoder::default());
-    for event in Reader::new(&cbor[..], deser_cbor::Decoder::default()).iter::<Event>() {
+    let mut yaml = Writer::new(Vec::new(), deser_yaml::SerializerConfig::new());
+    for event in Reader::new(&cbor[..], deser_cbor::DeserializerConfig::new()).iter::<Event>() {
         yaml.write(&event?)?;
     }
     let yaml = String::from_utf8(yaml.into_inner()).unwrap();
     print!("{}", yaml);
 
-    let mut documents = Reader::new(yaml.as_bytes(), deser_yaml::Decoder::default());
+    let mut documents = Reader::new(yaml.as_bytes(), deser_yaml::DeserializerConfig::new());
     let events = documents.iter::<Event>().collect::<Result<Vec<_>, _>>()?;
     assert_eq!(events.len(), 3);
     Ok(())

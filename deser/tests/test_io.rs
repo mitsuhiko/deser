@@ -3,26 +3,27 @@ use std::io::Read;
 use deser::de::DeserializeDriver;
 use deser::io::{DecodeBuffer, Decoder, Encoder, Frame, Reader, Status, Writer};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Error, ErrorKind, Event};
 
 /// A format with a string or number per line.  Blank lines and leading
 /// spaces are skipped.
 ///
 /// The decoder remembers how far it scanned so it does not scan again.
-#[derive(Default)]
-struct Lines {
-    scanned: usize,
-}
+#[derive(Default, Clone, Copy)]
+struct Lines;
 
 impl Decoder for Lines {
-    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+    /// How far the input was scanned.
+    type State = usize;
+
+    fn frame(&self, scanned: &mut usize, input: &[u8], eof: bool) -> Result<Frame, Error> {
         // skip blank lines
         let blank = input
             .iter()
             .position(|&b| b != b'\n')
             .unwrap_or(input.len());
         if blank > 0 {
-            self.scanned = self.scanned.saturating_sub(blank);
+            *scanned = scanned.saturating_sub(blank);
             return Ok(if eof && blank == input.len() {
                 Frame::End
             } else {
@@ -32,10 +33,10 @@ impl Decoder for Lines {
         if input.first() == Some(&b'!') {
             return Err(Error::new(ErrorKind::Unexpected, "bang").with_offset(0));
         }
-        match input[self.scanned..].iter().position(|&b| b == b'\n') {
+        match input[*scanned..].iter().position(|&b| b == b'\n') {
             Some(index) => {
-                let end = self.scanned + index;
-                self.scanned = 0;
+                let end = *scanned + index;
+                *scanned = 0;
                 Ok(Frame::Value {
                     start: input[..end].iter().take_while(|&&b| b == b' ').count(),
                     end,
@@ -44,7 +45,7 @@ impl Decoder for Lines {
             }
             None if eof && input.is_empty() => Ok(Frame::End),
             None if eof => {
-                self.scanned = 0;
+                *scanned = 0;
                 Ok(Frame::Value {
                     start: 0,
                     end: input.len(),
@@ -52,14 +53,14 @@ impl Decoder for Lines {
                 })
             }
             None => {
-                self.scanned = input.len();
+                *scanned = input.len();
                 Ok(Frame::Incomplete { consumed: 0 })
             }
         }
     }
 
     fn drive<'de>(
-        &mut self,
+        &self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -75,9 +76,14 @@ impl Decoder for Lines {
 }
 
 impl Encoder for Lines {
-    fn encode(&mut self, value: &dyn Serialize, out: &mut Vec<u8>) -> Result<(), Error> {
+    fn encode(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        _index: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
         let mut line = String::new();
-        SerializeDriver::new(value).drive(|event, _| {
+        driver.drive(|event, _| {
             match event {
                 Event::Atom(Atom::U64(value)) => line.push_str(&value.to_string()),
                 Event::Atom(Atom::Str(value)) => line.push_str(&value),
@@ -111,7 +117,7 @@ const INPUT: &[u8] = b"1\n\n22\nhello\n\n333";
 #[test]
 fn test_read_in_chunks() {
     for size in 1..=INPUT.len() {
-        let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines::default());
+        let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines);
         assert_eq!(reader.read::<u64>().unwrap(), Some(1));
         assert_eq!(reader.read::<u64>().unwrap(), Some(22));
         assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hello"));
@@ -124,7 +130,7 @@ fn test_read_in_chunks() {
 
 #[test]
 fn test_read_borrowed() {
-    let mut reader = Reader::new(&b"a\nb\n"[..], Lines::default());
+    let mut reader = Reader::new(&b"a\nb\n"[..], Lines);
     let value: &str = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value, "a");
     let value: &str = reader.read_borrowed().unwrap().unwrap();
@@ -134,7 +140,7 @@ fn test_read_borrowed() {
 
 #[test]
 fn test_iter() {
-    let mut reader = Reader::new(&b"1\n2\n3"[..], Lines::default());
+    let mut reader = Reader::new(&b"1\n2\n3"[..], Lines);
     let values = reader.iter::<u64>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2, 3]);
 }
@@ -144,7 +150,7 @@ fn test_errors_refer_to_the_stream() {
     for size in 1..=8 {
         // errors of values continue with the next value
         let input = b"1\n\nx\n2\n";
-        let mut reader = Reader::new(Chunked { input, size }, Lines::default());
+        let mut reader = Reader::new(Chunked { input, size }, Lines);
         assert_eq!(reader.read::<u64>().unwrap(), Some(1));
         let err = reader.read::<u64>().unwrap_err();
         assert_eq!(err.offset(), Some(3));
@@ -154,7 +160,7 @@ fn test_errors_refer_to_the_stream() {
         // frames that do not start at the start of a line (columns are
         // counted in characters)
         let input = "ä\n  x\n".as_bytes();
-        let mut reader = Reader::new(Chunked { input, size }, Lines::default());
+        let mut reader = Reader::new(Chunked { input, size }, Lines);
         assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("ä"));
         let err = reader.read::<u64>().unwrap_err();
         assert_eq!(err.offset(), Some(5));
@@ -164,7 +170,7 @@ fn test_errors_refer_to_the_stream() {
 
 #[test]
 fn test_decoder_errors_are_fatal() {
-    let mut reader = Reader::new(&b"1\n\n!\n2\n"[..], Lines::default());
+    let mut reader = Reader::new(&b"1\n\n!\n2\n"[..], Lines);
     assert_eq!(reader.read::<u64>().unwrap(), Some(1));
     let err = reader.read::<u64>().unwrap_err();
     assert_eq!(err.message(), "bang");
@@ -179,12 +185,12 @@ fn test_decoder_errors_are_fatal() {
 #[test]
 fn test_from_reader() {
     assert_eq!(
-        deser::io::from_reader::<u64, _, _>(&b"42\n\n"[..], Lines::default()).unwrap(),
+        deser::io::from_reader::<u64, _, _>(&b"42\n\n"[..], Lines).unwrap(),
         42
     );
-    let err = deser::io::from_reader::<u64, _, _>(&b""[..], Lines::default()).unwrap_err();
+    let err = deser::io::from_reader::<u64, _, _>(&b""[..], Lines).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
-    let err = deser::io::from_reader::<u64, _, _>(&b"1\n\n2\n"[..], Lines::default()).unwrap_err();
+    let err = deser::io::from_reader::<u64, _, _>(&b"1\n\n2\n"[..], Lines).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected value after the end at line 3 column 1"
@@ -201,9 +207,7 @@ fn test_io_errors() {
         }
     }
 
-    let err = Reader::new(Failing, Lines::default())
-        .read::<u64>()
-        .unwrap_err();
+    let err = Reader::new(Failing, Lines).read::<u64>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Io);
     assert_eq!(
         std::error::Error::source(&err).unwrap().to_string(),
@@ -213,7 +217,7 @@ fn test_io_errors() {
 
 #[test]
 fn test_decode_buffer() {
-    let mut buffer = DecodeBuffer::new(Lines::default());
+    let mut buffer = DecodeBuffer::new(Lines);
     assert_eq!(buffer.poll().unwrap(), Status::NeedInput);
     buffer.extend_from_slice(b"1\n2");
     assert_eq!(buffer.poll().unwrap(), Status::Ready);
@@ -230,7 +234,7 @@ fn test_decode_buffer() {
 fn test_large_values() {
     let long = "x".repeat(100_000);
     let input = format!("{long}\n{long}\n");
-    let mut reader = Reader::new(input.as_bytes(), Lines::default());
+    let mut reader = Reader::new(input.as_bytes(), Lines);
     assert_eq!(reader.read::<String>().unwrap().unwrap(), long);
     assert_eq!(reader.read::<String>().unwrap().unwrap(), long);
     assert_eq!(reader.read::<String>().unwrap(), None);
@@ -238,7 +242,7 @@ fn test_large_values() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), Lines::default());
+    let mut writer = Writer::new(Vec::new(), Lines);
     writer.write(&1u64).unwrap();
     writer.write(&"hello").unwrap();
     // failed values write nothing
@@ -247,6 +251,6 @@ fn test_writer() {
     assert_eq!(writer.into_inner(), b"1\nhello\n2\n");
 
     let mut out = Vec::new();
-    deser::io::to_writer(&mut out, Lines::default(), &42u64).unwrap();
+    deser::io::to_writer(&mut out, Lines, &42u64).unwrap();
     assert_eq!(out, b"42\n");
 }

@@ -3,7 +3,7 @@ use std::io::Read;
 use deser::de::Recording;
 use deser::io::{Reader, Writer};
 use deser::{ErrorKind, Event};
-use deser_cbor::{Decoder, Deserializer, Encoder};
+use deser_cbor::{Deserializer, DeserializerConfig, SerializerConfig};
 
 /// A reader that returns the input in chunks of a fixed size.
 struct Chunked<'a> {
@@ -70,7 +70,7 @@ fn test_sequence_in_chunks() {
                 input: &input,
                 size,
             },
-            Decoder::default(),
+            DeserializerConfig::new(),
         );
         let mut values = Vec::new();
         while let Some(value) = reader.read::<Recording>().unwrap() {
@@ -83,7 +83,7 @@ fn test_sequence_in_chunks() {
 #[test]
 fn test_no_read_while_an_item_is_complete() {
     let input = [0x01, 0x82, 0x02, 0x03, 0x61, b'x'];
-    let mut reader = Reader::new(Blocking(&input), Decoder::default());
+    let mut reader = Reader::new(Blocking(&input), DeserializerConfig::new());
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("x"));
@@ -93,7 +93,7 @@ fn test_no_read_while_an_item_is_complete() {
 fn test_errors() {
     // items that do not match the type are skipped
     let input = [0x01, 0x61, b'x', 0x02];
-    let mut reader = Reader::new(&input[..], Decoder::default());
+    let mut reader = Reader::new(&input[..], DeserializerConfig::new());
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     let err = reader.read::<u32>().unwrap_err();
     assert_eq!(err.offset(), Some(1));
@@ -105,14 +105,14 @@ fn test_errors() {
         &[0x01, 0xff, 0x02],
         &[0x01, 0x82, 0xff],
     ] {
-        let mut reader = Reader::new(input, Decoder::default());
+        let mut reader = Reader::new(input, DeserializerConfig::new());
         assert_eq!(reader.read::<u32>().unwrap(), Some(1));
         assert!(reader.read::<Recording>().is_err());
         assert!(reader.read::<Recording>().is_err());
     }
 
     // truncated items
-    let mut reader = Reader::new(&[0x01, 0x82, 0x01][..], Decoder::default());
+    let mut reader = Reader::new(&[0x01, 0x82, 0x01][..], DeserializerConfig::new());
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
@@ -134,7 +134,7 @@ fn test_from_reader_and_to_writer() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), Encoder::default());
+    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
     writer.write(&1u32).unwrap();
     writer.write(&vec![2u32]).unwrap();
     assert_eq!(writer.into_inner(), [0x01, 0x81, 0x02]);
@@ -143,7 +143,7 @@ fn test_writer() {
 #[test]
 fn test_borrowed() {
     let input = [0x62, b'h', b'i'];
-    let mut reader = Reader::new(&input[..], Decoder::default());
+    let mut reader = Reader::new(&input[..], DeserializerConfig::new());
     let value: &str = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value, "hi");
 }

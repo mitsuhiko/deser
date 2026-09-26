@@ -45,6 +45,6 @@ assert_eq!(
   with the respective features of deser.
 * Other tags are transparent, `Tagged<T>` reads and writes them.
 * Deeply nested input does not overflow the stack.
-* `from_reader` and `to_writer` work with `std::io`, and the `Decoder` and
-  `Encoder` read and write CBOR sequences on streams with `deser::io` or
+* `from_reader` and `to_writer` work with `std::io`, and the configurations
+  read and write CBOR sequences on streams with `deser::io` or
   async runtimes (`deser-tokio`) while only buffering one item at a time.

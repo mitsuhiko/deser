@@ -2,20 +2,25 @@
 //!
 //! Data formats parse complete inputs (slices) and serialize into complete
 //! outputs.  This module connects them to streams, such as files, sockets
-//! or pipes, without the formats having to know about IO.  The formats
-//! provide a [`Decoder`] and an [`Encoder`] and this module (or an adapter
-//! for an async runtime such as `deser-tokio`) does the IO.
+//! or pipes, without the formats having to know about IO.  The
+//! configurations of the formats implement [`Decoder`] (for reading) and
+//! [`Encoder`] (for writing) and this module (or an adapter for an async
+//! runtime such as `deser-tokio`) does the IO.  The configuration that is
+//! used to deserialize from or serialize into a string is also used for
+//! streams:
 //!
 //! ```
 //! # fn example() -> Result<(), deser::Error> {
 //! use deser::io::{Reader, Writer};
 //! # use deser::io::{Decoder, Encoder, Frame};
 //! # use deser::de::DeserializeDriver;
-//! # use deser::{Error, Serialize};
-//! # /// A format of numbers on lines of their own.
-//! # struct Lines;
-//! # impl Decoder for Lines {
-//! #     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+//! # use deser::ser::SerializeDriver;
+//! # use deser::Error;
+//! # /// A format with a number per line.
+//! # struct LinesConfig;
+//! # impl Decoder for LinesConfig {
+//! #     type State = ();
+//! #     fn frame(&self, _: &mut (), input: &[u8], eof: bool) -> Result<Frame, Error> {
 //! #         Ok(match input.iter().position(|&b| b == b'\n') {
 //! #             Some(end) => Frame::Value { start: 0, end, consumed: end + 1 },
 //! #             None if eof && input.is_empty() => Frame::End,
@@ -23,20 +28,24 @@
 //! #             None => Frame::Incomplete { consumed: 0 },
 //! #         })
 //! #     }
-//! #     fn drive<'de>(&mut self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+//! #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 //! #         let value: u64 = std::str::from_utf8(frame).unwrap().parse().unwrap();
 //! #         driver.emit(value)
 //! #     }
 //! # }
-//! # impl Encoder for Lines {
-//! #     fn encode(&mut self, value: &dyn Serialize, out: &mut Vec<u8>) -> Result<(), Error> {
-//! #         let mut driver = deser::ser::SerializeDriver::new(value);
-//! #         driver.drive(|event, _| { if let deser::Event::Atom(deser::Atom::U64(v)) = event { out.extend_from_slice(format!("{v}\n").as_bytes()); } Ok(()) })
+//! # impl Encoder for LinesConfig {
+//! #     fn encode(&self, driver: &mut SerializeDriver<'_>, _: usize, out: &mut Vec<u8>) -> Result<(), Error> {
+//! #         driver.drive(|event, _| {
+//! #             if let deser::Event::Atom(deser::Atom::U64(v)) = event {
+//! #                 out.extend_from_slice(format!("{v}\n").as_bytes());
+//! #             }
+//! #             Ok(())
+//! #         })
 //! #     }
 //! # }
-//! // `Lines` is a format with one number per line
-//! let mut reader = Reader::new(&b"1\n2\n3\n"[..], Lines);
-//! let mut writer = Writer::new(Vec::new(), Lines);
+//! // `LinesConfig` is the configuration of a format with a number per line
+//! let mut reader = Reader::new(&b"1\n2\n3\n"[..], LinesConfig);
+//! let mut writer = Writer::new(Vec::new(), LinesConfig);
 //! while let Some(value) = reader.read::<u64>()? {
 //!     writer.write(&(value * 2))?;
 //! }
@@ -75,7 +84,7 @@ use std::marker::PhantomData;
 
 use crate::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use crate::error::{Error, ErrorKind};
-use crate::ser::Serialize;
+use crate::ser::{Serialize, SerializeDriver};
 
 mod buffer;
 
@@ -110,10 +119,18 @@ pub enum Frame {
 
 /// Splits a stream into values and deserializes them.
 ///
-/// Decoders are provided by data formats.  They are used with a
-/// [`DecodeBuffer`] (for instance through a [`Reader`]), see the [module
-/// documentation](self) for more information.
+/// This is implemented by the deserializer configurations of the data
+/// formats.  Decoders are used with a [`DecodeBuffer`] (for instance
+/// through a [`Reader`]), see the [module documentation](self) for more
+/// information.
 pub trait Decoder {
+    /// The state of a stream.
+    ///
+    /// This holds the progress of splitting a stream into values, for
+    /// instance how far the input was scanned.  Every stream starts with the
+    /// default state.
+    type State: Default;
+
     /// Finds the next value in the input.
     ///
     /// The input holds the data that was read so far (minus the data that
@@ -121,33 +138,36 @@ pub trait Decoder {
     /// [`Frame::Incomplete`] is returned and the method is invoked again
     /// once more data was read: the input then starts after the bytes that
     /// were consumed and continues with the new data.  This allows decoders
-    /// to keep the state of their scan so they do not have to scan the input
-    /// again.  `eof` is `true` if no more data follows the input.
+    /// to keep the progress of their scan in the state so they do not have
+    /// to scan the input again.  `eof` is `true` if no more data follows the
+    /// input.
     ///
     /// Once a value is complete, [`Frame::Value`] is returned and the value
     /// is deserialized with [`drive`](Self::drive).  The next call starts a
     /// new value, again after the consumed bytes.  Offsets of errors refer
     /// to the input.
-    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error>;
+    fn frame(&self, state: &mut Self::State, input: &[u8], eof: bool) -> Result<Frame, Error>;
 
     /// Deserializes a value from its frame.
     ///
     /// The frame holds the bytes of a value found by
     /// [`frame`](Self::frame).  Offsets of errors refer to the frame.
     fn drive<'de>(
-        &mut self,
+        &self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error>;
 }
 
-impl<D: Decoder + ?Sized> Decoder for &mut D {
-    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
-        (**self).frame(input, eof)
+impl<D: Decoder + ?Sized> Decoder for &D {
+    type State = D::State;
+
+    fn frame(&self, state: &mut Self::State, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        (**self).frame(state, input, eof)
     }
 
     fn drive<'de>(
-        &mut self,
+        &self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -157,29 +177,79 @@ impl<D: Decoder + ?Sized> Decoder for &mut D {
 
 /// Serializes values into the bytes of a stream.
 ///
-/// Encoders are provided by data formats.  They are used by a [`Writer`]
-/// (or the equivalent of an async runtime) to write a value or a stream of
-/// values.  Encoders write everything that separates values in the
-/// stream, for instance the line breaks of JSON Lines or the markers
-/// between YAML documents.
+/// This is implemented by the serializer configurations of the data
+/// formats.  Encoders are used by a [`Writer`] (or the equivalent of an
+/// async runtime) to write a value or a stream of values.  Encoders write
+/// everything that separates values in the stream, for instance the line
+/// breaks of JSON Lines or the markers between YAML documents.
 pub trait Encoder {
     /// Serializes a value and appends its bytes to the output.
     ///
-    /// If this fails, the output is left unchanged.
-    fn encode(&mut self, value: &dyn Serialize, out: &mut Vec<u8>) -> Result<(), Error>;
+    /// The value is serialized by driving the driver, which might have been
+    /// configured before (for instance with layers).  `index` is the number
+    /// of values that were written to the stream before.  If this fails,
+    /// the output can contain a partial value (the writers discard it).
+    fn encode(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        index: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error>;
 }
 
-impl<E: Encoder + ?Sized> Encoder for &mut E {
-    fn encode(&mut self, value: &dyn Serialize, out: &mut Vec<u8>) -> Result<(), Error> {
-        (**self).encode(value, out)
+impl<E: Encoder + ?Sized> Encoder for &E {
+    fn encode(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        index: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        (**self).encode(driver, index, out)
     }
+}
+
+/// Serializes a value into a buffer with an encoder.
+///
+/// The buffer is cleared first.  This is used by the writers of this module
+/// and of adapters for other kinds of IO.
+///
+/// ```
+/// # use deser::io::Encoder;
+/// # use deser::ser::SerializeDriver;
+/// # use deser::Error;
+/// # struct Debug;
+/// # impl Encoder for Debug {
+/// #     fn encode(&self, driver: &mut SerializeDriver<'_>, _: usize, out: &mut Vec<u8>) -> Result<(), Error> {
+/// #         driver.drive(|event, _| Ok(out.extend_from_slice(format!("{event:?};").as_bytes())))
+/// #     }
+/// # }
+/// let mut buffer = Vec::new();
+/// deser::io::encode(&Debug, &true, |_| {}, 0, &mut buffer).unwrap();
+/// assert_eq!(buffer, b"Atom(Bool(true));");
+/// ```
+pub fn encode<E, F>(
+    encoder: &E,
+    value: &dyn Serialize,
+    setup: F,
+    index: usize,
+    buffer: &mut Vec<u8>,
+) -> Result<(), Error>
+where
+    E: Encoder + ?Sized,
+    F: FnOnce(&mut SerializeDriver<'_>),
+{
+    buffer.clear();
+    let mut driver = SerializeDriver::new(value);
+    setup(&mut driver);
+    encoder.encode(&mut driver, index, buffer)
 }
 
 /// Reads values from a [`Read`].
 ///
-/// The values are split and deserialized with a [`Decoder`].  The reader
-/// buffers the input so it does not need to be buffered.
-pub struct Reader<R, D> {
+/// The values are split and deserialized with a [`Decoder`] (the
+/// deserializer configuration of a format).  The reader buffers the input so
+/// it does not need to be buffered.
+pub struct Reader<R, D: Decoder> {
     reader: R,
     buffer: DecodeBuffer<D>,
 }
@@ -251,9 +321,10 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// # use deser::io::{Decoder, Frame, Reader};
     /// # use deser::de::DeserializeDriver;
     /// # use deser::Error;
-    /// # struct Lines;
-    /// # impl Decoder for Lines {
-    /// #     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+    /// # struct LinesConfig;
+    /// # impl Decoder for LinesConfig {
+    /// #     type State = ();
+    /// #     fn frame(&self, _: &mut (), input: &[u8], eof: bool) -> Result<Frame, Error> {
     /// #         Ok(match input.iter().position(|&b| b == b'\n') {
     /// #             Some(end) => Frame::Value { start: 0, end, consumed: end + 1 },
     /// #             None if eof && input.is_empty() => Frame::End,
@@ -261,12 +332,12 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// #             None => Frame::Incomplete { consumed: 0 },
     /// #         })
     /// #     }
-    /// #     fn drive<'de>(&mut self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+    /// #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
     /// #         driver.emit_borrowed(std::str::from_utf8(frame).unwrap())
     /// #     }
     /// # }
-    /// // `Lines` is a format with one string per line
-    /// let mut reader = Reader::new(&b"hello\nworld\n"[..], Lines);
+    /// // `LinesConfig` is the configuration of a format with a string per line
+    /// let mut reader = Reader::new(&b"hello\nworld\n"[..], LinesConfig);
     /// let value: &str = reader.read_borrowed().unwrap().unwrap();
     /// assert_eq!(value, "hello");
     /// ```
@@ -326,7 +397,7 @@ impl<R: Read, D: Decoder> Reader<R, D> {
 }
 
 /// An iterator over the values of a [`Reader`].
-pub struct Iter<'r, R, D, T> {
+pub struct Iter<'r, R, D: Decoder, T> {
     reader: &'r mut Reader<R, D>,
     failed: bool,
     _marker: PhantomData<fn() -> T>,
@@ -352,13 +423,15 @@ impl<R: Read, D: Decoder, T: DeserializeOwned> Iterator for Iter<'_, R, D, T> {
 
 /// Writes values to a [`Write`].
 ///
-/// The values are serialized with an [`Encoder`].  Every value is written
-/// with a single [`write_all`](Write::write_all), wrap the writer in a
+/// The values are serialized with an [`Encoder`] (the serializer
+/// configuration of a format).  Every value is written with a single
+/// [`write_all`](Write::write_all), wrap the writer in a
 /// [`BufWriter`](std::io::BufWriter) when writing many small values.
 pub struct Writer<W, E> {
     writer: W,
     encoder: E,
     buffer: Vec<u8>,
+    written: usize,
 }
 
 impl<W: Write, E: Encoder> Writer<W, E> {
@@ -368,6 +441,7 @@ impl<W: Write, E: Encoder> Writer<W, E> {
             writer,
             encoder,
             buffer: Vec::new(),
+            written: 0,
         }
     }
 
@@ -375,9 +449,20 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     ///
     /// If the value fails to serialize nothing is written.
     pub fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
-        self.buffer.clear();
-        self.encoder.encode(value, &mut self.buffer)?;
+        self.write_with(value, |_| {})
+    }
+
+    /// Serializes a value with a configured driver and writes it.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](crate::ser::Layer)s.
+    pub fn write_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
         self.writer.write_all(&self.buffer)?;
+        self.written += 1;
         Ok(())
     }
 

@@ -526,6 +526,14 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
+        self.serialize_driver(&mut driver)
+    }
+
+    /// Serializes the value of a driver.
+    pub(crate) fn serialize_driver(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+    ) -> Result<Vec<u8>, Error> {
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,

@@ -8,6 +8,7 @@ use tokio::io::{AsyncWriteExt, duplex};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Message {
@@ -26,17 +27,17 @@ fn message(id: u64) -> Message {
 async fn test_values_in_small_chunks() {
     let (mut client, server) = duplex(3);
     let writer = tokio::spawn(async move {
-        let mut out = Vec::new();
-        let mut encoder = SerializerConfig::new().encoder().lines();
+        let mut writer = deser::io::Writer::new(Vec::new(), WRITE_LINES);
         for id in 0..10 {
-            deser::io::Encoder::encode(&mut encoder, &message(id), &mut out).unwrap();
+            writer.write(&message(id)).unwrap();
         }
+        let out = writer.into_inner();
         for chunk in out.chunks(7) {
             client.write_all(chunk).await.unwrap();
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
     });
-    let mut reader = Reader::new(server, LINES.decoder());
+    let mut reader = Reader::new(server, LINES);
     for id in 0..10 {
         assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(id)));
     }
@@ -49,13 +50,13 @@ async fn test_futures_are_send() {
     let (client, server) = duplex(64);
     // spawning requires the futures to be `Send`
     let writer = tokio::spawn(async move {
-        let mut writer = Writer::new(client, deser_cbor::Encoder::default());
+        let mut writer = Writer::new(client, deser_cbor::SerializerConfig::new());
         for id in 0..100 {
             writer.write(&message(id)).await.unwrap();
         }
     });
     let reader = tokio::spawn(async move {
-        let mut reader = Reader::new(server, deser_cbor::Decoder::default());
+        let mut reader = Reader::new(server, deser_cbor::DeserializerConfig::new());
         let mut count = 0;
         while let Some(value) = reader.read::<Message>().await.unwrap() {
             assert_eq!(value, message(count));
@@ -70,7 +71,7 @@ async fn test_futures_are_send() {
 #[tokio::test]
 async fn test_read_is_cancellation_safe() {
     let (mut client, server) = duplex(64);
-    let mut reader = Reader::new(server, LINES.decoder());
+    let mut reader = Reader::new(server, LINES);
     // half a value arrives, then the read is cancelled
     client.write_all(b"{\"id\": 1, ").await.unwrap();
     tokio::select! {
@@ -87,7 +88,7 @@ async fn test_read_is_cancellation_safe() {
 #[tokio::test]
 async fn test_errors_continue() {
     let input = &b"{\"id\": 1, \"text\": \"message 1\"}\n{\"id\": \"x\"}\n{\"id\": 2, \"text\": \"message 2\"}\n"[..];
-    let mut reader = Reader::new(input, LINES.decoder());
+    let mut reader = Reader::new(input, LINES);
     assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(1)));
     let err = reader.read::<Message>().await.unwrap_err();
     assert_eq!(err.line(), Some(2));
@@ -96,7 +97,7 @@ async fn test_errors_continue() {
 
 #[tokio::test]
 async fn test_read_borrowed() {
-    let mut reader = Reader::new(&b"\"hello\"\n"[..], LINES.decoder());
+    let mut reader = Reader::new(&b"\"hello\"\n"[..], LINES);
     let value: &str = reader.read_borrowed().await.unwrap().unwrap();
     assert_eq!(value, "hello");
 }
@@ -104,7 +105,7 @@ async fn test_read_borrowed() {
 #[tokio::test]
 async fn test_stream() {
     let input = &b"1\n2\n3\n"[..];
-    let values = Reader::new(input, LINES.decoder())
+    let values = Reader::new(input, LINES)
         .into_stream::<u32>()
         .collect::<Vec<_>>()
         .await;
@@ -117,19 +118,20 @@ async fn test_stream() {
 #[tokio::test]
 async fn test_from_reader_and_to_writer() {
     let mut out = Vec::new();
-    deser_tokio::to_writer(&mut out, deser_json::Encoder::default(), &message(1))
+    deser_tokio::to_writer(&mut out, deser_json::SerializerConfig::new(), &message(1))
         .await
         .unwrap();
-    let value: Message = deser_tokio::from_reader(&out[..], deser_json::Decoder::default())
+    let value: Message = deser_tokio::from_reader(&out[..], deser_json::DeserializerConfig::new())
         .await
         .unwrap();
     assert_eq!(value, message(1));
 
-    let err = deser_tokio::from_reader::<u32, _, _>(&b""[..], deser_json::Decoder::default())
-        .await
-        .unwrap_err();
+    let err =
+        deser_tokio::from_reader::<u32, _, _>(&b""[..], deser_json::DeserializerConfig::new())
+            .await
+            .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
-    let err = deser_tokio::from_reader::<u32, _, _>(&b"1\n2"[..], LINES.decoder())
+    let err = deser_tokio::from_reader::<u32, _, _>(&b"1\n2"[..], LINES)
         .await
         .unwrap_err();
     assert_eq!(err.line(), Some(2));
@@ -141,8 +143,8 @@ async fn test_codec() {
     let mut sink = FramedWrite::new(
         client,
         Codec::<_, _, Message>::new(
-            deser_cbor::Decoder::default(),
-            deser_cbor::Encoder::default(),
+            deser_cbor::DeserializerConfig::new(),
+            deser_cbor::SerializerConfig::new(),
         ),
     );
     let writer = tokio::spawn(async move {
@@ -153,8 +155,8 @@ async fn test_codec() {
     let values = FramedRead::new(
         server,
         Codec::<_, _, Message>::new(
-            deser_cbor::Decoder::default(),
-            deser_cbor::Encoder::default(),
+            deser_cbor::DeserializerConfig::new(),
+            deser_cbor::SerializerConfig::new(),
         ),
     )
     .collect::<Vec<_>>()
@@ -170,7 +172,7 @@ async fn test_codec_values_at_the_end() {
     let config = DeserializerConfig::new().trailing(Trailing::Stop);
     let values = FramedRead::new(
         &b"1 2 3"[..],
-        Codec::<_, _, u32>::new(config.decoder(), deser_json::Encoder::default()),
+        Codec::<_, _, u32>::new(config, deser_json::SerializerConfig::new()),
     )
     .collect::<Vec<_>>()
     .await;

@@ -471,6 +471,18 @@ fn test_documents() {
     assert_eq!(START.to_string(&1).unwrap(), "---\n1\n");
     const DIRECTIVE: SerializerConfig = SerializerConfig::new().version_directive(true);
     assert_eq!(DIRECTIVE.to_string(&1).unwrap(), "%YAML 1.2\n---\n1\n");
+
+    // directives of later documents follow the end of the previous one
+    let mut serializer = Serializer::new(DIRECTIVE);
+    serializer.serialize(&"a").unwrap();
+    serializer.serialize(&"b").unwrap();
+    let yaml = serializer.finish();
+    assert_eq!(yaml, "%YAML 1.2\n---\na\n...\n%YAML 1.2\n---\nb\n");
+    let docs = deser_yaml::Deserializer::from_str(&yaml)
+        .iter::<String>()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(docs, ["a", "b"]);
 }
 
 /// Strings built from pieces that have a meaning in YAML must read back as

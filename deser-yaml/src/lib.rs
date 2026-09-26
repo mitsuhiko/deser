@@ -99,21 +99,22 @@
 //!
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
-//! or write streams of documents use the [`Decoder`] and [`Encoder`] with
+//! or write streams of documents the configurations are used with
 //! [`deser::io`] (or an adapter for an async runtime such as
 //! `deser-tokio`).  The reader only buffers until a document is complete:
 //!
 //! ```rust
 //! use deser::io::{Reader, Writer};
+//! use deser_yaml::{DeserializerConfig, SerializerConfig};
 //!
-//! let encoder = deser_yaml::Encoder::default().end_documents();
-//! let mut writer = Writer::new(Vec::new(), encoder);
+//! const ENDED: SerializerConfig = SerializerConfig::new().end_documents(true);
+//! let mut writer = Writer::new(Vec::new(), ENDED);
 //! writer.write(&vec![1, 2]).unwrap();
 //! writer.write(&"done").unwrap();
 //! let output = writer.into_inner();
 //! assert_eq!(output, b"- 1\n- 2\n...\n---\ndone\n...\n");
 //!
-//! let mut reader = Reader::new(&output[..], deser_yaml::Decoder::default());
+//! let mut reader = Reader::new(&output[..], DeserializerConfig::new());
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("done"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
@@ -135,7 +136,7 @@ pub mod style;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
-pub use self::io::{Decoder, Encoder, from_reader, to_writer};
+pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::resolve::Version;
 pub use self::ser::{
     FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,

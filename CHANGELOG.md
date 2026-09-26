@@ -5,36 +5,35 @@ All notable changes to deser are documented here.
 ## Unreleased
 
 - Added `deser::io` to read values from and write values to streams.
-  Formats provide a `Decoder` which splits a stream into the frames of
-  values and deserializes them and an `Encoder` which serializes values.
-  `Reader` and `Writer` (and `from_reader` and `to_writer`) use them with
-  `std::io::Read` and `std::io::Write`.  `DecodeBuffer` implements the
+  The configurations of the formats implement `Decoder`, which splits a
+  stream into the frames of values and deserializes them, and `Encoder`,
+  which serializes values.  `Reader` and `Writer` (and `from_reader` and
+  `to_writer`) use them with `std::io::Read` and `std::io::Write`,
+  `Writer::write_with` supports layers.  `DecodeBuffer` implements the
   framing without doing IO itself for other kinds of IO (such as async
   runtimes).  Errors of values refer to positions in the stream.
 - `deser-json` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the `Decoder` (created with
-  `DeserializerConfig::decoder`) and `Encoder` (created with
-  `SerializerConfig::encoder`) for `deser::io`.  The decoder splits the
-  stream according to `Trailing`: a single value, JSON Lines or
-  concatenated values.  `Encoder::lines` writes JSON Lines.
+  (also on the configurations) and the configurations for `deser::io`.
+  Streams are split according to `Trailing`: a single value, JSON Lines or
+  concatenated values.  `SerializerConfig::trailing` is the counterpart
+  for writing (`Trailing::Newline` writes JSON Lines).
 - `deser-cbor` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the `Decoder` and `Encoder` for
-  `deser::io` which read and write CBOR sequences.  Items are split by
-  scanning their heads.
+  (also on the configurations) and the configurations for `deser::io`
+  which read and write CBOR sequences.  Items are split by scanning their
+  heads.
 - `deser-toml` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the `Decoder` and `Encoder` for
-  `deser::io`.  A stream holds a single document.
+  (also on the configurations) and the configurations for `deser::io`.  A
+  stream holds a single document.
 - `deser-yaml` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the `Decoder` and `Encoder` for
-  `deser::io` which read and write streams of documents.  Documents are
-  split at document markers.  `Encoder::end_documents` ends every document
+  (also on the configurations) and the configurations for `deser::io`
+  which read and write streams of documents.  Documents are split at
+  document markers.  `SerializerConfig::end_documents` ends every document
   with `...` for streams that stay open.
 - Added `deser-tokio` which reads and writes values with tokio's
-  `AsyncRead` and `AsyncWrite` using the decoders and encoders of the
-  formats: `Reader` (also as a `Stream`), `Writer`, `from_reader` and
-  `to_writer`.  The futures are `Send` and reads are cancellation safe.
-  With the `codec` feature `Codec` implements the codec traits of
-  tokio-util.
+  `AsyncRead` and `AsyncWrite` using the configurations of the formats:
+  `Reader` (also as a `Stream`), `Writer`, `from_reader` and `to_writer`.
+  The futures are `Send` and reads are cancellation safe.  With the
+  `codec` feature `Codec` implements the codec traits of tokio-util.
 - Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
   converts into `Error`.
 - Ongoing serializations and deserializations can move between threads:

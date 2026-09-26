@@ -9,8 +9,8 @@ use deser::ser::Serialize;
 /// Implements the codec traits of [`tokio-util`](https://docs.rs/tokio-util).
 ///
 /// The codec decodes values of type `T` with a [`Decoder`] and encodes
-/// values with an [`Encoder`] of a data format.  This makes it usable with
-/// `FramedRead`, `FramedWrite` and `Framed`:
+/// values with an [`Encoder`] (the configurations of a data format).  This
+/// makes it usable with `FramedRead`, `FramedWrite` and `Framed`:
 ///
 /// ```
 /// # #[tokio::main(flavor = "current_thread")]
@@ -20,21 +20,13 @@ use deser::ser::Serialize;
 /// use deser_tokio::Codec;
 /// use tokio_util::codec::Framed;
 ///
-/// let codec = Codec::<_, _, Vec<u32>>::new(
-///     DeserializerConfig::new().trailing(Trailing::Newline).decoder(),
-///     SerializerConfig::new().encoder().lines(),
-/// );
-/// let (client, server) = tokio::io::duplex(1024);
-/// let mut client = Framed::new(client, codec);
-/// client.send(vec![1, 2]).await.unwrap();
+/// const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+/// const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
 ///
-/// let mut server = tokio_util::codec::FramedRead::new(
-///     server,
-///     Codec::<_, _, Vec<u32>>::new(
-///         DeserializerConfig::new().trailing(Trailing::Newline).decoder(),
-///         SerializerConfig::new().encoder(),
-///     ),
-/// );
+/// let (client, server) = tokio::io::duplex(1024);
+/// let mut client = Framed::new(client, Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES));
+/// let mut server = Framed::new(server, Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES));
+/// client.send(vec![1, 2]).await.unwrap();
 /// assert_eq!(server.next().await.unwrap().unwrap(), [1, 2]);
 /// # }
 /// ```
@@ -42,9 +34,10 @@ use deser::ser::Serialize;
 /// The data read by the framed reader is moved into the codec's buffer, so
 /// errors refer to positions in the stream.
 #[cfg_attr(docsrs, doc(cfg(feature = "codec")))]
-pub struct Codec<D, E, T> {
+pub struct Codec<D: Decoder, E, T> {
     buffer: DecodeBuffer<D>,
     encoder: E,
+    written: usize,
     _marker: PhantomData<fn() -> T>,
 }
 
@@ -54,6 +47,7 @@ impl<D: Decoder, E: Encoder, T> Codec<D, E, T> {
         Codec {
             buffer: DecodeBuffer::new(decoder),
             encoder,
+            written: 0,
             _marker: PhantomData,
         }
     }
@@ -103,13 +97,14 @@ impl<D: Decoder, E: Encoder, T: DeserializeOwned> tokio_util::codec::Decoder for
     }
 }
 
-impl<D, E: Encoder, T, V: Serialize> tokio_util::codec::Encoder<V> for Codec<D, E, T> {
+impl<D: Decoder, E: Encoder, T, V: Serialize> tokio_util::codec::Encoder<V> for Codec<D, E, T> {
     type Error = Error;
 
     fn encode(&mut self, item: V, dst: &mut BytesMut) -> Result<(), Error> {
         let mut out = Vec::new();
-        self.encoder.encode(&item, &mut out)?;
+        deser::io::encode(&self.encoder, &item, |_| {}, self.written, &mut out)?;
         dst.extend_from_slice(&out);
+        self.written += 1;
         Ok(())
     }
 }

@@ -27,12 +27,13 @@ pub enum Response {
     Error(String),
 }
 
-const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
 
 async fn handle(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let mut requests = Reader::new(input, LINES.decoder());
-    let mut responses = Writer::new(output, SerializerConfig::new().encoder().lines());
+    let mut requests = Reader::new(input, READ_LINES);
+    let mut responses = Writer::new(output, WRITE_LINES);
     loop {
         let response = match requests.read::<Request>().await {
             Ok(Some(Request::Add { a, b })) => Response::Number(a + b),
@@ -61,8 +62,7 @@ async fn main() -> Result<(), deser::Error> {
         }
     });
 
-    let codec =
-        Codec::<_, _, Response>::new(LINES.decoder(), SerializerConfig::new().encoder().lines());
+    let codec = Codec::<_, _, Response>::new(READ_LINES, WRITE_LINES);
     let mut client = Framed::new(TcpStream::connect(addr).await?, codec);
     client.send(Request::Add { a: 1, b: 2 }).await?;
     client

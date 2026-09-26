@@ -7,6 +7,7 @@ use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
+use crate::de::Trailing;
 use crate::pretty::PrettyWriter;
 use crate::scan::{find_escape, skip_to_escape};
 
@@ -79,6 +80,7 @@ pub struct SerializerConfig {
     indent: Indent,
     compact: bool,
     inline: InlinePolicy,
+    trailing: Trailing,
 }
 
 impl SerializerConfig {
@@ -89,7 +91,42 @@ impl SerializerConfig {
             indent: Indent::None,
             compact: true,
             inline: InlinePolicy::Never,
+            trailing: Trailing::Strict,
         }
+    }
+
+    /// Sets what follows the values of a stream.
+    ///
+    /// This is the counterpart of
+    /// [`DeserializerConfig::trailing`](crate::DeserializerConfig::trailing)
+    /// for writing streams (see [`deser::io`]), it does not affect
+    /// [`to_string`](Self::to_string):
+    ///
+    /// * [`Trailing::Strict`]: the stream holds a single value, writing a
+    ///   second one fails.  This is the default.
+    /// * [`Trailing::Newline`]: every value is followed by a line break
+    ///   ([JSON Lines](https://jsonlines.org/)).  The values must not be
+    ///   indented.
+    /// * [`Trailing::Stop`]: values are separated by line breaks.
+    ///
+    /// ```
+    /// use deser::io::Writer;
+    /// use deser_json::{SerializerConfig, Trailing};
+    ///
+    /// const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+    /// let mut writer = Writer::new(Vec::new(), LINES);
+    /// writer.write(&vec![1, 2]).unwrap();
+    /// writer.write(&vec![3]).unwrap();
+    /// assert_eq!(writer.into_inner(), b"[1,2]\n[3]\n");
+    /// ```
+    pub const fn trailing(mut self, trailing: Trailing) -> SerializerConfig {
+        self.trailing = trailing;
+        self
+    }
+
+    /// Returns what follows the values of a stream.
+    pub(crate) fn trailing_mode(&self) -> Trailing {
+        self.trailing
     }
 
     /// Sets how the output is indented.
@@ -248,12 +285,20 @@ impl SerializerConfig {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        self.serialize_driver(&mut driver)
+    }
+
+    /// Serializes the value of a driver.
+    pub(crate) fn serialize_driver(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+    ) -> Result<String, Error> {
         let ser = Output {
             out: Buffer::with_capacity(128),
             bytes: self.bytes,
         };
-        let mut driver = SerializeDriver::new(value);
-        setup(&mut driver);
         if self.indent == Indent::None && self.compact {
             let mut writer = Writer {
                 ser,

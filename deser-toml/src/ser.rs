@@ -82,14 +82,22 @@ impl SerializerConfig {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        self.serialize_driver(&mut driver)
+    }
+
+    /// Serializes the value of a driver.
+    pub(crate) fn serialize_driver(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+    ) -> Result<String, Error> {
         let mut builder = Builder {
             doc: Document::default(),
             stack: Vec::new(),
             done: false,
             bytes: self.bytes,
         };
-        let mut driver = SerializeDriver::new(value);
-        setup(&mut driver);
         driver.drive(|event, state| builder.event(event, state))?;
         if !builder.done {
             return Err(Error::new(ErrorKind::Unexpected, "no value was serialized"));

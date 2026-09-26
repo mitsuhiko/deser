@@ -1,15 +1,17 @@
 # deser-tokio
 
 Read and write [deser](https://github.com/mitsuhiko/deser) values with
-[tokio](https://tokio.rs).  This connects the decoders and encoders of all
-deser formats (JSON, CBOR, YAML, TOML, ...) to `AsyncRead` and
-`AsyncWrite`, for instance to speak JSON Lines or CBOR sequences over a
-socket:
+[tokio](https://tokio.rs).  This connects the configurations of all deser
+formats (JSON, CBOR, YAML, TOML, ...) to `AsyncRead` and `AsyncWrite`, for
+instance to speak JSON Lines or CBOR sequences over a socket:
 
 ```rust
 use deser::{Deserialize, Serialize};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 use deser_tokio::{Reader, Writer};
+
+const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
 
 #[derive(Serialize, Deserialize)]
 struct Request {
@@ -19,9 +21,8 @@ struct Request {
 
 async fn serve(socket: tokio::net::TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let config = DeserializerConfig::new().trailing(Trailing::Newline);
-    let mut requests = Reader::new(input, config.decoder());
-    let mut responses = Writer::new(output, SerializerConfig::new().encoder().lines());
+    let mut requests = Reader::new(input, READ_LINES);
+    let mut responses = Writer::new(output, WRITE_LINES);
     while let Some(request) = requests.read::<Request>().await? {
         responses.write(&request.id).await?;
     }
@@ -29,8 +30,8 @@ async fn serve(socket: tokio::net::TcpStream) -> Result<(), deser::Error> {
 }
 ```
 
-* **Works with every format:** the framing is done by the formats'
-  decoders (see `deser::io`), this crate only does the IO.
+* **Works with every format:** the configurations of the formats split
+  streams into values (see `deser::io`), this crate only does the IO.
 * **Bounded memory for streams:** only one value is buffered at a time.
   Values are parsed from a complete buffer with the regular (fast)
   parsers, and they can borrow from it (`Reader::read_borrowed`).

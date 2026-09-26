@@ -65,20 +65,21 @@
 //! Data items are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
 //! or write [CBOR sequences](https://www.rfc-editor.org/rfc/rfc8742) (data
-//! items that follow each other, for instance on a socket) use the
-//! [`Decoder`] and [`Encoder`] with [`deser::io`] (or an adapter for an
-//! async runtime such as `deser-tokio`).  The reader only buffers until an
-//! item is complete:
+//! items that follow each other, for instance on a socket) the
+//! configurations are used with [`deser::io`] (or an adapter for an async
+//! runtime such as `deser-tokio`).  The reader only buffers until an item
+//! is complete:
 //!
 //! ```rust
 //! use deser::io::{Reader, Writer};
+//! use deser_cbor::{DeserializerConfig, SerializerConfig};
 //!
-//! let mut writer = Writer::new(Vec::new(), deser_cbor::Encoder::default());
+//! let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
 //! writer.write(&vec![1u32, 2]).unwrap();
 //! writer.write(&"three").unwrap();
 //! let bytes = writer.into_inner();
 //!
-//! let mut reader = Reader::new(&bytes[..], deser_cbor::Decoder::default());
+//! let mut reader = Reader::new(&bytes[..], DeserializerConfig::new());
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("three"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
@@ -98,7 +99,7 @@ mod simple;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
-pub use self::io::{Decoder, Encoder, from_reader, to_writer};
+pub use self::io::{StreamState, from_reader, to_writer};
 pub use self::ser::{SerializerConfig, to_vec};
 pub use self::simple::Simple;
 pub use self::tag::{Tagged, take_tag};

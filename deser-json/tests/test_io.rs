@@ -61,7 +61,7 @@ fn read_chunked(config: &DeserializerConfig, input: &str, size: usize) -> Vec<Ve
             input: input.as_bytes(),
             size,
         },
-        config.decoder(),
+        config,
     );
     let mut rv = Vec::new();
     while let Some(value) = reader.read::<Recording>().unwrap() {
@@ -115,11 +115,11 @@ fn test_strict_in_chunks() {
 #[test]
 fn test_no_read_while_a_value_is_complete() {
     // everything after the complete values is only read when needed
-    let mut reader = Reader::new(Blocking(b"1\n\n[2]\n"), NEWLINE.decoder());
+    let mut reader = Reader::new(Blocking(b"1\n\n[2]\n"), NEWLINE);
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2]));
 
-    let mut reader = Reader::new(Blocking(b"[1] \"x\" {} 2"), STOP.decoder());
+    let mut reader = Reader::new(Blocking(b"[1] \"x\" {} 2"), STOP);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("x"));
     assert_eq!(
@@ -157,7 +157,7 @@ fn test_from_reader() {
 
 #[test]
 fn test_borrowed() {
-    let mut reader = Reader::new(&b"{\"name\": \"Peter\"}\n"[..], NEWLINE.decoder());
+    let mut reader = Reader::new(&b"{\"name\": \"Peter\"}\n"[..], NEWLINE);
     let value: std::collections::BTreeMap<&str, &str> = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value["name"], "Peter");
 }
@@ -167,7 +167,7 @@ fn test_errors() {
     // lines continue after errors, positions refer to the stream
     for size in [1, 3, 100] {
         let input = b"[1]\n[\"x\"]\n  [2, x]\n[3]\n";
-        let mut reader = Reader::new(Chunked { input, size }, NEWLINE.decoder());
+        let mut reader = Reader::new(Chunked { input, size }, NEWLINE);
         let mut results = Vec::new();
         while let Some(result) = reader.read::<Vec<u32>>().transpose() {
             results.push(result.map_err(|err| err.to_string()));
@@ -184,7 +184,7 @@ fn test_errors() {
     }
 
     // values continue after errors with `Trailing::Stop`
-    let mut reader = Reader::new(&b"[1] [\"x\"] {]\n[3]"[..], STOP.decoder());
+    let mut reader = Reader::new(&b"[1] [\"x\"] {]\n[3]"[..], STOP);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(
@@ -196,7 +196,7 @@ fn test_errors() {
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
 
     // incomplete values at the end
-    let mut reader = Reader::new(&b"[1] [2"[..], STOP.decoder());
+    let mut reader = Reader::new(&b"[1] [2"[..], STOP);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
@@ -205,18 +205,21 @@ fn test_errors() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new().encoder());
+    let mut writer = Writer::new(Vec::new(), SerializerConfig::new().trailing(Trailing::Stop));
     writer.write(&1).unwrap();
     writer.write(&vec![2, 3]).unwrap();
     let out = writer.into_inner();
     assert_eq!(out, b"1\n[2,3]");
 
     // the output can be read again
-    let mut reader = Reader::new(&out[..], STOP.decoder());
+    let mut reader = Reader::new(&out[..], STOP);
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
 
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new().encoder().lines());
+    let mut writer = Writer::new(
+        Vec::new(),
+        SerializerConfig::new().trailing(Trailing::Newline),
+    );
     writer.write(&"a").unwrap();
     writer.write(&"b").unwrap();
     assert_eq!(writer.into_inner(), b"\"a\"\n\"b\"\n");
@@ -224,4 +227,37 @@ fn test_writer() {
     let mut out = Vec::new();
     deser_json::to_writer(&mut out, &vec!["x"]).unwrap();
     assert_eq!(out, b"[\"x\"]");
+}
+
+#[test]
+fn test_writer_strict_and_layers() {
+    use deser::ser::{Layer, Next};
+    use deser::{Atom, Error};
+
+    // a strict stream holds a single value
+    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    writer.write(&1).unwrap();
+    assert!(writer.write(&2).is_err());
+    assert_eq!(writer.into_inner(), b"1");
+
+    /// Writes all numbers as strings.
+    struct NumbersAsStrings;
+
+    impl Layer for NumbersAsStrings {
+        fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+            match event {
+                Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+                event => next.emit(event),
+            }
+        }
+    }
+
+    let mut writer = Writer::new(
+        Vec::new(),
+        SerializerConfig::new().trailing(Trailing::Newline),
+    );
+    writer
+        .write_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
+        .unwrap();
+    assert_eq!(writer.into_inner(), b"[\"1\",\"2\"]\n");
 }

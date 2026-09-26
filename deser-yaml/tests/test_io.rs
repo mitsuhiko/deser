@@ -3,7 +3,7 @@ use std::io::Read;
 use deser::Event;
 use deser::de::Recording;
 use deser::io::{Reader, Writer};
-use deser_yaml::{Decoder, Deserializer, Encoder};
+use deser_yaml::{Deserializer, DeserializerConfig, SerializerConfig};
 
 /// A reader that returns the input in chunks of a fixed size.
 struct Chunked<'a> {
@@ -48,7 +48,7 @@ fn read_chunked(input: &str, size: usize) -> Vec<Vec<Event<'static>>> {
             input: input.as_bytes(),
             size,
         },
-        Decoder::default(),
+        DeserializerConfig::new(),
     );
     let mut rv = Vec::new();
     while let Some(value) = reader.read::<Recording>().unwrap() {
@@ -85,7 +85,7 @@ fn test_documents_in_chunks() {
 
 #[test]
 fn test_no_read_while_a_document_is_complete() {
-    let mut reader = Reader::new(Blocking(b"a\n...\n--- b\n...\n"), Decoder::default());
+    let mut reader = Reader::new(Blocking(b"a\n...\n--- b\n...\n"), DeserializerConfig::new());
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("a"));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("b"));
 }
@@ -94,7 +94,7 @@ fn test_no_read_while_a_document_is_complete() {
 fn test_errors_only_discard_their_document() {
     for size in [1, 5, 100] {
         let input = b"a: 1\n---\nb: [1\n---\nc: 3\n---\nd: x\n";
-        let mut reader = Reader::new(Chunked { input, size }, Decoder::default());
+        let mut reader = Reader::new(Chunked { input, size }, DeserializerConfig::new());
         let mut results = Vec::new();
         while let Some(result) = reader
             .read::<std::collections::BTreeMap<String, u32>>()
@@ -134,13 +134,13 @@ fn test_from_reader() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), Encoder::default());
+    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
     writer.write(&vec![1, 2]).unwrap();
     writer.write(&"b").unwrap();
     let output = writer.into_inner();
     assert_eq!(output, b"- 1\n- 2\n---\nb\n");
 
-    let mut reader = Reader::new(&output[..], Decoder::default());
+    let mut reader = Reader::new(&output[..], DeserializerConfig::new());
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("b"));
 

@@ -60,9 +60,10 @@ impl Position {
 /// # use deser::io::{Decoder, Frame};
 /// # use deser::de::DeserializeDriver;
 /// # use deser::Error;
-/// # struct Lines;
-/// # impl Decoder for Lines {
-/// #     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+/// # struct LinesConfig;
+/// # impl Decoder for LinesConfig {
+/// #     type State = ();
+/// #     fn frame(&self, _: &mut (), input: &[u8], eof: bool) -> Result<Frame, Error> {
 /// #         Ok(match input.iter().position(|&b| b == b'\n') {
 /// #             Some(end) => Frame::Value { start: 0, end, consumed: end + 1 },
 /// #             None if eof && input.is_empty() => Frame::End,
@@ -70,7 +71,7 @@ impl Position {
 /// #             None => Frame::Incomplete { consumed: 0 },
 /// #         })
 /// #     }
-/// #     fn drive<'de>(&mut self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+/// #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 /// #         let value: u64 = std::str::from_utf8(frame).unwrap().parse().unwrap();
 /// #         driver.emit(value)
 /// #     }
@@ -79,8 +80,8 @@ impl Position {
 /// use deser::io::{DecodeBuffer, Status};
 ///
 /// fn read_all(mut input: impl Read) -> Result<Vec<u64>, deser::Error> {
-///     // `Lines` is a format with one number per line
-///     let mut buffer = DecodeBuffer::new(Lines);
+///     // `LinesConfig` is the configuration of a format with a number per line
+///     let mut buffer = DecodeBuffer::new(LinesConfig);
 ///     let mut values = Vec::new();
 ///     loop {
 ///         match buffer.poll()? {
@@ -98,8 +99,9 @@ impl Position {
 /// ```
 ///
 /// The offsets, lines and columns of errors refer to the stream.
-pub struct DecodeBuffer<D> {
+pub struct DecodeBuffer<D: Decoder> {
     decoder: D,
+    state: D::State,
     // `data[start..end]` holds the input that was not consumed yet, the
     // data after `end` is space to read into.
     data: Vec<u8>,
@@ -120,6 +122,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     pub fn new(decoder: D) -> DecodeBuffer<D> {
         DecodeBuffer {
             decoder,
+            state: D::State::default(),
             data: Vec::new(),
             start: 0,
             end: 0,
@@ -180,7 +183,7 @@ impl<D: Decoder> DecodeBuffer<D> {
         }
         loop {
             let input = &self.data[self.start..self.end];
-            let frame = match self.decoder.frame(input, self.eof) {
+            let frame = match self.decoder.frame(&mut self.state, input, self.eof) {
                 Ok(frame) => frame,
                 Err(err) => {
                     self.failed = true;

@@ -83,8 +83,8 @@
 //!
 //! Documents are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
-//! [`Decoder`] and [`Encoder`] do the same with [`deser::io`] or an adapter
-//! for an async runtime (such as `deser-tokio`).  As TOML documents cannot
+//! configurations can also be used with [`deser::io`] or an adapter for an
+//! async runtime (such as `deser-tokio`).  As TOML documents cannot
 //! be split, the whole document is read before it's parsed.
 //!
 //! # Features
@@ -98,7 +98,7 @@ mod parser;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
-pub use self::io::{Decoder, Encoder, from_reader, to_writer};
+pub use self::io::{from_reader, to_writer};
 pub use self::ser::{SerializerConfig, to_string};
 /// Re-exported from [`deser::ext`] for convenience.
 pub use deser::ext::{Date, Datetime, Offset, Time};
