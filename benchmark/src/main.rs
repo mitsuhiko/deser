@@ -70,9 +70,27 @@ impl<'a> Benches<'a> {
     where
         T: Serialize + for<'de> Deserialize<'de>,
     {
+        self.add_events(dataset);
         for (format, input) in dataset.inputs() {
             self.add_deser_format(dataset, format, input);
         }
+    }
+
+    /// Adds a benchmark that only produces the events of the value, without
+    /// a format.  This is the cost of the serialize driver.
+    fn add_events<T: Serialize>(&mut self, dataset: &'a Dataset<T>) {
+        let value = &dataset.value;
+        self.add(format!("{}/events/ser", dataset.name), move || {
+            let mut count = 0usize;
+            deser::ser::SerializeDriver::new(value)
+                .drive(|event, _| {
+                    black_box(&event);
+                    count += 1;
+                    Ok(())
+                })
+                .unwrap();
+            black_box(count);
+        });
     }
 
     /// Adds the benchmarks of the deser crates and the serde libraries for
@@ -82,6 +100,7 @@ impl<'a> Benches<'a> {
         T: Serialize + for<'de> Deserialize<'de>,
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
+        self.add_events(dataset);
         for (format, input) in dataset.inputs() {
             let name = format!("{}/{}", dataset.name, format.name());
             let value = &dataset.value;

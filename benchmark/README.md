@@ -62,7 +62,10 @@ barely contains:
 * `tree`: deeply nested small containers
 
 The benchmarks are named `DATASET/FORMAT/OP` where `OP` is `de` or `ser`
-for deser and `de-serde` or `ser-serde` for serde.
+for deser and `de-serde` or `ser-serde` for serde.  `DATASET/events/ser`
+only produces the events of the value with the serialize driver, without
+a format.  It's the part of the cost of serialization that all formats
+share.
 
 Usage:
 
