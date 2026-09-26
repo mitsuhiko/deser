@@ -88,8 +88,9 @@ fn test_container_lengths() {
 #[test]
 fn test_nested_container_lengths() {
     // nested containers which grow their headers move the contents of the
-    // outer containers.
-    let value: Vec<Vec<Vec<u8>>> = (0..30)
+    // outer containers.  In miri only just past the first header growth.
+    let count: usize = if cfg!(miri) { 26 } else { 30 };
+    let value: Vec<Vec<Vec<u8>>> = (0..count)
         .map(|x| (0..x).map(|y| vec![y as u8; y]).collect())
         .collect();
     let bytes = deser_cbor::to_vec(&value).unwrap();
@@ -100,7 +101,7 @@ fn test_nested_container_lengths() {
     let dynamic: Value = deser_cbor::from_slice(&bytes).unwrap();
     assert_eq!(deser_cbor::to_vec(&dynamic).unwrap(), bytes);
 
-    let value: Vec<BTreeMap<String, Vec<u32>>> = (0..30)
+    let value: Vec<BTreeMap<String, Vec<u32>>> = (0..count as u32)
         .map(|x| {
             (0..x)
                 .map(|y| (format!("key{}", y), (0..y).collect()))
@@ -243,10 +244,11 @@ fn canonical_hash_maps() {
         "a461620361630461 7a01626161 02".replace(' ', "")
     );
 
-    // large maps with longer headers
-    let map: HashMap<u32, u32> = (0..1000).map(|x| (x, x)).collect();
+    // large maps with longer headers (and keys of all sizes up to u16)
+    let len = if cfg!(miri) { 300 } else { 1000 };
+    let map: HashMap<u32, u32> = (0..len).map(|x| (x, x)).collect();
     let bytes = CANONICAL.to_vec(&map).unwrap();
-    let sorted: BTreeMap<u32, u32> = (0..1000).map(|x| (x, x)).collect();
+    let sorted: BTreeMap<u32, u32> = (0..len).map(|x| (x, x)).collect();
     assert_eq!(bytes, deser_cbor::to_vec(&sorted).unwrap());
 }
 

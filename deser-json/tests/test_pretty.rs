@@ -99,19 +99,23 @@ fn test_scalars_and_empty() {
 
 #[test]
 fn test_deep_nesting() {
+    // the output grows quadratically, miri needs minutes for the full size.
+    // The indentation is still wider than the chunks it is written in.
+    let (depth, width) = if cfg!(miri) { (10, 40) } else { (100, 100) };
     let mut value = String::new();
-    for _ in 0..100 {
+    for _ in 0..depth {
         value.push('[');
     }
-    for _ in 0..100 {
+    for _ in 0..depth {
         value.push(']');
     }
     let parsed: deser::de::Recording = deser_json::from_str(&value).unwrap();
     let json = SerializerConfig::new()
-        .pretty(Indent::Spaces(100))
+        .pretty(Indent::Spaces(width))
         .to_string(&parsed)
         .unwrap();
-    assert!(json.contains(&format!("\n{}[]\n", " ".repeat(9900))));
+    let indent = " ".repeat(width * (depth - 1));
+    assert!(json.contains(&format!("\n{}[]\n", indent)));
     assert_eq!(strip(&json), value);
 }
 
@@ -321,7 +325,9 @@ fn test_inline_widths() {
     );
     let compact = to_string(&value).unwrap();
     for compact_setting in [true, false] {
-        for width in 0..80 {
+        // miri is too slow to check every width
+        let widths = (0..80).filter(|width| !cfg!(miri) || width % 8 == 0 || *width == 79);
+        for width in widths {
             let config = SerializerConfig::new()
                 .indent(Indent::Spaces(2))
                 .compact(compact_setting)

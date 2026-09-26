@@ -853,8 +853,10 @@ fn test_format_finite_like_ryu() {
     ] {
         check(val);
     }
+    // every iteration takes about 40ms in miri
+    let iterations = if cfg!(miri) { 100 } else { 100_000 };
     let mut x: u64 = 0x2545_f491_4f6c_dd1d;
-    for _ in 0..100_000 {
+    for _ in 0..iterations {
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
