@@ -22,12 +22,9 @@ fn assert_syntax_error<T: DeserializeOwned + std::fmt::Debug>(s: &str, offset: u
     let err = de::<T>(s).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Unexpected, "{}: {}", s, err);
     let msg = err.to_string();
-    assert!(
-        msg.contains(&format!("syntax error at offset {}", offset)),
-        "{}: {}",
-        s,
-        msg
-    );
+    assert!(msg.contains("syntax error: "), "{}: {}", s, msg);
+    assert_eq!(err.offset(), Some(offset), "{}: {}", s, msg);
+    assert!(msg.ends_with(&format!(" at offset {}", offset)), "{}", msg);
 }
 
 fn assert_eof<T: DeserializeOwned + std::fmt::Debug>(s: &str) {
@@ -221,7 +218,7 @@ fn malformed_breaks_and_arguments() {
     for prefix in [0x1c, 0x1d, 0x1e, 0x3c, 0x5c, 0x7c, 0x9c, 0xbc, 0xdc, 0xfc] {
         let err = deser_cbor::from_slice::<Value>(&[prefix, 0]).unwrap_err();
         assert!(
-            err.to_string().contains("syntax error at offset 0"),
+            err.to_string().contains("syntax error: ") && err.offset() == Some(0),
             "{:02x}: {}",
             prefix,
             err
@@ -482,4 +479,52 @@ fn borrowing() {
         deser_cbor::from_slice::<String>(&hex("7f 6161 6162 ff")).unwrap(),
         "ab"
     );
+}
+
+#[test]
+fn value_error_offsets() {
+    // errors of the values have the offset of the data item
+    let err = de::<Vec<u32>>("830102f5").unwrap_err();
+    assert_eq!(err.offset(), Some(3));
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unexpected bool, expected u32 at offset 3"
+    );
+
+    // tagged items report the item after the tags
+    let err = de::<Vec<u32>>("8201c1f5").unwrap_err();
+    assert_eq!(err.offset(), Some(3));
+
+    // the input ranges of the items are published
+    use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+    use deser::{Atom, Error, State};
+
+    #[derive(Debug)]
+    struct Range(std::ops::Range<usize>);
+
+    deser::make_slot_wrapper!(SlotWrapper);
+
+    impl<'de> Deserialize<'de> for Range {
+        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+            SlotWrapper::make_handle(out)
+        }
+    }
+
+    impl<'de> Sink<'de> for SlotWrapper<Range> {
+        fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
+            **self = Some(Range(state.input_range().unwrap()));
+            Ok(())
+        }
+    }
+
+    let input = hex("82 01 63 616263");
+    let mut out = None::<Vec<Range>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        deser_cbor::Deserializer::from_slice(&input)
+            .drive(&mut driver)
+            .unwrap();
+    }
+    let ranges: Vec<_> = out.unwrap().into_iter().map(|x| x.0).collect();
+    assert_eq!(ranges, [1..2, 2..6]);
 }

@@ -20,11 +20,9 @@
 //!
 //! # Implementing Location Support in Formats
 //!
-//! Formats do not depend on this crate.  They emit every event together
-//! with its byte range with
-//! [`DeserializeDriver::emit_at`](deser::de::DeserializeDriver::emit_at)
-//! and set the source with [`State::set_source`] if locations are
-//! requested.  The source map is built when a consumer asks for a location
+//! Formats do not depend on this crate.  They publish the byte range of
+//! every event with [`State::set_input_range`] before they emit it and set
+//! the source with [`State::set_source`] if locations are requested.  The source map is built when a consumer asks for a location
 //! for the first time:
 //!
 //! ```
@@ -37,7 +35,8 @@
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
 //!     driver.state_mut().set_source(input);
-//!     driver.emit_at(Event::from(true), 0, 4).unwrap();
+//!     driver.state_mut().set_input_range(0, 4);
+//!     driver.emit(Event::from(true)).unwrap();
 //! }
 //! let span = out.unwrap().span.unwrap();
 //! assert_eq!((span.start.line, span.start.column), (1, 1));

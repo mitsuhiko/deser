@@ -896,11 +896,9 @@ fn describe_char(c: char) -> String {
 /// Creates an error with the location of the byte offset.
 #[cold]
 pub(crate) fn error_at(input: &str, pos: usize, kind: ErrorKind, msg: &str) -> Error {
-    let before = input.get(..pos).unwrap_or(input);
-    let line = before.bytes().filter(|&c| c == b'\n').count() + 1;
-    let line_start = before.rfind('\n').map_or(0, |x| x + 1);
-    let column = before[line_start..].chars().count() + 1;
-    Error::new(kind, format!("{} at line {} column {}", msg, line, column))
+    Error::new(kind, msg.to_string())
+        .with_offset(pos.min(input.len()))
+        .resolve_position(input.as_bytes())
 }
 
 type NumberError = (ErrorKind, &'static str);

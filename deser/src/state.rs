@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::descriptors::Descriptor;
+use crate::error::Error;
 use crate::extensions::Extensions;
 
 const STACK_CAPACITY: usize = 128;
@@ -32,7 +33,9 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///   value, such as a tag.
 ///
 /// Additionally formats can publish the byte range in the input of every
-/// event (see [`input_range`](Self::input_range)).
+/// event (see [`input_range`](Self::input_range)) and extensions can
+/// register functions that add context to errors (see
+/// [`add_error_context`](Self::add_error_context)).
 ///
 /// Extension values have to be [`Send`] so that the state is [`Send`] too.
 /// This means that the state never prevents an ongoing serialization or
@@ -45,7 +48,11 @@ pub struct State {
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
     source: Option<Arc<str>>,
+    error_context: Vec<ErrorContextFn>,
 }
+
+/// A function that adds context to an error, see [`State::add_error_context`].
+pub type ErrorContextFn = fn(Error, &State) -> Error;
 
 impl State {
     /// Creates a new state for a driver.
@@ -56,6 +63,7 @@ impl State {
             is_map_key: false,
             input_range: NO_RANGE,
             source: None,
+            error_context: Vec::new(),
         }
     }
 
@@ -69,6 +77,7 @@ impl State {
                 is_map_key: false,
                 input_range: NO_RANGE,
                 source: None,
+                error_context: Vec::new(),
             },
         )
     }
@@ -120,8 +129,9 @@ impl State {
     /// after that event was delivered:
     ///
     /// * During deserialization, formats attach data with
-    ///   [`DeserializeDriver::emit_with`](crate::de::DeserializeDriver::emit_with).
-    ///   The sinks that receive the event (including the
+    ///   [`event_mut`](Self::event_mut) before they emit the event with the
+    ///   [`DeserializeDriver`](crate::de::DeserializeDriver).  The sinks
+    ///   that receive the event (including the
     ///   [`finish`](crate::de::Sink::finish) of a container on its end event)
     ///   can access it.
     /// * During serialization, [`Serialize`](crate::ser::Serialize)
@@ -173,10 +183,7 @@ impl State {
 
     /// Detaches all data from the current event.
     ///
-    /// The drivers call this after the events that carry data.  Formats
-    /// which attach data for every event they emit do not need to detach it
-    /// between events as it's replaced, but they should detach it once they
-    /// are done.
+    /// The drivers call this after every event.
     #[inline(always)]
     pub fn clear_event_data(&mut self) {
         self.extensions.clear_event_data();
@@ -214,9 +221,9 @@ impl State {
     /// Returns the byte range in the input of the current event.
     ///
     /// This is only available if the format provides it (see
-    /// [`DeserializeDriver::emit_at`](crate::de::DeserializeDriver::emit_at)).
-    /// The range refers to the [`source`](Self::source) and can be resolved
-    /// into lines and columns for instance with the `deser-location` crate.
+    /// [`set_input_range`](Self::set_input_range)).  The range refers to
+    /// the [`source`](Self::source) and can be resolved into lines and
+    /// columns for instance with the `deser-location` crate.
     #[inline]
     pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
         let (start, end) = self.input_range;
@@ -225,6 +232,95 @@ impl State {
         } else {
             Some(start..end)
         }
+    }
+
+    /// Sets the byte range in the input of the next event.
+    ///
+    /// Formats call this before they emit an event into a
+    /// [`DeserializeDriver`](crate::de::DeserializeDriver).  Like event
+    /// data, the range is only attached to the next event: the driver
+    /// detaches it after the event was delivered.
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    ///
+    /// let mut out = None::<bool>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.state_mut().set_input_range(0, 4);
+    /// driver.emit(true).unwrap();
+    /// assert_eq!(driver.state().input_range(), None);
+    /// ```
+    #[inline(always)]
+    pub fn set_input_range(&mut self, start: usize, end: usize) {
+        self.input_range = (start, end);
+    }
+
+    /// Detaches the input range and the event data from the current event.
+    #[inline(always)]
+    pub(crate) fn clear_event(&mut self) {
+        self.input_range.0 = NO_RANGE.0;
+        self.extensions.clear_event_data();
+    }
+
+    /// Registers a function that adds context to errors.
+    ///
+    /// When an event fails (for instance because a sink rejects a value)
+    /// the drivers invoke the registered functions with the error and the
+    /// state as it was when the error happened.  This means that the
+    /// context is also correct for errors in values which are replayed from
+    /// a [`Recording`](crate::de::Recording).  The drivers only do this
+    /// once for an error: the outer containers which the error passes
+    /// through do not add their context.  Functions should not replace
+    /// context that is already there.
+    ///
+    /// Registering the same function again has no effect.
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{Error, Event, State};
+    ///
+    /// fn add_depth(err: Error, state: &State) -> Error {
+    ///     match err.path() {
+    ///         Some(_) => err,
+    ///         None => err.with_path(format!("<depth {}>", state.depth())),
+    ///     }
+    /// }
+    ///
+    /// let mut out = None::<Vec<Vec<u32>>>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.state_mut().add_error_context(add_depth);
+    /// driver.emit(Event::SeqStart).unwrap();
+    /// driver.emit(Event::SeqStart).unwrap();
+    /// let err = driver.emit(true).unwrap_err();
+    /// assert_eq!(err.path(), Some("<depth 2>"));
+    /// ```
+    pub fn add_error_context(&mut self, f: ErrorContextFn) {
+        if !self
+            .error_context
+            .iter()
+            .any(|&other| other as usize == f as usize)
+        {
+            self.error_context.push(f);
+        }
+    }
+
+    /// Attaches the context of the current event to an error.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn attach_error_context(&self, mut err: Error) -> Error {
+        if err.has_context() {
+            return err;
+        }
+        err.set_has_context();
+        if err.offset().is_none() {
+            if let Some(range) = self.input_range() {
+                err = err.with_offset(range.start);
+            }
+        }
+        for f in self.error_context.iter() {
+            err = f(err, self);
+        }
+        err
     }
 
     /// Returns the source the input ranges refer to.

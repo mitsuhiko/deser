@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, Event};
@@ -11,8 +12,48 @@ use crate::State;
 /// without using the runtime stack.  As rust lifetimes make what this type does
 /// internally impossible with safe code, this is a safe abstractiont that
 /// hides the unsafety internally.
+///
+/// # Events and Their Context
+///
+/// Events are emitted with [`emit`](Self::emit) or, if they borrow from
+/// the data being deserialized, with [`emit_borrowed`](Self::emit_borrowed).
+/// Information about the next event is placed into the [`State`] before it's
+/// emitted: its byte range in the input with
+/// [`State::set_input_range`] and data attached to it with
+/// [`State::event_mut`].  Both are detached after the event was delivered.
+///
+/// ```
+/// use deser::de::DeserializeDriver;
+/// use deser::Event;
+///
+/// let mut out = None::<Vec<u32>>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// driver.state_mut().set_input_range(0, 1);
+/// driver.emit(Event::SeqStart).unwrap();
+/// driver.state_mut().set_input_range(1, 3);
+/// driver.emit(42u64).unwrap();
+/// driver.state_mut().set_input_range(3, 4);
+/// driver.emit(Event::SeqEnd).unwrap();
+/// ```
+///
+/// When an event fails, the error gets the context of the event attached
+/// (see [`Error`] and [`State::add_error_context`]).
+///
+/// # Layers
+///
+/// [`Layer`]s sit between the format and the sinks and see every event
+/// before it's delivered.  They are added with
+/// [`push_layer`](Self::push_layer), see [`Layer`] for more information.
 pub struct DeserializeDriver<'a, 'de: 'a> {
-    state: State,
+    core: DriverCore<'de>,
+    layers: Vec<Box<dyn Layer>>,
+    // the sinks borrow for 'a
+    _marker: PhantomData<&'a mut ()>,
+}
+
+/// The state and the sinks of a driver.
+pub(crate) struct DriverCore<'de> {
+    pub(crate) state: State,
     // The sinks borrow from each other: every sink on the stack can borrow
     // from the sink below it.  The lifetimes of these borrows are erased
     // (to `'de` as the handles cannot outlive that) and it's the driver's
@@ -22,15 +63,13 @@ pub struct DeserializeDriver<'a, 'de: 'a> {
     // `root` holds the sink the driver was created with while no container
     // is open.
     root: Option<SinkHandle<'de, 'de>>,
-    sink_stack: Vec<(SinkHandle<'de, 'de>, Layer)>,
-    // the sinks borrow for 'a
-    _marker: PhantomData<&'a mut ()>,
+    sink_stack: Vec<(SinkHandle<'de, 'de>, Container)>,
 }
 
 const STACK_CAPACITY: usize = 128;
 
 #[derive(Copy, Clone)]
-enum Layer {
+enum Container {
     /// A map, the flag is `true` if a key is expected next.
     Map(bool),
     Seq,
@@ -63,7 +102,9 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// deserialization: the extensions are shared and the containers opened
     /// by the nested driver are placed on top of the ones that are currently
     /// open.  This is used to replay recorded events so that replayed values
-    /// observe the same state as values that were not buffered.
+    /// observe the same state as values that were not buffered.  The nested
+    /// driver has no layers: the replayed events already passed the layers
+    /// when they were recorded.
     pub(crate) fn nested<R>(
         state: &mut State,
         sink: SinkHandle<'_, 'de>,
@@ -73,9 +114,9 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         let depth = state.descriptor_stack.len();
         let outer_is_map_key = state.is_map_key;
         let mut driver = DeserializeDriver::with_state(state.take(), sink);
-        driver.state.is_map_key = is_map_key;
+        driver.core.state.is_map_key = is_map_key;
         let rv = f(&mut driver);
-        *state = driver.state.take();
+        *state = driver.core.state.take();
         drop(driver);
         // a failed replay can leave containers open
         state.descriptor_stack.truncate(depth);
@@ -85,17 +126,20 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
 
     fn with_state(state: State, sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver {
-            state,
-            sink_stack: Vec::with_capacity(STACK_CAPACITY),
-            // SAFETY: the driver cannot outlive 'a
-            root: Some(unsafe { erase_lifetime(sink) }),
+            core: DriverCore {
+                state,
+                sink_stack: Vec::with_capacity(STACK_CAPACITY),
+                // SAFETY: the driver cannot outlive 'a
+                root: Some(unsafe { erase_lifetime(sink) }),
+            },
+            layers: Vec::new(),
             _marker: PhantomData,
         }
     }
 
     /// Returns a borrowed reference to the current deserializer state.
     pub fn state(&self) -> &State {
-        &self.state
+        &self.core.state
     }
 
     /// Returns a mutable reference to the current deserializer state.
@@ -103,14 +147,49 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Formats use this to publish information for the event they emit
     /// next into the state.
     pub fn state_mut(&mut self) -> &mut State {
-        &mut self.state
+        &mut self.core.state
+    }
+
+    /// Adds a layer.
+    ///
+    /// Layers see the events in the order they were added: the layer that
+    /// was added first sees the events emitted into the driver, the last
+    /// one passes them on to the sinks.  See [`Layer`] for more
+    /// information.
+    pub fn push_layer<L: Layer + 'static>(&mut self, layer: L) {
+        self.layers.push(Box::new(layer));
+    }
+
+    /// Wraps the sink the driver deserializes into.
+    ///
+    /// This allows placing a sink between the driver and the sink of a
+    /// value, for instance to change how certain values are deserialized.
+    /// Unlike [`Layer`]s such sinks see the sinks of the values and not just
+    /// the events.  Sinks created by a wrapped sink are not wrapped
+    /// automatically, the wrapper needs to wrap them in
+    /// [`next_key`](crate::de::Sink::next_key) and
+    /// [`next_value`](crate::de::Sink::next_value) if it wants to see
+    /// them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if events were already emitted.
+    pub fn wrap_sink<F>(&mut self, f: F)
+    where
+        F: for<'x> FnOnce(SinkHandle<'x, 'de>) -> SinkHandle<'x, 'de>,
+    {
+        assert!(
+            self.core.sink_stack.is_empty(),
+            "sinks can only be wrapped before events are emitted"
+        );
+        let root = self.core.root.take().expect("no active sink");
+        self.core.root = Some(f(root));
     }
 
     /// Emits an event into the driver.
     ///
-    /// To attach data to the event (see
-    /// [`State::event`](crate::State::event)) use
-    /// [`emit_with`](Self::emit_with).
+    /// The data of the event is only valid for the call.  To emit data that
+    /// can be borrowed use [`emit_borrowed`](Self::emit_borrowed).
     ///
     /// # Panics
     ///
@@ -119,11 +198,11 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     #[inline]
     pub fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error> {
         match event.into() {
-            Event::Atom(atom) => self.emit_atom(atom),
-            Event::MapStart => self.emit_start(true),
-            Event::SeqStart => self.emit_start(false),
-            Event::MapEnd => self.emit_end(true),
-            Event::SeqEnd => self.emit_end(false),
+            Event::Atom(atom) => self.atom_event(atom),
+            Event::MapStart => self.start_event(true),
+            Event::SeqStart => self.start_event(false),
+            Event::MapEnd => self.end_event(true),
+            Event::SeqEnd => self.end_event(false),
         }
     }
 
@@ -147,6 +226,111 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     #[inline]
     pub fn emit_borrowed<E: Into<Event<'de>>>(&mut self, event: E) -> Result<(), Error> {
         match event.into() {
+            Event::Atom(atom) => self.borrowed_atom_event(atom),
+            Event::MapStart => self.start_event(true),
+            Event::SeqStart => self.start_event(false),
+            Event::MapEnd => self.end_event(true),
+            Event::SeqEnd => self.end_event(false),
+        }
+    }
+
+    // The following functions deliver an event emitted into the driver and
+    // detach its context afterwards.  They are not inlined so that the code
+    // emitting events stays small.
+
+    #[inline(never)]
+    fn atom_event(&mut self, atom: Atom) -> Result<(), Error> {
+        if !self.layers.is_empty() {
+            return self.emit_layered(LayerEvent::new(Event::Atom(atom)));
+        }
+        let rv = self.core.emit_atom(atom);
+        self.core.finish_event(rv)
+    }
+
+    #[inline(never)]
+    fn borrowed_atom_event(&mut self, atom: Atom<'de>) -> Result<(), Error> {
+        if !self.layers.is_empty() {
+            return self.emit_layered(LayerEvent::borrowed(Event::Atom(atom)));
+        }
+        let rv = self.core.emit_borrowed_atom(atom);
+        self.core.finish_event(rv)
+    }
+
+    #[inline(never)]
+    fn start_event(&mut self, is_map: bool) -> Result<(), Error> {
+        if !self.layers.is_empty() {
+            let event = if is_map {
+                Event::MapStart
+            } else {
+                Event::SeqStart
+            };
+            return self.emit_layered(LayerEvent::new(event));
+        }
+        let rv = self.core.emit_start(is_map);
+        self.core.finish_event(rv)
+    }
+
+    #[inline(never)]
+    fn end_event(&mut self, is_map: bool) -> Result<(), Error> {
+        if !self.layers.is_empty() {
+            let event = if is_map { Event::MapEnd } else { Event::SeqEnd };
+            return self.emit_layered(LayerEvent::new(event));
+        }
+        let rv = self.core.emit_end(is_map);
+        self.core.finish_event(rv)
+    }
+
+    /// Passes an event through the layers.
+    ///
+    /// This is marked as cold so that it does not affect the code emitting
+    /// events when there are no layers.
+    #[cold]
+    #[inline(never)]
+    fn emit_layered(&mut self, event: LayerEvent<'_, 'de>) -> Result<(), Error> {
+        let rv = Next::new(&mut self.layers, &mut self.core).emit(event);
+        self.core.finish_event(rv)
+    }
+}
+
+impl<'de> DriverCore<'de> {
+    /// Detaches the context of the event that was delivered.
+    ///
+    /// If the event failed, the context is attached to the error.
+    #[inline(always)]
+    fn finish_event(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
+        let rv = match rv {
+            Ok(()) => Ok(()),
+            Err(err) => Err(self.state.attach_error_context(err)),
+        };
+        self.state.clear_event();
+        rv
+    }
+
+    /// Sets the position of the next event in the state.
+    #[inline]
+    pub(crate) fn update_position(&mut self, event: &Event<'_>) {
+        self.state.is_map_key = match event {
+            Event::MapEnd | Event::SeqEnd => false,
+            _ => matches!(self.sink_stack.last(), Some((_, Container::Map(true)))),
+        };
+    }
+
+    /// Delivers an event to the sinks.
+    #[inline(always)]
+    pub(crate) fn dispatch(&mut self, event: Event<'_>) -> Result<(), Error> {
+        match event {
+            Event::Atom(atom) => self.emit_atom(atom),
+            Event::MapStart => self.emit_start(true),
+            Event::SeqStart => self.emit_start(false),
+            Event::MapEnd => self.emit_end(true),
+            Event::SeqEnd => self.emit_end(false),
+        }
+    }
+
+    /// Delivers an event that borrows from the data to the sinks.
+    #[inline(always)]
+    pub(crate) fn dispatch_borrowed(&mut self, event: Event<'de>) -> Result<(), Error> {
+        match event {
             Event::Atom(atom) => self.emit_borrowed_atom(atom),
             Event::MapStart => self.emit_start(true),
             Event::SeqStart => self.emit_start(false),
@@ -155,92 +339,10 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         }
     }
 
-    /// Emits an event with data attached to it.
-    ///
-    /// The callback attaches the data to the state with
-    /// [`State::event_mut`](crate::State::event_mut), the data is detached
-    /// after the event was emitted.  Events emitted with
-    /// [`emit`](Self::emit) do not pay for event data this way.
-    ///
-    /// ```
-    /// use deser::de::DeserializeDriver;
-    /// use deser::Event;
-    ///
-    /// #[derive(Debug, Default, Clone)]
-    /// struct Offset(usize);
-    ///
-    /// let mut out = None::<Vec<u32>>;
-    /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver.emit(Event::SeqStart).unwrap();
-    /// driver.emit_with(1u64, |state| state.event_mut::<Offset>().0 = 1).unwrap();
-    /// assert!(!driver.state().has_event_data());
-    /// ```
-    #[inline]
-    pub fn emit_with<'e, E, F>(&mut self, event: E, attach: F) -> Result<(), Error>
-    where
-        E: Into<Event<'e>>,
-        F: FnOnce(&mut State),
-    {
-        attach(&mut self.state);
-        let rv = self.emit(event);
-        self.state.clear_event_data();
-        rv
-    }
-
-    /// Emits a borrowed event with data attached to it.
-    ///
-    /// This combines [`emit_borrowed`](Self::emit_borrowed) and
-    /// [`emit_with`](Self::emit_with).
-    #[inline]
-    pub fn emit_borrowed_with<E, F>(&mut self, event: E, attach: F) -> Result<(), Error>
-    where
-        E: Into<Event<'de>>,
-        F: FnOnce(&mut State),
-    {
-        attach(&mut self.state);
-        let rv = self.emit_borrowed(event);
-        self.state.clear_event_data();
-        rv
-    }
-
-    /// Emits an event together with its byte range in the input.
-    ///
-    /// Sinks retrieve the range with
-    /// [`State::input_range`](crate::State::input_range).  The range is only
-    /// attached to this event.
-    #[inline]
-    pub fn emit_at<'e, E: Into<Event<'e>>>(
-        &mut self,
-        event: E,
-        start: usize,
-        end: usize,
-    ) -> Result<(), Error> {
-        self.state.input_range = (start, end);
-        let rv = self.emit(event);
-        self.state.input_range.0 = crate::state::NO_RANGE.0;
-        rv
-    }
-
-    /// Emits a borrowed event together with its byte range in the input.
-    ///
-    /// This combines [`emit_borrowed`](Self::emit_borrowed) and
-    /// [`emit_at`](Self::emit_at).
-    #[inline]
-    pub fn emit_borrowed_at<E: Into<Event<'de>>>(
-        &mut self,
-        event: E,
-        start: usize,
-        end: usize,
-    ) -> Result<(), Error> {
-        self.state.input_range = (start, end);
-        let rv = self.emit_borrowed(event);
-        self.state.input_range.0 = crate::state::NO_RANGE.0;
-        rv
-    }
-
+    #[inline(always)]
     fn emit_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
-            Some((sink, Layer::Map(ref mut is_key))) => {
+            Some((sink, Container::Map(ref mut is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;
@@ -250,7 +352,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                     sink.borrowed_value_atom(atom, &mut self.state)
                 }
             }
-            Some((sink, Layer::Seq)) => {
+            Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
                 sink.borrowed_value_atom(atom, &mut self.state)
             }
@@ -262,9 +364,10 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         }
     }
 
+    #[inline(always)]
     fn emit_atom(&mut self, atom: Atom) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
-            Some((sink, Layer::Map(ref mut is_key))) => {
+            Some((sink, Container::Map(ref mut is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;
@@ -274,7 +377,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                     sink.value_atom(atom, &mut self.state)
                 }
             }
-            Some((sink, Layer::Seq)) => {
+            Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
                 sink.value_atom(atom, &mut self.state)
             }
@@ -286,9 +389,10 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         }
     }
 
+    #[inline(always)]
     fn emit_start(&mut self, is_map: bool) -> Result<(), Error> {
         let mut sink = match self.sink_stack.last_mut() {
-            Some((parent, Layer::Map(ref mut is_key))) => {
+            Some((parent, Container::Map(ref mut is_key))) => {
                 let key = *is_key;
                 *is_key = !key;
                 self.state.is_map_key = key;
@@ -302,7 +406,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                 // before it.
                 unsafe { erase_lifetime(sink) }
             }
-            Some((parent, Layer::Seq)) => {
+            Some((parent, Container::Seq)) => {
                 self.state.is_map_key = false;
                 let sink = parent.next_value(&mut self.state)?;
                 // SAFETY: see above
@@ -310,22 +414,23 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             }
             None => self.root.take().expect("no active sink"),
         };
-        let layer = if is_map {
+        let container = if is_map {
             sink.map(&mut self.state)?;
-            Layer::Map(true)
+            Container::Map(true)
         } else {
             sink.seq(&mut self.state)?;
-            Layer::Seq
+            Container::Seq
         };
         self.state.descriptor_stack.push(sink.descriptor());
-        self.sink_stack.push((sink, layer));
+        self.sink_stack.push((sink, container));
         Ok(())
     }
 
+    #[inline(always)]
     fn emit_end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.sink_stack.last() {
-            Some((_, Layer::Map(_))) if is_map => {}
-            Some((_, Layer::Seq)) if !is_map => {}
+            Some((_, Container::Map(_))) if is_map => {}
+            Some((_, Container::Seq)) if !is_map => {}
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
         }
         let (mut sink, _) = self.sink_stack.pop().unwrap();
@@ -342,7 +447,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     }
 }
 
-impl<'a, 'de> Drop for DeserializeDriver<'a, 'de> {
+impl<'de> Drop for DriverCore<'de> {
     fn drop(&mut self) {
         // sinks borrow from the sinks below them, drop them in inverse order
         while let Some(_item) = self.sink_stack.pop() {}

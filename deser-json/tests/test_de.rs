@@ -575,3 +575,78 @@ fn test_exact_number_text() {
         check(&text);
     }
 }
+
+#[test]
+fn test_error_locations() {
+    fn fails<'de, T: deser::de::Deserialize<'de> + std::fmt::Debug>(input: &'de str) -> String {
+        from_str::<T>(input).unwrap_err().to_string()
+    }
+
+    // syntax errors
+    assert_eq!(
+        fails::<Vec<u32>>("[1,\n 2 x]"),
+        "Unexpected: expected a comma at line 2 column 4"
+    );
+    assert_eq!(
+        fails::<Vec<u32>>("  \n  @"),
+        "Unexpected: unexpected character at line 2 column 3"
+    );
+    assert_eq!(
+        fails::<Vec<u32>>("[1, ]"),
+        "Unexpected: expected a value at line 1 column 5"
+    );
+    assert_eq!(
+        fails::<Vec<u32>>("[1, 2"),
+        "EndOfFile: unexpected end of file at line 1 column 6"
+    );
+
+    // errors of the values
+    assert_eq!(
+        fails::<Vec<u32>>("[1,\n  true]"),
+        "Unexpected: unexpected bool, expected u32 at line 2 column 3"
+    );
+    // columns are counted in characters
+    assert_eq!(
+        fails::<Vec<(String, u32)>>("[[\"äöü\", \"x\"]]"),
+        "Unexpected: unexpected string, expected u32 at line 1 column 10"
+    );
+
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Point {
+        x: u32,
+        y: u32,
+    }
+    // missing fields are reported at the end of the map
+    let err = from_str::<Point>("{\n  \"x\": 1\n}").unwrap_err();
+    assert_eq!(
+        (err.line(), err.column(), err.offset()),
+        (Some(3), Some(1), Some(11))
+    );
+
+    // from_slice works on bytes
+    let err = deser_json::from_slice::<Vec<u32>>(b"[1,\n \"x\"]").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(2), Some(2)));
+}
+
+#[test]
+fn test_limits() {
+    use deser::de::{Format, Limits};
+
+    let input = r#"{"a": [[1]], "b": "hello"}"#;
+    let parse = |limits: Limits| {
+        deser_json::Deserializer::from_str(input)
+            .deserialize_with::<deser::de::Recording, _>(|driver| driver.push_layer(limits))
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    };
+    assert_eq!(parse(Limits::new().max_depth(3).max_len(5)), Ok(()));
+    assert_eq!(
+        parse(Limits::new().max_depth(2)),
+        Err("Unexpected: recursion limit exceeded at line 1 column 8".into())
+    );
+    assert_eq!(
+        parse(Limits::new().max_len(4)),
+        Err("Unexpected: string or bytes too long at line 1 column 19".into())
+    );
+}

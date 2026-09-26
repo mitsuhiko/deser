@@ -13,48 +13,34 @@
 //!
 //! * Out-of-band in the deserializer state.  The JSON deserializer publishes
 //!   the input range of every event there (`State::input_range`) which
-//!   `deser_location::Locations` resolves into lines and columns, and
-//!   `deser_path::PathSink` maintains the path there as replayable state.
+//!   `deser_location::Locations` resolves into lines and columns, and the
+//!   `deser_path::PathLayer` maintains the path there as replayable state.
 //!   A `deser::de::Recording` captures both for every recorded event and
 //!   restores them on replay.  `deser_location::Spanned` reads the location
 //!   from the state.
-//! * In-band as extension values.  [`Annotator`] is a sink wrapper which
-//!   turns every primitive value into a [`LocatedAtom`] extension value
-//!   carrying the value, its path and its location.  Its fallback is the
-//!   plain value, so types that do not know about it continue to work.
-//!   [`Located`] picks the information up from the extension value.
+//! * In-band as extension values.  [`Annotator`] is a layer which turns
+//!   every primitive value into a [`LocatedAtom`] extension value carrying
+//!   the value, its path and its location.  Its fallback is the plain value,
+//!   so types that do not know about it continue to work.  [`Located`]
+//!   picks the information up from the extension value.  As layers see the
+//!   events before they are recorded, the annotated values are recorded
+//!   and replayed as well.
 //!
 //! [`Either`] is a hand written untagged enum on top of
 //! `Recording::capture`.  [`Backend`], [`Action`], [`Hook`] and [`Limit`] are
 //! derived enums in the different representations (internally tagged,
 //! externally tagged, adjacently tagged and untagged) which buffer where
 //! needed.
+//!
+//! The path layer also attaches the path to errors, see the end of `main`.
 use std::fmt;
 
-use deser::de::{DeserializeDriver, OwnedSink, Recording, Sink, SinkHandle};
+use deser::de::{Format, Layer, LayerEvent, Next, OwnedSink, Recording, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
 use deser::State;
-use deser::{Atom, Descriptor, Deserialize, Error, ErrorKind};
+use deser::{Atom, Descriptor, Deserialize, Error, Event};
 use deser_location::{Locations, Span, Spanned};
-use deser_path::{Path, PathSegment, PathSink};
-
-/// Formats a path as `servers[1].host`.
-fn format_path(path: &Path) -> String {
-    let mut rv = String::new();
-    for segment in path.segments() {
-        match segment {
-            PathSegment::Key(key) => {
-                if !rv.is_empty() {
-                    rv.push('.');
-                }
-                rv.push_str(key);
-            }
-            PathSegment::Index(idx) => rv.push_str(&format!("[{}]", idx)),
-            PathSegment::Unknown => rv.push_str(".?"),
-        }
-    }
-    rv
-}
+use deser_path::{Path, PathLayer};
 
 /// A primitive value annotated with the path and location where it was found.
 ///
@@ -77,75 +63,39 @@ impl Extension for LocatedAtom {
     }
 }
 
-/// Wraps a sink and annotates all primitive values with their path and
+/// A layer which annotates all primitive values with their path and
 /// location.
 ///
-/// This needs to be wrapped by a `PathSink` which maintains the path and the
-/// format needs to publish locations.
-pub struct Annotator<'a, 'de> {
-    sink: SinkHandle<'a, 'de>,
-}
+/// This needs to be added after a `PathLayer` which maintains the path and
+/// the format needs to publish locations.
+pub struct Annotator;
 
-impl<'a, 'de> Annotator<'a, 'de> {
-    pub fn wrap(sink: SinkHandle<'a, 'de>) -> Annotator<'a, 'de> {
-        Annotator { sink }
-    }
-}
-
-impl<'a, 'de> Sink<'de> for Annotator<'a, 'de> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl Layer for Annotator {
+    fn event<'de>(
+        &mut self,
+        event: LayerEvent<'_, 'de>,
+        next: &mut Next<'_, 'de>,
+    ) -> Result<(), Error> {
         // map keys are not annotated and values that already are extension
         // values are passed through as is as fallbacks cannot be extension
         // values themselves.
-        if state.is_map_key() || matches!(atom, Atom::Ext(_)) {
-            return self.sink.atom(atom, state);
-        }
-        let located = LocatedAtom {
-            path: state.get::<Path>().map(format_path).unwrap_or_default(),
-            span: Locations::current_span(state),
-            value: atom.to_static(),
+        let located = match event.event() {
+            Event::Atom(atom) if !next.state().is_map_key() && !matches!(atom, Atom::Ext(_)) => {
+                LocatedAtom {
+                    path: next
+                        .state()
+                        .get::<Path>()
+                        .map(Path::to_string)
+                        .unwrap_or_default(),
+                    span: Locations::current_span(next.state_mut()),
+                    value: atom.to_static(),
+                }
+            }
+            _ => return next.emit(event),
         };
-        self.sink
-            .atom(Atom::Ext(ExtValue::borrowed(&located)), state)
-    }
-
-    fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.map(state)
-    }
-
-    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.seq(state)
-    }
-
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(SinkHandle::boxed(Annotator::wrap(
-            self.sink.next_key(state)?,
-        )))
-    }
-
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(SinkHandle::boxed(Annotator::wrap(
-            self.sink.next_value(state)?,
-        )))
-    }
-
-    fn value_for_key(
-        &mut self,
-        key: &str,
-        state: &mut State,
-    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        Ok(self
-            .sink
-            .value_for_key(key, state)?
-            .map(|sink| SinkHandle::boxed(Annotator::wrap(sink))))
-    }
-
-    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.finish(state)
-    }
-
-    fn descriptor(&self) -> &'static dyn Descriptor {
-        self.sink.descriptor()
+        next.emit(LayerEvent::new(Event::Atom(Atom::Ext(ExtValue::borrowed(
+            &located,
+        )))))
     }
 }
 
@@ -155,14 +105,10 @@ const CONFIG: deser_json::DeserializerConfig =
 
 /// Deserializes JSON and annotates all values with their path and location.
 pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
-    let mut out = None;
-    {
-        let sink = Annotator::wrap(T::deserialize_into(&mut out));
-        let sink = PathSink::wrap_ref(SinkHandle::boxed(sink));
-        let mut driver = DeserializeDriver::from_sink(SinkHandle::boxed(sink));
-        deser_json::Deserializer::from_str_with_config(json, &CONFIG).drive(&mut driver)?;
-    }
-    out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+    deser_json::Deserializer::from_str_with_config(json, &CONFIG).deserialize_with(|driver| {
+        driver.push_layer(PathLayer::new());
+        driver.push_layer(Annotator);
+    })
 }
 
 /// A value together with the path and location where it was found (in-band).
@@ -400,4 +346,15 @@ fn main() {
     println!("plain JSON:");
     let config: Config = deser_json::from_str(INPUT).unwrap();
     println!("{:#?}", config);
+
+    // errors carry the location and, with the path layer, the path.  This
+    // also works for values which are buffered: the backend is replayed
+    // once its type is known.
+    println!();
+    println!("error:");
+    let input = INPUT.replace(r#""timeout": 30,"#, r#""timeout": "30s","#);
+    let err = from_json_with_locations::<Config>(&input).unwrap_err();
+    println!("{}", err);
+    assert_eq!(err.path(), Some("backend.timeout"));
+    assert_eq!((err.line(), err.column()), (Some(11), Some(20)));
 }

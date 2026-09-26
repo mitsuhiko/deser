@@ -217,10 +217,10 @@ impl Recording {
     ) -> Result<(), Error> {
         DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
             for recorded in self.events.iter() {
-                driver.emit_with(recorded.event.as_borrowed(), |state| {
-                    state.input_range = recorded.input_range;
-                    state.extensions_mut().restore(&recorded.snapshot)
-                })?;
+                let state = driver.state_mut();
+                state.input_range = recorded.input_range;
+                state.extensions_mut().restore(&recorded.snapshot);
+                driver.emit(recorded.event.as_borrowed())?;
             }
             Ok(())
         })

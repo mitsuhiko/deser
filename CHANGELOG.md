@@ -4,6 +4,42 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added layers: `deser::de::Layer` and `deser::ser::Layer` sit between a
+  format and the types and see every event.  They are added to the drivers
+  with `push_layer` and can observe, reject, change, drop and insert events.
+  Deserialization layers know the position of an event (`State::is_map_key`
+  and `State::depth`) and replayed values do not pass through them again.
+  Serialization layers are only applied by `SerializeDriver::drive`,
+  `SerializeDriver::next` panics if layers were added.
+- Added `deser::de::Limits`, a layer which limits the depth, the number of
+  events, the number of items of maps and sequences and the length of strings
+  and bytes.  The `max_depth` options of `deser-yaml` and `deser-cbor` add
+  this layer and no longer have their own implementation.
+- Added `deser::de::Format` which is implemented by the deserializers of all
+  formats.  `Format::deserialize_with` allows configuring the driver, for
+  instance to add layers or to wrap the sink with the new
+  `DeserializeDriver::wrap_sink`.  The formats' `Deserializer::deserialize`
+  forwards to it.  The serializer configurations have new `to_string_with`
+  (`to_vec_with` for CBOR) methods to configure the serialize driver.
+- Errors carry context: the offset, line and column in the input
+  (`Error::offset`, `Error::line`, `Error::column`) and the path of the value
+  (`Error::path`), which are part of the `Display` output.  The deserialize
+  driver attaches the start of the input range of an event to the errors of
+  that event, also for replayed values, and functions registered with the new
+  `State::add_error_context` add further context (the serialize driver runs
+  them as well).  The formats resolve offsets into lines and columns (except
+  CBOR which reports offsets), so errors of values (for instance type errors)
+  now report their location in all formats.  Syntax errors of `deser-json`
+  now have locations too.  The syntax errors of `deser-yaml` and
+  `deser-cbor` read `syntax error: ... at line L column C` and
+  `syntax error: ... at offset N`.
+- `deser-cbor` publishes the byte ranges of data items as input ranges.
+- `deser-path` was rewritten as a layer: `PathLayer` replaces `PathSink` and
+  `PathSerializable` and works in both directions.  It adds the path to
+  errors, `Path` formats as `servers[1].port` and during serialization the
+  format sees keys with the path of their map.
+- Added the `layers` example with serialization layers that rename keys,
+  skip null values and redact values.  The `located` example uses layers.
 - Format options moved from the deserializers and serializers into new
   `DeserializerConfig` and `SerializerConfig` types in all formats.  They
   do not borrow the input, can be created in constants (the constructors
@@ -26,8 +62,8 @@ All notable changes to deser are documented here.
   `Cow<[u8]>` borrow with the new `Borrowed` adapter and the derive supports
   structs with lifetimes.  `DeserializeOwned` is implemented for types which
   do not borrow.
-  - Formats emit borrowed data with `DeserializeDriver::emit_borrowed` (and
-    `emit_borrowed_with` / `emit_borrowed_at`), sinks receive it in
+  - Formats emit borrowed data with `DeserializeDriver::emit_borrowed`,
+    sinks receive it in
     `Sink::borrowed_atom` (and `borrowed_key_atom` / `borrowed_value_atom`)
     which default to the regular methods.  Data emitted with `emit` is only
     valid for the call and cannot be borrowed.
@@ -95,15 +131,16 @@ All notable changes to deser are documented here.
   current container while their sink is finished.
 - Improved the performance of serializing CBOR tags.
 - Added event data to the `State`: values attached to a single event with
-  `State::event_mut` and read with `State::event`.  Formats attach data with
-  `DeserializeDriver::emit_with`, during serialization `Serialize`
-  implementations attach data to their first event and the serialize driver
-  detaches it after the event was delivered.  Recordings capture event data
+  `State::event_mut` and read with `State::event`.  Formats attach data
+  before they emit an event and the deserialize driver detaches it after
+  every event, during serialization `Serialize` implementations attach data
+  to their first event and the serialize driver detaches it after the event
+  was delivered.  Recordings capture event data
   automatically.  The CBOR and YAML tags are now event data, `Locations` is
   no longer replayable.
-- Added input ranges to the `State`: formats emit events together with their
-  byte range in the input with `DeserializeDriver::emit_at` and sinks read it
-  with `State::input_range`.  Recordings capture the range of every event.
+- Added input ranges to the `State`: formats set the byte range in the input
+  of the next event with `State::set_input_range` (the driver detaches it
+  after the event) and sinks read it with `State::input_range`.  Recordings capture the range of every event.
   The source the ranges refer to is available as `State::source` if the
   format provides it.  `deser-json`, `deser-toml` and `deser-yaml` always
   publish input ranges, which has no measurable overhead, and

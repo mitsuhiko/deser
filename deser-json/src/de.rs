@@ -1,6 +1,6 @@
 use std::str;
 
-use deser::de::{Deserialize, DeserializeDriver};
+use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::{ExtValue, Number as ExactNumber};
 use deser::Atom;
 use deser::Event;
@@ -226,23 +226,21 @@ impl<'a> Deserializer<'a> {
     }
 
     /// Deserializes the value.
+    ///
+    /// To configure the deserialization (for instance to add layers) use
+    /// [`Format::deserialize_with`].
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            self.drive(&mut driver)?;
-        }
-        out.take()
-            .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+        Format::deserialize(self)
     }
 
     /// Parses the input and feeds the events into the given driver.
     ///
-    /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink)
-    /// or to wrap the sink of a value, for instance to track the path.
+    /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink).
+    /// See also [`Format::deserialize_with`].
     ///
     /// Strings without escape sequences are passed on borrowed from the
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    /// Errors carry the location in the input (see [`Error::line`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         // the scratch buffer for strings is moved out of the deserializer
         // so that tokens borrowing from it do not borrow the deserializer.
@@ -253,7 +251,19 @@ impl<'a> Deserializer<'a> {
         }
         let rv = self.drive_impl(driver, &mut buffer);
         self.buffer = buffer;
-        rv
+        rv.map_err(|err| self.locate_error(err))
+    }
+
+    /// Attaches the location to an error.
+    #[cold]
+    fn locate_error(&self, err: Error) -> Error {
+        // errors of the parser are located at the current position, errors
+        // of the sinks at the event that failed
+        let err = match err.offset() {
+            Some(_) => err,
+            None => err.with_offset(self.pos),
+        };
+        err.resolve_position(self.input)
     }
 
     fn drive_impl(
@@ -265,9 +275,10 @@ impl<'a> Deserializer<'a> {
         // start is derived from the position rather than stored as this
         // keeps the tokenizer fast.
         macro_rules! emit {
-            ($start:expr, $event:expr) => {
-                driver.emit_at($event, $start, self.pos)?
-            };
+            ($start:expr, $event:expr) => {{
+                driver.state_mut().set_input_range($start, self.pos);
+                driver.emit($event)?
+            }};
         }
 
         // the state of the current container is held in a local, the outer
@@ -280,7 +291,10 @@ impl<'a> Deserializer<'a> {
             let start = self.pos - 1;
             match byte {
                 b'"' => match self.parse_str(buffer)? {
-                    Str::Borrowed(val) => driver.emit_borrowed_at(val, start, self.pos)?,
+                    Str::Borrowed(val) => {
+                        driver.state_mut().set_input_range(start, self.pos);
+                        driver.emit_borrowed(val)?
+                    }
                     Str::Scratch(val) => emit!(start, Event::from(val)),
                 },
                 b'0'..=b'9' => {
@@ -348,10 +362,10 @@ impl<'a> Deserializer<'a> {
                     );
                     container = stack.pop().unwrap_or(Container::Top);
                 }
-                b',' => return Err(Error::new(ErrorKind::Unexpected, "unexpected comma")),
-                b':' => return Err(Error::new(ErrorKind::Unexpected, "unexpected colon")),
-                b']' | b'}' => return Err(Error::new(ErrorKind::Unexpected, "expected a value")),
-                _ => return Err(Error::new(ErrorKind::Unexpected, "unexpected character")),
+                b',' => return Err(token_error(start, "unexpected comma")),
+                b':' => return Err(token_error(start, "unexpected colon")),
+                b']' | b'}' => return Err(token_error(start, "expected a value")),
+                _ => return Err(token_error(start, "unexpected character")),
             }
 
             // a value was completed, either the container ends or the next
@@ -417,12 +431,14 @@ impl<'a> Deserializer<'a> {
         buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
         if self.next_token_byte()? != b'"' {
-            return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
+            return Err(token_error(self.pos - 1, "expected map key"));
         }
         let start = self.pos - 1;
-        match self.parse_str(buffer)? {
-            Str::Borrowed(key) => driver.emit_borrowed_at(key, start, self.pos)?,
-            Str::Scratch(key) => driver.emit_at(key, start, self.pos)?,
+        let key = self.parse_str(buffer)?;
+        driver.state_mut().set_input_range(start, self.pos);
+        match key {
+            Str::Borrowed(key) => driver.emit_borrowed(key)?,
+            Str::Scratch(key) => driver.emit(key)?,
         }
         match self.parse_whitespace() {
             Some(b':') => {
@@ -1003,6 +1019,12 @@ static POW10: [f64; 309] = [
     1e300, 1e301, 1e302, 1e303, 1e304, 1e305, 1e306, 1e307, 1e308,
 ];
 
+/// Creates an error for the token at the offset.
+#[cold]
+fn token_error(offset: usize, msg: &'static str) -> Error {
+    Error::new(ErrorKind::Unexpected, msg).with_offset(offset)
+}
+
 /// Returns `true` if a decimal number without exponent is the shortest
 /// representation of its value as `f64` (as formatted by `Debug`).
 ///
@@ -1031,13 +1053,14 @@ fn emit_number(
     start: usize,
     end: usize,
 ) -> Result<(), Error> {
+    driver.state_mut().set_input_range(start, end);
     match number {
-        Number::U64(val) => driver.emit_at(Event::from(val), start, end),
-        Number::I64(val) => driver.emit_at(Event::from(val), start, end),
-        Number::F64(val) => driver.emit_at(Event::from(val), start, end),
+        Number::U64(val) => driver.emit(Event::from(val)),
+        Number::I64(val) => driver.emit(Event::from(val)),
+        Number::F64(val) => driver.emit(Event::from(val)),
         Number::Literal(val) if exact_numbers => emit_literal(driver, input, val, start, end),
-        Number::Literal(val) => driver.emit_at(Event::from(val), start, end),
-        Number::BigInt(val) => emit_big_int(driver, val, start, end),
+        Number::Literal(val) => driver.emit(Event::from(val)),
+        Number::BigInt(val) => emit_big_int(driver, val),
     }
 }
 
@@ -1055,28 +1078,25 @@ fn emit_literal(
     // SAFETY: numbers only consist of ASCII characters
     let text = unsafe { str::from_utf8_unchecked(&input[start..end]) };
     let number = ExactNumber::new(text, value);
-    driver.emit_at(
-        Atom::Ext(ExtValue::borrowed_value::<ExactNumber>(&number)),
-        start,
-        end,
-    )
+    driver.emit(Atom::Ext(ExtValue::borrowed_value::<ExactNumber>(&number)))
 }
 
 /// Emits an integer that does not fit into 64 bits as extension value.
 #[cold]
-fn emit_big_int(
-    driver: &mut DeserializeDriver<'_, '_>,
-    text: &str,
-    start: usize,
-    end: usize,
-) -> Result<(), Error> {
+fn emit_big_int(driver: &mut DeserializeDriver<'_, '_>, text: &str) -> Result<(), Error> {
     // the tokenizer already validated that the value fits
     if text.starts_with('-') {
         let value: i128 = text.parse().unwrap();
-        driver.emit_at(Atom::Ext(ExtValue::borrowed(&value)), start, end)
+        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
     } else {
         let value: u128 = text.parse().unwrap();
-        driver.emit_at(Atom::Ext(ExtValue::borrowed(&value)), start, end)
+        driver.emit(Atom::Ext(ExtValue::borrowed(&value)))
+    }
+}
+
+impl<'a> Format<'a> for Deserializer<'a> {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        Deserializer::drive(self, driver)
     }
 }
 

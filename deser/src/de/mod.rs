@@ -57,6 +57,24 @@
 //! assert_eq!(map[&2], "World");
 //! ```
 //!
+//! Data formats implement the [`Format`] trait which feeds the events of a
+//! value into a driver.
+//!
+//! # Layers and Wrapped Sinks
+//!
+//! There are two ways to change how a deserialization is processed without
+//! support by the format or the types:
+//!
+//! * [`Layer`]s sit between the format and the driver and see the events.
+//!   They are useful for everything that can be derived from the events,
+//!   for instance to track the current path, to enforce limits (see
+//!   [`Limits`]) or to rewrite values.
+//! * Wrapped sinks (see [`DeserializeDriver::wrap_sink`]) sit between the
+//!   driver and the sinks of the values.  They are useful for changes that
+//!   depend on the target types.
+//!
+//! Both are set up with [`Format::deserialize_with`].
+//!
 //! # Deserializing Primitives
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
@@ -202,14 +220,18 @@ use crate::event::Atom;
 mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
+mod format;
 mod ignore;
 pub(crate) mod impls;
+mod layer;
 pub(crate) mod mapped;
 mod owned;
 mod recording;
 mod sinkbox;
 
 pub use self::driver::DeserializeDriver;
+pub use self::format::Format;
+pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::owned::OwnedSink;
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;

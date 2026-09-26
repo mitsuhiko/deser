@@ -872,9 +872,8 @@ fn test_recording_raw_value() {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         driver.emit(Event::SeqStart).unwrap();
-        driver
-            .emit_with(1u64, |state| state.event_mut::<Tag>().0 = 42)
-            .unwrap();
+        driver.state_mut().event_mut::<Tag>().0 = 42;
+        driver.emit(1u64).unwrap();
         driver.emit(2u64).unwrap();
         driver.emit(Event::SeqEnd).unwrap();
     }

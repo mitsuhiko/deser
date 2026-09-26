@@ -487,7 +487,19 @@ impl SerializerConfig {
 
     /// Serializes the given value.
     pub fn to_vec(&self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+        self.to_vec_with(value, |_| {})
+    }
+
+    /// Serializes the given value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the serialization
+    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    pub fn to_vec_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<Vec<u8>, Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
         let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,

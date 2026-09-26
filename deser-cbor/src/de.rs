@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str;
 
-use deser::de::{Deserialize, DeserializeDriver};
+use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
 use deser::{Atom, Error, ErrorKind, Event};
 
@@ -53,7 +53,8 @@ impl DeserializerConfig {
     /// Deser does not use the stack to process nested data so arbitrarily
     /// deep structures do not overflow the stack.  Still it can be useful to
     /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.
+    /// limited.  This adds a [`Limits`] layer to the driver, which can also
+    /// limit other aspects of the input.
     pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
         self.max_depth = Some(depth);
         self
@@ -173,14 +174,11 @@ impl<'a> Deserializer<'a> {
     /// This does not check if there is more data after the item.  Use
     /// [`end`](Self::end) for this or [`from_slice`] which does it
     /// automatically.
+    ///
+    /// To configure the deserialization (for instance to add layers) use
+    /// [`Format::deserialize_with`].
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            self.drive(&mut driver)?;
-        }
-        out.take()
-            .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+        Format::deserialize(self)
     }
 
     /// Returns an iterator over the remaining data items.
@@ -208,8 +206,14 @@ impl<'a> Deserializer<'a> {
     ///
     /// Definite length strings and byte strings are passed on borrowed from
     /// the input (see
-    /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).  The byte
+    /// ranges of the data items are published as input ranges (see
+    /// [`State::input_range`](deser::State::input_range)) and errors carry
+    /// the offset in the input (see [`Error::offset`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if let Some(max_depth) = self.config.max_depth {
+            driver.push_layer(Limits::new().max_depth(max_depth));
+        }
         // the scratch buffer is moved out of the deserializer so that
         // strings borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
@@ -250,12 +254,14 @@ impl<'a> Deserializer<'a> {
                     }
                     break;
                 }
+                let start = self.pos;
                 if current.remaining.is_none() {
                     if current.in_value {
                         return Err(syntax_error(self.pos, "missing map value"));
                     }
                     self.pos += 1;
                 }
+                driver.state_mut().set_input_range(start, self.pos);
                 driver.emit(if current.is_map {
                     Event::MapEnd
                 } else {
@@ -267,8 +273,7 @@ impl<'a> Deserializer<'a> {
                 }
             }
 
-            let depth = stack.len() + usize::from(frame.is_some());
-            if let Some(new) = self.parse_item(driver, buffer, depth)? {
+            if let Some(new) = self.parse_item(driver, buffer)? {
                 if let Some(outer) = frame.replace(new) {
                     stack.push(outer);
                 }
@@ -286,17 +291,16 @@ impl<'a> Deserializer<'a> {
         &mut self,
         driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
-        depth: usize,
     ) -> Result<Option<Frame>, Error> {
         let mut start = self.pos;
         let mut head = self.read_head()?;
         while head.major == MAJOR_TAG {
             match head.arg {
                 2 | 3 => {
-                    self.parse_bignum(driver, buffer, head.arg == 3)?;
+                    self.parse_bignum(driver, buffer, head.arg == 3, start)?;
                     return Ok(None);
                 }
-                0 | 4 | 37 | 1004 if self.parse_well_known(driver, buffer, head.arg)? => {
+                0 | 4 | 37 | 1004 if self.parse_well_known(driver, buffer, head.arg, start)? => {
                     return Ok(None);
                 }
                 _ => {}
@@ -307,47 +311,46 @@ impl<'a> Deserializer<'a> {
         }
 
         match head.major {
-            MAJOR_UNSIGNED => self.emit(driver, Atom::U64(head.arg))?,
+            MAJOR_UNSIGNED => self.emit(driver, start, Atom::U64(head.arg))?,
             MAJOR_NEGATIVE => {
                 if head.arg <= i64::MAX as u64 {
                     // -1 - n without overflows
-                    self.emit(driver, Atom::I64(!(head.arg as i64)))?
+                    self.emit(driver, start, Atom::I64(!(head.arg as i64)))?
                 } else {
                     let value = -1 - i128::from(head.arg);
-                    self.emit(driver, Atom::Ext(ExtValue::borrowed(&value)))?
+                    self.emit(driver, start, Atom::Ext(ExtValue::borrowed(&value)))?
                 }
             }
             // definite length strings are slices of the input
             MAJOR_BYTES if !head.is_indefinite() => {
                 let bytes = self.read_body(head)?;
-                self.emit_borrowed(driver, Event::Atom(Atom::Bytes(Cow::Borrowed(bytes))))?
+                self.emit_borrowed(
+                    driver,
+                    start,
+                    Event::Atom(Atom::Bytes(Cow::Borrowed(bytes))),
+                )?
             }
             MAJOR_TEXT if !head.is_indefinite() => {
                 let bytes = self.read_body(head)?;
                 // SAFETY: text is validated as UTF-8 when read
                 let text = unsafe { str::from_utf8_unchecked(bytes) };
-                self.emit_borrowed(driver, Event::Atom(Atom::Str(Cow::Borrowed(text))))?
+                self.emit_borrowed(driver, start, Event::Atom(Atom::Str(Cow::Borrowed(text))))?
             }
             MAJOR_BYTES => {
                 let bytes = self.read_string(head, buffer)?;
-                self.emit(driver, Atom::Bytes(Cow::Borrowed(bytes)))?
+                self.emit(driver, start, Atom::Bytes(Cow::Borrowed(bytes)))?
             }
             MAJOR_TEXT => {
                 let bytes = self.read_string(head, buffer)?;
                 // SAFETY: text chunks are validated as UTF-8 when read
                 let text = unsafe { str::from_utf8_unchecked(bytes) };
-                self.emit(driver, Atom::Str(Cow::Borrowed(text)))?
+                self.emit(driver, start, Atom::Str(Cow::Borrowed(text)))?
             }
             MAJOR_ARRAY | MAJOR_MAP => {
                 let is_map = head.major == MAJOR_MAP;
-                if self.config.max_depth.is_some_and(|max| depth >= max) {
-                    return Err(Error::new(
-                        ErrorKind::Unexpected,
-                        format!("recursion limit exceeded at offset {}", start),
-                    ));
-                }
                 self.emit(
                     driver,
+                    start,
                     if is_map {
                         Event::MapStart
                     } else {
@@ -382,58 +385,51 @@ impl<'a> Deserializer<'a> {
                     INDEFINITE => return Err(syntax_error(start, "unexpected break")),
                     info => Atom::Ext(ExtValue::owned(Simple::new(info).unwrap())),
                 };
-                self.emit(driver, atom)?
+                self.emit(driver, start, atom)?
             }
         }
         Ok(None)
     }
 
-    /// Emits an event with the pending tags.
+    /// Emits an event of the item at `start` with the pending tags.
     #[inline(always)]
     fn emit<'e, E: Into<Event<'e>>>(
         &mut self,
         driver: &mut DeserializeDriver<'_, 'a>,
+        start: usize,
         event: E,
     ) -> Result<(), Error> {
-        if self.tags.is_empty() {
-            driver.emit(event)
-        } else {
-            self.emit_tagged(driver, event.into())
+        driver.state_mut().set_input_range(start, self.pos);
+        if !self.tags.is_empty() {
+            self.attach_tags(driver);
         }
+        driver.emit(event)
     }
 
-    #[cold]
-    fn emit_tagged(
-        &mut self,
-        driver: &mut DeserializeDriver<'_, 'a>,
-        event: Event,
-    ) -> Result<(), Error> {
-        let tags = &mut self.tags;
-        let rv = driver.emit_with(event, |state| {
-            // swapping retains the memory of both vectors
-            std::mem::swap(&mut state.event_mut::<CurrentTags>().0, tags);
-        });
-        self.tags.clear();
-        rv
-    }
-
-    /// Emits a borrowed event with the pending tags.
+    /// Emits a borrowed event of the item at `start` with the pending tags.
     #[inline(always)]
     fn emit_borrowed(
         &mut self,
         driver: &mut DeserializeDriver<'_, 'a>,
+        start: usize,
         event: Event<'a>,
     ) -> Result<(), Error> {
-        if self.tags.is_empty() {
-            driver.emit_borrowed(event)
-        } else {
-            let tags = &mut self.tags;
-            let rv = driver.emit_borrowed_with(event, |state| {
-                std::mem::swap(&mut state.event_mut::<CurrentTags>().0, tags);
-            });
-            self.tags.clear();
-            rv
+        driver.state_mut().set_input_range(start, self.pos);
+        if !self.tags.is_empty() {
+            self.attach_tags(driver);
         }
+        driver.emit_borrowed(event)
+    }
+
+    /// Attaches the pending tags to the next event.
+    #[cold]
+    fn attach_tags(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
+        // swapping retains the memory of both vectors
+        std::mem::swap(
+            &mut driver.state_mut().event_mut::<CurrentTags>().0,
+            &mut self.tags,
+        );
+        self.tags.clear();
     }
 
     /// Parses the content of a tag that maps onto a well-known type and
@@ -447,11 +443,12 @@ impl<'a> Deserializer<'a> {
         driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
         tag: u64,
+        item_start: usize,
     ) -> Result<bool, Error> {
         let start = self.pos;
         match self.read_well_known(buffer, tag) {
             Some(value) => {
-                self.emit(driver, Atom::Ext(value))?;
+                self.emit(driver, item_start, Atom::Ext(value))?;
                 Ok(true)
             }
             None => {
@@ -528,38 +525,41 @@ impl<'a> Deserializer<'a> {
         driver: &mut DeserializeDriver<'_, 'a>,
         buffer: &mut Vec<u8>,
         negative: bool,
+        item_start: usize,
     ) -> Result<(), Error> {
         let start = self.pos;
         let head = self.read_head()?;
         if head.major != MAJOR_BYTES {
             return Err(Error::new(
                 ErrorKind::Unexpected,
-                format!("invalid bignum at offset {}, expected byte string", start),
-            ));
+                "invalid bignum, expected byte string",
+            )
+            .with_offset(start));
         }
         let bytes = self.read_string(head, buffer)?;
         let skip = bytes.iter().take_while(|&&b| b == 0).count();
         let significant = &bytes[skip..];
+        let start = item_start;
         if significant.len() > 16 {
             let value = bignum(negative, significant.to_vec());
-            return self.emit(driver, Atom::Ext(ExtValue::owned(value)));
+            return self.emit(driver, start, Atom::Ext(ExtValue::owned(value)));
         }
         let mut buf = [0u8; 16];
         buf[16 - significant.len()..].copy_from_slice(significant);
         let value = u128::from_be_bytes(buf);
         if !negative {
             match u64::try_from(value) {
-                Ok(value) => self.emit(driver, Atom::U64(value)),
-                Err(_) => self.emit(driver, Atom::Ext(ExtValue::borrowed(&value))),
+                Ok(value) => self.emit(driver, start, Atom::U64(value)),
+                Err(_) => self.emit(driver, start, Atom::Ext(ExtValue::borrowed(&value))),
             }
         } else if value <= i64::MAX as u128 {
-            self.emit(driver, Atom::I64(-1 - value as i64))
+            self.emit(driver, start, Atom::I64(-1 - value as i64))
         } else if value <= i128::MAX as u128 {
             let value = -1 - value as i128;
-            self.emit(driver, Atom::Ext(ExtValue::borrowed(&value)))
+            self.emit(driver, start, Atom::Ext(ExtValue::borrowed(&value)))
         } else {
             let value = bignum(true, significant.to_vec());
-            self.emit(driver, Atom::Ext(ExtValue::owned(value)))
+            self.emit(driver, start, Atom::Ext(ExtValue::owned(value)))
         }
     }
 
@@ -755,18 +755,18 @@ fn test_is_ascii() {
 
 #[cold]
 fn syntax_error(offset: usize, msg: &str) -> Error {
-    Error::new(
-        ErrorKind::Unexpected,
-        format!("syntax error at offset {}: {}", offset, msg),
-    )
+    Error::new(ErrorKind::Unexpected, format!("syntax error: {}", msg)).with_offset(offset)
 }
 
 #[cold]
 fn eof_error(offset: usize) -> Error {
-    Error::new(
-        ErrorKind::EndOfFile,
-        format!("unexpected end of input at offset {}", offset),
-    )
+    Error::new(ErrorKind::EndOfFile, "unexpected end of input").with_offset(offset)
+}
+
+impl<'a> Format<'a> for Deserializer<'a> {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        Deserializer::drive(self, driver)
+    }
 }
 
 /// Deserializes a value from CBOR.

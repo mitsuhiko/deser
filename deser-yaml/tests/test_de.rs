@@ -381,7 +381,7 @@ fn test_syntax_errors() {
     let err = from_str::<Value>("a: b: c").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: syntax error at line 1 column 5: mapping values are not allowed in this context"
+        "Unexpected: syntax error: mapping values are not allowed in this context at line 1 column 5"
     );
     let err = from_str::<Value>("[1, 2").unwrap_err();
     assert!(err.to_string().contains("syntax error"), "{}", err);
@@ -644,4 +644,34 @@ fn test_borrowing() {
     let err = from_str::<&str>("\"a\\tb\"").unwrap_err();
     assert!(err.to_string().contains("expected a borrowed string"));
     assert_eq!(from_str::<String>("\"a\\tb\"").unwrap(), "a\tb");
+}
+
+#[test]
+fn test_error_locations() {
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Server {
+        host: String,
+        port: u16,
+    }
+
+    let err = from_str::<Vec<Server>>("- host: a\n  port: 1\n- host: b\n  port: x\n").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unexpected string, expected u16 at line 4 column 9"
+    );
+
+    // values produced by aliases report the anchored node
+    let err = from_str::<Vec<u32>>("- &a x\n- 1\n- *a\n").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(1), Some(3)));
+
+    // the limits of the configuration are enforced by a layer
+    use deser::de::{Format, Limits};
+    let err = Deserializer::from_str("a: [1, 2, 3]")
+        .deserialize_with::<Value, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: too many items at line 1 column 11"
+    );
 }

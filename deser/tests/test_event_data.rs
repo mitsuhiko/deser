@@ -31,12 +31,10 @@ fn deserialize<T: DeserializeOwned>(events: Vec<(Event<'_>, Option<u32>)>) -> T 
     {
         let mut driver = DeserializeDriver::new(&mut out);
         for (event, marker) in events {
-            match marker {
-                Some(marker) => driver
-                    .emit_with(event, |state| state.event_mut::<Marker>().0 = marker)
-                    .unwrap(),
-                None => driver.emit(event).unwrap(),
+            if let Some(marker) = marker {
+                driver.state_mut().event_mut::<Marker>().0 = marker;
             }
+            driver.emit(event).unwrap();
             assert!(!driver.state().has_event_data());
         }
     }

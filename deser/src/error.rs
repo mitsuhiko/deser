@@ -14,6 +14,32 @@ pub enum ErrorKind {
 }
 
 /// An error for deser.
+///
+/// Besides a kind and a message an error can carry context: the location
+/// in the input it refers to (see [`offset`](Self::offset),
+/// [`line`](Self::line) and [`column`](Self::column)) and the path of the
+/// value it refers to (see [`path`](Self::path)).  The context is part of
+/// the [`Display`](fmt::Display) output:
+///
+/// ```
+/// use deser::{Error, ErrorKind};
+///
+/// let err = Error::new(ErrorKind::Unexpected, "unexpected string")
+///     .with_position(12, 2, 5)
+///     .with_path("servers[1].port");
+/// assert_eq!(
+///     err.to_string(),
+///     "Unexpected: unexpected string at line 2 column 5 (path: servers[1].port)"
+/// );
+/// ```
+///
+/// Errors raised while deserializing a value (for instance by a
+/// [`Sink`](crate::de::Sink)) get the context attached by the
+/// [`DeserializeDriver`](crate::de::DeserializeDriver): the start of the
+/// input range of the event (see [`State::input_range`](crate::State::input_range))
+/// and the context of the functions registered with
+/// [`State::add_error_context`](crate::State::add_error_context).  Formats
+/// resolve the offsets into lines and columns.
 pub struct Error {
     // boxed so that results stay small.  Errors are rare but results are
     // passed around for every single value.
@@ -25,6 +51,12 @@ struct ErrorInner {
     kind: ErrorKind,
     msg: Cow<'static, str>,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    offset: Option<usize>,
+    // line and column (1-based)
+    line_column: Option<(usize, usize)>,
+    path: Option<String>,
+    // `true` once the driver attached the context of the current event.
+    has_context: bool,
 }
 
 impl Error {
@@ -36,6 +68,10 @@ impl Error {
                 kind,
                 msg: msg.into(),
                 source: None,
+                offset: None,
+                line_column: None,
+                path: None,
+                has_context: false,
             }),
         }
     }
@@ -50,21 +86,131 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         self.inner.kind
     }
+
+    /// Returns the message of the error (without context).
+    pub fn message(&self) -> &str {
+        &self.inner.msg
+    }
+
+    /// Sets the byte offset in the input the error refers to.
+    ///
+    /// A previously set line and column are discarded.
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.inner.offset = Some(offset);
+        self.inner.line_column = None;
+        self
+    }
+
+    /// Sets the byte offset together with its line and column (1-based).
+    pub fn with_position(mut self, offset: usize, line: usize, column: usize) -> Self {
+        self.inner.offset = Some(offset);
+        self.inner.line_column = Some((line, column));
+        self
+    }
+
+    /// Resolves the offset into line and column.
+    ///
+    /// The source is the input the offset refers to.  Columns are counted
+    /// in characters (bytes that are not UTF-8 continuation bytes).  If the
+    /// error has no offset or already has a line and column, it's returned
+    /// unchanged.  Text formats call this for the errors they return.
+    ///
+    /// ```
+    /// use deser::{Error, ErrorKind};
+    ///
+    /// let err = Error::new(ErrorKind::Unexpected, "bad value")
+    ///     .with_offset(7)
+    ///     .resolve_position(b"[1,\n  x]");
+    /// assert_eq!((err.line(), err.column()), (Some(2), Some(4)));
+    /// ```
+    pub fn resolve_position(mut self, source: &[u8]) -> Self {
+        if let (Some(offset), None) = (self.inner.offset, self.inner.line_column) {
+            let before = &source[..offset.min(source.len())];
+            let line_start = before
+                .iter()
+                .rposition(|&b| b == b'\n')
+                .map_or(0, |x| x + 1);
+            let line = before.iter().filter(|&&b| b == b'\n').count() + 1;
+            let column = before[line_start..]
+                .iter()
+                .filter(|&&b| b & 0xc0 != 0x80)
+                .count()
+                + 1;
+            self.inner.line_column = Some((line, column));
+        }
+        self
+    }
+
+    /// Returns the byte offset in the input the error refers to.
+    pub fn offset(&self) -> Option<usize> {
+        self.inner.offset
+    }
+
+    /// Returns the line (1-based) the error refers to.
+    pub fn line(&self) -> Option<usize> {
+        self.inner.line_column.map(|x| x.0)
+    }
+
+    /// Returns the column (1-based, in characters) the error refers to.
+    pub fn column(&self) -> Option<usize> {
+        self.inner.line_column.map(|x| x.1)
+    }
+
+    /// Sets the path of the value the error refers to.
+    ///
+    /// The path is a human readable string such as `servers[1].port`, see
+    /// for instance the `deser-path` crate.
+    pub fn with_path<P: Into<String>>(mut self, path: P) -> Self {
+        self.inner.path = Some(path.into());
+        self
+    }
+
+    /// Returns the path of the value the error refers to.
+    pub fn path(&self) -> Option<&str> {
+        self.inner.path.as_deref()
+    }
+
+    /// Returns `true` if the context of an event was attached.
+    pub(crate) fn has_context(&self) -> bool {
+        self.inner.has_context
+    }
+
+    /// Marks the context of an event as attached.
+    pub(crate) fn set_has_context(&mut self) {
+        self.inner.has_context = true;
+    }
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Error")
-            .field("kind", &self.inner.kind)
-            .field("msg", &self.inner.msg)
-            .field("source", &self.inner.source)
-            .finish()
+        let mut s = f.debug_struct("Error");
+        s.field("kind", &self.inner.kind)
+            .field("msg", &self.inner.msg);
+        if let Some(offset) = self.inner.offset {
+            s.field("offset", &offset);
+        }
+        if let Some((line, column)) = self.inner.line_column {
+            s.field("line", &line).field("column", &column);
+        }
+        if let Some(ref path) = self.inner.path {
+            s.field("path", path);
+        }
+        s.field("source", &self.inner.source).finish()
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {}", self.inner.kind, self.inner.msg)
+        write!(f, "{:?}: {}", self.inner.kind, self.inner.msg)?;
+        match (self.inner.line_column, self.inner.offset) {
+            (Some((line, column)), _) => write!(f, " at line {} column {}", line, column)?,
+            (None, Some(offset)) => write!(f, " at offset {}", offset)?,
+            (None, None) => {}
+        }
+        if let Some(ref path) = self.inner.path {
+            write!(f, " (path: {})", path)?;
+        }
+        Ok(())
     }
 }
 

@@ -4,6 +4,7 @@ use std::ptr::NonNull;
 
 use crate::descriptors::NamedDescriptor;
 use crate::error::Error;
+use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{Begin, BeginKind, Chunk, IndexedSeq, IndexedStruct, StructField};
 use crate::{Atom, Descriptor, Event, Serialize, State};
 
@@ -13,9 +14,21 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 ///
 /// This is the only way to convert from a [`Serialize`] into an event
 /// stream.  As a user one has to call [`next`](Self::next) until `None`
-/// is returned, indicating the end of the event stream.
+/// is returned, indicating the end of the event stream, or use
+/// [`drive`](Self::drive).
+///
+/// When the serialization fails, the error gets the context of the
+/// current value attached (see [`State::add_error_context`]).
+///
+/// # Layers
+///
+/// [`Layer`]s sit between the serialized values and the format and see
+/// every event before the format receives it.  They are added with
+/// [`push_layer`](Self::push_layer) and are only supported by
+/// [`drive`](Self::drive).
 pub struct SerializeDriver<'a> {
     state: State,
+    layers: Vec<Box<dyn Layer>>,
     // Values and frames refer to data borrowed from the serializables and
     // emitters of the frames below them, which is why the lifetimes are
     // erased.  `next_value` and `needs_finish` borrow from the top frame.
@@ -137,6 +150,7 @@ impl<'a> SerializeDriver<'a> {
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
         SerializeDriver {
             state: State::new(),
+            layers: Vec::new(),
             // SAFETY: the driver cannot outlive 'a
             next_value: Some(unsafe { Held::new(SerializeHandle::Borrowed(serializable)) }),
             needs_finish: None,
@@ -159,17 +173,35 @@ impl<'a> SerializeDriver<'a> {
         &mut self.state
     }
 
+    /// Adds a layer.
+    ///
+    /// Layers see the events in the order they were added: the layer that
+    /// was added first sees the events produced by the values, the last one
+    /// passes them on to the format.  See [`Layer`] for more information.
+    pub fn push_layer<L: Layer + 'static>(&mut self, layer: L) {
+        self.layers.push(Box::new(layer));
+    }
+
     /// Produces the next serialization event.
     ///
     /// # Panics
     ///
-    /// The driver will panic if the data fed from the serializer is malformed.
+    /// The driver will panic if the data fed from the serializer is
+    /// malformed.  As layers can change the number of events, this method
+    /// panics if layers were added.
     #[allow(clippy::should_implement_trait)]
     #[inline]
     pub fn next(
         &mut self,
     ) -> Result<Option<(Event<'_>, &'static dyn Descriptor, &mut State)>, Error> {
-        let rv = self.advance()?;
+        assert!(
+            self.layers.is_empty(),
+            "layers are only supported by SerializeDriver::drive"
+        );
+        let rv = match self.advance() {
+            Ok(rv) => rv,
+            Err(err) => return Err(self.state.attach_error_context(err)),
+        };
         self.delivered = rv.is_some();
         // The event borrows from the values held by the driver but never
         // from the state (serializables cannot return chunks borrowing from
@@ -207,7 +239,50 @@ impl<'a> SerializeDriver<'a> {
     /// # Ok(()) } do_it().unwrap();
     /// ```
     #[inline]
-    pub fn drive<F>(&mut self, mut f: F) -> Result<(), Error>
+    pub fn drive<F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+    {
+        match self.drive_impl(f) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(self.state.attach_error_context(err)),
+        }
+    }
+
+    /// Delivers an event to the layers and the callback of
+    /// [`drive`](Self::drive).
+    #[inline(always)]
+    fn deliver<F>(
+        &mut self,
+        f: &mut F,
+        event: Event<'_>,
+        descriptor: &'static dyn Descriptor,
+    ) -> Result<(), Error>
+    where
+        F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
+    {
+        if self.layers.is_empty() {
+            f(event, descriptor, &mut self.state)?;
+        } else {
+            self.deliver_layered(f, event, descriptor)?;
+        }
+        self.state.clear_event_data();
+        Ok(())
+    }
+
+    /// Passes an event through the layers.
+    #[inline(never)]
+    fn deliver_layered(
+        &mut self,
+        f: &mut EventFn<'_>,
+        event: Event<'_>,
+        descriptor: &'static dyn Descriptor,
+    ) -> Result<(), Error> {
+        Next::new(&mut self.layers, &mut self.state, f).emit(event, descriptor)
+    }
+
+    #[inline(always)]
+    fn drive_impl<F>(&mut self, mut f: F) -> Result<(), Error>
     where
         F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
@@ -236,12 +311,11 @@ impl<'a> SerializeDriver<'a> {
                     match field {
                         StructField::Field(key, value) => {
                             self.state.is_map_key = true;
-                            f(
+                            self.deliver(
+                                &mut f,
                                 Event::Atom(Atom::Str(Cow::Borrowed(key))),
                                 &STRUCT_KEY_DESCRIPTOR,
-                                &mut self.state,
                             )?;
-                            self.state.clear_event_data();
                             (value, false)
                         }
                         StructField::Skip => continue,
@@ -265,12 +339,7 @@ impl<'a> SerializeDriver<'a> {
                 Emitter::Struct(emitter) => match emitter.next(&mut self.state)? {
                     Some((key, value)) => {
                         self.state.is_map_key = true;
-                        f(
-                            Event::Atom(Atom::Str(key)),
-                            &STRUCT_KEY_DESCRIPTOR,
-                            &mut self.state,
-                        )?;
-                        self.state.clear_event_data();
+                        self.deliver(&mut f, Event::Atom(Atom::Str(key)), &STRUCT_KEY_DESCRIPTOR)?;
                         (value, false)
                     }
                     None => {
@@ -375,8 +444,7 @@ impl<'a> SerializeDriver<'a> {
         } = serializable.__private_begin(&mut self.state)?;
         let (emitter, event) = match kind {
             BeginKind::Chunk(Chunk::Atom(atom)) => {
-                f(Event::Atom(atom), descriptor, &mut self.state)?;
-                self.state.clear_event_data();
+                self.deliver(f, Event::Atom(atom), descriptor)?;
                 if needs_finish {
                     serializable.finish(&mut self.state)?;
                 }
@@ -400,9 +468,7 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         });
         self.state.descriptor_stack.push(descriptor);
-        f(event, descriptor, &mut self.state)?;
-        self.state.clear_event_data();
-        Ok(())
+        self.deliver(f, event, descriptor)
     }
 
     /// Ends the container on the top of the stack and emits the end event.
@@ -412,8 +478,7 @@ impl<'a> SerializeDriver<'a> {
         F: FnMut(Event<'_>, &'static dyn Descriptor, &mut State) -> Result<(), Error>,
     {
         let (event, descriptor) = self.end_container();
-        f(event, descriptor, &mut self.state)?;
-        self.state.clear_event_data();
+        self.deliver(f, event, descriptor)?;
         if let Some((held, true)) = self.needs_finish.take() {
             // SAFETY: the value is alive until the end of this block
             unsafe { held.get() }.finish(&mut self.state)?;

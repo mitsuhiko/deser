@@ -32,6 +32,45 @@ impl SerializerConfig {
 
     /// Serializes the given value.
     pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
+        self.to_string_with(value, |_| {})
+    }
+
+    /// Serializes the given value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the serialization
+    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    ///
+    /// ```
+    /// use deser::ser::{Layer, Next};
+    /// use deser::{Atom, Descriptor, Error, Event};
+    /// use deser_json::SerializerConfig;
+    ///
+    /// /// Writes all numbers as strings.
+    /// struct NumbersAsStrings;
+    ///
+    /// impl Layer for NumbersAsStrings {
+    ///     fn event(
+    ///         &mut self,
+    ///         event: Event<'_>,
+    ///         descriptor: &'static dyn Descriptor,
+    ///         next: &mut Next<'_>,
+    ///     ) -> Result<(), Error> {
+    ///         match event {
+    ///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into(), descriptor),
+    ///             event => next.emit(event, descriptor),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let json = SerializerConfig::new()
+    ///     .to_string_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
+    ///     .unwrap();
+    /// assert_eq!(json, r#"["1","2"]"#);
+    /// ```
+    pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
         let mut writer = Writer {
             ser: Output {
                 out: Buffer::with_capacity(128),
@@ -41,8 +80,9 @@ impl SerializerConfig {
             first: true,
             is_key: false,
         };
-        SerializeDriver::new(value)
-            .drive(|event, descriptor, _| writer.event(event, descriptor))?;
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        driver.drive(|event, descriptor, _| writer.event(event, descriptor))?;
         Ok(writer.ser.out.into_string())
     }
 }

@@ -81,6 +81,12 @@ To see some practical examples of this have a look at the
   to keep track of the "path" to the current structure during serialization and
   deserialization.  (See [deser-path](https://docs.rs/deser-path/) for a
   practical example)
+* **Layers:** layers sit between the data format and the types and see all
+  events.  They can observe, reject and rewrite events without support by
+  the format or the types, for instance to track the path, to limit the size
+  of untrusted input or to rename keys in the output.  Errors carry the
+  location in the input and (with the path layer) the path of the value
+  they refer to, also for values which are buffered.
 
 Deser does not intend on replacing serde but it attempts to address some if it's
 shortcomings.  For more information there is a document about [Serde
@@ -107,8 +113,9 @@ included benchmark.
   implementation for deser with support for tags
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
   implementation for deser
-* [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a crate
-  that extends deser to track the path during serialization
+* [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a layer
+  that tracks the path during serialization and deserialization and adds it
+  to errors
 * [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a
   crate that provides source locations (line and column) for formats that
   support them

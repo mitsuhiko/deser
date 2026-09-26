@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser::de::{Deserialize, DeserializeDriver};
+use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::ExtValue;
 use deser::{Atom, Error, ErrorKind, Event};
 
@@ -146,14 +146,11 @@ impl<'a> Deserializer<'a> {
     }
 
     /// Deserializes the document.
+    ///
+    /// To configure the deserialization (for instance to add layers) use
+    /// [`Format::deserialize_with`].
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            self.drive(&mut driver)?;
-        }
-        out.take()
-            .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+        Format::deserialize(self)
     }
 
     /// Parses the input and feeds the events into the given driver.
@@ -162,6 +159,7 @@ impl<'a> Deserializer<'a> {
     /// syntax errors are reported before any value is deserialized.  Keys
     /// and strings without escape sequences are passed on borrowed from the
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    /// Errors carry the location in the input (see [`Error::line`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(err) = self.error.take() {
             return Err(err);
@@ -171,7 +169,13 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             driver.state_mut().set_source(self.input);
         }
-        emit(&doc, driver)
+        emit(&doc, driver).map_err(|err| err.resolve_position(self.input.as_bytes()))
+    }
+}
+
+impl<'a> Format<'a> for Deserializer<'a> {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        Deserializer::drive(self, driver)
     }
 }
 
@@ -182,7 +186,8 @@ fn emit_at<'e, E: Into<Event<'e>>>(
     event: E,
     span: Span,
 ) -> Result<(), Error> {
-    driver.emit_at(event, span.start, span.end)
+    driver.state_mut().set_input_range(span.start, span.end);
+    driver.emit(event)
 }
 
 /// Emits a string, borrowed if it's a slice of the input.
@@ -194,9 +199,10 @@ fn emit_str<'a>(
     value: &Cow<'a, str>,
     span: Span,
 ) -> Result<(), Error> {
+    driver.state_mut().set_input_range(span.start, span.end);
     match *value {
-        Cow::Borrowed(value) => driver.emit_borrowed_at(value, span.start, span.end),
-        Cow::Owned(ref value) => driver.emit_at(value.as_str(), span.start, span.end),
+        Cow::Borrowed(value) => driver.emit_borrowed(value),
+        Cow::Owned(ref value) => driver.emit(value.as_str()),
     }
 }
 
@@ -282,10 +288,7 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
         }
     }
     std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(
-            ErrorKind::Unexpected,
-            format!("invalid UTF-8 at offset {}", err.valid_up_to()),
-        )
+        Error::new(ErrorKind::Unexpected, "invalid UTF-8").with_offset(err.valid_up_to())
     })
 }
 

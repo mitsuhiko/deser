@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deser::de::{Deserialize, DeserializeDriver};
+use deser::de::{Deserialize, DeserializeDriver, Format, Limits};
 use deser::{Atom, Error, ErrorKind, Event};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
@@ -76,7 +76,8 @@ impl DeserializerConfig {
     /// Deser does not use the stack to process nested data so arbitrarily
     /// deep structures do not overflow the stack.  Still it can be useful to
     /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.
+    /// limited.  This adds a [`Limits`] layer to the driver, which can also
+    /// limit other aspects of the input.
     pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
         self.max_depth = Some(depth);
         self
@@ -568,14 +569,11 @@ impl<'a> Deserializer<'a> {
     /// If a document fails to deserialize (for instance because it does not
     /// match the type), the rest of the document is skipped and the next
     /// call continues with the next document.  Syntax errors end the stream.
+    ///
+    /// To configure the deserialization (for instance to add layers) use
+    /// [`Format::deserialize_with`].
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            self.drive(&mut driver)?;
-        }
-        out.take()
-            .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty document"))
+        Format::deserialize(self)
     }
 
     /// Returns an iterator over the remaining documents.
@@ -598,7 +596,8 @@ impl<'a> Deserializer<'a> {
     /// Parses the next document and feeds the events into the given driver.
     ///
     /// This is useful to deserialize into a custom
-    /// [`Sink`](deser::de::Sink) or to wrap the sink of a value.
+    /// [`Sink`](deser::de::Sink).  See also [`Format::deserialize_with`].
+    /// Errors carry the location in the input (see [`Error::line`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(err) = self.pending_error.take() {
             return Err(err);
@@ -630,7 +629,13 @@ impl<'a> Deserializer<'a> {
             let source = self.source.get_or_insert_with(|| self.input.into());
             driver.state_mut().set_source(source.clone());
         }
-        let rv = self.drive_document(driver);
+        if let Some(max_depth) = self.config.max_depth {
+            driver.push_layer(Limits::new().max_depth(max_depth));
+        }
+        let input = self.input;
+        let rv = self
+            .drive_document(driver)
+            .map_err(|err| err.resolve_position(input.as_bytes()));
 
         if rv.is_err() && !self.failed {
             // skip the rest of the document so that the next one can be read
@@ -685,7 +690,6 @@ impl<'a> Deserializer<'a> {
         let mut pending: Vec<Pending<'a>> = Vec::new();
         // the number of nodes produced by aliases and merges
         let mut replayed = 0;
-        let mut depth = 0;
         // merge keys need to know the keys of all open maps.  This is only
         // done if the input can contain merge keys.
         let track_merges = self.track_merges;
@@ -756,10 +760,6 @@ impl<'a> Deserializer<'a> {
                     start,
                     end,
                 } => {
-                    if self.config.max_depth.is_some_and(|max| depth >= max) {
-                        return Err(error_at(start, "recursion limit exceeded"));
-                    }
-                    depth += 1;
                     if track_merges {
                         frames.push(Frame {
                             is_map,
@@ -773,13 +773,14 @@ impl<'a> Deserializer<'a> {
                     } else {
                         Event::SeqStart
                     };
+                    driver.state_mut().set_input_range(start.offset, end);
                     match tag {
                         Some(tag) => match is_collection_tag(&tag, is_map) {
-                            Ok(true) => driver.emit_at(event, start.offset, end)?,
-                            Ok(false) => emit_tagged(driver, &tag, event, start.offset, end)?,
+                            Ok(true) => driver.emit(event)?,
+                            Ok(false) => emit_tagged(driver, &tag, event)?,
                             Err(msg) => return Err(error_at(start, msg)),
                         },
-                        None => driver.emit_at(event, start.offset, end)?,
+                        None => driver.emit(event)?,
                     }
                 }
                 Node::End { is_map, start, end } => {
@@ -800,9 +801,9 @@ impl<'a> Deserializer<'a> {
                         }
                         frames.pop();
                     }
-                    depth -= 1;
                     let event = if is_map { Event::MapEnd } else { Event::SeqEnd };
-                    driver.emit_at(event, start.offset, end)?;
+                    driver.state_mut().set_input_range(start.offset, end);
+                    driver.emit(event)?;
                 }
                 Node::Alias { range } => pending.push(Pending::Range(range.0, range.1)),
             }
@@ -985,21 +986,21 @@ fn emit_scalar<'a>(
     start: Mark,
     end: usize,
 ) -> Result<(), Error> {
-    let offset = start.offset;
+    driver.state_mut().set_input_range(start.offset, end);
     let tag = match tag {
         None if style == ScalarStyle::Plain => {
-            return driver.emit_borrowed_at(resolve_plain(value, version), offset, end);
+            return driver.emit_borrowed(resolve_plain(value, version));
         }
-        None => return driver.emit_borrowed_at(Atom::Str(value), offset, end),
+        None => return driver.emit_borrowed(Atom::Str(value)),
         Some(tag) => tag,
     };
     match classify_tag(&tag) {
-        ScalarTag::Str => driver.emit_borrowed_at(Atom::Str(value), offset, end),
+        ScalarTag::Str => driver.emit_borrowed(Atom::Str(value)),
         ScalarTag::Standard(name) => match resolve_standard(name, value, version) {
-            Ok(atom) => driver.emit_borrowed_at(atom, offset, end),
+            Ok(atom) => driver.emit_borrowed(atom),
             Err(msg) => Err(error_at(start, msg)),
         },
-        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value), offset, end),
+        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value)),
     }
 }
 
@@ -1009,14 +1010,9 @@ fn emit_tagged<'a, E: Into<Event<'a>>>(
     driver: &mut DeserializeDriver<'_, 'a>,
     tag: &str,
     event: E,
-    start: usize,
-    end: usize,
 ) -> Result<(), Error> {
-    // this is `emit_with` together with the input range
     driver.state_mut().event_mut::<CurrentTag>().0 = Some(tag.to_string());
-    let rv = driver.emit_borrowed_at(event, start, end);
-    driver.state_mut().clear_event_data();
-    rv
+    driver.emit_borrowed(event)
 }
 
 fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
@@ -1028,10 +1024,7 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
         }
     }
     std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(
-            ErrorKind::Unexpected,
-            format!("invalid UTF-8 at offset {}", err.valid_up_to()),
-        )
+        Error::new(ErrorKind::Unexpected, "invalid UTF-8").with_offset(err.valid_up_to())
     })
 }
 
@@ -1054,6 +1047,12 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
         let rv = self.de.deserialize();
         self.failed = rv.is_err();
         Some(rv)
+    }
+}
+
+impl<'a> Format<'a> for Deserializer<'a> {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        Deserializer::drive(self, driver)
     }
 }
 

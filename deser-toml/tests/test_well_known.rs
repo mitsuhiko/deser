@@ -60,7 +60,7 @@ days = [2024-02-29, 0001-01-01]
     let err = from_str::<Stamp>("value = 1979-05-27T07:32:00").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected local date-time, expected offset date-time"
+        "Unexpected: unexpected local date-time, expected offset date-time at line 1 column 9"
     );
 }
 

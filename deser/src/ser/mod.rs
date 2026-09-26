@@ -119,8 +119,10 @@ mod driver;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
 mod impls;
+mod layer;
 
 pub use self::chunk::Chunk;
+pub use self::layer::{Layer, Next};
 
 pub use driver::SerializeDriver;
 
