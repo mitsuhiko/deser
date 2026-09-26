@@ -121,6 +121,8 @@ included benchmark.
   implementation for deser with support for tags
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
   implementation for deser
+* [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
+  implementation for deser
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a layer
   that tracks the path during serialization and deserialization and adds it
   to errors
