@@ -27,6 +27,8 @@ members = [
   "examples/located",
   "examples/manual-struct",
   "examples/optionals",
+  "examples/streams",
+  "examples/tokio-server",
 ]
 resolver = "3"
 

@@ -1,0 +1,18 @@
+[package]
+name = "streams"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-cbor = { path = "../../deser-cbor" }
+deser-json = { path = "../../deser-json" }
+deser-toml = { path = "../../deser-toml" }
+deser-yaml = { path = "../../deser-yaml" }
+
+[[bin]]
+name = "streams"
+path = "src/main.rs"
+test = false

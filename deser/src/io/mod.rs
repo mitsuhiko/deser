@@ -66,6 +66,10 @@
 //! of errors are relative to the start of the stream, not to the start of
 //! the frame.  Failed reads and writes are errors of the kind
 //! [`ErrorKind::Io`] with the IO error as source.
+//!
+//! The input ranges formats publish into the [`State`](crate::State) (and
+//! the locations derived from them, for instance by `deser-location`)
+//! refer to the frame of the value.
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 

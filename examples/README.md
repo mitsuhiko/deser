@@ -34,6 +34,10 @@ What sets deser apart:
   recovery and writing them.
 * [`json-numbers`](json-numbers): exact decimal numbers and timestamps in
   JSON.
+* [`streams`](streams): reading and writing files and streams of values
+  (JSON Lines, CBOR sequences, YAML documents) with `std::io`.
+* [`tokio-server`](tokio-server): a JSON Lines server and client with
+  tokio, using `deser-tokio`'s reader, writer and codec.
 
 Advanced:
 
