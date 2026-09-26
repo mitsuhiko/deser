@@ -18,8 +18,12 @@ ifeq ($(CI),true)
 export CARGO_TERM_PROGRESS_WHEN := never
 endif
 
-# ordered by how long they take, the slowest start first
-MIRI_CRATES := deser-cbor deser deser-json deser-path deser-location deser-debug
+# Crates tested with miri (with stacked borrows), ordered by how long they
+# take, the slowest start first.  CI splits them across jobs.
+MIRI_CRATES ?= deser deser-json deser-cbor deser-path deser-location deser-debug
+# Crates also tested with tree borrows.  Almost all unsafe code is in the
+# core crate, the formats only have simple byte copies.
+MIRI_TREE_BORROWS_CRATES ?= deser
 # every miri run is single threaded
 MIRI_JOBS ?= 6
 # Tests that are slow in miri and do not test unsafe code opt out with
@@ -43,9 +47,11 @@ test:
 
 miri-test:
 	@$(RUN) "miri:setup" "cargo +nightly miri setup"
-	@$(RUN) -j $(MIRI_JOBS) $(foreach crate,$(MIRI_CRATES), \
-		"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)" \
-		"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)")
+	@$(RUN) -j $(MIRI_JOBS) \
+		$(foreach crate,$(MIRI_TREE_BORROWS_CRATES), \
+			"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)") \
+		$(foreach crate,$(MIRI_CRATES), \
+			"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)")
 
 miri-test-full:
 	@$(MAKE) --no-print-directory miri-test MIRI_TEST_ARGS=--include-ignored

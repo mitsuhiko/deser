@@ -28,8 +28,21 @@ jobs:
         run: make msrv
 
   miri-test-latest:
-    name: Miri Test
+    name: Miri Test (${{ matrix.name }})
     runs-on: ubuntu-latest
+    # miri is slow, the crates are split across jobs so they run in parallel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: deser
+            crates: deser
+          - name: deser, tree borrows
+            tree-borrows-crates: deser
+          - name: deser-json
+            crates: deser-json
+          - name: other crates
+            crates: deser-cbor deser-path deser-location deser-debug
 
     steps:
       - uses: actions/checkout@v3
@@ -38,4 +51,4 @@ jobs:
           toolchain: nightly
           components: miri
       - name: Miri Test
-        run: make miri-test
+        run: make miri-test MIRI_CRATES="${{ matrix.crates }}" MIRI_TREE_BORROWS_CRATES="${{ matrix.tree-borrows-crates }}"
