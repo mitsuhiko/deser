@@ -76,7 +76,7 @@ use std::task::{Context, Poll, ready};
 
 use deser::de::Decoder;
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
-use deser::io::{DecodeBuffer, Status};
+use deser::io::{DecodeBuffer, ElementReader, ElementStatus, Next, Status};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
 use deser::{Error, ErrorKind};
@@ -239,6 +239,87 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         poll_fn(|cx| self.poll_read_setup(cx, &mut setup)).await
     }
 
+    /// Polls for the next element of the [`Streamed`](deser::io::Streamed) sequence of a value or
+    /// the value.
+    ///
+    /// This is the poll based version of [`read_next`](Self::read_next).
+    pub fn poll_read_next<T, E>(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<Next<E, T>>, Error>>
+    where
+        T: DeserializeOwned + 'static,
+        E: Send + 'static,
+    {
+        let mut reader = match self.pending.take() {
+            Some(pending) => match pending.downcast::<ElementReader<T, E>>() {
+                Ok(reader) => reader,
+                Err(pending) => {
+                    self.pending = Some(pending);
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "a value of another type is being read",
+                    )));
+                }
+            },
+            None => Box::new(ElementReader::<T, E>::new()),
+        };
+        loop {
+            match reader.poll(&mut self.buffer)? {
+                ElementStatus::Ready(next) => {
+                    if reader.is_reading() {
+                        self.pending = Some(reader);
+                    }
+                    return Poll::Ready(Ok(Some(next)));
+                }
+                ElementStatus::End => return Poll::Ready(Ok(None)),
+                ElementStatus::NeedInput => match self.poll_read_more(cx) {
+                    Poll::Ready(Ok(())) => {}
+                    rv => {
+                        // the value continues with the next read
+                        self.pending = Some(reader);
+                        return rv.map(|rv| rv.map(|_| None));
+                    }
+                },
+            }
+        }
+    }
+
+    /// Reads the next element of the [`Streamed`](deser::io::Streamed) sequence of a value or
+    /// the value.
+    ///
+    /// `T` is the type of the value and `E` the type of the elements of a
+    /// [`Streamed<E>`](deser::io::Streamed) sequence within it.  The elements are
+    /// handed out as they are read ([`Next::Element`]), the value once it's
+    /// complete ([`Next::Done`]).  The next call continues with the next
+    /// value.  Resolves to `None` if there are no more values.  This is
+    /// cancellation safe, until the value is complete the reader can only
+    /// be used to read the value with the same types.
+    pub async fn read_next<T, E>(&mut self) -> Result<Option<Next<E, T>>, Error>
+    where
+        T: DeserializeOwned + 'static,
+        E: Send + 'static,
+    {
+        poll_fn(|cx| self.poll_read_next(cx)).await
+    }
+
+    /// Converts the reader into a [`Stream`] of the elements of the
+    /// [`Streamed`](deser::io::Streamed) sequence of values and the values.
+    ///
+    /// See [`read_next`](Self::read_next).  The stream ends after the first
+    /// error.
+    pub fn into_element_stream<T, E>(self) -> ElementStream<R, D, T, E>
+    where
+        T: DeserializeOwned + 'static,
+        E: Send + 'static,
+    {
+        ElementStream {
+            reader: self,
+            failed: false,
+            _marker: PhantomData,
+        }
+    }
+
     /// Reads the next value which can borrow from the reader's buffer.
     ///
     /// The complete value is buffered first.
@@ -326,6 +407,48 @@ impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
         }
         match ready!(self.reader.poll_read(cx)) {
             Ok(value) => Poll::Ready(value.map(Ok)),
+            Err(err) => {
+                self.failed = true;
+                Poll::Ready(Some(Err(err)))
+            }
+        }
+    }
+}
+
+/// A [`Stream`] of the elements of the [`Streamed`](deser::io::Streamed) sequence of values and
+/// the values.
+///
+/// Created with [`Reader::into_element_stream`].
+pub struct ElementStream<R, D: Decoder, T, E> {
+    reader: Reader<R, D>,
+    failed: bool,
+    _marker: PhantomData<fn() -> (T, E)>,
+}
+
+impl<R, D: Decoder, T, E> Unpin for ElementStream<R, D, T, E> {}
+
+impl<R, D: Decoder, T, E> ElementStream<R, D, T, E> {
+    /// Returns the reader.
+    pub fn into_inner(self) -> Reader<R, D> {
+        self.reader
+    }
+}
+
+impl<R, D, T, E> Stream for ElementStream<R, D, T, E>
+where
+    R: AsyncRead + Unpin,
+    D: Decoder,
+    T: DeserializeOwned + 'static,
+    E: Send + 'static,
+{
+    type Item = Result<Next<E, T>, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.failed {
+            return Poll::Ready(None);
+        }
+        match ready!(self.reader.poll_read_next(cx)) {
+            Ok(next) => Poll::Ready(next.map(Ok)),
             Err(err) => {
                 self.failed = true;
                 Poll::Ready(Some(Err(err)))

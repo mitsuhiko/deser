@@ -400,3 +400,212 @@ fn test_feeding_with_layers() {
         "Unexpected: too many items at line 1 column 8"
     );
 }
+
+mod streamed {
+    use deser::io::{Next, Reader, Streamed};
+    use deser::{Deserialize, Serialize};
+    use deser_json::{DeserializerConfig, Trailing};
+
+    use super::{Blocking, Chunked, STRICT};
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Item {
+        id: u32,
+        name: String,
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Page {
+        total: u32,
+        items: Streamed<Item>,
+        next: Option<String>,
+    }
+
+    fn item(id: u32) -> Item {
+        Item {
+            id,
+            name: format!("item {id}"),
+        }
+    }
+
+    fn read_all(
+        reader: &mut Reader<impl std::io::Read, DeserializerConfig>,
+    ) -> Vec<Next<Item, Page>> {
+        let mut rv = Vec::new();
+        while let Some(next) = reader.read_next::<Page, Item>().unwrap() {
+            rv.push(next);
+        }
+        rv
+    }
+
+    #[test]
+    fn test_elements_are_handed_out() {
+        let page = Page {
+            total: 3,
+            items: (0..3).map(item).collect(),
+            next: Some("cursor".into()),
+        };
+        let json = deser_json::to_string(&page).unwrap();
+        let expected = vec![
+            Next::Element(item(0)),
+            Next::Element(item(1)),
+            Next::Element(item(2)),
+            Next::Done(Page {
+                total: 3,
+                items: Streamed::new(),
+                next: Some("cursor".into()),
+            }),
+        ];
+        for size in 1..=json.len() {
+            let mut reader = Reader::new(
+                Chunked {
+                    input: json.as_bytes(),
+                    size,
+                },
+                STRICT,
+            );
+            assert_eq!(read_all(&mut reader), expected, "size {size}");
+        }
+    }
+
+    #[test]
+    fn test_elements_are_handed_out_as_they_arrive() {
+        // the stream stays open after the second element
+        let input = b"{\"total\": 2, \"items\": [{\"id\": 0, \"name\": \"item 0\"}, {\"id\": 1, \"name\": \"item 1\"}";
+        let mut reader = Reader::new(Blocking(input), STRICT);
+        assert_eq!(
+            reader.read_next::<Page, Item>().unwrap(),
+            Some(Next::Element(item(0)))
+        );
+        assert_eq!(
+            reader.read_next::<Page, Item>().unwrap(),
+            Some(Next::Element(item(1)))
+        );
+    }
+
+    #[test]
+    fn test_collected_like_a_vec() {
+        let page: Page = deser_json::from_str(
+            r#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#,
+        )
+        .unwrap();
+        assert_eq!(page.items.as_slice(), [item(0)]);
+        assert_eq!(
+            deser_json::to_string(&page).unwrap(),
+            r#"{"total":1,"items":[{"id":0,"name":"item 0"}],"next":null}"#
+        );
+
+        // without read_next the elements are collected
+        let input = br#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#;
+        let mut reader = Reader::new(&input[..], STRICT);
+        assert_eq!(reader.read::<Page>().unwrap().unwrap().items.len(), 1);
+    }
+
+    #[test]
+    fn test_framed_values() {
+        // JSON Lines are read from frames, the elements are handed out once
+        // the line is complete
+        let lines = DeserializerConfig::new().trailing(Trailing::Newline);
+        let input = b"{\"total\": 1, \"items\": [{\"id\": 0, \"name\": \"item 0\"}], \"next\": null}\n{\"total\": 0, \"items\": [], \"next\": \"x\"}\n";
+        let mut reader = Reader::new(&input[..], lines);
+        assert_eq!(
+            read_all(&mut reader),
+            [
+                Next::Element(item(0)),
+                Next::Done(Page {
+                    total: 1,
+                    items: Streamed::new(),
+                    next: None
+                }),
+                Next::Done(Page {
+                    total: 0,
+                    items: Streamed::new(),
+                    next: Some("x".into())
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_nested_and_atoms() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Outer {
+            inner: Inner,
+        }
+
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Inner {
+            values: Streamed<u32>,
+        }
+
+        let input = br#"{"inner": {"values": [1, 2, 3]}} {"inner": {"values": []}}"#;
+        let stop = DeserializerConfig::new().trailing(Trailing::Stop);
+        let mut reader = Reader::new(Chunked { input, size: 3 }, stop);
+        let mut rv = Vec::new();
+        while let Some(next) = reader.read_next::<Outer, u32>().unwrap() {
+            rv.push(match next {
+                Next::Element(value) => Some(value),
+                Next::Done(_) => None,
+            });
+        }
+        assert_eq!(rv, [Some(1), Some(2), Some(3), None, None]);
+    }
+
+    #[test]
+    fn test_other_reads_while_reading_elements() {
+        let input = br#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#;
+        let mut reader = Reader::new(&input[..], STRICT);
+        assert!(matches!(
+            reader.read_next::<Page, Item>().unwrap(),
+            Some(Next::Element(_))
+        ));
+        assert!(reader.read::<Page>().is_err());
+        assert!(reader.read_next::<Page, u32>().is_err());
+        assert!(matches!(
+            reader.read_next::<Page, Item>().unwrap(),
+            Some(Next::Done(_))
+        ));
+        assert!(reader.read_next::<Page, Item>().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_elements_bound_the_buffer() {
+        use deser::io::{DecodeBuffer, ElementReader, ElementStatus};
+
+        let page = Page {
+            total: 10_000,
+            items: (0..10_000).map(item).collect(),
+            next: None,
+        };
+        let json = deser_json::to_string(&page).unwrap();
+        let mut buffer = DecodeBuffer::new(STRICT);
+        let mut reader = ElementReader::<Page, Item>::new();
+        let mut chunks = json.as_bytes().chunks(1024);
+        let mut count = 0;
+        let mut max_buffered = 0;
+        loop {
+            match reader.poll(&mut buffer).unwrap() {
+                ElementStatus::Ready(Next::Element(element)) => {
+                    assert_eq!(element, item(count));
+                    count += 1;
+                }
+                ElementStatus::Ready(Next::Done(page)) => {
+                    assert_eq!(page.total, 10_000);
+                    assert!(page.items.is_empty());
+                    break;
+                }
+                ElementStatus::NeedInput => {
+                    // only an incomplete token is left
+                    max_buffered = max_buffered.max(buffer.buffered());
+                    match chunks.next() {
+                        Some(chunk) => buffer.extend_from_slice(chunk),
+                        None => buffer.set_eof(),
+                    }
+                }
+                ElementStatus::End => unreachable!(),
+            }
+        }
+        assert_eq!(count, 10_000);
+        assert!(max_buffered < 100, "{max_buffered} bytes buffered");
+    }
+}

@@ -71,6 +71,15 @@
 //! buffered, which means that the memory used does not depend on the size
 //! of the values.  Otherwise the complete value is buffered first.
 //!
+//! # Large Sequences
+//!
+//! Values which contain a large (or unbounded) sequence can be processed
+//! while they are read: a [`Streamed`] sequence hands out its elements as
+//! they are read with [`Reader::read_next`] (and behaves like a `Vec`
+//! otherwise).
+//!
+//! # Other IO
+//!
 //! The [`DecodeBuffer`] implements the framing without doing IO itself.  The
 //! [`Reader`] fills it from a [`std::io::Read`], adapters for other IO
 //! (for instance async runtimes) do the same with their IO.
@@ -85,6 +94,7 @@
 //! The input ranges formats publish into the [`State`](crate::State) (and
 //! the locations derived from them, for instance by `deser-location`)
 //! refer to the frame of the value.
+use std::any::Any;
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 
@@ -93,9 +103,11 @@ use crate::error::{Error, ErrorKind};
 use crate::ser::{Encoder, Serialize, SerializeDriver};
 
 mod buffer;
+mod streamed;
 
 use self::buffer::Position;
 pub use self::buffer::{DecodeBuffer, Status};
+pub use self::streamed::{ElementReader, ElementStatus, Next, Streamed};
 
 /// Serializes a value into a buffer with an encoder.
 ///
@@ -141,6 +153,8 @@ where
 pub struct Reader<R, D: Decoder> {
     reader: R,
     buffer: DecodeBuffer<D>,
+    // the value that is read with `read_next` (an `ElementReader`)
+    pending: Option<Box<dyn Any + Send>>,
 }
 
 impl<R: Read, D: Decoder> Reader<R, D> {
@@ -149,6 +163,18 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         Reader {
             reader,
             buffer: DecodeBuffer::new(decoder),
+            pending: None,
+        }
+    }
+
+    /// Fails if a value is being read with [`read_next`](Self::read_next).
+    fn ensure_idle(&self) -> Result<(), Error> {
+        match self.pending {
+            Some(_) => Err(Error::new(
+                ErrorKind::Unexpected,
+                "a value is being read with read_next",
+            )),
+            None => Ok(()),
         }
     }
 
@@ -204,6 +230,7 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         T: DeserializeOwned,
         F: FnOnce(&mut DeserializeDriver<'_, '_>),
     {
+        self.ensure_idle()?;
         if !self.buffer.supports_feed() {
             if !self.fill()? {
                 return Ok(None);
@@ -260,10 +287,60 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// assert_eq!(value, "hello");
     /// ```
     pub fn read_borrowed<'a, T: Deserialize<'a>>(&'a mut self) -> Result<Option<T>, Error> {
+        self.ensure_idle()?;
         if !self.fill()? {
             return Ok(None);
         }
         self.buffer.deserialize().map(Some)
+    }
+
+    /// Reads the next element of the [`Streamed`] sequence of a value or
+    /// the value.
+    ///
+    /// `T` is the type of the value and `E` the type of the elements of a
+    /// [`Streamed<E>`](Streamed) sequence within it.  The elements are
+    /// handed out as they are read ([`Next::Element`]), the value once it's
+    /// complete ([`Next::Done`]).  The next call continues with the next
+    /// value.  Returns `None` if there are no more values.  See [`Streamed`]
+    /// for an example.
+    ///
+    /// Until the value is complete, the reader can only be used to read the
+    /// value with the same types.
+    pub fn read_next<T, E>(&mut self) -> Result<Option<Next<E, T>>, Error>
+    where
+        T: DeserializeOwned + 'static,
+        E: Send + 'static,
+    {
+        let mut reader = match self.pending.take() {
+            Some(pending) => match pending.downcast::<ElementReader<T, E>>() {
+                Ok(reader) => reader,
+                Err(pending) => {
+                    self.pending = Some(pending);
+                    return Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "a value of another type is being read",
+                    ));
+                }
+            },
+            None => Box::new(ElementReader::<T, E>::new()),
+        };
+        loop {
+            match reader.poll(&mut self.buffer)? {
+                ElementStatus::Ready(next) => {
+                    if reader.is_reading() {
+                        self.pending = Some(reader);
+                    }
+                    return Ok(Some(next));
+                }
+                ElementStatus::End => return Ok(None),
+                ElementStatus::NeedInput => {
+                    if let Err(err) = self.read_more() {
+                        self.pending = Some(reader);
+                        return Err(err);
+                    }
+                }
+            }
+        }
     }
 
     /// Checks that there are no more values.
@@ -271,6 +348,7 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// Fails if another value follows (or if the data that follows is not
     /// valid).
     pub fn end(&mut self) -> Result<(), Error> {
+        self.ensure_idle()?;
         if self.fill()? {
             return Err(self.buffer.trailing_error());
         }

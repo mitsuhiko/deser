@@ -9,6 +9,12 @@ All notable changes to deser are documented here.
   configurations of the formats implement them, which makes them usable in
   generic code: `Decoder::from_slice` and `Decoder::from_reader`,
   `Encoder::to_vec` and `Encoder::to_writer`.
+- Added `deser::io::Streamed<T>`, a sequence whose elements are handed out
+  while a value is read with `Reader::read_next` (as `Next::Element`,
+  followed by the value as `Next::Done`) instead of being collected.
+  Otherwise it behaves like a `Vec<T>`.  `ElementReader` implements this
+  without IO, `deser-tokio` has `Reader::read_next` and
+  `Reader::into_element_stream`.
 - Added `OwnedDriver`, a `DeserializeDriver` which owns the value it
   deserializes.  It can be held across calls, for instance to deserialize
   a value from input which arrives over time.

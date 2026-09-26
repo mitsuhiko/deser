@@ -228,3 +228,52 @@ async fn test_feeding_across_tasks() {
     writer.await.unwrap();
     assert_eq!(reader.await.unwrap(), 50);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_streamed_elements() {
+    use deser::io::{Next, Streamed};
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Feed {
+        name: String,
+        messages: Streamed<Message>,
+    }
+
+    let (mut client, server) = duplex(16);
+    let (sent, mut received) = tokio::sync::mpsc::channel::<u64>(1);
+    let writer = tokio::spawn(async move {
+        client
+            .write_all(b"{\"name\": \"feed\", \"messages\": [")
+            .await
+            .unwrap();
+        for id in 0..5 {
+            if id > 0 {
+                client.write_all(b",").await.unwrap();
+            }
+            let json = deser_json::to_string(&message(id)).unwrap();
+            client.write_all(json.as_bytes()).await.unwrap();
+            // the next message is only written once this one arrived
+            assert_eq!(received.recv().await, Some(id));
+        }
+        client.write_all(b"]}").await.unwrap();
+    });
+
+    let mut stream =
+        Reader::new(server, DeserializerConfig::new()).into_element_stream::<Feed, Message>();
+    for id in 0..5 {
+        assert_eq!(
+            stream.next().await.unwrap().unwrap(),
+            Next::Element(message(id))
+        );
+        sent.send(id).await.unwrap();
+    }
+    assert_eq!(
+        stream.next().await.unwrap().unwrap(),
+        Next::Done(Feed {
+            name: "feed".into(),
+            messages: Streamed::new()
+        })
+    );
+    assert!(stream.next().await.is_none());
+    writer.await.unwrap();
+}
