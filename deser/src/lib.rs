@@ -73,6 +73,7 @@ pub mod adapters;
 pub mod de;
 mod error;
 pub mod ext;
+pub mod hints;
 pub mod ser;
 
 mod extensions;

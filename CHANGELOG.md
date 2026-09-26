@@ -34,6 +34,13 @@ All notable changes to deser are documented here.
   `SerializeDriver::drive_described` which passes the value of every event.
   `deser-debug` uses it and formats values like `#[derive(Debug)]` (including
   struct and newtype names).
+- Added `deser::hints` with well-known formatting hints.  `Layout` asks
+  formats to lay out a map or sequence compact (inline) or expanded, the
+  `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and
+  layers can set it by path.  `deser-toml` writes compact tables and arrays
+  of tables inline and reports inline tables as compact when reading, so
+  they stay inline through a `Recording`.  It also reports the lengths of
+  tables and arrays.
 - `deser-cbor` uses the same event data for tags when reading and writing,
   values that capture event data (such as `Recording`) keep the tags when
   they are serialized again.

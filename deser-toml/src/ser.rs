@@ -3,8 +3,9 @@ use std::fmt::Write;
 
 use deser::adapters::bytes::BytesFormat;
 use deser::ext::ExtValue;
+use deser::hints::Layout;
 use deser::ser::SerializeDriver;
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
 use deser::ext::{Datetime, Number, Timestamp};
@@ -17,7 +18,11 @@ use deser::ext::{Datetime, Number, Timestamp};
 /// sequences are an error.
 ///
 /// Values that are maps are written as `[table]` sections and sequences of
-/// maps as `[[array]]` sections unless they are nested in other sequences.
+/// maps as `[[array]]` sections unless they are nested in other sequences or
+/// have the [`Layout::Compact`](deser::hints::Layout) hint (see
+/// [`hints`](deser::hints)) which makes them inline.  Inline tables and
+/// inline arrays of tables have that hint when deserialized, so they stay
+/// inline when a value is deserialized and serialized again.
 /// The output is compatible with TOML 1.0.
 ///
 /// [`to_string`](Self::to_string) works like the
@@ -85,7 +90,7 @@ impl SerializerConfig {
         };
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        driver.drive(|event, _state| builder.event(event))?;
+        driver.drive(|event, state| builder.event(event, state))?;
         if !builder.done {
             return Err(Error::new(ErrorKind::Unexpected, "no value was serialized"));
         }
@@ -136,7 +141,7 @@ enum Converted {
 }
 
 impl Builder {
-    fn event(&mut self, event: Event) -> Result<(), Error> {
+    fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         let Some(frame) = self.stack.last_mut() else {
             if self.done {
                 return Err(Error::new(ErrorKind::Unexpected, "unexpected event"));
@@ -172,7 +177,7 @@ impl Builder {
             },
             Frame::Table(id, ref mut key @ Some(_)) => {
                 let key = key.take().unwrap();
-                let value = match self.value(event)? {
+                let value = match self.value(event, state)? {
                     Converted::Value(value) => value,
                     // map entries with null values are skipped
                     Converted::Null => return Ok(()),
@@ -201,7 +206,7 @@ impl Builder {
                     self.stack.pop();
                     return Ok(());
                 }
-                match self.value(event)? {
+                match self.value(event, state)? {
                     Converted::Value(value) => {
                         self.doc.arrays[id].items.push(Item {
                             value,
@@ -220,19 +225,26 @@ impl Builder {
 
     /// Converts the first event of a value.  Maps and sequences are pushed
     /// to the stack.
-    fn value(&mut self, event: Event) -> Result<Converted, Error> {
+    fn value(&mut self, event: Event, state: &State) -> Result<Converted, Error> {
         match event {
             Event::Atom(Atom::Bytes(ref bytes)) => Ok(Converted::Value(
                 self.bytes_value(bytes, bytes.fallback.copied().unwrap_or(self.bytes)),
             )),
             Event::Atom(atom) => convert_atom(atom, self.bytes),
             Event::MapStart(_) => {
-                let id = self.doc.new_table(TableKind::Header, Span::default());
+                // compact tables are inline tables, others sections
+                let kind = match Layout::of(state) {
+                    Layout::Compact => TableKind::Inline,
+                    _ => TableKind::Header,
+                };
+                let id = self.doc.new_table(kind, Span::default());
                 self.stack.push(Frame::Table(id, None));
                 Ok(Converted::Value(Value::Table(id)))
             }
             Event::SeqStart(_) => {
-                let id = self.doc.new_array(false, Span::default());
+                // arrays of tables are `[[array]]` sections unless compact
+                let of_tables = Layout::of(state) != Layout::Compact;
+                let id = self.doc.new_array(of_tables, Span::default());
                 self.stack.push(Frame::Array(id));
                 Ok(Converted::Value(Value::Array(id)))
             }
@@ -402,15 +414,20 @@ impl<'d> Writer<'d> {
     /// Returns `true` if the value is written as section rather than inline.
     fn is_section(&self, value: &Value) -> bool {
         match *value {
-            Value::Table(_) => true,
+            Value::Table(id) => self.doc.tables[id].kind != TableKind::Inline,
             Value::Array(id) => self.is_array_of_tables(id),
             _ => false,
         }
     }
 
     fn is_array_of_tables(&self, id: usize) -> bool {
-        let items = &self.doc.arrays[id].items;
-        !items.is_empty() && items.iter().all(|x| matches!(x.value, Value::Table(_)))
+        let array = &self.doc.arrays[id];
+        array.of_tables
+            && !array.items.is_empty()
+            && array
+                .items
+                .iter()
+                .all(|x| matches!(x.value, Value::Table(_)))
     }
 
     fn write_document(&mut self) -> Result<(), Error> {
@@ -469,11 +486,13 @@ impl<'d> Writer<'d> {
                     path
                 };
                 match entry.item.value {
-                    Value::Table(id) => sections.push(Section {
-                        id,
-                        path: child_path(),
-                        header: Header::Table,
-                    }),
+                    Value::Table(id) if self.is_section(&entry.item.value) => {
+                        sections.push(Section {
+                            id,
+                            path: child_path(),
+                            header: Header::Table,
+                        })
+                    }
                     Value::Array(id) if self.is_array_of_tables(id) => {
                         for item in &doc.arrays[id].items {
                             if let Value::Table(id) = item.value {

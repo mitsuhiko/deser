@@ -363,3 +363,81 @@ fn drop_value(value: Value) {
         }
     }
 }
+
+#[test]
+fn test_layout_hints() {
+    use deser::hints::{Compact, Layout};
+
+    #[derive(Serialize)]
+    struct Point {
+        x: u32,
+        y: u32,
+    }
+
+    #[derive(Serialize)]
+    struct Server {
+        host: String,
+    }
+
+    #[derive(Serialize)]
+    struct Config {
+        name: String,
+        #[deser(as = Compact)]
+        point: Point,
+        servers: Vec<Server>,
+        #[deser(as = Compact)]
+        mirrors: Vec<Server>,
+        origin: Point,
+    }
+
+    let config = Config {
+        name: "x".into(),
+        point: Point { x: 1, y: 2 },
+        servers: vec![Server { host: "a".into() }],
+        mirrors: vec![Server { host: "b".into() }],
+        origin: Point { x: 0, y: 0 },
+    };
+    assert_eq!(
+        to_string(&config).unwrap(),
+        "name = \"x\"\n\
+         point = { x = 1, y = 2 }\n\
+         mirrors = [{ host = \"b\" }]\n\
+         \n\
+         [[servers]]\n\
+         host = \"a\"\n\
+         \n\
+         [origin]\n\
+         x = 0\n\
+         y = 0\n"
+    );
+
+    // layers can set hints, here for all maps below the root
+    struct CompactNested;
+
+    impl deser::ser::Layer for CompactNested {
+        fn event(
+            &mut self,
+            event: deser::Event<'_>,
+            next: &mut deser::ser::Next<'_>,
+        ) -> Result<(), deser::Error> {
+            if matches!(event, deser::Event::MapStart(_)) && next.state().depth() > 1 {
+                Layout::Compact.set(next.state_mut());
+            }
+            next.emit(event)
+        }
+    }
+
+    let toml = deser_toml::SerializerConfig::new()
+        .to_string_with(&config, |driver| driver.push_layer(CompactNested))
+        .unwrap();
+    assert!(toml.contains("origin = { x = 0, y = 0 }\n"), "{}", toml);
+    assert!(toml.contains("[[servers]]\n"), "{}", toml);
+}
+
+#[test]
+fn test_inline_tables_roundtrip() {
+    // inline tables and arrays of tables stay inline through a recording
+    let input = "a = 1\npoint = { x = 1, y = 2 }\nlist = [{ x = 1 }]\n\n[[items]]\nb = 2\n\n[table]\nc = 3\n";
+    let recording: deser::de::Recording = from_str(input).unwrap();
+    assert_eq!(to_string(&recording).unwrap(), input);
+}

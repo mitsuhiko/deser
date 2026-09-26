@@ -3,9 +3,10 @@ use std::borrow::Cow;
 use deser::adapters::bytes::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::ExtValue;
-use deser::{Atom, Error, ErrorKind, Event};
+use deser::hints::Layout;
+use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
 
-use crate::document::{Document, Item, Span, Value};
+use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};
 
 /// Configures how TOML is deserialized.
@@ -249,7 +250,8 @@ enum Frame {
 /// Emits the events of a document.
 fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
     let mut stack = vec![Frame::Table(ROOT, 0)];
-    emit_at(driver, Event::map_start(), doc.tables[ROOT].span)?;
+    let shape = ContainerShape::new().with_len(doc.tables[ROOT].entries.len());
+    emit_at(driver, Event::MapStart(shape), doc.tables[ROOT].span)?;
 
     while let Some(frame) = stack.last_mut() {
         let item: &Item = match *frame {
@@ -286,11 +288,29 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
 
         match item.value {
             Value::Table(id) => {
-                emit_at(driver, Event::map_start(), doc.tables[id].span)?;
+                let table = &doc.tables[id];
+                // inline tables are compact so that they stay inline when
+                // they are serialized again
+                if table.kind == TableKind::Inline {
+                    Layout::Compact.set(driver.state_mut());
+                }
+                let shape = ContainerShape::new().with_len(table.entries.len());
+                emit_at(driver, Event::MapStart(shape), table.span)?;
                 stack.push(Frame::Table(id, 0));
             }
             Value::Array(id) => {
-                emit_at(driver, Event::seq_start(), doc.arrays[id].span)?;
+                let array = &doc.arrays[id];
+                // same for inline arrays of tables
+                if !array.of_tables
+                    && array
+                        .items
+                        .first()
+                        .is_some_and(|x| matches!(x.value, Value::Table(_)))
+                {
+                    Layout::Compact.set(driver.state_mut());
+                }
+                let shape = ContainerShape::new().with_len(array.items.len());
+                emit_at(driver, Event::SeqStart(shape), array.span)?;
                 stack.push(Frame::Array(id, 0));
             }
             Value::Str(ref value) => emit_str(driver, value, item.span)?,
