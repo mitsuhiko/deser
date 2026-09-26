@@ -3,7 +3,8 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
 use crate::adapters::DeserializeAs;
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+use crate::error::{Error, ErrorKind};
 
 struct NonuniqueBox<T: ?Sized> {
     ptr: NonNull<T>,
@@ -168,6 +169,106 @@ impl<'de, T> Drop for OwnedSink<'de, T> {
         // storage it borrows from.
         unsafe {
             ManuallyDrop::drop(&mut self.sink);
+        }
+    }
+}
+
+/// A [`DeserializeDriver`] which owns the value it deserializes.
+///
+/// A [`DeserializeDriver`] borrows the slot of the value it deserializes,
+/// which means that it cannot be held together with the slot, for instance
+/// in a struct that deserializes a value from input which arrives over
+/// time.  This bundles a driver with its slot.  The driver is lent out with
+/// [`with`](Self::with) and the value is taken with
+/// [`finish`](Self::finish):
+///
+/// ```
+/// use deser::de::OwnedDriver;
+/// use deser::Event;
+///
+/// let mut driver = OwnedDriver::<Vec<u32>>::new();
+/// driver.with(|driver| driver.emit(Event::seq_start())).unwrap();
+/// // ... later, when more input arrived
+/// driver.with(|driver| {
+///     driver.emit(1u64)?;
+///     driver.emit(Event::SeqEnd)
+/// }).unwrap();
+/// assert_eq!(driver.finish().unwrap(), [1]);
+/// ```
+pub struct OwnedDriver<'de, T> {
+    // The driver borrows from the storage.  It's dropped before the
+    // storage is accessed (in `finish`) or dropped.  The lifetime of the
+    // borrow is erased (to `'de` as the driver cannot outlive that).
+    driver: ManuallyDrop<DeserializeDriver<'de, 'de>>,
+    storage: NonuniqueBox<Option<T>>,
+}
+
+impl<'de, T: Deserialize<'de>> OwnedDriver<'de, T> {
+    /// Creates a driver for a value.
+    pub fn new() -> OwnedDriver<'de, T> {
+        let storage = NonuniqueBox::new(None);
+        // SAFETY: the storage is heap allocated and not moved.  The driver
+        // is dropped before the storage is accessed again or freed.
+        let driver = unsafe {
+            let slot = &mut *storage.ptr.as_ptr();
+            std::mem::transmute::<DeserializeDriver<'_, 'de>, DeserializeDriver<'de, 'de>>(
+                DeserializeDriver::new(slot),
+            )
+        };
+        OwnedDriver {
+            driver: ManuallyDrop::new(driver),
+            storage,
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Default for OwnedDriver<'de, T> {
+    fn default() -> OwnedDriver<'de, T> {
+        OwnedDriver::new()
+    }
+}
+
+impl<'de, T> OwnedDriver<'de, T> {
+    /// Invokes a function with the driver.
+    ///
+    /// The function has to accept a driver of any lifetime which ensures
+    /// that it cannot keep the driver or replace it.
+    pub fn with<R, F>(&mut self, f: F) -> R
+    where
+        F: for<'a> FnOnce(&mut DeserializeDriver<'a, 'de>) -> R,
+    {
+        f(&mut self.driver)
+    }
+
+    /// Returns a reference to the driver.
+    pub fn driver(&self) -> &DeserializeDriver<'_, 'de> {
+        &self.driver
+    }
+
+    /// Finishes the deserialization and returns the value.
+    ///
+    /// Fails with [`ErrorKind::EndOfFile`] if the value is incomplete.
+    pub fn finish(self) -> Result<T, Error> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: the driver is dropped before the storage it borrows from
+        // is accessed.  The storage is moved out of the forgotten value
+        // exactly once.
+        let mut storage = unsafe {
+            ManuallyDrop::drop(&mut this.driver);
+            std::ptr::read(&this.storage)
+        };
+        storage
+            .take()
+            .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "unexpected end of input"))
+    }
+}
+
+impl<'de, T> Drop for OwnedDriver<'de, T> {
+    fn drop(&mut self) {
+        // SAFETY: the driver is never used again and dropped before the
+        // storage it borrows from.
+        unsafe {
+            ManuallyDrop::drop(&mut self.driver);
         }
     }
 }

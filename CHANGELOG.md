@@ -9,6 +9,9 @@ All notable changes to deser are documented here.
   configurations of the formats implement them, which makes them usable in
   generic code: `Decoder::from_slice` and `Decoder::from_reader`,
   `Encoder::to_vec` and `Encoder::to_writer`.
+- Added `OwnedDriver`, a `DeserializeDriver` which owns the value it
+  deserializes.  It can be held across calls, for instance to deserialize
+  a value from input which arrives over time.
 - Added `deser::io` to read values from and write values to streams with
   decoders and encoders: `Reader` and `Writer` (and `from_reader` and
   `to_writer`) use them with `std::io::Read` and `std::io::Write`,

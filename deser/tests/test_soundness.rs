@@ -824,3 +824,75 @@ fn test_drivers_move_between_threads() {
         assert_eq!(produced, events);
     }
 }
+
+#[test]
+fn test_owned_driver() {
+    use deser::de::OwnedDriver;
+
+    let events = outer_events();
+    let step = if cfg!(miri) { 7 } else { 1 };
+
+    // complete values, fed in two parts
+    for split in (0..=events.len()).step_by(step) {
+        let mut driver = OwnedDriver::<Outer>::new();
+        driver
+            .with(|driver| {
+                for event in &events[..split] {
+                    driver.emit(event.clone())?;
+                }
+                Ok::<_, Error>(())
+            })
+            .unwrap();
+        // moving the driver (also to another thread) does not move the slot
+        let driver = std::thread::spawn(move || {
+            let mut driver = driver;
+            driver
+                .with(|driver| {
+                    for event in &events_clone(split) {
+                        driver.emit(event.clone())?;
+                    }
+                    Ok::<_, Error>(())
+                })
+                .unwrap();
+            driver
+        })
+        .join()
+        .unwrap();
+        assert_eq!(
+            driver.finish().unwrap(),
+            emit_partial::<Outer>(&events).unwrap()
+        );
+    }
+
+    // incomplete values are dropped or fail to finish
+    for cut in (0..events.len()).step_by(step) {
+        let mut driver = OwnedDriver::<Outer>::new();
+        driver
+            .with(|driver| {
+                for event in &events[..cut] {
+                    driver.emit(event.clone())?;
+                }
+                Ok::<_, Error>(())
+            })
+            .unwrap();
+        if cut % 2 == 0 {
+            drop(driver);
+        } else {
+            assert!(driver.finish().is_err());
+        }
+    }
+
+    // a panic while the driver is lent out
+    let mut driver = OwnedDriver::<Outer>::new();
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        driver.with(|driver| {
+            driver.emit(events[0].clone()).unwrap();
+            panic!("boom");
+        })
+    }));
+    drop(driver);
+}
+
+fn events_clone(split: usize) -> Vec<Event<'static>> {
+    outer_events()[split..].to_vec()
+}

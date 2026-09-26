@@ -233,7 +233,7 @@ pub use self::decoder::{Decoder, Frame};
 pub use self::driver::DeserializeDriver;
 pub use self::format::Format;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
-pub use self::owned::OwnedSink;
+pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
 use crate::State;
