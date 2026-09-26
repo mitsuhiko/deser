@@ -19,6 +19,13 @@ All notable changes to deser are documented here.
   serializing.  Flattened maps silently stayed empty and failed to
   serialize before.  `deser_value::Value` and `deser_value::Map` can be
   flattened the same way.
+- Added `Serialize` and `Deserialize` for `Range`, `RangeInclusive`,
+  `RangeFrom`, `RangeTo` (structs with `start` and `end` like serde),
+  `Bound` (externally tagged like serde), `OsString` and `Box<OsStr>`
+  (strings like paths, serde uses a platform specific representation).
+  `Mutex` and `RwLock` can be deserialized, they cannot be serialized as the
+  lock guard would have to be held while the serialization moves between
+  threads.
 - Improved error messages.  Unknown variants list the expected variants
   (``unknown variant `D`, expected `A` or `B` ``, enums with only unit
   variants reported `unexpected value for enum` before), integers that do

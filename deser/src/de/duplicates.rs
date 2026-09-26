@@ -57,6 +57,7 @@ impl DuplicateKeys {
 /// Marks a field of a struct as seen.
 ///
 /// Returns `true` if it was seen before.
+#[cfg(feature = "derive")]
 #[inline(always)]
 pub fn mark_seen(seen: &mut [u64], index: usize) -> bool {
     let (word, bit) = (index / 64, 1u64 << (index % 64));

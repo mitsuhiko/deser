@@ -335,3 +335,44 @@ impl std::error::Error for Error {
         self.inner.source.as_ref().map(|err| err.as_ref() as _)
     }
 }
+
+/// Creates the error for an unknown variant.
+///
+/// `tag` is the name that was given (if it was a string), `names` are the
+/// names of the variants.
+#[cold]
+pub fn unknown_variant(tag: Option<&str>, names: &[&str]) -> Error {
+    let mut msg = String::from("unknown variant");
+    if let Some(tag) = tag {
+        msg.push_str(" `");
+        msg.push_str(tag);
+        msg.push('`');
+    }
+    match names {
+        [] => msg.push_str(", there are no variants"),
+        [name] => {
+            msg.push_str(", expected `");
+            msg.push_str(name);
+            msg.push('`');
+        }
+        [first, second] => {
+            msg.push_str(", expected `");
+            msg.push_str(first);
+            msg.push_str("` or `");
+            msg.push_str(second);
+            msg.push('`');
+        }
+        names => {
+            msg.push_str(", expected one of ");
+            for (idx, name) in names.iter().enumerate() {
+                if idx > 0 {
+                    msg.push_str(", ");
+                }
+                msg.push('`');
+                msg.push_str(name);
+                msg.push('`');
+            }
+        }
+    }
+    Error::new(ErrorKind::Unexpected, msg)
+}

@@ -213,6 +213,8 @@ pub trait SeqEmitter: Send {
 /// threads, for instance when it is suspended while the output is written
 /// asynchronously.  Types with shared ownership or interior mutability that
 /// is not thread safe (such as `Rc` or `RefCell`) cannot be serialized.
+/// `Mutex` and `RwLock` cannot be serialized either as the lock guard would
+/// have to be held while the serialization moves between threads.
 pub trait Serialize: Sync {
     /// Serializes this serializable.
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;

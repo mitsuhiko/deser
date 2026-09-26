@@ -156,9 +156,9 @@ pub mod __derive {
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
-        InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, unknown_variant,
-        untagged_handle,
+        InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,
     };
+    pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,
     };

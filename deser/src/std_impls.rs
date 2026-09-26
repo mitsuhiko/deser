@@ -4,19 +4,22 @@
 //! `ser::impls` and `de::impls`.
 use std::borrow::Cow;
 use std::cmp::Reverse;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::num::{NonZero, Saturating, Wrapping};
+use std::ops::{Bound, Range, RangeFrom, RangeInclusive, RangeTo};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{Mutex, RwLock};
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs, SerializeAsRef};
+use crate::de::duplicates::duplicate_field;
 use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, Sink, SinkHandle};
-use crate::error::{Error, ErrorKind};
+use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Bytes};
 use crate::ext::ExtValue;
 use crate::ser::{
@@ -648,4 +651,364 @@ impl Via<CString> for Box<CStr> {
 deserialize_via! {
     [] CString => Vec<u8>;
     [] Box<CStr> => CString;
+}
+
+// OS strings
+
+/// Serializes as a string like [`Path`].  OS strings which are not valid
+/// UTF-8 fail to serialize.
+impl Serialize for OsStr {
+    begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        match self.to_str() {
+            Some(value) => Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(value)))),
+            None => Err(Error::new(
+                ErrorKind::Unexpected,
+                "OS string contains invalid UTF-8 characters",
+            )),
+        }
+    }
+}
+
+impl Serialize for OsString {
+    begin_without_finish!();
+
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        self.as_os_str().serialize(state)
+    }
+}
+
+impl Via<String> for OsString {
+    #[inline]
+    fn convert(value: String) -> Result<Self, Error> {
+        Ok(OsString::from(value))
+    }
+}
+
+impl Via<OsString> for Box<OsStr> {
+    #[inline]
+    fn convert(value: OsString) -> Result<Self, Error> {
+        Ok(value.into_boxed_os_str())
+    }
+}
+
+deserialize_via! {
+    [] OsString => String;
+    [] Box<OsStr> => OsString;
+}
+
+// Locks
+
+// `Mutex` and `RwLock` are only deserialized: serializing would have to hold
+// the lock guard until the value is serialized, but serializations can move
+// between threads which guards must not.
+
+impl<T: Send> Via<T> for Mutex<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(Mutex::new(value))
+    }
+}
+
+impl<T: Send> Via<T> for RwLock<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(RwLock::new(value))
+    }
+}
+
+deserialize_via! {
+    [T: Deserialize<'de>] Mutex<T> => T;
+    [T: Deserialize<'de>] RwLock<T> => T;
+}
+
+// Ranges
+
+/// Emits a fixed number of fields.
+struct FieldsEmitter<'a, const N: usize> {
+    fields: [(&'static str, &'a dyn Serialize); N],
+    index: usize,
+}
+
+impl<'a, const N: usize> FieldsEmitter<'a, N> {
+    fn chunk(fields: [(&'static str, &'a dyn Serialize); N]) -> Chunk<'a> {
+        Chunk::Struct(Box::new(FieldsEmitter { fields, index: 0 }))
+    }
+}
+
+impl<'a, const N: usize> StructEmitter for FieldsEmitter<'a, N> {
+    fn next(
+        &mut self,
+        _state: &mut State,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
+        let rv = self
+            .fields
+            .get(self.index)
+            .map(|&(name, value)| (Cow::Borrowed(name), SerializeHandle::Borrowed(value)));
+        self.index += 1;
+        Ok(rv)
+    }
+}
+
+/// Serializes as a struct with `start` and `end` like serde.
+impl<T: Serialize> Serialize for Range<T> {
+    begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(FieldsEmitter::chunk([
+            ("start", &self.start),
+            ("end", &self.end),
+        ]))
+    }
+}
+
+/// Serializes as a struct with `start` and `end` like serde.
+impl<T: Serialize> Serialize for RangeInclusive<T> {
+    begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(FieldsEmitter::chunk([
+            ("start", self.start()),
+            ("end", self.end()),
+        ]))
+    }
+}
+
+/// Serializes as a struct with `start` like serde.
+impl<T: Serialize> Serialize for RangeFrom<T> {
+    begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(FieldsEmitter::chunk([("start", &self.start)]))
+    }
+}
+
+/// Serializes as a struct with `end` like serde.
+impl<T: Serialize> Serialize for RangeTo<T> {
+    begin_without_finish!();
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(FieldsEmitter::chunk([("end", &self.end)]))
+    }
+}
+
+/// Deserializes the fields of a range.
+struct RangeSink<'a, T, R> {
+    slot: &'a mut Option<R>,
+    key: Option<String>,
+    start: Option<T>,
+    end: Option<T>,
+    // the fields of the range, `start` and/or `end`
+    fields: &'static [&'static str],
+    make: fn(Option<T>, Option<T>) -> R,
+}
+
+impl<'a, T, R> RangeSink<'a, T, R> {
+    fn handle<'de>(
+        slot: &'a mut Option<R>,
+        fields: &'static [&'static str],
+        make: fn(Option<T>, Option<T>) -> R,
+    ) -> SinkHandle<'a, 'de>
+    where
+        T: Deserialize<'de> + 'a,
+        R: Send + 'a,
+    {
+        SinkHandle::boxed(RangeSink {
+            slot,
+            key: None,
+            start: None,
+            end: None,
+            fields,
+            make,
+        })
+    }
+}
+
+impl<'a, 'de, T: Deserialize<'de>, R: Send> Sink<'de> for RangeSink<'a, T, R> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("range")
+    }
+
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(String::deserialize_into(&mut self.key))
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        let key = self.key.take().unwrap_or_default();
+        Ok(self
+            .value_for_key(&key, state)?
+            .unwrap_or_else(SinkHandle::null))
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        let slot = match key {
+            "start" if self.fields.contains(&"start") => &mut self.start,
+            "end" if self.fields.contains(&"end") => &mut self.end,
+            _ => return Ok(None),
+        };
+        if slot.is_some() && !duplicate_field(key, state)? {
+            return Ok(Some(SinkHandle::null()));
+        }
+        Ok(Some(T::deserialize_into(slot)))
+    }
+
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+        for (name, value) in [("start", self.start.is_some()), ("end", self.end.is_some())] {
+            if !value && self.fields.contains(&name) {
+                return Err(Error::new(
+                    ErrorKind::MissingField,
+                    format!("missing field `{}`", name),
+                ));
+            }
+        }
+        *self.slot = Some((self.make)(self.start.take(), self.end.take()));
+        Ok(())
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Range<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        RangeSink::handle(out, &["start", "end"], |start, end| Range {
+            start: start.unwrap(),
+            end: end.unwrap(),
+        })
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeInclusive<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        RangeSink::handle(out, &["start", "end"], |start, end| {
+            RangeInclusive::new(start.unwrap(), end.unwrap())
+        })
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeFrom<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        RangeSink::handle(out, &["start"], |start, _| RangeFrom {
+            start: start.unwrap(),
+        })
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeTo<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        RangeSink::handle(out, &["end"], |_, end| RangeTo { end: end.unwrap() })
+    }
+}
+
+// Bound
+
+/// Serializes externally tagged like serde: `"Unbounded"`, `{"Included":
+/// value}` or `{"Excluded": value}`.
+impl<T: Serialize> Serialize for Bound<T> {
+    begin_without_finish!();
+
+    fn describe(&self, d: &mut dyn Describe) {
+        let (name, kind) = match self {
+            Bound::Included(_) => ("Included", VariantKind::Newtype),
+            Bound::Excluded(_) => ("Excluded", VariantKind::Newtype),
+            Bound::Unbounded => ("Unbounded", VariantKind::Unit),
+        };
+        d.variant(&Variant::new("Bound", name, kind, VariantRepr::External));
+    }
+
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(match self {
+            Bound::Included(value) => FieldsEmitter::chunk([("Included", value)]),
+            Bound::Excluded(value) => FieldsEmitter::chunk([("Excluded", value)]),
+            Bound::Unbounded => Chunk::Atom(Atom::Str(Cow::Borrowed("Unbounded"))),
+        })
+    }
+}
+
+/// Deserializes a `Bound`.
+struct BoundSink<'a, T> {
+    slot: &'a mut Option<Bound<T>>,
+    // the variant, `true` for `Included`
+    included: Option<bool>,
+    key: Option<String>,
+    value: Option<T>,
+}
+
+impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("Bound")
+    }
+
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Str(ref name) | Atom::Lexical(ref name) => {
+                if &**name != "Unbounded" {
+                    return Err(unknown_variant(Some(name), BOUND_VARIANTS));
+                }
+                *self.slot = Some(Bound::Unbounded);
+                Ok(())
+            }
+            other => self.unexpected_atom(other, state),
+        }
+    }
+
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        if self.included.is_some() {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "expected a map with a single key for Bound",
+            ));
+        }
+        Ok(String::deserialize_into(&mut self.key))
+    }
+
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        let key = self.key.take().unwrap_or_default();
+        self.included = Some(match &*key {
+            "Included" => true,
+            "Excluded" => false,
+            other => return Err(unknown_variant(Some(other), BOUND_VARIANTS)),
+        });
+        Ok(T::deserialize_into(&mut self.value))
+    }
+
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+        if self.slot.is_some() {
+            return Ok(());
+        }
+        *self.slot = Some(match (self.included, self.value.take()) {
+            (Some(true), Some(value)) => Bound::Included(value),
+            (Some(false), Some(value)) => Bound::Excluded(value),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "expected a map with a single key for Bound",
+                ));
+            }
+        });
+        Ok(())
+    }
+}
+
+const BOUND_VARIANTS: &[&str] = &["Unbounded", "Included", "Excluded"];
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Bound<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        SinkHandle::boxed(BoundSink {
+            slot: out,
+            included: None,
+            key: None,
+            value: None,
+        })
+    }
 }

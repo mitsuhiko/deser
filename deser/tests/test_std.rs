@@ -242,7 +242,11 @@ fn test_non_zero() {
         ErrorKind::OutOfRange,
         "value must be non-zero",
     );
-    assert_err::<NonZero<u8>>(vec![256u64.into()], ErrorKind::OutOfRange, "invalid value 256, expected u8");
+    assert_err::<NonZero<u8>>(
+        vec![256u64.into()],
+        ErrorKind::OutOfRange,
+        "invalid value 256, expected u8",
+    );
 
     // usable as map keys
     let mut map = std::collections::BTreeMap::new();
@@ -403,7 +407,11 @@ fn test_atomics() {
         roundtrip(&value, vec![3u64.into()]).load(atomic::Ordering::Relaxed),
         3
     );
-    assert_err::<AtomicI8>(vec![1000u64.into()], ErrorKind::OutOfRange, "invalid value 1000, expected i8");
+    assert_err::<AtomicI8>(
+        vec![1000u64.into()],
+        ErrorKind::OutOfRange,
+        "invalid value 1000, expected i8",
+    );
 }
 
 #[test]
@@ -482,4 +490,106 @@ fn test_describe() {
     let mut names = Names::default();
     Err::<u32, u32>(1).describe(&mut names);
     assert_eq!(names.0, ["variant Result::Err"]);
+}
+
+#[test]
+fn test_os_strings() {
+    use std::ffi::{OsStr, OsString};
+
+    let value = roundtrip(&OsString::from("a/b"), string("a/b"));
+    assert_eq!(value, "a/b");
+    let value: Box<OsStr> = OsStr::new("x").into();
+    assert_eq!(&*roundtrip(&value, string("x")), "x");
+    assert_err::<OsString>(vec![1u64.into()], ErrorKind::Unexpected, "expected string");
+}
+
+#[test]
+fn test_locks() {
+    use std::sync::{Mutex, RwLock};
+
+    let value: Mutex<u32> = deserialize(vec![1u64.into()]).unwrap();
+    assert_eq!(*value.lock().unwrap(), 1);
+    let value: RwLock<Vec<u32>> = deserialize(ints(&[1, 2])).unwrap();
+    assert_eq!(*value.read().unwrap(), [1, 2]);
+}
+
+fn fields(fields: &[(&'static str, u64)]) -> Vec<Event<'static>> {
+    let mut rv = vec![Event::map_start()];
+    for &(name, value) in fields {
+        rv.push(name.into());
+        rv.push(value.into());
+    }
+    rv.push(Event::MapEnd);
+    rv
+}
+
+#[test]
+fn test_ranges() {
+    use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo};
+
+    assert_eq!(
+        roundtrip(&(1u32..3), fields(&[("start", 1), ("end", 3)])),
+        1..3
+    );
+    assert_eq!(
+        roundtrip(&(1u32..=3), fields(&[("start", 1), ("end", 3)])),
+        1..=3
+    );
+    assert_eq!(roundtrip(&(1u32..), fields(&[("start", 1)])), 1..);
+    assert_eq!(roundtrip(&(..3u32), fields(&[("end", 3)])), ..3);
+
+    // fields can come in any order, unknown fields are ignored
+    let value: Range<u32> = deserialize(fields(&[("x", 0), ("end", 3), ("start", 1)])).unwrap();
+    assert_eq!(value, 1..3);
+    let value: RangeFrom<u32> = deserialize(fields(&[("start", 1), ("end", 3)])).unwrap();
+    assert_eq!(value, 1..);
+
+    assert_err::<Range<u32>>(
+        fields(&[("start", 1)]),
+        ErrorKind::MissingField,
+        "missing field `end`",
+    );
+    assert_err::<RangeTo<u32>>(
+        fields(&[("start", 1)]),
+        ErrorKind::MissingField,
+        "missing field `end`",
+    );
+    assert_err::<RangeInclusive<u32>>(
+        fields(&[("start", 1), ("start", 2), ("end", 3)]),
+        ErrorKind::Unexpected,
+        "duplicate field `start`",
+    );
+}
+
+#[test]
+fn test_bound() {
+    use std::ops::Bound;
+
+    assert_eq!(
+        roundtrip(&Bound::<u32>::Unbounded, string("Unbounded")),
+        Bound::Unbounded
+    );
+    assert_eq!(
+        roundtrip(&Bound::Included(1u32), fields(&[("Included", 1)])),
+        Bound::Included(1)
+    );
+    assert_eq!(
+        roundtrip(&Bound::Excluded(1u32), fields(&[("Excluded", 1)])),
+        Bound::Excluded(1)
+    );
+    assert_err::<Bound<u32>>(
+        string("Nope"),
+        ErrorKind::Unexpected,
+        "unknown variant `Nope`, expected one of `Unbounded`, `Included`, `Excluded`",
+    );
+    assert_err::<Bound<u32>>(
+        fields(&[("Included", 1), ("Excluded", 2)]),
+        ErrorKind::Unexpected,
+        "expected a map with a single key for Bound",
+    );
+    assert_err::<Bound<u32>>(
+        fields(&[]),
+        ErrorKind::Unexpected,
+        "expected a map with a single key for Bound",
+    );
 }

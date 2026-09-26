@@ -217,6 +217,14 @@ structs and vectors serialize without allocations, and sinks are allocated
 from a per thread cache) and for JSON it is roughly on par with Serde in the
 included benchmark.
 
+Serializables are `Sync`, deserializable types and sinks are `Send` so that
+an ongoing serialization or deserialization can move between threads (for
+instance while waiting for IO).  This means that types which are not thread
+safe (`Rc`, `rc::Weak`, `Cell` and `RefCell`) cannot be serialized or
+deserialized.  `Mutex` and `RwLock` can only be deserialized as serializing
+them would have to hold the lock guard while the serialization moves between
+threads.
+
 ## Crates
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
