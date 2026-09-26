@@ -45,6 +45,9 @@ assert_eq!(
   with the respective features of deser.
 * Other tags are transparent, `Tagged<T>` reads and writes them.
 * Deeply nested input does not overflow the stack.
+* CBOR sequences are read with a `Deserializer` and written with a
+  `Serializer`.
 * `from_reader` and `to_writer` work with `std::io`, and the configurations
-  read and write CBOR sequences on streams with `deser::io` or
-  async runtimes (`deser-tokio`) while only buffering one item at a time.
+  read and write CBOR sequences on streams with `deser::io` or async
+  runtimes (`deser-tokio`).  Items are parsed while their input arrives,
+  so only incomplete items (like strings) are buffered.

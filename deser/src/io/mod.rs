@@ -1,5 +1,10 @@
 //! Reading and writing values from and to streams.
 //!
+//! This module requires the `io` feature (which is enabled by default).
+//! For values in memory, the formats have deserializers (which read values
+//! from slices) and serializers (which write values into buffers) that do
+//! not need this module.
+//!
 //! Data formats parse complete inputs (slices) and serialize into complete
 //! outputs.  This module connects them to streams, such as files, sockets
 //! or pipes, without the formats having to know about IO.  The

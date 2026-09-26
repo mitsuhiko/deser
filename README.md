@@ -63,6 +63,36 @@ deser = { version = "0.8", features = ["derive"] }
 deser-json = "0.8"
 ```
 
+## Reading and Writing
+
+Every format has the same pieces:
+
+* Functions for single values: `from_str`, `from_slice` and `to_string`
+  (`to_vec` for CBOR).  Options are set on a `DeserializerConfig` or
+  `SerializerConfig`, which have the same methods.
+* A `Deserializer` which reads one value after another from a slice, and a
+  `Serializer` which writes more than one value (JSON Lines, CBOR
+  sequences, YAML documents).
+* With the `io` feature (enabled by default): `from_reader` and
+  `to_writer` for `std::io`, and `deser::io::Reader` and `deser::io::Writer`
+  for streams of values.  They only buffer what they need: JSON and CBOR
+  are parsed while the input arrives, and a `deser::Streamed<T>` sequence
+  hands out its elements one by one.
+  [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
+
+```rust
+use deser::io::Reader;
+use deser_json::{DeserializerConfig, Trailing};
+
+const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+
+// reads one event per line, a line that fails does not end the stream
+let mut events = Reader::new(std::io::stdin(), LINES);
+while let Some(event) = events.read::<Event>()? {
+    handle(event);
+}
+```
+
 ## Errors That Help
 
 Consider a config file with an internally tagged enum where the tag comes

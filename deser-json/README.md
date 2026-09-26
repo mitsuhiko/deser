@@ -41,11 +41,12 @@ Why use it:
   format or per field (hex, arrays of integers, ...).
 * **Unlimited nesting:** a million nested arrays do not overflow the stack.
 * **JSON Lines:** a `Deserializer` can read one value per line and
-  recovers from errors in individual lines.
+  recovers from errors in individual lines, a `Serializer` writes them.
 * **Streams:** `from_reader` and `to_writer` work with `std::io`, and the
   configurations read and write streams of values (JSON Lines or
-  concatenated JSON) with `deser::io` or async runtimes (`deser-tokio`)
-  while only buffering one value at a time.
+  concatenated JSON) with `deser::io` or async runtimes (`deser-tokio`).
+  Values are parsed while their input arrives, so only incomplete tokens
+  are buffered.
 * **Source locations:** errors carry line and column and with
   `DeserializerConfig::track_locations` values can be wrapped in
   [`deser_location::Spanned`](https://docs.rs/deser-location) to learn
