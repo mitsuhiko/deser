@@ -44,39 +44,49 @@ pub struct SerializerConfig {
 }
 
 /// An open map or array (or the top level).
+///
+/// This is kept small as it's moved to the stack and back for every
+/// container.
+#[derive(Clone, Copy)]
 struct Frame {
-    /// The number of items written into the container so far.  For maps
-    /// both keys and values are counted.
-    items: u64,
-    /// The number of items the header announced (for maps twice the
-    /// number of entries) or [`UNKNOWN_LEN`] if the header is patched when
-    /// the container ends.
-    expected: u64,
-    /// The offset of the header.
-    header: usize,
-    /// The offset of the content (after the header).
-    body: usize,
-    /// For maps in canonical mode: the index into the entry offsets where
-    /// the offsets of this map begin.
-    offsets_start: usize,
-    is_map: bool,
+    /// Counts down with every item (for maps keys and values are counted
+    /// separately).  If the length is known, it starts at the number of
+    /// items the header announced and ends at zero.  Otherwise it starts
+    /// at `u64::MAX` and the length is patched into the header at the end.
+    remaining: u64,
+    /// The offset of the header shifted by two, the flags [`IS_MAP`] and
+    /// [`UNKNOWN_LEN`] are in the lower bits.
+    info: usize,
 }
 
-/// The expected number of items of a container whose length is patched.
-const UNKNOWN_LEN: u64 = u64::MAX;
+const IS_MAP: usize = 1;
+const UNKNOWN_LEN: usize = 2;
 
 impl Frame {
     /// The frame of the top level, which is not a container.
-    fn top() -> Frame {
-        Frame {
-            items: 0,
-            expected: UNKNOWN_LEN,
-            header: 0,
-            body: 0,
-            offsets_start: 0,
-            is_map: false,
-        }
+    const TOP: Frame = Frame {
+        remaining: u64::MAX,
+        info: UNKNOWN_LEN,
+    };
+
+    #[inline(always)]
+    fn is_map(self) -> bool {
+        self.info & IS_MAP != 0
     }
+
+    #[inline(always)]
+    fn header(self) -> usize {
+        self.info >> 2
+    }
+}
+
+/// The start of a map in canonical mode.
+struct CanonicalMap {
+    /// The offset of the content (after the header).
+    body: usize,
+    /// The index into the entry offsets where the offsets of this map
+    /// begin.
+    offsets_start: usize,
 }
 
 /// Holds the state of the serializer while writing.
@@ -87,7 +97,9 @@ struct Writer {
     // outer containers are saved on the stack.
     frame: Frame,
     stack: Vec<Frame>,
-    // in canonical mode the offsets of the keys and values of the open maps
+    // in canonical mode the open maps and the offsets of their keys and
+    // values
+    maps: Vec<CanonicalMap>,
     offsets: Vec<usize>,
     // bytes to be inserted into the output at the end, see `patch_length`.
     insertions: Vec<Insertion>,
@@ -126,8 +138,8 @@ impl Writer {
     /// pending tags.
     #[inline(always)]
     fn begin_item(&mut self, state: &State) {
-        self.frame.items += 1;
-        if self.canonical && self.frame.is_map {
+        self.frame.remaining = self.frame.remaining.wrapping_sub(1);
+        if self.canonical && self.frame.is_map() {
             self.offsets.push(self.out.len());
         }
         if state.has_event_data() {
@@ -145,72 +157,81 @@ impl Writer {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn start(&mut self, is_map: bool, shape: ContainerShape, state: &State) -> Result<(), Error> {
         self.begin_item(state);
         let header = self.out.len();
         let major = if is_map { MAJOR_MAP } else { MAJOR_ARRAY };
+        let mut info = (header << 2) | if is_map { IS_MAP } else { 0 };
         // with a known length the header is written right away, otherwise a
         // byte is reserved and the length is patched in at the end.
-        let expected = match shape.len() {
+        let remaining = match shape.len() {
             Some(len) => {
                 self.write_head(major, len as u64);
                 if is_map { len as u64 * 2 } else { len as u64 }
             }
             None => {
                 self.out.push(major << 5);
-                UNKNOWN_LEN
+                info |= UNKNOWN_LEN;
+                u64::MAX
             }
         };
-        let frame = Frame {
-            items: 0,
-            expected,
-            header,
-            body: self.out.len(),
-            offsets_start: self.offsets.len(),
-            is_map,
-        };
-        self.stack.push(std::mem::replace(&mut self.frame, frame));
+        if self.canonical && is_map {
+            self.maps.push(CanonicalMap {
+                body: self.out.len(),
+                offsets_start: self.offsets.len(),
+            });
+        }
+        self.stack.push(std::mem::replace(
+            &mut self.frame,
+            Frame { remaining, info },
+        ));
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     fn end(&mut self) -> Result<(), Error> {
         let Some(parent) = self.stack.pop() else {
             return Err(Error::new(ErrorKind::Unexpected, "unexpected end"));
         };
         let frame = std::mem::replace(&mut self.frame, parent);
-        if frame.is_map && self.canonical {
-            if !frame.items.is_multiple_of(2) {
-                return Err(Error::new(ErrorKind::Unexpected, "map without value"));
-            }
-            self.sort_entries(&frame)?;
-        }
-        if frame.items == frame.expected {
+        if frame.remaining == 0 && !self.canonical {
             Ok(())
         } else {
-            self.end_unknown(frame)
+            self.end_slow(frame)
         }
     }
 
-    /// Ends a container whose length was not known upfront.
+    /// Ends a container that needs more than a check: the length was not
+    /// known upfront, the number of items does not match or maps in
+    /// canonical mode.
     #[inline(never)]
-    fn end_unknown(&mut self, frame: Frame) -> Result<(), Error> {
-        if frame.expected != UNKNOWN_LEN {
+    fn end_slow(&mut self, frame: Frame) -> Result<(), Error> {
+        let unknown = frame.info & UNKNOWN_LEN != 0;
+        if !unknown && frame.remaining != 0 {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "number of items does not match the length of the container",
             ));
         }
-        let count = if frame.is_map {
-            if !frame.items.is_multiple_of(2) {
+        let items = if unknown {
+            u64::MAX - frame.remaining
+        } else {
+            0
+        };
+        if frame.is_map() {
+            if !items.is_multiple_of(2) {
                 return Err(Error::new(ErrorKind::Unexpected, "map without value"));
             }
-            frame.items / 2
-        } else {
-            frame.items
-        };
-        self.patch_length(frame.header, count);
+            if self.canonical {
+                let map = self.maps.pop().unwrap();
+                self.sort_entries(&map)?;
+            }
+        }
+        if unknown {
+            let count = if frame.is_map() { items / 2 } else { items };
+            self.patch_length(frame.header(), count);
+        }
         Ok(())
     }
 
@@ -274,9 +295,9 @@ impl Writer {
 
     /// Sorts the entries of a map for the deterministic encoding.
     #[cold]
-    fn sort_entries(&mut self, frame: &Frame) -> Result<(), Error> {
-        let offsets = self.offsets.split_off(frame.offsets_start);
-        let body_start = frame.body;
+    fn sort_entries(&mut self, map: &CanonicalMap) -> Result<(), Error> {
+        let offsets = self.offsets.split_off(map.offsets_start);
+        let body_start = map.body;
         let body_end = self.out.len();
         // (key start, value start, entry end)
         let mut entries: Vec<(usize, usize, usize)> = (0..offsets.len())
@@ -593,8 +614,9 @@ impl SerializerConfig {
         let mut writer = Writer {
             out: Vec::with_capacity(128),
             canonical: self.canonical,
-            frame: Frame::top(),
+            frame: Frame::TOP,
             stack: Vec::new(),
+            maps: Vec::new(),
             offsets: Vec::new(),
             insertions: Vec::new(),
         };
