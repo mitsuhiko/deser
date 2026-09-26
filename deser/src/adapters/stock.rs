@@ -304,7 +304,10 @@ impl SerializeAs<bool> for Flag {
 /// Converts from and into another type.
 ///
 /// The value is deserialized as `U` and converted with [`Into`] and it's
-/// serialized by cloning it and converting it into `U`.
+/// serialized by cloning it and converting it into `U`.  The value is
+/// [optional](Serialize::is_optional) if the converted value is, which means
+/// that with `#[deser(skip_serializing_optionals)]` the value is cloned and
+/// converted once more to find out.
 ///
 /// ```
 /// use deser::{Deserialize, Serialize};
@@ -382,6 +385,8 @@ where
         ))))
     }
 
+    // this clones once more, but only `skip_serializing_optionals` asks.
+    // Without converting there is no way to know as `()` is optional too.
     fn is_optional_as(value: &T) -> bool {
         Into::<U>::into(value.clone()).is_optional()
     }
@@ -390,7 +395,9 @@ where
 /// Converts from and into another type with fallible conversions.
 ///
 /// This is like [`FromInto`] but uses [`TryFrom`] and [`TryInto`].  Failed
-/// conversions are reported as errors.
+/// conversions are reported as errors.  Like with [`FromInto`] the value is
+/// cloned and converted once more with `#[deser(skip_serializing_optionals)]`
+/// to find out if it's optional.
 ///
 /// ```
 /// use deser::{Deserialize, Serialize};
