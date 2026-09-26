@@ -49,6 +49,24 @@
 //! assert_eq!(user.name, "Peter");
 //! ```
 //!
+//! # Pretty Printing
+//!
+//! By default the output is compact.  [`SerializerConfig::pretty`] indents
+//! it and writes spaces after separators:
+//!
+//! ```rust
+//! use deser_json::{Indent, SerializerConfig};
+//!
+//! const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+//! let json = PRETTY.to_string(&vec![vec![1, 2]]).unwrap();
+//! assert_eq!(json, "[\n  [\n    1,\n    2\n  ]\n]");
+//! ```
+//!
+//! Indentation and spaces can also be configured on their own with
+//! [`SerializerConfig::indent`] and [`SerializerConfig::compact`].  Maps
+//! and sequences with the [`Layout::Compact`](deser::hints::Layout) hint
+//! are written on a single line in indented output.
+//!
 //! # JSON Lines
 //!
 //! By default only whitespace may follow a value.  What may follow is
@@ -85,8 +103,9 @@
 //! byte slices.
 mod buf;
 mod de;
+mod pretty;
 mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
-pub use self::ser::{SerializerConfig, to_string};
+pub use self::ser::{Indent, SerializerConfig, to_string};

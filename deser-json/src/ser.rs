@@ -7,23 +7,57 @@ use deser::ser::SerializeDriver;
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
+use crate::pretty::PrettyWriter;
 use crate::scan::{find_escape, skip_to_escape};
+
+/// How the output is indented.
+///
+/// See [`SerializerConfig::indent`] and [`SerializerConfig::pretty`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum Indent {
+    /// No indentation, the value is written on a single line.
+    #[default]
+    None,
+    /// Every entry on a line of its own, indented by the given number of
+    /// spaces per level.
+    Spaces(usize),
+    /// Every entry on a line of its own, indented by a tab per level.
+    Tab,
+}
 
 /// Configures how values are serialized to JSON.
 ///
+/// By default the output is as short as possible: no line breaks and no
+/// spaces.  [`pretty`](Self::pretty) writes every entry on a line of its
+/// own:
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use deser_json::{Indent, SerializerConfig};
+///
+/// let value = BTreeMap::from([("name", vec!["a", "b"])]);
+/// assert_eq!(deser_json::to_string(&value).unwrap(), r#"{"name":["a","b"]}"#);
+///
+/// const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+/// assert_eq!(
+///     PRETTY.to_string(&value).unwrap(),
+///     "{\n  \"name\": [\n    \"a\",\n    \"b\"\n  ]\n}"
+/// );
+/// ```
+///
+/// In indented output maps and sequences with the
+/// [`Layout::Compact`](deser::hints::Layout) hint (see
+/// [`hints`](deser::hints)) are written on a single line.  The output never
+/// ends with a line break.
+///
 /// [`to_string`](Self::to_string) works like the
 /// [`to_string`](crate::to_string) function.
-///
-/// ```
-/// use deser::adapters::bytes::BytesFormat;
-/// use deser_json::SerializerConfig;
-///
-/// const CONFIG: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
-/// assert_eq!(CONFIG.to_string(&vec![1u8, 2]).unwrap(), "[1,2]");
-/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SerializerConfig {
     bytes: BytesFormat,
+    indent: Indent,
+    compact: bool,
 }
 
 impl SerializerConfig {
@@ -31,7 +65,70 @@ impl SerializerConfig {
     pub const fn new() -> SerializerConfig {
         SerializerConfig {
             bytes: BytesFormat::BASE64,
+            indent: Indent::None,
+            compact: true,
         }
+    }
+
+    /// Sets how the output is indented.
+    ///
+    /// By default ([`Indent::None`]) the value is written on a single line.
+    /// Otherwise every entry of a map or sequence is written on a line of
+    /// its own, indented by its depth.  Empty maps and sequences are always
+    /// written as `{}` and `[]`.  This does not change the spaces after
+    /// separators, see [`compact`](Self::compact).  To indent with spaces
+    /// after separators use [`pretty`](Self::pretty).
+    ///
+    /// ```
+    /// use deser_json::{Indent, SerializerConfig};
+    ///
+    /// const TAB: SerializerConfig = SerializerConfig::new().indent(Indent::Tab);
+    /// assert_eq!(TAB.to_string(&vec![1, 2]).unwrap(), "[\n\t1,\n\t2\n]");
+    /// ```
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+        self.indent = indent;
+        self
+    }
+
+    /// Controls the spaces after separators.
+    ///
+    /// When enabled (which is the default) there are no spaces after `:`
+    /// and `,`.  When disabled a space follows every `:` and every `,`
+    /// that is not followed by a line break:
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser_json::SerializerConfig;
+    ///
+    /// let value = BTreeMap::from([("a", vec![1, 2])]);
+    /// const SPACED: SerializerConfig = SerializerConfig::new().compact(false);
+    /// assert_eq!(SPACED.to_string(&value).unwrap(), r#"{"a": [1, 2]}"#);
+    /// ```
+    pub const fn compact(mut self, yes: bool) -> SerializerConfig {
+        self.compact = yes;
+        self
+    }
+
+    /// Enables or disables pretty printing.
+    ///
+    /// This sets the [indentation](Self::indent) and writes spaces after
+    /// separators (see [`compact`](Self::compact)) unless the indentation
+    /// is [`Indent::None`], in which case the output is compact again.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser_json::{Indent, SerializerConfig};
+    ///
+    /// let value = BTreeMap::from([("a", 1)]);
+    /// const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(4));
+    /// assert_eq!(PRETTY.to_string(&value).unwrap(), "{\n    \"a\": 1\n}");
+    /// const NOT_PRETTY: SerializerConfig = PRETTY.pretty(Indent::None);
+    /// assert_eq!(NOT_PRETTY.to_string(&value).unwrap(), r#"{"a":1}"#);
+    /// ```
+    pub const fn pretty(mut self, indent: Indent) -> SerializerConfig {
+        self.indent = indent;
+        self.compact = matches!(indent, Indent::None);
+        self
     }
 
     /// Sets how bytes are represented.
@@ -94,26 +191,33 @@ impl SerializerConfig {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut writer = Writer {
-            ser: Output {
-                out: Buffer::with_capacity(128),
-                bytes: self.bytes,
-            },
-            stack: Vec::new(),
-            container: Container::Top,
-            first: true,
-            is_key: false,
+        let ser = Output {
+            out: Buffer::with_capacity(128),
+            bytes: self.bytes,
         };
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        driver.drive(|event, _| writer.event(event))?;
-        Ok(writer.ser.out.into_string())
+        if self.indent == Indent::None && self.compact {
+            let mut writer = Writer {
+                ser,
+                stack: Vec::new(),
+                container: Container::Top,
+                first: true,
+                is_key: false,
+            };
+            driver.drive(|event, _| writer.event(event))?;
+            Ok(writer.ser.out.into_string())
+        } else {
+            let mut writer = PrettyWriter::new(ser, self.indent, self.compact);
+            driver.drive(|event, state| writer.event(event, state))?;
+            Ok(writer.finish())
+        }
     }
 }
 
 /// The output of the serializer.
-struct Output {
-    out: Buffer,
+pub(crate) struct Output {
+    pub(crate) out: Buffer,
     bytes: BytesFormat,
 }
 
@@ -233,6 +337,13 @@ impl Output {
         if !first {
             self.write_char(',');
         }
+        self.write_key_text(atom)?;
+        self.write_char(':');
+        Ok(())
+    }
+
+    /// Writes an atom as map key without separator and colon.
+    pub(crate) fn write_key_text(&mut self, atom: Atom) -> Result<(), Error> {
         match atom {
             Atom::Str(ref val) => self.write_escaped_str(val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
@@ -255,13 +366,12 @@ impl Output {
                 ));
             }
         }
-        self.write_char(':');
         Ok(())
     }
 
     /// Writes an atom in value position.
     #[inline(always)]
-    fn write_atom(&mut self, atom: Atom) -> Result<(), Error> {
+    pub(crate) fn write_atom(&mut self, atom: Atom) -> Result<(), Error> {
         // borrowed strings and scalars do not need to be dropped, the atom
         // is only dropped for the other values.
         let atom = ManuallyDrop::new(atom);
@@ -322,12 +432,12 @@ impl Output {
     }
 
     #[inline(always)]
-    fn write_str(&mut self, s: &str) {
+    pub(crate) fn write_str(&mut self, s: &str) {
         self.out.push_str(s);
     }
 
     #[inline(always)]
-    fn write_char(&mut self, c: char) {
+    pub(crate) fn write_char(&mut self, c: char) {
         debug_assert!(c.is_ascii());
         self.out.push(c as u8);
     }

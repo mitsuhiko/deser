@@ -36,9 +36,9 @@ All notable changes to deser are documented here.
   struct and newtype names).
 - `deser-yaml` can serialize: `to_string`, `SerializerConfig` (indentation
   with `Indent`, where `Indent::None` writes documents on a single line in
-  flow style, indented or indentless sequences, quote style, multi-line strings as
-  literal block scalars or quoted, null style, `!!binary` or a bytes
-  format, timestamps, document markers) and `Serializer` for streams of
+  flow style, indented or indentless sequences, quote style, multi-line
+  strings as literal block scalars or quoted, null style, `!!binary` or a
+  bytes format, timestamps, document markers) and `Serializer` for streams of
   documents.  Strings are quoted if readers of YAML 1.1 or 1.2 would read
   them as something else (`SerializerConfig::compat`).  `Tagged` writes its
   tag, `set_tag` sets the tag of a value and tags survive a `Recording`.
@@ -52,6 +52,11 @@ All notable changes to deser are documented here.
   `Literal` and `Folded`), long strings can be folded
   (`SerializerConfig::fold_width`).  Flow collections are reported as
   compact when reading.
+- `deser-json` can pretty print: `SerializerConfig::indent` sets the
+  indentation (`Indent::Spaces(n)` or `Indent::Tab`),
+  `SerializerConfig::compact(false)` writes spaces after separators and
+  `SerializerConfig::pretty` does both.  In indented output maps and
+  sequences with the `Layout::Compact` hint are written on a single line.
 - Added `deser::hints` with well-known formatting hints.  `Layout` asks
   formats to lay out a map or sequence compact (inline) or expanded, the
   `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and
