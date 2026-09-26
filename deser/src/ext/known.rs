@@ -24,7 +24,7 @@ pub(crate) trait WellKnown: Extension + Sized {
 ///
 /// This is implemented for the types of other crates (`jiff`, `uuid`, ...)
 /// and some types of the standard library.
-pub(crate) trait Bridge: Sized {
+pub(crate) trait Bridge: Sized + Send {
     /// The well-known type.
     type Known: WellKnown;
 

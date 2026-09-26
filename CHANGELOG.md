@@ -4,6 +4,20 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Ongoing serializations and deserializations can move between threads:
+  `SerializeDriver` and `DeserializeDriver` are `Send`.  This allows them
+  to be suspended across an `.await` in multi threaded runtimes.
+  - `Serialize` requires `Sync` and the emitters (`StructEmitter`,
+    `MapEmitter`, `SeqEmitter`) require `Send`.  Owned values in a
+    `SerializeHandle` are `Send`.
+  - `Deserialize`, `Sink` and `VariantBuilder` require `Send`.
+  - Serialization and deserialization layers require `Send`.
+  - Extension values in the `State` must be `Send + Sync`.
+  - Derived implementations require `Sync` (for `Serialize`) and `Send`
+    (for `Deserialize`) of type parameters which only appear in fields
+    with adapters.
+  - Types that are not thread safe (such as `Rc` or `RefCell`) can no
+    longer be serialized or deserialized.
 - Removed `Descriptor`.  The information it carried moved to where it
   belongs:
   - Bytes carry the format for formats without native bytes as
@@ -410,11 +424,10 @@ All notable changes to deser are documented here.
   implement `BytesEncoding`.
 - Added support for more standard library types:
   - `str`, `CStr` and `Path` implement `Serialize` which makes `Box<str>`,
-    `Rc<str>`, `Arc<str>`, `Box<CStr>` and `Box<Path>` serializable.
-    `Box<str>`, `Rc<str>`, `Arc<str>`, `Box<[T]>`, `Rc<[T]>` and `Arc<[T]>`
-    serialize and deserialize.
-  - `Rc<T>` and `Arc<T>` serialize and deserialize like `Box<T>`.  Shared
-    values are serialized once per reference and deserialized into separate
+    `Arc<str>`, `Box<CStr>` and `Box<Path>` serializable.  `Box<str>`,
+    `Arc<str>`, `Box<[T]>` and `Arc<[T]>` serialize and deserialize.
+  - `Arc<T>` serializes and deserializes like `Box<T>`.  Shared values are
+    serialized once per reference and deserialized into separate
     allocations.
   - `Cow<'a, T>` is supported for all `T: ToOwned` (for instance
     `Cow<Path>` and `Cow<[T]>`), deserialization goes through `T::Owned`.
@@ -437,9 +450,9 @@ All notable changes to deser are documented here.
   - `CString` and `Box<CStr>` are bytes (without the nul terminator).
     Interior nul bytes fail to deserialize.
   - `HashSet<T, H>` serializes with custom hashers.
-  - The new containers are adapters as well: `Rc<U>`, `Arc<U>`,
-    `Box<[U]>`, `Rc<[U]>`, `Arc<[U]>`, `VecDeque<U>`, `LinkedList<U>`,
-    `BinaryHeap<U>` and `Result<U, V>`.
+  - The new containers are adapters as well: `Arc<U>`, `Box<[U]>`,
+    `Arc<[U]>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>` and
+    `Result<U, V>`.
 
 ## 0.8.0
 

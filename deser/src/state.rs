@@ -35,9 +35,11 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// register functions that add context to errors (see
 /// [`add_error_context`](Self::add_error_context)).
 ///
-/// Extension values have to be [`Send`] so that the state is [`Send`] too.
-/// This means that the state never prevents an ongoing serialization or
-/// deserialization from moving between threads.
+/// Extension values have to be [`Send`] and [`Sync`] so that the state is
+/// too.  This means that the state never prevents an ongoing serialization
+/// or deserialization from moving between threads.  They are `Sync` as
+/// event data is recorded (see [`Recording`](crate::de::Recording)) and
+/// recordings can be serialized.
 pub struct State {
     extensions: Extensions,
     // the number of open containers
@@ -99,7 +101,7 @@ impl State {
     ///
     /// Returns `None` if the value was never set.
     #[inline]
-    pub fn get<T: fmt::Debug + Send + 'static>(&self) -> Option<&T> {
+    pub fn get<T: fmt::Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         self.extensions.get()
     }
 
@@ -107,7 +109,7 @@ impl State {
     ///
     /// If the value was never set, it's initialized with the default value.
     #[inline]
-    pub fn get_mut<T: Default + fmt::Debug + Send + 'static>(&mut self) -> &mut T {
+    pub fn get_mut<T: Default + fmt::Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         self.extensions.get_mut()
     }
 
@@ -120,7 +122,7 @@ impl State {
     /// replayed.  This is used for information that changes from event to
     /// event but remains in the state, such as the current path.  Event data
     /// is always captured, it does not need to be marked.
-    pub fn set_replayable<T: Clone + Default + fmt::Debug + Send + 'static>(&mut self) {
+    pub fn set_replayable<T: Clone + Default + fmt::Debug + Send + Sync + 'static>(&mut self) {
         self.extensions.set_replayable::<T>();
     }
 
@@ -145,7 +147,7 @@ impl State {
     /// Event data is captured by a [`Recording`](crate::de::Recording) and
     /// restored when the events are replayed.
     #[inline]
-    pub fn event<T: fmt::Debug + Send + 'static>(&self) -> Option<&T> {
+    pub fn event<T: fmt::Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         self.extensions.event()
     }
 
@@ -171,7 +173,7 @@ impl State {
     /// }
     /// ```
     #[inline]
-    pub fn event_mut<T: Default + Clone + fmt::Debug + Send + 'static>(&mut self) -> &mut T {
+    pub fn event_mut<T: Default + Clone + fmt::Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         self.extensions.event_mut()
     }
 
@@ -358,8 +360,8 @@ impl State {
 // the state must never prevent an ongoing serialization or deserialization
 // from moving between threads.
 const _: () = {
-    const fn assert_send<T: Send>() {}
-    assert_send::<State>();
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<State>();
 };
 
 impl fmt::Debug for State {

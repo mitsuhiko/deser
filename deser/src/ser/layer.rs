@@ -66,7 +66,7 @@ pub(crate) type EventFn<'f> =
 /// layer received (see [`Next::value`]), so that formats that
 /// [describe](crate::ser::Describe) values see the description of the
 /// original value.
-pub trait Layer {
+pub trait Layer: Send {
     /// Processes an event.
     ///
     /// To pass the event on, invoke [`Next::emit`].

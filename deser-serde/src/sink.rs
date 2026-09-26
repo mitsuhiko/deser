@@ -8,7 +8,7 @@ use crate::de::{Single, ValueDe};
 use crate::error::Error;
 
 /// Receives the events of a value.
-pub(crate) trait Push<'de> {
+pub(crate) trait Push<'de>: Send {
     fn push(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error>;
 }
 
@@ -52,7 +52,7 @@ impl<'a, T, C> RootSink<'a, T, C> {
 
 impl<'a, 'de, T, C> Sink<'de> for RootSink<'a, T, C>
 where
-    T: serde::Deserialize<'de>,
+    T: serde::Deserialize<'de> + Send,
     C: Collector<'de, T>,
 {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {

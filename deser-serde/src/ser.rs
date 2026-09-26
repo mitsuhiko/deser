@@ -1,6 +1,5 @@
 //! A serde serializer that emits deser events.
 use std::borrow::Cow;
-use std::cell::RefCell;
 
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
@@ -457,12 +456,35 @@ impl ser::Serializer for NoneProbe {
     }
 }
 
-/// A stream of the events of a serialized value.
+/// The events of a buffered compound value.
 ///
-/// The events are pulled in order as the serialization driver walks the
-/// value depth first.
-pub(crate) trait EventStream {
-    fn next_event(&self) -> Result<Event<'static>, deser::Error>;
+/// The events form a single map or sequence (see [`Events::new`]).  Values
+/// within it are slices of the events, so no further buffering is needed
+/// to serialize them.
+pub(crate) struct Events(Vec<Event<'static>>);
+
+impl Events {
+    /// Wraps the events of a map or sequence.
+    ///
+    /// Fails if the events are not a single map or sequence.
+    pub(crate) fn new(events: Vec<Event<'static>>) -> Result<Events, deser::Error> {
+        match events.first() {
+            Some(Event::MapStart(_) | Event::SeqStart(_)) if value_len(&events) == events.len() => {
+                Ok(Events(events))
+            }
+            _ => Err(malformed()),
+        }
+    }
+}
+
+impl Serialize for Events {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser::Error> {
+        EventsValue(&self.0).chunk()
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        EventsValue(&self.0).container_shape()
+    }
 }
 
 #[cold]
@@ -470,117 +492,96 @@ fn malformed() -> deser::Error {
     deser::Error::new(ErrorKind::Unexpected, "malformed serde value")
 }
 
-fn event_shape(event: Option<&Event>) -> ContainerShape {
-    match event {
-        Some(Event::MapStart(shape) | Event::SeqStart(shape)) => *shape,
-        _ => ContainerShape::new(),
-    }
-}
-
-/// Converts the first event of a value into a chunk.
-fn chunk<'a>(
-    event: Event<'static>,
-    stream: &'a dyn EventStream,
-) -> Result<Chunk<'a>, deser::Error> {
-    Ok(match event {
-        Event::Atom(atom) => Chunk::Atom(atom),
-        Event::MapStart(_) => Chunk::Map(Box::new(StreamEmitter::new(stream))),
-        Event::SeqStart(_) => Chunk::Seq(Box::new(StreamEmitter::new(stream))),
-        Event::MapEnd | Event::SeqEnd => return Err(malformed()),
-    })
-}
-
-/// The root of a streamed value.
-///
-/// It owns the stream and holds the first event of the value.
-pub(crate) struct StreamRoot<S> {
-    stream: S,
-    first: RefCell<Option<Event<'static>>>,
-}
-
-impl<S: EventStream> StreamRoot<S> {
-    pub(crate) fn new(stream: S, first: Event<'static>) -> StreamRoot<S> {
-        StreamRoot {
-            stream,
-            first: RefCell::new(Some(first)),
+/// Returns the number of events of the value the events start with.
+fn value_len(events: &[Event<'static>]) -> usize {
+    let mut depth = 0usize;
+    for (index, event) in events.iter().enumerate() {
+        match event {
+            Event::MapStart(_) | Event::SeqStart(_) => depth += 1,
+            Event::MapEnd | Event::SeqEnd => depth = depth.saturating_sub(1),
+            Event::Atom(_) => {}
+        }
+        if depth == 0 {
+            return index + 1;
         }
     }
+    events.len()
 }
 
-impl<S: EventStream> Serialize for StreamRoot<S> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser::Error> {
-        let first = self.first.borrow_mut().take().ok_or_else(malformed)?;
-        chunk(first, &self.stream)
+/// A value within the events, the slice holds exactly its events.
+struct EventsValue<'a>(&'a [Event<'static>]);
+
+impl<'a> EventsValue<'a> {
+    fn chunk(&self) -> Result<Chunk<'a>, deser::Error> {
+        let events = self.0;
+        // the content is everything between the start and the end event
+        let content = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
+        Ok(match events.first() {
+            Some(Event::Atom(atom)) => Chunk::Atom(atom.as_borrowed()),
+            Some(Event::MapStart(_)) => Chunk::Map(Box::new(EventsEmitter::new(content))),
+            Some(Event::SeqStart(_)) => Chunk::Seq(Box::new(EventsEmitter::new(content))),
+            _ => return Err(malformed()),
+        })
     }
 
     fn container_shape(&self) -> ContainerShape {
-        event_shape(self.first.borrow().as_ref())
+        match self.0.first() {
+            Some(Event::MapStart(shape) | Event::SeqStart(shape)) => *shape,
+            _ => ContainerShape::new(),
+        }
     }
 }
 
-/// A value within a streamed value.
-struct StreamValue<'a> {
-    stream: &'a dyn EventStream,
-    first: RefCell<Option<Event<'static>>>,
-}
-
-impl Serialize for StreamValue<'_> {
+impl Serialize for EventsValue<'_> {
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser::Error> {
-        let first = self.first.borrow_mut().take().ok_or_else(malformed)?;
-        chunk(first, self.stream)
+        self.chunk()
     }
 
     fn container_shape(&self) -> ContainerShape {
-        event_shape(self.first.borrow().as_ref())
+        EventsValue::container_shape(self)
     }
 }
 
-/// Emits the contents of a streamed map or sequence.
-///
-/// The driver completes a value before it asks the emitter for the next
-/// one, so the values can pull their events from the shared stream.
-struct StreamEmitter<'a> {
-    current: StreamValue<'a>,
+/// Emits the values of a map or sequence within the events.
+struct EventsEmitter<'a> {
+    rest: &'a [Event<'static>],
+    current: EventsValue<'a>,
 }
 
-impl<'a> StreamEmitter<'a> {
-    fn new(stream: &'a dyn EventStream) -> StreamEmitter<'a> {
-        StreamEmitter {
-            current: StreamValue {
-                stream,
-                first: RefCell::new(None),
-            },
+impl<'a> EventsEmitter<'a> {
+    fn new(content: &'a [Event<'static>]) -> EventsEmitter<'a> {
+        EventsEmitter {
+            rest: content,
+            current: EventsValue(&[]),
         }
     }
 
-    fn next_value(&mut self, is_map: bool) -> Result<Option<SerializeHandle<'_>>, deser::Error> {
-        match self.current.stream.next_event()? {
-            Event::MapEnd if is_map => Ok(None),
-            Event::SeqEnd if !is_map => Ok(None),
-            Event::MapEnd | Event::SeqEnd => Err(malformed()),
-            event => {
-                *self.current.first.get_mut() = Some(event);
-                Ok(Some(SerializeHandle::to(&self.current)))
-            }
+    fn next_value(&mut self) -> Option<SerializeHandle<'_>> {
+        if self.rest.is_empty() {
+            return None;
         }
+        let (value, rest) = self.rest.split_at(value_len(self.rest));
+        self.current = EventsValue(value);
+        self.rest = rest;
+        Some(SerializeHandle::to(&self.current))
     }
 }
 
-impl SeqEmitter for StreamEmitter<'_> {
+impl SeqEmitter for EventsEmitter<'_> {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, deser::Error> {
-        self.next_value(false)
+        Ok(self.next_value())
     }
 }
 
-impl MapEmitter for StreamEmitter<'_> {
+impl MapEmitter for EventsEmitter<'_> {
     fn next_key(
         &mut self,
         _state: &mut State,
     ) -> Result<Option<SerializeHandle<'_>>, deser::Error> {
-        self.next_value(true)
+        Ok(self.next_value())
     }
 
     fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, deser::Error> {
-        StreamEmitter::next_value(self, true)?.ok_or_else(malformed)
+        EventsEmitter::next_value(self).ok_or_else(malformed)
     }
 }

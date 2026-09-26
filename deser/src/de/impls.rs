@@ -4,7 +4,6 @@ use std::hash::BuildHasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem::{MaybeUninit, take};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::State;
@@ -330,7 +329,7 @@ deserialize!(f64);
 // compiles to the same code as a direct implementation.
 
 /// Sequences that are collected into a vector and then converted.
-pub(crate) trait SeqTarget<T>: Sized {
+pub(crate) trait SeqTarget<T>: Sized + Send {
     /// The name of the type for error messages.
     const NAME: &'static str;
 
@@ -338,7 +337,7 @@ pub(crate) trait SeqTarget<T>: Sized {
     fn from_vec(vec: Vec<T>) -> Self;
 }
 
-impl<T> SeqTarget<T> for Vec<T> {
+impl<T: Send> SeqTarget<T> for Vec<T> {
     const NAME: &'static str = "vec";
 
     #[inline(always)]
@@ -347,7 +346,7 @@ impl<T> SeqTarget<T> for Vec<T> {
     }
 }
 
-impl<T> SeqTarget<T> for VecDeque<T> {
+impl<T: Send> SeqTarget<T> for VecDeque<T> {
     const NAME: &'static str = "VecDeque";
 
     #[inline]
@@ -356,7 +355,7 @@ impl<T> SeqTarget<T> for VecDeque<T> {
     }
 }
 
-impl<T> SeqTarget<T> for LinkedList<T> {
+impl<T: Send> SeqTarget<T> for LinkedList<T> {
     const NAME: &'static str = "LinkedList";
 
     #[inline]
@@ -365,7 +364,7 @@ impl<T> SeqTarget<T> for LinkedList<T> {
     }
 }
 
-impl<T: Ord> SeqTarget<T> for BinaryHeap<T> {
+impl<T: Ord + Send> SeqTarget<T> for BinaryHeap<T> {
     const NAME: &'static str = "BinaryHeap";
 
     #[inline]
@@ -374,7 +373,7 @@ impl<T: Ord> SeqTarget<T> for BinaryHeap<T> {
     }
 }
 
-impl<T> SeqTarget<T> for Box<[T]> {
+impl<T: Send> SeqTarget<T> for Box<[T]> {
     const NAME: &'static str = "slice";
 
     #[inline]
@@ -383,16 +382,7 @@ impl<T> SeqTarget<T> for Box<[T]> {
     }
 }
 
-impl<T> SeqTarget<T> for Rc<[T]> {
-    const NAME: &'static str = "slice";
-
-    #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        Rc::from(vec)
-    }
-}
-
-impl<T> SeqTarget<T> for Arc<[T]> {
+impl<T: Send + Sync> SeqTarget<T> for Arc<[T]> {
     const NAME: &'static str = "slice";
 
     #[inline]
@@ -408,7 +398,7 @@ impl<T> SeqTarget<T> for Arc<[T]> {
 fn seq_sink<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
 where
     C: SeqTarget<T> + 'a,
-    T: 'a,
+    T: Send + 'a,
     A: DeserializeAs<'de, T>,
 {
     struct SeqSink<'a, C, T, A> {
@@ -427,7 +417,9 @@ where
         }
     }
 
-    impl<'de, 'a, C: SeqTarget<T>, T, A: DeserializeAs<'de, T>> Sink<'de> for SeqSink<'a, C, T, A> {
+    impl<'de, 'a, C: SeqTarget<T>, T: Send, A: DeserializeAs<'de, T>> Sink<'de>
+        for SeqSink<'a, C, T, A>
+    {
         fn expecting(&self) -> Cow<'_, str> {
             Cow::Borrowed(if A::__private_is_bytes_as() {
                 "bytes"
@@ -526,13 +518,12 @@ macro_rules! deserialize_seq {
 }
 
 deserialize_seq! {
-    [T] Vec<T> => Vec<A>;
-    [T] VecDeque<T> => VecDeque<A>;
-    [T] LinkedList<T> => LinkedList<A>;
-    [T: Ord] BinaryHeap<T> => BinaryHeap<A>;
-    [T] Box<[T]> => Box<[A]>;
-    [T] Rc<[T]> => Rc<[A]>;
-    [T] Arc<[T]> => Arc<[A]>;
+    [T: Send] Vec<T> => Vec<A>;
+    [T: Send] VecDeque<T> => VecDeque<A>;
+    [T: Send] LinkedList<T> => LinkedList<A>;
+    [T: Ord + Send] BinaryHeap<T> => BinaryHeap<A>;
+    [T: Send] Box<[T]> => Box<[A]>;
+    [T: Send + Sync] Arc<[T]> => Arc<[A]>;
 }
 
 /// Maps that can be deserialized.
@@ -551,7 +542,7 @@ fn cautious_capacity<T>(state: &State) -> usize {
     }
 }
 
-pub(crate) trait MapTarget<K, V>: Default {
+pub(crate) trait MapTarget<K, V>: Default + Send {
     const UNORDERED: bool;
     fn insert_entry(&mut self, key: K, value: V);
     fn reserve_entries(&mut self, additional: usize) {
@@ -559,7 +550,7 @@ pub(crate) trait MapTarget<K, V>: Default {
     }
 }
 
-impl<K: Ord, V> MapTarget<K, V> for BTreeMap<K, V> {
+impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
     const UNORDERED: bool = false;
 
     #[inline]
@@ -568,7 +559,9 @@ impl<K: Ord, V> MapTarget<K, V> for BTreeMap<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V, H: BuildHasher + Default> MapTarget<K, V> for HashMap<K, V, H> {
+impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K, V>
+    for HashMap<K, V, H>
+{
     const UNORDERED: bool = true;
 
     #[inline]
@@ -586,8 +579,8 @@ impl<K: Hash + Eq, V, H: BuildHasher + Default> MapTarget<K, V> for HashMap<K, V
 fn map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
-    K: 'a,
-    V: 'a,
+    K: Send + 'a,
+    V: Send + 'a,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -610,6 +603,8 @@ where
     impl<'de, 'a, M, K, V, KA, VA> Sink<'de> for MapSink<'a, M, K, V, KA, VA>
     where
         M: MapTarget<K, V>,
+        K: Send,
+        V: Send,
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
@@ -678,7 +673,8 @@ where
 
 impl<'de, K, V, KA, VA> DeserializeAs<'de, BTreeMap<K, V>> for BTreeMap<KA, VA>
 where
-    K: Ord,
+    K: Ord + Send,
+    V: Send,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -691,7 +687,7 @@ impl<'de, K, V, H> Deserialize<'de> for HashMap<K, V, H>
 where
     K: Hash + Eq + Deserialize<'de>,
     V: Deserialize<'de>,
-    H: BuildHasher + Default,
+    H: BuildHasher + Default + Send,
 {
     #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
@@ -701,8 +697,9 @@ where
 
 impl<'de, K, V, H, KA, VA> DeserializeAs<'de, HashMap<K, V, H>> for HashMap<KA, VA>
 where
-    K: Hash + Eq,
-    H: BuildHasher + Default,
+    K: Hash + Eq + Send,
+    V: Send,
+    H: BuildHasher + Default + Send,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -712,7 +709,7 @@ where
 }
 
 /// Sets that can be deserialized.
-trait SetTarget<T>: Default {
+trait SetTarget<T>: Default + Send {
     const UNORDERED: bool;
     fn insert_element(&mut self, value: T);
     fn reserve_elements(&mut self, additional: usize) {
@@ -720,7 +717,7 @@ trait SetTarget<T>: Default {
     }
 }
 
-impl<T: Ord> SetTarget<T> for BTreeSet<T> {
+impl<T: Ord + Send> SetTarget<T> for BTreeSet<T> {
     const UNORDERED: bool = false;
 
     #[inline]
@@ -729,7 +726,7 @@ impl<T: Ord> SetTarget<T> for BTreeSet<T> {
     }
 }
 
-impl<T: Hash + Eq, H: BuildHasher + Default> SetTarget<T> for HashSet<T, H> {
+impl<T: Hash + Eq + Send, H: BuildHasher + Default + Send> SetTarget<T> for HashSet<T, H> {
     const UNORDERED: bool = true;
 
     #[inline]
@@ -747,7 +744,7 @@ impl<T: Hash + Eq, H: BuildHasher + Default> SetTarget<T> for HashSet<T, H> {
 fn set_sink<'a, 'de, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a, 'de>
 where
     S: SetTarget<T> + 'a,
-    T: 'a,
+    T: Send + 'a,
     A: DeserializeAs<'de, T>,
 {
     struct SetSink<'a, S, T, A> {
@@ -765,7 +762,9 @@ where
         }
     }
 
-    impl<'de, 'a, S: SetTarget<T>, T, A: DeserializeAs<'de, T>> Sink<'de> for SetSink<'a, S, T, A> {
+    impl<'de, 'a, S: SetTarget<T>, T: Send, A: DeserializeAs<'de, T>> Sink<'de>
+        for SetSink<'a, S, T, A>
+    {
         fn expecting(&self) -> Cow<'_, str> {
             Cow::Borrowed(if S::UNORDERED { "HashSet" } else { "BTreeSet" })
         }
@@ -812,7 +811,7 @@ impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for BTreeSet<T> {
     }
 }
 
-impl<'de, T: Ord, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T>> for BTreeSet<A> {
+impl<'de, T: Ord + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T>> for BTreeSet<A> {
     fn deserialize_into_as(out: &mut Option<BTreeSet<T>>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, A>(out)
     }
@@ -821,7 +820,7 @@ impl<'de, T: Ord, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T>> for 
 impl<'de, T, H> Deserialize<'de> for HashSet<T, H>
 where
     T: Deserialize<'de> + Hash + Eq,
-    H: BuildHasher + Default,
+    H: BuildHasher + Default + Send,
 {
     #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
@@ -831,8 +830,8 @@ where
 
 impl<'de, T, H, A> DeserializeAs<'de, HashSet<T, H>> for HashSet<A>
 where
-    T: Hash + Eq,
-    H: BuildHasher + Default,
+    T: Hash + Eq + Send,
+    H: BuildHasher + Default + Send,
     A: DeserializeAs<'de, T>,
 {
     fn deserialize_into_as(out: &mut Option<HashSet<T, H>>) -> SinkHandle<'_, 'de> {
@@ -934,7 +933,7 @@ macro_rules! deserialize_for_tuple {
             }
         }
 
-        impl<'de, $($name,)* $($adapter: DeserializeAs<'de, $name>),*> DeserializeAs<'de, ($($name,)*)> for ($($adapter,)*) {
+        impl<'de, $($name: Send,)* $($adapter: DeserializeAs<'de, $name>),*> DeserializeAs<'de, ($($name,)*)> for ($($adapter,)*) {
             fn deserialize_into_as(out: &mut Option<($($name,)*)>) -> SinkHandle<'_, 'de> {
                 #![allow(non_snake_case)]
 
@@ -947,7 +946,7 @@ macro_rules! deserialize_for_tuple {
                     _marker: PhantomData<fn() -> ($($adapter,)*)>,
                 }
 
-                impl<'de, 'a, $($name,)* $($adapter: DeserializeAs<'de, $name>,)*> Sink<'de> for TupleSink<'a, $($name,)* $($adapter,)*> {
+                impl<'de, 'a, $($name: Send,)* $($adapter: DeserializeAs<'de, $name>,)*> Sink<'de> for TupleSink<'a, $($name,)* $($adapter,)*> {
                     fn expecting(&self) -> Cow<'_, str> {
                         Cow::Borrowed("tuple")
                     }
@@ -1036,7 +1035,7 @@ impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
     }
 }
 
-impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]> for [A; N] {
+impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]> for [A; N] {
     fn deserialize_into_as(out: &mut Option<[T; N]>) -> SinkHandle<'_, 'de> {
         // Invariant: if `buffer` is `Some`, the first `index` elements of it
         // are initialized.  Once the buffer was moved into the slot, `buffer`
@@ -1073,7 +1072,7 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
             }
         }
 
-        impl<'de, 'a, T: 'a, A: DeserializeAs<'de, T>, const N: usize> Sink<'de>
+        impl<'de, 'a, T: Send + 'a, A: DeserializeAs<'de, T>, const N: usize> Sink<'de>
             for ArraySink<'a, T, A, N>
         {
             fn expecting(&self) -> Cow<'_, str> {
@@ -1199,7 +1198,7 @@ impl<'de, T, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]
 }
 
 /// A type that is deserialized as `T` and converted.
-pub(crate) trait Via<T>: Sized {
+pub(crate) trait Via<T>: Sized + Send {
     /// Converts the deserialized value.
     fn convert(value: T) -> Result<Self, Error>;
 }
@@ -1208,7 +1207,7 @@ pub(crate) trait Via<T>: Sized {
 #[inline]
 pub(crate) fn via_handle<'a, 'de, T, U, A>(out: &'a mut Option<U>) -> SinkHandle<'a, 'de>
 where
-    T: 'a,
+    T: Send + 'a,
     U: Via<T> + 'a,
     A: DeserializeAs<'de, T>,
 {
@@ -1295,9 +1294,9 @@ pub(crate) use deserialize_via;
 
 /// Implements `DeserializeAs` for wrappers of a single value.
 macro_rules! deserialize_as_via {
-    ($($wrapper:ident),*) => {
+    ($([$($bound:tt)*] $wrapper:ident),*) => {
         $(
-            impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, $wrapper<T>> for $wrapper<A> {
+            impl<'de, T: $($bound)*, A: DeserializeAs<'de, T>> DeserializeAs<'de, $wrapper<T>> for $wrapper<A> {
                 #[inline]
                 fn deserialize_into_as(out: &mut Option<$wrapper<T>>) -> SinkHandle<'_, 'de> {
                     via_handle::<T, $wrapper<T>, A>(out)
@@ -1325,21 +1324,14 @@ macro_rules! deserialize_as_via {
     };
 }
 
-impl<T> Via<T> for Box<T> {
+impl<T: Send> Via<T> for Box<T> {
     #[inline]
     fn convert(value: T) -> Result<Self, Error> {
         Ok(Box::new(value))
     }
 }
 
-impl<T> Via<T> for Rc<T> {
-    #[inline]
-    fn convert(value: T) -> Result<Self, Error> {
-        Ok(Rc::new(value))
-    }
-}
-
-impl<T> Via<T> for Arc<T> {
+impl<T: Send + Sync> Via<T> for Arc<T> {
     #[inline]
     fn convert(value: T) -> Result<Self, Error> {
         Ok(Arc::new(value))
@@ -1353,13 +1345,6 @@ impl Via<String> for Box<str> {
     }
 }
 
-impl Via<String> for Rc<str> {
-    #[inline]
-    fn convert(value: String) -> Result<Self, Error> {
-        Ok(Rc::from(value))
-    }
-}
-
 impl Via<String> for Arc<str> {
     #[inline]
     fn convert(value: String) -> Result<Self, Error> {
@@ -1369,16 +1354,17 @@ impl Via<String> for Arc<str> {
 
 deserialize_via! {
     [T: Deserialize<'de>] Box<T> => T;
-    [T: Deserialize<'de>] Rc<T> => T;
-    [T: Deserialize<'de>] Arc<T> => T;
+    [T: Deserialize<'de> + Sync] Arc<T> => T;
     [] Box<str> => String;
-    [] Rc<str> => String;
     [] Arc<str> => String;
 }
 
-deserialize_as_via!(Box, Rc, Arc);
+deserialize_as_via!([Send] Box, [Send + Sync] Arc);
 
-impl<'a, T: ToOwned + ?Sized> Via<T::Owned> for Cow<'a, T> {
+impl<'a, T: ToOwned + Sync + ?Sized> Via<T::Owned> for Cow<'a, T>
+where
+    T::Owned: Send,
+{
     #[inline]
     fn convert(value: T::Owned) -> Result<Self, Error> {
         Ok(Cow::Owned(value))
@@ -1390,7 +1376,7 @@ impl<'a, T: ToOwned + ?Sized> Via<T::Owned> for Cow<'a, T> {
 /// the [`Borrowed`](crate::adapters::Borrowed) adapter.
 impl<'de, 'a, T> Deserialize<'de> for Cow<'a, T>
 where
-    T: ToOwned + ?Sized,
+    T: ToOwned + Sync + ?Sized,
     T::Owned: Deserialize<'de>,
 {
     #[inline]

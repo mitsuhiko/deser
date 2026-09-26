@@ -68,6 +68,13 @@ pub(crate) struct DriverCore<'de> {
 
 const STACK_CAPACITY: usize = 128;
 
+// an ongoing serialization can move between threads, for instance when it
+// is suspended while waiting for IO.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<DeserializeDriver<'static, 'static>>();
+};
+
 #[derive(Copy, Clone)]
 enum Container {
     /// A map, the flag is `true` if a key is expected next.

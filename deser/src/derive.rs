@@ -275,9 +275,12 @@
 //!
 //! By default the derive requires every type parameter to implement the
 //! derived trait (`T: Serialize` or `T: Deserialize`, for enums also
-//! `T: 'static` when deserializing).  This is wrong when a type parameter
-//! is not serialized itself, for instance when only an associated type is.
-//! The bounds can be replaced with a list of where predicates:
+//! `T: 'static` when deserializing).  Type parameters which only appear in
+//! fields with adapters instead need to be `Sync` for `Serialize` and
+//! `Send` for `Deserialize` (serializables are `Sync` and deserializables
+//! are `Send`).  This is wrong when a type parameter is not serialized
+//! itself, for instance when only an associated type is.  The bounds can
+//! be replaced with a list of where predicates:
 //!
 //! * `#[deser(bound(...))]` replaces the bounds for both derives.
 //! * `#[deser(serialize_bound(...))]` and `#[deser(deserialize_bound(...))]`

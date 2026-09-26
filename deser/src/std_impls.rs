@@ -29,7 +29,7 @@ make_slot_wrapper!(SlotWrapper);
 // PhantomData
 
 /// Serializes as null like `()`.
-impl<T: ?Sized> Serialize for PhantomData<T> {
+impl<T: ?Sized + Sync> Serialize for PhantomData<T> {
     __begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
@@ -41,7 +41,7 @@ impl<T: ?Sized> Serialize for PhantomData<T> {
     }
 }
 
-impl<'de, T: ?Sized> Sink<'de> for SlotWrapper<PhantomData<T>> {
+impl<'de, T: ?Sized + Send> Sink<'de> for SlotWrapper<PhantomData<T>> {
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed("null")
     }
@@ -59,7 +59,7 @@ impl<'de, T: ?Sized> Sink<'de> for SlotWrapper<PhantomData<T>> {
 
 /// Deserializes from null.  Missing values are accepted as the value is
 /// skipped by `#[deser(skip_serializing_optionals)]`.
-impl<'de, T: ?Sized> Deserialize<'de> for PhantomData<T> {
+impl<'de, T: ?Sized + Send> Deserialize<'de> for PhantomData<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SlotWrapper::make_handle(out)
     }
@@ -102,7 +102,7 @@ macro_rules! newtype_wrapper {
                 }
             }
 
-            impl<T> Via<T> for $ty<T> {
+            impl<T: Send> Via<T> for $ty<T> {
                 #[inline]
                 fn convert(value: T) -> Result<Self, Error> {
                     Ok($ty(value))
@@ -269,6 +269,8 @@ impl<T: Serialize, E: Serialize> Serialize for Result<T, E> {
 
 impl<T, E, TA, EA> SerializeAs<Result<T, E>> for Result<TA, EA>
 where
+    T: Sync,
+    E: Sync,
     TA: SerializeAs<T>,
     EA: SerializeAs<E>,
 {
@@ -337,8 +339,8 @@ impl<'de> Sink<'de> for ResultVariantSlot<ResultVariant> {
 /// Creates the sink for a `Result` with adapters.
 fn result_sink<'a, 'de, T, E, TA, EA>(out: &'a mut Option<Result<T, E>>) -> SinkHandle<'a, 'de>
 where
-    T: 'a,
-    E: 'a,
+    T: Send + 'a,
+    E: Send + 'a,
     TA: DeserializeAs<'de, T>,
     EA: DeserializeAs<'de, E>,
 {
@@ -352,6 +354,8 @@ where
 
     impl<'de, 'a, T, E, TA, EA> Sink<'de> for ResultSink<'a, T, E, TA, EA>
     where
+        T: Send,
+        E: Send,
         TA: DeserializeAs<'de, T>,
         EA: DeserializeAs<'de, E>,
     {
@@ -433,6 +437,8 @@ impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> Deserialize<'de> for Result<
 
 impl<'de, T, E, TA, EA> DeserializeAs<'de, Result<T, E>> for Result<TA, EA>
 where
+    T: Send,
+    E: Send,
     TA: DeserializeAs<'de, T>,
     EA: DeserializeAs<'de, E>,
 {
@@ -444,7 +450,7 @@ where
 // Types that are represented as strings
 
 /// Types that are deserialized by parsing a string.
-trait Parse: FromStr<Err: Display> {
+trait Parse: FromStr<Err: Display> + Send {
     /// What the type expects, for error messages.
     const EXPECTING: &'static str;
 }

@@ -9,6 +9,9 @@ struct NonuniqueBox<T: ?Sized> {
     ptr: NonNull<T>,
 }
 
+// SAFETY: the box owns its value like a `Box<T>`.
+unsafe impl<T: ?Sized + Send> Send for NonuniqueBox<T> {}
+
 impl<T> NonuniqueBox<T> {
     pub fn new(value: T) -> Self {
         NonuniqueBox::from(Box::new(value))

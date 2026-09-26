@@ -769,3 +769,58 @@ fn test_adapters_and_forwarding() {
         let _ = catch_unwind(AssertUnwindSafe(|| emit_partial::<WithAdapters>(&events)));
     }
 }
+
+#[test]
+fn test_drivers_move_between_threads() {
+    let events = outer_events();
+    let step = if cfg!(miri) { 7 } else { 1 };
+
+    // the sinks are allocated on one thread and continued, finished or
+    // dropped on another one (which frees them into its own cache)
+    for split in (0..=events.len()).step_by(step) {
+        for finish in [true, false] {
+            let mut out = None::<Outer>;
+            std::thread::scope(|scope| {
+                let mut driver = DeserializeDriver::new(&mut out);
+                for event in &events[..split] {
+                    driver.emit(event.clone()).unwrap();
+                }
+                let rest = &events[split..];
+                scope
+                    .spawn(move || {
+                        if finish {
+                            for event in rest {
+                                driver.emit(event.clone()).unwrap();
+                            }
+                        }
+                        drop(driver);
+                    })
+                    .join()
+                    .unwrap();
+            });
+            assert_eq!(out.is_some(), finish || split == events.len());
+        }
+    }
+
+    // the emitters are created on one thread and continued on another one
+    let value = emit_partial::<Outer>(&events).unwrap();
+    for split in (0..=events.len()).step_by(step) {
+        let mut driver = SerializeDriver::new(&value);
+        let mut produced = Vec::new();
+        for _ in 0..split {
+            let (event, _, _) = driver.next().unwrap().unwrap();
+            produced.push(event.to_static());
+        }
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    while let Some((event, _, _)) = driver.next().unwrap() {
+                        produced.push(event.to_static());
+                    }
+                })
+                .join()
+                .unwrap();
+        });
+        assert_eq!(produced, events);
+    }
+}

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::hash::BuildHasher;
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::State;
@@ -127,6 +126,7 @@ impl Serialize for str {
 impl<'a, T> Serialize for Cow<'a, T>
 where
     T: Serialize + ToOwned + ?Sized,
+    T::Owned: Sync,
 {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Serialize::serialize(&**self, state)
@@ -205,8 +205,7 @@ serialize_slice!(
     [T: Serialize] Vec<T>,
     ['a, T: Serialize] &'a [T],
     [T: Serialize] Box<[T]>,
-    [T: Serialize] Rc<[T]>,
-    [T: Serialize] Arc<[T]>,
+    [T: Serialize + Send] Arc<[T]>,
     ['a, T: Serialize + Clone] Cow<'a, [T]>,
 );
 
@@ -234,7 +233,7 @@ struct IterEmitter<'a, I>(I, PhantomData<&'a ()>);
 
 impl<'a, I, T> SeqEmitter for IterEmitter<'a, I>
 where
-    I: Iterator<Item = &'a T>,
+    I: Iterator<Item = &'a T> + Send,
     T: Serialize + 'a,
 {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
@@ -390,6 +389,7 @@ impl<K, V, H> Serialize for HashMap<K, V, H>
 where
     K: Serialize,
     V: Serialize,
+    H: Sync,
     H: BuildHasher,
 {
     __begin_without_finish!();
@@ -462,7 +462,7 @@ where
 impl<T, H> Serialize for HashSet<T, H>
 where
     T: Serialize,
-    H: BuildHasher,
+    H: BuildHasher + Sync,
 {
     __begin_without_finish!();
 
@@ -653,9 +653,9 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
 }
 
 macro_rules! forward_serialize {
-    ($($ty:ty),*) => {
+    ($([$($bound:tt)*] $ty:ty),*) => {
         $(
-            impl<'a, T: Serialize + ?Sized> Serialize for $ty {
+            impl<'a, T: Serialize + $($bound)* ?Sized> Serialize for $ty {
                 fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
                     Serialize::serialize(&**self, state)
                 }
@@ -686,4 +686,4 @@ macro_rules! forward_serialize {
     };
 }
 
-forward_serialize!(&'a T, &'a mut T, Box<T>, Rc<T>, Arc<T>);
+forward_serialize!([] &'a T, [] &'a mut T, [] Box<T>, [Send +] Arc<T>);

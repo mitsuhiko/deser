@@ -17,7 +17,7 @@ use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
 
 /// Builds the value of an enum variant.
-pub trait VariantBuilder<'de, E> {
+pub trait VariantBuilder<'de, E>: Send {
     /// Returns the sink for the variant's fields.
     fn sink(&mut self) -> &mut dyn Sink<'de>;
 
@@ -328,7 +328,7 @@ pub struct ExternallyTaggedSink<'a, 'de, E> {
     variant: Option<BoxedVariant<'de, E>>,
 }
 
-impl<'a, 'de, E: 'de> ExternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> ExternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an externally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
@@ -360,7 +360,7 @@ impl<'a, 'de, E: 'de> ExternallyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let mut variant = match atom {
             Atom::Ext(_) => return self.unexpected_atom(atom, state),
@@ -460,7 +460,7 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     variant: Option<BoxedVariant<'de, E>>,
 }
 
-impl<'a, 'de, E: 'de> AdjacentlyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an adjacently tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
@@ -511,7 +511,7 @@ impl<'a, 'de, E: 'de> AdjacentlyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
@@ -566,7 +566,7 @@ impl<'a, 'de, E: 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 ///
 /// The value is recorded and replayed into the variants in order until one
 /// of them accepts it.
-pub fn untagged_handle<'a, 'de, E>(
+pub fn untagged_handle<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
     name: &'static str,
     candidates: CandidateLookup<'de, E>,
@@ -609,7 +609,7 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     variant: Option<BoxedVariant<'de, E>>,
 }
 
-impl<'a, 'de, E: 'de> InternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an internally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
@@ -657,7 +657,7 @@ impl<'a, 'de, E: 'de> InternallyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }

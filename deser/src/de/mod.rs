@@ -582,7 +582,14 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
 ///
 /// Data can only be borrowed if the data format passes it on borrowed (see
 /// [`Sink::borrowed_atom`]).
-pub trait Deserialize<'de>: Sized {
+///
+/// # Thread Safety
+///
+/// Deserializable values are `Send` and so are the sinks they create.  This
+/// allows an ongoing deserialization (a [`DeserializeDriver`]) to move
+/// between threads, for instance when it is suspended while waiting for more
+/// input.  Types that are not `Send` (such as `Rc`) cannot be deserialized.
+pub trait Deserialize<'de>: Sized + Send {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// There are two typical implementations for this method: the common one is
@@ -754,7 +761,7 @@ fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {
 /// deserialized (which lives for `'de`) to [`borrowed_atom`](Self::borrowed_atom)
 /// instead.  By default this forwards to [`atom`](Self::atom), only sinks of
 /// types which want to borrow (like `&'de str`) need to implement it.
-pub trait Sink<'de> {
+pub trait Sink<'de>: Send {
     /// Receives an [`Atom`].
     ///
     /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).

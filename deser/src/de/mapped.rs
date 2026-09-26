@@ -15,7 +15,7 @@ pub(crate) struct MappedSink<'a, 'de, T, U> {
     convert: fn(T) -> Result<U, Error>,
 }
 
-impl<'a, 'de, T: 'a, U: 'a> MappedSink<'a, 'de, T, U> {
+impl<'a, 'de, T: Send + 'a, U: Send + 'a> MappedSink<'a, 'de, T, U> {
     /// Creates a handle to a mapped sink.
     pub(crate) fn handle(
         out: &'a mut Option<U>,
@@ -26,7 +26,7 @@ impl<'a, 'de, T: 'a, U: 'a> MappedSink<'a, 'de, T, U> {
     }
 }
 
-impl<'a, 'de, T, U> Sink<'de> for MappedSink<'a, 'de, T, U> {
+impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().atom(atom, state)
     }

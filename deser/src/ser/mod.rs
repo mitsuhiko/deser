@@ -123,7 +123,10 @@ pub enum SerializeHandle<'a> {
     /// A borrowed reference to a [`Serialize`].
     Borrowed(&'a dyn Serialize),
     /// A boxed up [`Serialize`].
-    Owned(Box<dyn Serialize + 'a>),
+    ///
+    /// Boxed values are owned by the handle, they must be `Send` so that
+    /// the serialization can move between threads.
+    Owned(Box<dyn Serialize + Send + 'a>),
 }
 
 impl<'a> Deref for SerializeHandle<'a> {
@@ -132,7 +135,7 @@ impl<'a> Deref for SerializeHandle<'a> {
     fn deref(&self) -> &Self::Target {
         match self {
             SerializeHandle::Borrowed(val) => *val,
-            SerializeHandle::Owned(val) => &**val,
+            SerializeHandle::Owned(val) => val.as_ref(),
         }
     }
 }
@@ -144,7 +147,7 @@ impl<'a> SerializeHandle<'a> {
     }
 
     /// Create an owned handle to a heap allocated [`Serialize`].
-    pub fn boxed<S: Serialize + 'a>(val: S) -> SerializeHandle<'a> {
+    pub fn boxed<S: Serialize + Send + 'a>(val: S) -> SerializeHandle<'a> {
         SerializeHandle::Owned(Box::new(val))
     }
 }
@@ -217,7 +220,7 @@ pub enum StructField<'a> {
 /// The fields are requested with increasing indexes starting at zero until
 /// [`StructField::End`] is returned.
 #[doc(hidden)]
-pub trait IndexedStruct {
+pub trait IndexedStruct: Sync {
     fn field(&self, index: usize, state: &mut State) -> Result<StructField<'_>, Error>;
 }
 
@@ -256,7 +259,7 @@ impl<'a> StructEmitter for IndexedStructEmitter<'a> {
 /// The elements are requested with increasing indexes starting at zero
 /// until `None` is returned.
 #[doc(hidden)]
-pub trait IndexedSeq {
+pub trait IndexedSeq: Sync {
     fn element(
         &self,
         index: usize,
@@ -269,7 +272,7 @@ pub trait IndexedSeq {
 /// A struct emitter is a simplified version of a [`MapEmitter`] which produces struct
 /// field and value in one go.  The object model itself however does not know structs,
 /// it only knows about maps.
-pub trait StructEmitter {
+pub trait StructEmitter: Send {
     /// Produces the next field and value in the struct.
     fn next(
         &mut self,
@@ -278,7 +281,7 @@ pub trait StructEmitter {
 }
 
 /// A map emitter.
-pub trait MapEmitter {
+pub trait MapEmitter: Send {
     /// Produces the next key in the map.
     ///
     /// If this reached the end of the map `None` shall be returned.  The expectation
@@ -296,7 +299,7 @@ pub trait MapEmitter {
 }
 
 /// A sequence emitter.
-pub trait SeqEmitter {
+pub trait SeqEmitter: Send {
     /// Produces the next item in the sequence.
     fn next(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error>;
 }
@@ -308,7 +311,15 @@ pub trait SeqEmitter {
 /// which can be further processed to walk the embedded compound value.  The
 /// [`container_shape`](Self::container_shape) of such values is passed on
 /// with the start event of the container.
-pub trait Serialize {
+///
+/// # Thread Safety
+///
+/// Serializables are `Sync` and the emitters they create are `Send`.  This
+/// allows an ongoing serialization (a [`SerializeDriver`]) to move between
+/// threads, for instance when it is suspended while the output is written
+/// asynchronously.  Types with shared ownership or interior mutability that
+/// is not thread safe (such as `Rc` or `RefCell`) cannot be serialized.
+pub trait Serialize: Sync {
     /// Serializes this serializable.
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
 

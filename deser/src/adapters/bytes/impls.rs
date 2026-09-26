@@ -13,7 +13,7 @@ use crate::ser::{Begin, Chunk};
 mod sealed {
     use super::*;
 
-    pub trait BytesBufImpl: Sized {
+    pub trait BytesBufImpl: Sized + Send + Sync {
         fn bytes(&self) -> &[u8];
         fn from_vec(bytes: Vec<u8>) -> Result<Self, Error>;
         fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de>;

@@ -1,5 +1,4 @@
 //! Bridges serde by buffering the events of a value.
-use std::cell::RefCell;
 use std::iter::Peekable;
 
 use deser::ser::{Chunk, SerializeHandle};
@@ -7,7 +6,7 @@ use deser::{Atom, ErrorKind, Event, State};
 
 use crate::de::{Source, ValueDe, unexpected_end};
 use crate::error::Error;
-use crate::ser::{Emit, EventSerializer, EventStream, StreamRoot};
+use crate::ser::{Emit, EventSerializer, Events};
 use crate::sink::{Collector, Push};
 
 struct Recorded<'de> {
@@ -108,17 +107,6 @@ impl Emit for SerBuffer {
     }
 }
 
-struct BufferStream(RefCell<std::vec::IntoIter<Event<'static>>>);
-
-impl EventStream for BufferStream {
-    fn next_event(&self) -> Result<Event<'static>, deser::Error> {
-        self.0
-            .borrow_mut()
-            .next()
-            .ok_or_else(|| unexpected_end().into_deser())
-    }
-}
-
 /// Serializes a serde value by buffering its events.
 pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
     value: &T,
@@ -134,10 +122,7 @@ pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
         )),
         SerBuffer::Atom(atom) => Ok(Chunk::Atom(atom)),
         SerBuffer::Events(events) => {
-            let mut events = events.into_iter();
-            let first = events.next().ok_or_else(|| unexpected_end().into_deser())?;
-            let root = StreamRoot::new(BufferStream(RefCell::new(events)), first);
-            Ok(Chunk::Forward(SerializeHandle::boxed(root)))
+            Ok(Chunk::Forward(SerializeHandle::boxed(Events::new(events)?)))
         }
     }
 }

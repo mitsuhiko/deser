@@ -150,7 +150,7 @@ make_slot_wrapper!(FromStrSlot);
 
 impl<'de, T> Sink<'de> for FromStrSlot<T>
 where
-    T: FromStr,
+    T: FromStr + Send,
     T::Err: Display,
 {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -176,7 +176,7 @@ where
 
 impl<'de, T> DeserializeAs<'de, T> for DisplayFromStr
 where
-    T: FromStr,
+    T: FromStr + Send,
     T::Err: Display,
 {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
@@ -254,6 +254,7 @@ pub struct FromInto<U>(PhantomData<fn() -> U>);
 
 impl<'de, T, U> DeserializeAs<'de, T> for FromInto<U>
 where
+    T: Send,
     U: Deserialize<'de> + Into<T> + 'static,
 {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
@@ -292,7 +293,7 @@ where
 impl<T, U> SerializeAs<T> for FromInto<U>
 where
     T: Clone + Into<U>,
-    U: Serialize + 'static,
+    U: Serialize + Send + 'static,
 {
     fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Forward(SerializeHandle::boxed(Into::<U>::into(
@@ -346,7 +347,7 @@ fn conversion_error<E: Display>(err: E) -> Error {
 impl<'de, T, U> DeserializeAs<'de, T> for TryFromInto<U>
 where
     U: Deserialize<'de> + 'static,
-    T: TryFrom<U>,
+    T: TryFrom<U> + Send,
     T::Error: Display,
 {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
@@ -394,7 +395,7 @@ impl<T, U> SerializeAs<T> for TryFromInto<U>
 where
     T: Clone + TryInto<U>,
     <T as TryInto<U>>::Error: Display,
-    U: Serialize + 'static,
+    U: Serialize + Send + 'static,
 {
     fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
         let value: U = value.clone().try_into().map_err(conversion_error)?;
@@ -433,7 +434,7 @@ where
 /// ```
 pub struct DefaultOnError<A = Same>(PhantomData<fn() -> A>);
 
-impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
+impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         Recording::capture(move |recording, state| {
             let mut value = None;
@@ -518,7 +519,7 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
 /// Atoms are deserialized directly, compound values are recorded first.
 /// Errors are not reported, in that case the callback is not invoked.
 fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
-    then: impl FnOnce(T) + 'a,
+    then: impl FnOnce(T) + Send + 'a,
 ) -> SinkHandle<'a, 'de> {
     Recording::capture(move |recording, state| {
         let mut value = None;
@@ -580,7 +581,7 @@ fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
 /// ```
 pub struct VecSkipError<A = Same>(PhantomData<fn() -> A>);
 
-impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipError<A> {
+impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipError<A> {
     fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_, 'de> {
         struct SkipSink<'a, T, A> {
             slot: &'a mut Option<Vec<T>>,
@@ -588,7 +589,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipErr
             _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, 'de, T, A: DeserializeAs<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
+        impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
             fn expecting(&self) -> Cow<'_, str> {
                 Cow::Borrowed("vec")
             }
@@ -634,7 +635,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipErr
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
+impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
     fn serialize_as<'a>(value: &'a Vec<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
         <Vec<A> as SerializeAs<Vec<T>>>::serialize_as(value, state)
     }
@@ -684,7 +685,7 @@ pub struct MapSkipError<KA = Same, VA = Same>(PhantomData<fn() -> (KA, VA)>);
 fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
-    K: 'a,
+    K: Send + 'a,
     V: 'a,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
@@ -701,6 +702,7 @@ where
     impl<'a, 'de, M, K, V, KA, VA> Sink<'de> for SkipMapSink<'a, M, K, V, KA, VA>
     where
         M: MapTarget<K, V>,
+        K: Send,
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
@@ -769,7 +771,8 @@ where
 
 impl<'de, K, V, KA, VA> DeserializeAs<'de, BTreeMap<K, V>> for MapSkipError<KA, VA>
 where
-    K: Ord,
+    K: Ord + Send,
+    V: Send,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -780,8 +783,9 @@ where
 
 impl<'de, K, V, H, KA, VA> DeserializeAs<'de, HashMap<K, V, H>> for MapSkipError<KA, VA>
 where
-    K: Hash + Eq,
-    H: BuildHasher + Default,
+    K: Hash + Eq + Send,
+    V: Send,
+    H: BuildHasher + Default + Send,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -792,6 +796,8 @@ where
 
 impl<K, V, KA, VA> SerializeAs<BTreeMap<K, V>> for MapSkipError<KA, VA>
 where
+    K: Sync,
+    V: Sync,
     KA: SerializeAs<K>,
     VA: SerializeAs<V>,
 {
@@ -810,7 +816,9 @@ where
 
 impl<K, V, H, KA, VA> SerializeAs<HashMap<K, V, H>> for MapSkipError<KA, VA>
 where
-    H: BuildHasher,
+    K: Sync,
+    V: Sync,
+    H: BuildHasher + Sync,
     KA: SerializeAs<K>,
     VA: SerializeAs<V>,
 {

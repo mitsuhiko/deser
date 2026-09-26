@@ -24,12 +24,12 @@ impl Debug for TypeKey {
     }
 }
 
-trait DebugAny: Any + Debug + Send {
+trait DebugAny: Any + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<T: Any + Debug + Send + 'static> DebugAny for T {
+impl<T: Any + Debug + Send + Sync + 'static> DebugAny for T {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -47,7 +47,7 @@ struct CloneFns {
 }
 
 impl CloneFns {
-    fn of<T: Clone + Debug + Send + 'static>() -> CloneFns {
+    fn of<T: Clone + Debug + Send + Sync + 'static>() -> CloneFns {
         CloneFns {
             clone: |value| Box::new(value.as_any().downcast_ref::<T>().unwrap().clone()),
             clone_into: |target, value| {
@@ -108,7 +108,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get<T: Debug + Send + 'static>(&self) -> Option<&T> {
+    pub fn get<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         let index = self.position(TypeId::of::<T>())?;
         let value: &dyn DebugAny = &*self.entries[index].1;
         // SAFETY: values are always stored with the key of their type
@@ -116,7 +116,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get_mut<T: Default + Debug + Send + 'static>(&mut self) -> &mut T {
+    pub fn get_mut<T: Default + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         let index = match self.position(TypeId::of::<T>()) {
             Some(index) => index,
             None => self.insert_default::<T>(),
@@ -127,14 +127,14 @@ impl Extensions {
     }
 
     #[cold]
-    fn insert_default<T: Default + Debug + Send + 'static>(&mut self) -> usize {
+    fn insert_default<T: Default + Debug + Send + Sync + 'static>(&mut self) -> usize {
         self.entries
             .push((TypeKey::of::<T>(), Box::new(T::default())));
         self.entries.len() - 1
     }
 
     /// Marks an extension type as replayable.
-    pub fn set_replayable<T: Clone + Debug + Send + 'static>(&mut self) {
+    pub fn set_replayable<T: Clone + Debug + Send + Sync + 'static>(&mut self) {
         let key = TypeKey::of::<T>();
         if !self.replayable.iter().any(|(k, _)| *k == key) {
             self.replayable.push((key, CloneFns::of::<T>()));
@@ -154,7 +154,7 @@ impl Extensions {
 
     /// Returns the data of a type attached to the current event.
     #[inline]
-    pub fn event<T: Debug + Send + 'static>(&self) -> Option<&T> {
+    pub fn event<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         if !self.has_event_data {
             return None;
         }
@@ -170,7 +170,7 @@ impl Extensions {
     ///
     /// If no such data is attached yet, the default value is attached.
     #[inline]
-    pub fn event_mut<T: Default + Clone + Debug + Send + 'static>(&mut self) -> &mut T {
+    pub fn event_mut<T: Default + Clone + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         let index = match self.event_position(TypeId::of::<T>()) {
             Some(index) => index,
             None => self.insert_event::<T>(),
@@ -189,7 +189,7 @@ impl Extensions {
     }
 
     #[cold]
-    fn insert_event<T: Default + Clone + Debug + Send + 'static>(&mut self) -> usize {
+    fn insert_event<T: Default + Clone + Debug + Send + Sync + 'static>(&mut self) -> usize {
         self.events.push(EventEntry {
             key: TypeKey::of::<T>(),
             active: false,

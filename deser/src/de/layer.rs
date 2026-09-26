@@ -64,7 +64,7 @@ use crate::event::{Atom, Event};
 /// twice.  Information that layers keep in the state and that is needed
 /// for replayed values should be kept in replayable extensions (see
 /// [`State::set_replayable`]) which are captured with the events.
-pub trait Layer {
+pub trait Layer: Send {
     /// Processes an event.
     ///
     /// To pass the event on, invoke [`Next::emit`].

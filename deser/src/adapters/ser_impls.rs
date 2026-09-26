@@ -1,7 +1,6 @@
 //! Serialization adapters for the standard containers.
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::hash::BuildHasher;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::State;
@@ -12,7 +11,7 @@ use crate::ser::{Begin, Chunk, Describe, IndexedSeq, MapEmitter, SeqEmitter, Ser
 
 /// Returns a handle to a value that serializes with an adapter.
 #[inline(always)]
-fn handle_as<A: SerializeAs<T>, T>(value: &T) -> SerializeHandle<'_> {
+fn handle_as<A: SerializeAs<T>, T: Sync>(value: &T) -> SerializeHandle<'_> {
     SerializeHandle::to(SerializeAsRef::<A, T>::new(value))
 }
 
@@ -36,8 +35,8 @@ struct IterEmitter<'a, I, A>(I, std::marker::PhantomData<(&'a (), fn() -> A)>);
 
 impl<'a, I, T, A> SeqEmitter for IterEmitter<'a, I, A>
 where
-    I: Iterator<Item = &'a T>,
-    T: 'a,
+    I: Iterator<Item = &'a T> + Send,
+    T: Sync + 'a,
     A: SerializeAs<T>,
 {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
@@ -54,9 +53,9 @@ struct MapIterEmitter<'a, I, V, KA, VA> {
 
 impl<'a, I, K, V, KA, VA> MapEmitter for MapIterEmitter<'a, I, V, KA, VA>
 where
-    I: Iterator<Item = (&'a K, &'a V)>,
-    K: 'a,
-    V: 'a,
+    I: Iterator<Item = (&'a K, &'a V)> + Send,
+    K: Sync + 'a,
+    V: Sync + 'a,
     KA: SerializeAs<K>,
     VA: SerializeAs<V>,
 {
@@ -72,7 +71,7 @@ where
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
+impl<T: Sync, A: SerializeAs<T>> SerializeAs<Option<T>> for Option<A> {
     fn serialize_as<'a>(value: &'a Option<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
         match value {
             Some(value) => A::serialize_as(value, state),
@@ -156,19 +155,17 @@ macro_rules! serialize_as_pointer {
 }
 
 serialize_as_pointer! {
-    [T, A: SerializeAs<T>] Box<T> => Box<A>, T, A;
-    [T, A: SerializeAs<T>] Rc<T> => Rc<A>, T, A;
-    [T, A: SerializeAs<T>] Arc<T> => Arc<A>, T, A;
-    [T, A: SerializeAs<T>] Box<[T]> => Box<[A]>, [T], [A];
-    [T, A: SerializeAs<T>] Rc<[T]> => Rc<[A]>, [T], [A];
-    [T, A: SerializeAs<T>] Arc<[T]> => Arc<[A]>, [T], [A];
+    [T: Sync, A: SerializeAs<T>] Box<T> => Box<A>, T, A;
+    [T: Send + Sync, A: SerializeAs<T>] Arc<T> => Arc<A>, T, A;
+    [T: Sync, A: SerializeAs<T>] Box<[T]> => Box<[A]>, [T], [A];
+    [T: Send + Sync, A: SerializeAs<T>] Arc<[T]> => Arc<[A]>, [T], [A];
 }
 
 /// Implements `SerializeAs` for sequences which are serialized by iterating.
 macro_rules! serialize_as_iter_seq {
     ($($ty:ident),*) => {
         $(
-            impl<T, A: SerializeAs<T>> SerializeAs<$ty<T>> for $ty<A> {
+            impl<T: Sync, A: SerializeAs<T>> SerializeAs<$ty<T>> for $ty<A> {
                 fn serialize_as<'a>(value: &'a $ty<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
                     Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
                         value.iter(),
@@ -192,7 +189,7 @@ macro_rules! serialize_as_iter_seq {
 
 serialize_as_iter_seq!(VecDeque, LinkedList, BinaryHeap);
 
-impl<T, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
+impl<T: Sync, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
     #[inline]
     fn element(
         &self,
@@ -203,7 +200,7 @@ impl<T, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
+impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
     fn serialize_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
@@ -228,7 +225,7 @@ impl<T, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
     }
 }
 
-impl<T, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[A; N], [T; N]> {
+impl<T: Sync, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[A; N], [T; N]> {
     #[inline]
     fn element(
         &self,
@@ -239,7 +236,7 @@ impl<T, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[A; N],
     }
 }
 
-impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
+impl<T: Sync, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
     fn serialize_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
@@ -264,7 +261,7 @@ impl<T, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
+impl<T: Sync, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
     fn serialize_as<'a>(value: &'a [T], _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
@@ -292,6 +289,8 @@ impl<T, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
 
 impl<K, V, KA, VA> SerializeAs<BTreeMap<K, V>> for BTreeMap<KA, VA>
 where
+    K: Sync,
+    V: Sync,
     KA: SerializeAs<K>,
     VA: SerializeAs<V>,
 {
@@ -325,7 +324,9 @@ where
 
 impl<K, V, H, KA, VA> SerializeAs<HashMap<K, V, H>> for HashMap<KA, VA>
 where
-    H: BuildHasher,
+    K: Sync,
+    V: Sync,
+    H: BuildHasher + Sync,
     KA: SerializeAs<K>,
     VA: SerializeAs<V>,
 {
@@ -360,7 +361,7 @@ where
     }
 }
 
-impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
+impl<T: Sync, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
     fn serialize_as<'a>(value: &'a BTreeSet<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
             value.iter(),
@@ -392,7 +393,7 @@ impl<T, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
     }
 }
 
-impl<T, H: BuildHasher, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSet<A> {
+impl<T: Sync, H: BuildHasher + Sync, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSet<A> {
     fn serialize_as<'a>(value: &'a HashSet<T, H>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
             value.iter(),
@@ -434,7 +435,7 @@ macro_rules! count_one {
 macro_rules! serialize_as_for_tuple {
     () => ();
     ($(($name:ident, $adapter:ident),)+) => (
-        impl<$($name,)* $($adapter: SerializeAs<$name>),*> IndexedSeq
+        impl<$($name: Sync,)* $($adapter: SerializeAs<$name>),*> IndexedSeq
             for SerializeAsRef<($($adapter,)*), ($($name,)*)>
         {
             #[allow(non_snake_case)]
@@ -452,7 +453,7 @@ macro_rules! serialize_as_for_tuple {
             }
         }
 
-        impl<$($name,)* $($adapter: SerializeAs<$name>),*> SerializeAs<($($name,)*)> for ($($adapter,)*) {
+        impl<$($name: Sync,)* $($adapter: SerializeAs<$name>),*> SerializeAs<($($name,)*)> for ($($adapter,)*) {
             fn serialize_as<'a>(value: &'a ($($name,)*), _state: &mut State) -> Result<Chunk<'a>, Error> {
                 Ok(Chunk::Seq(Box::new(IndexedSeqEmitter {
                     seq: SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value),

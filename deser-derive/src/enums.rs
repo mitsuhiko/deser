@@ -443,7 +443,7 @@ pub fn derive_deserialize(
     let mut where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Deserialize<'de> + 'static),
-        Some(quote!('static)),
+        Some(quote!(__deser::__derive::Send + 'static)),
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
@@ -867,7 +867,7 @@ pub fn derive_serialize(
     let where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
-        None,
+        Some(quote!(__deser::__derive::Sync)),
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),

@@ -157,7 +157,7 @@ impl Recording {
     /// ```
     pub fn capture<'a, 'de, F>(then: F) -> SinkHandle<'a, 'de>
     where
-        F: FnOnce(Recording, &mut State) -> Result<(), Error> + 'a,
+        F: FnOnce(Recording, &mut State) -> Result<(), Error> + Send + 'a,
     {
         SinkHandle::boxed(CaptureSink {
             recording: Recording::new(),
@@ -240,7 +240,7 @@ fn record(recording: &mut Recording, is_root: bool, event: Event<'static>, state
     });
 }
 
-type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &mut State) -> Result<(), Error> + 'a>;
+type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &mut State) -> Result<(), Error> + Send + 'a>;
 
 /// Records a value into an owned recording and invokes a callback with it.
 struct CaptureSink<'a> {

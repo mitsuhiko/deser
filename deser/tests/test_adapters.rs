@@ -798,7 +798,7 @@ fn test_as_wrapper() {
 /// A value that serializes by forwarding to another value.
 struct Forwarding<'a> {
     inner: &'a dyn Serialize,
-    log: &'a std::cell::RefCell<Vec<&'static str>>,
+    log: &'a std::sync::Mutex<Vec<&'static str>>,
 }
 
 impl<'a> Serialize for Forwarding<'a> {
@@ -807,14 +807,14 @@ impl<'a> Serialize for Forwarding<'a> {
     }
 
     fn finish(&self, _state: &mut State) -> Result<(), Error> {
-        self.log.borrow_mut().push("outer");
+        self.log.lock().unwrap().push("outer");
         Ok(())
     }
 }
 
 struct Logged<'a, T> {
     value: T,
-    log: &'a std::cell::RefCell<Vec<&'static str>>,
+    log: &'a std::sync::Mutex<Vec<&'static str>>,
 }
 
 impl<'a, T: Serialize> Serialize for Logged<'a, T> {
@@ -823,14 +823,14 @@ impl<'a, T: Serialize> Serialize for Logged<'a, T> {
     }
 
     fn finish(&self, _state: &mut State) -> Result<(), Error> {
-        self.log.borrow_mut().push("inner");
+        self.log.lock().unwrap().push("inner");
         Ok(())
     }
 }
 
 #[test]
 fn test_forward() {
-    let log = std::cell::RefCell::new(Vec::new());
+    let log = std::sync::Mutex::new(Vec::new());
     for value in [
         &1u32 as &dyn Serialize,
         &vec![1u32, 2] as &dyn Serialize,
@@ -848,11 +848,11 @@ fn test_forward() {
         };
         let expected = serialize(value);
         assert_eq!(serialize(&outer), expected);
-        assert_eq!(&log.borrow()[..], ["inner", "outer", "outer"]);
-        log.borrow_mut().clear();
+        assert_eq!(&log.lock().unwrap()[..], ["inner", "outer", "outer"]);
+        log.lock().unwrap().clear();
         assert_eq!(serialize_drive(&outer), expected);
-        assert_eq!(&log.borrow()[..], ["inner", "outer", "outer"]);
-        log.borrow_mut().clear();
+        assert_eq!(&log.lock().unwrap()[..], ["inner", "outer", "outer"]);
+        log.lock().unwrap().clear();
 
         // within containers
         let values = vec![&outer as &dyn Serialize, &outer];
@@ -862,7 +862,7 @@ fn test_forward() {
         expected_seq.push(Event::SeqEnd);
         assert_eq!(serialize(&values), expected_seq);
         assert_eq!(serialize_drive(&values), expected_seq);
-        log.borrow_mut().clear();
+        log.lock().unwrap().clear();
     }
 }
 

@@ -41,7 +41,7 @@ fn struct_where_clause(
     where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
-        None,
+        Some(quote!(__deser::__derive::Sync)),
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),
@@ -459,7 +459,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let bounded_where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
-        None,
+        Some(quote!(__deser::__derive::Sync)),
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),

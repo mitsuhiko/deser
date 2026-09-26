@@ -7,7 +7,6 @@ use std::marker::PhantomData;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::num::{NonZero, Saturating, Wrapping};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicI8, AtomicI64, AtomicU32, AtomicUsize};
 
@@ -89,12 +88,9 @@ fn assert_err<T: DeserializeOwned + Debug>(events: Vec<Event<'_>>, kind: ErrorKi
 #[test]
 fn test_unsized_pointers() {
     assert_eq!(&*roundtrip(&Box::<str>::from("hi"), string("hi")), "hi");
-    assert_eq!(&*roundtrip(&Rc::<str>::from("hi"), string("hi")), "hi");
     assert_eq!(&*roundtrip(&Arc::<str>::from("hi"), string("hi")), "hi");
 
     let value: Box<[u32]> = vec![1, 2].into();
-    assert_eq!(*roundtrip(&value, ints(&[1, 2])), [1, 2]);
-    let value: Rc<[u32]> = vec![1, 2].into();
     assert_eq!(*roundtrip(&value, ints(&[1, 2])), [1, 2]);
     let value: Arc<[u32]> = vec![1, 2].into();
     assert_eq!(*roundtrip(&value, ints(&[1, 2])), [1, 2]);
@@ -108,16 +104,15 @@ fn test_unsized_pointers() {
 
 #[test]
 fn test_pointers() {
-    assert_eq!(*roundtrip(&Rc::new(42u32), ints(&[42])[1..2].to_vec()), 42);
     assert_eq!(*roundtrip(&Arc::new(42u32), ints(&[42])[1..2].to_vec()), 42);
-    let value = Rc::new(vec![Arc::new(true)]);
+    let value = Arc::new(vec![Arc::new(true)]);
     let rv = roundtrip(&value, seq([Event::Atom(Atom::Bool(true))]));
     assert!(*rv[0]);
 
     #[derive(Serialize, Deserialize)]
     struct Shared {
         name: Arc<str>,
-        tags: Rc<[String]>,
+        tags: Arc<[String]>,
     }
     let value: Shared = deserialize(vec![
         Event::map_start(),
@@ -445,9 +440,6 @@ fn test_adapters() {
         roundtrip(&value, seq(["1".into()])).into_inner().into_vec(),
         [1]
     );
-
-    let value: As<Rc<u32>, Rc<DisplayFromStr>> = As::new(Rc::new(1));
-    assert_eq!(**roundtrip(&value, string("1")), 1);
 
     let value: As<Arc<u32>, Arc<DisplayFromStr>> = As::new(Arc::new(1));
     assert_eq!(**roundtrip(&value, string("1")), 1);

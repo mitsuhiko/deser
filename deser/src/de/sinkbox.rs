@@ -164,6 +164,12 @@ pub(crate) struct SinkBox<'a, 'de> {
     _marker: PhantomData<Box<dyn Sink<'de> + 'a>>,
 }
 
+// SAFETY: the box owns the sink like a `Box<dyn Sink>` which is `Send` as
+// sinks are `Send`.  The block can be freed on another thread than it was
+// allocated on: all blocks come from the global allocator and the caches of
+// the threads only hold freed blocks.
+unsafe impl Send for SinkBox<'_, '_> {}
+
 impl<'a, 'de> SinkBox<'a, 'de> {
     /// Moves a sink to the heap.
     #[inline]
@@ -225,9 +231,9 @@ fn test_sink_box() {
     use crate::State;
     use crate::de::SinkHandle;
     use crate::{Atom, Error};
-    use std::rc::Rc;
+    use std::sync::Arc;
 
-    struct Tracked<const N: usize>(#[allow(dead_code)] Rc<()>, [u8; N]);
+    struct Tracked<const N: usize>(#[allow(dead_code)] Arc<()>, [u8; N]);
 
     impl<'de, const N: usize> Sink<'de> for Tracked<N> {
         fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
@@ -238,7 +244,7 @@ fn test_sink_box() {
     struct Zst;
     impl Sink<'_> for Zst {}
 
-    let rc = Rc::new(());
+    let rc = Arc::new(());
     let mut boxes = Vec::new();
     for _ in 0..3 {
         for _ in 0..40 {
@@ -247,14 +253,14 @@ fn test_sink_box() {
             boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 5000])));
             boxes.push(SinkBox::new(Zst));
         }
-        assert_eq!(Rc::strong_count(&rc), 121);
+        assert_eq!(Arc::strong_count(&rc), 121);
         // drop in a mixed order
         let mut index = 0;
         while !boxes.is_empty() {
             index = (index + 7) % boxes.len();
             boxes.swap_remove(index);
         }
-        assert_eq!(Rc::strong_count(&rc), 1);
+        assert_eq!(Arc::strong_count(&rc), 1);
     }
 
     // boxes also work through handles and across threads
@@ -262,9 +268,9 @@ fn test_sink_box() {
     drop(handle);
     std::thread::spawn(|| {
         let _a = SinkBox::<'_, '_>::new(Zst);
-        let _b = SinkBox::<'_, '_>::new(Tracked(Rc::new(()), [0u8; 10]));
+        let _b = SinkBox::<'_, '_>::new(Tracked(Arc::new(()), [0u8; 10]));
     })
     .join()
     .unwrap();
-    assert_eq!(Rc::strong_count(&rc), 1);
+    assert_eq!(Arc::strong_count(&rc), 1);
 }

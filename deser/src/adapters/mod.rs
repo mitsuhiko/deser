@@ -53,10 +53,9 @@
 //! * The adapters for bytes are in [`bytes`]: the encodings (for instance
 //!   [`Hex`](bytes::Hex)) and [`BytesFallback`](bytes::BytesFallback).
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
-//!   `Rc<U>`, `Arc<U>`, `Vec<U>`, `VecDeque<U>`, `LinkedList<U>`,
-//!   `BinaryHeap<U>`, `[U]`, `[U; N]`, `Box<[U]>`, `Rc<[U]>`, `Arc<[U]>`,
-//!   `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<U>`, `HashSet<U>` and
-//!   tuples.
+//!   `Arc<U>`, `Vec<U>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>`,
+//!   `[U]`, `[U; N]`, `Box<[U]>`, `Arc<[U]>`, `BTreeMap<K, V>`,
+//!   `HashMap<K, V>`, `BTreeSet<U>`, `HashSet<U>` and tuples.
 //!
 //! # Implementing Adapters
 //!
@@ -389,7 +388,7 @@ impl<A, T: ?Sized> SerializeAsRef<A, T> {
     }
 }
 
-impl<A: SerializeAs<T>, T: ?Sized> Serialize for SerializeAsRef<A, T> {
+impl<A: SerializeAs<T>, T: ?Sized + Sync> Serialize for SerializeAsRef<A, T> {
     #[inline]
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         A::serialize_as(&self.value, state)
@@ -522,7 +521,7 @@ impl<T: Hash, A> Hash for As<T, A> {
     }
 }
 
-impl<'de, T, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
+impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         crate::de::mapped::MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), |value| {
             Ok(As::new(value))
@@ -558,7 +557,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
     }
 }
 
-impl<T, A: SerializeAs<T>> Serialize for As<T, A> {
+impl<T: Sync, A: SerializeAs<T>> Serialize for As<T, A> {
     #[inline]
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         A::serialize_as(&self.value, state)

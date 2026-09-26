@@ -190,7 +190,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let bounded_where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Deserialize<'de>),
-        None,
+        Some(quote!(__deser::__derive::Send)),
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
@@ -722,7 +722,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let bounded_where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Deserialize<'de>),
-        None,
+        Some(quote!(__deser::__derive::Send)),
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),

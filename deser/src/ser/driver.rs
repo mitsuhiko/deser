@@ -82,6 +82,11 @@ pub(crate) struct Held {
     owned: bool,
 }
 
+// SAFETY: a held value is either a borrowed `&dyn Serialize` (which is
+// `Send` as serializables are `Sync`) or an owned
+// `Box<dyn Serialize + Send>`.
+unsafe impl Send for Held {}
+
 impl Held {
     /// Creates a held value from a handle.
     ///
@@ -94,6 +99,7 @@ impl Held {
             let (ptr, owned) = match handle {
                 SerializeHandle::Borrowed(value) => (NonNull::from(value), false),
                 SerializeHandle::Owned(value) => {
+                    let value: Box<dyn Serialize + '_> = value;
                     (NonNull::new_unchecked(Box::into_raw(value)), true)
                 }
             };
@@ -147,6 +153,13 @@ impl<'a> Drop for SerializeDriver<'a> {
 }
 
 const STACK_CAPACITY: usize = 128;
+
+// an ongoing serialization can move between threads, for instance when it
+// is suspended while waiting for IO.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<SerializeDriver<'static>>();
+};
 
 type NextEvent<'a> = Option<(Event<'a>, &'a dyn Serialize)>;
 
