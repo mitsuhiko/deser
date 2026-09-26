@@ -181,6 +181,13 @@ x = 1
     let mut map = BTreeMap::new();
     map.insert('c', 1);
     assert_eq!(to_string(&map).unwrap(), "c = 1\n");
+    let map = BTreeMap::from([(false, 1), (true, 2)]);
+    let toml = to_string(&map).unwrap();
+    assert_eq!(toml, "false = 1\ntrue = 2\n");
+    assert_eq!(
+        deser_toml::from_str::<BTreeMap<bool, u32>>(&toml).unwrap(),
+        map
+    );
 }
 
 #[test]

@@ -604,6 +604,7 @@ impl Output {
                 self.write_i64(val);
                 self.write_char('"');
             }
+            Atom::Bool(val) => self.write_str(if val { "\"true\"" } else { "\"false\"" }),
             Atom::Ext(ref ext) => self.write_ext_key(ext)?,
             Atom::Bytes(ref val) => self.write_bytes_str(val, val.fallback),
             _ => {
@@ -757,6 +758,7 @@ impl Output {
                 self.write_i64(val);
                 self.write_char('"');
             }
+            Atom::Bool(val) => self.write_str(if val { "\"true\"" } else { "\"false\"" }),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,

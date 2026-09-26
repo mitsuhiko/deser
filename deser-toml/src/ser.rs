@@ -266,10 +266,7 @@ impl Builder {
                     self.done = self.stack.is_empty();
                     Ok(())
                 }
-                _ => Err(Error::new(
-                    ErrorKind::UnsupportedType,
-                    "TOML only supports strings and integers as keys",
-                )),
+                _ => Err(unsupported_key()),
             },
             Frame::Table(id, ref mut key @ Some(_)) => {
                 let key = key.take().unwrap();
@@ -453,6 +450,7 @@ fn key_to_string(atom: Atom, bytes: BytesFormat) -> Result<String, Error> {
         Atom::Char(value) => value.to_string(),
         Atom::U64(value) => value.to_string(),
         Atom::I64(value) => value.to_string(),
+        Atom::Bool(value) => value.to_string(),
         Atom::Bytes(value) => encode_str(&value, value.fallback, bytes),
         Atom::Ext(ref ext) => {
             if let Some(value) = ext.downcast_ref::<u128>() {
@@ -474,7 +472,7 @@ fn key_to_string(atom: Atom, bytes: BytesFormat) -> Result<String, Error> {
 fn unsupported_key() -> Error {
     Error::new(
         ErrorKind::UnsupportedType,
-        "TOML only supports strings and integers as keys",
+        "TOML only supports strings, integers and booleans as keys",
     )
 }
 

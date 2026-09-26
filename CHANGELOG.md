@@ -19,6 +19,8 @@ All notable changes to deser are documented here.
   serializing.  Flattened maps silently stayed empty and failed to
   serialize before.  `deser_value::Value` and `deser_value::Map` can be
   flattened the same way.
+- JSON and TOML serialize `bool` map keys as strings (`{"true": 1}`) like
+  `serde_json`, which they can also be deserialized from.
 - Flattened `Option`s are `None` if no key was given for them and `None`
   serializes no fields.  Both failed before.  Unlike serde, errors in the
   value are reported and not turned into `None`.

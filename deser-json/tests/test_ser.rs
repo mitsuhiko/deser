@@ -59,6 +59,14 @@ fn test_map_keys() {
     let mut map = BTreeMap::new();
     map.insert('x', 1u32);
     assert_eq!(to_string(&map).unwrap(), r#"{"x":1}"#);
+
+    let map = BTreeMap::from([(false, 1u32), (true, 2)]);
+    let json = to_string(&map).unwrap();
+    assert_eq!(json, r#"{"false":1,"true":2}"#);
+    assert_eq!(
+        deser_json::from_str::<BTreeMap<bool, u32>>(&json).unwrap(),
+        map
+    );
 }
 
 #[test]
