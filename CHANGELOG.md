@@ -4,6 +4,40 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Removed `Descriptor`.  The information it carried moved to where it
+  belongs:
+  - Bytes carry the format for formats without native bytes as
+    `Bytes::fallback`: `Atom::Bytes` holds a `Bytes` (which dereferences to
+    `[u8]`) instead of a `Cow<[u8]>`.  `BytesFallback` sets it.
+  - The start events of maps and sequences carry a `ContainerShape`:
+    `Event::MapStart(ContainerShape)` and `Event::SeqStart(ContainerShape)`
+    (`Event::map_start()` and `Event::seq_start()` create the default).  It
+    holds the `Order` of the elements (`HashMap` and `HashSet` are
+    `Order::Arbitrary`, `BTreeMap` and `BTreeSet` `Order::Sorted`) and the
+    number of elements if known.  Types report it with
+    `Serialize::container_shape` (`SerializeAs::container_shape_as`), sinks
+    read it with `State::container_shape`.
+  - Names are only used for error messages: sinks provide them with
+    `Sink::expecting`, `Sink::descriptor` is gone.
+  - The precision of numbers is gone.  Floats are `f64`, `f32` values are
+    written as the `f64` they widen to (`0.1f32` is written as
+    `0.10000000149011612` in JSON and TOML).
+  - The serialize driver callback, `Layer::event` and `Next::emit` no
+    longer receive a descriptor, `SerializeDriver::next` returns the event,
+    the value and the state, `State::top_descriptor` is gone.
+
+  Serialization got 4-12% faster.
+- Added `Serialize::describe` and `deser::ser::Describe` with which values
+  describe their Rust shape: structs, newtypes, enum variants (with their
+  kind and representation), `Option`, tuples and sets.  The derive and the
+  standard types implement it.  Formats that want the description use
+  `SerializeDriver::drive_described` which passes the value of every event.
+  `deser-debug` uses it and formats values like `#[derive(Debug)]` (including
+  struct and newtype names).
+- `deser-cbor` writes definite lengths directly if the length of a
+  container is known and fails if the number of items does not match.  It
+  passes the declared lengths of its input on, which `Vec`, `HashMap` and
+  `HashSet` use to preallocate (at most 1 MiB).
 - Raised the minimum supported Rust version to 1.88 and moved all crates to
   the 2024 edition.  The minimum version is now declared as `rust-version`
   and tested on CI.
