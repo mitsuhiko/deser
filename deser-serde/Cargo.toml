@@ -16,15 +16,9 @@ autotests = false
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[features]
-# Adds the `SerdeCoroutine` adapter which runs serde on a stackful
-# coroutine instead of buffering.
-coroutine = ["dep:corosensei"]
-
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
 serde = { version = "1.0.200", default-features = false, features = ["std"] }
-corosensei = { version = "0.3.4", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

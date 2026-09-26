@@ -44,5 +44,4 @@ assert_eq!(
 ```
 
 serde and deser drive values in opposite directions, so compound values are
-buffered by `Serde`.  With the `coroutine` feature the `SerdeCoroutine`
-adapter streams them instead by running serde on a stackful coroutine.
+buffered by `Serde`.

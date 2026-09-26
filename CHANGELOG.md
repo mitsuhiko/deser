@@ -200,9 +200,7 @@ All notable changes to deser are documented here.
 - `deser-yaml` supports the `!!timestamp` tag (as `Datetime`).
 - Added `deser-serde` with the `Serde` adapter which serializes and
   deserializes values with their serde implementations
-  (`#[deser(as = Serde)]`).  Compound values are buffered.  With the
-  `coroutine` feature the `SerdeCoroutine` adapter streams them instead by
-  running serde on a stackful coroutine (corosensei).
+  (`#[deser(as = Serde)]`).  Compound values are buffered.
 - Added `deser-toml` which implements TOML 1.1 from scratch.  It passes the
   toml-test suite, supports date-times through the well-known `Datetime`
   type, writes maps as tables and sequences of maps as arrays of tables and

@@ -352,6 +352,3 @@ macro_rules! adapter_tests {
 }
 
 adapter_tests!(buffered, deser_serde::Serde);
-
-#[cfg(feature = "coroutine")]
-adapter_tests!(coroutine, deser_serde::SerdeCoroutine);
