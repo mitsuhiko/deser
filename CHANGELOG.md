@@ -33,6 +33,13 @@ All notable changes to deser are documented here.
   now have locations too.  The syntax errors of `deser-yaml` and
   `deser-cbor` read `syntax error: ... at line L column C` and
   `syntax error: ... at offset N`.
+- `deser-json` can read streams of values like the CBOR and YAML
+  deserializers: `Deserializer::deserialize` reads the next value and
+  `is_end`, `end`, `iter` and `offset` were added.  What may follow a value
+  is controlled by `DeserializerConfig::trailing`: `Trailing::Strict` (the
+  default) only allows whitespace, `Trailing::Newline` reads JSON Lines
+  (NDJSON) where errors only skip their line and `Trailing::Stop` stops
+  after the value regardless of what follows.
 - `deser-cbor` publishes the byte ranges of data items as input ranges.
 - `deser-path` was rewritten as a layer: `PathLayer` replaces `PathSink` and
   `PathSerializable` and works in both directions.  It adds the path to

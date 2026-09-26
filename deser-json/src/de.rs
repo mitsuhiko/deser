@@ -1,4 +1,6 @@
+use std::marker::PhantomData;
 use std::str;
+use std::sync::Arc;
 
 use deser::de::{Deserialize, DeserializeDriver, Format};
 use deser::ext::{ExtValue, Number as ExactNumber};
@@ -46,6 +48,33 @@ macro_rules! overflow {
     };
 }
 
+/// Controls what may follow a value.
+///
+/// See [`DeserializerConfig::trailing`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Trailing {
+    /// Only whitespace may follow the value.
+    ///
+    /// This is the default.  Anything else after the value is an error.
+    #[default]
+    Strict,
+    /// Every value is on a line of its own ([JSON
+    /// Lines](https://jsonlines.org/), also known as NDJSON).
+    ///
+    /// Only whitespace may follow a value on its line, the next line holds
+    /// the next value.  Lines that only contain whitespace are skipped.
+    /// Errors are contained to their line: if a line fails to deserialize
+    /// (even if it's malformed) the next call to
+    /// [`Deserializer::deserialize`] continues with the next line.
+    Newline,
+    /// Parsing stops after the value, regardless of what follows.
+    ///
+    /// The data after the value is not looked at.  The next call to
+    /// [`Deserializer::deserialize`] continues after the value (see
+    /// [`Deserializer::offset`]), which also reads concatenated JSON.
+    Stop,
+}
+
 /// Configures how JSON is deserialized.
 ///
 /// The configuration is independent of the input so it can be created once
@@ -66,6 +95,7 @@ macro_rules! overflow {
 pub struct DeserializerConfig {
     track_locations: bool,
     exact_numbers: bool,
+    trailing: Trailing,
 }
 
 impl Default for DeserializerConfig {
@@ -80,7 +110,45 @@ impl DeserializerConfig {
         DeserializerConfig {
             track_locations: false,
             exact_numbers: true,
+            trailing: Trailing::Strict,
         }
+    }
+
+    /// Controls what may follow a value.
+    ///
+    /// By default ([`Trailing::Strict`]) only whitespace may follow the
+    /// value.  [`Trailing::Newline`] reads [JSON
+    /// Lines](https://jsonlines.org/) and [`Trailing::Stop`] stops after
+    /// the value without looking at what follows:
+    ///
+    /// ```
+    /// use deser_json::{DeserializerConfig, Trailing};
+    ///
+    /// assert!(deser_json::from_str::<Vec<u32>>("[1] trash").is_err());
+    /// const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+    /// assert_eq!(STOP.from_str::<Vec<u32>>("[1] trash").unwrap(), [1]);
+    /// ```
+    ///
+    /// With [`Trailing::Newline`] a [`Deserializer`] reads the lines one by
+    /// one.  Errors only discard their line:
+    ///
+    /// ```
+    /// use deser_json::{Deserializer, DeserializerConfig, Trailing};
+    ///
+    /// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+    /// let mut de = Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
+    /// let mut values = Vec::new();
+    /// while !de.is_end() {
+    ///     match de.deserialize::<u32>() {
+    ///         Ok(value) => values.push(value),
+    ///         Err(err) => assert_eq!(err.line(), Some(3)),
+    ///     }
+    /// }
+    /// assert_eq!(values, [1, 3]);
+    /// ```
+    pub const fn trailing(mut self, trailing: Trailing) -> DeserializerConfig {
+        self.trailing = trailing;
+        self
     }
 
     /// Enables or disables location tracking.
@@ -126,6 +194,9 @@ impl DeserializerConfig {
     }
 
     /// Deserializes JSON from the given string.
+    ///
+    /// What may follow the value depends on [`trailing`](Self::trailing).
+    /// With [`Trailing::Newline`] this reads the first line.
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
         Deserializer::from_str_with_config(s, self).deserialize()
     }
@@ -142,16 +213,36 @@ impl DeserializerConfig {
 
 /// Deserializes a serializable from JSON.
 ///
-/// Most of the time the [`from_str`](crate::from_str) and
-/// [`from_slice`](crate::from_slice) functions (or the methods of the same
-/// name on [`DeserializerConfig`]) are all that is needed.  The
-/// deserializer is useful to [`drive`](Self::drive) a custom sink.
+/// Every call to [`deserialize`](Self::deserialize) reads the next value.
+/// What may follow a value is controlled by
+/// [`DeserializerConfig::trailing`].  By default only whitespace may follow
+/// so there is only a single value.  With [`Trailing::Newline`] the
+/// deserializer reads [JSON Lines](https://jsonlines.org/):
+///
+/// ```
+/// use deser_json::{Deserializer, DeserializerConfig, Trailing};
+///
+/// let config = DeserializerConfig::new().trailing(Trailing::Newline);
+/// let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
+/// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
+/// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [3]);
+/// assert!(de.is_end());
+/// ```
+///
+/// To deserialize a single value, use [`from_str`](crate::from_str) and
+/// [`from_slice`](crate::from_slice) (or the methods of the same name on
+/// [`DeserializerConfig`]).  The deserializer is also useful to
+/// [`drive`](Self::drive) a custom sink.
 pub struct Deserializer<'a> {
     input: &'a [u8],
     pos: usize,
     buffer: Vec<u8>,
     // `true` if the input is a byte slice which needs to be validated
     validate_utf8: bool,
+    // `true` if a value failed and the stream cannot be continued
+    failed: bool,
+    // the input as source for location tracking, shared by all values
+    source: Option<Arc<str>>,
     config: DeserializerConfig,
 }
 
@@ -178,6 +269,8 @@ impl<'a> Deserializer<'a> {
             validate_utf8: false,
             pos: 0,
             buffer: Vec::new(),
+            failed: false,
+            source: None,
             config: config.clone(),
         }
     }
@@ -204,6 +297,8 @@ impl<'a> Deserializer<'a> {
             validate_utf8: true,
             pos: 0,
             buffer: Vec::new(),
+            failed: false,
+            source: None,
             config: config.clone(),
         }
     }
@@ -211,6 +306,37 @@ impl<'a> Deserializer<'a> {
     /// Returns the configuration.
     pub fn config(&self) -> &DeserializerConfig {
         &self.config
+    }
+
+    /// Returns the current offset in the input.
+    pub fn offset(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns `true` if there are no more values.
+    ///
+    /// This is the case if only whitespace is left or if a value failed and
+    /// the stream cannot be continued (see [`deserialize`](Self::deserialize)).
+    pub fn is_end(&self) -> bool {
+        self.failed || self.input[self.pos..].iter().all(|&b| is_whitespace(b))
+    }
+
+    /// Fails if there is more than whitespace left.
+    ///
+    /// This is useful with [`Trailing::Stop`] to check that the input was
+    /// consumed.
+    pub fn end(&self) -> Result<(), Error> {
+        if self.is_end() {
+            return Ok(());
+        }
+        let offset = self.pos
+            + self.input[self.pos..]
+                .iter()
+                .position(|&b| !is_whitespace(b))
+                .unwrap_or(0);
+        Err(Error::new(ErrorKind::Unexpected, "garbage after input")
+            .with_offset(offset)
+            .resolve_position(self.input))
     }
 
     /// Returns the input as string for the source.
@@ -225,7 +351,17 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    /// Deserializes the value.
+    /// Deserializes the next value.
+    ///
+    /// What may follow the value depends on
+    /// [`DeserializerConfig::trailing`].  Fails with
+    /// [`ErrorKind::EndOfFile`] if there are no more values.
+    ///
+    /// If a value fails to deserialize (because it's malformed or does not
+    /// match the type), the stream ends: [`is_end`](Self::is_end) returns
+    /// `true` and further calls fail.  With [`Trailing::Newline`] only the
+    /// rest of the line is skipped and the next call continues with the
+    /// next line.
     ///
     /// To configure the deserialization (for instance to add layers) use
     /// [`Format::deserialize_with`].
@@ -233,7 +369,28 @@ impl<'a> Deserializer<'a> {
         Format::deserialize(self)
     }
 
-    /// Parses the input and feeds the events into the given driver.
+    /// Returns an iterator over the remaining values.
+    ///
+    /// This is useful to read JSON Lines (see [`Trailing::Newline`]).  The
+    /// iterator stops after the first error.
+    ///
+    /// ```
+    /// use deser_json::{Deserializer, DeserializerConfig, Trailing};
+    ///
+    /// let config = DeserializerConfig::new().trailing(Trailing::Newline);
+    /// let mut de = Deserializer::from_str_with_config("1\n2\n3\n", &config);
+    /// let items = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
+    /// assert_eq!(items, [1, 2, 3]);
+    /// ```
+    pub fn iter<T: Deserialize<'a>>(&mut self) -> Iter<'_, 'a, T> {
+        Iter {
+            de: self,
+            failed: false,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Parses the next value and feeds the events into the given driver.
     ///
     /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink).
     /// See also [`Format::deserialize_with`].
@@ -242,16 +399,54 @@ impl<'a> Deserializer<'a> {
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
     /// Errors carry the location in the input (see [`Error::line`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if self.failed {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "cannot continue after an error",
+            ));
+        }
+        if self.config.track_locations {
+            let source = match self.source {
+                Some(ref source) => source.clone(),
+                None => {
+                    let source: Arc<str> = self.source().into();
+                    self.source = Some(source.clone());
+                    source
+                }
+            };
+            driver.state_mut().set_source(source);
+        }
+
+        // for JSON Lines the input is cut off at the end of the line.  The
+        // parser then fails if the value does not end on the line.
+        let input = self.input;
+        let line_end = if self.config.trailing == Trailing::Newline {
+            self.parse_whitespace();
+            let end = input[self.pos..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(input.len(), |idx| self.pos + idx);
+            self.input = &input[..end];
+            Some(end)
+        } else {
+            None
+        };
+
         // the scratch buffer for strings is moved out of the deserializer
         // so that tokens borrowing from it do not borrow the deserializer.
         let mut buffer = std::mem::take(&mut self.buffer);
-        if self.config.track_locations {
-            let source = self.source();
-            driver.state_mut().set_source(source);
-        }
         let rv = self.drive_impl(driver, &mut buffer);
         self.buffer = buffer;
-        rv.map_err(|err| self.locate_error(err))
+        self.input = input;
+
+        let rv = rv.map_err(|err| self.locate_error(err));
+        match line_end {
+            // the rest of the line is skipped, even after errors
+            Some(end) => self.pos = end,
+            // after an error the position within the value is unknown
+            None => self.failed = rv.is_err() && !self.is_end(),
+        }
+        rv
     }
 
     /// Attaches the location to an error.
@@ -372,13 +567,7 @@ impl<'a> Deserializer<'a> {
             // value follows.
             loop {
                 let close = match container {
-                    Container::Top => {
-                        return if self.parse_whitespace().is_some() {
-                            Err(Error::new(ErrorKind::Unexpected, "garbage after input"))
-                        } else {
-                            Ok(())
-                        };
-                    }
+                    Container::Top => return self.finish_value(),
                     Container::Map => b'}',
                     Container::Seq => b']',
                 };
@@ -421,6 +610,21 @@ impl<'a> Deserializer<'a> {
                 }
             }
         }
+    }
+
+    /// Checks what follows a complete value.
+    #[inline]
+    fn finish_value(&mut self) -> Result<(), Error> {
+        let msg = match self.config.trailing {
+            Trailing::Strict => "garbage after input",
+            // the input was cut off at the end of the line
+            Trailing::Newline => "expected end of line after value",
+            Trailing::Stop => return Ok(()),
+        };
+        if self.parse_whitespace().is_some() {
+            return Err(Error::new(ErrorKind::Unexpected, msg));
+        }
+        Ok(())
     }
 
     /// Parses a map key and the colon after it.
@@ -1094,6 +1298,34 @@ fn emit_big_int(driver: &mut DeserializeDriver<'_, '_>, text: &str) -> Result<()
     }
 }
 
+/// Returns `true` for JSON whitespace.
+#[inline]
+fn is_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
+}
+
+/// An iterator over the values of a JSON stream.
+///
+/// See [`Deserializer::iter`].
+pub struct Iter<'b, 'a, T> {
+    de: &'b mut Deserializer<'a>,
+    failed: bool,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
+    type Item = Result<T, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.failed || self.de.is_end() {
+            return None;
+        }
+        let rv = self.de.deserialize();
+        self.failed = rv.is_err();
+        Some(rv)
+    }
+}
+
 impl<'a> Format<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         Deserializer::drive(self, driver)
@@ -1102,9 +1334,12 @@ impl<'a> Format<'a> for Deserializer<'a> {
 
 /// Deserializes JSON from the given string.
 ///
-/// This uses the default [`DeserializerConfig`].
+/// The input must contain exactly one value, only whitespace may follow it.
+/// To read multiple values (for instance JSON Lines) use a [`Deserializer`]
+/// with [`Trailing::Newline`].  This uses the default
+/// [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    Deserializer::from_str(s).deserialize()
+    DeserializerConfig::new().from_str(s)
 }
 
 /// Deserializes JSON from the given bytes.
@@ -1113,5 +1348,5 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// strings are validated while parsing (see [`Deserializer::from_slice`]).
 /// This uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    Deserializer::from_slice(bytes).deserialize()
+    DeserializerConfig::new().from_slice(bytes)
 }

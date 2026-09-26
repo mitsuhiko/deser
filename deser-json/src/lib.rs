@@ -46,6 +46,36 @@
 //! assert_eq!(user.name, "Peter");
 //! ```
 //!
+//! # JSON Lines
+//!
+//! By default only whitespace may follow a value.  What may follow is
+//! controlled by [`DeserializerConfig::trailing`] (see [`Trailing`]).  With
+//! [`Trailing::Newline`] a [`Deserializer`] reads
+//! [JSON Lines](https://jsonlines.org/) (also known as NDJSON) one by one:
+//!
+//! ```rust
+//! use deser_json::{Deserializer, DeserializerConfig, Trailing};
+//!
+//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
+//! let lines = de.iter::<Vec<u32>>().collect::<Result<Vec<_>, _>>().unwrap();
+//! assert_eq!(lines, [vec![1, 2], vec![3]]);
+//! ```
+//!
+//! Errors only discard their line, so the remaining lines can still be
+//! read.  [`Trailing::Stop`] stops after the value without looking at what
+//! follows.  The serializer never writes line breaks, so JSON Lines are
+//! written by adding a newline after every value:
+//!
+//! ```rust
+//! let mut out = String::new();
+//! for value in [vec![1, 2], vec![3]] {
+//!     out.push_str(&deser_json::to_string(&value).unwrap());
+//!     out.push('\n');
+//! }
+//! assert_eq!(out, "[1,2]\n[3]\n");
+//! ```
+//!
 //! By default this crate has no dependency crates other than `deser`, but optionally
 //! the `speedups` feature can be enabled in which case the `ryu` and `itoa` crates are
 //! used for number formatting and `simdutf8` is used to validate UTF-8 when parsing
@@ -55,5 +85,5 @@ mod de;
 mod scan;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig};
+pub use self::de::{from_slice, from_str, Deserializer, DeserializerConfig, Iter, Trailing};
 pub use self::ser::{to_string, SerializerConfig};
