@@ -7,7 +7,7 @@ use deser::ser::{Layer, Next};
 use deser::{Deserialize, Serialize};
 use deser_yaml::style::{DoubleQuoted, Folded, Literal, Plain, ScalarStyle, SingleQuoted};
 use deser_yaml::{
-    DeserializerConfig, FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer,
+    DeserializerConfig, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer,
     SerializerConfig, Tagged, Version, from_str, to_string,
 };
 
@@ -74,7 +74,7 @@ volumes: []
 fn test_indentless_sequences() {
     const CONFIG: SerializerConfig = SerializerConfig::new()
         .indent_sequences(false)
-        .indent(4)
+        .indent(Indent::Spaces(4))
         .compat(Version::V1_2);
     let yaml = CONFIG.to_string(&service()).unwrap();
     assert_eq!(
@@ -100,6 +100,57 @@ volumes: []
 "
     );
     assert_eq!(from_str::<Service>(&yaml).unwrap(), service());
+}
+
+#[test]
+fn test_single_line() {
+    const LINE: SerializerConfig = SerializerConfig::new()
+        .indent(Indent::None)
+        .compat(Version::V1_2);
+    let yaml = LINE.to_string(&service()).unwrap();
+    assert_eq!(
+        yaml,
+        "{image: nginx, ports: [80, 443], command: null, labels: {env: prod, tier: web}, \
+         origin: {x: 1, y: 2}, points: [{x: 1, y: 2}, {x: 3, y: 4}], volumes: []}\n"
+    );
+    assert_eq!(from_str::<Service>(&yaml).unwrap(), service());
+
+    // scalar documents and strings with line breaks stay on the line
+    assert_eq!(LINE.to_string(&"a\nb").unwrap(), "\"a\\nb\"\n");
+    assert_eq!(LINE.to_string(&vec!["a\nb"]).unwrap(), "[\"a\\nb\"]\n");
+    assert_eq!(LINE.to_string(&"x").unwrap(), "x\n");
+    assert_eq!(LINE.to_string(&Vec::<u32>::new()).unwrap(), "[]\n");
+
+    // the flow policy and expanded hints have no effect, bytes are not
+    // wrapped
+    #[derive(Serialize)]
+    struct Hinted {
+        #[deser(as = Expanded)]
+        items: Vec<u32>,
+        data: Vec<u8>,
+    }
+    let value = Hinted {
+        items: vec![1, 2],
+        data: vec![0; 100],
+    };
+    let yaml = LINE
+        .flow(FlowPolicy::LeafIfFits(8))
+        .to_string(&value)
+        .unwrap();
+    assert_eq!(yaml.lines().count(), 1, "{}", yaml);
+    assert!(yaml.starts_with("{items: [1, 2], data: !!binary AAAA"));
+
+    // tags and keys that are collections
+    let value = Value::Map(vec![
+        (
+            Value::Seq(vec![1i64.into()]),
+            Value::Tagged("!point".into(), Box::new(Value::Map(vec![]))),
+        ),
+        ("k".into(), Value::Null),
+    ]);
+    let yaml = LINE.null_style(NullStyle::Empty).to_string(&value).unwrap();
+    assert_eq!(yaml, "{? [1]: !point {}, k: null}\n");
+    assert_eq!(from_str::<Value>(&yaml).unwrap(), value);
 }
 
 #[test]
@@ -199,8 +250,11 @@ fn test_block_scalars() {
     ] {
         for config in [
             SerializerConfig::new(),
-            SerializerConfig::new().indent(4),
-            SerializerConfig::new().indent_sequences(false).indent(1),
+            SerializerConfig::new().indent(Indent::Spaces(4)),
+            SerializerConfig::new()
+                .indent_sequences(false)
+                .indent(Indent::Spaces(1)),
+            SerializerConfig::new().indent(Indent::None),
         ] {
             for doc in [
                 Value::from(value),

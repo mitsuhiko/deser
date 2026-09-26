@@ -24,8 +24,8 @@ use std::process::ExitCode;
 
 use deser_yaml::__private::parse_to_test_events;
 use deser_yaml::{
-    Deserializer, FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
-    Version,
+    Deserializer, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer,
+    SerializerConfig, Version,
 };
 
 mod common;
@@ -177,7 +177,9 @@ fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
         ("default", SerializerConfig::new()),
         (
             "indentless",
-            SerializerConfig::new().indent_sequences(false).indent(4),
+            SerializerConfig::new()
+                .indent_sequences(false)
+                .indent(Indent::Spaces(4)),
         ),
         (
             "quoted",
@@ -189,7 +191,7 @@ fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
         (
             "compact",
             SerializerConfig::new()
-                .indent(1)
+                .indent(Indent::Spaces(1))
                 .compat(Version::V1_2)
                 .null_style(NullStyle::Empty),
         ),
@@ -203,6 +205,7 @@ fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
                 .flow(FlowPolicy::LeafIfFits(8))
                 .fold_width(Some(4)),
         ),
+        ("single line", SerializerConfig::new().indent(Indent::None)),
     ]
 }
 
@@ -232,6 +235,15 @@ fn check_roundtrip(case: &Case) -> Outcome {
             }
             Err(_) => return Outcome::Fail(format!("[{}] serializer panicked", name)),
         };
+        // without indentation every document is on a line of its own
+        if config == SerializerConfig::new().indent(Indent::None)
+            && output.lines().filter(|line| *line != "---").count() != docs.len()
+        {
+            return Outcome::Fail(format!(
+                "[{}] documents are not on single lines\n  output:\n{}",
+                name, output
+            ));
+        }
         let reparsed = Deserializer::from_str(&output)
             .iter::<Value>()
             .collect::<Result<Vec<_>, _>>();

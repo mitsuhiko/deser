@@ -5,6 +5,29 @@ use deser::{Error, Serialize};
 use crate::emit::Emitter;
 use crate::resolve::Version;
 
+/// How the output is indented.
+///
+/// See [`SerializerConfig::indent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Indent {
+    /// No indentation: the document is written on a single line in flow
+    /// style (`{name: web, ports: [80, 443]}`).
+    None,
+    /// Block style indented by the given number of spaces per level.
+    ///
+    /// YAML does not allow tabs for indentation.  Values outside of
+    /// `1..=9` are clamped as indentation indicators of block scalars are
+    /// single digits.
+    Spaces(usize),
+}
+
+impl Default for Indent {
+    fn default() -> Indent {
+        Indent::Spaces(2)
+    }
+}
+
 /// How strings are quoted when they cannot be written plain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
@@ -64,7 +87,8 @@ pub enum NullStyle {
 /// YAML allows the same data to be written in many ways.  The defaults
 /// follow what is common for hand-written YAML:
 ///
-/// * block collections, sequences in mappings are indented
+/// * block collections indented by two spaces (see [`indent`](Self::indent)),
+///   sequences in mappings are indented
 ///   ([`indent_sequences`](Self::indent_sequences)), empty collections are
 ///   written as `{}` and `[]`.  Compact collections (see
 ///   [`hints`](deser::hints)) are written in flow style, see
@@ -93,7 +117,7 @@ pub enum NullStyle {
 /// [`to_string`](crate::to_string) function.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
-    pub(crate) indent: usize,
+    pub(crate) indent: Indent,
     pub(crate) indent_sequences: bool,
     pub(crate) flow: FlowPolicy,
     pub(crate) fold_width: Option<usize>,
@@ -119,7 +143,7 @@ impl SerializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> SerializerConfig {
         SerializerConfig {
-            indent: 2,
+            indent: Indent::Spaces(2),
             indent_sequences: true,
             flow: FlowPolicy::Never,
             fold_width: None,
@@ -136,18 +160,47 @@ impl SerializerConfig {
         }
     }
 
-    /// Sets the number of spaces per indentation level.
+    /// Sets how the output is indented.
     ///
-    /// The default is 2.  Values outside of `1..=9` are clamped.
-    pub const fn indent(mut self, indent: usize) -> SerializerConfig {
-        self.indent = if indent < 1 {
-            1
-        } else if indent > 9 {
-            9
-        } else {
-            indent
+    /// The default is [`Indent::Spaces(2)`](Indent::Spaces), values outside
+    /// of `1..=9` are clamped.  With [`Indent::None`] documents are written
+    /// on a single line in flow style, the [flow policy](Self::flow) and
+    /// [`Layout`](deser::hints::Layout) hints have no effect then:
+    ///
+    /// ```
+    /// use deser::Serialize;
+    /// use deser_yaml::{Indent, SerializerConfig};
+    ///
+    /// #[derive(Serialize)]
+    /// struct Config {
+    ///     name: String,
+    ///     ports: Vec<u16>,
+    /// }
+    ///
+    /// let config = Config { name: "web".into(), ports: vec![80, 443] };
+    /// const WIDE: SerializerConfig = SerializerConfig::new().indent(Indent::Spaces(4));
+    /// assert_eq!(WIDE.to_string(&config).unwrap(), "name: web\nports:\n    - 80\n    - 443\n");
+    /// const LINE: SerializerConfig = SerializerConfig::new().indent(Indent::None);
+    /// assert_eq!(LINE.to_string(&config).unwrap(), "{name: web, ports: [80, 443]}\n");
+    /// ```
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+        self.indent = match indent {
+            Indent::None => Indent::None,
+            Indent::Spaces(0) => Indent::Spaces(1),
+            Indent::Spaces(n) if n > 9 => Indent::Spaces(9),
+            Indent::Spaces(n) => Indent::Spaces(n),
         };
         self
+    }
+
+    /// Returns the number of spaces per indentation level of block
+    /// collections.
+    pub(crate) fn indent_width(&self) -> usize {
+        match self.indent {
+            Indent::Spaces(n) => n,
+            // nothing is written in block style
+            Indent::None => 0,
+        }
     }
 
     /// Indents sequences that are values of mappings.
@@ -162,6 +215,9 @@ impl SerializerConfig {
     }
 
     /// Sets when collections are written in flow style.
+    ///
+    /// This has no effect with [`Indent::None`] where everything is written
+    /// in flow style.
     ///
     /// ```
     /// use deser::Serialize;

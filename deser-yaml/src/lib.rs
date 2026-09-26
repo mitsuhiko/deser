@@ -112,7 +112,8 @@ pub mod tag;
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 pub use self::resolve::Version;
 pub use self::ser::{
-    FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig, to_string,
+    FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
+    to_string,
 };
 pub use self::tag::{Tagged, set_tag, take_tag};
 

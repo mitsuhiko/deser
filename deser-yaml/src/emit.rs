@@ -3,8 +3,8 @@
 //! Collections are held back until their first item is known so that empty
 //! collections can be written as `{}` and `[]` and the layout never needs to
 //! be patched afterwards.  Collections are written in block style unless
-//! they are compact (see [`Layout`]) or the flow policy allows them to be
-//! written in flow style.  For the flow policy the events of a collection
+//! they are compact (see [`Layout`]), the flow policy allows them to be
+//! written in flow style or there is no indentation ([`Indent::None`]).  For the flow policy the events of a collection
 //! are recorded while it's written in flow style.  If it turns out not to
 //! fit, the output is rolled back and the recorded events are written in
 //! block style.
@@ -18,7 +18,7 @@ use crate::quote::{
     write_double_quoted, write_float, write_single_quoted, write_tag,
 };
 use crate::resolve::{Version, is_plain_str};
-use crate::ser::{FlowPolicy, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig};
+use crate::ser::{FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig};
 use crate::style::{ScalarStyle, StyleHint};
 use crate::tag::NodeTag;
 
@@ -222,6 +222,7 @@ impl<'c> Emitter<'c> {
     /// fits.
     fn may_attempt(&self, pending: &Pending) -> bool {
         matches!(self.config.flow, FlowPolicy::LeafIfFits(_))
+            && self.config.indent != Indent::None
             && pending.hints.layout == Layout::Auto
             && !matches!(pending.pos, Pos::Flow)
     }
@@ -305,7 +306,10 @@ impl<'c> Emitter<'c> {
 
     /// Writes the start of a non-empty collection.
     fn open(&mut self, pending: Pending) {
-        if matches!(pending.pos, Pos::Flow) || pending.hints.layout == Layout::Compact {
+        if matches!(pending.pos, Pos::Flow)
+            || pending.hints.layout == Layout::Compact
+            || self.config.indent == Indent::None
+        {
             self.open_flow(pending);
         } else {
             self.open_block(pending);
@@ -349,7 +353,7 @@ impl<'c> Emitter<'c> {
                 }
                 self.space = false;
                 let indent = if pending.is_map || self.config.indent_sequences {
-                    key_column + self.config.indent
+                    key_column + self.config.indent_width()
                 } else {
                     key_column
                 };
@@ -508,6 +512,8 @@ impl<'c> Emitter<'c> {
         };
         let context = match pos {
             Pos::Flow => Context::Flow,
+            // without indentation a scalar document is on a single line
+            _ if self.config.indent == Indent::None => Context::Key,
             _ => Context::Block,
         };
         let (scalar, implicit_tag) = self.render(&atom, context, hints.style)?;
@@ -530,9 +536,9 @@ impl<'c> Emitter<'c> {
                 // the indentation indicator is relative to the parent node
                 let (column, parent) = match pos {
                     // the document is at indentation 0 for indicators
-                    Pos::Root => (self.config.indent, 0),
+                    Pos::Root => (self.config.indent_width(), 0),
                     Pos::Inline(column) => (column, column - 2),
-                    Pos::Value(key_column) => (key_column + self.config.indent, key_column),
+                    Pos::Value(key_column) => (key_column + self.config.indent_width(), key_column),
                     Pos::Flow => unreachable!("no block scalars in flow collections"),
                 };
                 block.write_header(&mut self.out, column - parent);
