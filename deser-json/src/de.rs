@@ -147,6 +147,16 @@ impl DeserializerConfig {
         self.trailing
     }
 
+    /// Returns how strings are decoded into bytes.
+    pub(crate) fn bytes_format(&self) -> BytesFormat {
+        self.bytes
+    }
+
+    /// Returns `true` if exact numbers are enabled.
+    pub(crate) fn exact_numbers_enabled(&self) -> bool {
+        self.exact_numbers
+    }
+
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state

@@ -12,6 +12,12 @@ All notable changes to deser are documented here.
 - Added `OwnedDriver`, a `DeserializeDriver` which owns the value it
   deserializes.  It can be held across calls, for instance to deserialize
   a value from input which arrives over time.
+- Decoders can deserialize values while their input arrives
+  (`Decoder::feed`), JSON (except for JSON Lines) supports this.
+  `Reader::read` (also in `deser-tokio`) uses it if possible, which only
+  buffers incomplete tokens instead of the complete value.  The JSON
+  parser was rewritten as a state machine which can be suspended between
+  tokens for this, parsing complete inputs is as fast as before.
 - Added `deser::io` to read values from and write values to streams with
   decoders and encoders: `Reader` and `Writer` (and `from_reader` and
   `to_writer`) use them with `std::io::Read` and `std::io::Write`,

@@ -229,7 +229,7 @@ mod owned;
 mod recording;
 mod sinkbox;
 
-pub use self::decoder::{Decoder, Frame};
+pub use self::decoder::{Decoder, Frame, Progress};
 pub use self::driver::DeserializeDriver;
 pub use self::format::Format;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};

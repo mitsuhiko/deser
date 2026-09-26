@@ -61,11 +61,15 @@
 //! next value in the input that was read so far (see [`Decoder::frame`]),
 //! for instance a line with JSON Lines.  Once a value is complete it's
 //! deserialized from its frame with the format's regular parser (see
-//! [`Decoder::drive`]).  This means that a value has to fit into memory as
-//! a whole, but streams of values (like JSON Lines, CBOR sequences or YAML
-//! documents) can be read with bounded memory and parsing is as fast as for
-//! complete inputs.  Types can borrow from the frame (see
+//! [`Decoder::drive`]).  Types can borrow from the frame (see
 //! [`Reader::read_borrowed`]).
+//!
+//! Decoders of formats which can be parsed while the input arrives (like
+//! JSON and CBOR) can also deserialize values incrementally (see
+//! [`Decoder::feed`]).  [`Reader::read`] uses this if possible: the parts of
+//! a value are deserialized as they are read and only incomplete tokens are
+//! buffered, which means that the memory used does not depend on the size
+//! of the values.  Otherwise the complete value is buffered first.
 //!
 //! The [`DecodeBuffer`] implements the framing without doing IO itself.  The
 //! [`Reader`] fills it from a [`std::io::Read`], adapters for other IO
@@ -148,7 +152,25 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         }
     }
 
-    /// Reads until the next value is complete.
+    /// Reads more input into the buffer.
+    fn read_more(&mut self) -> Result<(), Error> {
+        let buf = self.buffer.read_buf();
+        let read = loop {
+            match self.reader.read(buf) {
+                Ok(read) => break read,
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(err) => return Err(err.into()),
+            }
+        };
+        if read == 0 {
+            self.buffer.set_eof();
+        } else {
+            self.buffer.filled(read);
+        }
+        Ok(())
+    }
+
+    /// Reads until the frame of the next value is complete.
     ///
     /// Returns `false` if there are no more values.
     fn fill(&mut self) -> Result<bool, Error> {
@@ -156,31 +178,21 @@ impl<R: Read, D: Decoder> Reader<R, D> {
             match self.buffer.poll()? {
                 Status::Ready => return Ok(true),
                 Status::End => return Ok(false),
-                Status::NeedInput => {}
-            }
-            let buf = self.buffer.read_buf();
-            let read = loop {
-                match self.reader.read(buf) {
-                    Ok(read) => break read,
-                    Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(err) => return Err(err.into()),
-                }
-            };
-            if read == 0 {
-                self.buffer.set_eof();
-            } else {
-                self.buffer.filled(read);
+                Status::NeedInput => self.read_more()?,
             }
         }
     }
 
     /// Reads the next value.
     ///
-    /// Returns `None` if there are no more values.  Whether reading can
-    /// continue after an error depends on the decoder (for instance with
-    /// JSON Lines it continues with the next line).
+    /// Returns `None` if there are no more values.  If the decoder supports
+    /// it (see [`Decoder::supports_feed`]), the value is deserialized while
+    /// the input is read which means that only incomplete tokens are
+    /// buffered.  Otherwise the complete value is buffered first.  Whether
+    /// reading can continue after an error depends on the decoder (for
+    /// instance with JSON Lines it continues with the next line).
     pub fn read<T: DeserializeOwned>(&mut self) -> Result<Option<T>, Error> {
-        self.read_borrowed()
+        self.read_with(|_| {})
     }
 
     /// Reads the next value with a configured driver.
@@ -192,15 +204,35 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         T: DeserializeOwned,
         F: FnOnce(&mut DeserializeDriver<'_, '_>),
     {
-        if !self.fill()? {
-            return Ok(None);
+        if !self.buffer.supports_feed() {
+            if !self.fill()? {
+                return Ok(None);
+            }
+            return self
+                .buffer
+                .deserialize_with(|driver| setup(driver))
+                .map(Some);
         }
-        self.buffer
-            .deserialize_with(|driver| setup(driver))
+
+        let mut out = None::<T>;
+        {
+            let mut driver = DeserializeDriver::<'_, 'static>::new(&mut out);
+            setup(&mut driver);
+            loop {
+                match self.buffer.feed(&mut driver)? {
+                    Status::Ready => break,
+                    Status::End => return Ok(None),
+                    Status::NeedInput => self.read_more()?,
+                }
+            }
+        }
+        out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
             .map(Some)
     }
 
     /// Reads the next value which can borrow from the reader's buffer.
+    ///
+    /// The complete value is buffered first.
     ///
     /// ```
     /// # use deser::de::{Decoder, Frame};

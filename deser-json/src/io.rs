@@ -1,13 +1,15 @@
 //! Reading and writing JSON streams.
 use std::io::{Read, Write};
 
-use deser::de::{Decoder, Frame};
+use deser::adapters::bytes::BytesFormat;
+use deser::de::{Decoder, Frame, Progress};
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, Format};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind};
+use deser::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig, Trailing};
+use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
 use crate::scan::skip_to_escape;
 use crate::ser::SerializerConfig;
 
@@ -22,6 +24,15 @@ fn is_whitespace(byte: u8) -> bool {
 pub struct StreamState {
     // `Trailing::Strict`: the value was read
     done: bool,
+    // parses values incrementally (see `Decoder::feed`)
+    parser: Parser,
+    // the rest of a value that failed in a sink is skipped from the
+    // position in the input
+    skipping: Option<usize>,
+    // parsing failed, the stream cannot be continued
+    failed: bool,
+    // the stream ended within a value
+    ended: bool,
     // the position up to which the input was scanned
     pos: usize,
     // `Trailing::Stop`: the value being scanned
@@ -45,12 +56,21 @@ enum ValueKind {
     Structure,
 }
 
-fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
-    if !eof {
-        return Frame::Incomplete { consumed: 0 };
+fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+    if state.done {
+        // only whitespace may follow the value
+        return trailing_whitespace(input, 0, eof).map(|progress| match progress {
+            Progress::End => Frame::End,
+            _ => Frame::Incomplete {
+                consumed: input.len(),
+            },
+        });
     }
-    match input.iter().position(|&b| !is_whitespace(b)) {
-        Some(start) if !state.done => {
+    if !eof {
+        return Ok(Frame::Incomplete { consumed: 0 });
+    }
+    Ok(match input.iter().position(|&b| !is_whitespace(b)) {
+        Some(start) => {
             state.done = true;
             Frame::Value {
                 start,
@@ -58,7 +78,22 @@ fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                 consumed: input.len(),
             }
         }
-        _ => Frame::End,
+        None => Frame::End,
+    })
+}
+
+/// Checks that only whitespace follows a value.
+///
+/// `offset` is the offset of the input in the stream for errors.
+fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progress, Error> {
+    match input.iter().position(|&b| !is_whitespace(b)) {
+        Some(pos) => {
+            Err(Error::new(ErrorKind::Unexpected, "garbage after input").with_offset(offset + pos))
+        }
+        None if eof => Ok(Progress::End),
+        None => Ok(Progress::NeedMore {
+            consumed: input.len(),
+        }),
     }
 }
 
@@ -227,7 +262,12 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 ///   whitespace) and are split where they end.  Numbers at the end of the
 ///   stream are only complete at the end of the stream, other values are
 ///   complete once their last byte was read.  Reading continues after
-///   values that fail to deserialize.
+///   values that fail to deserialize, values that are not valid JSON end
+///   the stream (unless they are read from their frames).
+///
+/// Except for JSON Lines, values which do not borrow are deserialized
+/// while their input arrives (see [`Decoder::feed`]) so only incomplete
+/// tokens are buffered.
 ///
 /// ```
 /// use deser::io::Reader;
@@ -240,19 +280,21 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
 /// ```
 ///
-/// Values are parsed like with a [`Deserializer`], so they can borrow from
-/// the stream's buffer (see [`deser::io::Reader::read_borrowed`]).  The
-/// input ranges (and thus locations) of values refer to the start of their
-/// line (or value).
+/// Values which are read from their frames are parsed like with a
+/// [`Deserializer`], so they can borrow from the stream's buffer (see
+/// [`deser::io::Reader::read_borrowed`]).  The input ranges (and thus
+/// locations) of these values refer to the start of their line (or value),
+/// those of values that are deserialized while their input arrives to the
+/// stream.
 impl Decoder for DeserializerConfig {
     type State = StreamState;
 
     fn frame(&self, state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
-        Ok(match self.trailing_mode() {
+        match self.trailing_mode() {
             Trailing::Strict => frame_all(state, input, eof),
-            Trailing::Newline => frame_line(state, input, eof),
-            Trailing::Stop => frame_value(state, input, eof),
-        })
+            Trailing::Newline => Ok(frame_line(state, input, eof)),
+            Trailing::Stop => Ok(frame_value(state, input, eof)),
+        }
     }
 
     fn drive<'de>(
@@ -261,6 +303,111 @@ impl Decoder for DeserializerConfig {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         Deserializer::from_frame(frame, self).drive(driver)
+    }
+
+    /// JSON Lines are read line by line, the other values while their
+    /// input arrives.
+    fn supports_feed(&self) -> bool {
+        self.trailing_mode() != Trailing::Newline
+    }
+
+    fn feed(
+        &self,
+        state: &mut StreamState,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Progress, Error> {
+        if state.ended {
+            return Ok(Progress::End);
+        }
+        if state.failed {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "cannot continue after an error",
+            ));
+        }
+        let options = Options {
+            validate_utf8: true,
+            exact_numbers: self.exact_numbers_enabled(),
+        };
+
+        // skip the rest of a value that failed in a sink
+        let mut pos = 0;
+        if let Some(skip) = state.skipping {
+            let mut discard = Discard(State::new());
+            match state
+                .parser
+                .parse(input, skip, eof, offset, options, &mut discard)
+            {
+                Ok(ParseProgress::Done(end)) => {
+                    state.skipping = None;
+                    state.done = self.trailing_mode() == Trailing::Strict;
+                    pos = end;
+                }
+                Ok(ParseProgress::NeedMore(consumed)) => {
+                    state.skipping = Some(0);
+                    return Ok(Progress::NeedMore { consumed });
+                }
+                Err(err) => {
+                    state.parser.reset();
+                    state.skipping = None;
+                    state.failed = true;
+                    return Err(err);
+                }
+            }
+        }
+
+        if state.parser.is_idle() {
+            if state.done {
+                return match trailing_whitespace(&input[pos..], offset + pos, eof)? {
+                    Progress::NeedMore { consumed } => Ok(Progress::NeedMore {
+                        consumed: pos + consumed,
+                    }),
+                    progress => Ok(progress),
+                };
+            }
+            // a new value, skip the whitespace before it
+            pos += input[pos..]
+                .iter()
+                .position(|&b| !is_whitespace(b))
+                .unwrap_or(input.len() - pos);
+            if pos == input.len() {
+                return Ok(if eof {
+                    Progress::End
+                } else {
+                    Progress::NeedMore { consumed: pos }
+                });
+            }
+            if self.bytes_format() != BytesFormat::BASE64 {
+                *driver.state_mut().get_mut::<BytesFormat>() = self.bytes_format();
+            }
+        }
+        match state
+            .parser
+            .parse(input, pos, eof, offset, options, &mut Copying(driver))
+        {
+            Ok(ParseProgress::Done(end)) => {
+                state.done = self.trailing_mode() == Trailing::Strict;
+                Ok(Progress::Done { consumed: end })
+            }
+            Ok(ParseProgress::NeedMore(consumed)) => Ok(Progress::NeedMore { consumed }),
+            Err(err) => {
+                if let Some(resume) = state.parser.recoverable() {
+                    // a sink failed, the next call continues after the
+                    // value.  The input is not consumed on errors.
+                    state.skipping = Some(resume);
+                } else {
+                    state.parser.reset();
+                    // after an incomplete value at the end there are no
+                    // more values
+                    state.ended = eof && err.kind() == ErrorKind::EndOfFile;
+                    state.failed = true;
+                }
+                Err(err)
+            }
+        }
     }
 
     fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>

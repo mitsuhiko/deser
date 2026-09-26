@@ -179,3 +179,52 @@ async fn test_codec_values_at_the_end() {
     let values = values.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2, 3]);
 }
+
+const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+
+#[tokio::test]
+async fn test_feeding_read_is_cancellation_safe() {
+    let (mut client, server) = duplex(64);
+    let mut reader = Reader::new(server, STOP);
+    // half a value arrives and is deserialized, then the read is cancelled
+    client
+        .write_all(b"{\"id\": 1, \"text\": \"mes")
+        .await
+        .unwrap();
+    tokio::select! {
+        _ = reader.read::<Message>() => panic!("value is incomplete"),
+        _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+    }
+    // a value of another type cannot be read now
+    let err = reader.read::<u32>().await.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: a value of another type is being read"
+    );
+    client.write_all(b"sage 1\"}\n").await.unwrap();
+    assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(1)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_feeding_across_tasks() {
+    let (mut client, server) = duplex(7);
+    let writer = tokio::spawn(async move {
+        let mut out = Vec::new();
+        for id in 0..50 {
+            out.extend(deser_json::to_string(&message(id)).unwrap().into_bytes());
+            out.push(b' ');
+        }
+        client.write_all(&out).await.unwrap();
+    });
+    let reader = tokio::spawn(async move {
+        let mut reader = Reader::new(server, STOP).into_stream::<Message>();
+        let mut count = 0;
+        while let Some(value) = reader.next().await {
+            assert_eq!(value.unwrap(), message(count));
+            count += 1;
+        }
+        count
+    });
+    writer.await.unwrap();
+    assert_eq!(reader.await.unwrap(), 50);
+}

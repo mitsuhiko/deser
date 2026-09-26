@@ -88,7 +88,6 @@ impl<'i> Out<'i> for Borrowing<'_, '_, 'i> {
 ///
 /// This is used when the input does not outlive the deserialization (for
 /// instance a buffer that is refilled).
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Copying<'a, 'd, 'de>(pub &'a mut DeserializeDriver<'d, 'de>);
 
 impl<'i> Out<'i> for Copying<'_, '_, '_> {
@@ -105,6 +104,28 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
     #[inline(always)]
     fn emit_input(&mut self, value: &'i str) -> Result<(), Error> {
         self.0.emit(value)
+    }
+}
+
+/// Discards the events.
+///
+/// This is used to skip the rest of a value after an error.
+pub(crate) struct Discard(pub State);
+
+impl<'i> Out<'i> for Discard {
+    #[inline(always)]
+    fn state_mut(&mut self) -> &mut State {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn emit<'e, E: Into<Event<'e>>>(&mut self, _event: E) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn emit_input(&mut self, _value: &'i str) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -171,6 +192,9 @@ pub(crate) struct Parser {
     expect: Expect,
     scratch: Vec<u8>,
     partial: Option<PartialString>,
+    // the last error was an error of a sink, the rest of the value
+    // continues at the position
+    recoverable: Option<usize>,
 }
 
 impl Default for Parser {
@@ -181,6 +205,7 @@ impl Default for Parser {
             expect: Expect::Value,
             scratch: Vec::new(),
             partial: None,
+            recoverable: None,
         }
     }
 }
@@ -190,11 +215,16 @@ macro_rules! emit {
     ($out:expr, $base:expr, $start:expr, $end:expr, $event:expr) => {{
         $out.state_mut()
             .set_input_range($base + $start, $base + $end);
-        $out.emit($event)?
+        $out.emit($event)
     }};
 }
 
 impl Parser {
+    /// Returns `true` if the parser is between values.
+    pub(crate) fn is_idle(&self) -> bool {
+        self.expect == Expect::Value && self.container == Container::Top && self.partial.is_none()
+    }
+
     /// Resets the parser to parse a new value.
     ///
     /// This is needed after an error.
@@ -203,13 +233,24 @@ impl Parser {
         self.container = Container::Top;
         self.expect = Expect::Value;
         self.partial = None;
+        self.recoverable = None;
+    }
+
+    /// Returns where the rest of the value continues if the last error was
+    /// an error of a sink.
+    ///
+    /// In that case the state is as if the event was accepted and the rest
+    /// of the value can be parsed from the position (for instance with
+    /// [`Discard`]).
+    pub(crate) fn recoverable(&self) -> Option<usize> {
+        self.recoverable
     }
 
     /// Parses a value (or continues it) from `input[pos..]`.
     ///
     /// `eof` is `true` if no input follows, `base` is the offset of the
-    /// input in the stream (for the input ranges of events).  The offsets
-    /// of errors refer to the input.  After an error the parser has to be
+    /// input in the stream: the input ranges of the events and the offsets
+    /// of errors refer to the stream.  After an error the parser has to be
     /// [reset](Self::reset).
     #[inline(always)]
     pub(crate) fn parse<'i, O: Out<'i>>(
@@ -221,6 +262,7 @@ impl Parser {
         options: Options,
         out: &mut O,
     ) -> Result<Progress, Error> {
+        self.recoverable = None;
         let mut cur = Cursor {
             input,
             pos,
@@ -230,7 +272,7 @@ impl Parser {
         };
         match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
-            Err(err) if err.offset().is_none() => Err(err.with_offset(cur.pos)),
+            Err(err) if err.offset().is_none() => Err(err.with_offset(base + cur.pos)),
             Err(err) => Err(err),
         }
     }
@@ -257,6 +299,19 @@ impl Parser {
                 self.expect = $expect;
                 return Ok(Progress::NeedMore($consumed));
             }};
+        }
+
+        // fails with an error of a sink.  The state is stored as if the
+        // event was accepted so that the rest of the value can be skipped.
+        macro_rules! sink {
+            ($rv:expr, $expect:expr) => {
+                if let Err(err) = $rv {
+                    self.container = container;
+                    self.expect = $expect;
+                    self.recoverable = Some(cur.pos);
+                    return Err(err);
+                }
+            };
         }
 
         // skips whitespace and returns the next byte, suspends at the end
@@ -291,8 +346,11 @@ impl Parser {
         // closes the current container
         macro_rules! close {
             ($start:expr, $event:expr) => {{
-                emit!(out, base, $start, cur.pos, $event);
                 container = stack.pop().unwrap_or(Container::Top);
+                sink!(
+                    emit!(out, base, $start, cur.pos, $event),
+                    Expect::AfterValue
+                );
             }};
         }
 
@@ -301,16 +359,19 @@ impl Parser {
             ($byte:expr) => {{
                 let start = cur.pos;
                 if $byte != b'"' {
-                    return Err(token_error(start, "expected map key"));
+                    return Err(token_error(base + start, "expected map key"));
                 }
                 cur.bump();
                 match string!(start, Expect::Key) {
                     Str::Borrowed(key) => {
                         out.state_mut()
                             .set_input_range(base + start, base + cur.pos);
-                        out.emit_input(key)?
+                        sink!(out.emit_input(key), Expect::Colon)
                     }
-                    Str::Scratch(key) => emit!(out, base, start, cur.pos, Event::from(key)),
+                    Str::Scratch(key) => sink!(
+                        emit!(out, base, start, cur.pos, Event::from(key)),
+                        Expect::Colon
+                    ),
                 }
                 colon!();
             }};
@@ -397,9 +458,12 @@ impl Parser {
                         Str::Borrowed(val) => {
                             out.state_mut()
                                 .set_input_range(base + start, base + cur.pos);
-                            out.emit_input(val)?
+                            sink!(out.emit_input(val), Expect::AfterValue)
                         }
-                        Str::Scratch(val) => emit!(out, base, start, cur.pos, Event::from(val)),
+                        Str::Scratch(val) => sink!(
+                            emit!(out, base, start, cur.pos, Event::from(val)),
+                            Expect::AfterValue
+                        ),
                     },
                     b'0'..=b'9' | b'-' => {
                         let rv = if byte == b'-' {
@@ -412,9 +476,13 @@ impl Parser {
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Value)
                         }
+                        let number = rv?;
                         out.state_mut()
                             .set_input_range(base + start, base + cur.pos);
-                        emit_number(out, rv?, input, exact_numbers, start, cur.pos)?
+                        sink!(
+                            emit_number(out, number, input, exact_numbers, start, cur.pos),
+                            Expect::AfterValue
+                        )
                     }
                     b'n' | b't' | b'f' => {
                         let (rest, event): (&[u8], _) = match byte {
@@ -427,28 +495,34 @@ impl Parser {
                             suspend!(start, Expect::Value)
                         }
                         rv?;
-                        emit!(out, base, start, cur.pos, event)
+                        sink!(emit!(out, base, start, cur.pos, event), Expect::AfterValue)
                     }
                     b'{' => {
-                        emit!(out, base, start, cur.pos, Event::map_start());
                         stack.push(container);
                         container = Container::Map;
+                        sink!(
+                            emit!(out, base, start, cur.pos, Event::map_start()),
+                            Expect::KeyOrEnd
+                        );
                         if open_map!() {
                             continue 'value;
                         }
                     }
                     b'[' => {
-                        emit!(out, base, start, cur.pos, Event::seq_start());
                         stack.push(container);
                         container = Container::Seq;
+                        sink!(
+                            emit!(out, base, start, cur.pos, Event::seq_start()),
+                            Expect::ValueOrEnd
+                        );
                         if open_seq!() {
                             continue 'value;
                         }
                     }
-                    b',' => return Err(token_error(start, "unexpected comma")),
-                    b':' => return Err(token_error(start, "unexpected colon")),
-                    b']' | b'}' => return Err(token_error(start, "expected a value")),
-                    _ => return Err(token_error(start, "unexpected character")),
+                    b',' => return Err(token_error(base + start, "unexpected comma")),
+                    b':' => return Err(token_error(base + start, "unexpected colon")),
+                    b']' | b'}' => return Err(token_error(base + start, "expected a value")),
+                    _ => return Err(token_error(base + start, "unexpected character")),
                 }
             }
             skip_value = false;

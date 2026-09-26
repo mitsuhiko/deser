@@ -73,8 +73,12 @@ pub trait ErrorContext: 'static {
 }
 
 impl State {
-    /// Creates a new state for a driver.
-    pub(crate) fn new() -> State {
+    /// Creates an empty state.
+    ///
+    /// Drivers create their state, this is useful for code that processes
+    /// events without a driver.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> State {
         State {
             extensions: Extensions::default(),
             depth: 0,

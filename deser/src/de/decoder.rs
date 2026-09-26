@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use crate::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 
 /// The result of [`Decoder::frame`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -30,6 +30,22 @@ pub enum Frame {
     End,
 }
 
+/// The result of [`Decoder::feed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Progress {
+    /// The value is complete, it used the first `consumed` bytes of the
+    /// input.
+    Done { consumed: usize },
+    /// The value needs more input.  The first `consumed` bytes of the input
+    /// were used and are discarded, the next call continues with the input
+    /// after them (followed by the new data).
+    NeedMore { consumed: usize },
+    /// There are no more values.
+    ///
+    /// This must only be returned at the end of the input.
+    End,
+}
+
 /// A data format that deserializes values from bytes.
 ///
 /// This is implemented by the deserializer configurations of the data
@@ -40,7 +56,9 @@ pub enum Frame {
 ///
 /// To read streams, a decoder splits the input into the frames of values
 /// with [`frame`](Self::frame) and deserializes a value once its frame is
-/// complete with [`drive`](Self::drive).
+/// complete with [`drive`](Self::drive).  Formats which can deserialize a
+/// value while its input arrives additionally implement
+/// [`feed`](Self::feed), which only needs to buffer incomplete tokens.
 ///
 /// Types which produce the events of a value from something else than bytes
 /// implement [`Format`](crate::de::Format) instead.
@@ -77,6 +95,49 @@ pub trait Decoder {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error>;
+
+    /// Returns `true` if the decoder implements [`feed`](Self::feed).
+    ///
+    /// This can depend on the configuration, for instance JSON Lines are
+    /// read line by line.
+    fn supports_feed(&self) -> bool {
+        false
+    }
+
+    /// Deserializes a value while its input arrives.
+    ///
+    /// This is only invoked if [`supports_feed`](Self::supports_feed)
+    /// returns `true`.  It's used instead of [`frame`](Self::frame) and
+    /// [`drive`](Self::drive) for values which do not borrow from the input.
+    /// The decoder emits the events of the parts of the value in the input
+    /// into the driver and returns how much of the input it used
+    /// ([`Progress::NeedMore`]) until the value is complete
+    /// ([`Progress::Done`]).  Only incomplete tokens need to be kept.  The
+    /// driver is the same for all calls for a value, the first call for a
+    /// value starts where the previous value ended.  At the end of the
+    /// input (`eof`) the value has to be completed (or fail).
+    ///
+    /// As the input does not live beyond the call, the events cannot
+    /// borrow from it.  `offset` is the offset of the input in the stream:
+    /// the input ranges of the events and the offsets of errors refer to
+    /// positions in the stream.  After an error the value is abandoned, the
+    /// decoder decides if the stream can continue with the next value (for
+    /// instance by skipping the rest of the value if a sink failed) or if
+    /// further calls fail.
+    fn feed(
+        &self,
+        state: &mut Self::State,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Progress, Error> {
+        let _ = (state, input, offset, eof, driver);
+        Err(Error::new(
+            ErrorKind::Unexpected,
+            "the decoder cannot deserialize incrementally",
+        ))
+    }
 
     /// Deserializes a value from a slice.
     ///
@@ -129,6 +190,21 @@ impl<D: Decoder + ?Sized> Decoder for &D {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         (**self).drive(frame, driver)
+    }
+
+    fn supports_feed(&self) -> bool {
+        (**self).supports_feed()
+    }
+
+    fn feed(
+        &self,
+        state: &mut Self::State,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Progress, Error> {
+        (**self).feed(state, input, offset, eof, driver)
     }
 
     fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>

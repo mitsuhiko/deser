@@ -32,9 +32,10 @@ async fn serve(socket: tokio::net::TcpStream) -> Result<(), deser::Error> {
 
 * **Works with every format:** the configurations of the formats split
   streams into values (see `deser::io`), this crate only does the IO.
-* **Bounded memory for streams:** only one value is buffered at a time.
-  Values are parsed from a complete buffer with the regular (fast)
-  parsers, and they can borrow from it (`Reader::read_borrowed`).
+* **Bounded memory:** values of formats that support it (JSON and CBOR)
+  are deserialized while their input arrives, only incomplete tokens are
+  buffered.  Values of other formats are buffered one at a time.  Values
+  can also borrow from the buffer (`Reader::read_borrowed`).
 * **Multi-threaded runtimes:** the futures are `Send` and can be spawned.
 * **Cancellation safe reads:** a read can be used in `tokio::select!`
   without losing data.

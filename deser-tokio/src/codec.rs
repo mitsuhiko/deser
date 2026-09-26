@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use bytes::BytesMut;
 use deser::Error;
 use deser::de::Decoder;
-use deser::de::DeserializeOwned;
+use deser::de::{DeserializeOwned, OwnedDriver};
 use deser::io::{DecodeBuffer, Status};
 use deser::ser::Encoder;
 use deser::ser::Serialize;
@@ -34,12 +34,16 @@ use deser::ser::Serialize;
 /// ```
 ///
 /// The data read by the framed reader is moved into the codec's buffer, so
-/// errors refer to positions in the stream.
+/// errors refer to positions in the stream.  If the decoder supports it
+/// (see [`Decoder::supports_feed`]), values are deserialized while their
+/// input arrives.
 #[cfg_attr(docsrs, doc(cfg(feature = "codec")))]
 pub struct Codec<D: Decoder, E, T> {
     buffer: DecodeBuffer<D>,
     encoder: E,
     written: usize,
+    // the value which is deserialized while its input arrives
+    pending: Option<OwnedDriver<'static, T>>,
     _marker: PhantomData<fn() -> T>,
 }
 
@@ -50,6 +54,7 @@ impl<D: Decoder, E: Encoder, T> Codec<D, E, T> {
             buffer: DecodeBuffer::new(decoder),
             encoder,
             written: 0,
+            pending: None,
             _marker: PhantomData,
         }
     }
@@ -72,9 +77,20 @@ impl<D: Decoder, E: Encoder, T> Codec<D, E, T> {
             self.buffer.extend_from_slice(src);
             src.clear();
         }
-        match self.buffer.poll()? {
-            Status::Ready => self.buffer.deserialize().map(Some),
-            Status::NeedInput | Status::End => Ok(None),
+        if !self.buffer.supports_feed() {
+            return match self.buffer.poll()? {
+                Status::Ready => self.buffer.deserialize().map(Some),
+                Status::NeedInput | Status::End => Ok(None),
+            };
+        }
+        let mut driver = self.pending.take().unwrap_or_default();
+        match driver.with(|driver| self.buffer.feed(driver))? {
+            Status::Ready => driver.finish().map(Some),
+            Status::End => Ok(None),
+            Status::NeedInput => {
+                self.pending = Some(driver);
+                Ok(None)
+            }
         }
     }
 }

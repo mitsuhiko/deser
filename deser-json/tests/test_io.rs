@@ -195,17 +195,44 @@ fn test_errors() {
         );
     }
 
-    // values continue after errors with `Trailing::Stop`
-    let mut reader = Reader::new(&b"[1] [\"x\"] {]\n[3]"[..], STOP);
+    // with `Trailing::Stop` values that do not match the type are skipped
+    // (also while they are read incrementally)
+    for size in [1, 3, 100] {
+        let input = b"[1] [\"x\", [{}]] {\"a\": 1}\n[3]";
+        let mut reader = Reader::new(Chunked { input, size }, STOP);
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
+        let err = reader.read::<Vec<u32>>().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Unexpected: unexpected string, expected u32 at line 1 column 6"
+        );
+        let err = reader.read::<Vec<u32>>().unwrap_err();
+        assert_eq!(err.offset(), Some(16));
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
+    }
+
+    // values that are not valid end the stream when read incrementally
+    let mut reader = Reader::new(&b"[1] {] [3]"[..], STOP);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
+    let err = reader.read::<Vec<u32>>().unwrap_err();
+    assert_eq!(err.offset(), Some(4));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u32 at line 1 column 6"
+        "Unexpected: expected map key at line 1 column 6"
     );
     let err = reader.read::<Vec<u32>>().unwrap_err();
-    assert_eq!(err.offset(), Some(10));
-    assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: cannot continue after an error"
+    );
+
+    // values which are read from their frames (borrowing) are skipped
+    let mut reader = Reader::new(&b"[1] {] [3]"[..], STOP);
+    assert_eq!(reader.read_borrowed::<Vec<u32>>().unwrap(), Some(vec![1]));
+    assert!(reader.read_borrowed::<Vec<u32>>().is_err());
+    assert_eq!(reader.read_borrowed::<Vec<u32>>().unwrap(), Some(vec![3]));
 
     // incomplete values at the end
     let mut reader = Reader::new(&b"[1] [2"[..], STOP);
@@ -306,4 +333,70 @@ fn test_generic_formats() {
     assert_eq!(value, ["a", "b"]);
     assert!(Decoder::from_slice::<u32>(&STRICT, b"1 2").is_err());
     assert_eq!(Decoder::from_slice::<u32>(&STOP, b"1 2").unwrap(), 1);
+}
+
+#[test]
+fn test_feeding_bounds_the_buffer() {
+    use deser::de::DeserializeDriver;
+    use deser::io::{DecodeBuffer, Status};
+
+    // a large value that arrives in chunks is deserialized while it
+    // arrives, only incomplete tokens are buffered
+    let long = "x".repeat(50);
+    let mut input = String::from("[");
+    for idx in 0..10_000 {
+        if idx > 0 {
+            input.push(',');
+        }
+        input.push_str(&format!("{{\"id\": {idx}, \"name\": \"{long}\"}}"));
+    }
+    input.push(']');
+
+    let mut buffer = DecodeBuffer::new(STRICT);
+    let mut out = None::<Vec<std::collections::BTreeMap<String, Recording>>>;
+    let mut max_buffered = 0;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        let chunks = input.as_bytes().chunks(1024).collect::<Vec<_>>();
+        for (idx, chunk) in chunks.iter().enumerate() {
+            buffer.extend_from_slice(chunk);
+            let status = buffer.feed(&mut driver).unwrap();
+            // the value is complete with the last chunk
+            if idx == chunks.len() - 1 {
+                assert_eq!(status, Status::Ready);
+            } else {
+                assert_eq!(status, Status::NeedInput);
+            }
+            max_buffered = max_buffered.max(buffer.buffered());
+        }
+    }
+    buffer.set_eof();
+    assert_eq!(out.unwrap().len(), 10_000);
+    assert!(max_buffered < 100, "{max_buffered} bytes buffered");
+    assert_eq!(
+        buffer
+            .feed(&mut DeserializeDriver::new(&mut None::<u32>))
+            .unwrap(),
+        Status::End
+    );
+}
+
+#[test]
+fn test_feeding_with_layers() {
+    use deser::de::Limits;
+
+    let mut reader = Reader::new(
+        Chunked {
+            input: b"[1, 2, 3]",
+            size: 2,
+        },
+        STRICT,
+    );
+    let err = reader
+        .read_with::<Vec<u32>, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: too many items at line 1 column 8"
+    );
 }

@@ -3,9 +3,10 @@
 //!
 //! This crate connects the configurations of the data formats (which
 //! implement [`Decoder`] and [`Encoder`], see [`deser::io`]) to tokio's
-//! [`AsyncRead`] and [`AsyncWrite`].  It works
-//! with every format and only buffers until a value is complete, so
-//! streams of values (like JSON Lines, CBOR sequences or YAML documents)
+//! [`AsyncRead`] and [`AsyncWrite`].  It works with every format.  Values
+//! of formats which support it (like JSON and CBOR) are deserialized while
+//! their input arrives, other values are buffered until they are complete,
+//! so streams of values (like JSON Lines, CBOR sequences or YAML documents)
 //! can be read from sockets with bounded memory:
 //!
 //! ```
@@ -67,13 +68,14 @@
 //! been written partially.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+use std::any::Any;
 use std::future::poll_fn;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
 use deser::de::Decoder;
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
 use deser::io::{DecodeBuffer, Status};
 use deser::ser::Encoder;
 use deser::ser::{Serialize, SerializeDriver};
@@ -90,11 +92,16 @@ pub use self::codec::Codec;
 /// Reads values from an [`AsyncRead`].
 ///
 /// The values are split and deserialized with a [`Decoder`] (the
-/// deserializer configuration of a data format).  The reader buffers the input so it does not need to be
-/// buffered.
+/// deserializer configuration of a data format).  The reader buffers the
+/// input so it does not need to be buffered.  If the decoder supports it
+/// (see [`Decoder::supports_feed`]), values are deserialized while their
+/// input arrives which means that only incomplete tokens are buffered.
 pub struct Reader<R, D: Decoder> {
     reader: R,
     buffer: DecodeBuffer<D>,
+    // a value that is being deserialized while its input arrives (an
+    // `OwnedDriver<'static, T>`), kept when a read is cancelled.
+    pending: Option<Box<dyn Any + Send>>,
 }
 
 // the reader is never pinned structurally
@@ -106,10 +113,24 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         Reader {
             reader,
             buffer: DecodeBuffer::new(decoder),
+            pending: None,
         }
     }
 
-    /// Reads until the next value is complete.
+    /// Reads more input into the buffer.
+    fn poll_read_more(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        let mut buf = ReadBuf::new(self.buffer.read_buf());
+        ready!(Pin::new(&mut self.reader).poll_read(cx, &mut buf))?;
+        let read = buf.filled().len();
+        if read == 0 {
+            self.buffer.set_eof();
+        } else {
+            self.buffer.filled(read);
+        }
+        Poll::Ready(Ok(()))
+    }
+
+    /// Reads until the frame of the next value is complete.
     ///
     /// Resolves to `false` if there are no more values.
     fn poll_fill(&mut self, cx: &mut Context<'_>) -> Poll<Result<bool, Error>> {
@@ -117,15 +138,69 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
             match self.buffer.poll()? {
                 Status::Ready => return Poll::Ready(Ok(true)),
                 Status::End => return Poll::Ready(Ok(false)),
-                Status::NeedInput => {}
+                Status::NeedInput => ready!(self.poll_read_more(cx))?,
             }
-            let mut buf = ReadBuf::new(self.buffer.read_buf());
-            ready!(Pin::new(&mut self.reader).poll_read(cx, &mut buf))?;
-            let read = buf.filled().len();
-            if read == 0 {
-                self.buffer.set_eof();
-            } else {
-                self.buffer.filled(read);
+        }
+    }
+
+    /// Reads the next value, the setup is invoked with its driver.
+    fn poll_read_setup<T, F>(
+        &mut self,
+        cx: &mut Context<'_>,
+        setup: &mut Option<F>,
+    ) -> Poll<Result<Option<T>, Error>>
+    where
+        T: DeserializeOwned + 'static,
+        F: FnOnce(&mut DeserializeDriver<'_, '_>),
+    {
+        if !self.buffer.supports_feed() {
+            if !ready!(self.poll_fill(cx))? {
+                return Poll::Ready(Ok(None));
+            }
+            let setup = setup.take();
+            return Poll::Ready(
+                self.buffer
+                    .deserialize_with(|driver| {
+                        if let Some(setup) = setup {
+                            setup(driver);
+                        }
+                    })
+                    .map(Some),
+            );
+        }
+
+        // continue a value that is being read or start a new one
+        let mut driver = match self.pending.take() {
+            Some(pending) => match pending.downcast::<OwnedDriver<'static, T>>() {
+                Ok(driver) => *driver,
+                Err(pending) => {
+                    self.pending = Some(pending);
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "a value of another type is being read",
+                    )));
+                }
+            },
+            None => {
+                let mut driver = OwnedDriver::<'static, T>::new();
+                if let Some(setup) = setup.take() {
+                    driver.with(|driver| setup(driver));
+                }
+                driver
+            }
+        };
+        loop {
+            match driver.with(|driver| self.buffer.feed(driver))? {
+                Status::Ready => return Poll::Ready(driver.finish().map(Some)),
+                Status::End => return Poll::Ready(Ok(None)),
+                Status::NeedInput => match self.poll_read_more(cx) {
+                    Poll::Ready(Ok(())) => {}
+                    rv => {
+                        // the value continues with the next read
+                        self.pending = Some(Box::new(driver));
+                        return rv.map(|rv| rv.map(|_| None));
+                    }
+                },
             }
         }
     }
@@ -133,22 +208,21 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Polls for the next value.
     ///
     /// This is the poll based version of [`read`](Self::read).
-    pub fn poll_read<T: DeserializeOwned>(
+    pub fn poll_read<T: DeserializeOwned + 'static>(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<T>, Error>> {
-        if !ready!(self.poll_fill(cx))? {
-            return Poll::Ready(Ok(None));
-        }
-        Poll::Ready(self.buffer.deserialize().map(Some))
+        self.poll_read_setup(cx, &mut None::<fn(&mut DeserializeDriver<'_, '_>)>)
     }
 
     /// Reads the next value.
     ///
-    /// Resolves to `None` if there are no more values.  Whether reading can
-    /// continue after an error depends on the decoder (for instance with
-    /// JSON Lines it continues with the next line).
-    pub async fn read<T: DeserializeOwned>(&mut self) -> Result<Option<T>, Error> {
+    /// Resolves to `None` if there are no more values.  If the future is
+    /// dropped before it resolves, the next read continues where it
+    /// stopped (a value of another type cannot be read then).  Whether
+    /// reading can continue after an error depends on the decoder (for
+    /// instance with JSON Lines it continues with the next line).
+    pub async fn read<T: DeserializeOwned + 'static>(&mut self) -> Result<Option<T>, Error> {
         poll_fn(|cx| self.poll_read(cx)).await
     }
 
@@ -158,18 +232,16 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
     pub async fn read_with<T, F>(&mut self, setup: F) -> Result<Option<T>, Error>
     where
-        T: DeserializeOwned,
+        T: DeserializeOwned + 'static,
         F: FnOnce(&mut DeserializeDriver<'_, '_>),
     {
-        if !poll_fn(|cx| self.poll_fill(cx)).await? {
-            return Ok(None);
-        }
-        self.buffer
-            .deserialize_with(|driver| setup(driver))
-            .map(Some)
+        let mut setup = Some(setup);
+        poll_fn(|cx| self.poll_read_setup(cx, &mut setup)).await
     }
 
     /// Reads the next value which can borrow from the reader's buffer.
+    ///
+    /// The complete value is buffered first.
     pub async fn read_borrowed<'a, T: Deserialize<'a>>(&'a mut self) -> Result<Option<T>, Error> {
         if !poll_fn(|cx| self.poll_fill(cx)).await? {
             return Ok(None);
@@ -191,7 +263,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Converts the reader into a [`Stream`] of values.
     ///
     /// The stream ends after the first error.
-    pub fn into_stream<T: DeserializeOwned>(self) -> ReaderStream<R, D, T> {
+    pub fn into_stream<T: DeserializeOwned + 'static>(self) -> ReaderStream<R, D, T> {
         ReaderStream {
             reader: self,
             failed: false,
@@ -243,7 +315,9 @@ impl<R, D: Decoder, T> ReaderStream<R, D, T> {
     }
 }
 
-impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned> Stream for ReaderStream<R, D, T> {
+impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
+    for ReaderStream<R, D, T>
+{
     type Item = Result<T, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -360,7 +434,7 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
 /// ```
 pub async fn from_reader<T, R, D>(reader: R, decoder: D) -> Result<T, Error>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + 'static,
     R: AsyncRead + Unpin,
     D: Decoder,
 {

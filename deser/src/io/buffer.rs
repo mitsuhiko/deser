@@ -1,4 +1,4 @@
-use crate::de::{Decoder, Frame};
+use crate::de::{Decoder, Frame, Progress};
 use crate::de::{Deserialize, DeserializeDriver};
 use crate::error::{Error, ErrorKind};
 
@@ -108,6 +108,9 @@ impl Position {
 /// ```
 ///
 /// The offsets, lines and columns of errors refer to the stream.
+///
+/// Decoders which support it can also deserialize values while their input
+/// arrives, see [`feed`](Self::feed).
 pub struct DecodeBuffer<D: Decoder> {
     decoder: D,
     state: D::State,
@@ -124,6 +127,8 @@ pub struct DecodeBuffer<D: Decoder> {
     // `true` once the decoder reported the end or failed
     done: bool,
     failed: bool,
+    // a value is being fed into a driver
+    feeding: bool,
 }
 
 impl<D: Decoder> DecodeBuffer<D> {
@@ -140,6 +145,7 @@ impl<D: Decoder> DecodeBuffer<D> {
             ready: None,
             done: false,
             failed: false,
+            feeding: false,
         }
     }
 
@@ -153,6 +159,11 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// This is the offset of the unconsumed input in the stream.
     pub fn offset(&self) -> usize {
         self.position.offset
+    }
+
+    /// Returns the number of bytes which were read but not consumed.
+    pub fn buffered(&self) -> usize {
+        self.end - self.start
     }
 
     /// Returns `true` if the end of the stream was reached.
@@ -178,9 +189,12 @@ impl<D: Decoder> DecodeBuffer<D> {
             return Ok(Status::Ready);
         }
         if self.failed {
+            return Err(failed_error());
+        }
+        if self.feeding {
             return Err(Error::new(
                 ErrorKind::Unexpected,
-                "cannot continue after an error",
+                "a value is being read incrementally",
             ));
         }
         if self.done {
@@ -193,7 +207,11 @@ impl<D: Decoder> DecodeBuffer<D> {
                 Err(err) => {
                     self.failed = true;
                     let base = self.position;
-                    return Err(err.shift_position(base.offset, base.line, base.column));
+                    return Err(err.resolve_position(input).shift_position(
+                        base.offset,
+                        base.line,
+                        base.column,
+                    ));
                 }
             };
             match frame {
@@ -234,6 +252,148 @@ impl<D: Decoder> DecodeBuffer<D> {
                     return Ok(Status::End);
                 }
             }
+        }
+    }
+
+    /// Returns `true` if the decoder can deserialize values while their
+    /// input arrives.
+    ///
+    /// See [`Decoder::supports_feed`] and [`feed`](Self::feed).
+    pub fn supports_feed(&self) -> bool {
+        self.decoder.supports_feed()
+    }
+
+    /// Feeds the input into the driver of the next value.
+    ///
+    /// This is the incremental alternative to [`poll`](Self::poll) and
+    /// [`deserialize`](Self::deserialize) for decoders which support it
+    /// (see [`supports_feed`](Self::supports_feed)) and values which do not
+    /// borrow from the input.  The input is fed into the driver until the
+    /// value is complete ([`Status::Ready`]), the input is consumed as it's
+    /// used.  If more input is needed ([`Status::NeedInput`]) the method has
+    /// to be invoked again with the same driver once more input was read.
+    /// In the meantime the buffer cannot be used otherwise.  After an error
+    /// the value is abandoned, whether the stream can continue with the next
+    /// value depends on the decoder.
+    ///
+    /// ```
+    /// # use deser::de::{Decoder, Frame, Progress};
+    /// # use deser::Error;
+    /// # /// A format with sequences of digits (without separators).
+    /// # struct DigitsConfig;
+    /// # impl Decoder for DigitsConfig {
+    /// #     type State = bool;
+    /// #     fn frame(&self, _: &mut bool, _: &[u8], _: bool) -> Result<Frame, Error> { unimplemented!() }
+    /// #     fn drive<'de>(&self, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
+    /// #     fn supports_feed(&self) -> bool { true }
+    /// #     fn feed(&self, started: &mut bool, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
+    /// #         if !*started {
+    /// #             if input.is_empty() && eof { return Ok(Progress::End); }
+    /// #             driver.emit(deser::Event::seq_start())?;
+    /// #             *started = true;
+    /// #         }
+    /// #         for digit in input { driver.emit(u64::from(digit - b'0'))?; }
+    /// #         if eof {
+    /// #             driver.emit(deser::Event::SeqEnd)?;
+    /// #             *started = false;
+    /// #             return Ok(Progress::Done { consumed: input.len() });
+    /// #         }
+    /// #         Ok(Progress::NeedMore { consumed: input.len() })
+    /// #     }
+    /// # }
+    /// use deser::de::DeserializeDriver;
+    /// use deser::io::{DecodeBuffer, Status};
+    ///
+    /// // `DigitsConfig` is the configuration of a format with a sequence of digits
+    /// let mut buffer = DecodeBuffer::new(DigitsConfig);
+    /// let mut out = None::<Vec<u32>>;
+    /// {
+    ///     let mut driver = DeserializeDriver::new(&mut out);
+    ///     for chunk in [&b"12"[..], b"3"] {
+    ///         buffer.extend_from_slice(chunk);
+    ///         assert_eq!(buffer.feed(&mut driver).unwrap(), Status::NeedInput);
+    ///     }
+    ///     buffer.set_eof();
+    ///     assert_eq!(buffer.feed(&mut driver).unwrap(), Status::Ready);
+    /// }
+    /// assert_eq!(out.unwrap(), [1, 2, 3]);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the decoder does not support feeding or if a value is
+    /// ready to be deserialized from its frame.
+    pub fn feed(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<Status, Error> {
+        assert!(
+            self.decoder.supports_feed(),
+            "the decoder does not support feeding"
+        );
+        assert!(self.ready.is_none(), "a value is ready to be deserialized");
+        if self.failed {
+            return Err(failed_error());
+        }
+        if self.done {
+            return Ok(Status::End);
+        }
+        let input = &self.data[self.start..self.end];
+        let rv = self.decoder.feed(
+            &mut self.state,
+            input,
+            self.position.offset,
+            self.eof,
+            driver,
+        );
+        match rv {
+            Ok(Progress::Done { consumed }) => {
+                assert!(consumed <= input.len(), "invalid progress");
+                self.consume(consumed);
+                self.feeding = false;
+                Ok(Status::Ready)
+            }
+            Ok(Progress::NeedMore { consumed }) => {
+                assert!(consumed <= input.len(), "invalid progress");
+                self.consume(consumed);
+                self.feeding = true;
+                if self.eof {
+                    self.failed = true;
+                    return Err(self.locate(
+                        Error::new(ErrorKind::EndOfFile, "unexpected end of input")
+                            .with_offset(self.position.offset),
+                    ));
+                }
+                Ok(Status::NeedInput)
+            }
+            Ok(Progress::End) => {
+                assert!(self.eof, "end of values before the end of the input");
+                self.done = true;
+                self.feeding = false;
+                Ok(Status::End)
+            }
+            // whether the stream can continue is up to the decoder
+            Err(err) => {
+                self.feeding = false;
+                Err(self.locate(err))
+            }
+        }
+    }
+
+    /// Resolves the line and column of an error with an offset in the
+    /// stream.
+    ///
+    /// This is only possible for offsets in the buffered data.
+    fn locate(&self, err: Error) -> Error {
+        match err.offset() {
+            Some(offset)
+                if err.line().is_none()
+                    && offset >= self.position.offset
+                    && offset - self.position.offset <= self.end - self.start =>
+            {
+                let mut position = self.position;
+                position
+                    .advance(&self.data[self.start..self.start + offset - self.position.offset]);
+                err.with_position(offset, position.line, position.column)
+            }
+            _ => err,
         }
     }
 
@@ -372,4 +532,9 @@ impl<D: Decoder> DecodeBuffer<D> {
             .with_position(0, 1, 1)
             .shift_position(position.offset, position.line, position.column)
     }
+}
+
+#[cold]
+fn failed_error() -> Error {
+    Error::new(ErrorKind::Unexpected, "cannot continue after an error")
 }
