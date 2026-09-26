@@ -20,6 +20,14 @@ members = [
 ]
 resolver = "3"
 
+[profile.dev]
+# Incremental compilation leaves new object files in target/debug/deps on
+# every build (with the unpacked debug info that is the default on macOS).
+# They are never cleaned up and rustc lists that directory on every
+# invocation which made builds and doctests slower and slower.  The crates
+# are small, a non-incremental build is about as fast.
+incremental = false
+
 [workspace.package]
 edition = "2024"
 rust-version = "1.88"

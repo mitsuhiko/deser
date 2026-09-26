@@ -12,6 +12,7 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-yaml"
 # the vendored conformance test data is only needed for development
 exclude = ["tests/data"]
+autotests = false
 
 [features]
 speedups = ["simdutf8"]
@@ -27,3 +28,7 @@ deser-location = { version = "0.8.0", path = "../deser-location" }
 [[test]]
 name = "yaml_test_suite"
 harness = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -10,6 +10,7 @@ keywords = ["serialization", "deserialization"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-path"
+autotests = false
 
 [dependencies]
 deser = { version = "0.8.0", path = "../deser", default-features = false }
@@ -17,3 +18,7 @@ deser = { version = "0.8.0", path = "../deser", default-features = false }
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
 deser-json = { path = "../deser-json" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

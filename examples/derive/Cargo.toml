@@ -9,3 +9,8 @@ rust-version.workspace = true
 [dependencies]
 deser = { path = "../../deser", features = ["derive"] }
 deser-debug = { path = "../../deser-debug" }
+
+[[bin]]
+name = "derive"
+path = "src/main.rs"
+test = false

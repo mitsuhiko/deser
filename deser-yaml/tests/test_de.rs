@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use deser::{Deserialize, ErrorKind};
 use deser_yaml::{Deserializer, DeserializerConfig, Tagged, Version, from_slice, from_str};
 
-mod common;
+use crate::common;
 
 use common::Value;
 

@@ -10,6 +10,7 @@ keywords = ["serialization", "deserialization"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-json"
+autotests = false
 
 [features]
 speedups = ["itoa", "ryu", "simdutf8"]
@@ -23,3 +24,7 @@ simdutf8 = { version = "0.1.5", optional = true }
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
 deser-location = { version = "0.8.0", path = "../deser-location" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -10,6 +10,7 @@ keywords = ["serialization", "deserialization", "cbor"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-cbor"
+autotests = false
 
 [features]
 speedups = ["simdutf8"]
@@ -20,3 +21,7 @@ simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

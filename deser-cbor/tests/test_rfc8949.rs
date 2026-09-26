@@ -3,7 +3,7 @@
 //! Adapted from the cbor2 test suite.  Every vector is decoded and compared
 //! against the expected value.  Vectors that are in the preferred
 //! serialization are also encoded back byte for byte.
-mod common;
+use crate::common;
 
 use common::{Value, hex, to_hex};
 

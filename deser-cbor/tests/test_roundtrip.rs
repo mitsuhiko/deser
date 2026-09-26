@@ -1,7 +1,7 @@
 //! Round-trip and wire-format tests.
 //!
 //! Adapted from the cbor2 test suite.
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;

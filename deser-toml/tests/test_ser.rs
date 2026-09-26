@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use deser::{Deserialize, ErrorKind, Serialize};
 use deser_toml::{Datetime, from_str, to_string};
 
-mod common;
+use crate::common;
 
 use common::Value;
 

@@ -9,3 +9,8 @@ publish = false
 deser = { path = "../../deser", features = ["derive", "jiff"] }
 deser-json = { path = "../../deser-json" }
 jiff = "0.2.14"
+
+[[bin]]
+name = "json-numbers"
+path = "src/main.rs"
+test = false

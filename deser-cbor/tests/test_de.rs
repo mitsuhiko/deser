@@ -1,7 +1,7 @@
 //! Tests for malformed input, error reporting and edge cases.
 //!
 //! Adapted from the cbor2 test suite.
-mod common;
+use crate::common;
 
 use deser::de::DeserializeOwned;
 use std::collections::HashMap;

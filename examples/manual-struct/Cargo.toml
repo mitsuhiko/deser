@@ -9,3 +9,8 @@ rust-version.workspace = true
 [dependencies]
 deser = { path = "../../deser" }
 deser-debug = { path = "../../deser-debug" }
+
+[[bin]]
+name = "manual-struct"
+path = "src/main.rs"
+test = false

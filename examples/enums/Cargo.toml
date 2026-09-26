@@ -8,3 +8,8 @@ publish = false
 [dependencies]
 deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "enums"
+path = "src/main.rs"
+test = false

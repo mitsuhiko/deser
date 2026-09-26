@@ -10,6 +10,7 @@ keywords = ["serialization", "deserialization"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser"
+autotests = false
 
 [package.metadata.docs.rs]
 all-features = true
@@ -37,3 +38,7 @@ uuid = { version = "1", optional = true, default-features = false }
 # the tests use derive
 deser = { path = ".", features = ["derive"] }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

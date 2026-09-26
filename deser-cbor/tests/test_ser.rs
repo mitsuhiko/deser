@@ -1,7 +1,7 @@
 //! Serialization tests including the deterministic encoding.
 //!
 //! The canonical tests are adapted from the cbor2 test suite.
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, HashMap};
 

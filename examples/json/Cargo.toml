@@ -9,3 +9,8 @@ rust-version.workspace = true
 [dependencies]
 deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "json"
+path = "src/main.rs"
+test = false

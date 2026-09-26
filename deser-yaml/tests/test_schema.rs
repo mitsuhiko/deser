@@ -10,7 +10,7 @@ use std::path::Path;
 use deser::Error;
 use deser_yaml::{DeserializerConfig, Version};
 
-mod common;
+use crate::common;
 
 use common::{Value, parse_json_stream};
 

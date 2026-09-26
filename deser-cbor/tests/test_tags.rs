@@ -1,7 +1,7 @@
 //! Tests for CBOR tag support.
 //!
 //! Adapted from the cbor2 test suite.
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

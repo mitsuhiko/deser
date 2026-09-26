@@ -1,5 +1,5 @@
 //! Formats with native bytes ignore the bytes formats requested by values.
-mod common;
+use crate::common;
 
 use common::{de, ser};
 use deser::adapters::bytes::{BytesFallback, Hex, IntSeq};

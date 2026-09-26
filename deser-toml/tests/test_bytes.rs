@@ -4,7 +4,7 @@ use deser::adapters::bytes::{Base64UrlNoPad, BytesFallback, BytesFormat, Hex, In
 use deser::{Deserialize, Serialize};
 use deser_toml::{DeserializerConfig, SerializerConfig, from_str, to_string};
 
-mod common;
+use crate::common;
 
 use common::Value;
 

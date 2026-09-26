@@ -12,6 +12,7 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-toml"
 # the vendored conformance test data is only needed for development
 exclude = ["tests/data"]
+autotests = false
 
 [features]
 speedups = ["simdutf8"]
@@ -29,3 +30,7 @@ deser-json = { version = "0.8.0", path = "../deser-json" }
 [[test]]
 name = "toml_test_suite"
 harness = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

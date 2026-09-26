@@ -13,6 +13,9 @@ documentation = "https://docs.rs/deser"
 
 [lib]
 proc-macro = true
+# the derive is tested through deser
+test = false
+doctest = false
 
 [dependencies]
 proc-macro2 = "1.0.91"

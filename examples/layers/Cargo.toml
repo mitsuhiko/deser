@@ -9,3 +9,8 @@ publish = false
 deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
 deser-path = { path = "../../deser-path" }
+
+[[bin]]
+name = "layers"
+path = "src/main.rs"
+test = false

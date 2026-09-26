@@ -1,5 +1,5 @@
 //! Tests for the well-known types of deser.
-mod common;
+use crate::common;
 
 use common::{Value, de, ser};
 use deser::ext::{BigInt, Datetime, Decimal, Duration, Timestamp, Uuid};
