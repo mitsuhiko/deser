@@ -9,6 +9,8 @@ fn invalid(name: &str) -> Error {
 
 const STANDARD: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const URL_SAFE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const HEX_LOWER: &[u8; 16] = b"0123456789abcdef";
+const HEX_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 
 const INVALID: u8 = 0xff;
 
@@ -112,22 +114,32 @@ fn encode_hex(bytes: &[u8], digits: &[u8; 16], out: &mut String) {
     }
 }
 
-fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
-    fn value(b: u8) -> Result<u8, Error> {
-        match b {
-            b'0'..=b'9' => Ok(b - b'0'),
-            b'a'..=b'f' => Ok(b - b'a' + 10),
-            b'A'..=b'F' => Ok(b - b'A' + 10),
-            _ => Err(invalid("hex")),
-        }
+/// Maps hex digits (both cases) to their values.
+static HEX_VALUES: [u8; 256] = {
+    let mut table = [INVALID; 256];
+    let mut idx = 0;
+    while idx < 16 {
+        table[HEX_LOWER[idx] as usize] = idx as u8;
+        table[HEX_UPPER[idx] as usize] = idx as u8;
+        idx += 1;
     }
+    table
+};
+
+fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
     let (pairs, []) = s.as_bytes().as_chunks::<2>() else {
         return Err(invalid("hex"));
     };
-    pairs
-        .iter()
-        .map(|&[hi, lo]| Ok(value(hi)? << 4 | value(lo)?))
-        .collect()
+    let mut out = Vec::with_capacity(pairs.len());
+    for &[hi, lo] in pairs {
+        let (hi, lo) = (HEX_VALUES[hi as usize], HEX_VALUES[lo as usize]);
+        // digits are below 16, `INVALID` is not
+        if (hi | lo) >= 16 {
+            return Err(invalid("hex"));
+        }
+        out.push(hi << 4 | lo);
+    }
+    Ok(out)
 }
 
 macro_rules! encoding {
@@ -196,7 +208,7 @@ encoding!(
     /// Lowercase and uppercase digits are accepted when decoding.
     Hex,
     "hex",
-    |bytes, out| encode_hex(bytes, b"0123456789abcdef", out),
+    |bytes, out| encode_hex(bytes, HEX_LOWER, out),
     decode_hex
 );
 
@@ -206,7 +218,7 @@ encoding!(
     /// Lowercase and uppercase digits are accepted when decoding.
     HexUpper,
     "hex-upper",
-    |bytes, out| encode_hex(bytes, b"0123456789ABCDEF", out),
+    |bytes, out| encode_hex(bytes, HEX_UPPER, out),
     decode_hex
 );
 
@@ -339,6 +351,10 @@ mod tests {
         assert_eq!(decode_hex("").unwrap(), b"");
         assert!(decode_hex("0").is_err());
         assert!(decode_hex("0g").is_err());
+        for invalid in ["0/", "0:", "@0", "G0", "0`", "g0", "\u{ff}"] {
+            assert!(decode_hex(invalid).is_err(), "{invalid:?}");
+        }
+        assert_eq!(decode_hex("09afAF").unwrap(), b"\x09\xaf\xaf");
     }
 
     #[cfg(feature = "bytes-encoding")]
