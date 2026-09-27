@@ -27,36 +27,41 @@ static BASE64_VALUES: [u8; 256] = {
 };
 
 fn encode_base64(bytes: &[u8], alphabet: &[u8; 64], pad: bool, out: &mut String) {
-    let char_at = |value: u32| alphabet[(value & 0x3f) as usize] as char;
-    out.reserve(bytes.len().div_ceil(3) * 4);
+    let char_at = |value: u32| alphabet[(value & 0x3f) as usize];
     let (chunks, remainder) = bytes.as_chunks::<3>();
-    for &[a, b, c] in chunks {
+    let tail_len = match remainder.len() {
+        0 => 0,
+        _ if pad => 4,
+        len => len + 1,
+    };
+    let start = out.len();
+    // SAFETY: the string only gets ASCII characters (the characters of the
+    // alphabet, `=` and the zeros from `resize`), it stays valid UTF-8 also
+    // if this panics.
+    let buf = unsafe { out.as_mut_vec() };
+    buf.resize(start + chunks.len() * 4 + tail_len, 0);
+    let (body, tail) = buf[start..].split_at_mut(chunks.len() * 4);
+    for (&[a, b, c], dst) in chunks.iter().zip(body.as_chunks_mut::<4>().0) {
         let n = (a as u32) << 16 | (b as u32) << 8 | c as u32;
-        out.push(char_at(n >> 18));
-        out.push(char_at(n >> 12));
-        out.push(char_at(n >> 6));
-        out.push(char_at(n));
+        *dst = [
+            char_at(n >> 18),
+            char_at(n >> 12),
+            char_at(n >> 6),
+            char_at(n),
+        ];
     }
-    match *remainder {
+    let quad = match *remainder {
         [a] => {
             let n = (a as u32) << 16;
-            out.push(char_at(n >> 18));
-            out.push(char_at(n >> 12));
-            if pad {
-                out.push_str("==");
-            }
+            [char_at(n >> 18), char_at(n >> 12), b'=', b'=']
         }
         [a, b] => {
             let n = (a as u32) << 16 | (b as u32) << 8;
-            out.push(char_at(n >> 18));
-            out.push(char_at(n >> 12));
-            out.push(char_at(n >> 6));
-            if pad {
-                out.push('=');
-            }
+            [char_at(n >> 18), char_at(n >> 12), char_at(n >> 6), b'=']
         }
-        _ => {}
-    }
+        _ => return,
+    };
+    tail.copy_from_slice(&quad[..tail_len]);
 }
 
 /// Decodes base64 leniently.
@@ -71,35 +76,37 @@ pub(crate) fn decode_base64(s: &str) -> Result<Vec<u8>, Error> {
         .take(2)
         .take_while(|&&b| b == b'=')
         .count();
-    let data = &input[..input.len() - padding];
-    if data.len() % 4 == 1 || (padding > 0 && data.len() % 4 + padding != 4) {
+    let (chunks, remainder) = input[..input.len() - padding].as_chunks::<4>();
+    if remainder.len() == 1 || (padding > 0 && remainder.len() + padding != 4) {
         return Err(invalid("base64"));
     }
 
-    let value = |b: u8| match BASE64_VALUES[b as usize] {
-        INVALID => Err(invalid("base64")),
-        value => Ok(value as u32),
-    };
-    let mut out = Vec::with_capacity(data.len() / 4 * 3 + 2);
-    let (chunks, remainder) = data.as_chunks::<4>();
-    for &[a, b, c, d] in chunks {
-        let n = value(a)? << 18 | value(b)? << 12 | value(c)? << 6 | value(d)?;
-        out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+    // values are below 64, `INVALID` is not
+    let value = |b: u8| BASE64_VALUES[b as usize];
+    let mut out = vec![0; chunks.len() * 3 + remainder.len().saturating_sub(1)];
+    let (body, tail) = out.split_at_mut(chunks.len() * 3);
+    for (&[a, b, c, d], dst) in chunks.iter().zip(body.as_chunks_mut::<3>().0) {
+        let (a, b, c, d) = (value(a), value(b), value(c), value(d));
+        if a | b | c | d >= 64 {
+            return Err(invalid("base64"));
+        }
+        let n = (a as u32) << 18 | (b as u32) << 12 | (c as u32) << 6 | d as u32;
+        *dst = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
     }
     match *remainder {
         [a, b] => {
-            let n = value(a)? << 18 | value(b)? << 12;
-            if n & 0xffff != 0 {
+            let (a, b) = (value(a), value(b));
+            if a | b >= 64 || b & 0xf != 0 {
                 return Err(invalid("base64"));
             }
-            out.push((n >> 16) as u8);
+            tail[0] = a << 2 | b >> 4;
         }
         [a, b, c] => {
-            let n = value(a)? << 18 | value(b)? << 12 | value(c)? << 6;
-            if n & 0xff != 0 {
+            let (a, b, c) = (value(a), value(b), value(c));
+            if a | b | c >= 64 || c & 0x3 != 0 {
                 return Err(invalid("base64"));
             }
-            out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8]);
+            tail.copy_from_slice(&[a << 2 | b >> 4, b << 4 | c >> 2]);
         }
         _ => {}
     }
@@ -328,6 +335,63 @@ mod tests {
         assert_eq!(encode::<Base64>(b"\xfb\xff"), "+/8=");
         assert_eq!(encode::<Base64Url>(b"\xfb\xff"), "-_8=");
         assert_eq!(encode::<Base64UrlNoPad>(b"\xfb\xff"), "-_8");
+    }
+
+    /// Encodes base64 bit by bit.
+    fn reference_base64(bytes: &[u8], alphabet: &[u8; 64], pad: bool) -> String {
+        let bits: Vec<bool> = bytes
+            .iter()
+            .flat_map(|byte| (0..8).rev().map(move |idx| byte >> idx & 1 == 1))
+            .collect();
+        let mut rv: String = bits
+            .chunks(6)
+            .map(|chunk| {
+                let value = (0..6).fold(0, |acc, idx| {
+                    acc << 1 | chunk.get(idx).copied().unwrap_or(false) as usize
+                });
+                alphabet[value] as char
+            })
+            .collect();
+        while pad && !rv.len().is_multiple_of(4) {
+            rv.push('=');
+        }
+        rv
+    }
+
+    #[test]
+    fn test_base64_roundtrip() {
+        let data: Vec<u8> = (0..=255).rev().chain(0..=255).collect();
+        for len in (0..10).chain([254, 255, 256, 511, 512]) {
+            let bytes = &data[..len];
+            for (encoded, alphabet, pad) in [
+                (encode::<Base64>(bytes), STANDARD, true),
+                (encode::<Base64NoPad>(bytes), STANDARD, false),
+                (encode::<Base64Url>(bytes), URL_SAFE, true),
+                (encode::<Base64UrlNoPad>(bytes), URL_SAFE, false),
+            ] {
+                assert_eq!(encoded, reference_base64(bytes, alphabet, pad));
+                assert_eq!(decode_base64(&encoded).unwrap(), bytes);
+            }
+        }
+
+        // encoding appends
+        let mut out = String::from("x");
+        Base64::encode(b"f", &mut out);
+        Base64UrlNoPad::encode(b"\xfb\xff", &mut out);
+        assert_eq!(out, "xZg==-_8");
+    }
+
+    #[test]
+    fn test_base64_invalid_chars() {
+        let valid = encode::<Base64>(&[0xa5; 8]);
+        for idx in 0..valid.len() - 1 {
+            for invalid in [b' ', b'.', b'\n', b'=', 0xc3] {
+                let mut bytes = valid.clone().into_bytes();
+                bytes[idx] = invalid;
+                let s = String::from_utf8_lossy(&bytes);
+                assert!(decode_base64(&s).is_err(), "{s:?}");
+            }
+        }
     }
 
     #[test]

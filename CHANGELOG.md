@@ -4,6 +4,8 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Encoding and decoding base64 is faster, up to 1.6 times for large
+  buffers.
 - Added `deser::ser::EventSink` and `SerializeDriver::drive_sink`.  Like
   `drive` with a callback, but formats can mark `EventSink::event` as
   `#[inline(always)]` so that it's specialized for every kind of event the
