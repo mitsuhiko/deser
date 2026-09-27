@@ -1,0 +1,38 @@
+[package]
+name = "deser-csv"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "CSV, TSV and other delimited text for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "csv", "tsv"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-csv"
+# the vendored conformance test data is only needed for development
+exclude = ["tests/data"]
+autotests = false
+
+[features]
+default = ["io"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["deser-core/io"]
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-json = { version = "0.8.0", path = "../deser-json" }
+deser-location = { version = "0.8.0", path = "../deser-location" }
+deser-path = { version = "0.8.0", path = "../deser-path" }
+deser-value = { version = "0.8.0", path = "../deser-value" }
+
+[[test]]
+name = "papaparse_test_suite"
+harness = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

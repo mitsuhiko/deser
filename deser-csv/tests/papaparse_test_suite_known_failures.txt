@@ -1,0 +1,36 @@
+# Test cases of PapaParse that are expected to fail.
+# Format: <name> [# reason].  Regenerate with DESER_CSV_BLESS=1.
+core: Duplicate header names with __proto__ field # duplicate names are an error, PapaParse renames them
+core: Duplicated header names existing column # duplicate names are an error, PapaParse renames them
+core: Fast mode with blank line at end # a line break at the end does not start a record
+core: Input with only a commented line and blank line after # a line break at the end does not start a record
+core: Misplaced quotes in data, not as opening quotes # quotes in unquoted fields are errors (unless lenient_quotes)
+core: One column input with empty fields # a line break at the end does not start a record
+core: Quoted field with whitespace around quotes # quotes in unquoted fields are errors (unless lenient_quotes)
+core: Simple duplicated header names # duplicate names are an error, PapaParse renames them
+core: Unquoted field with quotes at end of field # quotes in unquoted fields are errors (unless lenient_quotes)
+parse: Bad delimiter (\n) # invalid delimiters are an error, PapaParse uses a comma
+parse: Blank lines at end # a line break at the end does not start a record
+parse: Custom escape character not used for escaping # the escape character escapes every character (like in Python)
+parse: Delimiter is guessed correctly when a quoted field holds newlines and other delimiter characters # the delimiter is not guessed
+parse: Empty input string # PapaParse reports that the delimiter cannot be guessed
+parse: Empty lines # a line break at the end does not start a record
+parse: Input is just a string (a single field) # PapaParse reports that the delimiter cannot be guessed
+parse: Misplaced quotes in data twice, not as opening quotes # quotes in unquoted fields are errors (unless lenient_quotes)
+parse: Mixed slash n and slash r should choose first as precident # all line endings end records, PapaParse only uses the first one it finds
+parse: Parsing with skipEmptyLines set to 'greedy' # lines with only whitespace or delimiters are not blank
+parse: Parsing with skipEmptyLines set to 'greedy' with quotes and delimiters as content # lines with only whitespace or delimiters are not blank
+parse: Pipe delimiter is guessed correctly when first field are enclosed in quotes and contain delimiter characters # the delimiter is not guessed
+parse: Pipe delimiter is guessed correctly when mixed with comas # the delimiter is not guessed
+parse: Pipe delimiter is guessed correctly when some fields are enclosed in quotes and contain delimiter characters and escaoped quotes # the delimiter is not guessed
+parse: Quoted fields with spaces after closing quote # characters after a closing quote are errors (Trim::Fields accepts whitespace)
+parse: Quoted fields with spaces between closing quote and newline and contains newline # characters after a closing quote are errors (Trim::Fields accepts whitespace)
+parse: Quoted fields with spaces between closing quote and next delimiter # characters after a closing quote are errors (Trim::Fields accepts whitespace)
+parse: Quoted fields with spaces between closing quote and next delimiter and contains delimiter # characters after a closing quote are errors (Trim::Fields accepts whitespace)
+parse: Quoted fields with spaces between closing quote and next new line # characters after a closing quote are errors (Trim::Fields accepts whitespace)
+parse: Skip empty lines, with empty input # PapaParse reports that the delimiter cannot be guessed
+unparse: Bad delimiter (\n) # invalid delimiters are an error, PapaParse uses a comma
+unparse: Custom quoteChar with custom escapeChar quotes and escapes embedded quoteChar # special characters are escaped instead of quoting the field
+unparse: Mismatched field counts in rows # records with a different number of fields are an error (unless flexible)
+unparse: Use different escapeChar # special characters are escaped instead of quoting the field
+unparse: With header row, with extra field in a row # keys that are not a column are an error, PapaParse drops them

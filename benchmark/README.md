@@ -3,7 +3,7 @@
 This folder compares every format of deser with a serde based library on
 the same data and types: `deser-json` with `serde_json`, `deser-cbor` with
 `ciborium`, `deser-msgpack` with `rmp-serde`, `deser-yaml` with
-`serde-saphyr` and `deser-toml` with `toml`.  The results below are from
+`serde-saphyr`, `deser-toml` with `toml` and `deser-csv` with `csv`.  The results below are from
 `make bench-versus` on an Apple M5 Max with Rust 1.98 (they do not include
 MessagePack yet).  Ratios are deser/serde, below 1 deser is faster.
 
@@ -61,6 +61,14 @@ For the Twitter JSON document `cargo bench` also compares with miniserde:
 * **TOML** documents are parsed into a tree (tables can be defined out of
   order), which costs one allocation per inline array (58k for canada).
   An arena was tried and did not pay off.
+* **CSV** is compared with the `csv` crate on a table only (see
+  `src/table.rs`): reading is 1.58x (6.21 ms vs 3.92 ms) and writing 2.87x
+  (4.79 ms vs 1.67 ms) of it.  The parser finds the fields of a record in
+  one pass and they are emitted from there, most of the time is spent in
+  the drivers and the sinks (`table/events/ser`, the serialize driver
+  alone, is about 1 ms).  Formatting floats with the standard library is
+  about 8% of writing.  Empty optional numbers used to build an error
+  message for every field that was thrown away (a third of reading).
 * **Exact numbers** in JSON (on by default) pass floats with more than 15
   digits or an exponent as number extension values.  Float sinks read
   their values with a single dynamic call, which makes this as fast as
@@ -146,7 +154,8 @@ and `tree` (deeply nested small containers).  `manifests` are Kubernetes
 manifests (internally tagged by `kind`, flattened fields, see
 `src/manifests.rs`) and `logs` are 5,000 structured log events of a few
 hundred bytes which are read and written one by one, which measures what
-a document costs (see `src/logs.rs`).
+a document costs (see `src/logs.rs`).  `table` is a table of 20,000 rows
+which only exists for CSV (see `src/table.rs`).
 
 A document is the input of its own format, the inputs of the other formats
 are serialized from it with deser.  Both libraries read the same input and

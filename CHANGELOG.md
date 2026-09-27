@@ -48,6 +48,22 @@ All notable changes to deser are documented here.
   deserialization continues with the next item.  Errors of the format and
   of layers are not recoverable.  `DefaultOnError`, `VecSkipError` and
   `MapSkipError` use this and no longer buffer values.
+- Added `deser-csv` for CSV, TSV and other delimited text.  A document is
+  a sequence of records which are maps of the names of the columns (from
+  the first record, given or none) to the fields.  Like query strings,
+  fields are lexical atoms which the types parse, also in flattened
+  structs and tagged enums.  The dialect is configurable (delimiter,
+  quotes, escapes, line endings, comments, blank lines, trimming, nulls, the
+  `sep=` line of Excel) and presets exist for TSV as databases write it.
+  Quotes that do not follow the rules and records with the wrong number of
+  fields are errors by default.  Streams are read and written one record
+  at a time, errors only discard their record.  Serializing writes the
+  columns of the first record (or given columns), quotes where necessary
+  and can escape formulas for spreadsheets.  The parser is tested with the
+  test cases of PapaParse and rust-csv.
+- Empty values that the value of an optional rejects (like an empty field
+  for an `Option<u32>` in a query string) no longer build an error message
+  that is thrown away.
 - Added `deser-env` for environment variables.  The variables with a
   prefix are a map, `__` separates nested keys (`APP_SERVER__PORT` is
   `server.port`) and names are lowercased.  Like query strings, values are

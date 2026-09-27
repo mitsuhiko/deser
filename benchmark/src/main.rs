@@ -37,6 +37,7 @@ mod kubernetes;
 mod logs;
 mod manifests;
 mod saphyr;
+mod table;
 mod twitter;
 
 use compare::Equality;
@@ -367,6 +368,49 @@ where
     }
 }
 
+/// The table for CSV (which only holds flat records, see `table.rs`).
+struct Table {
+    rows: Vec<table::Row>,
+    csv: String,
+}
+
+impl Table {
+    fn new() -> Table {
+        let rows = table::rows();
+        let csv = table::csv(&rows);
+        assert_eq!(table::serde_de(&csv), rows);
+        assert_eq!(table::deser_de(&csv), rows);
+        Table { rows, csv }
+    }
+
+    fn add_benches<'a>(&'a self, benches: &mut Benches<'a>) {
+        let (rows, csv) = (&self.rows, self.csv.as_str());
+        benches.add("table/csv/de", move || {
+            black_box(table::deser_de(csv));
+        });
+        benches.add("table/csv/ser", move || {
+            black_box(table::deser_ser(rows));
+        });
+        benches.add("table/events/ser", move || {
+            let mut count = 0usize;
+            deser::ser::SerializeDriver::new(rows)
+                .drive(|event, _| {
+                    black_box(&event);
+                    count += 1;
+                    Ok(())
+                })
+                .unwrap();
+            black_box(count);
+        });
+        benches.add("table/csv/de-serde", move || {
+            black_box(table::serde_de(csv));
+        });
+        benches.add("table/csv/ser-serde", move || {
+            black_box(table::serde_ser(rows));
+        });
+    }
+}
+
 /// Holds the data of all benchmarks.
 struct Data {
     // real world data
@@ -382,6 +426,7 @@ struct Data {
     // synthetic data
     manifests: Dataset<manifests::ManifestList>,
     logs: Documents<logs::LogEvent>,
+    table: Table,
     features: Dataset<datasets::FeatureCollection>,
     point_cloud: Dataset<datasets::PointCloud>,
     blobs: Dataset<datasets::Blobs>,
@@ -419,6 +464,7 @@ impl Data {
                 .with_serde(),
             manifests: Dataset::new("manifests", manifests::manifests()).with_serde(),
             logs: Documents::new("logs", logs::events()),
+            table: Table::new(),
             features: Dataset::new("features", datasets::features()).with_serde(),
             point_cloud: Dataset::new("point-cloud", datasets::point_cloud()).with_serde(),
             blobs: Dataset::new("blobs", datasets::blobs()),
@@ -452,6 +498,7 @@ impl Data {
         benches.add_deser_and_serde(&self.kubernetes);
         benches.add_deser_and_serde(&self.manifests);
         benches.add_documents(&self.logs);
+        self.table.add_benches(&mut benches);
         benches.add_deser_and_serde(&self.features);
         benches.add_deser_and_serde(&self.point_cloud);
         benches.add_deser(&self.blobs);

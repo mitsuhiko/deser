@@ -8,7 +8,7 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is a serialization library for Rust for self describing formats such as
-JSON, YAML, TOML, CBOR, MessagePack and query strings.  It takes the user experience of
+JSON, YAML, TOML, CBOR, MessagePack, CSV and query strings.  It takes the user experience of
 serde, the problems that years of running serde in production turned up and the
 Rust of today, and tries to solve them with a different architecture.  If you
 know serde you will feel at home: you derive `Serialize` and `Deserialize` on
@@ -40,8 +40,9 @@ The same type works unchanged with
 [`deser-yaml`](https://docs.rs/deser-yaml),
 [`deser-toml`](https://docs.rs/deser-toml),
 [`deser-cbor`](https://docs.rs/deser-cbor),
-[`deser-msgpack`](https://docs.rs/deser-msgpack) and
-[`deser-urlencoded`](https://docs.rs/deser-urlencoded).  Deriving requires the `derive`
+[`deser-msgpack`](https://docs.rs/deser-msgpack),
+[`deser-urlencoded`](https://docs.rs/deser-urlencoded) and (as long as it's
+flat) [`deser-csv`](https://docs.rs/deser-csv).  Deriving requires the `derive`
 feature, which is not enabled by default:
 
 ```sh
@@ -366,6 +367,7 @@ threads.
 * [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack): MessagePack
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
+* [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv): CSV and TSV
 * [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded): query strings and forms
 * [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env): environment variables
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): paths in errors

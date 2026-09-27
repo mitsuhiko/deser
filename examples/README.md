@@ -27,6 +27,9 @@ Getting started:
 * [`query-strings`](query-strings): query strings and HTML forms with
   `deser-urlencoded`, with numbers that parse in flattened structs and
   tagged enums.
+* [`csv`](csv): reading a CSV export row by row with `deser-csv`,
+  flattened tagged enums, lists in a field, per-row errors and writing
+  CSV and TSV.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.
