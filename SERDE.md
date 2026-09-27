@@ -241,6 +241,51 @@ different convention.  The tag and content keys can have aliases too
 * [serde: Consider supporting concat! macro in attributes #1636](https://github.com/serde-rs/serde/issues/1636)
 * [serde: Enum tag alias #2324](https://github.com/serde-rs/serde/issues/2324)
 
+## Skipping and Required Fields
+
+Serde infers `T: Default` for type parameters of skipped fields, even if
+the field is an `Option<T>` which has a default for any `T`.  Deser
+requires the field type to have a default (`Option<T>: Default`) and type
+parameters that only appear in skipped fields need neither `Serialize` nor
+`Deserialize`.  This also applies to skipped fields of enum variants and
+to variants that are skipped as a whole.
+
+Optional fields (`Option<T>` and other types with a value for missing
+fields) can be made required with `#[deser(required)]`: `null` is still
+accepted, a missing key is not.
+
+**Related issues:**
+
+* [serde: #[serde(skip_deserializing)] for Option<T> wrongly requires T to implement Default #2759](https://github.com/serde-rs/serde/issues/2759)
+* [serde: `Option<T>` defaults to `None` when missing fields #2753](https://github.com/serde-rs/serde/issues/2753)
+
+## Error Messages
+
+Serde's errors for enums lose information: unknown variants do not name
+the enum, and enums with only unit variants that receive a value of the
+wrong type report `expected value`.  Deser names the enum in errors about
+unknown variants (``unknown variant `D` of Kind, expected `A` or `B` ``)
+and reports the type of the value and the enum otherwise (`unexpected
+float, expected Level`).
+
+**Related issues:**
+
+* [serde: More descriptive unknown variant deserialize error #1481](https://github.com/serde-rs/serde/issues/1481)
+* [serde: Confusing error message when deserializing a simple enum from JSON #2702](https://github.com/serde-rs/serde/issues/2702)
+
+## Standard Library Types
+
+Deser implements `Serialize` and `Deserialize` for some types that serde
+does not support: `ManuallyDrop` (like its value), `OnceLock` (like an
+`Option`) and `Infallible` (which cannot be deserialized, useful for enums
+with impossible variants).
+
+**Related issues:**
+
+* [serde: impl Serialize and Deserialize for ManuallyDrop #1507](https://github.com/serde-rs/serde/issues/1507)
+* [serde: impl Serialize for OnceCell #1952](https://github.com/serde-rs/serde/issues/1952)
+* [serde: Implement Serialize and Deserialize for core::convert::Infaillible #2740](https://github.com/serde-rs/serde/issues/2740)
+
 ## Updating Values
 
 Serde has a hidden `deserialize_in_place` which reuses allocations but
