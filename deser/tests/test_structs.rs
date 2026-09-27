@@ -164,40 +164,6 @@ fn test_tuple_struct_borrowed() {
 }
 
 #[test]
-fn test_tuple_struct_validate() {
-    fn ordered(value: &Range) -> Result<(), &'static str> {
-        if value.0 > value.1 {
-            Err("start is after end")
-        } else {
-            Ok(())
-        }
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(validate = ordered)]
-    struct Range(u32, u32);
-
-    assert_eq!(
-        deserialize::<Range>(vec![
-            Event::seq_start(),
-            1u64.into(),
-            2u64.into(),
-            Event::SeqEnd
-        ])
-        .unwrap(),
-        Range(1, 2)
-    );
-    let err = deserialize::<Range>(vec![
-        Event::seq_start(),
-        2u64.into(),
-        1u64.into(),
-        Event::SeqEnd,
-    ])
-    .unwrap_err();
-    assert_eq!(err.message(), "invalid value: start is after end");
-}
-
-#[test]
 fn test_empty_tuple_struct() {
     // without fields tuple structs are like unit structs
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -284,30 +250,6 @@ fn test_tuple_struct_phantom() {
             Event::SeqEnd,
         ],
     );
-}
-
-#[test]
-fn test_tuple_struct_borrowed_validate() {
-    fn not_empty(value: &Named<'_>) -> Result<(), &'static str> {
-        if value.0.is_empty() {
-            Err("empty name")
-        } else {
-            Ok(())
-        }
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(validate = not_empty)]
-    struct Named<'a>(&'a str, u32);
-
-    let input = String::from("");
-    let mut out = None::<Named<'_>>;
-    let mut driver = DeserializeDriver::new(&mut out);
-    driver.emit(Event::seq_start()).unwrap();
-    driver.emit_borrowed(input.as_str()).unwrap();
-    driver.emit(1u64).unwrap();
-    let err = driver.emit(Event::SeqEnd).unwrap_err();
-    assert_eq!(err.message(), "invalid value: empty name");
 }
 
 #[test]
@@ -407,22 +349,6 @@ fn test_transparent() {
         },
         vec!["1".into()],
     );
-
-    fn positive(value: &Positive) -> Result<(), &'static str> {
-        if value.0 > 0 {
-            Ok(())
-        } else {
-            Err("not positive")
-        }
-    }
-
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(transparent, validate = positive)]
-    struct Positive(i32, #[deser(skip)] ());
-
-    check(Positive(1, ()), vec![1i64.into()]);
-    let err = deserialize::<Positive>(vec![0i64.into()]).unwrap_err();
-    assert_eq!(err.message(), "invalid value: not positive");
 
     // borrowing
     #[derive(Debug, PartialEq, Deserialize)]

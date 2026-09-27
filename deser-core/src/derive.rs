@@ -54,7 +54,7 @@
 //!
 //! The fields of newtype and tuple structs support the attributes of
 //! [unnamed fields](#unnamed-field-attributes).  Of the container attributes
-//! newtype, tuple and unit structs support `rename`, `validate`, the
+//! newtype, tuple and unit structs support `rename`, the
 //! adapters, the bounds and the crate path.
 //!
 //! # Borrowing
@@ -112,8 +112,6 @@
 //!   a flattened field takes.  By default they are ignored, unless the
 //!   [`UnknownFields`](crate::de::UnknownFields) policy of the
 //!   deserialization says otherwise.  See [unknown fields](#unknown-fields).
-//! * `#[deser(validate = path)]`: validates the struct once it was
-//!   deserialized.  See [validation](#validation).
 //! * `#[deser(expecting = "...")]`: what is expected in errors, for
 //!   instance `unexpected bool, expected a point` instead of the name of
 //!   the type.  It takes the same values as `rename`.  It's supported on
@@ -261,8 +259,6 @@
 //!   (and the unit variants of internally tagged enums) and keys other than
 //!   the tag and the content of adjacently tagged enums.  See [unknown
 //!   fields](#unknown-fields).
-//! * `#[deser(validate = path)]`: validates the enum once it was
-//!   deserialized.  See [validation](#validation).
 //! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
 //!   set in struct variants when serializing.
 //! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
@@ -310,8 +306,6 @@
 //!   the map become fields.  A flattened `Option` is `None` if the value did
 //!   not take any key (unlike serde, errors in the value are not turned into
 //!   `None`), when serializing `None` has no fields.
-//! * `#[deser(validate = path)]`: validates the value of the field once it
-//!   was deserialized.  See [validation](#validation).
 //! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See
@@ -681,44 +675,27 @@
 //!
 //! ## Validation
 //!
-//! `#[deser(validate = path)]` invokes a function with a reference to the
-//! value once it was deserialized.  It can be placed on fields, structs,
-//! newtype structs and enums.  The function returns a `Result<(), E>` where
-//! `E` implements [`Display`](std::fmt::Display).  If it returns an error,
-//! deserialization fails with ``invalid value: {error}``.  The error points
-//! at the start of the value (the location and, with
-//! [`deser-path`](https://docs.rs/deser-path), the path), also for compound
-//! values which can only be validated once they are complete.
+//! Validation is provided by [`deser-validate`](https://docs.rs/deser-validate)
+//! with adapters: `Check<V>` validates a field with the validator `V` and
+//! on a type `Check<V, _>` validates the whole value once the derived
+//! implementation (`_`, see [container adapters](#container-adapters))
+//! deserialized it.  Errors point at the start of the value:
 //!
-//! ```
+//! ```ignore
 //! use deser::Deserialize;
+//! use deser_validate::{Check, validator};
 //!
-//! fn non_zero(value: &u16) -> Result<(), &'static str> {
-//!     if *value == 0 { Err("port must not be zero") } else { Ok(()) }
-//! }
-//!
-//! fn ordered(value: &Ports) -> Result<(), String> {
-//!     if value.min > value.max {
-//!         return Err(format!("min {} is larger than max {}", value.min, value.max));
-//!     }
-//!     Ok(())
-//! }
+//! validator!(NonZero(port: &u16) => *port != 0, "port must not be zero");
+//! validator!(Ordered(ports: &Ports) => ports.min <= ports.max, "min is larger than max");
 //!
 //! #[derive(Deserialize)]
-//! #[deser(validate = ordered)]
+//! #[deser(deserialize_as = Check<Ordered, _>)]
 //! pub struct Ports {
-//!     #[deser(validate = non_zero)]
+//!     #[deser(as = Check<NonZero>)]
 //!     min: u16,
 //!     max: u16,
 //! }
 //! ```
-//!
-//! Values that are not in the data (missing fields that are `None` or
-//! filled in with defaults) are not validated.  A validator on a field
-//! receives the field's type, for an `Option<T>` that's `&Option<T>`.  To
-//! validate every value of a type, place the validator on the type instead
-//! of the fields.  Validators run for every value that is deserialized,
-//! also in values that are replayed (for instance for untagged enums).
 //!
 //! ## Updating Values
 //!
@@ -770,8 +747,10 @@
 //! (for instance `deser_toml::Deserializer::from_str(s).update(&mut config)`).
 //! Some things to be aware of:
 //!
-//! * Fields with adapters or validators are replaced (after validating the
-//!   new value).  Validators of the struct run after the update.
+//! * Fields with adapters are updated by the adapter (see
+//!   [`DeserializeAs::deserialize_update_as`](crate::adapters::DeserializeAs::deserialize_update_as)),
+//!   most adapters replace the value.  Types with adapters forward updates
+//!   to the adapter too.
 //! * Flattened fields are updated with the keys they take, flattened fields
 //!   that take no key keep their values.
 //! * If the update fails, the value might be partially updated.

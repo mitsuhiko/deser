@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** `#[deser(validate = ...)]` was removed, validation moved
+  into `deser-validate`.  Use `#[deser(as = Check<V>)]` on fields and
+  `#[deser(deserialize_as = Check<V, _>)]` on types, with validators made by
+  `validator!(NonZero(port: &u16) => *port != 0, "must not be zero")` or
+  `validator!(Rules(config: &Config) = check_config)`.  The derive points
+  at the replacement when the attribute is used.  Updated values are now
+  checked once they were updated (the value keeps the update if it's
+  invalid) instead of before they replace the value.
 - Adapters on types can wrap the derived implementation: `_` (the
   `Derived` adapter) stands for it, as in `#[deser(as = DefaultOnError<_>)]`
   or `#[deser(deserialize_as = Check<Rules, _>)]`.

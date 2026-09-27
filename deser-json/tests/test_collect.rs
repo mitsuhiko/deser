@@ -226,33 +226,6 @@ fn test_collect_flatten() {
     );
 }
 
-fn non_zero(value: &u32) -> Result<(), &'static str> {
-    match *value {
-        0 => Err("must not be zero"),
-        _ => Ok(()),
-    }
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-struct Limits {
-    #[deser(validate = non_zero)]
-    workers: u32,
-    #[deser(validate = non_zero)]
-    threads: u32,
-}
-
-#[test]
-fn test_collect_validation_errors() {
-    let rv = collect::<Limits>(r#"{"workers": 0, "threads": 0}"#);
-    assert_eq!(
-        errors(rv),
-        [
-            "Unexpected: invalid value: must not be zero at line 1 column 13",
-            "Unexpected: invalid value: must not be zero at line 1 column 27",
-        ]
-    );
-}
-
 #[test]
 fn test_collect_separated() {
     use deser::adapters::{Separated, TrimWhitespace};

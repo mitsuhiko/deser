@@ -236,8 +236,6 @@ mod sinkbox;
 mod source;
 pub(crate) mod unknown;
 pub(crate) mod update;
-#[cfg(feature = "derive")]
-pub(crate) mod validate;
 
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use self::atoms::{

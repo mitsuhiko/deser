@@ -149,55 +149,6 @@ fn test_top_level_values() {
     assert_eq!(option.unwrap().connections, 1);
 }
 
-fn positive(value: &u32) -> Result<(), &'static str> {
-    if *value == 0 {
-        Err("must be positive")
-    } else {
-        Ok(())
-    }
-}
-
-fn ordered(value: &Range) -> Result<(), &'static str> {
-    if value.min > value.max {
-        Err("min is larger than max")
-    } else {
-        Ok(())
-    }
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-#[deser(validate = ordered, deny_unknown_fields)]
-struct Range {
-    #[deser(validate = positive)]
-    min: u32,
-    max: u32,
-}
-
-#[test]
-fn test_validation() {
-    let mut range = Range { min: 1, max: 5 };
-    update(&mut range, map(vec![("max", v(3u64))])).unwrap();
-    assert_eq!(range, Range { min: 1, max: 3 });
-
-    let rv = update(&mut range, map(vec![("min", v(0u64))]));
-    assert_eq!(rv.unwrap_err().message(), "invalid value: must be positive");
-    assert_eq!(range, Range { min: 1, max: 3 });
-
-    // the container is validated after the update
-    let rv = update(&mut range, map(vec![("min", v(4u64))]));
-    assert_eq!(
-        rv.unwrap_err().message(),
-        "invalid value: min is larger than max"
-    );
-
-    // unknown fields
-    let rv = update(&mut range, map(vec![("x", v(4u64))]));
-    assert_eq!(
-        rv.unwrap_err().message(),
-        "unknown field `x`, expected `min` or `max`"
-    );
-}
-
 #[test]
 fn test_unknown_fields_policy() {
     let mut limits = defaults().limits;
@@ -310,16 +261,7 @@ fn test_maps() {
     );
 }
 
-fn no_conflicts(value: &Settings) -> Result<(), &'static str> {
-    if value.extra.contains_key(&value.name) {
-        Err("extra conflicts with name")
-    } else {
-        Ok(())
-    }
-}
-
 #[derive(Debug, Deserialize, PartialEq, Clone)]
-#[deser(validate = no_conflicts)]
 struct Settings {
     name: String,
     #[deser(flatten)]
@@ -377,13 +319,6 @@ fn test_flatten() {
     update(&mut value, map(vec![("key", v("k2"))])).unwrap();
     expected.tls.as_mut().unwrap().key = "k2".into();
     assert_eq!(value, expected);
-
-    // the struct is validated once the flattened fields are updated
-    let rv = update(&mut value, map(vec![("a", v(1u64))]));
-    assert_eq!(
-        rv.unwrap_err().message(),
-        "invalid value: extra conflicts with name"
-    );
 
     // duplicate keys are detected in the flattened fields
     let mut value = settings();

@@ -214,11 +214,6 @@ impl<'de> Sink<'de> for FieldKeySink {
 pub trait UpdateFields<'de>: Send {
     /// Returns the sink that updates the field with the index.
     fn update_field(&mut self, index: usize) -> SinkHandle<'_, 'de>;
-
-    /// Validates the struct once it was updated.
-    fn validate(&self) -> Result<(), Error> {
-        Ok(())
-    }
 }
 
 /// The sink that updates a derived struct.
@@ -231,17 +226,13 @@ pub struct StructUpdateSink<'a, 'de> {
     fields: &'static [&'static str],
     name: &'static str,
     deny: bool,
-    validates: bool,
-    start: Option<usize>,
 }
 
 impl<'a, 'de> StructUpdateSink<'a, 'de> {
     /// Creates the sink that updates a struct.
     ///
     /// The arguments are the ones of [`FieldKeySink::new`] and
-    /// [`FieldKeySink::next_index`], the name of the struct for errors and
-    /// if the struct is validated.
-    #[allow(clippy::too_many_arguments)]
+    /// [`FieldKeySink::next_index`] and the name of the struct for errors.
     pub fn handle(
         value: &'a mut (dyn UpdateFields<'de> + 'a),
         lookup: FieldLookup,
@@ -249,7 +240,6 @@ impl<'a, 'de> StructUpdateSink<'a, 'de> {
         fields: &'static [&'static str],
         name: &'static str,
         deny: bool,
-        validates: bool,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(StructUpdateSink {
             value,
@@ -258,8 +248,6 @@ impl<'a, 'de> StructUpdateSink<'a, 'de> {
             fields,
             name,
             deny,
-            validates,
-            start: None,
         })
     }
 }
@@ -269,11 +257,7 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
         Cow::Borrowed(self.name)
     }
 
-    fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        // errors of the validation point at the start of the map
-        if self.validates {
-            self.start = state.input_range().map(|range| range.start);
-        }
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
@@ -307,16 +291,6 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
                 self.next_value(state).map(Some)
             }
             None => Ok(None),
-        }
-    }
-
-    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-        match self.value.validate() {
-            Err(err) if err.offset().is_none() => Err(match self.start {
-                Some(start) => err.with_offset(start),
-                None => err,
-            }),
-            rv => rv,
         }
     }
 }

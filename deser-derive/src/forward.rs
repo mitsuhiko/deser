@@ -45,7 +45,7 @@ fn affected_directions(level: Level, name: &str) -> Option<(bool, bool)> {
             "as" | "serialize_as" | "deserialize_as" | "bound" | "serialize_bound"
             | "deserialize_bound" | "crate" | "rename",
         ) => return None,
-        (Level::Container, "default" | "deny_unknown_fields" | "validate" | "expecting") => DE,
+        (Level::Container, "default" | "deny_unknown_fields" | "expecting") => DE,
         (Level::Container, "skip_serializing_optionals") => SER,
         (Level::Container, _) => BOTH,
         (Level::Variant, "alias" | "default" | "skip_deserializing" | "deny_unknown_fields") => DE,
@@ -53,7 +53,7 @@ fn affected_directions(level: Level, name: &str) -> Option<(bool, bool)> {
         (Level::Variant, _) => BOTH,
         (
             Level::Field,
-            "alias" | "default" | "deserialize_as" | "validate" | "skip_deserializing" | "required",
+            "alias" | "default" | "deserialize_as" | "skip_deserializing" | "required",
         ) => DE,
         (
             Level::Field,

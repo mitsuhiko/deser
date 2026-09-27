@@ -30,5 +30,4 @@ mod test_structs;
 mod test_tagged;
 mod test_unknown;
 mod test_update;
-mod test_validate;
 mod test_well_known;

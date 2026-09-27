@@ -270,7 +270,7 @@ can navigate:
 | `#[serde(bound = "T: Trait")]` | `#[deser(bound(T: Trait))]` |
 | `#[serde(crate = "path")]` | `#[deser(crate = path)]` |
 | `#[serde(try_from = "U")]` | `#[deser(deserialize_as = TryFromInto<U>)]`, also on fields |
-| no validation hook | `#[deser(validate = path)]` |
+| no validation hook | `#[deser(as = Check<V>)]` with `deser-validate`, also on types |
 
 Names take paths to constants and macro invocations, also for the tag and
 content keys of tagged enums.  `#[deser(alias_all = "...")]` adds aliases in a name style
@@ -406,10 +406,13 @@ instead of rejecting them.
 
 Serde has no validation hooks, values are validated with `try_from` (which
 requires a second type) or after deserialization, where the location of the
-value in the input is lost.  Deser has `#[deser(validate = path)]` on
-fields and types.  The validator runs when the value is complete and its
-errors point at the value (location and path), like the errors of the
-format.
+value in the input is lost.  With `deser-validate` validators are adapters:
+`#[deser(as = Check<V>)]` on fields and `#[deser(deserialize_as = Check<V, _>)]`
+on types (which wraps the derived implementation).  The validator runs when
+the value is complete and its errors point at the value (location and
+path), like the errors of the format.  Values can also keep their errors
+(`Validated<T, V>`) and all problems of an input can be reported at once,
+not just the first one.
 
 **Related issues:**
 

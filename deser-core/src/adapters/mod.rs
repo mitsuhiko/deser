@@ -264,7 +264,7 @@ pub trait DeserializeAs<'de, T>: 'static {
         T: Send,
         Self: Sized,
     {
-        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>(), None)
+        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>())
     }
 
     #[doc(hidden)]

@@ -87,9 +87,6 @@ pub mod __derive {
     pub use crate::de::recording::RecordBuf;
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::de::update::{UpdateTarget, replace_with};
-    pub use crate::de::validate::{
-        Validator, invalid_value, validate_slot, validated, validated_with,
-    };
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,

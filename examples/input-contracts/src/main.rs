@@ -5,7 +5,8 @@
 //!
 //! * `transparent` makes a struct with named fields look like its only
 //!   field on the wire (an email address is a string), other fields are
-//!   skipped and cannot be set by clients,
+//!   skipped and cannot be set by clients.  `Check` of `deser-validate`
+//!   checks it once it's deserialized,
 //! * `expecting` describes a value in errors in the words of the API,
 //!   instead of the name of the Rust type,
 //! * `required` makes an `Option` field required: the key has to be given,
@@ -17,16 +18,19 @@
 //! Errors carry the path of the value with `deser-path`.
 use deser::{Deserialize, Error, Serialize};
 use deser_path::PathLayer;
+use deser_validate::{Check, validator};
 
 /// An email address, written as a string.  Whether it's verified is known
 /// by the server, a client cannot claim it.
 #[derive(Debug, Serialize, Deserialize)]
-#[deser(transparent, validate = check_email)]
+#[deser(transparent, deserialize_as = Check<ValidEmail, _>)]
 pub struct Email {
     address: String,
     #[deser(skip)]
     verified: bool,
 }
+
+validator!(ValidEmail(email: &Email) = check_email);
 
 fn check_email(email: &Email) -> Result<(), String> {
     match email.address.split_once('@') {

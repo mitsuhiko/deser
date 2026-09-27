@@ -482,7 +482,6 @@ pub struct ContainerAttrs<'a> {
     deny_unknown_fields: bool,
     transparent: bool,
     expecting: Option<Name>,
-    validate: Option<syn::ExprPath>,
     tag: Option<Name>,
     tag_aliases: Vec<Name>,
     content: Option<Name>,
@@ -532,7 +531,6 @@ impl AttrLevel {
                 "skip_serializing_optionals",
                 "transparent",
                 "expecting",
-                "validate",
                 "as",
                 "serialize_as",
                 "deserialize_as",
@@ -563,7 +561,6 @@ impl AttrLevel {
                 "skip_serializing",
                 "skip_deserializing",
                 "skip_serializing_if",
-                "validate",
                 "as",
                 "serialize_as",
                 "deserialize_as",
@@ -598,9 +595,14 @@ impl AttrLevel {
     }
 }
 
-/// Returns a hint for attributes of serde which deser does not have.
+/// Returns a hint for attributes which deser does not have (of serde and
+/// earlier versions of deser).
 fn serde_hint(name: &str) -> Option<&'static str> {
     Some(match name {
+        "validate" => {
+            "validation moved into `deser-validate`: use `#[deser(as = Check<V>)]` on fields \
+             and `#[deser(deserialize_as = Check<V, _>)]` on types"
+        }
         "with" | "serialize_with" | "deserialize_with" => {
             "deser uses adapter types instead of functions, use `as`, `serialize_as` or \
              `deserialize_as` with an adapter (see `deser::adapters`)"
@@ -974,7 +976,6 @@ impl<'a> ContainerAttrs<'a> {
             deny_unknown_fields: false,
             transparent: false,
             expecting: None,
-            validate: None,
             tag: None,
             tag_aliases: Vec::new(),
             content: None,
@@ -1076,10 +1077,6 @@ impl<'a> ContainerAttrs<'a> {
                     }) => Ok(()),
                     _ => Err(meta.error("transparent is only supported on structs with fields")),
                 }
-            }
-            "validate" => {
-                let value = parse_path(meta)?;
-                set_once(meta, name, &mut rv.validate, value)
             }
             "crate" => {
                 let value = meta
@@ -1259,11 +1256,6 @@ impl<'a> ContainerAttrs<'a> {
             .iter()
             .find(|x| x.name == name)
             .map_or_else(Span::call_site, |x| x.span)
-    }
-
-    /// Returns the function that validates deserialized values.
-    pub fn validate(&self) -> Option<&syn::ExprPath> {
-        self.validate.as_ref()
     }
 
     /// Returns `true` if the struct is serialized and deserialized like its
@@ -1545,7 +1537,6 @@ pub struct FieldAttrs<'a> {
     skip_serializing: bool,
     skip_deserializing: bool,
     required: bool,
-    validate: Option<syn::ExprPath>,
     adapters: Adapters,
     bounds: FieldBounds,
     tag: bool,
@@ -1564,7 +1555,6 @@ impl<'a> FieldAttrs<'a> {
             skip_serializing: false,
             skip_deserializing: false,
             required: false,
-            validate: None,
             adapters: Adapters::default(),
             bounds: FieldBounds::default(),
             tag: false,
@@ -1594,10 +1584,6 @@ impl<'a> FieldAttrs<'a> {
             "skip_serializing_if" => {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.skip_serializing_if, value)
-            }
-            "validate" => {
-                let value = parse_path(meta)?;
-                set_once(meta, name, &mut rv.validate, value)
             }
             "skip" => set_flag(meta, name, &mut skip),
             "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
@@ -1633,7 +1619,6 @@ impl<'a> FieldAttrs<'a> {
                     "alias",
                     "flatten",
                     "skip_serializing_if",
-                    "validate",
                     "required",
                     "as",
                     "serialize_as",
@@ -1653,14 +1638,7 @@ impl<'a> FieldAttrs<'a> {
         if rv.skip_deserializing && !skip {
             conflict(
                 "skip_deserializing",
-                &[
-                    "alias",
-                    "validate",
-                    "required",
-                    "deserialize_as",
-                    "flatten",
-                    "tag",
-                ],
+                &["alias", "required", "deserialize_as", "flatten", "tag"],
             )?;
         }
         if rv.required {
@@ -1671,12 +1649,6 @@ impl<'a> FieldAttrs<'a> {
             return Err(syn::Error::new_spanned(
                 field,
                 "cannot combine flatten and default",
-            ));
-        }
-        if rv.flatten && rv.validate.is_some() {
-            return Err(syn::Error::new_spanned(
-                field,
-                "cannot combine flatten and validate, validate the flattened type instead",
             ));
         }
         if rv.flatten && rv.adapters.any() {
@@ -1690,8 +1662,7 @@ impl<'a> FieldAttrs<'a> {
                 || !rv.aliases.is_empty()
                 || rv.default.is_some()
                 || rv.flatten
-                || rv.skip_serializing_if.is_some()
-                || rv.validate.is_some())
+                || rv.skip_serializing_if.is_some())
         {
             return Err(syn::Error::new_spanned(
                 field,
@@ -1753,11 +1724,6 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
         self.skip_serializing_if.as_ref()
-    }
-
-    /// Returns the function that validates deserialized values.
-    pub fn validate(&self) -> Option<&syn::ExprPath> {
-        self.validate.as_ref()
     }
 
     /// Returns `true` if the field is not serialized.

@@ -1079,9 +1079,8 @@ pub fn derive_deserialize(
     };
 
     // atoms go to the variants of untagged enums without creating the sink
-    // (validated enums need the sink)
     let atom_into = match repr {
-        Repr::Untagged if container_attrs.validate().is_none() => quote! {
+        Repr::Untagged => quote! {
             #[inline]
             fn __private_atom_into(
                 __slot: &mut __deser::__derive::Option<Self>,
@@ -1103,30 +1102,6 @@ pub fn derive_deserialize(
         _ => quote! {},
     };
 
-    // validated enums deserialize into an owned sink which is validated
-    // once it finished
-    let (validated_support, handle) = match container_attrs.validate() {
-        Some(path) => {
-            let validator = crate::de::validator(path);
-            let slot_generics = crate::bound::with_slot_lifetime(&de_generics);
-            let (slot_impl_generics, _, _) = slot_generics.split_for_impl();
-            (
-                quote! {
-                    #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn __unvalidated #slot_impl_generics (
-                        __slot: &'__s mut __deser::__derive::Option<#enum_ty>,
-                    ) -> __deser::de::SinkHandle<'__s, 'de> #where_clause {
-                        #handle
-                    }
-                },
-                quote! {
-                    __deser::__derive::validated_with(__slot, __unvalidated #turbofish, #validator)
-                },
-            )
-        }
-        None => (quote! {}, handle),
-    };
-
     let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
@@ -1138,7 +1113,6 @@ pub fn derive_deserialize(
 
             #candidate_support
 
-            #validated_support
 
             #[automatically_derived]
             impl #impl_generics #de_trait for #ident #ty_generics #where_clause {

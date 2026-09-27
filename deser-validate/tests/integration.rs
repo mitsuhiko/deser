@@ -1,3 +1,5 @@
+mod check;
+
 use deser::de::Limits;
 use deser::{Deserialize, Serialize};
 use deser_path::{Path, PathLayer};

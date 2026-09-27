@@ -85,8 +85,9 @@ Things it can fix that is tricky for Serde to address:
   `#[deser(repr)]` uses the discriminants.
 * **Customizations compose.**  `#[deser(as = Option<Vec<DisplayFromStr>>)]`
   works without writing another function, missing fields stay optional,
-  and validation, in-place updates and unknown field collection are built
-  in.
+  in-place updates and unknown field collection are built in, and
+  validation ([`deser-validate`](https://docs.rs/deser-validate)) is an
+  adapter as well: `#[deser(as = Check<NonZero>)]`.
 
 [SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) goes
 through these in detail and links the open serde issues they correspond to.
@@ -97,8 +98,8 @@ advantage of what the language has gained since:
 
 * **Attributes are Rust, not strings.**  Defaults are expressions
   (`default = 8080`), names can be constants or `concat!(...)`, adapters are
-  types (`as = BTreeMap<_, DisplayFromStr>`) and bounds, paths and
-  validators are written as code.  The compiler checks them and your
+  types (`as = BTreeMap<_, DisplayFromStr>`) and bounds and paths are
+  written as code.  The compiler checks them and your
   editor can navigate them.
 * **Const generics everywhere.**  Arrays of any length and `NonZero<T>` work
   out of the box, as do newer standard library types like `OnceLock` and
@@ -161,14 +162,13 @@ use std::net::IpAddr;
 use deser::{Deserialize, Serialize};
 use deser::adapters::DisplayFromStr;
 use deser::de::Recording;
+use deser_validate::{Check, validator};
 
 mod keys {
     pub const KIND: &str = "@type";
 }
 
-fn non_zero(port: &u16) -> Result<(), &'static str> {
-    if *port == 0 { Err("must not be zero") } else { Ok(()) }
-}
+validator!(NonZero(port: &u16) => *port != 0, "must not be zero");
 
 #[derive(Debug, Serialize, Deserialize)]
 #[deser(tag = keys::KIND, tag_alias = "type", rename_all = "snake_case")]
@@ -178,7 +178,7 @@ pub enum Listener {
     Tcp {
         #[deser(as = DisplayFromStr)]
         host: IpAddr,
-        #[deser(default = 8080, validate = non_zero)]
+        #[deser(default = 8080, as = Check<NonZero>)]
         port: u16,
     },
     Unix { path: String },

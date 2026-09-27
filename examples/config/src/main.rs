@@ -9,8 +9,9 @@
 //!
 //! On top of that:
 //!
-//! * `validate` checks values with errors that point at the value (with
-//!   line, column and path) like the errors of the format,
+//! * `Check` of `deser-validate` checks values with errors that point at
+//!   the value (with line, column and path) like the errors of the format,
+//!   on the whole configuration once an update is complete,
 //! * unknown keys (like typos) are collected as warnings with their location
 //!   (the `UnknownFields` policy), while `deny_unknown_fields` makes them
 //!   errors for a single type,
@@ -27,9 +28,10 @@ use deser::{Deserialize, Error, Serialize};
 use deser_env::EnvVar;
 use deser_path::{Path, PathLayer};
 use deser_urlencoded::Nesting;
+use deser_validate::{Check, validator};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[deser(validate = check_config)]
+#[deser(deserialize_as = Check<ConfigRules, _>)]
 pub struct Config {
     name: String,
     server: Server,
@@ -40,7 +42,7 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Server {
     host: String,
-    #[deser(validate = non_zero)]
+    #[deser(as = Check<NonZero>)]
     port: u16,
     workers: usize,
     timeouts: Timeouts,
@@ -90,13 +92,9 @@ impl Default for Config {
     }
 }
 
-fn non_zero(port: &u16) -> Result<(), &'static str> {
-    if *port == 0 {
-        Err("the port must not be 0")
-    } else {
-        Ok(())
-    }
-}
+validator!(NonZero(port: &u16) => *port != 0, "the port must not be 0");
+
+validator!(ConfigRules(config: &Config) = check_config);
 
 fn check_config(config: &Config) -> Result<(), String> {
     let timeouts = &config.server.timeouts;

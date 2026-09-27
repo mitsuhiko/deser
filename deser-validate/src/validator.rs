@@ -197,25 +197,3 @@ impl fmt::Display for Violation {
 }
 
 impl ErrorAttachment for Violation {}
-
-/// Validates a value with a validator.
-///
-/// This can be used with `#[deser(validate = ...)]`, which fails the
-/// deserialization if the value is invalid:
-///
-/// ```
-/// use deser::Deserialize;
-/// use deser_validate::{Email, check};
-///
-/// #[derive(Deserialize, Debug)]
-/// struct User {
-///     #[deser(validate = check::<Email, _>)]
-///     email: String,
-/// }
-///
-/// let err = deser_json::from_str::<User>(r#"{"email": "nope"}"#).unwrap_err();
-/// assert_eq!(err.to_string(), "Unexpected: invalid value: must be an email address at line 1 column 11");
-/// ```
-pub fn check<V: Validator<T>, T: ?Sized>(value: &T) -> Result<(), Violation> {
-    V::validate(value)
-}

@@ -9,6 +9,7 @@ publish = false
 deser = { path = "../../deser", features = ["derive"] }
 deser-json = { path = "../../deser-json" }
 deser-path = { path = "../../deser-path" }
+deser-validate = { path = "../../deser-validate" }
 
 [[bin]]
 name = "input-contracts"

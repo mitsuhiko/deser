@@ -562,35 +562,3 @@ fn test_generic_enum_with_borrowed_parameter() {
     .unwrap();
     assert_eq!(value, Either::Left("left"));
 }
-
-#[test]
-fn test_validated_borrowed_enum() {
-    fn not_empty(value: &Name<'_>) -> Result<(), &'static str> {
-        match value {
-            Name::Plain("") => Err("empty name"),
-            _ => Ok(()),
-        }
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(validate = not_empty, tag = "kind", content = "value")]
-    enum Name<'a> {
-        Plain(&'a str),
-        #[deser(default)]
-        Missing,
-    }
-
-    let input = String::from("");
-    let err = borrowed::<Name<'_>>(vec![
-        Event::map_start(),
-        "kind".into(),
-        "Plain".into(),
-        "value".into(),
-        input.as_str().into(),
-        Event::MapEnd,
-    ])
-    .unwrap_err();
-    assert_eq!(err.message(), "invalid value: empty name");
-    let value: Name<'_> = borrowed(vec![Event::map_start(), Event::MapEnd]).unwrap();
-    assert_eq!(value, Name::Missing);
-}

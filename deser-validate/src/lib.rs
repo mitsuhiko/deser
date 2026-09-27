@@ -93,7 +93,7 @@ pub use self::macros::__private;
 pub use self::macros::{IntoViolation, ValidationResult};
 pub use self::report::{Issue, Outcome, Report, Validation};
 pub use self::validated::Validated;
-pub use self::validator::{Param, Validator, Violation, check};
+pub use self::validator::{Param, Validator, Violation};
 pub use self::validators::{
     Each, Email, Integer, Len, Length, Max, MaxLen, Min, MinLen, NonEmpty, Range,
 };

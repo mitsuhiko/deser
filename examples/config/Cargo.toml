@@ -11,6 +11,7 @@ deser-env = { path = "../../deser-env" }
 deser-path = { path = "../../deser-path" }
 deser-toml = { path = "../../deser-toml" }
 deser-urlencoded = { path = "../../deser-urlencoded" }
+deser-validate = { path = "../../deser-validate" }
 
 [[bin]]
 name = "config"

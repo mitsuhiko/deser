@@ -29,8 +29,9 @@ point at its source.
   a path plus a line/column or an environment variable name.
 - `#[deser(deny_unknown_fields)]` on `Timeouts` turns typos into errors
   for that one type.
-- Validation: `#[deser(validate = non_zero)]` on a field and
-  `#[deser(validate = check_config)]` on the whole struct. The struct-level
+- Validation with `deser-validate`: `#[deser(as = Check<NonZero>)]` on a
+  field and `#[deser(deserialize_as = Check<ConfigRules, _>)]` on the
+  whole struct, with validators made by `validator!`. The struct-level
   check runs after the update is complete.
 - A small `Report` type that formats `Path`, `line`/`column` and `EnvVar`
   attachments.
