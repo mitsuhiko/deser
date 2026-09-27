@@ -35,6 +35,8 @@ pub struct Account {
 //!   deserialization.
 //! * [`deser-cbor`](https://docs.rs/deser-cbor): implements CBOR serialization and
 //!   deserialization.
+//! * [`deser-msgpack`](https://docs.rs/deser-msgpack): implements MessagePack
+//!   serialization and deserialization.
 //! * [`deser-toml`](https://docs.rs/deser-toml): implements TOML serialization and
 //!   deserialization.
 //! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML serialization and
@@ -42,6 +44,8 @@ pub struct Account {
 //! * [`deser-urlencoded`](https://docs.rs/deser-urlencoded): implements query string
 //!   and form data (`application/x-www-form-urlencoded`) serialization and
 //!   deserialization.
+//! * [`deser-csv`](https://docs.rs/deser-csv): implements CSV, TSV and other
+//!   delimited text serialization and deserialization.
 //! * [`deser-env`](https://docs.rs/deser-env): implements reading
 //!   configuration from environment variables (and writing values into
 //!   them).
@@ -69,6 +73,8 @@ pub struct Account {
 //!   convert between formats.
 //! * [`deser-path`](https://docs.rs/deser-path): a layer that tracks the path of
 //!   the current value (like `servers[1].timeout`) and attaches it to errors.
+//! * [`deser-validate`](https://docs.rs/deser-validate): validates values while
+//!   they are deserialized.
 //! * [`deser-location`](https://docs.rs/deser-location): resolves the source
 //!   locations (line and column) of values while they are deserialized.
 //! * [`deser-debug`](https://docs.rs/deser-debug): formats serializable values
