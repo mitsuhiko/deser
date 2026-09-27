@@ -130,6 +130,19 @@ enum Scalar<'a> {
     Empty,
 }
 
+impl Scalar<'_> {
+    /// Detaches a scalar that is not a block scalar from the data it
+    /// borrows.
+    fn into_owned(self) -> Scalar<'static> {
+        match self {
+            Scalar::Text(text) => Scalar::Text(Cow::Owned(text.into_owned())),
+            Scalar::Short(text) => Scalar::Short(text),
+            Scalar::Empty => Scalar::Empty,
+            Scalar::Block(_) => unreachable!("only strings are block scalars"),
+        }
+    }
+}
+
 /// A short text held inline.
 struct ShortText {
     buf: [u8; 48],
@@ -740,6 +753,12 @@ impl<'c> Emitter<'c> {
                 }
             }
             Atom::Ext(ref ext) => return self.render_ext(ext, context, style),
+            // values whose type was inferred from text are written as value
+            Atom::Implicit(ref value) => {
+                let value = value.value().to_atom();
+                let (scalar, tag) = self.render(&value, context, style)?;
+                (scalar.into_owned(), tag)
+            }
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         })
     }
@@ -791,15 +810,7 @@ impl<'c> Emitter<'c> {
             )),
             fallback => {
                 let (scalar, tag) = self.render(&fallback, context, style)?;
-                Ok((
-                    match scalar {
-                        Scalar::Text(text) => Scalar::Text(Cow::Owned(text.into_owned())),
-                        Scalar::Short(text) => Scalar::Short(text),
-                        Scalar::Empty => Scalar::Empty,
-                        Scalar::Block(_) => unreachable!("only strings are block scalars"),
-                    },
-                    tag,
-                ))
+                Ok((scalar.into_owned(), tag))
             }
         }
     }

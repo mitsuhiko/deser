@@ -292,6 +292,35 @@ macro_rules! adapter_tests {
             }
 
             #[test]
+            fn test_implicit() {
+                // values whose type was inferred from text are their value
+                // unless serde asks for a string
+                use deser::{Atom, Implicit, ImplicitValue};
+                let implicit = |text: &'static str, value| {
+                    deser::Event::Atom(Atom::Implicit(Implicit::new(text, value)))
+                };
+                let mut out = None::<As<(String, f64, Option<String>, u32), A>>;
+                {
+                    let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                    for event in [
+                        deser::Event::seq_start(),
+                        implicit("1.10", ImplicitValue::F64(1.1)),
+                        implicit("1.10", ImplicitValue::F64(1.1)),
+                        implicit("~", ImplicitValue::Null),
+                        implicit("0x1F", ImplicitValue::U64(31)),
+                        deser::Event::SeqEnd,
+                    ] {
+                        driver.emit(event).unwrap();
+                    }
+                }
+                let (text, value, none, hex) = out.unwrap().into_inner();
+                assert_eq!(text, "1.10");
+                assert_eq!(value, 1.1);
+                assert_eq!(none, None);
+                assert_eq!(hex, 31);
+            }
+
+            #[test]
             fn test_keys() {
                 let value: As<BTreeMap<u32, BTreeMap<bool, String>>, A> =
                     deser_json::from_str(r#"{"1": {"true": "a"}, "2": {}}"#).unwrap();

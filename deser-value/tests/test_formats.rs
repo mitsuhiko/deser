@@ -95,6 +95,40 @@ fn test_yaml_tags() {
 }
 
 #[test]
+fn test_yaml_plain_scalars() {
+    let value: Value = deser_yaml::from_str("version: 1.10\nport: 0x1F\nowner: ~\n").unwrap();
+    // plain scalars behave like their value
+    assert_eq!(value, value!({"version": 1.1, "port": 31, "owner": null}));
+    assert_eq!(value["port"].as_u64(), Some(31));
+    assert_eq!(value["version"].as_f64(), Some(1.1));
+    assert!(value["owner"].is_null());
+    assert_eq!(value["version"].as_str(), None);
+    assert_eq!(value["version"].name(), "float");
+    // formats write the value
+    assert_eq!(
+        deser_json::to_string(&value).unwrap(),
+        r#"{"version":1.1,"port":31,"owner":null}"#
+    );
+    // but strings still get the text
+    #[derive(deser::Deserialize, Debug, PartialEq)]
+    struct Config {
+        version: String,
+        port: u16,
+        owner: Option<String>,
+    }
+    assert_eq!(
+        from_value::<Config>(&value).unwrap(),
+        Config {
+            version: "1.10".into(),
+            port: 31,
+            owner: None,
+        }
+    );
+    let map: std::collections::BTreeMap<String, String> = deser_yaml::from_str("200: ok").unwrap();
+    assert_eq!(map["200"], "ok");
+}
+
+#[test]
 fn test_hints() {
     #[derive(Serialize)]
     struct Config {

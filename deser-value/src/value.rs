@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 
 use deser_core::ext::{BorrowedExtension, ExtValue, Extension};
-use deser_core::{Atom, Bytes, EventData, Position};
+use deser_core::{Atom, Bytes, EventData, Implicit, ImplicitValue, Position};
 
 use crate::index::ValueIndex;
 use crate::map::Map;
@@ -107,6 +107,16 @@ pub enum Kind {
     Bytes(Bytes<'static>),
     /// A value extending the data model.
     Ext(ExtValue<'static>),
+    /// A value whose type the format inferred from its text.
+    ///
+    /// This is created from [`Atom::Implicit`], for instance for the plain
+    /// scalars of YAML (`42`, `1.10`, `true` or `~`).  It's serialized as
+    /// implicit atom again, so types that do not accept the value (like
+    /// strings) can be deserialized from its text.  Otherwise it behaves
+    /// like its value: it compares equal to and hashes like the same
+    /// value, the accessors (like [`as_f64`](Kind::as_f64)) return it and
+    /// [`as_str`](Kind::as_str) does not return the text.
+    Implicit(Implicit<'static>),
     Seq(Seq),
     Map(Map),
 }
@@ -428,6 +438,7 @@ impl Kind {
             Kind::Str(_) | Kind::Lexical(_) => "string",
             Kind::Bytes(_) => "bytes",
             Kind::Ext(ext) => ext.name(),
+            Kind::Implicit(value) => value.value().name(),
             Kind::Seq(_) => "sequence",
             Kind::Map(_) => "map",
         }
@@ -440,6 +451,7 @@ impl Kind {
         match self {
             Kind::Null => true,
             Kind::Ext(ext) => matches!(ext.fallback(), Atom::Null),
+            Kind::Implicit(value) => value.value() == ImplicitValue::Null,
             _ => false,
         }
     }
@@ -452,6 +464,7 @@ impl Kind {
                 Atom::Bool(value) => Some(value),
                 _ => None,
             },
+            Kind::Implicit(value) => Kind::from_implicit(value.value()).as_bool(),
             _ => None,
         }
     }
@@ -479,6 +492,7 @@ impl Kind {
         match self {
             Kind::U64(value) => Some(i128::from(*value)),
             Kind::I64(value) => Some(i128::from(*value)),
+            Kind::Implicit(value) => Kind::from_implicit(value.value()).as_i128(),
             Kind::Ext(ext) => {
                 if let Some(value) = ext.downcast_ref::<i128>() {
                     Some(*value)
@@ -505,6 +519,7 @@ impl Kind {
             Kind::F32(value) => Some(f64::from(*value)),
             Kind::U64(value) => Some(*value as f64),
             Kind::I64(value) => Some(*value as f64),
+            Kind::Implicit(value) => Kind::from_implicit(value.value()).as_f64(),
             Kind::Ext(ext) => match ext.fallback() {
                 Atom::F64(value) => Some(value),
                 Atom::F32(value) => Some(f64::from(value)),
@@ -746,6 +761,18 @@ impl Kind {
         match u64::try_from(value) {
             Ok(value) => Kind::U64(value),
             Err(_) => Kind::I64(value),
+        }
+    }
+
+    /// Creates the kind of the value of an implicit atom.
+    pub(crate) fn from_implicit(value: ImplicitValue) -> Kind {
+        match value {
+            ImplicitValue::Null => Kind::Null,
+            ImplicitValue::Bool(value) => Kind::Bool(value),
+            ImplicitValue::U64(value) => Kind::U64(value),
+            ImplicitValue::I64(value) => Kind::from_i64(value),
+            ImplicitValue::F64(value) => Kind::F64(value),
+            _ => Kind::Null,
         }
     }
 

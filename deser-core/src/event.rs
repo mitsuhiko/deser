@@ -32,7 +32,9 @@ use crate::text::{Slice, Text};
 ///
 /// Text whose type the format cannot express is [`Lexical`](Atom::Lexical).
 /// It's a string for everybody who does not care, see there for more
-/// information.
+/// information.  A value whose type the format inferred from its text is
+/// [`Implicit`](Atom::Implicit), it carries the text for types that do not
+/// accept the value.
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Atom<'a> {
@@ -81,6 +83,10 @@ pub enum Atom<'a> {
     ///
     /// See [`ext`](crate::ext) for more information.
     Ext(ExtValue<'a>),
+    /// A value whose type the format inferred from its text.
+    ///
+    /// See [`Implicit`] for more information.
+    Implicit(Implicit<'a>),
 }
 
 impl<'a> Atom<'a> {
@@ -98,6 +104,7 @@ impl<'a> Atom<'a> {
             Atom::F32(v) => Atom::F32(v),
             Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.to_static()),
+            Atom::Implicit(ref v) => Atom::Implicit(v.to_static()),
         }
     }
 
@@ -117,6 +124,7 @@ impl<'a> Atom<'a> {
             Atom::F32(v) => Atom::F32(v),
             Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.as_borrowed()),
+            Atom::Implicit(ref v) => Atom::Implicit(v.as_borrowed()),
         }
     }
 
@@ -169,6 +177,7 @@ impl<'a> Atom<'a> {
             Atom::I64(_) => "signed integer",
             Atom::F32(_) | Atom::F64(_) => "float",
             Atom::Ext(ref v) => v.name(),
+            Atom::Implicit(ref v) => v.value().name(),
         }
     }
 
@@ -192,6 +201,138 @@ impl<'a> Atom<'a> {
             ErrorKind::Unexpected,
             format!("unexpected {}, expected {}", self.name(), expectation),
         )
+    }
+}
+
+/// A value whose type the format inferred from its text.
+///
+/// Some formats write values as text and infer their type from it: in YAML
+/// `42` is an integer, `1.10` a float, `true` a boolean and `~` null, but
+/// only because these plain scalars look like it.  The format resolves the
+/// value with its own rules (which are not the ones of Rust, `0x1F` is an
+/// integer in YAML) and emits it together with its text.
+///
+/// Types that accept the value receive it, types that reject it receive
+/// the text as [`Str`](Atom::Str) instead (see
+/// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).  This
+/// means that a `u32` is `31` for `0x1F` while a `String` is `"0x1F"` and an
+/// `Option<String>` is `None` for `~` while a `String` is `"~"`.  If both are
+/// rejected, the error is the one of the value.  Enums look up their
+/// variants by the value and then by the text.  Types that take any value
+/// (like dynamic values) keep both, serializers write the value.
+///
+/// ```
+/// use deser::{Atom, Implicit, ImplicitValue};
+///
+/// let atom = Atom::Implicit(Implicit::new("0x1F", ImplicitValue::U64(31)));
+/// let mut out = None::<u32>;
+/// deser::de::DeserializeDriver::new(&mut out).emit(atom.clone()).unwrap();
+/// assert_eq!(out, Some(31));
+///
+/// let mut out = None::<String>;
+/// deser::de::DeserializeDriver::new(&mut out).emit(atom).unwrap();
+/// assert_eq!(out.as_deref(), Some("0x1F"));
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct Implicit<'a> {
+    text: Text<'a>,
+    value: ImplicitValue,
+}
+
+impl<'a> Implicit<'a> {
+    /// Creates a value from its text and the value inferred from it.
+    #[inline]
+    pub fn new<T: Into<Text<'a>>>(text: T, value: ImplicitValue) -> Implicit<'a> {
+        Implicit {
+            text: text.into(),
+            value,
+        }
+    }
+
+    /// Returns the text of the value.
+    #[inline]
+    pub fn text(&self) -> &Text<'a> {
+        &self.text
+    }
+
+    /// Returns the inferred value.
+    #[inline]
+    pub fn value(&self) -> ImplicitValue {
+        self.value
+    }
+
+    /// Splits the value into its text and the inferred value.
+    #[inline]
+    pub fn into_parts(self) -> (Text<'a>, ImplicitValue) {
+        (self.text, self.value)
+    }
+
+    /// Returns a value borrowing from this one.
+    #[inline]
+    pub fn as_borrowed(&self) -> Implicit<'_> {
+        Implicit {
+            text: self.text.as_borrowed(),
+            value: self.value,
+        }
+    }
+
+    /// Makes a static clone decoupling the lifetimes.
+    #[inline]
+    pub fn to_static(&self) -> Implicit<'static> {
+        Implicit {
+            text: self.text.to_static(),
+            value: self.value,
+        }
+    }
+}
+
+/// The value of an [`Implicit`] atom.
+///
+/// These are the types formats infer from text.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub enum ImplicitValue {
+    Null,
+    Bool(bool),
+    U64(u64),
+    I64(i64),
+    F64(f64),
+}
+
+impl ImplicitValue {
+    /// Returns the value for an atom if it's one of the inferred types.
+    pub fn from_atom(atom: &Atom<'_>) -> Option<ImplicitValue> {
+        match *atom {
+            Atom::Null => Some(ImplicitValue::Null),
+            Atom::Bool(value) => Some(ImplicitValue::Bool(value)),
+            Atom::U64(value) => Some(ImplicitValue::U64(value)),
+            Atom::I64(value) => Some(ImplicitValue::I64(value)),
+            Atom::F64(value) => Some(ImplicitValue::F64(value)),
+            _ => None,
+        }
+    }
+
+    /// Returns the value as atom.
+    #[inline]
+    pub fn to_atom(self) -> Atom<'static> {
+        match self {
+            ImplicitValue::Null => Atom::Null,
+            ImplicitValue::Bool(value) => Atom::Bool(value),
+            ImplicitValue::U64(value) => Atom::U64(value),
+            ImplicitValue::I64(value) => Atom::I64(value),
+            ImplicitValue::F64(value) => Atom::F64(value),
+        }
+    }
+
+    /// Returns the human readable name of the value.
+    pub fn name(&self) -> &'static str {
+        match *self {
+            ImplicitValue::Null => "null",
+            ImplicitValue::Bool(_) => "bool",
+            ImplicitValue::U64(_) => "unsigned integer",
+            ImplicitValue::I64(_) => "signed integer",
+            ImplicitValue::F64(_) => "float",
+        }
     }
 }
 

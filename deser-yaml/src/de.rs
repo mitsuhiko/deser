@@ -6,12 +6,14 @@ use std::sync::Arc;
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Limits, Source};
 use deser_core::hints::Layout;
-use deser_core::{Atom, Error, ErrorKind, Event};
+use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};
 use crate::resolve::{ScalarTag, Version};
-use crate::resolve::{classify_tag, is_collection_tag, resolve_plain, resolve_standard};
+use crate::resolve::{
+    classify_tag, is_collection_tag, resolve_plain, resolve_plain_implicit, resolve_standard,
+};
 use crate::tag::NodeTag;
 
 /// The default for [`DeserializerConfig::alias_limit`].
@@ -1037,7 +1039,7 @@ fn emit_scalar<'a>(
     driver.state_mut().set_input_range(start.offset, end);
     let tag = match tag {
         None if style == ScalarStyle::Plain => {
-            return driver.emit_borrowed(resolve_plain(value, version));
+            return driver.emit_borrowed(resolve_plain_implicit(value, version));
         }
         None => return driver.emit_borrowed(Atom::Str(value.into())),
         Some(tag) => tag,
@@ -1132,7 +1134,8 @@ where
         {
             let mut driver = DeserializeDriver::new(&mut out);
             setup(&mut driver);
-            driver.emit(Atom::Null)?;
+            // an empty document is an empty plain scalar
+            driver.emit(Atom::Implicit(Implicit::new("", ImplicitValue::Null)))?;
         }
         return out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty document"));
     }

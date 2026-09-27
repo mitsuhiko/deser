@@ -612,6 +612,7 @@ impl Output {
             Atom::Bool(val) => self.write_str(if val { "\"true\"" } else { "\"false\"" }),
             Atom::Ext(ref ext) => self.write_ext_key(ext)?,
             Atom::Bytes(ref val) => self.write_bytes_str(val, val.fallback),
+            Atom::Implicit(ref val) => return self.write_key_text(val.value().to_atom()),
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -651,6 +652,8 @@ impl Output {
             Atom::Bytes(ref val) => {
                 self.write_bytes(val, val.fallback.copied().unwrap_or(self.bytes))
             }
+            // values whose type was inferred from text are written as value
+            Atom::Implicit(ref val) => return self.write_atom(val.value().to_atom()),
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         }
         Ok(())

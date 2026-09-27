@@ -53,6 +53,7 @@ fn clone_leaf(kind: &Kind) -> Kind {
         Kind::Lexical(value) => Kind::Lexical(value.clone()),
         Kind::Bytes(value) => Kind::Bytes(value.clone()),
         Kind::Ext(value) => Kind::Ext(value.clone()),
+        Kind::Implicit(value) => Kind::Implicit(value.clone()),
         Kind::Seq(seq) => {
             debug_assert!(seq.is_empty());
             Kind::Seq(seq.empty_like(0))
@@ -192,6 +193,9 @@ pub(crate) fn clone_map(map: &Map) -> Kind {
 /// kinds.
 fn eq_leaf(a: &Kind, b: &Kind) -> bool {
     match (a, b) {
+        // implicit values compare like their value
+        (Kind::Implicit(a), b) => eq_leaf(&Kind::from_implicit(a.value()), b),
+        (a, Kind::Implicit(b)) => eq_leaf(a, &Kind::from_implicit(b.value())),
         (Kind::Null, Kind::Null) => true,
         (Kind::Bool(a), Kind::Bool(b)) => a == b,
         (Kind::U64(a), Kind::U64(b)) => a == b,
@@ -379,6 +383,8 @@ fn hash_node<'a, H: Hasher>(
             state.write_u8(TAG_EXT);
             hash_fallback(&value.fallback(), state);
         }
+        // implicit values hash like their value
+        Kind::Implicit(value) => hash_fallback(&value.value().to_atom(), state),
         Kind::Seq(seq) => {
             state.write_u8(TAG_SEQ);
             state.write_usize(seq.len());
@@ -432,6 +438,7 @@ fn fmt_leaf(kind: &Kind, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Kind::Str(value) | Kind::Lexical(value) => write!(f, "{:?}", value),
         Kind::Bytes(value) => write!(f, "b\"{}\"", value.data().escape_ascii()),
         Kind::Ext(value) => write!(f, "{:?}", value),
+        Kind::Implicit(value) => fmt_leaf(&Kind::from_implicit(value.value()), f),
         Kind::Seq(_) => f.write_str("[]"),
         Kind::Map(_) => f.write_str("{}"),
     }

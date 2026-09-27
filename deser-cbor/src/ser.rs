@@ -358,6 +358,8 @@ impl Writer {
             Atom::Str(ref val) | Atom::Lexical(ref val) => self.write_str(val),
             Atom::Bytes(ref val) => self.write_bytes(val),
             Atom::Ext(ref ext) => return self.write_ext(ext),
+            // values whose type was inferred from text are written as value
+            Atom::Implicit(ref val) => return self.write_atom(val.value().to_atom()),
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         }
         Ok(())

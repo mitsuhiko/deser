@@ -39,6 +39,7 @@ impl Serialize for Kind {
             Kind::Lexical(value) => Chunk::Atom(Atom::Lexical(Text::borrowed(value))),
             Kind::Bytes(value) => Chunk::Atom(Atom::Bytes(value.as_borrowed())),
             Kind::Ext(value) => Chunk::Atom(Atom::Ext(value.as_borrowed())),
+            Kind::Implicit(value) => Chunk::Atom(Atom::Implicit(value.as_borrowed())),
             Kind::Seq(seq) => return seq.serialize(state),
             Kind::Map(map) => return map.serialize(state),
         })

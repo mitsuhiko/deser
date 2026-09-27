@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 use deser_core::adapters::{Base64, BytesEncoding};
 use deser_core::ext::{Date, Datetime, ExtValue, Offset, Time};
-use deser_core::{Atom, Bytes};
+use deser_core::{Atom, Bytes, Implicit, ImplicitValue};
 
 /// The YAML version that determines how plain scalars are resolved.
 ///
@@ -73,6 +73,24 @@ pub fn is_collection_tag(tag: &str, is_map: bool) -> Result<bool, &'static str> 
 pub fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
     match resolve_plain_str(&value, version) {
         Some(atom) => atom,
+        None => Atom::Str(value.into()),
+    }
+}
+
+/// Resolves a plain scalar without tag into the atom that is emitted.
+///
+/// The type of plain scalars is inferred from their text.  Scalars that
+/// are not strings are emitted as [`Atom::Implicit`] so that types which
+/// expect strings receive the text (`1.10` is `"1.10"` for a `String` and
+/// `1.1` for an `f64`).  Integers which do not fit into 64 bits are emitted
+/// as their value.
+#[inline]
+pub fn resolve_plain_implicit(value: Cow<'_, str>, version: Version) -> Atom<'_> {
+    match resolve_plain_str(&value, version) {
+        Some(atom) => match ImplicitValue::from_atom(&atom) {
+            Some(resolved) => Atom::Implicit(Implicit::new(value, resolved)),
+            None => atom,
+        },
         None => Atom::Str(value.into()),
     }
 }

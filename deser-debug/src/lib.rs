@@ -324,6 +324,7 @@ fn render_atom(atom: &Atom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Atom::F32(v) => fmt::Debug::fmt(&v, f),
         Atom::F64(v) => fmt::Debug::fmt(&v, f),
         Atom::Ext(ref v) => fmt::Debug::fmt(v, f),
+        Atom::Implicit(ref v) => render_atom(&v.value().to_atom(), f),
         _ => f.write_str("?"),
     }
 }

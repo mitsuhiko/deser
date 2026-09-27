@@ -69,8 +69,244 @@ fn test_scalars() {
     );
     assert_eq!(from_str::<String>("|\n  a\n  b\n").unwrap(), "a\nb\n");
     assert_eq!(from_str::<String>(">-\n  a\n  b\n").unwrap(), "a b");
-    // a plain scalar that looks like a number is a number
-    assert!(from_str::<String>("42").is_err());
+    // a plain scalar that looks like a number is a number for everybody who
+    // accepts numbers and its text for strings
+    assert_eq!(from_str::<String>("42").unwrap(), "42");
+}
+
+#[test]
+fn test_plain_scalars_as_strings() {
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct S {
+        v: String,
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct O {
+        v: Option<String>,
+    }
+
+    // plain scalars that are not strings are their text for strings
+    for (input, text) in [
+        ("1.10", "1.10"),
+        ("1e3", "1e3"),
+        ("0x1F", "0x1F"),
+        ("0o17", "0o17"),
+        ("true", "true"),
+        ("True", "True"),
+        (".inf", ".inf"),
+        ("~", "~"),
+        ("null", "null"),
+        ("", ""),
+    ] {
+        let doc = format!("v: {}", input);
+        assert_eq!(from_str::<S>(&doc).unwrap().v, text, "{}", input);
+    }
+
+    // null is `None` for optionals, other values are their text
+    assert_eq!(from_str::<O>("v: ~").unwrap().v, None);
+    assert_eq!(from_str::<O>("v: null").unwrap().v, None);
+    assert_eq!(from_str::<O>("v:").unwrap().v, None);
+    assert_eq!(from_str::<O>("v: 1.10").unwrap().v.as_deref(), Some("1.10"));
+    assert_eq!(
+        from_str::<O>("v: false").unwrap().v.as_deref(),
+        Some("false")
+    );
+
+    // the empty document is null and empty text
+    assert_eq!(from_str::<String>("").unwrap(), "");
+    assert_eq!(from_str::<Option<u32>>("").unwrap(), None);
+
+    // other types still get the value
+    assert_eq!(from_str::<u32>("0x1F").unwrap(), 31);
+    assert_eq!(from_str::<f64>("1.10").unwrap(), 1.1);
+    assert!(from_str::<()>("~").is_ok());
+    assert_eq!(from_str::<char>("1").unwrap(), '1');
+
+    // explicit types are strict: quoted scalars are strings and tagged
+    // scalars are values
+    assert!(from_str::<u32>("'42'").is_err());
+    let err = from_str::<String>("!!int 42").unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unexpected unsigned integer, expected string"
+    );
+
+    // the text does not give other types a second chance
+    let err = from_str::<bool>("1").unwrap_err();
+    assert_eq!(err.message(), "unexpected unsigned integer, expected bool");
+    let err = from_str::<u8>("300").unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::OutOfRange);
+    let err = from_str::<u32>("1.5").unwrap_err();
+    assert_eq!(err.message(), "unexpected float, expected u32");
+
+    // YAML 1.1 has other booleans and numbers
+    let config = DeserializerConfig::new().version(Version::V1_1);
+    assert!(config.from_str::<bool>("yes").unwrap());
+    assert_eq!(config.from_str::<String>("yes").unwrap(), "yes");
+    assert_eq!(config.from_str::<u32>("1:30").unwrap(), 90);
+    assert_eq!(config.from_str::<String>("1:30").unwrap(), "1:30");
+    assert_eq!(from_str::<String>("yes").unwrap(), "yes");
+}
+
+#[test]
+fn test_plain_scalar_keys() {
+    // keys of maps and struct fields take the text too
+    let map: BTreeMap<String, String> = from_str(
+        "200: ok
+404: missing
+true: yes",
+    )
+    .unwrap();
+    assert_eq!(
+        map,
+        BTreeMap::from([
+            ("200".into(), "ok".into()),
+            ("404".into(), "missing".into()),
+            ("true".into(), "yes".into()),
+        ])
+    );
+    let map: BTreeMap<u16, String> = from_str(
+        "200: ok
+0x194: missing",
+    )
+    .unwrap();
+    assert_eq!(
+        map,
+        BTreeMap::from([(200, "ok".into()), (404, "missing".into())])
+    );
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct Workflow {
+        on: String,
+        #[deser(rename = "1")]
+        one: u32,
+        #[deser(rename = "null")]
+        nothing: bool,
+    }
+    let config = DeserializerConfig::new().version(Version::V1_1);
+    let workflow: Workflow = config
+        .from_str(
+            "on: push
+1: 2
+null: true",
+        )
+        .unwrap();
+    assert_eq!(
+        workflow,
+        Workflow {
+            on: "push".into(),
+            one: 2,
+            nothing: true,
+        }
+    );
+
+    // an integer and a string with the same text are the same key
+    let err = from_str::<BTreeMap<String, u32>>(
+        "1: 1
+'1': 2",
+    )
+    .unwrap_err();
+    assert_eq!(err.message(), "duplicate key in map");
+}
+
+#[test]
+fn test_plain_scalar_enums() {
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[deser(rename_all = "lowercase")]
+    enum Answer {
+        Yes,
+        No,
+        #[deser(rename = "1")]
+        One,
+    }
+
+    let config = DeserializerConfig::new().version(Version::V1_1);
+    assert_eq!(config.from_str::<Answer>("yes").unwrap(), Answer::Yes);
+    assert_eq!(config.from_str::<Answer>("no").unwrap(), Answer::No);
+    assert_eq!(from_str::<Answer>("1").unwrap(), Answer::One);
+
+    // integer tags come first
+    #[derive(Deserialize, Debug, PartialEq)]
+    enum Level {
+        #[deser(rename = 1)]
+        Low,
+        #[deser(rename = "1.0")]
+        Text,
+    }
+    assert_eq!(from_str::<Level>("1").unwrap(), Level::Low);
+    assert_eq!(from_str::<Level>("1.0").unwrap(), Level::Text);
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[deser(untagged)]
+    enum Release {
+        Number(u32),
+        Text(String),
+    }
+    assert_eq!(from_str::<Release>("42").unwrap(), Release::Number(42));
+    assert_eq!(
+        from_str::<Release>("1.10").unwrap(),
+        Release::Text("1.10".into())
+    );
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[deser(tag = "kind")]
+    enum Shape {
+        #[deser(rename = "1")]
+        Circle { radius: String },
+    }
+    assert_eq!(
+        from_str::<Shape>(
+            "radius: 1.50
+kind: 1"
+        )
+        .unwrap(),
+        Shape::Circle {
+            radius: "1.50".into()
+        }
+    );
+}
+
+#[test]
+fn test_plain_scalars_borrowed() {
+    use std::borrow::Cow;
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct Borrowed<'a> {
+        a: &'a str,
+        #[deser(as = deser::adapters::Borrowed)]
+        b: Cow<'a, str>,
+    }
+    let input = String::from(
+        "a: 1.10
+b: 0x1F",
+    );
+    let value: Borrowed = from_str(&input).unwrap();
+    assert_eq!(value.a, "1.10");
+    assert!(matches!(value.b, Cow::Borrowed("0x1F")));
+}
+
+#[test]
+fn test_plain_scalars_recorded() {
+    use deser::de::Recording;
+
+    // buffered values keep the text
+    let recording: Recording = from_str("[1.10, 0x1F, ~]").unwrap();
+    let mut out = None::<(String, String, String)>;
+    {
+        let mut driver_out = None::<()>;
+        let mut driver = deser::de::DeserializeDriver::new(&mut driver_out);
+        recording
+            .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
+            .unwrap();
+    }
+    assert_eq!(out.unwrap(), ("1.10".into(), "0x1F".into(), "~".into()));
+
+    // and serializers write the value (the sequence stays a flow sequence)
+    assert_eq!(
+        deser_yaml::to_string(&recording).unwrap(),
+        "[1.1, 31, null]\n"
+    );
 }
 
 #[test]

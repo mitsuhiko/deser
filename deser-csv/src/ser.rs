@@ -1062,6 +1062,21 @@ impl FieldEncoder<'_> {
                 }
                 true
             }
+            // values whose type was inferred from text are written as value
+            Atom::Implicit(ref value) => {
+                let mut inner = Vec::new();
+                return Ok(match self.text(&value.value().to_atom(), &mut inner)? {
+                    Some(text) => {
+                        let numeric = text.numeric;
+                        scratch.extend_from_slice(text.bytes);
+                        Some(Text {
+                            bytes: scratch,
+                            numeric,
+                        })
+                    }
+                    None => None,
+                });
+            }
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,

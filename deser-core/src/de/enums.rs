@@ -275,11 +275,15 @@ impl<'a> Tag<'a> {
 ///
 /// Strings, integers and booleans are tags.  Lexical atoms (text of unknown
 /// type) are looked up as strings and then as integers or booleans.
+/// Implicit atoms are looked up as their value and then as their text.
 /// Extension values are lowered to their fallback.
 #[inline]
 pub fn lookup_atom<T>(atom: &Atom, lookup: impl Fn(Tag<'_>) -> Option<T>) -> Option<T> {
     match atom {
         Atom::Lexical(text) => lookup(Tag::Str(text)).or_else(|| lookup(Tag::parse_lexical(text)?)),
+        Atom::Implicit(value) => Tag::of_atom(&value.value().to_atom())
+            .and_then(&lookup)
+            .or_else(|| lookup(Tag::Str(value.text()))),
         Atom::Ext(ext) => lookup_atom(&ext.fallback(), lookup),
         atom => lookup(Tag::of_atom(atom)?),
     }
@@ -334,6 +338,7 @@ fn unit_variant_slow(
 fn tag_display<'a>(atom: &'a Atom<'_>) -> Option<Cow<'a, str>> {
     match atom {
         Atom::Lexical(text) => Some(Cow::Borrowed(text)),
+        Atom::Implicit(value) => Some(Cow::Borrowed(value.text())),
         Atom::Ext(ext) => tag_display(&ext.fallback()).map(|x| Cow::Owned(x.into_owned())),
         atom => Some(match Tag::of_atom(atom)? {
             Tag::Str(name) => Cow::Borrowed(name),

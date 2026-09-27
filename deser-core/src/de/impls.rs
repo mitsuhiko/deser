@@ -18,7 +18,7 @@ use crate::de::{
     Deserialize, OwnedSink, Sink, SinkHandle, empty_lexical_or_none, is_empty_lexical, is_null_atom,
 };
 use crate::error::{Error, ErrorKind};
-use crate::event::Atom;
+use crate::event::{Atom, ImplicitValue};
 use crate::ext::Number;
 
 make_slot_wrapper!(SlotWrapper);
@@ -97,6 +97,14 @@ impl<'de> Sink<'de> for SlotWrapper<bool> {
                 **self = Some(lexical::parse_bool(value, state)?);
                 Ok(())
             }
+            // the text of other values is not a bool either
+            Atom::Implicit(ref value) => match value.value() {
+                ImplicitValue::Bool(value) => {
+                    **self = Some(value);
+                    Ok(())
+                }
+                _ => self.unexpected_atom(atom, state),
+            },
             other => self.unexpected_atom(other, state),
         }
     }
@@ -194,6 +202,16 @@ macro_rules! int_sink {
                         Err(err) => {
                             return Err(lexical::int_error(value, err, stringify!($ty), state));
                         }
+                    },
+                    // the text of other values is not a number either
+                    Atom::Implicit(ref value) => match value.value() {
+                        ImplicitValue::U64(value) => {
+                            <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                        }
+                        ImplicitValue::I64(value) => {
+                            <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                        }
+                        _ => return self.unexpected_atom(atom, state),
                     },
                     other => return self.unexpected_atom(other, state),
                 };
@@ -303,6 +321,13 @@ macro_rules! float_sink {
                         Atom::Lexical(value) => match value.parse::<$ty>() {
                             Ok(value) => value,
                             Err(_) => return Err(lexical::invalid(&value, stringify!($ty), state)),
+                        },
+                        // the text of other values is not a number either
+                        Atom::Implicit(ref value) => match value.value() {
+                            ImplicitValue::U64(value) => value as $ty,
+                            ImplicitValue::I64(value) => value as $ty,
+                            ImplicitValue::F64(value) => value as $ty,
+                            _ => return sink.unexpected_atom(atom, state),
                         },
                         other => return sink.unexpected_atom(other, state),
                     };
@@ -1703,7 +1728,7 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(_) | Atom::Lexical(_) => Err(expected_borrowed("string")),
+            Atom::Str(_) | Atom::Lexical(_) | Atom::Implicit(_) => Err(expected_borrowed("string")),
             other => self.unexpected_atom(other, state),
         }
     }
@@ -1712,6 +1737,11 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
         match atom {
             Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_borrowed() => {
                 **self = text.borrowed_str();
+                Ok(())
+            }
+            // strings take the text of values whose type was inferred
+            Atom::Implicit(ref value) if value.text().is_borrowed() => {
+                **self = value.text().borrowed_str();
                 Ok(())
             }
             other => self.atom(other, state),

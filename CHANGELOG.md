@@ -4,6 +4,18 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `Atom::Implicit` for values whose type the format inferred from
+  their text.  It carries the value (`ImplicitValue`: null, bool,
+  integers or float) and the text: types that accept the value receive
+  it, types that reject it receive the text as string.  Enums look up
+  their variants by the value and then by the text, `deser-value` keeps
+  both and serializers write the value.  `Atom` remains 32 bytes.
+- `deser-yaml` emits plain scalars that are not strings as implicit
+  atoms.  This fixes plain scalars like `1.10`, `0x1F`, `true` or `~` for
+  strings (`version: 1.10` is `"1.10"` for a `String`, `~` is `None` for
+  an `Option<String>` and `"~"` for a `String`) and keys like `200` for
+  maps with string keys and struct fields.  An empty document is `""`
+  for a `String`.
 - How lexical atoms are interpreted is decided by the `LexicalRules` of
   the deserialization (an extension value in the state) instead of being
   the same for all formats.  The default are the strict rules for text

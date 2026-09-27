@@ -174,6 +174,12 @@ impl Path {
                     fallback => self.key_segment(&fallback),
                 }
             }
+            // values inferred from text are indexes if they are integers,
+            // otherwise their text is the key
+            Atom::Implicit(ref value) => match value.value().to_atom() {
+                index @ (Atom::U64(_) | Atom::I64(0..)) => self.key_segment(&index),
+                _ => self.key_segment(&Atom::Str(value.text().as_borrowed())),
+            },
             _ => PathSegment::Unknown,
         }
     }

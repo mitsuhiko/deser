@@ -218,6 +218,10 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a BStr> {
                 **self = text.borrowed_str().map(BStr::new);
                 Ok(())
             }
+            Atom::Implicit(ref value) if value.text().is_borrowed() => {
+                **self = value.text().borrowed_str().map(BStr::new);
+                Ok(())
+            }
             Atom::Bytes(ref value) if value.is_borrowed() => {
                 **self = value.borrowed_data().map(BStr::new);
                 Ok(())

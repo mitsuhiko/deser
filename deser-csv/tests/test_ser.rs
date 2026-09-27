@@ -313,3 +313,27 @@ fn test_field_order() {
     );
     assert_eq!(serializer.finish(), "a,b,c\n1,2,3\n4,5,6\n7,8,\n,9,10\n");
 }
+
+#[test]
+fn test_implicit() {
+    use deser::ser::Chunk;
+    use deser::{Atom, Error, Implicit, ImplicitValue, State};
+
+    // like the plain scalars of YAML
+    struct Plain(&'static str, ImplicitValue);
+
+    impl Serialize for Plain {
+        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+            Ok(Chunk::Atom(Atom::Implicit(Implicit::new(self.0, self.1))))
+        }
+    }
+
+    // values whose type was inferred from text are written as value
+    let rows = vec![BTreeMap::from([
+        ("a", Plain("0x1F", ImplicitValue::U64(31))),
+        ("b", Plain("~", ImplicitValue::Null)),
+        ("c", Plain("yes", ImplicitValue::Bool(true))),
+        ("d", Plain("-1.50", ImplicitValue::F64(-1.5))),
+    ])];
+    assert_eq!(to_string(&rows).unwrap(), "a,b,c,d\n31,,true,-1.5\n");
+}

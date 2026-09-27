@@ -316,6 +316,11 @@ fn key_text<'a>(atom: &'a Atom<'_>) -> Result<Cow<'a, str>, Error> {
 fn value_text<'a>(atom: &'a Atom<'_>, bytes: BytesFormat) -> Result<Option<Cow<'a, str>>, Error> {
     Ok(Some(match *atom {
         Atom::Null => return Ok(None),
+        // values whose type was inferred from text are written as value
+        Atom::Implicit(ref value) => {
+            return Ok(value_text(&value.value().to_atom(), bytes)?
+                .map(|text| Cow::Owned(text.into_owned())));
+        }
         Atom::Bool(value) => Cow::Borrowed(if value { "true" } else { "false" }),
         Atom::Str(ref value) | Atom::Lexical(ref value) => Cow::Borrowed(&**value),
         Atom::Char(value) => Cow::Owned(value.to_string()),

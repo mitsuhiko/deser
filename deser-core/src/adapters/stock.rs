@@ -68,6 +68,11 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
                 **self = Some(value.into_cow());
                 Ok(())
             }
+            // strings take the text of values whose type was inferred
+            Atom::Implicit(value) => {
+                **self = Some(value.into_parts().0.into_cow());
+                Ok(())
+            }
             other => self.atom(other, state),
         }
     }

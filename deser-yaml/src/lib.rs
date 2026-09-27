@@ -40,7 +40,26 @@
 //! | mappings and sequences                | maps and sequences                      |
 //!
 //! Which plain (unquoted) scalars are null, booleans or numbers depends on
-//! the YAML version, see [`Version`].  Quoted scalars are always strings.
+//! the YAML version, see [`Version`].  As their type is inferred from
+//! their text, they are passed on as
+//! [`Implicit`](deser_core::Atom::Implicit) atoms: types that expect strings
+//! receive the text, all others the value.  `version: 1.10` is `1.1` for an
+//! `f64` and `"1.10"` for a `String`, `~` is `None` for an `Option<String>`
+//! and `"~"` for a `String`, and keys like `200` work for maps with string
+//! keys.  Quoted scalars are always strings and scalars with a standard tag
+//! (like `!!int 42`) are always of the type of their tag.
+//!
+//! ```rust
+//! #[derive(deser::Deserialize)]
+//! struct Package {
+//!     version: String,
+//!     port: u16,
+//! }
+//!
+//! let package: Package = deser_yaml::from_str("version: 1.10\nport: 0x1F").unwrap();
+//! assert_eq!(package.version, "1.10");
+//! assert_eq!(package.port, 31);
+//! ```
 //! The standard tags (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
 //! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) determine the type of a
 //! value, all other tags are passed on out of band (see [`tag`]).

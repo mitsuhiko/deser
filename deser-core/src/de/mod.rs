@@ -408,6 +408,7 @@ pub(crate) fn is_null_atom(atom: &Atom) -> bool {
         // an extension value that falls back to null (for instance a
         // null with additional information attached) is a null too.
         Atom::Ext(ext) => is_null_ext(ext),
+        Atom::Implicit(value) => value.value() == crate::ImplicitValue::Null,
         _ => false,
     }
 }

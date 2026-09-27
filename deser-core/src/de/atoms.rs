@@ -10,7 +10,7 @@ use crate::de::Deserialize;
 use crate::de::lexical::is_empty_null;
 use crate::de::{Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, discarded_error};
-use crate::event::Atom;
+use crate::event::{Atom, Implicit};
 
 /// Creates the sink that updates a field of a derived struct.
 ///
@@ -61,6 +61,7 @@ pub fn unit_struct(atom: &Atom<'_>, expecting: &str, state: &State) -> Result<()
     match atom {
         Atom::Null => Ok(()),
         Atom::Lexical(value) if is_empty_null(value, state) => Ok(()),
+        Atom::Implicit(value) if value.value() == crate::ImplicitValue::Null => Ok(()),
         Atom::Ext(ext) => match ext.fallback() {
             Atom::Ext(_) => Err(atom.unexpected_error(expecting)),
             fallback => unit_struct(&fallback, expecting, state),
@@ -142,7 +143,9 @@ pub(crate) fn default_borrowed_value_atom<'de>(
 ///
 /// Extension values are lowered to their fallback, [`Atom::F32`] is widened
 /// into an [`Atom::F64`] and [`Atom::Lexical`] is passed on as
-/// [`Atom::Str`].  All other atoms are an error.
+/// [`Atom::Str`].  [`Atom::Implicit`] is passed on as its value and if that
+/// is rejected as [`Atom::Str`] with its text.  All other atoms are an
+/// error.
 #[inline(never)]
 pub(crate) fn default_unexpected_atom(
     sink: &mut dyn Sink<'_>,
@@ -152,6 +155,7 @@ pub(crate) fn default_unexpected_atom(
     let atom = match atom {
         Atom::F32(value) => return sink.atom(Atom::F64(f64::from(value)), state),
         Atom::Lexical(value) => return sink.atom(Atom::Str(value), state),
+        Atom::Implicit(value) => return implicit_into(sink, value, state),
         atom => atom,
     };
     if let Atom::Ext(ref ext) = atom {
@@ -168,6 +172,21 @@ pub(crate) fn default_unexpected_atom(
         return Err(discarded_error(ErrorKind::Unexpected));
     }
     Err(atom.unexpected_error(&sink.expecting()))
+}
+
+/// Delivers an implicit atom as its value or its text.
+///
+/// The text is only tried if the value is rejected for its type, errors of
+/// the value (like an integer that is out of range) are passed on.  If the
+/// text is rejected too, the error of the value is returned.
+fn implicit_into(sink: &mut dyn Sink<'_>, value: Implicit, state: &mut State) -> Result<(), Error> {
+    let (text, value) = value.into_parts();
+    match sink.atom(value.to_atom(), state) {
+        Err(err) if err.kind() == ErrorKind::Unexpected => {
+            sink.atom(Atom::Str(text), state).map_err(|_| err)
+        }
+        rv => rv,
+    }
 }
 
 /// The default of `Sink::map` and `Sink::seq`.

@@ -383,6 +383,8 @@ fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
         // fallbacks of extension values which cannot be arrays.
         Atom::Bytes(value) => Value::Str(Cow::Owned(encode_str(&value, value.fallback, bytes))),
         Atom::Ext(ref ext) => return convert_ext(ext, bytes),
+        // values whose type was inferred from text are written as value
+        Atom::Implicit(value) => return convert_atom(value.value().to_atom(), bytes),
         _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
     }))
 }
@@ -447,6 +449,7 @@ fn encode_str(value: &[u8], fallback: Option<&BytesFormat>, bytes: BytesFormat) 
 
 fn key_to_string(atom: Atom, bytes: BytesFormat) -> Result<String, Error> {
     Ok(match atom {
+        Atom::Implicit(value) => return key_to_string(value.value().to_atom(), bytes),
         Atom::Str(value) | Atom::Lexical(value) => value.into_owned(),
         Atom::Char(value) => value.to_string(),
         Atom::U64(value) => value.to_string(),

@@ -443,6 +443,10 @@ impl Hash for KeyRef<'_> {
 impl Equivalent<Value> for KeyRef<'_> {
     fn equivalent(&self, key: &Value) -> bool {
         match (self, &key.kind) {
+            // implicit values are looked up like their value
+            (_, Kind::Implicit(value)) => {
+                self.equivalent(&Value::new(Kind::from_implicit(value.value())))
+            }
             (KeyRef::Str(a), Kind::Str(b) | Kind::Lexical(b)) => *a == b,
             (KeyRef::Int(a), Kind::U64(b)) => *a == i128::from(*b),
             (KeyRef::Int(a), Kind::I64(b)) => *a == i128::from(*b),

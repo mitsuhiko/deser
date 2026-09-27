@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use deser_core::Text;
 use deser_core::de::LexicalRules;
-use deser_core::{Atom, ErrorKind, Event};
+use deser_core::{Atom, ErrorKind, Event, ImplicitValue};
 use serde::de::{self, DeserializeSeed, Visitor};
 
 use crate::error::Error;
@@ -66,7 +66,16 @@ fn is_null(atom: &Atom) -> bool {
     match atom {
         Atom::Null => true,
         Atom::Ext(ext) => matches!(ext.fallback(), Atom::Null),
+        Atom::Implicit(value) => value.value() == ImplicitValue::Null,
         _ => false,
+    }
+}
+
+/// Invokes the visitor with text.
+fn visit_text<'de, V: Visitor<'de>>(text: Text<'de>, visitor: V) -> Result<V::Value, Error> {
+    match text.into_cow() {
+        Cow::Borrowed(v) => visitor.visit_borrowed_str(v),
+        Cow::Owned(v) => visitor.visit_string(v),
     }
 }
 
@@ -75,10 +84,10 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
     match atom {
         Atom::Null => visitor.visit_unit(),
         Atom::Bool(v) => visitor.visit_bool(v),
-        Atom::Str(v) | Atom::Lexical(v) => match v.into_cow() {
-            Cow::Borrowed(v) => visitor.visit_borrowed_str(v),
-            Cow::Owned(v) => visitor.visit_string(v),
-        },
+        Atom::Str(v) | Atom::Lexical(v) => visit_text(v, visitor),
+        // values inferred from text are their value unless serde asks for
+        // a string (see `ValueDe`)
+        Atom::Implicit(v) => visit_atom(v.value().to_atom(), visitor),
         Atom::Bytes(v) => match v.into_data() {
             Cow::Borrowed(v) => visitor.visit_borrowed_bytes(v),
             Cow::Owned(v) => visitor.visit_byte_buf(v),
@@ -148,6 +157,25 @@ impl<'s, S> ValueDe<'s, S> {
     pub(crate) fn new(src: &'s mut S) -> ValueDe<'s, S> {
         ValueDe { src }
     }
+}
+
+/// Implements methods for strings which take the text of implicit atoms.
+///
+/// Values whose type was inferred from text (see [`Atom::Implicit`]) are
+/// their value, unless serde asks for a string.
+macro_rules! implicit_text {
+    ($($method:ident)*) => {
+        $(
+            fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+                if let Event::Atom(Atom::Implicit(_)) = self.src.peek()?
+                    && let Event::Atom(Atom::Implicit(value)) = self.src.next()?
+                {
+                    return visit_text(value.into_parts().0, visitor);
+                }
+                self.deserialize_any(visitor)
+            }
+        )*
+    };
 }
 
 macro_rules! parse_lexical {
@@ -284,9 +312,13 @@ impl<'de, 's, S: Source<'de>> de::Deserializer<'de> for ValueDe<'s, S> {
         true
     }
 
+    implicit_text! {
+        deserialize_char deserialize_str deserialize_string deserialize_identifier
+    }
+
     serde::forward_to_deserialize_any! {
-        char str string bytes byte_buf unit unit_struct seq tuple
-        tuple_struct map struct identifier
+        bytes byte_buf unit unit_struct seq tuple
+        tuple_struct map struct
     }
 }
 

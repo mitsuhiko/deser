@@ -29,7 +29,7 @@ mod streamed;
 mod text;
 
 pub use self::error::{Error, ErrorAttachment, ErrorKind};
-pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
+pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;
 pub use self::position::Position;
 pub use self::state::{ErrorContext, State};
