@@ -593,9 +593,10 @@ fn is_unit_type(ty: &syn::Type) -> bool {
     }
 }
 
-/// Defines the name of the type which is used in error messages.
+/// Defines the name of the type which is used in error messages (see
+/// `expecting`).
 fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
-    let type_name = container_attrs.container_name();
+    let type_name = container_attrs.expecting();
     quote! {
         const __TYPE_NAME: &__deser::__derive::str = #type_name;
     }

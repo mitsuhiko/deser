@@ -469,3 +469,56 @@ fn test_rename_fields_of_variants() {
         assert_eq!(deserialize::<Request>(events).unwrap(), value);
     }
 }
+
+#[test]
+fn test_expecting() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(expecting = "a point with x and y")]
+    struct Point {
+        x: u32,
+        y: u32,
+    }
+
+    let err = deserialize::<Point>(vec![true.into()]).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unexpected bool, expected a point with x and y"
+    );
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(expecting = "a color")]
+    enum Color {
+        Red,
+    }
+
+    let err = deserialize::<Color>(vec![1.5f64.into()]).unwrap_err();
+    assert_eq!(err.message(), "unexpected float, expected a color");
+    // it's also used in place of the name of the enum
+    let err = deserialize::<Color>(vec!["Blue".into()]).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unknown variant `Blue` of a color, expected `Red`"
+    );
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(tag = "type", expecting = "a shape")]
+    enum Shape {
+        Circle { radius: u32 },
+    }
+
+    let err = deserialize::<Shape>(vec![1u64.into()]).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unexpected unsigned integer, expected a shape"
+    );
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(expecting = "nothing")]
+    struct Marker;
+
+    let err = deserialize::<Marker>(vec![1u64.into()]).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unexpected unsigned integer, expected nothing"
+    );
+}

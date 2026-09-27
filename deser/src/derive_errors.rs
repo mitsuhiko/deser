@@ -578,6 +578,15 @@
 /// }
 /// ```
 ///
+/// `expecting` has no effect on types that are deserialized like their
+/// fields.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(expecting = "a number")]
+/// struct Test(u32);
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

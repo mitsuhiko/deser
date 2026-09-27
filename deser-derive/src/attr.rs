@@ -462,6 +462,7 @@ pub struct ContainerAttrs<'a> {
     skip_serializing_optionals: bool,
     deny_unknown_fields: bool,
     transparent: bool,
+    expecting: Option<Name>,
     validate: Option<syn::ExprPath>,
     tag: Option<Name>,
     tag_aliases: Vec<Name>,
@@ -719,6 +720,7 @@ impl<'a> ContainerAttrs<'a> {
             skip_serializing_optionals: false,
             deny_unknown_fields: false,
             transparent: false,
+            expecting: None,
             validate: None,
             tag: None,
             tag_aliases: Vec::new(),
@@ -808,6 +810,10 @@ impl<'a> ContainerAttrs<'a> {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)
             }
             "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
+            "expecting" => {
+                let value = Name::parse(meta)?;
+                set_once(meta, name, &mut rv.expecting, value)
+            }
             "transparent" => {
                 set_flag(meta, name, &mut rv.transparent)?;
                 match input.data {
@@ -907,6 +913,30 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the name style of the fields of struct variants.
     pub fn rename_all_fields(&self) -> Option<RenameAll> {
         self.rename_all_fields
+    }
+
+    /// Returns what is expected in errors (the name of the type unless
+    /// `expecting` was given).
+    pub fn expecting(&self) -> Name {
+        match self.expecting {
+            Some(ref expecting) => expecting.clone(),
+            None => self.container_name(),
+        }
+    }
+
+    /// Rejects `expecting` for types which are deserialized like other
+    /// values (which report what they expect).
+    pub fn reject_expecting(&self, kind: &str) -> syn::Result<()> {
+        match self.expecting {
+            Some(_) => Err(syn::Error::new(
+                self.span_of("expecting"),
+                format!(
+                    "`expecting` has no effect on {}, they are deserialized like their fields",
+                    kind
+                ),
+            )),
+            None => Ok(()),
+        }
     }
 
     pub fn get_field_name(&self, field: &syn::Field) -> String {

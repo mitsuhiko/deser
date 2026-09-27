@@ -4,6 +4,8 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(expecting = "...")]` which replaces the name of the type
+  in errors (`unexpected bool, expected a point`).
 - Added `#[deser(untagged)]` for variants of tagged enums which are
   represented by their content alone.  They are tried in order if the
   tagged representation fails to deserialize, for instance to fall back to

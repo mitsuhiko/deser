@@ -112,6 +112,10 @@
 //!   deserialization says otherwise.  See [unknown fields](#unknown-fields).
 //! * `#[deser(validate = path)]`: validates the struct once it was
 //!   deserialized.  See [validation](#validation).
+//! * `#[deser(expecting = "...")]`: what is expected in errors, for
+//!   instance `unexpected bool, expected a point` instead of the name of
+//!   the type.  It takes the same values as `rename`.  It's supported on
+//!   structs with named fields, unit structs and enums.
 //! * `#[deser(transparent)]`: serializes and deserializes the struct like
 //!   its only field that is not skipped (like a newtype struct).  The other
 //!   fields have to be skipped, the field can have an adapter.  Structs
@@ -229,6 +233,8 @@
 //! ## Enum Attributes
 //!
 //! * `#[deser(rename = "...")]`: renames the type name hint for this enum.
+//! * `#[deser(expecting = "...")]`: what is expected in errors (and the
+//!   name of the enum in errors about unknown variants), like on structs.
 //! * `#[deser(rename_all = "...")]`: renames all variants at once to a
 //!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
 //!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,

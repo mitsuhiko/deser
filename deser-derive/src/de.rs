@@ -162,6 +162,7 @@ fn derive_tuple_struct(
     let de_generics = with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
+    container_attrs.reject_expecting("tuple structs")?;
     if fields.len() > MAX_TUPLE_LEN {
         return Err(syn::Error::new_spanned(
             fields[MAX_TUPLE_LEN].field,
@@ -252,7 +253,7 @@ fn derive_unit_struct(
     let de_generics = with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
-    let type_name = container_attrs.container_name();
+    let type_name = container_attrs.expecting();
     let construct = st.construct(&[]);
     let validate = container_attrs.validate().map(|path| {
         let validator = validator(path);
@@ -308,7 +309,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
-    let type_name = container_attrs.container_name();
+    let type_name = container_attrs.expecting();
     let all_attrs = fields
         .named
         .iter()
@@ -1326,7 +1327,7 @@ pub fn derive_enum(
         let validator = validator(path);
         quote! { (#validator)(&value)?; }
     });
-    let type_name = container_attrs.container_name();
+    let type_name = container_attrs.expecting();
     // atoms that are not the name of a variant are the other variant (if
     // there is one), or an error with the names
     let other = match attrs.iter().position(|x| x.other()) {
@@ -1433,6 +1434,7 @@ pub(crate) fn derive_newtype_struct(
     field: &NewtypeField,
     bounded_where_clause: syn::WhereClause,
 ) -> syn::Result<TokenStream> {
+    container_attrs.reject_expecting("newtype and transparent structs")?;
     let ident = &input.ident;
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let de_generics = with_de_lifetime(&input.generics)?;
