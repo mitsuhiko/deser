@@ -3,9 +3,10 @@
 #
 # 1. Clean builds of a small program (`LIB-version`), including all
 #    dependencies.  The best of three runs is reported.
-# 2. Builds of a program with 100 structs and 100 enums (generated into
+# 2. Builds of a library with 100 structs and 100 enums (generated into
 #    `target/many`), without the dependencies.  This is the cost of the
-#    derived code.  The best of three runs is reported.
+#    derived code.  It's a library as in a binary only the code that is
+#    used is compiled.  The best of three runs is reported.
 set -e
 cd "$(dirname "$0")"
 
@@ -35,7 +36,7 @@ clean_builds() {
   done
 }
 
-# Generates a program with 100 structs and enums for a library.
+# Generates a library with 100 structs and enums for a library.
 generate_many() {
   lib=$1
   dir=target/many/$lib
@@ -74,7 +75,7 @@ generate_many() {
       echo "}"
       i=$((i + 1))
     done
-    echo "fn main() {"
+    echo "pub fn run() {"
     echo "    let input = std::env::args().nth(1).unwrap_or_default();"
     i=0
     while [ $i -lt 100 ]; do
@@ -82,7 +83,7 @@ generate_many() {
       i=$((i + 1))
     done
     echo "}"
-  } > $dir/src/main.rs
+  } > $dir/src/lib.rs
 }
 
 # Prints the best of three builds of the generated program (without the
@@ -93,7 +94,7 @@ many_builds() {
   echo "$lib"
   for cmd in "check" "build" "build --release"; do
     (cd $dir; cargo $cmd -q)
-    best_of_three $dir "$cmd" "touch src/main.rs"
+    best_of_three $dir "$cmd" "touch src/lib.rs"
   done
 }
 
@@ -103,7 +104,7 @@ for lib in $LIBS; do
 done
 
 echo
-echo "100 structs and enums, without dependencies (best of three)"
+echo "library with 100 structs and enums, without dependencies (best of three)"
 for lib in $LIBS; do
   generate_many $lib
   many_builds $lib
