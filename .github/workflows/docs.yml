@@ -32,7 +32,7 @@ jobs:
       - name: Point docs.rs links of deser crates to the dev docs
         run: |
           find target/doc -name '*.html' -print0 | xargs -0 perl -pi -e '
-            s{href="https://docs\.rs/(deser(?:-[a-z]+)?)(?:/latest/\w+)?(/[^"]*)?"}{
+            s{href="https://docs\.rs/(deser(?:-[a-z0-9]+)*)(?:/latest/\w+)?(/[^"]*)?"}{
               my ($crate, $path) = ($1, $2);
               (my $module = $crate) =~ tr/-/_/;
               "href=\"/deser/$module" . ($path && $path ne "/" ? $path : "/index.html") . "\""
