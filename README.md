@@ -27,7 +27,8 @@ pub struct Account {
     is_deactivated: bool,
 }
 
-let account: Account = deser_json::from_str(r#"{"id": 42, "accountHolder": "Jane"}"#).unwrap();
+let json = r#"{"id": 42, "accountHolder": "Jane"}"#;
+let account: Account = deser_json::from_str(json).unwrap();
 assert_eq!(account.account_holder, "Jane");
 assert_eq!(
     deser_json::to_string(&account).unwrap(),
@@ -185,15 +186,20 @@ pub enum Listener {
     Other(#[deser(tag)] String, Recording),
 }
 
-let listener: Listener = deser_json::from_str(r#"{"host": "127.0.0.1"}"#).unwrap();
+let listener: Listener =
+    deser_json::from_str(r#"{"host": "127.0.0.1"}"#).unwrap();
 assert!(matches!(listener, Listener::Tcp { port: 8080, .. }));
 
 let input = r#"{"@type":"quic","host":"::1","alpn":["h3"]}"#;
 let listener: Listener = deser_json::from_str(input).unwrap();
 assert_eq!(deser_json::to_string(&listener).unwrap(), input);
 
-let err = deser_json::from_str::<Listener>(r#"{"host": "::1", "port": 0}"#).unwrap_err();
-assert_eq!(err.to_string(), "Unexpected: invalid value: must not be zero at line 1 column 25");
+let input = r#"{"host": "::1", "port": 0}"#;
+let err = deser_json::from_str::<Listener>(input).unwrap_err();
+assert_eq!(
+    err.to_string(),
+    "Unexpected: invalid value: must not be zero at line 1 column 25"
+);
 ```
 
 ## Errors That Help
@@ -230,12 +236,16 @@ type = "http"
 "#;
 
 let err = deser_toml::Deserializer::from_str(toml)
-    .deserialize_with::<Config, _>(|driver| driver.push_layer(PathLayer::new()))
+    .deserialize_with::<Config, _>(|driver| {
+        driver.push_layer(PathLayer::new())
+    })
     .unwrap_err();
-assert_eq!(err.attachment::<Path>().unwrap().to_string(), "servers[1].timeout");
+let path = err.attachment::<Path>().unwrap();
+assert_eq!(path.to_string(), "servers[1].timeout");
 assert_eq!((err.line(), err.column()), (Some(8), Some(11)));
 
-// Unexpected: unexpected string, expected u32 at line 8 column 11 (path: servers[1].timeout)
+// Unexpected: unexpected string, expected u32 at line 8 column 11
+// (path: servers[1].timeout)
 println!("{err}");
 ```
 
@@ -264,7 +274,8 @@ Every format has the same pieces:
 use deser::io::Reader;
 use deser_json::{DeserializerConfig, Trailing};
 
-const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const LINES: DeserializerConfig =
+    DeserializerConfig::new().trailing(Trailing::Newline);
 
 // reads one event per line, a line that fails does not end the stream
 let mut events = Reader::new(std::io::stdin(), LINES);

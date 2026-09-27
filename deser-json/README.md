@@ -15,7 +15,11 @@ struct Event<'a> {
     payload: Vec<u8>,
 }
 
-let json = r#"{"kind": "upload", "id": 340282366920938463463374607431768211455, "payload": "aGVsbG8="}"#;
+let json = r#"{
+    "kind": "upload",
+    "id": 340282366920938463463374607431768211455,
+    "payload": "aGVsbG8="
+}"#;
 let event: Event = deser_json::from_str(json).unwrap();
 assert_eq!(event.kind, "upload");
 assert_eq!(event.id, u128::MAX);
@@ -23,7 +27,11 @@ assert_eq!(event.payload, b"hello");
 
 assert_eq!(
     deser_json::to_string(&event).unwrap(),
-    r#"{"kind":"upload","id":340282366920938463463374607431768211455,"payload":"aGVsbG8="}"#
+    concat!(
+        r#"{"kind":"upload","#,
+        r#""id":340282366920938463463374607431768211455,"#,
+        r#""payload":"aGVsbG8="}"#,
+    )
 );
 ```
 

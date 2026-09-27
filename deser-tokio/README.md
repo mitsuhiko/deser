@@ -9,9 +9,12 @@ instance to speak JSON Lines or CBOR sequences over a socket:
 use deser::{Deserialize, Serialize};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 use deser_tokio::{Reader, Writer};
+use tokio::net::TcpStream;
 
-const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+const READ_LINES: DeserializerConfig =
+    DeserializerConfig::new().trailing(Trailing::Newline);
+const WRITE_LINES: SerializerConfig =
+    SerializerConfig::new().trailing(Trailing::Newline);
 
 #[derive(Serialize, Deserialize)]
 struct Request {
@@ -19,7 +22,7 @@ struct Request {
     method: String,
 }
 
-async fn serve(socket: tokio::net::TcpStream) -> Result<(), deser::Error> {
+async fn serve(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
     let mut requests = Reader::new(input, READ_LINES);
     let mut responses = Writer::new(output, WRITE_LINES);

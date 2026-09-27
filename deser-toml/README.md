@@ -34,12 +34,17 @@ assert_eq!(config.servers[0].port, 8080);
 // sequences of maps are written as arrays of tables
 assert_eq!(
     deser_toml::to_string(&config).unwrap(),
-    "name = \"web\"\n\n[[servers]]\nhost = \"a.example.com\"\nport = 8080\n"
+    concat!(
+        "name = \"web\"\n\n",
+        "[[servers]]\nhost = \"a.example.com\"\nport = 8080\n",
+    )
 );
 
 // errors point at the problem
-let err = deser_toml::from_str::<Config>("name = \"web\"\nservers = [{host = \"a\", port = 80800}]")
-    .unwrap_err();
+let err = deser_toml::from_str::<Config>(
+    "name = \"web\"\nservers = [{host = \"a\", port = 80800}]",
+)
+.unwrap_err();
 assert_eq!((err.line(), err.column()), (Some(2), Some(32)));
 ```
 
@@ -69,7 +74,8 @@ Pass parts of test names to only run some tests and to see the details of
 failures, including known ones:
 
 ```sh
-cargo test -p deser-toml --test toml_test_suite -- valid/string invalid/table
+cargo test -p deser-toml --test toml_test_suite -- \
+    valid/string invalid/table
 ```
 
 Every valid test is also serialized again and has to roundtrip.  Tests that

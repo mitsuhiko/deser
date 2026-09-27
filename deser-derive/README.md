@@ -50,7 +50,10 @@ assert_eq!(service.timeout_secs, 30);
 
 assert_eq!(
     deser_json::to_string(&service).unwrap(),
-    r#"{"name":"web","listen":"127.0.0.1","timeout-secs":30,"backend":{"type":"static","root":"/srv/www"}}"#
+    concat!(
+        r#"{"name":"web","listen":"127.0.0.1","timeout-secs":30,"#,
+        r#""backend":{"type":"static","root":"/srv/www"}}"#,
+    )
 );
 ```
 

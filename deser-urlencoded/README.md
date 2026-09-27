@@ -28,8 +28,8 @@ struct Paginate {
     offset: Option<u32>,
 }
 
-let search: Search =
-    deser_urlencoded::from_str("q=rust&limit=10&offset=&tags=a&tags=b").unwrap();
+let query = "q=rust&limit=10&offset=&tags=a&tags=b";
+let search: Search = deser_urlencoded::from_str(query).unwrap();
 assert_eq!(search.paginate.limit, 10);
 assert_eq!(search.paginate.offset, None);
 assert_eq!(search.tags, ["a", "b"]);

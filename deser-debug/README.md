@@ -28,7 +28,10 @@ enum Shape {
     Circle { center: Point, radius: f64 },
 }
 
-let shape = Shape::Circle { center: Point { x: 1, y: None }, radius: 2.5 };
+let shape = Shape::Circle {
+    center: Point { x: 1, y: None },
+    radius: 2.5,
+};
 assert_eq!(
     format!("{:?}", ToDebug::new(&shape)),
     "Circle { center: Point { x: 1, y: None }, radius: 2.5 }"

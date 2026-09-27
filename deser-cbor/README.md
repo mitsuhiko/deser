@@ -20,7 +20,10 @@ struct Blob {
     data: Vec<u8>,
 }
 
-let blob = Blob { name: "logo".into(), data: vec![0xde, 0xad, 0xbe, 0xef] };
+let blob = Blob {
+    name: "logo".into(),
+    data: vec![0xde, 0xad, 0xbe, 0xef],
+};
 
 // CBOR has native bytes
 let cbor = deser_cbor::to_vec(&blob).unwrap();

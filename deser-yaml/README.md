@@ -34,8 +34,10 @@ assert_eq!(
 );
 
 // errors point at the problem
-let err = deser_yaml::from_str::<Config>("name: web\nversion: '1'\nports: [80, https]\ndebug: no")
-    .unwrap_err();
+let err = deser_yaml::from_str::<Config>(
+    "name: web\nversion: '1'\nports: [80, https]\ndebug: no",
+)
+.unwrap_err();
 assert_eq!((err.line(), err.column()), (Some(3), Some(13)));
 ```
 

@@ -30,9 +30,12 @@ let json = r#"{"servers": [
 ]}"#;
 
 let err = deser_json::Deserializer::from_str(json)
-    .deserialize_with::<Config, _>(|driver| driver.push_layer(PathLayer::new()))
+    .deserialize_with::<Config, _>(|driver| {
+        driver.push_layer(PathLayer::new())
+    })
     .unwrap_err();
-assert_eq!(err.attachment::<Path>().unwrap().to_string(), "servers[1].port");
+let path = err.attachment::<Path>().unwrap();
+assert_eq!(path.to_string(), "servers[1].port");
 assert_eq!((err.line(), err.column()), (Some(3), Some(39)));
 ```
 

@@ -39,7 +39,10 @@ assert_eq!(shape.extra, Some(serde_json::json!({"color": "red"})));
 
 assert_eq!(
     deser_json::to_string(&shape).unwrap(),
-    r#"{"name":"line","points":[{"x":1,"y":2},{"x":3,"y":4}],"extra":{"color":"red"}}"#
+    concat!(
+        r#"{"name":"line","points":[{"x":1,"y":2},{"x":3,"y":4}],"#,
+        r#""extra":{"color":"red"}}"#,
+    )
 );
 ```
 
