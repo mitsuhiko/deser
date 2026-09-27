@@ -14,7 +14,7 @@ use crate::de::lexical;
 use crate::de::mapped::MappedSink;
 use crate::de::{CollectedErrors, DuplicateKeys};
 use crate::de::{
-    Deserialize, OwnedSink, Sink, SinkHandle, empty_as_none, is_empty_lexical, is_null_atom,
+    Deserialize, OwnedSink, Sink, SinkHandle, empty_lexical_or_none, is_empty_lexical, is_null_atom,
 };
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes};
@@ -1089,7 +1089,12 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
             drop(A::deserialize_into_as(inner));
             Ok(())
         } else if is_empty_lexical(&atom) {
-            empty_as_none(A::__private_atom_into_as(inner, atom, state), inner)
+            if !empty_lexical_or_none(atom, state, |atom, state| {
+                A::__private_atom_into_as(inner, atom, state)
+            })? {
+                *inner = None;
+            }
+            Ok(())
         } else {
             A::__private_atom_into_as(inner, atom, state)
         }
@@ -1106,10 +1111,12 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
             drop(A::deserialize_into_as(inner));
             Ok(())
         } else if is_empty_lexical(&atom) {
-            empty_as_none(
-                A::__private_borrowed_atom_into_as(inner, atom, state),
-                inner,
-            )
+            if !empty_lexical_or_none(atom, state, |atom, state| {
+                A::__private_borrowed_atom_into_as(inner, atom, state)
+            })? {
+                *inner = None;
+            }
+            Ok(())
         } else {
             A::__private_borrowed_atom_into_as(inner, atom, state)
         }

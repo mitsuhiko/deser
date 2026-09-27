@@ -420,18 +420,25 @@ pub(crate) fn is_empty_lexical(atom: &Atom) -> bool {
     matches!(atom, Atom::Lexical(value) if value.is_empty())
 }
 
-/// Turns the rejection of an empty lexical atom into `None`.
+/// Delivers an empty lexical atom to an optional value.
 ///
-/// Values are rejected with [`ErrorKind::Unexpected`], other errors are
-/// passed on.
-#[cold]
-pub(crate) fn empty_as_none<T>(rv: Result<(), Error>, slot: &mut Option<T>) -> Result<(), Error> {
-    match rv {
-        Err(err) if err.kind() == ErrorKind::Unexpected => {
-            *slot = None;
-            Ok(())
-        }
-        rv => rv,
+/// Returns `false` if the value rejects it with [`ErrorKind::Unexpected`],
+/// the optional is `None` then.  As that error is thrown away, it's created
+/// without a message (optional numbers are empty in every other row of
+/// some CSV files).  Other errors are passed on with their message (the
+/// atom is delivered again for this).
+#[inline]
+pub(crate) fn empty_lexical_or_none<'a>(
+    atom: Atom<'a>,
+    state: &mut State,
+    mut deliver: impl FnMut(Atom<'a>, &mut State) -> Result<(), Error>,
+) -> Result<bool, Error> {
+    let retry = atom.clone();
+    match state.discard_errors(|state| deliver(atom, state)) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == ErrorKind::Unexpected => Ok(false),
+        Err(err) if state.discards_errors => Err(err),
+        Err(_) => deliver(retry, state).map(|()| true),
     }
 }
 
@@ -446,8 +453,11 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             return Ok(());
         }
         if self.is_optional() && is_empty_lexical(&atom) {
-            let rv = self.sink_mut().atom(atom, state);
-            return self.empty_as_null(rv);
+            if !empty_lexical_or_none(atom, state, |atom, state| self.sink_mut().atom(atom, state))?
+            {
+                *self = SinkHandle::null();
+            }
+            return Ok(());
         }
         self.sink_mut().atom(atom, state)
     }
@@ -459,8 +469,13 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             return Ok(());
         }
         if self.is_optional() && is_empty_lexical(&atom) {
-            let rv = self.sink_mut().borrowed_atom(atom, state);
-            return self.empty_as_null(rv);
+            let delivered = empty_lexical_or_none(atom, state, |atom, state| {
+                self.sink_mut().borrowed_atom(atom, state)
+            })?;
+            if !delivered {
+                *self = SinkHandle::null();
+            }
+            return Ok(());
         }
         self.sink_mut().borrowed_atom(atom, state)
     }
@@ -473,20 +488,6 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             self.0,
             HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_)
         )
-    }
-
-    /// Turns the rejection of an empty lexical atom into a null.
-    ///
-    /// The handle becomes a null handle, like for null atoms.
-    #[cold]
-    fn empty_as_null(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
-        match rv {
-            Err(err) if err.kind() == ErrorKind::Unexpected => {
-                *self = SinkHandle::null();
-                Ok(())
-            }
-            rv => rv,
-        }
     }
 
     /// Forwards to [`Sink::unexpected_atom`].
