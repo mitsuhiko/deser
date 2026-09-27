@@ -762,40 +762,19 @@ pub fn derive_enum(
         .collect::<syn::Result<Vec<_>>>()?;
 
     let mut seen_names = HashSet::new();
-    let mut first_duplicate_name = None;
-    let matcher = attrs
-        .iter()
-        .map(|x| {
-            let name = x.name(&container_attrs).to_string();
-            if first_duplicate_name.is_none() && seen_names.contains(&name) {
-                first_duplicate_name = Some((name.clone(), x.variant()));
+    let mut matcher = Vec::new();
+    for x in attrs.iter() {
+        let mut patterns = Vec::new();
+        for name in std::iter::once(x.name(&container_attrs)).chain(x.aliases().iter().cloned()) {
+            if !seen_names.insert(name.clone()) {
+                return Err(syn::Error::new_spanned(
+                    x.variant(),
+                    format!("variant name `{}` used more than once", name.display()),
+                ));
             }
-            seen_names.insert(name.clone());
-
-            let mut rv = quote! {
-                #name
-            };
-            for alias in x.aliases() {
-                let alias = alias.clone();
-                if first_duplicate_name.is_none() && seen_names.contains(&alias) {
-                    first_duplicate_name = Some((alias.clone(), x.variant()));
-                }
-                seen_names.insert(alias.clone());
-                rv = quote! {
-                    #rv | #alias
-                };
-            }
-            rv
-        })
-        .collect::<Vec<_>>();
-    if let Some((first_duplicate_name, field)) = first_duplicate_name {
-        return Err(syn::Error::new_spanned(
-            field,
-            format!(
-                "variant name `{}` used more than once",
-                first_duplicate_name
-            ),
-        ));
+            patterns.push(name.tag_pattern());
+        }
+        matcher.push(quote! { #(#patterns)|* });
     }
 
     if let Some(attrs) = attrs.iter().find(|x| x.default()) {
@@ -809,37 +788,21 @@ pub fn derive_enum(
         let validator = validator(path);
         quote! { (#validator)(&value)?; }
     });
-    let (fallback, non_str_fallback) = match attrs.iter().find(|x| x.other()) {
+    let type_name = container_attrs.container_name();
+    let fallback = match attrs.iter().find(|x| x.other()) {
+        // all other atoms are unknown tags too
         Some(other) => {
             let var_ident = &other.variant().ident;
-            (
-                quote! { #ident::#var_ident },
-                // other atoms are unknown tags too, extension values are
-                // lowered first.
-                quote! {
-                    __other @ __deser::Atom::Ext(_) => return self.unexpected_atom(__other, __state),
-                    _ => {
-                        let value = #ident::#var_ident;
-                        #unit_validate
-                        self.slot = __deser::__derive::Some(value);
-                        return __deser::__derive::Ok(());
-                    }
-                },
-            )
+            quote! { #ident::#var_ident }
         }
-        None => (
-            {
-                let names = attrs.iter().map(|x| x.name(&container_attrs).to_string());
-                quote! {
-                    return __deser::__derive::Err(
-                        __deser::__derive::unknown_variant(__deser::__derive::Some(s), &[#(#names),*])
-                    )
-                }
-            },
+        None => {
+            let names = attrs.iter().map(|x| x.name(&container_attrs).display());
             quote! {
-                __other => return self.unexpected_atom(__other, __state),
-            },
-        ),
+                return __deser::__derive::Err(
+                    __deser::__derive::unknown_variant_atom(&__atom, &[#(#names),*], #type_name)
+                )
+            }
+        }
     };
     if attrs.iter().filter(|x| x.other()).count() > 1 {
         return Err(syn::Error::new(
@@ -902,17 +865,25 @@ pub fn derive_enum(
                     __atom: __deser::Atom,
                     __state: &mut __deser::State
                 ) -> __deser::__derive::Result<()> {
-                    let s = match __atom {
-                        __deser::Atom::Str(ref s) | __deser::Atom::Lexical(ref s) => &s as &__deser::__derive::str,
-                        #non_str_fallback
-                    };
-                    let value = match s {
-                        #( #matcher => #ident::#var_idents, )*
-                        _ => #fallback
+                    if let __deser::Atom::Ext(_) = __atom {
+                        // lowered to the fallback
+                        return self.unexpected_atom(__atom, __state);
+                    }
+                    let __found = __deser::__derive::lookup_atom(&__atom, |__tag| match __tag {
+                        #( #matcher => __deser::__derive::Some(#ident::#var_idents), )*
+                        _ => __deser::__derive::None,
+                    });
+                    let value = match __found {
+                        __deser::__derive::Some(value) => value,
+                        __deser::__derive::None => #fallback,
                     };
                     #unit_validate
                     self.slot = __deser::__derive::Some(value);
                     __deser::__derive::Ok(())
+                }
+
+                fn expecting(&self) -> __deser::__derive::StrCow<'_> {
+                    __deser::__derive::StrCow::Borrowed(#type_name)
                 }
             }
         };

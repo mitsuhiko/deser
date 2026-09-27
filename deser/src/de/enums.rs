@@ -207,14 +207,97 @@ impl<'de> Deserialize<'de> for IgnoredContent {
     }
 }
 
+/// The tag of a variant.
+///
+/// Variants are named by strings, integers or booleans.  Non-negative
+/// integers are always [`U64`](Self::U64).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tag<'a> {
+    Str(&'a str),
+    U64(u64),
+    I64(i64),
+    Bool(bool),
+}
+
+impl<'a> Tag<'a> {
+    /// Returns the tag of an atom that is not lexical.
+    #[inline]
+    fn of_atom(atom: &'a Atom) -> Option<Tag<'a>> {
+        match *atom {
+            Atom::Str(ref name) => Some(Tag::Str(name)),
+            Atom::U64(value) => Some(Tag::U64(value)),
+            Atom::I64(value) => Some(match u64::try_from(value) {
+                Ok(value) => Tag::U64(value),
+                Err(_) => Tag::I64(value),
+            }),
+            Atom::Bool(value) => Some(Tag::Bool(value)),
+            _ => None,
+        }
+    }
+
+    /// Parses lexical text into a tag that is not a string.
+    fn parse_lexical(text: &str) -> Option<Tag<'static>> {
+        match text {
+            "true" => Some(Tag::Bool(true)),
+            "false" => Some(Tag::Bool(false)),
+            _ => text
+                .parse()
+                .map(Tag::U64)
+                .ok()
+                .or_else(|| text.parse().map(Tag::I64).ok()),
+        }
+    }
+}
+
+/// Looks up the variant for an atom.
+///
+/// Strings, integers and booleans are tags.  Lexical atoms (text of unknown
+/// type) are looked up as strings and then as integers or booleans.
+/// Extension values are lowered to their fallback.
+#[inline]
+pub fn lookup_atom<T>(atom: &Atom, lookup: impl Fn(Tag<'_>) -> Option<T>) -> Option<T> {
+    match atom {
+        Atom::Lexical(text) => lookup(Tag::Str(text)).or_else(|| lookup(Tag::parse_lexical(text)?)),
+        Atom::Ext(ext) => lookup_atom(&ext.fallback(), lookup),
+        atom => lookup(Tag::of_atom(atom)?),
+    }
+}
+
+/// Returns the name of an atom as tag for errors.
+///
+/// Returns `None` if the atom cannot be a tag.
+fn tag_display<'a>(atom: &'a Atom<'_>) -> Option<Cow<'a, str>> {
+    match atom {
+        Atom::Lexical(text) => Some(Cow::Borrowed(text)),
+        Atom::Ext(ext) => tag_display(&ext.fallback()).map(|x| Cow::Owned(x.into_owned())),
+        atom => Some(match Tag::of_atom(atom)? {
+            Tag::Str(name) => Cow::Borrowed(name),
+            Tag::U64(value) => Cow::Owned(value.to_string()),
+            Tag::I64(value) => Cow::Owned(value.to_string()),
+            Tag::Bool(value) => Cow::Borrowed(if value { "true" } else { "false" }),
+        }),
+    }
+}
+
+/// Creates the error for an atom that is not the tag of a variant.
+///
+/// Atoms that cannot be tags (such as floats) are unexpected.
+#[cold]
+pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Error {
+    match tag_display(atom) {
+        Some(name) => unknown_variant(Some(&name), names),
+        None => atom.unexpected_error(expecting),
+    }
+}
+
 /// Looks up a variant by tag.
-pub type VariantLookup<'de, E> = fn(&str) -> Option<BoxedVariant<'de, E>>;
+pub type VariantLookup<'de, E> = fn(Tag<'_>) -> Option<BoxedVariant<'de, E>>;
 
 /// Creates the builder of a special variant.
 pub type VariantMaker<'de, E> = fn() -> BoxedVariant<'de, E>;
 
-/// Looks up a unit variant by name.
-pub type UnitLookup<E> = fn(&str) -> Option<E>;
+/// Looks up a unit variant by tag.
+pub type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
 
 /// Creates the builder for the n-th variant of an untagged enum.
 pub type CandidateLookup<'de, E> = fn(usize) -> Option<BoxedVariant<'de, E>>;
@@ -242,9 +325,9 @@ impl<'de, E> Copy for Variants<'de, E> {}
 impl<'de, E> Variants<'de, E> {
     /// Returns the variant for a recorded tag.
     fn resolve(&self, tag: &Recording, state: &mut State) -> Result<BoxedVariant<'de, E>, Error> {
-        let tag_name = tag_name(tag);
-        if let Some(ref tag_name) = tag_name
-            && let Some(variant) = (self.lookup)(tag_name)
+        let atom = single_atom(tag);
+        if let Some(atom) = atom
+            && let Some(variant) = lookup_atom(atom, self.lookup)
         {
             return Ok(variant);
         }
@@ -254,7 +337,10 @@ impl<'de, E> Variants<'de, E> {
                 variant.set_tag(Some(tag), state)?;
                 Ok(variant)
             }
-            None => Err(unknown_variant(tag_name.as_deref(), self.names)),
+            None => Err(unknown_variant(
+                atom.and_then(tag_display).as_deref(),
+                self.names,
+            )),
         }
     }
 
@@ -274,21 +360,11 @@ impl<'de, E> Variants<'de, E> {
     }
 }
 
-/// Returns the name of a recorded tag if it's a string.
-///
-/// Extension values are lowered to their fallback.
-fn tag_name(tag: &Recording) -> Option<Cow<'_, str>> {
+/// Returns the atom of a recording if it's a single atom.
+fn single_atom(tag: &Recording) -> Option<&Atom<'static>> {
     let mut events = tag.events();
-    let atom = match (events.next(), events.next()) {
-        (Some(Event::Atom(atom)), None) => atom,
-        _ => return None,
-    };
-    match atom {
-        Atom::Str(name) | Atom::Lexical(name) => Some(Cow::Borrowed(name)),
-        Atom::Ext(ext) => match ext.fallback() {
-            Atom::Str(name) => Some(Cow::Owned(name.into_owned())),
-            _ => None,
-        },
+    match (events.next(), events.next()) {
+        (Some(Event::Atom(atom)), None) => Some(atom),
         _ => None,
     }
 }
@@ -354,18 +430,16 @@ impl<'a, 'de, E: Send + 'de> ExternallyTaggedSink<'a, 'de, E> {
 
 impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        let mut variant = match atom {
-            Atom::Ext(_) => return self.unexpected_atom(atom, state),
-            Atom::Str(ref name) | Atom::Lexical(ref name) => {
-                if let Some(value) = (self.unit)(name) {
-                    *self.out = Some(value);
-                    self.done = true;
-                    return Ok(());
-                }
-                (self.variants.lookup)(name)
-            }
-            _ => None,
-        };
+        if let Atom::Ext(_) = atom {
+            // lowered to the fallback
+            return self.unexpected_atom(atom, state);
+        }
+        if let Some(value) = lookup_atom(&atom, self.unit) {
+            *self.out = Some(value);
+            self.done = true;
+            return Ok(());
+        }
+        let mut variant = lookup_atom(&atom, self.variants.lookup);
         if variant.is_none()
             && let Some(other) = self.variants.other
         {
@@ -378,12 +452,11 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         let mut variant = match variant {
             Some(variant) => variant,
             None => {
-                return match atom {
-                    Atom::Str(ref name) | Atom::Lexical(ref name) => {
-                        Err(unknown_variant(Some(name), self.variants.names))
-                    }
-                    other => self.unexpected_atom(other, state),
-                };
+                return Err(unknown_variant_atom(
+                    &atom,
+                    self.variants.names,
+                    &self.expecting(),
+                ));
             }
         };
         feed_null(&mut *variant, state)?;

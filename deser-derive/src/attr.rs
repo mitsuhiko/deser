@@ -865,11 +865,115 @@ impl<'a> FieldAttrs<'a> {
     }
 }
 
+/// The name of a variant (its tag).
+///
+/// Variants are named by strings, integers or booleans.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum VariantName {
+    Str(String),
+    U64(u64),
+    I64(i64),
+    Bool(bool),
+}
+
+impl VariantName {
+    /// Parses the value of `rename = ...` or `alias = ...` of a variant.
+    fn parse(meta: &ParseNestedMeta) -> syn::Result<VariantName> {
+        let expr: syn::Expr = meta.value()?.parse()?;
+        let (negative, lit) = match expr {
+            syn::Expr::Lit(syn::ExprLit { ref lit, .. }) => (false, lit),
+            syn::Expr::Unary(syn::ExprUnary {
+                op: syn::UnOp::Neg(_),
+                expr: ref inner,
+                ..
+            }) => match **inner {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: ref lit @ syn::Lit::Int(_),
+                    ..
+                }) => (true, lit),
+                _ => return Err(unsupported_name(&expr)),
+            },
+            _ => return Err(unsupported_name(&expr)),
+        };
+        Ok(match lit {
+            syn::Lit::Str(lit) => VariantName::Str(lit.value()),
+            syn::Lit::Bool(lit) => VariantName::Bool(lit.value),
+            syn::Lit::Int(lit) if negative => {
+                let value: i128 = lit.base10_parse()?;
+                match i64::try_from(-value) {
+                    Ok(value) => VariantName::I64(value),
+                    Err(_) => return Err(syn::Error::new_spanned(lit, "integer is out of range")),
+                }
+            }
+            syn::Lit::Int(lit) => VariantName::U64(lit.base10_parse()?),
+            _ => return Err(unsupported_name(&expr)),
+        })
+    }
+
+    /// Returns the name as string if it is one.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            VariantName::Str(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Returns the name as it appears in descriptions and errors.
+    pub fn display(&self) -> String {
+        match self {
+            VariantName::Str(name) => name.clone(),
+            VariantName::U64(value) => value.to_string(),
+            VariantName::I64(value) => value.to_string(),
+            VariantName::Bool(value) => value.to_string(),
+        }
+    }
+
+    /// Returns a pattern that matches the name as `__deser::__derive::Tag`.
+    pub fn tag_pattern(&self) -> TokenStream {
+        match self {
+            VariantName::Str(name) => quote! { __deser::__derive::Tag::Str(#name) },
+            VariantName::U64(value) => quote! { __deser::__derive::Tag::U64(#value) },
+            VariantName::I64(value) => quote! { __deser::__derive::Tag::I64(#value) },
+            VariantName::Bool(value) => quote! { __deser::__derive::Tag::Bool(#value) },
+        }
+    }
+
+    /// Returns an expression for the name as atom.
+    pub fn atom(&self) -> TokenStream {
+        match self {
+            VariantName::Str(name) => quote! {
+                __deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name))
+            },
+            VariantName::U64(value) => quote! { __deser::Atom::U64(#value) },
+            VariantName::I64(value) => quote! { __deser::Atom::I64(#value) },
+            VariantName::Bool(value) => quote! { __deser::Atom::Bool(#value) },
+        }
+    }
+
+    /// Returns an expression for a serialize handle of the name.
+    pub fn ser_handle(&self) -> TokenStream {
+        let value = match self {
+            VariantName::Str(name) => quote! { #name },
+            VariantName::U64(value) => quote! { #value },
+            VariantName::I64(value) => quote! { #value },
+            VariantName::Bool(value) => quote! { #value },
+        };
+        quote! { __deser::ser::SerializeHandle::to(&#value) }
+    }
+}
+
+fn unsupported_name(expr: &syn::Expr) -> syn::Error {
+    syn::Error::new_spanned(
+        expr,
+        "expected a string, an integer or a boolean as name of the variant",
+    )
+}
+
 pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     seen: Vec<SeenAttr>,
-    rename: Option<String>,
-    aliases: Vec<String>,
+    rename: Option<VariantName>,
+    aliases: Vec<VariantName>,
     other: bool,
     default: bool,
 }
@@ -887,11 +991,11 @@ impl<'a> EnumVariantAttrs<'a> {
 
         let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
             "rename" => {
-                let value = parse_str(meta)?;
+                let value = VariantName::parse(meta)?;
                 set_once(meta, name, &mut rv.rename, value)
             }
             "alias" => {
-                rv.aliases.push(parse_str(meta)?);
+                rv.aliases.push(VariantName::parse(meta)?);
                 Ok(())
             }
             "other" => set_flag(meta, name, &mut rv.other),
@@ -922,14 +1026,13 @@ impl<'a> EnumVariantAttrs<'a> {
         self.variant
     }
 
-    pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
+    pub fn name(&self, container_attrs: &ContainerAttrs) -> VariantName {
         self.rename
-            .as_deref()
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| container_attrs.get_variant_name(self.variant).into())
+            .clone()
+            .unwrap_or_else(|| VariantName::Str(container_attrs.get_variant_name(self.variant)))
     }
 
-    pub fn aliases(&self) -> &[String] {
+    pub fn aliases(&self) -> &[VariantName] {
         &self.aliases
     }
 }

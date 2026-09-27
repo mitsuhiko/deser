@@ -10,3 +10,4 @@ mod test_nesting;
 mod test_pretty;
 mod test_ser;
 mod test_stream;
+mod test_tags;

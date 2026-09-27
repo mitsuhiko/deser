@@ -141,6 +141,40 @@
 //! }
 //! ```
 //!
+//! ### Tags
+//!
+//! The names of variants are their tags.  Besides strings they can be
+//! integers or booleans, which are then written as such:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "version")]
+//! pub enum Message {
+//!     // {"version": 1, "text": "..."}
+//!     #[deser(rename = 1)]
+//!     V1 { text: String },
+//!     #[deser(rename = 2)]
+//!     V2 { text: String, lang: String },
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub enum Level {
+//!     // 0
+//!     #[deser(rename = 0)]
+//!     Off,
+//!     #[deser(rename = 1, alias = "low")]
+//!     Low,
+//! }
+//! ```
+//!
+//! Tags are compared by type: the string `"1"` does not match a variant
+//! named `1`.  Text of unknown type (the keys of JSON objects, the values of
+//! query strings) matches both, so `version=1` in a query string selects
+//! `Message::V1`.  Integers are compared by value, independent of their
+//! width.
+//!
 //! ## Enum Attributes
 //!
 //! * `#[deser(rename = "...")]`: renames the type name hint for this enum.
@@ -215,9 +249,12 @@
 //!
 //! The following attributes can be added to enum variants:
 //!
-//! * `#[deser(rename = "...")]`: renames the enum variant.
+//! * `#[deser(rename = "...")]`: renames the enum variant.  Variants can
+//!   also be named by integers and booleans (`#[deser(rename = 1)]`,
+//!   `#[deser(rename = true)]`), see [tags](#tags).
 //! * `#[deser(alias = "...")]`: provides an alias for the variant name for deserialization.  This is ignored
-//!   for serialization.
+//!   for serialization.  Like `rename` it takes strings, integers and
+//!   booleans.
 //! * `#[deser(other)]`: marks a variant as catch-all for unknown tags during
 //!   deserialization (not supported for untagged enums).  See
 //!   [other variants](#other-variants).

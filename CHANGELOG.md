@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Variants can be named by integers and booleans (`#[deser(rename = 1)]`,
+  `#[deser(rename = true)]`, also for `alias`).  They are written as such
+  in all enum representations.  Tags of unknown type (the keys of JSON
+  objects, query strings) are parsed into the type of the names.
+- Unknown variants given as integers or booleans report the value
+  (``unknown variant `2`, expected `A` or `B` ``) and enums with only unit
+  variants report their name when they receive a value that cannot be a
+  tag (`unexpected float, expected Level`, it was `expected compatible
+  type` before).
 - Added `#[deser(validate = path)]` for fields, structs, newtype structs
   and enums.  The function receives a reference to the value once it was
   deserialized and can reject it.  Errors point at the start of the value

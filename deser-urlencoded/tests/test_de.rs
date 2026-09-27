@@ -633,3 +633,29 @@ fn test_flags() {
     assert_eq!(out, "recursive=true");
     assert_eq!(from_str::<Tree>(&out).unwrap(), tree);
 }
+
+#[test]
+fn test_integer_tags() {
+    #[derive(Debug, Deserialize, deser::Serialize, PartialEq)]
+    #[deser(tag = "v")]
+    enum Query {
+        #[deser(rename = 1)]
+        V1 { q: String },
+        #[deser(rename = 2)]
+        V2 { q: String, limit: u32 },
+    }
+
+    // the values of query strings are text of unknown type, the tag is
+    // parsed like the integer it is compared with
+    let query = from_str::<Query>("q=x&limit=10&v=2").unwrap();
+    assert_eq!(
+        query,
+        Query::V2 {
+            q: "x".into(),
+            limit: 10
+        }
+    );
+    let out = deser_urlencoded::to_string(&query).unwrap();
+    assert_eq!(out, "v=2&q=x&limit=10");
+    assert_eq!(from_str::<Query>(&out).unwrap(), query);
+}

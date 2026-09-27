@@ -476,7 +476,11 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .collect::<syn::Result<Vec<_>>>()?;
     let names = attrs
         .iter()
-        .map(|x| x.name(&container_attrs))
+        .map(|x| x.name(&container_attrs).display())
+        .collect::<Vec<_>>();
+    let atoms = attrs
+        .iter()
+        .map(|x| x.name(&container_attrs).atom())
         .collect::<Vec<_>>();
     let type_name = container_attrs.container_name();
     let begin_without_finish = begin_without_finish();
@@ -506,7 +510,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                     __deser::__derive::Ok(match *self {
                         #(
                             #ident::#var_idents => {
-                                __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#names)))
+                                __deser::ser::Chunk::Atom(#atoms)
                             }
                         )*
                     })

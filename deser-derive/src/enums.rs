@@ -21,6 +21,7 @@ use quote::quote;
 
 use crate::attr::{
     Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs,
+    VariantName,
 };
 use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
 
@@ -104,8 +105,8 @@ impl<'a> FieldInfo<'a> {
 
 struct VariantInfo<'a> {
     ident: &'a syn::Ident,
-    name: String,
-    names: Vec<String>,
+    name: VariantName,
+    names: Vec<VariantName>,
     other: bool,
     default: bool,
     shape: Shape,
@@ -306,13 +307,13 @@ fn collect_variants<'a>(
 
     for variant in &enumeration.variants {
         let attrs = EnumVariantAttrs::of(variant)?;
-        let name = attrs.name(container_attrs).to_string();
+        let name = attrs.name(container_attrs);
         let mut names = Vec::new();
         for name in std::iter::once(name.clone()).chain(attrs.aliases().iter().cloned()) {
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     variant,
-                    format!("variant name `{}` used more than once", name),
+                    format!("variant name `{}` used more than once", name.display()),
                 ));
             }
             names.push(name);
@@ -676,7 +677,7 @@ pub fn derive_deserialize(
             .zip(builders.iter())
             .filter(|(info, _)| !info.other)
             .map(|(info, builder)| {
-                let names = &info.names;
+                let names = info.names.iter().map(|x| x.tag_pattern());
                 quote! { #(#names)|* => __deser::__derive::Some(#builder), }
             });
         let (other_fn, other) = special_variant("__other", |info| info.other);
@@ -684,12 +685,12 @@ pub fn derive_deserialize(
         let names = variants
             .iter()
             .filter(|info| !info.other)
-            .map(|info| &info.name);
+            .map(|info| info.name.display());
         (
             quote! {
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                 fn __lookup #impl_generics (
-                    __tag: &__deser::__derive::str,
+                    __tag: __deser::__derive::Tag<'_>,
                 ) -> __deser::__derive::Option<#builder_ty> #where_clause {
                     match __tag {
                         #(#arms)*
@@ -717,7 +718,7 @@ pub fn derive_deserialize(
                 .iter()
                 .filter(|info| matches!(info.content, Content::Unit) && !info.other)
                 .map(|info| {
-                    let names = &info.names;
+                    let names = info.names.iter().map(|x| x.tag_pattern());
                     let construct = info.construct(ident, &[]);
                     quote! { #(#names)|* => __deser::__derive::Some(#construct), }
                 });
@@ -728,9 +729,9 @@ pub fn derive_deserialize(
 
                     #[allow(clippy::multiple_bound_locations)]
                     fn __unit #impl_generics (
-                        __name: &__deser::__derive::str,
+                        __tag: __deser::__derive::Tag<'_>,
                     ) -> __deser::__derive::Option<#enum_ty> #where_clause {
-                        match __name {
+                        match __tag {
                             #(#unit_arms)*
                             _ => __deser::__derive::None,
                         }
@@ -949,7 +950,7 @@ pub fn derive_serialize(
     };
     let mut describe_arms = Vec::new();
     for info in &variants {
-        let name = &info.name;
+        let name = info.name.display();
         let var_ident = info.ident;
         let kind = match info.content {
             Content::Unit => quote! { __deser::ser::VariantKind::Unit },
@@ -1012,31 +1013,31 @@ pub fn derive_serialize(
 
     let mut arms = Vec::new();
     for info in &variants {
-        let name = &info.name;
         let pattern = info.pattern(ident);
 
         // the value of the tag, other variants can provide it with a field
         let tag_handle = match info.tag_field() {
             Some(field) => field.ser_handle(),
-            None => quote! { __deser::ser::SerializeHandle::to(&#name) },
+            None => info.name.ser_handle(),
         };
         let is_unit = matches!(info.content, Content::Unit);
         let chunk = match repr {
             Repr::External if is_unit => match info.tag_field() {
                 Some(_) => quote! { __deser::ser::Chunk::Forward(#tag_handle) },
-                None => quote! {
-                    __deser::ser::Chunk::Atom(__deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name)))
-                },
+                None => {
+                    let atom = info.name.atom();
+                    quote! { __deser::ser::Chunk::Atom(#atom) }
+                }
             },
             Repr::External => {
                 let content = content_handle(info, container_attrs)?;
-                match info.tag_field() {
-                    Some(_) => quote! {
-                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk()
-                    },
-                    None => quote! {
+                match (info.tag_field(), info.name.as_str()) {
+                    (None, Some(name)) => quote! {
                         __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
                             .into_chunk()
+                    },
+                    _ => quote! {
+                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk()
                     },
                 }
             }

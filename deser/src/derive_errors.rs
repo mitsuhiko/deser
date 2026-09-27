@@ -527,4 +527,36 @@
 ///     field: u32,
 /// }
 /// ```
+///
+/// Variants can only be named by strings, integers and booleans.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(rename = 1.5)]
+///     A,
+/// }
+/// ```
+///
+/// Integer names are unique too.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(rename = 1)]
+///     A,
+///     #[deser(alias = 1)]
+///     B,
+/// }
+/// ```
+///
+/// Fields are only named by strings.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(rename = 1)]
+///     field: u32,
+/// }
+/// ```
 pub struct DeriveErrors;

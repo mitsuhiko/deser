@@ -208,3 +208,17 @@ format.
 
 * [serde: Support a #[serde(validate = "some_function")] attribute on fields #939](https://github.com/serde-rs/serde/issues/939)
 * [serde: Add finalizer attribute hook to validate a deserialized structure #642](https://github.com/serde-rs/serde/issues/642)
+
+## Tags That Are Not Strings
+
+In serde the names of variants are `&'static str` which is why protocols
+with integer or boolean tags (`{"version": 1, ...}`) need hand written
+implementations.  In deser variants can be named by integers and booleans
+(`#[deser(rename = 1)]`).  They are written as integers and booleans and
+compared by type, except for text of unknown type (such as query strings)
+which is parsed like the tag it's compared with.
+
+**Related issues:**
+
+* [serde: Allow integer tags for internally tagged enums #745](https://github.com/serde-rs/serde/issues/745)
+* [serde: Allow integers (or custom types) to be used as names/keys #1773](https://github.com/serde-rs/serde/issues/1773)
