@@ -436,8 +436,9 @@ fn test_duplicate_keys() {
     let err = Deserializer::from_str_with_config(input, &STRICT)
         .deserialize_with::<Body, _>(|driver| driver.push_layer(PathLayer::new()))
         .unwrap_err();
-    assert_eq!(err.message(), "duplicate key");
-    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "single[1]");
+    assert_eq!(err.message(), "duplicate field `single`");
+    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "single");
+    assert_eq!(err.offset(), Some(16));
     // sequences still get all values
     assert_eq!(
         STRICT
@@ -672,8 +673,9 @@ fn test_default_on_error_with_repeated_keys() {
         tags: Vec<u32>,
     }
 
-    // repeated keys of values which are not sequences are still collapsed
-    // into a single value
+    // repeated keys of values which are not collections are resolved to a
+    // single value, collections collect them (a value that fails resets the
+    // collection)
     let query = from_str::<Query>("page=1&page=2&tags=1&tags=2").unwrap();
     assert_eq!(
         query,
@@ -691,14 +693,131 @@ fn test_default_on_error_with_repeated_keys() {
         }
     );
 
+    // a duplicate key is an error of the struct, not of the value
     const STRICT: DeserializerConfig =
         DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
-    let query = STRICT.from_str::<Query>("page=1&page=2&tags=1").unwrap();
+    let err = STRICT
+        .from_str::<Query>("page=1&page=2&tags=1")
+        .unwrap_err();
+    assert_eq!(err.message(), "duplicate field `page`");
+    let query = STRICT.from_str::<Query>("page=1&tags=1&tags=2").unwrap();
     assert_eq!(
         query,
         Query {
-            page: 0,
-            tags: vec![1]
+            page: 1,
+            tags: vec![1, 2]
+        }
+    );
+}
+
+#[test]
+fn test_multimap() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        b: u32,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Query {
+        a: Vec<Inner>,
+        tags: Vec<String>,
+        page: Option<u32>,
+    }
+
+    // a key given once is a collection of one value, also if the value is
+    // a map
+    assert_eq!(
+        from_str::<Query>("a[b]=1&tags=x").unwrap(),
+        Query {
+            a: vec![Inner { b: 1 }],
+            tags: vec!["x".into()],
+            page: None,
+        }
+    );
+    // missing collections are empty
+    assert_eq!(
+        from_str::<Query>("").unwrap(),
+        Query {
+            a: vec![],
+            tags: vec![],
+            page: None,
+        }
+    );
+    // keys that are not next to each other are collected in order
+    assert_eq!(
+        from_str::<Query>("tags=a&page=1&tags=b").unwrap().tags,
+        ["a", "b"]
+    );
+    // a key given once can hold the sequence
+    assert_eq!(
+        from_str::<Query>("tags[]=a&tags[]=b").unwrap().tags,
+        ["a", "b"]
+    );
+
+    // values keep the repeated keys, converting them gives the same result
+    for input in ["a[b]=1&tags=x", "tags=a&page=1&tags=b", ""] {
+        let value = from_str::<deser_value::Value>(input).unwrap();
+        assert_eq!(
+            deser_value::from_value::<Query>(&value).unwrap(),
+            from_str::<Query>(input).unwrap(),
+            "{input}"
+        );
+    }
+
+    // the values of maps collect
+    let map = from_str::<HashMap<String, Vec<u32>>>("a=1&b=2&a=3").unwrap();
+    assert_eq!(map["a"], [1, 3]);
+    assert_eq!(map["b"], [2]);
+
+    // buffered values (for untagged and internally tagged enums and
+    // flattened values) behave the same
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(untagged)]
+    enum Untagged {
+        Search { q: String, tags: Vec<String> },
+    }
+    assert_eq!(
+        from_str::<Untagged>("tags=a&q=x&tags=b").unwrap(),
+        Untagged::Search {
+            q: "x".into(),
+            tags: vec!["a".into(), "b".into()]
+        }
+    );
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Paging {
+        page: u32,
+        sort: Vec<String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(tag = "kind")]
+    enum Tagged {
+        Search {
+            q: String,
+            #[deser(flatten)]
+            paging: Paging,
+        },
+    }
+    assert_eq!(
+        from_str::<Tagged>("sort=a&q=x&page=2&sort=b&kind=Search").unwrap(),
+        Tagged::Search {
+            q: "x".into(),
+            paging: Paging {
+                page: 2,
+                sort: vec!["a".into(), "b".into()],
+            }
+        }
+    );
+    // flattened collections that are missing are empty too
+    assert_eq!(
+        from_str::<Tagged>("kind=Search&q=x&page=2").unwrap(),
+        Tagged::Search {
+            q: "x".into(),
+            paging: Paging {
+                page: 2,
+                sort: vec![],
+            }
         }
     );
 }

@@ -345,6 +345,30 @@ pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(Token
                 }
 
                 #[inline]
+                fn __private_collects() -> bool {
+                    #adapter::__private_collects_as()
+                }
+
+                #[inline]
+                fn __private_collect_into(__slot: &mut __deser::__derive::Option<Self>)
+                    -> __deser::de::SinkHandle<'_, 'de>
+                {
+                    #adapter::__private_collect_into_as(__slot)
+                }
+
+                #[inline]
+                fn __private_collect_update(__value: &mut Self, __first: bool)
+                    -> __deser::de::SinkHandle<'_, 'de>
+                {
+                    #adapter::__private_collect_update_as(__value, __first)
+                }
+
+                #[inline]
+                fn __private_collect_empty() -> __deser::__derive::Option<Self> {
+                    #adapter::__private_collect_empty_as()
+                }
+
+                #[inline]
                 fn __private_atom_into(
                     __slot: &mut __deser::__derive::Option<Self>,
                     __atom: __deser::Atom,

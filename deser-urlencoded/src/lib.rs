@@ -60,26 +60,40 @@
 //! );
 //! ```
 //!
-//! The input is a map.  Keys can be nested (see [`Nesting`]):
+//! The input is a map whose keys can repeat (a [multimap]).  Keys can be
+//! nested (see [`Nesting`]):
 //!
 //! | query string               | deser                                               |
 //! |----------------------------|-----------------------------------------------------|
 //! | `a=1`                      | `{"a": "1"}`                                        |
-//! | `a=1&a=2`                  | `{"a": ["1", "2"]}` (a [repeated key])              |
+//! | `a=1&a=2`                  | `{"a": "1", "a": "2"}` (a repeated key)             |
 //! | `a[]=1&a[]=2`              | `{"a": ["1", "2"]}`                                 |
 //! | `a[0]=1&a[1]=2`            | `{"a": ["1", "2"]}`                                 |
 //! | `a[1]=1&a[3]=2`            | `{"a": {"1": "1", "3": "2"}}`                       |
 //! | `a[b]=1&a[c][]=2`          | `{"a": {"b": "1", "c": ["2"]}}`                     |
 //! | `a[0][b]=1&a[1][b]=2`      | `{"a": [{"b": "1"}, {"b": "2"}]}`                   |
 //!
-//! A key which is given once can stand for a single value or for a
-//! sequence of one element: types that expect sequences (like `Vec<T>`)
-//! accept a single value.  The values of a key which is given more than
-//! once are a sequence which is marked as [repeated]: types that expect a
-//! single value receive the last one (see
-//! [`DeserializerConfig::duplicate_keys`]).  `a[]=1` is always a
-//! sequence.  Indexes that start at `0` and have no gaps are sequences,
-//! other indexes are map keys.
+//! Fields and map values that are collections (like `Vec<T>` or
+//! `HashSet<T>`) collect the values of all occurrences of their key, also
+//! if other keys are between them.  A key given once is a collection of one
+//! value and a missing key an empty collection.  Types that expect a single
+//! value receive the last one (see [`DeserializerConfig::duplicate_keys`]).
+//! `a[]=1` is always a sequence.  Indexes that start at `0` and have no
+//! gaps are sequences, other indexes are map keys.
+//!
+//! ```rust
+//! #[derive(deser::Deserialize, Debug, PartialEq)]
+//! struct Filter {
+//!     tag: Vec<String>,
+//!     page: u32,
+//!     user: Vec<String>,
+//! }
+//!
+//! assert_eq!(
+//!     deser_urlencoded::from_str::<Filter>("tag=a&page=2&tag=b").unwrap(),
+//!     Filter { tag: vec!["a".into(), "b".into()], page: 2, user: vec![] },
+//! );
+//! ```
 //!
 //! The URL standard makes no difference between `a` and `a=`, both are the
 //! empty value.  Empty values are `None` for optionals if the type does not
@@ -114,7 +128,7 @@
 //! Serializing works the other way around (see [`SerializerConfig`]), how
 //! sequences are written can be configured (see [`ArrayFormat`]).
 //!
-//! [repeated]: deser_core::ContainerShape::with_repeated
+//! [multimap]: deser_core::ContainerShape::with_multimap
 //!
 //! # Streams
 //!

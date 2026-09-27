@@ -74,11 +74,48 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
 /// A map or sequence whose values are emitted.
 enum Frame<'a> {
     Seq(std::slice::Iter<'a, Value>, &'a Value),
-    Map(
-        indexmap::map::Iter<'a, Value, Value>,
-        Option<&'a Value>,
-        &'a Value,
-    ),
+    Map(MapFrame<'a>, &'a Value),
+}
+
+/// A map whose entries are emitted.
+struct MapFrame<'a> {
+    iter: indexmap::map::Iter<'a, Value, Value>,
+    // the value of the key that was emitted
+    pending: Option<&'a Value>,
+    // the key and the remaining values of a repeated key of a multimap
+    repeated: Option<(&'a Value, std::slice::Iter<'a, Value>)>,
+    multimap: bool,
+}
+
+impl<'a> MapFrame<'a> {
+    /// Returns the next key or value.
+    fn next(&mut self) -> Option<&'a Value> {
+        if let Some(value) = self.pending.take() {
+            return Some(value);
+        }
+        if let Some((key, ref mut values)) = self.repeated {
+            if let Some(value) = values.next() {
+                self.pending = Some(value);
+                return Some(key);
+            }
+            self.repeated = None;
+        }
+        let (key, value) = self.iter.next()?;
+        // the values of a repeated key are the values of the key given
+        // more than once
+        if self.multimap
+            && let Some(seq) = value.as_seq()
+            && seq.is_repeated()
+            && !seq.is_empty()
+        {
+            let mut values = seq.iter();
+            self.pending = values.next();
+            self.repeated = Some((key, values));
+        } else {
+            self.pending = Some(value);
+        }
+        Some(key)
+    }
 }
 
 /// Publishes the input range and the source of an event.
@@ -114,14 +151,27 @@ fn drive<'de>(
             }
             match value.kind {
                 Kind::Seq(ref seq) => {
-                    driver.emit(Event::SeqStart(
-                        shape(seq.len(), seq.order()).with_repeated(seq.is_repeated()),
-                    ))?;
+                    driver.emit(Event::SeqStart(shape(seq.len(), seq.order())))?;
                     stack.push(Frame::Seq(seq.iter(), value));
                 }
                 Kind::Map(ref map) => {
-                    driver.emit(Event::MapStart(shape(map.len(), map.order())))?;
-                    stack.push(Frame::Map(map.inner.entries.iter(), None, value));
+                    let mut map_shape = shape(map.len(), map.order());
+                    if map.is_multimap() {
+                        // the entries include the values of repeated keys
+                        map_shape = ContainerShape::new()
+                            .with_order(map.order())
+                            .with_multimap(true);
+                    }
+                    driver.emit(Event::MapStart(map_shape))?;
+                    stack.push(Frame::Map(
+                        MapFrame {
+                            iter: map.inner.entries.iter(),
+                            pending: None,
+                            repeated: None,
+                            multimap: map.is_multimap(),
+                        },
+                        value,
+                    ));
                 }
                 ref leaf => driver.emit_borrowed(leaf_atom(leaf))?,
             }
@@ -132,16 +182,12 @@ fn drive<'de>(
         };
         next = match frame {
             Frame::Seq(iter, _) => iter.next(),
-            Frame::Map(iter, pending, _) => pending.take().or_else(|| {
-                let (key, value) = iter.next()?;
-                *pending = Some(value);
-                Some(key)
-            }),
+            Frame::Map(map, _) => map.next(),
         };
         if next.is_none() {
             let (container, event) = match stack.pop() {
                 Some(Frame::Seq(_, container)) => (container, Event::SeqEnd),
-                Some(Frame::Map(_, _, container)) => (container, Event::MapEnd),
+                Some(Frame::Map(_, container)) => (container, Event::MapEnd),
                 None => unreachable!(),
             };
             if let Some(span) = container.span()

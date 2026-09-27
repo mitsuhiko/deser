@@ -19,9 +19,8 @@ const MAX_QUOTED: usize = 64;
 /// strings take them as they are.  What text means beyond that depends on
 /// where it comes from.  Keys of JSON objects are strict (a `bool` key is
 /// `true` or `false`), everything in a query string or an environment
-/// variable is text so `on` and `yes` are booleans too, empty values are
-/// missing values and a key given once can stand for a sequence of one
-/// value.
+/// variable is text so `on` and `yes` are booleans too and empty values are
+/// missing values.
 ///
 /// The rules are an extension value in the [`State`] (see
 /// [`State::get_mut`]) which formats set, the default are the
@@ -44,7 +43,6 @@ const MAX_QUOTED: usize = 64;
 pub struct LexicalRules {
     lenient_bools: bool,
     empty_is_null: bool,
-    single_is_seq: bool,
 }
 
 impl LexicalRules {
@@ -54,11 +52,9 @@ impl LexicalRules {
     /// * booleans are `true` and `false`
     /// * integers and floats are parsed with [`str::parse`]
     /// * empty text is not a missing value
-    /// * text is not a sequence
     pub const STRICT: LexicalRules = LexicalRules {
         lenient_bools: false,
         empty_is_null: false,
-        single_is_seq: false,
     };
 
     /// The rules for formats where everything is text, like query strings
@@ -70,13 +66,14 @@ impl LexicalRules {
     /// * empty text is a missing value for types that do not accept it:
     ///   `None` for an `Option<u32>`, `Some("")` for an `Option<String>`
     ///   and `()`
-    /// * text is a sequence of one element for types that expect
-    ///   sequences (like `Vec<T>`), as keys that are given once in a query
-    ///   string can stand for a sequence
+    ///
+    /// These formats typically also allow keys to repeat, a key given once
+    /// can then stand for a sequence of one value.  That is not a rule of
+    /// the text but of the maps they emit (see
+    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap)).
     pub const LENIENT: LexicalRules = LexicalRules {
         lenient_bools: true,
         empty_is_null: true,
-        single_is_seq: true,
     };
 
     /// Returns the rules of a deserialization.
@@ -105,13 +102,6 @@ impl LexicalRules {
         self
     }
 
-    /// Sets if text is a sequence of one element for types that expect
-    /// sequences.
-    pub const fn with_single_is_seq(mut self, yes: bool) -> LexicalRules {
-        self.single_is_seq = yes;
-        self
-    }
-
     /// Returns `true` if booleans are also `yes`, `on`, `1`, `no`, `off`
     /// and `0`.
     pub const fn lenient_bools(&self) -> bool {
@@ -122,12 +112,6 @@ impl LexicalRules {
     /// not accept it.
     pub const fn empty_is_null(&self) -> bool {
         self.empty_is_null
-    }
-
-    /// Returns `true` if text is a sequence of one element for types that
-    /// expect sequences.
-    pub const fn single_is_seq(&self) -> bool {
-        self.single_is_seq
     }
 }
 
@@ -176,12 +160,6 @@ pub(crate) fn parse_bool_with(value: &str, lenient: bool, state: &State) -> Resu
 #[inline]
 pub(crate) fn is_empty_null(value: &str, state: &State) -> bool {
     value.is_empty() && LexicalRules::of(state).empty_is_null
-}
-
-/// Returns `true` if text is a sequence of one element.
-#[inline]
-pub(crate) fn single_is_seq(state: &State) -> bool {
-    LexicalRules::of(state).single_is_seq
 }
 
 /// Converts the error of parsing an integer.

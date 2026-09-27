@@ -206,6 +206,29 @@ impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted
     fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         A::__private_array_from_bytes_as(bytes)
     }
+
+    #[inline]
+    fn __private_collects_as() -> bool {
+        A::__private_collects_as()
+    }
+
+    #[inline]
+    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        A::__private_collect_into_as(out)
+    }
+
+    #[inline]
+    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+    {
+        A::__private_collect_update_as(value, first)
+    }
+
+    #[inline]
+    fn __private_collect_empty_as() -> Option<T> {
+        A::__private_collect_empty_as()
+    }
 }
 
 /// The [`Hint`] for [`Layout::Compact`].

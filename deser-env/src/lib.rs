@@ -92,7 +92,10 @@
 //! ## Lists
 //!
 //! Sequences can be given with indexes (`APP_HOSTS__0`) without changes to
-//! the types.  Lists in a single variable (`APP_HOSTS=a,b,c`) use the
+//! the types.  A single variable (`APP_HOSTS=a`) is a list of one value and
+//! a list without variables is empty (the maps of the environment are
+//! [multimaps](deser_core::ContainerShape::with_multimap), like query
+//! strings).  Lists in a single variable (`APP_HOSTS=a,b,c`) use the
 //! [`Separated`](deser_core::adapters::Separated) adapter, with
 //! [`TrimWhitespace`](deser_core::adapters::TrimWhitespace) to allow spaces
 //! (`a, b, c`).  Both work with all formats, a configuration file can still
@@ -105,8 +108,8 @@
 //! struct Config {
 //!     #[deser(as = Separated<',', TrimWhitespace>)]
 //!     hosts: Vec<String>,
-//!     #[deser(default)]
 //!     ports: Vec<u16>,
+//!     tags: Vec<String>,
 //! }
 //!
 //! let config: Config = deser_env::from_vars("APP_", [
@@ -117,6 +120,7 @@
 //! .unwrap();
 //! assert_eq!(config.hosts, ["a", "b"]);
 //! assert_eq!(config.ports, [80, 443]);
+//! assert!(config.tags.is_empty());
 //! ```
 //!
 //! # Errors
@@ -339,9 +343,11 @@ where
 ///
 /// The value is parsed like the values of [`from_env`] (numbers and
 /// booleans parse, the empty value is `None` for optionals of types that do
-/// not accept it).  If the variable is not set, types that can be missing
-/// (like `Option<T>`) use their missing value, other types fail.  Errors
-/// carry the name of the variable (see [`EnvVar`]).
+/// not accept it).  Collections (like `Vec<T>`) are a collection of the
+/// value, like the fields of structs.  If the variable is not set, types
+/// that can be missing (like `Option<T>`) use their missing value and
+/// collections are empty, other types fail.  Errors carry the name of the
+/// variable (see [`EnvVar`]).
 ///
 /// ```no_run
 /// let port: u16 = deser_env::var("PORT").unwrap();
@@ -352,17 +358,27 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
     let value = match std::env::var_os(name) {
         Some(value) => value,
         None => {
-            return T::initial_value().ok_or_else(|| {
-                attach(Error::new(
-                    ErrorKind::MissingField,
-                    "environment variable is not set",
-                ))
-            });
+            // collections are empty (like the collections of missing
+            // keys in `from_env`)
+            return T::__private_collect_empty()
+                .or_else(T::initial_value)
+                .ok_or_else(|| {
+                    attach(Error::new(
+                        ErrorKind::MissingField,
+                        "environment variable is not set",
+                    ))
+                });
         }
     };
     let mut out = None;
     {
-        let mut driver = DeserializeDriver::new(&mut out);
+        // the variable stands for a key given once: collections (like
+        // `Vec<T>`) are one value
+        let mut driver = if T::__private_collects() {
+            DeserializeDriver::from_sink(T::__private_collect_into(&mut out))
+        } else {
+            DeserializeDriver::new(&mut out)
+        };
         LexicalRules::LENIENT.set(driver.state_mut());
         match value.into_string() {
             Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),

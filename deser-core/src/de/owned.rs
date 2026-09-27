@@ -127,6 +127,28 @@ impl<'de, T> OwnedSink<'de, T> {
         OwnedSink::with(A::deserialize_into_as)
     }
 
+    /// Creates an owned sink whose slot starts out with a value.
+    pub(crate) fn with_slot(
+        slot: Option<T>,
+        make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+    ) -> OwnedSink<'de, T> {
+        let storage = NonuniqueBox::new(slot);
+        // SAFETY: like in `with`
+        let sink = unsafe {
+            let slot = unbounded(storage.ptr.as_ptr());
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
+        };
+        OwnedSink {
+            storage,
+            sink: ManuallyDrop::new(sink),
+        }
+    }
+
+    /// Creates an owned sink without a value that ignores everything.
+    pub(crate) fn null() -> OwnedSink<'de, T> {
+        OwnedSink::with(|_| SinkHandle::null())
+    }
+
     pub(crate) fn with(
         make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
     ) -> OwnedSink<'de, T> {

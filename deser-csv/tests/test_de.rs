@@ -39,6 +39,31 @@ struct Person<'a> {
 }
 
 #[test]
+fn test_repeated_names() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Row {
+        name: String,
+        tag: Vec<String>,
+        other: Vec<u32>,
+    }
+
+    // columns with the same name are collected, a column given once is a
+    // collection of one value and a missing column an empty collection
+    let rows: Vec<Row> = from_str("name,tag,tag\na,x,y\n").unwrap();
+    assert_eq!(
+        rows,
+        [Row {
+            name: "a".into(),
+            tag: vec!["x".into(), "y".into()],
+            other: vec![],
+        }]
+    );
+    let rows: Vec<Row> = from_str("tag,name,other\nx,a,1\n").unwrap();
+    assert_eq!(rows[0].tag, ["x"]);
+    assert_eq!(rows[0].other, [1]);
+}
+
+#[test]
 fn test_basics() {
     let input = String::from("name,age,email\njane,42,jane@example.com\njohn,23,\n");
     let people: Vec<Person> = from_str(&input).unwrap();

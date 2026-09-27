@@ -67,7 +67,6 @@ impl Serialize for Seq {
         ContainerShape::new()
             .with_len(self.len())
             .with_order(self.order())
-            .with_repeated(self.is_repeated())
     }
 }
 
@@ -91,6 +90,7 @@ impl Serialize for Map {
         ContainerShape::new()
             .with_len(self.len())
             .with_order(self.order())
+            .with_multimap(self.is_multimap())
     }
 }
 

@@ -445,24 +445,29 @@ fn test_seq_repeated() {
     assert!(seq.is_repeated());
     seq.extend([1, 2]);
 
-    // the flag is retained when cloned and serialized
+    // the flag is retained when cloned
     assert!(seq.clone().is_repeated());
-    let value = Value::new(Kind::Seq(seq.clone()));
-    let mut events = Vec::new();
-    deser::ser::SerializeDriver::new(&value)
-        .drive(|event, _| {
-            events.push(event.to_static());
-            Ok(())
-        })
-        .unwrap();
-    assert!(matches!(events[0], deser::Event::SeqStart(shape) if shape.is_repeated()));
-    assert!(to_value(&value).unwrap().as_seq().unwrap().is_repeated());
 
     // but not considered for comparisons
     assert_eq!(seq, Seq::from(vec![value!(1), value!(2)]));
 
     seq.set_repeated(false);
     assert!(!seq.is_repeated());
+}
+
+#[test]
+fn test_map_multimap() {
+    let mut map = Map::new();
+    assert!(!map.is_multimap());
+    map.set_multimap(true);
+    map.insert("a", 1);
+    assert!(map.is_multimap());
+    // the flag is retained when cloned and serialized
+    assert!(map.clone().is_multimap());
+    let value = Value::from(map.clone());
+    assert!(to_value(&value).unwrap().as_map().unwrap().is_multimap());
+    // but not considered for comparisons
+    assert_eq!(map, value!({"a": 1}).as_map().unwrap().clone());
 }
 
 #[test]

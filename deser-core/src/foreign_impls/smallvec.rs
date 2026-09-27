@@ -10,7 +10,8 @@ use alloc::vec::Vec;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::adapters::ser_impls::serialize_as_slice;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::impls::{SeqTarget, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, collection_methods_as, seq_sink};
+use crate::de::update::Collection;
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::ser::Serialize;
@@ -38,6 +39,8 @@ impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for SmallVec<[T;
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         seq_sink::<Self, T, Same>(out)
     }
+
+    collection_methods!(Same);
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, SmallVec<[T; N]>>
@@ -45,6 +48,19 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
 {
     fn deserialize_into_as(out: &mut Option<SmallVec<[T; N]>>) -> SinkHandle<'_, 'de> {
         seq_sink::<SmallVec<[T; N]>, T, A>(out)
+    }
+
+    collection_methods_as!(SmallVec<[T; N]>);
+}
+
+impl<T: Send, const N: usize> Collection<T> for SmallVec<[T; N]> {
+    fn empty() -> Self {
+        SmallVec::new()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.push(value);
+        Ok(())
     }
 }
 

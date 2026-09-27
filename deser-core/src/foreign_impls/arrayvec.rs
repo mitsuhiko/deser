@@ -15,7 +15,8 @@ use crate::Text;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::adapters::ser_impls::serialize_as_slice;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::impls::{SeqTarget, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, collection_methods_as, seq_sink};
+use crate::de::update::Collection;
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
@@ -65,6 +66,8 @@ impl<'de, T: Deserialize<'de>, const CAP: usize> Deserialize<'de> for ArrayVec<T
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         seq_sink::<Self, T, Same>(out)
     }
+
+    collection_methods!(Same);
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const CAP: usize> DeserializeAs<'de, ArrayVec<T, CAP>>
@@ -72,6 +75,19 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const CAP: usize> DeserializeAs<'de
 {
     fn deserialize_into_as(out: &mut Option<ArrayVec<T, CAP>>) -> SinkHandle<'_, 'de> {
         seq_sink::<ArrayVec<T, CAP>, T, A>(out)
+    }
+
+    collection_methods_as!(ArrayVec<T, CAP>);
+}
+
+impl<T: Send, const CAP: usize> Collection<T> for ArrayVec<T, CAP> {
+    fn empty() -> Self {
+        ArrayVec::new()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.try_push(value)
+            .map_err(|_| capacity_exceeded("ArrayVec", CAP))
     }
 }
 

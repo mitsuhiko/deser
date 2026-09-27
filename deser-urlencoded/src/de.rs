@@ -85,10 +85,9 @@ impl DeserializerConfig {
     /// Sets what happens if a key that stands for a single value is given
     /// more than once.
     ///
-    /// The values of a key that is given more than once are passed on as a
-    /// sequence (see [`ContainerShape::with_repeated`]).  Types that accept
-    /// sequences (like `Vec<T>`) receive all of them, for other types this
-    /// decides which value is used.  The default is [`DuplicateKeys::Last`]
+    /// Maps are multimaps (see [`ContainerShape::with_multimap`]): a key
+    /// is passed on once per value.  Collections (like `Vec<T>`) collect
+    /// all of them, for other types this decides which value is used.  The default is [`DuplicateKeys::Last`]
     /// which matches what many web frameworks do (and makes the pattern of a
     /// hidden input for unchecked checkboxes work).
     ///
@@ -440,6 +439,18 @@ impl<'a> Tree<'a> {
         child
     }
 
+    /// Returns the shape of a map with children.
+    ///
+    /// Maps are multimaps, the keys of the children are given once per
+    /// value.
+    fn map_shape(&self, children: &[usize]) -> ContainerShape {
+        let len = children
+            .iter()
+            .map(|&child| self.nodes[child].values.len().max(1))
+            .sum();
+        ContainerShape::new().with_len(len).with_multimap(true)
+    }
+
     /// Decides how a node with nested keys is emitted.
     fn container(&self, node: &Node<'a>) -> Result<Container, Error> {
         let (mut names, mut indexes, mut pushes) = (false, false, false);
@@ -490,7 +501,7 @@ impl<'a> Tree<'a> {
         let end = (self.input_len, self.input_len);
         emit_at(
             driver,
-            Event::MapStart(ContainerShape::new().with_len(root.children.len())),
+            Event::MapStart(self.map_shape(&root.children)),
             root.key_range,
         )?;
         let mut stack = vec![Frame {
@@ -529,26 +540,54 @@ impl<'a> Tree<'a> {
 
             match (&node.values[..], node.children.is_empty()) {
                 ([(value, range)], true) => emit_value(driver, value, *range)?,
-                (values, true) => {
-                    let shape = ContainerShape::new()
-                        .with_len(values.len())
-                        .with_repeated(true);
-                    emit_at(driver, Event::SeqStart(shape), node.key_range)?;
-                    for (value, range) in values {
+                // a key given more than once is emitted for every value
+                // (maps are multimaps)
+                ([(first, first_range), rest @ ..], true) if is_map => {
+                    emit_value(driver, first, *first_range)?;
+                    for (value, range) in rest {
+                        driver
+                            .state_mut()
+                            .set_input_range(node.key_range.0, node.key_range.1);
+                        match node.key {
+                            NodeKey::Name(ref name) | NodeKey::Index(_, ref name) => {
+                                emit_lexical(driver, name)?
+                            }
+                            NodeKey::Root | NodeKey::Push => unreachable!(),
+                        }
                         emit_value(driver, value, *range)?;
                     }
-                    emit_at(driver, Event::SeqEnd, node.key_range)?;
+                }
+                // nodes have values or nested keys
+                ([], true) => unreachable!(),
+                // an index of a sequence given more than once (`a[0]=1&a[0]=2`)
+                (values @ [_, _, ..], true) => {
+                    let policy = driver
+                        .state()
+                        .get::<DuplicateKeys>()
+                        .copied()
+                        .unwrap_or_default();
+                    let (value, range) = match policy {
+                        DuplicateKeys::First => &values[0],
+                        DuplicateKeys::Error => {
+                            return Err(Error::new(
+                                ErrorKind::Unexpected,
+                                "index given more than once",
+                            )
+                            .with_offset(values[1].1.0));
+                        }
+                        _ => &values[values.len() - 1],
+                    };
+                    emit_value(driver, value, *range)?;
                 }
                 ([], false) => {
                     let (children, is_map) = match self.container(node)? {
                         Container::Map(children) => (children, true),
                         Container::Seq(children) => (children, false),
                     };
-                    let shape = ContainerShape::new().with_len(children.len());
                     let event = if is_map {
-                        Event::MapStart(shape)
+                        Event::MapStart(self.map_shape(&children))
                     } else {
-                        Event::SeqStart(shape)
+                        Event::SeqStart(ContainerShape::new().with_len(children.len()))
                     };
                     emit_at(driver, event, node.key_range)?;
                     stack.push(Frame {

@@ -317,6 +317,13 @@ while let Some(event) = events.read::<Event>()? {
   of JSON objects, the values of query strings) is passed as a lexical
   atom which the type it is deserialized into parses.  This keeps working
   in flattened structs and tagged enums.
+* **Multimaps:** formats whose keys can repeat (query strings, the
+  environment, CSV headers) emit multimaps.  Fields that are collections
+  (`Vec<T>`, sets, ...) collect every occurrence of their key, also if
+  other keys are between them, a key given once is a collection of one
+  value and a missing key an empty collection.  Other fields follow the
+  duplicate key policy.  Formats do not need to group the values of keys
+  for this.
 * **Native bytes and optionals:** a `Vec<u8>` is bytes in formats which
   support them (such as CBOR and MessagePack) and base64 elsewhere, other encodings can be
   picked per field or per format.  Values know if they are optional, so a

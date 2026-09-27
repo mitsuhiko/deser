@@ -6,8 +6,9 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
+use crate::adapters::DeserializeAs;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
 /// Forwards all calls of a sink to an owned sink.
@@ -489,4 +490,208 @@ impl<'a, T> UpdateTarget<'a, T> {
     pub fn as_ptr(&self) -> *mut T {
         self.ptr.as_ptr()
     }
+}
+
+/// Collections that collect the values of a repeated key one at a time.
+///
+/// In a multimap (see
+/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// the fields of structs and the values of maps with these types receive
+/// every value of their key (see [`Deserialize::__private_collects`]).
+pub(crate) trait Collection<T>: Sized + Send {
+    /// Returns an empty collection.
+    fn empty() -> Self;
+
+    /// Adds a value to the collection.
+    fn add(&mut self, value: T) -> Result<(), Error>;
+}
+
+/// Where a collected value goes.
+enum CollectTarget<'a, C> {
+    /// The slot of a value that is deserialized, the collection is created
+    /// if it's empty.
+    Slot(&'a mut Option<C>),
+    /// A collection that is updated.
+    Value(&'a mut C),
+}
+
+/// The sink of one value of a repeated key that is added to a collection
+/// once it's complete.
+///
+/// A value that is a sequence which the element rejects is the values of
+/// the key: they are all added to the collection (like `multi[]=a` in a
+/// query string for a `Vec<String>`).
+struct CollectSink<'a, 'de, C, T, A> {
+    target: CollectTarget<'a, C>,
+    element: OwnedSink<'de, T>,
+    // `true` if the value is a sequence whose items are added
+    extend: bool,
+    _marker: PhantomData<fn() -> A>,
+}
+
+impl<'a, 'de, C: Collection<T>, T: Send> CollectSink<'a, 'de, C, T, ()> {
+    /// Adds the value of the element (if there is one).
+    fn add(
+        target: &mut CollectTarget<'a, C>,
+        element: &mut OwnedSink<'de, T>,
+    ) -> Result<(), Error> {
+        // a null (for an optional element) leaves no value
+        if let Some(value) = element.take() {
+            match *target {
+                CollectTarget::Slot(ref mut slot) => {
+                    slot.get_or_insert_with(C::empty).add(value)?
+                }
+                CollectTarget::Value(ref mut collection) => collection.add(value)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'a, 'de, C, T, A> Sink<'de> for CollectSink<'a, 'de, C, T, A>
+where
+    C: Collection<T>,
+    T: Send,
+    A: DeserializeAs<'de, T>,
+{
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.element.borrow_mut().atom(atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.element.borrow_mut().borrowed_atom(atom, state)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        self.element.borrow_mut().map(state)
+    }
+
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        match self.element.borrow_mut().seq(state) {
+            Err(err) if err.kind() == ErrorKind::Unexpected => {
+                // the element that rejected the sequence is not a value
+                // (the slots of optionals are set when they are created)
+                self.element = OwnedSink::null();
+                self.extend = true;
+                Ok(())
+            }
+            rv => rv,
+        }
+    }
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.element.borrow_mut().next_key(state)
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        if self.extend {
+            // the previous item was finished by the driver
+            CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)?;
+            self.element = OwnedSink::deserialize_as::<A>();
+            return Ok(SinkHandle::to(self.element.borrow_mut()));
+        }
+        self.element.borrow_mut().next_value(state)
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.element.borrow_mut().__private_key_atom(atom, state)
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if self.extend {
+            return crate::de::atom_into_handle(self.next_value(state)?, atom, state);
+        }
+        self.element.borrow_mut().__private_value_atom(atom, state)
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.element
+            .borrow_mut()
+            .__private_borrowed_key_atom(atom, state)
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if self.extend {
+            return crate::de::borrowed_atom_into_handle(self.next_value(state)?, atom, state);
+        }
+        self.element
+            .borrow_mut()
+            .__private_borrowed_value_atom(atom, state)
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        if self.extend {
+            return Ok(None);
+        }
+        self.element.borrow_mut().value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        if self.extend {
+            return Err(err);
+        }
+        self.element.borrow_mut().recover(err, state)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        self.element.borrow().expecting()
+    }
+
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        if !self.extend {
+            self.element.borrow_mut().finish(state)?;
+        }
+        CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)
+    }
+}
+
+/// Creates the sink of a value that is added to the collection in a slot.
+///
+/// This implements [`Deserialize::__private_collect_into`] for collections.
+pub(crate) fn collect_into<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
+where
+    C: Collection<T> + 'a,
+    T: Send + 'a,
+    A: DeserializeAs<'de, T>,
+{
+    SinkHandle::boxed(CollectSink {
+        target: CollectTarget::Slot(out),
+        element: OwnedSink::deserialize_as::<A>(),
+        extend: false,
+        _marker: PhantomData::<fn() -> A>,
+    })
+}
+
+/// Creates the sink of a value that is added to a collection that is
+/// updated.
+///
+/// This implements [`Deserialize::__private_collect_update`] for
+/// collections.  The first value of a key replaces the collection.
+pub(crate) fn collect_update<'a, 'de, C, T, A>(value: &'a mut C, first: bool) -> SinkHandle<'a, 'de>
+where
+    C: Collection<T> + 'a,
+    T: Send + 'a,
+    A: DeserializeAs<'de, T>,
+{
+    if first {
+        *value = C::empty();
+    }
+    SinkHandle::boxed(CollectSink {
+        target: CollectTarget::Value(value),
+        element: OwnedSink::deserialize_as::<A>(),
+        extend: false,
+        _marker: PhantomData::<fn() -> A>,
+    })
 }

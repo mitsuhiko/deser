@@ -544,6 +544,28 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
         A::initial_value_as()
     }
 
+    // Collections collect the values of a repeated key, a value that fails
+    // resets the collection to the default.
+
+    fn __private_collects_as() -> bool {
+        A::__private_collects_as()
+    }
+
+    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        let collected = out.take();
+        SinkHandle::boxed(DefaultOnErrorSink {
+            out,
+            sink: Some(OwnedSink::with_slot(
+                collected,
+                A::__private_collect_into_as,
+            )),
+        })
+    }
+
+    fn __private_collect_empty_as() -> Option<T> {
+        A::__private_collect_empty_as()
+    }
+
     #[inline]
     fn __private_atom_into_as(
         out: &mut Option<T>,
@@ -628,17 +650,7 @@ impl<'a, 'de, T: Default + Send> Sink<'de> for DefaultOnErrorSink<'a, 'de, T> {
             Some(sink) => sink.seq(state),
             None => Ok(()),
         };
-        match rv {
-            // the values of a repeated key are delivered as a single value
-            // to sinks that reject sequences, the driver needs the error to
-            // do that (see `ContainerShape::with_repeated`)
-            Err(err)
-                if err.kind() == ErrorKind::Unexpected && state.container_shape().is_repeated() =>
-            {
-                Err(err)
-            }
-            rv => self.check(rv),
-        }
+        self.check(rv)
     }
 
     // Errors of the items are handled in `recover`.

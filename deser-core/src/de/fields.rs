@@ -26,6 +26,27 @@ const UNKNOWN: usize = usize::MAX;
 /// A function that returns the index of the field for a key.
 pub type FieldLookup = fn(&str) -> Option<usize>;
 
+/// A function that returns `true` if the field with the index collects the
+/// values of a repeated key (see
+/// [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
+pub type FieldCollects = fn(usize) -> bool;
+
+/// How the value of a field is deserialized.
+///
+/// In a multimap (see
+/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// fields that are collections collect the values of all occurrences of
+/// their key.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Collect {
+    /// The value is the value of the field.
+    No,
+    /// The value is the first one that the field collects.
+    First,
+    /// The value is added to the values the field collected.
+    Next,
+}
+
 /// The sink for the keys of a derived struct.
 ///
 /// Keys are resolved to the index of their field with a function generated
@@ -40,6 +61,9 @@ pub struct FieldKeySink {
     // the position of the key in the input if it's retained in `other`
     offset: Option<usize>,
     lookup: FieldLookup,
+    collects: FieldCollects,
+    // `true` if the field is a collection whose key was given before
+    repeated: bool,
     retain: bool,
 }
 
@@ -56,14 +80,47 @@ pub enum NextField {
 impl FieldKeySink {
     /// Creates the key sink.
     #[inline]
-    pub fn new(lookup: FieldLookup, retain: bool) -> FieldKeySink {
+    pub fn new(lookup: FieldLookup, collects: FieldCollects, retain: bool) -> FieldKeySink {
         FieldKeySink {
             index: UNKNOWN,
             other: None,
             offset: None,
             lookup,
+            collects,
+            repeated: false,
             retain,
         }
+    }
+
+    /// Returns how the value of the field with the index is deserialized.
+    ///
+    /// This is only needed for updates: collections whose key is given
+    /// the first time are replaced, later values are added to them.  It
+    /// must be called once per value.
+    #[inline]
+    pub fn collect(&mut self, index: usize, state: &State) -> Collect {
+        match (state.is_multimap() && (self.collects)(index), self.repeated) {
+            (false, _) => Collect::No,
+            (true, false) => Collect::First,
+            (true, true) => {
+                self.repeated = false;
+                Collect::Next
+            }
+        }
+    }
+
+    /// Decides if the value of a field that was given before is used.
+    ///
+    /// Collections in multimaps take all values, for other fields the
+    /// duplicate key policy decides.
+    #[cold]
+    #[inline(never)]
+    fn duplicate(&mut self, index: usize, fields: &[&str], state: &State) -> Result<bool, Error> {
+        if state.is_multimap() && (self.collects)(index) {
+            self.repeated = true;
+            return Ok(true);
+        }
+        duplicate_field(fields[index], state)
     }
 
     /// Resets the key before the next key is deserialized.
@@ -145,7 +202,7 @@ impl FieldKeySink {
         let index = core::mem::replace(&mut self.index, UNKNOWN);
         if index != UNKNOWN {
             Ok(
-                if !mark_seen(seen, index) || duplicate_field(fields[index], state)? {
+                if !mark_seen(seen, index) || self.duplicate(index, fields, state)? {
                     Some(index)
                 } else {
                     None
@@ -181,7 +238,7 @@ impl FieldKeySink {
     ) -> Result<NextField, Error> {
         let index = core::mem::replace(&mut self.index, UNKNOWN);
         Ok(if index != UNKNOWN {
-            if !mark_seen(seen, index) || duplicate_field(fields[index], state)? {
+            if !mark_seen(seen, index) || self.duplicate(index, fields, state)? {
                 NextField::Field(index)
             } else {
                 NextField::Ignore
@@ -238,10 +295,13 @@ pub struct StructInfo {
 /// structs.
 pub trait StructFields<'de>: Send {
     /// Returns the sink of the field with the index.
-    fn field_sink(&mut self, index: usize) -> SinkHandle<'_, 'de>;
+    fn collects(&self, index: usize) -> bool;
+
+    /// Returns the sink of the field, optionally collecting its value.
+    fn field_sink(&mut self, index: usize, collect: Collect) -> SinkHandle<'_, 'de>;
 
     /// Deserializes an atom into the field with the index.
-    fn field_atom(&mut self, index: usize, atom: Atom, state: &mut State) -> Result<(), Error>;
+    fn field_atom(&mut self, index: usize, collect: Collect, atom: Atom, state: &mut State) -> Result<(), Error>;
 
     /// Deserializes a borrowed atom into the field with the index.
     ///
@@ -250,10 +310,11 @@ pub trait StructFields<'de>: Send {
     fn field_borrowed_atom(
         &mut self,
         index: usize,
+        collect: Collect,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        let _ = (index, atom, state);
+        let _ = (index, collect, atom, state);
         unreachable!()
     }
 
@@ -365,7 +426,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
     ) -> StructSink<'a, 'de> {
         StructSink {
             fields,
-            key: FieldKeySink::new(info.lookup, info.deny),
+            key: FieldKeySink::new(info.lookup, |_| false, info.deny),
             seen: Seen {
                 small: 0,
                 large: None,
@@ -387,6 +448,16 @@ impl<'a, 'de> StructSink<'a, 'de> {
         // SAFETY: the fields are valid while the sink exists and only
         // borrowed through it
         unsafe { self.fields.as_mut() }
+    }
+
+    /// Returns how this occurrence of a field is deserialized.
+    fn collect(&mut self, index: usize, state: &State) -> Collect {
+        let collects = state.is_multimap() && self.fields().collects(index);
+        match (collects, core::mem::replace(&mut self.key.repeated, false)) {
+            (false, _) => Collect::No,
+            (true, false) => Collect::First,
+            (true, true) => Collect::Next,
+        }
     }
 
     /// Takes the field index of the next value.
@@ -424,7 +495,12 @@ impl<'a, 'de> StructSink<'a, 'de> {
                 .get_or_insert_with(|| vec![0; words].into_boxed_slice());
             mark_seen(large, index)
         };
-        if !seen_before || duplicate_field(self.info.fields[index], state)? {
+        if !seen_before || (state.is_multimap() && self.fields().collects(index)) {
+            if seen_before {
+                self.key.repeated = true;
+            }
+            Ok(Some(index))
+        } else if duplicate_field(self.info.fields[index], state)? {
             Ok(Some(index))
         } else {
             Ok(None)
@@ -448,7 +524,10 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(match self.next_index(state)? {
-            Some(index) => self.fields().field_sink(index),
+            Some(index) => {
+                let collect = self.collect(index, state);
+                self.fields().field_sink(index, collect)
+            },
             None => SinkHandle::null(),
         })
     }
@@ -459,7 +538,10 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match self.next_index(state)? {
-            Some(index) => self.fields().field_atom(index, atom, state),
+            Some(index) => {
+                let collect = self.collect(index, state);
+                self.fields().field_atom(index, collect, atom, state)
+            },
             None => Ok(()),
         }
     }
@@ -480,9 +562,13 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
     ) -> Result<(), Error> {
         match self.next_index(state)? {
             Some(index) if self.info.borrows => {
-                self.fields().field_borrowed_atom(index, atom, state)
+                let collect = self.collect(index, state);
+                self.fields().field_borrowed_atom(index, collect, atom, state)
             }
-            Some(index) => self.fields().field_atom(index, atom, state),
+            Some(index) => {
+                let collect = self.collect(index, state);
+                self.fields().field_atom(index, collect, atom, state)
+            },
             None => Ok(()),
         }
     }
@@ -526,7 +612,12 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
 /// everything else, it exists once for all structs.
 pub trait UpdateFields<'de>: Send {
     /// Returns the sink that updates the field with the index.
-    fn update_field(&mut self, index: usize) -> SinkHandle<'_, 'de>;
+    ///
+    /// `collect` says if the value is collected (see [`Collect`]).
+    fn update_field(&mut self, index: usize, collect: Collect) -> SinkHandle<'_, 'de>;
+
+    /// Returns whether the field collects repeated values.
+    fn collects(&self, index: usize) -> bool;
 }
 
 /// The sink that updates a derived struct.
@@ -547,7 +638,7 @@ impl<'a, 'de> StructUpdateSink<'a, 'de> {
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(StructUpdateSink {
             value,
-            key: FieldKeySink::new(info.lookup, info.deny),
+            key: FieldKeySink::new(info.lookup, |_| false, info.deny),
             seen: vec![0; info.fields.len().div_ceil(64)],
             info,
         })
@@ -569,15 +660,26 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(
-            match self
-                .key
-                .next_index(&mut self.seen, self.info.fields, self.info.deny, state)?
-            {
-                Some(index) => self.value.update_field(index),
-                None => SinkHandle::null(),
-            },
-        )
+        let index = core::mem::replace(&mut self.key.index, UNKNOWN);
+        if index == UNKNOWN {
+            if self.key.other.is_some() {
+                self.key.unknown_key(self.info.fields, self.info.deny, state)?;
+            }
+            return Ok(SinkHandle::null());
+        }
+        let repeated = mark_seen(&mut self.seen, index);
+        let collects = state.is_multimap() && self.value.collects(index);
+        if repeated && !collects && !duplicate_field(self.info.fields[index], state)? {
+            return Ok(SinkHandle::null());
+        }
+        let collect = if !collects {
+            Collect::No
+        } else if repeated {
+            Collect::Next
+        } else {
+            Collect::First
+        };
+        Ok(self.value.update_field(index, collect))
     }
 
     fn value_for_key(

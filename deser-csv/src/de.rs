@@ -588,7 +588,8 @@ impl StreamState {
         driver.state_mut().set_input_range(base, base);
         match names {
             Some(names) => {
-                driver.emit(Event::MapStart(shape))?;
+                // header names can repeat: records are multimaps
+                driver.emit(Event::MapStart(shape.with_multimap(true)))?;
                 for (index, field) in fields.iter().enumerate() {
                     emitter.set_range(driver, field);
                     match names.get(index) {

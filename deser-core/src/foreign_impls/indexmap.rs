@@ -11,7 +11,9 @@ use core::hash::{BuildHasher, Hash};
 use ::indexmap::{IndexMap, IndexSet, map};
 
 use crate::adapters::{DeserializeAs, MapSkipError, Same, skip_map_sink};
-use crate::de::impls::{MapOut, MapTarget, SetTarget, map_sink, set_sink};
+use crate::de::impls::{
+    MapOut, MapTarget, SetTarget, collection_methods, map_sink, set_collection, set_sink,
+};
 use crate::de::{Deserialize, SinkHandle};
 use crate::ser::impls::{serialize_map, serialize_set};
 
@@ -46,6 +48,11 @@ where
     #[inline]
     fn reserve_entries(&mut self, additional: usize) {
         self.reserve(additional);
+    }
+
+    #[inline]
+    fn entry_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.get_mut(key)
     }
 
     fn merge(&mut self, other: Self) {
@@ -120,6 +127,12 @@ where
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, Same>(out)
     }
+
+    collection_methods!(set Same);
+}
+
+set_collection! {
+    [T: Hash + Eq + Send, S: BuildHasher + Default + Send] IndexSet<T, S>;
 }
 
 /// The adapters, they need the default hasher.
@@ -133,7 +146,7 @@ mod adapters {
     use crate::adapters::ser_impls::{serialize_as_map, serialize_as_set};
     use crate::adapters::{DeserializeAs, MapSkipError, SerializeAs};
     use crate::de::SinkHandle;
-    use crate::de::impls::{MapOut, map_sink, set_sink};
+    use crate::de::impls::{MapOut, collection_methods_as, map_sink, set_sink};
     use crate::error::Error;
     use crate::event::ContainerShape;
     use crate::ser::{Chunk, Describe};
@@ -192,5 +205,7 @@ mod adapters {
         fn deserialize_into_as(out: &mut Option<IndexSet<T, S>>) -> SinkHandle<'_, 'de> {
             set_sink::<_, T, A>(out)
         }
+
+        collection_methods_as!(set IndexSet<T, S>);
     }
 }

@@ -19,10 +19,12 @@ use crate::Text;
 use crate::adapters::{DeserializeAs, Same};
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
+use crate::de::update::Collection;
 use crate::de::{CollectedErrors, DuplicateKeys};
 use crate::de::{
     Deserialize, OwnedSink, Sink, SinkHandle, empty_lexical_or_none, is_empty_lexical, is_null_atom,
 };
+use crate::de::{atom_into_handle, borrowed_atom_into_handle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ImplicitValue};
 use crate::ext::Number;
@@ -501,26 +503,7 @@ where
                         None => self.unexpected_atom(atom, state),
                     }
                 }
-                // a single value of a key given once in a query string
-                Atom::Lexical(_)
-                    if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
-                {
-                    self.is_seq = true;
-                    A::__private_atom_into_as(&mut self.element, atom, state)
-                }
                 other => self.unexpected_atom(other, state),
-            }
-        }
-
-        fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-            match atom {
-                Atom::Lexical(_)
-                    if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
-                {
-                    self.is_seq = true;
-                    A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
-                }
-                other => self.atom(other, state),
             }
         }
 
@@ -574,9 +557,91 @@ where
     })
 }
 
+/// The methods of `Deserialize` for collections that collect the values of
+/// a repeated key (see [`Collection`]), with the adapter of the elements.
+///
+/// Sequences of bytes (like `Vec<u8>`) do not collect, the value of their
+/// key is the bytes.
+macro_rules! collection_methods {
+    ($elem:ty) => {
+        #[inline]
+        fn __private_collects() -> bool {
+            !<$elem as DeserializeAs<'de, T>>::__private_is_bytes_as()
+        }
+
+        collection_methods!(@common $elem);
+    };
+    (set $elem:ty) => {
+        #[inline]
+        fn __private_collects() -> bool {
+            true
+        }
+
+        collection_methods!(@common $elem);
+    };
+    (@common $elem:ty) => {
+
+        fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+            crate::de::update::collect_into::<Self, T, $elem>(out)
+        }
+
+        fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
+            crate::de::update::collect_update::<Self, T, $elem>(value, first)
+        }
+
+        fn __private_collect_empty() -> Option<Self> {
+            Some(<Self as crate::de::update::Collection<T>>::empty())
+        }
+    };
+}
+
+/// The methods of `DeserializeAs` for collections that collect the values
+/// of a repeated key, the adapter of the elements is `A`.
+macro_rules! collection_methods_as {
+    ($target:ty) => {
+        #[inline]
+        fn __private_collects_as() -> bool {
+            !A::__private_is_bytes_as()
+        }
+
+        collection_methods_as!(@common $target);
+    };
+    (set $target:ty) => {
+        #[inline]
+        fn __private_collects_as() -> bool {
+            true
+        }
+
+        collection_methods_as!(@common $target);
+    };
+    (@common $target:ty) => {
+
+        fn __private_collect_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
+            crate::de::update::collect_into::<$target, T, A>(out)
+        }
+
+        fn __private_collect_update_as(value: &mut $target, first: bool) -> SinkHandle<'_, 'de>
+        where
+            $target: Send,
+            Self: Sized,
+        {
+            crate::de::update::collect_update::<$target, T, A>(value, first)
+        }
+
+        fn __private_collect_empty_as() -> Option<$target> {
+            Some(<$target as crate::de::update::Collection<T>>::empty())
+        }
+    };
+}
+
+#[allow(unused_imports)]
+pub(crate) use {collection_methods, collection_methods_as};
+
 /// Implements `Deserialize` and `DeserializeAs` for sequences.
+///
+/// Sequences marked with `collect` collect the values of repeated keys.
 macro_rules! deserialize_seq {
-    ($([$($bound:tt)*] $target:ty => $adapter:ty;)*) => {
+    ($($($collect:ident)? [$($bound:tt)*] $target:ty => $adapter:ty;)*) => {
         $(
             impl<'de, $($bound)*> Deserialize<'de> for $target
             where
@@ -586,24 +651,89 @@ macro_rules! deserialize_seq {
                 fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
                     seq_sink::<Self, T, Same>(out)
                 }
+
+                $(deserialize_seq! { @$collect de })?
             }
 
             impl<'de, $($bound)*, A: DeserializeAs<'de, T>> DeserializeAs<'de, $target> for $adapter {
                 fn deserialize_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
                     seq_sink::<$target, T, A>(out)
                 }
+
+                $(deserialize_seq! { @$collect adapter $target })?
             }
         )*
     };
+    (@collect de) => { collection_methods!(Same); };
+    (@collect adapter $target:ty) => { collection_methods_as!($target); };
 }
 
 deserialize_seq! {
-    [T: Send] Vec<T> => Vec<A>;
-    [T: Send] VecDeque<T> => VecDeque<A>;
-    [T: Send] LinkedList<T> => LinkedList<A>;
-    [T: Ord + Send] BinaryHeap<T> => BinaryHeap<A>;
-    [T: Send] Box<[T]> => Box<[A]>;
+    collect [T: Send] Vec<T> => Vec<A>;
+    collect [T: Send] VecDeque<T> => VecDeque<A>;
+    collect [T: Send] LinkedList<T> => LinkedList<A>;
+    collect [T: Ord + Send] BinaryHeap<T> => BinaryHeap<A>;
+    collect [T: Send] Box<[T]> => Box<[A]>;
+    // the elements of a shared slice cannot be moved into a larger one
     [T: Send + Sync] Arc<[T]> => Arc<[A]>;
+}
+
+impl<T: Send> Collection<T> for Vec<T> {
+    fn empty() -> Self {
+        Vec::new()
+    }
+
+    #[inline]
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.push(value);
+        Ok(())
+    }
+}
+
+impl<T: Send> Collection<T> for VecDeque<T> {
+    fn empty() -> Self {
+        VecDeque::new()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.push_back(value);
+        Ok(())
+    }
+}
+
+impl<T: Send> Collection<T> for LinkedList<T> {
+    fn empty() -> Self {
+        LinkedList::new()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.push_back(value);
+        Ok(())
+    }
+}
+
+impl<T: Ord + Send> Collection<T> for BinaryHeap<T> {
+    fn empty() -> Self {
+        BinaryHeap::new()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        self.push(value);
+        Ok(())
+    }
+}
+
+impl<T: Send> Collection<T> for Box<[T]> {
+    fn empty() -> Self {
+        Box::default()
+    }
+
+    fn add(&mut self, value: T) -> Result<(), Error> {
+        let mut vec = take(self).into_vec();
+        vec.push(value);
+        *self = vec.into_boxed_slice();
+        Ok(())
+    }
 }
 
 /// The maximum number of bytes that are preallocated for the declared
@@ -633,6 +763,8 @@ pub(crate) trait MapTarget<K, V>: Default + Send {
     fn reserve_entries(&mut self, additional: usize) {
         let _ = additional;
     }
+    /// Returns the value of a key.
+    fn entry_mut(&mut self, key: &K) -> Option<&mut V>;
     /// Moves the entries of another map into this one, the values of
     /// `other` replace existing values.
     fn merge(&mut self, other: Self);
@@ -655,6 +787,11 @@ impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
                 true
             }
         }
+    }
+
+    #[inline]
+    fn entry_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.get_mut(key)
     }
 
     fn merge(&mut self, mut other: Self) {
@@ -692,6 +829,11 @@ impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K,
     #[inline]
     fn reserve_entries(&mut self, additional: usize) {
         self.reserve(additional);
+    }
+
+    #[inline]
+    fn entry_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.get_mut(key)
     }
 
     fn merge(&mut self, mut other: Self) {
@@ -751,6 +893,25 @@ where
             Ok(())
         }
 
+        /// Returns the sink of a value that its key's collection collects.
+        ///
+        /// In a multimap the values of collections (see
+        /// [`Deserialize::__private_collects`]) collect the values of all
+        /// occurrences of their key.
+        #[cold]
+        fn collect_value<'de>(&mut self) -> SinkHandle<'_, 'de>
+        where
+            VA: DeserializeAs<'de, V>,
+            V: Send,
+        {
+            if let Some(ref key) = self.key
+                && let Some(value) = self.map.entry_mut(key)
+            {
+                return VA::__private_collect_update_as(value, false);
+            }
+            VA::__private_collect_into_as(&mut self.value)
+        }
+
         /// Adds the previous entry before the next one starts.
         ///
         /// If it's a duplicate that is rejected, the error is collected
@@ -787,7 +948,10 @@ where
             Ok(KA::deserialize_into_as(&mut self.key))
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            if VA::__private_collects_as() && state.is_multimap() {
+                return Ok(self.collect_value());
+            }
             Ok(VA::deserialize_into_as(&mut self.value))
         }
 
@@ -797,6 +961,9 @@ where
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            if VA::__private_collects_as() && state.is_multimap() {
+                return atom_into_handle(self.collect_value(), atom, state);
+            }
             VA::__private_atom_into_as(&mut self.value, atom, state)
         }
 
@@ -814,6 +981,9 @@ where
             atom: Atom<'de>,
             state: &mut State,
         ) -> Result<(), Error> {
+            if VA::__private_collects_as() && state.is_multimap() {
+                return borrowed_atom_into_handle(self.collect_value(), atom, state);
+            }
             VA::__private_borrowed_atom_into_as(&mut self.value, atom, state)
         }
 
@@ -830,6 +1000,9 @@ where
             self.duplicate_keys = state.duplicate_keys();
             self.flush_before(state)?;
             KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Text::borrowed(key)), state)?;
+            if VA::__private_collects_as() && state.is_multimap() {
+                return Ok(Some(self.collect_value()));
+            }
             Ok(Some(VA::deserialize_into_as(&mut self.value)))
         }
 
@@ -958,6 +1131,36 @@ impl<T: Hash + Eq + Send, H: BuildHasher + Default + Send> SetTarget<T> for Hash
     }
 }
 
+/// Implements [`Collection`] for sets.
+macro_rules! set_collection {
+    ($([$($bound:tt)*] $target:ty;)*) => {
+        $(
+            impl<$($bound)*> crate::de::update::Collection<T> for $target {
+                fn empty() -> Self {
+                    Default::default()
+                }
+
+                fn add(&mut self, value: T) -> Result<(), crate::Error> {
+                    crate::de::impls::SetTarget::insert_element(self, value);
+                    Ok(())
+                }
+            }
+        )*
+    };
+}
+
+#[allow(unused_imports)]
+pub(crate) use set_collection;
+
+set_collection! {
+    [T: Ord + Send] BTreeSet<T>;
+}
+
+#[cfg(feature = "std")]
+set_collection! {
+    [T: Hash + Eq + Send, H: BuildHasher + Default + Send] HashSet<T, H>;
+}
+
 /// Creates the sink for a set with an element adapter.
 pub(crate) fn set_sink<'a, 'de, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a, 'de>
 where
@@ -986,25 +1189,6 @@ where
     {
         fn expecting(&self) -> Cow<'_, str> {
             Cow::Borrowed(S::NAME)
-        }
-
-        fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            match atom {
-                // a single value of a key given once in a query string
-                Atom::Lexical(_) if lexical::single_is_seq(state) => {
-                    A::__private_atom_into_as(&mut self.element, atom, state)
-                }
-                other => self.unexpected_atom(other, state),
-            }
-        }
-
-        fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-            match atom {
-                Atom::Lexical(_) if lexical::single_is_seq(state) => {
-                    A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
-                }
-                other => self.atom(other, state),
-            }
         }
 
         fn seq(&mut self, state: &mut State) -> Result<(), Error> {
@@ -1058,12 +1242,16 @@ impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for BTreeSet<T> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, Same>(out)
     }
+
+    collection_methods!(set Same);
 }
 
 impl<'de, T: Ord + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T>> for BTreeSet<A> {
     fn deserialize_into_as(out: &mut Option<BTreeSet<T>>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, A>(out)
     }
+
+    collection_methods_as!(set BTreeSet<T>);
 }
 
 #[cfg(feature = "std")]
@@ -1076,6 +1264,8 @@ where
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, Same>(out)
     }
+
+    collection_methods!(set Same);
 }
 
 #[cfg(feature = "std")]
@@ -1088,6 +1278,8 @@ where
     fn deserialize_into_as(out: &mut Option<HashSet<T, H>>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, A>(out)
     }
+
+    collection_methods_as!(set HashSet<T, H>);
 }
 
 impl<'de, T> Deserialize<'de> for Option<T>
@@ -1126,12 +1318,48 @@ where
     fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
         crate::de::update::update_option(value)
     }
+
+    #[inline]
+    fn __private_collects() -> bool {
+        T::__private_collects()
+    }
+
+    fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_into_as(out)
+    }
+
+    fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
+        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_update_as(value, first)
+    }
 }
 
 impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<A> {
     #[inline]
     fn deserialize_into_as(out: &mut Option<Option<T>>) -> SinkHandle<'_, 'de> {
         A::deserialize_into_as(out.insert(None)).ignore_null()
+    }
+
+    // An optional collection collects into the collection, it's `None` if
+    // its key is missing.  Values that are null (or empty text for types
+    // that do not accept it) are not added.
+
+    #[inline]
+    fn __private_collects_as() -> bool {
+        A::__private_collects_as()
+    }
+
+    fn __private_collect_into_as(out: &mut Option<Option<T>>) -> SinkHandle<'_, 'de> {
+        A::__private_collect_into_as(out.get_or_insert(None)).ignore_null()
+    }
+
+    fn __private_collect_update_as(value: &mut Option<T>, first: bool) -> SinkHandle<'_, 'de>
+    where
+        Option<T>: Send,
+    {
+        if first {
+            *value = None;
+        }
+        A::__private_collect_into_as(value).ignore_null()
     }
 
     #[inline]
@@ -1378,26 +1606,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                             )),
                         }
                     }
-                    // a single value of a key given once in a query string
-                    Atom::Lexical(_)
-                        if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
-                    {
-                        self.is_seq = true;
-                        self.__private_value_atom(atom, state)
-                    }
                     other => self.unexpected_atom(other, state),
-                }
-            }
-
-            fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-                match atom {
-                    Atom::Lexical(_)
-                        if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
-                    {
-                        self.is_seq = true;
-                        self.__private_borrowed_value_atom(atom, state)
-                    }
-                    other => self.atom(other, state),
                 }
             }
 

@@ -302,6 +302,35 @@ pub trait DeserializeAs<'de, T>: 'static {
         let _ = bytes;
         None
     }
+
+    /// See [`Deserialize::__private_collects`].
+    #[doc(hidden)]
+    fn __private_collects_as() -> bool {
+        false
+    }
+
+    /// See [`Deserialize::__private_collect_into`].
+    #[doc(hidden)]
+    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        Self::deserialize_into_as(out)
+    }
+
+    /// See [`Deserialize::__private_collect_update`].
+    #[doc(hidden)]
+    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+        Self: Sized,
+    {
+        let _ = first;
+        Self::deserialize_update_as(value)
+    }
+
+    /// See [`Deserialize::__private_collect_empty`].
+    #[doc(hidden)]
+    fn __private_collect_empty_as() -> Option<T> {
+        None
+    }
 }
 
 /// Serializes a value of type `T` on behalf of it.
@@ -433,6 +462,29 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
     fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         T::__private_array_from_bytes(bytes)
+    }
+
+    #[inline]
+    fn __private_collects_as() -> bool {
+        T::__private_collects()
+    }
+
+    #[inline]
+    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        T::__private_collect_into(out)
+    }
+
+    #[inline]
+    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+    {
+        T::__private_collect_update(value, first)
+    }
+
+    #[inline]
+    fn __private_collect_empty_as() -> Option<T> {
+        T::__private_collect_empty()
     }
 }
 

@@ -54,6 +54,8 @@ pub struct State {
     // the shape of the container that is currently started
     pub(crate) container_shape: ContainerShape,
     pub(crate) is_map_key: bool,
+    // `true` if the innermost open container is a multimap
+    pub(crate) is_multimap: bool,
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
@@ -98,6 +100,7 @@ impl State {
             depth: 0,
             container_shape: ContainerShape::new(),
             is_map_key: false,
+            is_multimap: false,
             input_range: NO_RANGE,
             error_context: Vec::new(),
             discards_errors: false,
@@ -401,6 +404,22 @@ impl State {
         self.is_map_key
     }
 
+    /// Returns `true` if the innermost open container is a multimap.
+    ///
+    /// A multimap is a map whose keys can be given more than once (see
+    /// [`ContainerShape::with_multimap`]).  This is the case while its
+    /// keys and values are deserialized and while its sink is finished
+    /// (in [`Sink::finish`](crate::de::Sink::finish)), which includes the
+    /// keys and values that flattened fields take.  Within a nested map or
+    /// sequence it's the flag of that container.
+    ///
+    /// Sinks that collect the values of repeated keys (derived structs and
+    /// maps) check this.
+    #[inline]
+    pub fn is_multimap(&self) -> bool {
+        self.is_multimap
+    }
+
     /// Returns what happens if a key is given more than once.
     ///
     /// This is the [`DuplicateKeys`] extension value or the default.
@@ -542,6 +561,7 @@ impl fmt::Debug for State {
             .field("extensions", &self.extensions)
             .field("depth", &self.depth)
             .field("is_map_key", &self.is_map_key)
+            .field("is_multimap", &self.is_multimap)
             .field("input_range", &self.input_range())
             .finish()
     }

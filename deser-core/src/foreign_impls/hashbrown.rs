@@ -8,7 +8,10 @@ use ::hashbrown::{HashMap, HashSet, hash_map};
 use crate::State;
 use crate::adapters::ser_impls::{serialize_as_map, serialize_as_set};
 use crate::adapters::{DeserializeAs, MapSkipError, Same, SerializeAs, skip_map_sink};
-use crate::de::impls::{MapOut, MapTarget, SetTarget, map_sink, set_sink};
+use crate::de::impls::{
+    MapOut, MapTarget, SetTarget, collection_methods, collection_methods_as, map_sink,
+    set_collection, set_sink,
+};
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::ContainerShape;
@@ -50,6 +53,11 @@ where
     #[inline]
     fn reserve_entries(&mut self, additional: usize) {
         self.reserve(additional);
+    }
+
+    #[inline]
+    fn entry_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.get_mut(key)
     }
 
     fn merge(&mut self, mut other: Self) {
@@ -168,6 +176,12 @@ where
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, Same>(out)
     }
+
+    collection_methods!(set Same);
+}
+
+set_collection! {
+    [T: Hash + Eq + Send, S: BuildHasher + Default + Send] HashSet<T, S>;
 }
 
 impl<'de, T, S, A> DeserializeAs<'de, HashSet<T, S>> for HashSet<A>
@@ -179,4 +193,6 @@ where
     fn deserialize_into_as(out: &mut Option<HashSet<T, S>>) -> SinkHandle<'_, 'de> {
         set_sink::<_, T, A>(out)
     }
+
+    collection_methods_as!(set HashSet<T, S>);
 }

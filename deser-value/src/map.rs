@@ -34,15 +34,17 @@ pub(crate) type Entries = IndexMap<Value, Value, MapHasher>;
 pub(crate) struct MapInner {
     pub(crate) entries: Entries,
     pub(crate) order: Order,
+    pub(crate) multimap: bool,
 }
 
 /// A map of values.
 ///
 /// Maps retain the order in which the entries were inserted and every key
 /// is unique.  Keys can be any value, not just strings.  Additionally a
-/// map holds the [`Order`] of its entries which is passed on to formats when
-/// the map is serialized.  The order is not considered when maps are
-/// compared: maps are equal if they contain the same entries.  The
+/// map holds the [`Order`] of its entries and if it's a multimap (see
+/// [`is_multimap`](Self::is_multimap)) which are passed on to formats when
+/// the map is serialized.  Neither is considered when maps are compared:
+/// maps are equal if they contain the same entries.  The
 /// exception are entries with maps or sequences as keys, which are compared
 /// in order (this allows comparing maps without recursion).
 ///
@@ -75,6 +77,7 @@ impl Map {
             inner: Box::new(MapInner {
                 entries: IndexMap::with_capacity_and_hasher(capacity, MapHasher),
                 order: Order::Natural,
+                multimap: false,
             }),
         }
     }
@@ -92,6 +95,49 @@ impl Map {
     /// Sets the order of the entries and returns the map.
     pub fn with_order(mut self, order: Order) -> Map {
         self.inner.order = order;
+        self
+    }
+
+    /// Returns `true` if the map is a multimap.
+    ///
+    /// Maps that are deserialized from multimaps (like query strings, see
+    /// [`ContainerShape::with_multimap`](deser_core::ContainerShape::with_multimap))
+    /// are multimaps.  The values of a key that was given more than once
+    /// are a [`Seq`](crate::Seq) marked as
+    /// [repeated](crate::Seq::is_repeated).  When the map is deserialized
+    /// into another type, it's a multimap again and the values of repeated
+    /// keys are passed on as the values of repeated keys.  A key that was
+    /// given once is a single value, so types that collect the values of
+    /// keys (like `Vec<T>`) receive the same values as from the original
+    /// input.
+    ///
+    /// ```
+    /// use deser_value::{Map, Seq, Value};
+    ///
+    /// #[derive(deser::Deserialize, Debug, PartialEq)]
+    /// struct Query {
+    ///     tag: Vec<String>,
+    ///     page: Vec<u32>,
+    /// }
+    ///
+    /// let mut map = Map::new().with_multimap(true);
+    /// map.insert("tag", Seq::from(vec![Value::from("a"), Value::from("b")]).with_repeated(true));
+    /// map.insert("page", 1);
+    /// let query: Query = deser_value::from_value(&Value::from(map)).unwrap();
+    /// assert_eq!(query, Query { tag: vec!["a".into(), "b".into()], page: vec![1] });
+    /// ```
+    pub fn is_multimap(&self) -> bool {
+        self.inner.multimap
+    }
+
+    /// Sets if the map is a multimap.
+    pub fn set_multimap(&mut self, yes: bool) {
+        self.inner.multimap = yes;
+    }
+
+    /// Sets if the map is a multimap and returns the map.
+    pub fn with_multimap(mut self, yes: bool) -> Map {
+        self.inner.multimap = yes;
         self
     }
 

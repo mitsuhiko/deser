@@ -264,17 +264,7 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for ValidatedSink<'a, 'de, T, 
             Some(sink) => sink.seq(state),
             None => Ok(()),
         };
-        match rv {
-            // the values of a repeated key are delivered as a single value
-            // to sinks that reject sequences, the driver needs the error to
-            // do that (see `ContainerShape::with_repeated`)
-            Err(err)
-                if err.kind() == ErrorKind::Unexpected && state.container_shape().is_repeated() =>
-            {
-                Err(err)
-            }
-            rv => self.check(rv, state),
-        }
+        self.check(rv, state)
     }
 
     // The errors of the items are handled in `recover`.

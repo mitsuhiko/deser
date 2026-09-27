@@ -47,6 +47,61 @@ fn borrowed_atom_into(
     }
 }
 
+/// Returns an expression that is `true` if a field collects the values of
+/// a repeated key (see `ContainerShape::with_multimap`).
+fn field_collects(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collects_as()
+        },
+        None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collects() },
+    }
+}
+
+/// Returns an expression that creates the sink of a value that is added to
+/// the collection in the slot of a field.
+fn field_collect_into(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    slot: TokenStream,
+) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_into_as(#slot)
+        },
+        None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_into(#slot) },
+    }
+}
+
+/// Returns an expression that creates the sink of a value that is added to
+/// the collection of a field that is updated.
+fn field_collect_update(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    field: TokenStream,
+    first: TokenStream,
+) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_update_as(#field, #first)
+        },
+        None => {
+            quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_update(#field, #first) }
+        }
+    }
+}
+
+/// Returns an expression for the value of a collection whose key is
+/// missing in a multimap.
+fn field_collect_empty(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_empty_as()
+        },
+        None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_empty() },
+    }
+}
+
 /// The generated code for updating structs in place.
 struct UpdateSink {
     /// The `deserialize_update` method.
@@ -368,6 +423,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut field_sinks = Vec::new();
     let mut field_atoms = Vec::new();
     let mut field_borrowed_atoms = Vec::new();
+    let mut field_collects_arms = Vec::new();
     let mut update_dispatch = Vec::new();
     // the update sinks of structs with flattened fields borrow the fields
     // through a pointer (see `UpdateTarget`)
@@ -386,10 +442,42 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
         }
         let ty = &x.field().ty;
-        let sink = field_sink(ty, x.adapters().de(), quote! { &mut self.#fieldname });
-        let atom = atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
-        let borrowed_atom =
-            borrowed_atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+        let adapter = x.adapters().de();
+        let collects = field_collects(ty, adapter);
+        let collect_into = field_collect_into(ty, adapter, quote! { &mut self.#fieldname });
+        let sink = field_sink(ty, adapter, quote! { &mut self.#fieldname });
+        let sink = quote! {
+            if #collects && __multimap {
+                #collect_into
+            } else {
+                #sink
+            }
+        };
+        let atom = atom_into(ty, adapter, quote! { &mut self.#fieldname });
+        let atom = quote! {
+            if #collects && __state.is_multimap() {
+                __deser::__derive::atom_into_handle(#collect_into, __atom, __state)
+            } else {
+                #atom
+            }
+        };
+        let borrowed_atom = borrowed_atom_into(ty, adapter, quote! { &mut self.#fieldname });
+        let borrowed_atom = quote! {
+            if #collects && __state.is_multimap() {
+                __deser::__derive::borrowed_atom_into_handle(#collect_into, __atom, __state)
+            } else {
+                #borrowed_atom
+            }
+        };
+        field_collects_arms.push(quote! {
+            #index => #collects,
+        });
+        let collect_update = field_collect_update(
+            ty,
+            adapter,
+            quote! { __field },
+            quote! { __collect == __deser::__derive::Collect::First },
+        );
         // in updates, fields are updated in place, the adapters of fields
         // with adapters decide how they are updated (by default they are
         // replaced)
@@ -408,21 +496,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             // structs without flattened fields implement `UpdateFields`
             quote! { &mut self.#field_ident }
         };
-        update_dispatch.push(if update_through_ptr {
-            quote! {
-                #index => {
-                    let __field = #field_ref;
+        update_dispatch.push(quote! {
+            #index => {
+                let __field = #field_ref;
+                if #collects && __collect != __deser::__derive::Collect::No {
+                    #collect_update
+                } else {
                     #update
                 }
             }
-        } else {
-            let update = match x.adapters().de() {
-                None => quote! { __deser::__derive::field_update(#field_ref) },
-                Some(adapter) => quote_spanned! { adapter.span()=>
-                    <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(#field_ref)
-                },
-            };
-            quote! { #index => #update, }
         });
         key_matcher.push(Name::str_arms(
             &names,
@@ -438,6 +520,19 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             #index => #borrowed_atom,
         });
     }
+
+    // a closure (so that it has the generics and `'de`) that is a function
+    // pointer as it does not capture anything
+    let collects_fn = quote! {
+        |__index: usize| -> bool {
+            match __index {
+                #(
+                    #field_collects_arms
+                )*
+                _ => false,
+            }
+        }
+    };
 
     if let Some((first_duplicate_name, field)) = first_duplicate_name {
         return Err(syn::Error::new_spanned(
@@ -706,7 +801,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::boxed(__UpdateSink {
                         value: __deser::__derive::UpdateTarget::new(__value),
-                        key: __deser::__derive::FieldKeySink::new(__field_index, #retain_unknown),
+                        key: __deser::__derive::FieldKeySink::new(__field_index, #collects_fn, #retain_unknown),
                         seen: [0; #seen_words],
                         #standalone_init
                         #(
@@ -754,11 +849,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                     {
                         __deser::__derive::Ok(match self.key.next_field(&mut self.seen, __FIELDS, __state)? {
-                            __deser::__derive::NextField::Field(__index) => match __index {
-                                #(
-                                    #update_dispatch
-                                )*
-                                _ => __deser::de::SinkHandle::null(),
+                            __deser::__derive::NextField::Field(__index) => {
+                                let __collect = self.key.collect(__index, __state);
+                                match __index {
+                                    #(
+                                        #update_dispatch
+                                    )*
+                                    _ => __deser::de::SinkHandle::null(),
+                                }
                             },
                             #other_key_dispatch
                             __deser::__derive::NextField::Ignore => __deser::de::SinkHandle::null(),
@@ -825,7 +923,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             items: quote! {
                 #[automatically_derived]
                 impl #impl_generics __deser::__derive::UpdateFields<'de> for #ident #ty_generics #bounded_where_clause {
-                    fn update_field(&mut self, __index: usize) -> __deser::de::SinkHandle<'_, 'de> {
+                    fn collects(&self, __index: usize) -> bool {
+                        #collects_fn(__index)
+                    }
+
+                    fn update_field(&mut self, __index: usize, __collect: __deser::__derive::Collect) -> __deser::de::SinkHandle<'_, 'de> {
                         match __index {
                             #(
                                 #update_dispatch
@@ -863,7 +965,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         }
     };
     let next_value = dispatch(
-        quote! { self.__field_sink(__index) },
+        quote! { self.__field_sink(__index, __state.is_multimap()) },
         other_key_dispatch,
         quote! { __deser::de::SinkHandle::null() },
     );
@@ -910,10 +1012,36 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     // together with the required fields that are missing.  Fields that
     // were seen but have no value failed, they are not missing.  The
     // errors of values that flattened fields took are collected by them.
-    let mut flatten_index = Vec::with_capacity(flatten_fields.len());
-    for index in 0..flatten_fields.len() {
-        flatten_index.push(index);
-    }
+    let flatten_index = (0..flatten_fields.len()).collect::<Vec<_>>();
+
+    // In a multimap, collections whose key is missing are empty (unless
+    // they have defaults or are required).
+    let (empty_field, empty_value): (Vec<_>, Vec<_>) = sink_fieldname
+        .iter()
+        .zip(attrs.iter())
+        .filter(|(_, attrs)| {
+            !attrs.flatten()
+                && attrs.default().is_none()
+                && !attrs.required()
+                && container_attrs.default().is_none()
+        })
+        .map(|(name, attrs)| {
+            (name, field_collect_empty(&attrs.field().ty, attrs.adapters().de()))
+        })
+        .unzip();
+    let fill_empty = if empty_field.is_empty() {
+        None
+    } else {
+        Some(quote! {
+            if __state.is_multimap() {
+                #(
+                    if self.#empty_field.is_none() {
+                        self.#empty_field = #empty_value;
+                    }
+                )*
+            }
+        })
+    };
     let (current_field, current_init, current_reset) = if has_flatten {
         (
             Some(quote! { flatten_current: usize, }),
@@ -978,7 +1106,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
-                        key: __deser::__derive::FieldKeySink::new(__field_index, #retain_unknown),
+                        key: __deser::__derive::FieldKeySink::new(__field_index, #collects_fn, #retain_unknown),
                         seen: [0; #seen_words],
                         #standalone_init
                         #(
@@ -999,7 +1127,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             #update_items
 
             impl #wrapper_impl_generics __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn __field_sink(&mut self, __index: usize) -> __deser::de::SinkHandle<'_, 'de> {
+                fn __field_sink(&mut self, __index: usize, __multimap: bool) -> __deser::de::SinkHandle<'_, 'de> {
                     match __index {
                         #(
                             #field_sinks
@@ -1131,6 +1259,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
                 fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
                     #![allow(unused_mut)]
+                    #fill_empty
                     if !self.errors.is_empty() {
                         return __deser::__derive::Err(self.__collected_errors(__state));
                     }
@@ -1228,6 +1357,9 @@ impl CompactStruct<'_> {
         let mut field_sinks = Vec::with_capacity(len);
         let mut field_atoms = Vec::with_capacity(len);
         let mut borrowed_atoms = Vec::new();
+        let mut collects_arms = Vec::with_capacity(len);
+        let mut empty_fields = Vec::new();
+        let mut empty_values = Vec::new();
         let mut patterns = Vec::with_capacity(len);
         let mut takes = Vec::with_capacity(len);
         let mut fail_bindings = Vec::with_capacity(len);
@@ -1243,10 +1375,37 @@ impl CompactStruct<'_> {
             let adapter = x.adapters().de();
             let member = syn::Index::from(idx);
             let slot = quote! { &mut self.values.#member };
-            field_sinks.push(field_sink(ty, adapter, slot.clone()));
-            field_atoms.push(atom_into(ty, adapter, slot.clone()));
+            let collect_into = field_collect_into(ty, adapter, slot.clone());
+            let sink = field_sink(ty, adapter, slot.clone());
+            field_sinks.push(quote! {
+                if __collect != __deser::__derive::Collect::No {
+                    #collect_into
+                } else {
+                    #sink
+                }
+            });
+            let atom = atom_into(ty, adapter, slot.clone());
+            field_atoms.push(quote! {
+                if __collect != __deser::__derive::Collect::No {
+                    __deser::__derive::atom_into_handle(#collect_into, __atom, __state)
+                } else {
+                    #atom
+                }
+            });
             if borrows {
-                borrowed_atoms.push(borrowed_atom_into(ty, adapter, slot));
+                let borrowed = borrowed_atom_into(ty, adapter, slot.clone());
+                borrowed_atoms.push(quote! {
+                    if __collect != __deser::__derive::Collect::No {
+                        __deser::__derive::borrowed_atom_into_handle(#collect_into, __atom, __state)
+                    } else {
+                        #borrowed
+                    }
+                });
+            }
+            collects_arms.push(field_collects(ty, adapter));
+            if !has_container_default && x.default().is_none() && !x.required() {
+                empty_fields.push(member.clone());
+                empty_values.push(field_collect_empty(ty, adapter));
             }
             index.push(member);
             types.push(ty);
@@ -1288,6 +1447,7 @@ impl CompactStruct<'_> {
                 fn field_borrowed_atom(
                     &mut self,
                     __index: usize,
+                    __collect: __deser::__derive::Collect,
                     __atom: __deser::Atom<'de>,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
@@ -1376,7 +1536,14 @@ impl CompactStruct<'_> {
 
                 #[automatically_derived]
                 impl #wrapper_impl_generics __deser::__derive::StructFields<'de> for __Fields #wrapper_ty_generics #bounded_where_clause {
-                    fn field_sink(&mut self, __index: usize) -> __deser::de::SinkHandle<'_, 'de> {
+                    fn collects(&self, __index: usize) -> bool {
+                        match __index {
+                            #(#index => #collects_arms,)*
+                            _ => false,
+                        }
+                    }
+
+                    fn field_sink(&mut self, __index: usize, __collect: __deser::__derive::Collect) -> __deser::de::SinkHandle<'_, 'de> {
                         match __index {
                             #(#index => #field_sinks,)*
                             _ => __deser::de::SinkHandle::null(),
@@ -1386,6 +1553,7 @@ impl CompactStruct<'_> {
                     fn field_atom(
                         &mut self,
                         __index: usize,
+                        __collect: __deser::__derive::Collect,
                         __atom: __deser::Atom,
                         __state: &mut __deser::State,
                     ) -> __deser::__derive::Result<()> {
@@ -1402,6 +1570,13 @@ impl CompactStruct<'_> {
                         __finish: &mut __deser::__derive::StructFinish<'_>,
                         __state: &mut __deser::State,
                     ) -> __deser::__derive::Result<()> {
+                        if __state.is_multimap() {
+                            #(
+                                if self.values.#empty_fields.is_none() {
+                                    self.values.#empty_fields = #empty_values;
+                                }
+                            )*
+                        }
                         match __deser::__derive::replace(&mut self.values, (#(#nones,)*)) {
                             (#(#patterns,)*) if __finish.ok() => {
                                 #container_default

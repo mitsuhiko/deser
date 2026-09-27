@@ -4,6 +4,29 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** maps whose keys can repeat are multimaps
+  (`ContainerShape::with_multimap`, `State::is_multimap`), which replace
+  the sequences of repeated keys (`ContainerShape::with_repeated` was
+  removed) and the rule that a single lexical atom is a sequence of one
+  element (`LexicalRules::with_single_is_seq` was removed).  Formats emit
+  every occurrence of a key as an entry of its own.  Fields of derived
+  structs and values of maps that are collections (`Vec<T>`, `VecDeque`,
+  `LinkedList`, `BinaryHeap`, `Box<[T]>`, the sets, `SmallVec`,
+  `ArrayVec` and `Option`s of them) collect the values of all occurrences
+  of their key, also if other keys are between them.  A key given once is
+  a collection of one value (also if the value is a map, like `a[b]=1`
+  for a `Vec<T>`), a value that is a sequence the element does not accept
+  is the values of the key, and a missing key is an empty collection
+  (unless the field has a default or is `required`).  Other fields follow
+  the `DuplicateKeys` policy, errors say ``duplicate field `name` ``.
+  Updates replace a collection with the first value of its key and add
+  the others.  `deser-urlencoded`, `deser-env` and `deser-csv` (records
+  with headers, where names can repeat) emit multimaps.  In `deser-value`
+  maps know if they are multimaps (`Map::is_multimap`), the values of a
+  repeated key are a `Seq` marked as repeated and are passed on as
+  repeated keys again when the value is deserialized into another type.
+  `deser_env::var` returns a collection of the value for collections and
+  an empty one if the variable is missing.
 - **Breaking:** the standard library is optional (the new `std` feature,
   enabled by default).  Without it `deser`, `deser-json`, `deser-jsonc`,
   `deser-json5`, `deser-cbor`, `deser-msgpack`, `deser-csv`, `deser-path`
@@ -32,11 +55,10 @@ All notable changes to deser are documented here.
   the deserialization (an extension value in the state) instead of being
   the same for all formats.  The default are the strict rules for text
   that happens to be text, like the keys of JSON and TOML: booleans are
-  `true` and `false`, empty text is not a missing value and text is not
-  a sequence.  Query strings, environment variables and CSV use the
-  lenient rules (`yes`, `on` and `1` are booleans, empty values are
-  `None` for optionals of types that do not accept them, a single value
-  is a sequence of one element).  This fixes JSON keys like `"on"` being
+  `true` and `false` and empty text is not a missing value.  Query
+  strings, environment variables and CSV use the lenient rules (`yes`,
+  `on` and `1` are booleans, empty values are `None` for optionals of
+  types that do not accept them).  This fixes JSON keys like `"on"` being
   accepted as booleans.  `deser-serde` parses lexical atoms with the rules
   of the deserialization.
 - The text of `Atom::Str` and `Atom::Lexical` is a `Text` and the data

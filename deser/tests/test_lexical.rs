@@ -47,9 +47,14 @@ fn deserialize_with_rules<T: DeserializeOwned>(
     Ok(out.unwrap())
 }
 
+/// The start of a multimap, like the maps of query strings.
+fn multimap_start<'a>() -> Event<'a> {
+    Event::MapStart(deser::ContainerShape::new().with_multimap(true))
+}
+
 /// Events of a map where keys and values are lexical, like a query string.
 fn lexical_map<'a>(pairs: &[(&'a str, &'a str)]) -> Vec<Event<'a>> {
-    let mut events = vec![Event::map_start()];
+    let mut events = vec![multimap_start()];
     for (key, value) in pairs {
         events.push(lexical(key));
         events.push(lexical(value));
@@ -319,24 +324,14 @@ fn test_buffering() {
     );
 }
 
-fn repeated<'a>(values: &[&'a str]) -> Vec<Event<'a>> {
-    let mut events = vec![Event::SeqStart(
-        deser::ContainerShape::new().with_repeated(true),
-    )];
-    events.extend(values.iter().map(|x| lexical(x)));
-    events.push(Event::SeqEnd);
-    events
-}
-
-/// Events of a map where values are lexical, repeated if there is more than
-/// one of them.
+/// Events of a multimap where values are lexical, keys with more than one
+/// value are repeated.
 fn query<'a>(pairs: &[(&'a str, &[&'a str])]) -> Vec<Event<'a>> {
-    let mut events = vec![Event::map_start()];
+    let mut events = vec![multimap_start()];
     for (key, values) in pairs {
-        events.push(lexical(key));
-        match values {
-            [value] => events.push(lexical(value)),
-            values => events.extend(repeated(values)),
+        for value in *values {
+            events.push(lexical(key));
+            events.push(lexical(value));
         }
     }
     events.push(Event::MapEnd);
@@ -347,47 +342,98 @@ fn query<'a>(pairs: &[(&'a str, &[&'a str])]) -> Vec<Event<'a>> {
 fn test_single_value_sequences() {
     use std::collections::{BTreeSet, HashSet, VecDeque};
 
-    // a single lexical value is a sequence of one
-    assert_eq!(deserialize::<Vec<u32>>(vec![lexical("42")]).unwrap(), [42]);
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Collections {
+        vec: Vec<u32>,
+        deque: VecDeque<String>,
+        btree: BTreeSet<bool>,
+        hash: HashSet<u8>,
+        optional: Option<Vec<u32>>,
+        boxed: Box<[u16]>,
+        bytes: Vec<u8>,
+    }
+
+    // a key given once in a multimap is a collection of one value
     assert_eq!(
-        deserialize::<VecDeque<String>>(vec![lexical("x")]).unwrap(),
-        ["x"]
-    );
-    assert_eq!(
-        deserialize::<BTreeSet<bool>>(vec![lexical("on")]).unwrap(),
-        BTreeSet::from([true])
-    );
-    assert_eq!(
-        deserialize::<HashSet<u8>>(vec![lexical("1")]).unwrap(),
-        HashSet::from([1])
-    );
-    assert_eq!(deserialize::<[u16; 1]>(vec![lexical("7")]).unwrap(), [7]);
-    assert!(deserialize::<[u16; 2]>(vec![lexical("7")]).is_err());
-    assert_eq!(
-        deserialize::<Option<Vec<u32>>>(vec![lexical("1")]).unwrap(),
-        Some(vec![1])
+        deserialize::<Collections>(lexical_map(&[
+            ("vec", "42"),
+            ("deque", "x"),
+            ("btree", "on"),
+            ("hash", "1"),
+            ("optional", "1"),
+            ("boxed", "7"),
+            // bytes are still decoded from lexical atoms
+            ("bytes", "aGk="),
+        ]))
+        .unwrap(),
+        Collections {
+            vec: vec![42],
+            deque: VecDeque::from(["x".to_string()]),
+            btree: BTreeSet::from([true]),
+            hash: HashSet::from([1]),
+            optional: Some(vec![1]),
+            boxed: Box::new([7]),
+            bytes: b"hi".to_vec(),
+        }
     );
 
-    // strings are strings, not sequences
-    assert!(deserialize::<Vec<String>>(vec![Event::from("x")]).is_err());
-
-    // bytes are still decoded from lexical atoms
+    // a missing key is an empty collection (optionals are `None`)
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Missing {
+        vec: Vec<u32>,
+        optional: Option<Vec<u32>>,
+        #[deser(default = vec![1])]
+        default: Vec<u32>,
+    }
     assert_eq!(
-        deserialize::<Vec<u8>>(vec![lexical("aGk=")]).unwrap(),
-        b"hi"
+        deserialize::<Missing>(lexical_map(&[])).unwrap(),
+        Missing {
+            vec: vec![],
+            optional: None,
+            default: vec![1],
+        }
     );
+
+    // required collections are not empty
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Required {
+        #[deser(required)]
+        vec: Vec<u32>,
+    }
+    assert!(deserialize::<Required>(lexical_map(&[])).is_err());
+
+    // in maps that are not multimaps collections are not collected
+    let mut events = lexical_map(&[("vec", "42")]);
+    events[0] = Event::map_start();
+    assert!(deserialize::<Missing>(events).is_err());
+    let mut events = lexical_map(&[]);
+    events[0] = Event::map_start();
+    assert_eq!(
+        deserialize::<Missing>(events).unwrap_err().kind(),
+        ErrorKind::MissingField
+    );
+
+    // a lexical value on its own is not a sequence
+    assert!(deserialize::<Vec<u32>>(vec![lexical("42")]).is_err());
 
     // borrowed values are borrowed
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Borrowed<'a> {
+        values: Vec<&'a str>,
+    }
     let input = String::from("hello");
-    let mut out = None::<Vec<&str>>;
+    let mut out = None::<Borrowed>;
     {
         let mut driver = DeserializeDriver::new(&mut out);
         LexicalRules::LENIENT.set(driver.state_mut());
+        driver.emit(multimap_start()).unwrap();
+        driver.emit("values").unwrap();
         driver
             .emit_borrowed(Atom::Lexical(Text::borrowed(&input)))
             .unwrap();
+        driver.emit(Event::MapEnd).unwrap();
     }
-    assert_eq!(out.unwrap(), ["hello"]);
+    assert_eq!(out.unwrap().values, ["hello"]);
 }
 
 #[test]
@@ -435,19 +481,100 @@ fn test_repeated() {
     );
     // the default
     let err = deserialize::<Query>(events()).unwrap_err();
-    assert_eq!(err.message(), "duplicate key");
+    assert_eq!(err.message(), "duplicate field `page`");
 
-    // sequences that are not repeated keys are not collapsed
-    let mut events = vec![Event::seq_start(), lexical("1"), lexical("2")];
-    events.push(Event::SeqEnd);
-    assert!(deserialize::<u32>(events).is_err());
+    // keys do not need to be next to each other
+    assert_eq!(
+        deserialize::<Query>(lexical_map(&[("tags", "a"), ("page", "1"), ("tags", "b"),]))
+            .unwrap()
+            .tags,
+        ["a", "b"]
+    );
 
-    // repeated keys consist of atoms
-    let mut events = repeated(&["1"]);
-    events.insert(1, Event::seq_start());
-    events.insert(2, Event::SeqEnd);
-    let err = deserialize::<u32>(events).unwrap_err();
-    assert_eq!(err.message(), "the values of a repeated key must be atoms");
+    // the values of maps collect too
+    let map = deserialize::<BTreeMap<String, Vec<u32>>>(lexical_map(&[
+        ("a", "1"),
+        ("b", "2"),
+        ("a", "3"),
+    ]))
+    .unwrap();
+    assert_eq!(map["a"], [1, 3]);
+    assert_eq!(map["b"], [2]);
+    // other values follow the policy
+    let err =
+        deserialize::<BTreeMap<String, u32>>(lexical_map(&[("a", "1"), ("a", "3")])).unwrap_err();
+    assert_eq!(err.message(), "duplicate key in map");
+
+    // containers are collected too
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Item {
+        id: u32,
+    }
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Items {
+        item: Vec<Item>,
+    }
+    let item = |id| {
+        vec![
+            lexical("item"),
+            multimap_start(),
+            lexical("id"),
+            lexical(id),
+            Event::MapEnd,
+        ]
+    };
+    let mut events = vec![multimap_start()];
+    events.extend(item("1"));
+    events.extend(item("2"));
+    events.push(Event::MapEnd);
+    assert_eq!(
+        deserialize::<Items>(events).unwrap(),
+        Items {
+            item: vec![Item { id: 1 }, Item { id: 2 }]
+        }
+    );
+    let mut events = vec![multimap_start()];
+    events.extend(item("1"));
+    events.push(Event::MapEnd);
+    assert_eq!(
+        deserialize::<Items>(events).unwrap(),
+        Items {
+            item: vec![Item { id: 1 }]
+        }
+    );
+}
+
+#[test]
+fn test_repeated_update() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Config {
+        hosts: Vec<String>,
+        other: Vec<String>,
+        port: u16,
+    }
+
+    // the first value of a key replaces the collection, the others are
+    // added
+    let mut config = Config {
+        hosts: vec!["default".into()],
+        other: vec!["kept".into()],
+        port: 80,
+    };
+    {
+        let mut driver = DeserializeDriver::update(&mut config);
+        LexicalRules::LENIENT.set(driver.state_mut());
+        for event in lexical_map(&[("hosts", "a"), ("port", "8080"), ("hosts", "b")]) {
+            driver.emit(event).unwrap();
+        }
+    }
+    assert_eq!(
+        config,
+        Config {
+            hosts: vec!["a".into(), "b".into()],
+            other: vec!["kept".into()],
+            port: 8080,
+        }
+    );
 }
 
 #[test]

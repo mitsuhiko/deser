@@ -238,6 +238,35 @@ fn test_duplicate_keys() {
 }
 
 #[test]
+fn test_collections() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Config {
+        hosts: Vec<String>,
+        ports: Vec<u16>,
+        tags: Vec<String>,
+    }
+
+    // a single variable is a collection of one value, variables for the
+    // same key are collected and missing collections are empty
+    let config: Config = from_vars(
+        "APP_",
+        [("APP_HOSTS", "a"), ("APP_PORTS", "1"), ("APP_ports", "2")],
+    )
+    .unwrap();
+    assert_eq!(
+        config,
+        Config {
+            hosts: vec!["a".into()],
+            ports: vec![1, 2],
+            tags: vec![],
+        }
+    );
+    // indexes are sequences
+    let config: Config = from_vars("APP_", [("APP_HOSTS__0", "a"), ("APP_HOSTS__1", "b")]).unwrap();
+    assert_eq!(config.hosts, ["a", "b"]);
+}
+
+#[test]
 fn test_value_and_nested() {
     let err = from_vars::<Nested, _, _, _>("", [("DB", "x"), ("DB__POOL", "4")]).unwrap_err();
     assert_eq!(err.message(), "variable has a value and nested variables");
@@ -504,6 +533,11 @@ fn test_from_env() {
     let err = deser_env::var::<u32>("DESER_ENV_TEST_MISSING").unwrap_err();
     assert_eq!(err.kind(), ErrorKind::MissingField);
     assert_eq!(env_var(&err), Some("DESER_ENV_TEST_MISSING"));
+    // a variable is a collection of one value, a missing one is empty
+    let names: Vec<String> = deser_env::var("CARGO_PKG_NAME").unwrap();
+    assert_eq!(names, ["deser-env"]);
+    let missing: Vec<u32> = deser_env::var("DESER_ENV_TEST_MISSING").unwrap();
+    assert!(missing.is_empty());
     let err = deser_env::var::<u32>("CARGO_PKG_NAME").unwrap_err();
     assert_eq!(err.message(), "invalid value \"deser-env\", expected u32");
     assert_eq!(env_var(&err), Some("CARGO_PKG_NAME"));

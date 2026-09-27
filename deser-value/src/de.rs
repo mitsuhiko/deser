@@ -39,6 +39,9 @@ struct ValueSink<'a> {
     key: Option<Value>,
     // the key or value that is deserialized.
     slot: Option<Value>,
+    // `true` if the value is one of a key of a multimap that was given
+    // before
+    repeated: bool,
 }
 
 impl<'a> ValueSink<'a> {
@@ -49,6 +52,7 @@ impl<'a> ValueSink<'a> {
             meta: None,
             key: None,
             slot: None,
+            repeated: false,
         }
     }
 
@@ -59,7 +63,11 @@ impl<'a> ValueSink<'a> {
                 Building::Seq(ref mut seq) => seq.items.push(value),
                 Building::Map(ref mut map) => {
                     if let Some(key) = self.key.take() {
-                        map.inner.entries.insert(key, value);
+                        if std::mem::take(&mut self.repeated) {
+                            add_repeated(map, &key, value);
+                        } else {
+                            map.inner.entries.insert(key, value);
+                        }
                     }
                 }
                 Building::None => {}
@@ -76,7 +84,10 @@ impl<'a> ValueSink<'a> {
                     .take()
                     .ok_or_else(|| Error::new(ErrorKind::Unexpected, "missing map key"))?;
                 if map.contains_key(&key) {
-                    return Err(duplicate_key(&key));
+                    if !map.is_multimap() {
+                        return Err(duplicate_key(&key));
+                    }
+                    self.repeated = true;
                 }
                 self.key = Some(key);
             }
@@ -100,6 +111,23 @@ fn merge_map(target: &mut Map, mut map: Map) {
     entries.reserve(map.len());
     for (key, value) in std::mem::take(&mut map.inner.entries) {
         entries.insert(key, value);
+    }
+}
+
+/// Adds the value of a key of a multimap that was given before.
+///
+/// The values of the key become a sequence that is marked as repeated.
+#[cold]
+fn add_repeated(map: &mut Map, key: &Value, value: Value) {
+    let Some(existing) = map.inner.entries.get_mut(key) else {
+        return;
+    };
+    match existing.kind {
+        Kind::Seq(ref mut seq) if seq.is_repeated() => seq.items.push(value),
+        _ => {
+            let first = std::mem::replace(existing, Value::from(()));
+            *existing = Value::from(Seq::from(vec![first, value]).with_repeated(true));
+        }
     }
 }
 
@@ -142,7 +170,8 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         self.meta = capture_meta(state);
         self.building = Building::Map(
             Map::with_capacity(shape.len().unwrap_or(0).min(MAX_PREALLOC))
-                .with_order(shape.order()),
+                .with_order(shape.order())
+                .with_multimap(shape.is_multimap()),
         );
         Ok(())
     }
@@ -158,8 +187,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         self.meta = capture_meta(state);
         self.building = Building::Seq(
             Seq::with_capacity(shape.len().unwrap_or(0).min(MAX_PREALLOC))
-                .with_order(shape.order())
-                .with_repeated(shape.is_repeated()),
+                .with_order(shape.order()),
         );
         Ok(())
     }
@@ -206,12 +234,12 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     fn value_for_key(
         &mut self,
         key: &str,
-        _state: &mut State,
+        state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         match self.building {
             Building::Map(_) => self.flush(),
             Building::None if !matches!(self.out, Out::Seq(_)) => {
-                self.building = Building::Map(Map::new());
+                self.building = Building::Map(Map::new().with_multimap(state.is_multimap()));
             }
             _ => return Ok(None),
         }

@@ -86,10 +86,12 @@ impl DeserializerConfig {
     /// Sets what happens if more than one variable stands for the same key.
     ///
     /// This can only happen if names differ in case (`APP_PORT` and
-    /// `APP_port`) and [`Case::Upper`] makes them the same key.  The values
-    /// are passed on like a repeated key in a query string (see
-    /// [`ContainerShape::with_repeated`]), in the order of the names.  The
-    /// default is [`DuplicateKeys::Last`].
+    /// `APP_port`) and [`Case::Upper`] makes them the same key.  The key
+    /// is passed on once per variable, in the order of the names, like a
+    /// repeated key in a query string (maps are multimaps, see
+    /// [`ContainerShape::with_multimap`]).  Collections (like `Vec<T>`)
+    /// collect all values, for other types this decides which one is used.
+    /// The default is [`DuplicateKeys::Last`].
     pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
         self.duplicate_keys = policy;
         self
@@ -537,6 +539,18 @@ impl Tree {
         Container::Map(node.children.clone())
     }
 
+    /// Returns the shape of a map with children.
+    ///
+    /// Maps are multimaps, the keys of the children are given once per
+    /// variable.
+    fn map_shape(&self, children: &[usize]) -> ContainerShape {
+        let len = children
+            .iter()
+            .map(|&child| self.nodes[child].values.len().max(1))
+            .sum();
+        ContainerShape::new().with_len(len).with_multimap(true)
+    }
+
     /// Emits the events of the tree.
     fn emit<'a>(
         &self,
@@ -552,7 +566,7 @@ impl Tree {
         let root = &self.nodes[0];
         emit_as(
             driver,
-            Event::MapStart(ContainerShape::new().with_len(root.children.len())),
+            Event::MapStart(self.map_shape(&root.children)),
             None,
         )?;
         let mut stack = vec![Frame {
@@ -576,39 +590,51 @@ impl Tree {
             let is_map = frame.is_map;
             let node = &self.nodes[child];
             if is_map {
-                let key = match node.key {
-                    NodeKey::Name(ref text) | NodeKey::Index(_, ref text) => text,
-                    NodeKey::Root => unreachable!(),
-                };
-                emit_as(
-                    driver,
-                    Atom::Lexical(Text::borrowed(key.as_str())),
-                    node.name.as_ref(),
-                )?;
+                emit_key(driver, node)?;
             }
 
             match (&node.values[..], node.children.is_empty()) {
                 (&[var], true) => emit_value(driver, &vars[var])?,
-                (values, true) => {
-                    let shape = ContainerShape::new()
-                        .with_len(values.len())
-                        .with_repeated(true);
-                    emit_as(driver, Event::SeqStart(shape), node.name.as_ref())?;
-                    for &var in values {
+                // the key is emitted for every variable (maps are
+                // multimaps)
+                (&[first, ref rest @ ..], true) if is_map => {
+                    emit_value(driver, &vars[first])?;
+                    for &var in rest {
+                        emit_key(driver, node)?;
                         emit_value(driver, &vars[var])?;
                     }
-                    emit_as(driver, Event::SeqEnd, None)?;
                 }
+                // an index of a sequence given more than once
+                (values @ [_, _, ..], true) => {
+                    let policy = driver
+                        .state()
+                        .get::<DuplicateKeys>()
+                        .copied()
+                        .unwrap_or_default();
+                    let var = match policy {
+                        DuplicateKeys::First => values[0],
+                        DuplicateKeys::Error => {
+                            return Err(Error::new(
+                                ErrorKind::Unexpected,
+                                "more than one variable for the same index",
+                            )
+                            .with_attachment(EnvVar::new(vars[values[1]].name.clone())));
+                        }
+                        _ => values[values.len() - 1],
+                    };
+                    emit_value(driver, &vars[var])?;
+                }
+                // nodes have values or nested variables
+                ([], true) => unreachable!(),
                 ([], false) => {
                     let (children, is_map) = match self.container(node) {
                         Container::Map(children) => (children, true),
                         Container::Seq(children) => (children, false),
                     };
-                    let shape = ContainerShape::new().with_len(children.len());
                     let event = if is_map {
-                        Event::MapStart(shape)
+                        Event::MapStart(self.map_shape(&children))
                     } else {
-                        Event::SeqStart(shape)
+                        Event::SeqStart(ContainerShape::new().with_len(children.len()))
                     };
                     emit_as(driver, event, node.name.as_ref())?;
                     stack.push(Frame {
@@ -628,6 +654,19 @@ impl Tree {
         }
         Ok(())
     }
+}
+
+/// Emits the key of a node.
+fn emit_key(driver: &mut DeserializeDriver<'_, '_>, node: &Node) -> Result<(), Error> {
+    let key = match node.key {
+        NodeKey::Name(ref text) | NodeKey::Index(_, ref text) => text,
+        NodeKey::Root => unreachable!(),
+    };
+    emit_as(
+        driver,
+        Atom::Lexical(Text::borrowed(key.as_str())),
+        node.name.as_ref(),
+    )
 }
 
 /// Emits an event with the name of the variable it comes from.

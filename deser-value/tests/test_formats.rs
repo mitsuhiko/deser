@@ -269,34 +269,59 @@ fn test_repeated() {
     use deser::de::DeserializeDriver;
     use deser::{Atom, ContainerShape, Event};
 
-    // the values of a repeated key stay repeated in values
+    // the values of a repeated key of a multimap become a sequence marked
+    // as repeated
     let mut out = None::<Value>;
     {
         let mut driver = DeserializeDriver::new(&mut out);
         for event in [
-            Event::map_start(),
+            Event::MapStart(ContainerShape::new().with_multimap(true)),
             Atom::Lexical("page".into()).into(),
-            Event::SeqStart(ContainerShape::new().with_repeated(true)),
             Atom::Lexical("1".into()).into(),
+            Atom::Lexical("tag".into()).into(),
+            Atom::Lexical("x".into()).into(),
+            Atom::Lexical("page".into()).into(),
             Atom::Lexical("2".into()).into(),
-            Event::SeqEnd,
             Event::MapEnd,
         ] {
             driver.emit(event).unwrap();
         }
     }
     let value = out.unwrap();
+    assert!(value.as_map().unwrap().is_multimap());
     assert!(value["page"].as_seq().unwrap().is_repeated());
     assert!(value.clone()["page"].as_seq().unwrap().is_repeated());
+    assert_eq!(value["tag"].as_str(), Some("x"));
 
     #[derive(Debug, deser::Deserialize, PartialEq)]
     struct Query {
         page: u32,
+        tag: Vec<String>,
     }
     // a single value is picked from the repeated values (which is an error
-    // by default)
+    // by default), collections take all of them
     let err = from_value::<Query>(&value).unwrap_err();
-    assert_eq!(err.message(), "duplicate key");
-    let err = from_value::<Query>(&to_value(&value).unwrap()).unwrap_err();
-    assert_eq!(err.message(), "duplicate key");
+    assert_eq!(err.message(), "duplicate field `page`");
+
+    #[derive(Debug, deser::Deserialize, PartialEq)]
+    struct Pages {
+        page: Vec<u32>,
+        tag: Vec<String>,
+    }
+    assert_eq!(
+        from_value::<Pages>(&value).unwrap(),
+        Pages {
+            page: vec![1, 2],
+            tag: vec!["x".into()]
+        }
+    );
+
+    // duplicate keys of maps that are not multimaps are rejected
+    let mut out = None::<Value>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    driver.emit(Event::map_start()).unwrap();
+    driver.emit("a").unwrap();
+    driver.emit(1u64).unwrap();
+    driver.emit("a").unwrap();
+    assert!(driver.emit(2u64).is_err());
 }

@@ -756,7 +756,7 @@ impl Order {
 }
 
 const ORDER_MASK: u32 = 0b11;
-const REPEATED: u32 = 0b100;
+const MULTIMAP: u32 = 0b100;
 const UNKNOWN_LEN: usize = usize::MAX;
 
 /// Facts about a map or sequence.
@@ -767,8 +767,8 @@ const UNKNOWN_LEN: usize = usize::MAX;
 ///
 /// * [`order`](Self::order): how significant the order of the elements is.
 /// * [`len`](Self::len): the number of elements (entries for maps) if known.
-/// * [`is_repeated`](Self::is_repeated): the sequence holds the values of a
-///   key that was given more than once.
+/// * [`is_multimap`](Self::is_multimap): the keys of the map can be given
+///   more than once.
 ///
 /// ```
 /// use deser::{ContainerShape, Order};
@@ -824,48 +824,69 @@ impl ContainerShape {
         Order::from_bits(self.flags)
     }
 
-    /// Marks a sequence as the values of a key that was given more than
-    /// once.
+    /// Marks a map as a multimap: its keys can be given more than once.
     ///
-    /// Formats where keys can repeat (like query strings with `a=1&a=2`)
-    /// emit the values of a repeated key as a sequence with this flag.
-    /// Types that accept sequences (like `Vec<T>`) receive the values,
-    /// types that do not (like `u32`) receive a single value as
-    /// [`DuplicateKeys`](crate::de::DuplicateKeys) in the
-    /// [`State`](crate::State) decides: the last one, the first one or an
-    /// error (the default).  The sequence has to consist of atoms.
+    /// Formats where keys can repeat (like query strings with `a=1&a=2`,
+    /// the elements of XML or the columns of CSV files) emit their maps
+    /// with this flag and pass on every occurrence of a key as an entry of
+    /// its own, in the order of the input.  How repeated keys are resolved
+    /// is up to the type that receives the map:
+    ///
+    /// * The fields of derived structs and the values of maps whose type is
+    ///   a collection (like `Vec<T>` or `HashSet<T>`) collect the values
+    ///   of all occurrences of their key.  A key that is given once is a
+    ///   collection of one value and a key that is missing is an empty
+    ///   collection.
+    /// * Other fields and values receive a single value,
+    ///   [`DuplicateKeys`](crate::de::DuplicateKeys) in the
+    ///   [`State`](crate::State) decides which one: the last one, the first
+    ///   one or an error (the default).
+    ///
+    /// Types that do not know about multimaps receive the entries like
+    /// those of any other map.  See [`State::is_multimap`](crate::State::is_multimap).
     ///
     /// ```
-    /// use deser::de::{DeserializeDriver, DuplicateKeys};
-    /// use deser::{Atom, ContainerShape, Event};
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{Atom, ContainerShape, Deserialize, Event};
     ///
-    /// let mut out = None::<u32>;
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Query {
+    ///     tag: Vec<String>,
+    ///     page: u32,
+    ///     user: Vec<String>,
+    /// }
+    ///
+    /// let mut out = None::<Query>;
     /// let mut driver = DeserializeDriver::new(&mut out);
-    /// *driver.state_mut().get_mut::<DuplicateKeys>() = DuplicateKeys::Last;
-    /// driver.emit(Event::SeqStart(ContainerShape::new().with_repeated(true))).unwrap();
-    /// driver.emit(Atom::Lexical("1".into())).unwrap();
-    /// driver.emit(Atom::Lexical("2".into())).unwrap();
-    /// driver.emit(Event::SeqEnd).unwrap();
+    /// driver.emit(Event::MapStart(ContainerShape::new().with_multimap(true))).unwrap();
+    /// for (key, value) in [("tag", "a"), ("page", "1"), ("tag", "b")] {
+    ///     driver.emit(key).unwrap();
+    ///     driver.emit(Atom::Lexical(value.into())).unwrap();
+    /// }
+    /// driver.emit(Event::MapEnd).unwrap();
     /// drop(driver);
-    /// assert_eq!(out, Some(2));
+    /// assert_eq!(out, Some(Query {
+    ///     tag: vec!["a".into(), "b".into()],
+    ///     page: 1,
+    ///     user: vec![],
+    /// }));
     /// ```
     #[inline]
-    pub const fn with_repeated(mut self, yes: bool) -> ContainerShape {
+    pub const fn with_multimap(mut self, yes: bool) -> ContainerShape {
         if yes {
-            self.flags |= REPEATED;
+            self.flags |= MULTIMAP;
         } else {
-            self.flags &= !REPEATED;
+            self.flags &= !MULTIMAP;
         }
         self
     }
 
-    /// Returns `true` if the sequence holds the values of a key that was
-    /// given more than once.
+    /// Returns `true` if the keys of the map can be given more than once.
     ///
-    /// See [`with_repeated`](Self::with_repeated).
+    /// See [`with_multimap`](Self::with_multimap).
     #[inline]
-    pub const fn is_repeated(&self) -> bool {
-        self.flags & REPEATED != 0
+    pub const fn is_multimap(&self) -> bool {
+        self.flags & MULTIMAP != 0
     }
 }
 
@@ -880,8 +901,8 @@ impl fmt::Debug for ContainerShape {
         let mut s = f.debug_struct("ContainerShape");
         s.field("len", &self.len()).field("order", &self.order());
         // rare, only shown if set
-        if self.is_repeated() {
-            s.field("is_repeated", &true);
+        if self.is_multimap() {
+            s.field("is_multimap", &true);
         }
         s.finish()
     }
@@ -891,12 +912,12 @@ impl fmt::Debug for ContainerShape {
 #[cfg(test)]
 pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => Event::MapStart(ContainerShape::new().with_order(shape.order())),
-        Event::SeqStart(shape) => Event::SeqStart(
+        Event::MapStart(shape) => Event::MapStart(
             ContainerShape::new()
                 .with_order(shape.order())
-                .with_repeated(shape.is_repeated()),
+                .with_multimap(shape.is_multimap()),
         ),
+        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::new().with_order(shape.order())),
         event => event,
     }
 }

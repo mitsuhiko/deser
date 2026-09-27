@@ -92,7 +92,7 @@ pub mod __derive {
         untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{
-        FieldKeySink, NextField, StructFields, StructFinish, StructInfo, StructSink,
+        Collect, FieldKeySink, NextField, StructFields, StructFinish, StructInfo, StructSink,
         StructUpdateSink, UpdateFields,
     };
     pub use crate::de::mapped::mapped;

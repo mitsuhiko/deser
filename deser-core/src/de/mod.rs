@@ -787,6 +787,51 @@ pub trait Deserialize<'de>: Sized + Send {
         let _ = bytes;
         None
     }
+
+    /// Returns `true` if the type collects the values of a repeated key.
+    ///
+    /// This is `true` for collections like `Vec<T>` and sets (and
+    /// `Option`s of them).  In a multimap (see
+    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+    /// fields and map values of these types receive every value of their
+    /// key through [`__private_collect_into`](Self::__private_collect_into)
+    /// and [`__private_collect_update`](Self::__private_collect_update).
+    #[doc(hidden)]
+    fn __private_collects() -> bool {
+        false
+    }
+
+    /// Returns a sink for a value that is added to the collection in the
+    /// slot.
+    ///
+    /// The collection is created if the slot is empty.  This is only used
+    /// if [`__private_collects`](Self::__private_collects) returns `true`.
+    #[doc(hidden)]
+    fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        Self::deserialize_into(out)
+    }
+
+    /// Returns a sink for a value that is added to a collection that is
+    /// updated.
+    ///
+    /// The value that is added `first` replaces the collection.  This is
+    /// only used if [`__private_collects`](Self::__private_collects) returns
+    /// `true`.
+    #[doc(hidden)]
+    fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
+        let _ = first;
+        Self::deserialize_update(value)
+    }
+
+    /// Returns the value of a collection whose key is missing in a
+    /// multimap.
+    ///
+    /// Collections are empty then.  `None` means that the field is missing
+    /// (or has its [`initial_value`](Self::initial_value)).
+    #[doc(hidden)]
+    fn __private_collect_empty() -> Option<Self> {
+        None
+    }
 }
 
 /// A type that can be deserialized without borrowing.

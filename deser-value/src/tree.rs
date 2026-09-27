@@ -60,7 +60,11 @@ fn clone_leaf(kind: &Kind) -> Kind {
         }
         Kind::Map(map) => {
             debug_assert!(map.is_empty());
-            Kind::Map(Map::new().with_order(map.order()))
+            Kind::Map(
+                Map::new()
+                    .with_order(map.order())
+                    .with_multimap(map.is_multimap()),
+            )
         }
     }
 }
@@ -97,7 +101,9 @@ impl<'a> CloneFrame<'a> {
             iter: map.inner.entries.iter(),
             pending: None,
             key: None,
-            out: Map::with_capacity(map.len()).with_order(map.order()),
+            out: Map::with_capacity(map.len())
+                .with_order(map.order())
+                .with_multimap(map.is_multimap()),
             meta,
         }
     }
@@ -184,7 +190,11 @@ pub(crate) fn clone_seq(seq: &Seq) -> Kind {
 
 pub(crate) fn clone_map(map: &Map) -> Kind {
     if map.is_empty() {
-        return Kind::Map(Map::new().with_order(map.order()));
+        return Kind::Map(
+            Map::new()
+                .with_order(map.order())
+                .with_multimap(map.is_multimap()),
+        );
     }
     clone_tree(CloneFrame::map(map, None))
 }

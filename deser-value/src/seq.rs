@@ -10,12 +10,10 @@ use crate::value::{Kind, Value};
 /// A sequence of values.
 ///
 /// A sequence dereferences to a [`Vec`] of its values.  Additionally it
-/// holds the [`Order`] of the values and if it holds the values of a
-/// repeated key (see [`ContainerShape::with_repeated`]), which are passed on
-/// when the sequence is serialized.  They are not considered when sequences
-/// are compared.
-///
-/// [`ContainerShape::with_repeated`]: deser_core::ContainerShape::with_repeated
+/// holds the [`Order`] of the values, which is passed on when the sequence
+/// is serialized, and if it holds the values of a repeated key of a
+/// multimap (see [`Map::is_multimap`](crate::Map::is_multimap)).  They are
+/// not considered when sequences are compared.
 ///
 /// ```
 /// use deser::Order;
@@ -71,7 +69,9 @@ impl Seq {
 
     /// Returns `true` if the sequence holds the values of a repeated key.
     ///
-    /// See [`ContainerShape::with_repeated`](deser_core::ContainerShape::with_repeated).
+    /// Within a multimap (see [`Map::is_multimap`](crate::Map::is_multimap))
+    /// the values are passed on as the values of a key that is given more
+    /// than once.  Elsewhere this has no effect.
     pub fn is_repeated(&self) -> bool {
         self.repeated
     }
