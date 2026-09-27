@@ -141,15 +141,24 @@
 //!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
 //!   crate has no dependencies other than `deser`.
 mod buf;
+mod escape;
+mod pretty;
+mod ser;
+#[cfg(feature = "io")]
+mod ser_io;
+mod trailing;
+
+// These are generated from `deser-private-jsontemplate`.
 mod de;
 #[cfg(feature = "io")]
 mod io;
 mod parser;
-mod pretty;
 mod scan;
-mod ser;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, Trailing, from_slice, from_str};
+pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader, to_writer};
+pub use self::io::{StreamState, from_reader};
 pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};
+#[cfg(feature = "io")]
+pub use self::ser_io::to_writer;
+pub use self::trailing::Trailing;

@@ -1,5 +1,3 @@
-// @generated from deser-private-jsontemplate/src/scan.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
 //! Shared scanning utilities for the parser and serializer.
 
 /// Returns the index of the first byte at or after `pos` which needs special
@@ -24,6 +22,17 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     }
 
     while pos < input.len() && !ESCAPE[usize::from(input[pos])] {
+        pos += 1;
+    }
+    pos
+}
+
+/// Returns the index of the first byte at or after `pos` which needs special
+/// handling within a string in single quotes (a single quote, a backslash or
+/// a control character).
+#[cfg(json5)]
+pub fn skip_to_escape_single(input: &[u8], mut pos: usize) -> usize {
+    while pos < input.len() && !matches!(input[pos], b'\'' | b'\\' | 0x00..=0x1f) {
         pos += 1;
     }
     pos

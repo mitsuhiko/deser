@@ -6,10 +6,11 @@ use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
 use deser_core::ser::{self, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
+use crate::Trailing;
 use crate::buf::Buffer;
-use crate::de::Trailing;
+use crate::escape::find_escape;
 use crate::pretty::PrettyWriter;
-use crate::scan::{find_escape, skip_to_escape};
+use crate::scan::skip_to_escape;
 
 /// How the output is indented.
 ///

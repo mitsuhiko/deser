@@ -29,6 +29,16 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     pos
 }
 
+/// Returns the index of the first byte at or after `pos` which needs special
+/// handling within a string in single quotes (a single quote, a backslash or
+/// a control character).
+pub fn skip_to_escape_single(input: &[u8], mut pos: usize) -> usize {
+    while pos < input.len() && !matches!(input[pos], b'\'' | b'\\' | 0x00..=0x1f) {
+        pos += 1;
+    }
+    pos
+}
+
 pub const ONE_BYTES: u64 = u64::MAX / 255;
 
 /// Flags the bytes in a word (in little endian order) which need escaping.

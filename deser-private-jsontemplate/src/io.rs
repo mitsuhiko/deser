@@ -1,5 +1,3 @@
-// @generated from deser-private-jsontemplate/src/io.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
 //! Reading JSON streams.
 use std::io::Read;
 
@@ -10,21 +8,46 @@ use deser_core::{Error, ErrorKind, State};
 
 use crate::Trailing;
 use crate::de::{Deserializer, DeserializerConfig};
+#[cfg(comments)]
+use crate::parser::Cursor;
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
 use crate::scan::skip_to_escape;
+#[cfg(json5)]
+use crate::scan::skip_to_escape_single;
 
+#[cfg(not(json5))]
 fn is_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
+}
+
+/// Returns `true` for whitespace (the ASCII characters, not the Unicode
+/// whitespace).
+#[cfg(json5)]
+fn is_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\n' | b'\t' | b'\r' | 0x0b | 0x0c)
 }
 
 /// Returns where the next token starts and if it's there.
 ///
 /// At the end of the input there is no token.
+#[cfg(not(comments))]
 fn skip_whitespace(input: &[u8], pos: usize, _eof: bool) -> (usize, bool) {
     match input[pos..].iter().position(|&b| !is_whitespace(b)) {
         Some(index) => (pos + index, true),
         None => (input.len(), false),
     }
+}
+
+/// Returns where the next token starts and if it's there.
+///
+/// If the input ends within a comment (and more input follows), this is
+/// where the comment starts so that it's scanned again with more input,
+/// the token is not there.
+#[cfg(comments)]
+fn skip_whitespace(input: &[u8], pos: usize, eof: bool) -> (usize, bool) {
+    let mut cursor = Cursor::new_partial(input, pos, eof);
+    let token = cursor.parse_whitespace().is_some();
+    (cursor.pos, token)
 }
 
 /// The state of a JSON stream that is read.
@@ -56,6 +79,9 @@ struct Value {
     kind: ValueKind,
     depth: usize,
     in_string: bool,
+    // the string is in single quotes
+    #[cfg(json5)]
+    single: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +167,8 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
             };
             let (kind, depth, in_string) = match input[start] {
                 b'"' => (ValueKind::Structure, 0, true),
+                #[cfg(json5)]
+                b'\'' => (ValueKind::Structure, 0, true),
                 b'{' | b'[' => (ValueKind::Structure, 1, false),
                 // a value cannot start with these, the parser reports the
                 // error
@@ -159,6 +187,8 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                 kind,
                 depth,
                 in_string,
+                #[cfg(json5)]
+                single: input[start] == b'\'',
             })
         }
     };
@@ -167,6 +197,11 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
         ValueKind::Scalar => {
             let end = input[state.pos..].iter().position(|&b| match b {
                 b'{' | b'}' | b'[' | b']' | b',' | b':' | b'"' => true,
+                // a comment
+                #[cfg(comments)]
+                b'/' => true,
+                #[cfg(json5)]
+                b'\'' => true,
                 _ => is_whitespace(b),
             });
             match end {
@@ -217,8 +252,26 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
     let mut index = *pos;
     while index < input.len() {
         if value.in_string {
-            index = skip_to_escape(input, index);
+            #[cfg(not(json5))]
+            {
+                index = skip_to_escape(input, index);
+            }
+            #[cfg(json5)]
+            {
+                index = if value.single {
+                    skip_to_escape_single(input, index)
+                } else {
+                    skip_to_escape(input, index)
+                };
+            }
             let byte = input.get(index).copied();
+            // the closing single quote is handled like a double quote
+            #[cfg(json5)]
+            let byte = if value.single && byte == Some(b'\'') {
+                Some(b'"')
+            } else {
+                byte
+            };
             match byte {
                 Some(b'"') => {
                     value.in_string = false;
@@ -242,6 +295,31 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
             match input[index] {
                 b'"' => {
                     value.in_string = true;
+                    #[cfg(json5)]
+                    {
+                        value.single = false;
+                    }
+                }
+                #[cfg(json5)]
+                b'\'' => {
+                    value.in_string = true;
+                    value.single = true;
+                }
+                // comments are skipped, incomplete ones are scanned again
+                // with more input
+                #[cfg(comments)]
+                b'/' => {
+                    match skip_whitespace(input, index, false) {
+                        // not a comment, the parser reports the error
+                        (next, true) if next == index => index += 1,
+                        (next, token) => {
+                            index = next;
+                            if !token && next < input.len() {
+                                break;
+                            }
+                        }
+                    }
+                    continue;
                 }
                 b'{' | b'[' => value.depth += 1,
                 b'}' | b']' => {
@@ -281,7 +359,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 ///
 /// ```
 /// use deser::io::Reader;
-/// use deser_json::{DeserializerConfig, Trailing};
+/// use deser_private_jsontemplate::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
 /// let mut reader = Reader::new(&b"[1, 2]\n[3]\n"[..], LINES);
@@ -450,7 +528,7 @@ impl DeserializerConfig {
 /// [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_json::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+/// let value: Vec<u32> = deser_private_jsontemplate::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

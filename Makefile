@@ -36,6 +36,11 @@ MIRI_TEST_ARGS ?=
 # keep in sync with `rust-version` in Cargo.toml
 MSRV := 1.88
 
+# the template of the JSON dialect parsers is only the source of generated
+# code (see deser-private-jsontemplate/README.md), its tests are the ones
+# of the generated crates
+TEST_EXCLUDE := --exclude deser-private-jsontemplate
+
 # standalone workspaces that are not part of the main workspace
 EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version compile-times/miniserde-version
 
@@ -43,8 +48,8 @@ all: test
 
 test:
 	@$(RUN) -j 2 \
-		"test" "cargo test --workspace --all-features --tests" \
-		"doctest" "cargo test --workspace --all-features --doc"
+		"test" "cargo test --workspace $(TEST_EXCLUDE) --all-features --tests" \
+		"doctest" "cargo test --workspace $(TEST_EXCLUDE) --all-features --doc"
 
 miri-test:
 	@$(RUN) "miri:setup" "cargo +nightly miri setup"
@@ -59,11 +64,11 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
-	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv --all-targets --no-default-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv --all-targets --no-default-features"
 
 # uses its own target directory so it does not invalidate the regular builds
 msrv:
-	@$(RUN) "msrv" "rustup toolchain install $(MSRV) --profile minimal && CARGO_TARGET_DIR=target/msrv cargo +$(MSRV) test --workspace --all-features"
+	@$(RUN) "msrv" "rustup toolchain install $(MSRV) --profile minimal && CARGO_TARGET_DIR=target/msrv cargo +$(MSRV) test --workspace $(TEST_EXCLUDE) --all-features"
 
 doc:
 	@$(RUN) "doc" "cargo doc --all-features"
@@ -79,6 +84,7 @@ format-check:
 	@rustup component add rustfmt > /dev/null 2>&1
 	@$(RUN) -j 5 \
 		"fmt" "cargo fmt --all -- --check" \
+		"codegen" "python3 deser-private-jsontemplate/generate.py --check" \
 		"fmt:benchmark" "cd benchmark && cargo fmt --all -- --check" \
 		$(foreach ws,$(EXTRA_WORKSPACES),"fmt:$(notdir $(ws))" "cd $(ws) && cargo fmt --all -- --check")
 
@@ -89,6 +95,11 @@ lint:
 		"clippy:benchmark" "cd benchmark && RUSTC_BOOTSTRAP=1 cargo clippy --all-targets --all-features -- -D warnings" \
 		$(foreach ws,$(EXTRA_WORKSPACES),"clippy:$(notdir $(ws))" "cd $(ws) && cargo clippy --all-targets -- -D warnings")
 
+# regenerates the parsers of deser-json, deser-jsonc and deser-json5 from
+# deser-private-jsontemplate
+codegen:
+	@$(RUN) "codegen" --show-on-output "python3 deser-private-jsontemplate/generate.py"
+
 bench:
 	@$(RUN) "bench" --show-on-output "cd benchmark && RUSTC_BOOTSTRAP=1 cargo bench"
 
@@ -98,4 +109,4 @@ bench-versus:
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint bench bench-versus bench-compile-times
+.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint codegen bench bench-versus bench-compile-times

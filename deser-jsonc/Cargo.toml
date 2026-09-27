@@ -1,0 +1,34 @@
+[package]
+name = "deser-jsonc"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "JSONC (JSON with comments) support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "jsonc"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-jsonc"
+autotests = false
+
+[features]
+default = ["io"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["deser-core/io", "deser-json/io"]
+# faster UTF-8 validation (simdutf8) and faster serialization (see deser-json)
+speedups = ["dep:simdutf8", "deser-json/speedups"]
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+# the serializer (JSON is valid JSONC)
+deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
+simdutf8 = { version = "0.1.5", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-location = { version = "0.8.0", path = "../deser-location" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

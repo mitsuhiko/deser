@@ -10,6 +10,7 @@ use deser_core::{Error, ErrorKind, State};
 
 use crate::Trailing;
 use crate::de::{Deserializer, DeserializerConfig};
+use crate::parser::Cursor;
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
 use crate::scan::skip_to_escape;
 
@@ -19,12 +20,13 @@ fn is_whitespace(byte: u8) -> bool {
 
 /// Returns where the next token starts and if it's there.
 ///
-/// At the end of the input there is no token.
-fn skip_whitespace(input: &[u8], pos: usize, _eof: bool) -> (usize, bool) {
-    match input[pos..].iter().position(|&b| !is_whitespace(b)) {
-        Some(index) => (pos + index, true),
-        None => (input.len(), false),
-    }
+/// If the input ends within a comment (and more input follows), this is
+/// where the comment starts so that it's scanned again with more input,
+/// the token is not there.
+fn skip_whitespace(input: &[u8], pos: usize, eof: bool) -> (usize, bool) {
+    let mut cursor = Cursor::new_partial(input, pos, eof);
+    let token = cursor.parse_whitespace().is_some();
+    (cursor.pos, token)
 }
 
 /// The state of a JSON stream that is read.
@@ -167,6 +169,8 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
         ValueKind::Scalar => {
             let end = input[state.pos..].iter().position(|&b| match b {
                 b'{' | b'}' | b'[' | b']' | b',' | b':' | b'"' => true,
+                // a comment
+                b'/' => true,
                 _ => is_whitespace(b),
             });
             match end {
@@ -243,6 +247,21 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
                 b'"' => {
                     value.in_string = true;
                 }
+                // comments are skipped, incomplete ones are scanned again
+                // with more input
+                b'/' => {
+                    match skip_whitespace(input, index, false) {
+                        // not a comment, the parser reports the error
+                        (next, true) if next == index => index += 1,
+                        (next, token) => {
+                            index = next;
+                            if !token && next < input.len() {
+                                break;
+                            }
+                        }
+                    }
+                    continue;
+                }
                 b'{' | b'[' => value.depth += 1,
                 b'}' | b']' => {
                     value.depth -= 1;
@@ -281,7 +300,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 ///
 /// ```
 /// use deser::io::Reader;
-/// use deser_json::{DeserializerConfig, Trailing};
+/// use deser_jsonc::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
 /// let mut reader = Reader::new(&b"[1, 2]\n[3]\n"[..], LINES);
@@ -450,7 +469,7 @@ impl DeserializerConfig {
 /// [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_json::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+/// let value: Vec<u32> = deser_jsonc::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

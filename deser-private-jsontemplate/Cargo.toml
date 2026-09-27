@@ -1,0 +1,26 @@
+[package]
+name = "deser-private-jsontemplate"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The template of the JSON dialect parsers (not published)"
+license = "Apache-2.0"
+publish = false
+autotests = false
+
+# never documented, see the README
+[lib]
+doc = false
+
+[features]
+default = ["io"]
+io = ["deser-core/io", "deser-json/io"]
+speedups = ["dep:simdutf8", "deser-json/speedups"]
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
+simdutf8 = { version = "0.1.5", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

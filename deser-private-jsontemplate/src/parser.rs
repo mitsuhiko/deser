@@ -1,5 +1,3 @@
-// @generated from deser-private-jsontemplate/src/parser.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
 //! The JSON parser.
 //!
 //! The parser is a state machine which can be suspended between tokens: if
@@ -16,6 +14,8 @@ use deser_core::de::DeserializeDriver;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 
+#[cfg(json5)]
+use crate::scan::skip_to_escape_single;
 use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
 
 /// A parsed string.
@@ -287,6 +287,8 @@ impl Parser {
             validate_utf8: options.validate_utf8,
             hit_end: false,
             partial: (0, 0),
+            #[cfg(comments)]
+            eof,
         };
         match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
@@ -381,6 +383,20 @@ impl Parser {
                         cur.bump();
                         string!(start, Expect::Key)
                     }
+                    #[cfg(json5)]
+                    b'\'' => {
+                        cur.bump();
+                        string!(start, Expect::Key)
+                    }
+                    #[cfg(json5)]
+                    b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' | 0x80..=0xff => {
+                        cur.hit_end = false;
+                        let rv = cur.parse_identifier();
+                        if cur.hit_end && !eof {
+                            suspend!(start, Expect::Key)
+                        }
+                        rv?
+                    }
                     _ => return Err(token_error(base + start, "expected map key")),
                 };
                 match key {
@@ -471,6 +487,11 @@ impl Parser {
                         let first_digit = cur.next_or_nul();
                         cur.parse_integer(false, first_digit)
                     }
+                    #[cfg(json5)]
+                    b'+' => {
+                        let first_digit = cur.next_or_nul();
+                        cur.parse_integer(true, first_digit)
+                    }
                     byte => cur.parse_integer(true, byte),
                 };
                 // the number might continue
@@ -520,7 +541,12 @@ impl Parser {
                 cur.hit_end = false;
                 match byte {
                     b'"' => string_value!(start),
+                    #[cfg(json5)]
+                    b'\'' => string_value!(start),
                     b'0'..=b'9' | b'-' => number!(byte, start),
+                    // `+1`, `.5`, `Infinity` and `NaN`
+                    #[cfg(json5)]
+                    b'+' | b'.' | b'I' | b'N' => number!(byte, start),
                     b'n' | b't' | b'f' => {
                         let (rest, event): (&[u8], _) = match byte {
                             b'n' => (b"ull", Event::Atom(Atom::Null)),
@@ -579,11 +605,26 @@ impl Parser {
                 match next_byte!(Expect::AfterValue) {
                     b',' => {
                         cur.bump();
-                        if container == Container::Map {
-                            let byte = next_byte!(Expect::Key);
-                            key!(byte);
+                        #[cfg(not(trailing_commas))]
+                        {
+                            if container == Container::Map {
+                                let byte = next_byte!(Expect::Key);
+                                key!(byte);
+                            }
+                            continue 'value;
                         }
-                        continue 'value;
+                        // the container can end after the comma
+                        #[cfg(trailing_commas)]
+                        {
+                            let more = if container == Container::Map {
+                                open_map!()
+                            } else {
+                                open_seq!()
+                            };
+                            if more {
+                                continue 'value;
+                            }
+                        }
                     }
                     byte if byte == close => {
                         let start = cur.pos;
@@ -631,6 +672,21 @@ pub(crate) struct Cursor<'a> {
     hit_end: bool,
     // where an incomplete string continues (scan position and copy position)
     partial: (usize, usize),
+    // `true` if no input follows, a comment at the end is complete
+    #[cfg(comments)]
+    eof: bool,
+}
+
+/// A comment in the input (see [`Cursor::skip_comment`]).
+#[cfg(comments)]
+enum Comment {
+    /// The comment ends at the position.
+    End(usize),
+    /// The input ends within the comment.
+    Incomplete,
+    /// The byte at the position is invalid (it's not a comment or the
+    /// comment is not valid UTF-8).
+    Invalid(usize),
 }
 
 impl<'a> Cursor<'a> {
@@ -639,9 +695,22 @@ impl<'a> Cursor<'a> {
         Cursor {
             input,
             pos,
-            validate_utf8: false,
+            //# comments are always validated, for strings this is a no-op
+            validate_utf8: cfg!(comments),
             hit_end: false,
             partial: (0, 0),
+            #[cfg(comments)]
+            eof: true,
+        }
+    }
+
+    /// Creates a cursor to skip whitespace in an input that more input
+    /// might follow.
+    #[cfg(all(comments, feature = "io"))]
+    pub(crate) fn new_partial(input: &'a [u8], pos: usize, eof: bool) -> Cursor<'a> {
+        Cursor {
+            eof,
+            ..Cursor::new(input, pos)
         }
     }
 
@@ -687,8 +756,23 @@ impl<'a> Cursor<'a> {
             }
         };
 
+        // strings in single quotes end at a single quote
+        #[cfg(json5)]
+        let single = self.input[start] == b'\'';
+
         loop {
-            self.pos = skip_to_escape(self.input, self.pos);
+            #[cfg(not(json5))]
+            {
+                self.pos = skip_to_escape(self.input, self.pos);
+            }
+            #[cfg(json5)]
+            {
+                self.pos = if single {
+                    skip_to_escape_single(self.input, self.pos)
+                } else {
+                    skip_to_escape(self.input, self.pos)
+                };
+            }
             if self.pos == self.input.len() {
                 self.hit_end = true;
                 self.partial = (self.pos, copied);
@@ -698,6 +782,9 @@ impl<'a> Cursor<'a> {
                 ));
             }
             let byte = self.input[self.pos];
+            // the closing single quote is handled like a double quote
+            #[cfg(json5)]
+            let byte = if single && byte == b'\'' { b'"' } else { byte };
             match byte {
                 b'"' => {
                     if buffer.is_empty() {
@@ -724,6 +811,9 @@ impl<'a> Cursor<'a> {
                     }
                     copied = self.pos;
                 }
+                // control characters other than line breaks are allowed
+                #[cfg(json5)]
+                byte if byte != b'\n' && byte != b'\r' => self.pos += 1,
                 _ => {
                     return Err(Error::new(
                         ErrorKind::Unexpected,
@@ -821,10 +911,107 @@ impl<'a> Cursor<'a> {
 
                 buffer.extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
             }
+            #[cfg(json5)]
+            b'\'' => buffer.push(b'\''),
+            #[cfg(json5)]
+            b'v' => buffer.push(b'\x0b'),
+            // `\0` must not be followed by a digit
+            #[cfg(json5)]
+            b'0' => match self.peek() {
+                Some(b'0'..=b'9') => return Err(invalid_escape()),
+                Some(_) => buffer.push(b'\0'),
+                None => return Err(eof_error()),
+            },
+            #[cfg(json5)]
+            b'x' => {
+                let mut n = 0;
+                for _ in 0..2 {
+                    match char::from(self.next_or_eof()?).to_digit(16) {
+                        Some(digit) => n = n * 16 + digit,
+                        None => {
+                            return Err(Error::new(ErrorKind::Unexpected, "invalid hex escape"));
+                        }
+                    }
+                }
+                let c = char::from_u32(n).unwrap();
+                buffer.extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
+            }
+            // escaped line breaks are removed
+            #[cfg(json5)]
+            b'\n' => {}
+            #[cfg(json5)]
+            b'\r' => match self.peek() {
+                Some(b'\n') => self.bump(),
+                Some(_) => {}
+                None => return Err(eof_error()),
+            },
+            #[cfg(json5)]
+            0xe2 => match self.input.get(self.pos..self.pos + 2) {
+                // the line and paragraph separators
+                Some([0x80, 0xa8 | 0xa9]) => self.pos += 2,
+                Some(_) => buffer.push(0xe2),
+                None => {
+                    self.hit_end = true;
+                    return Err(eof_error());
+                }
+            },
+            #[cfg(json5)]
+            b'1'..=b'9' => return Err(invalid_escape()),
+            // other characters stand for themselves.  The rest of a
+            // character that is not ASCII is copied with the string.
+            #[cfg(json5)]
+            byte => buffer.push(byte),
+            #[cfg(not(json5))]
             _ => return Err(invalid_escape()),
         }
 
         Ok(())
+    }
+
+    /// Parses an identifier (a map key without quotes).
+    #[cfg(json5)]
+    fn parse_identifier<'b>(&mut self) -> Result<Str<'a, 'b>, Error> {
+        let start = self.pos;
+        loop {
+            match self.peek() {
+                Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'$') => self.bump(),
+                Some(byte @ 0x80..=0xff) => {
+                    let len = match byte {
+                        0xc0..=0xdf => 2,
+                        0xe0..=0xef => 3,
+                        _ => 4,
+                    };
+                    let Some(bytes) = self.input.get(self.pos..self.pos + len) else {
+                        self.hit_end = true;
+                        return Err(eof_error());
+                    };
+                    // letters, digits and the zero width (non-)joiner
+                    match str::from_utf8(bytes).ok().and_then(|s| s.chars().next()) {
+                        Some(c) if c.is_alphanumeric() || c == '\u{200c}' || c == '\u{200d}' => {
+                            self.pos += len;
+                        }
+                        Some(_) => break,
+                        None => {
+                            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8"));
+                        }
+                    }
+                }
+                Some(b'\\') => {
+                    return Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "escapes in identifiers are not supported",
+                    ));
+                }
+                _ => break,
+            }
+        }
+        if self.pos == start {
+            return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
+        }
+        // SAFETY: the identifier is ASCII or was validated above
+        Ok(Str::Borrowed(unsafe {
+            str::from_utf8_unchecked(&self.input[start..self.pos])
+        }))
     }
 
     fn decode_hex_escape(&mut self) -> Result<u16, Error> {
@@ -864,6 +1051,37 @@ impl<'a> Cursor<'a> {
             }
             match input.get(pos) {
                 Some(b' ' | b'\n' | b'\t' | b'\r') => pos += 1,
+                // vertical tab and form feed
+                #[cfg(json5)]
+                Some(0x0b | 0x0c) => pos += 1,
+                #[cfg(comments)]
+                Some(b'/') => match self.skip_comment(pos) {
+                    Comment::End(end) => pos = end,
+                    // the comment is scanned again with more input
+                    Comment::Incomplete => {
+                        self.pos = pos;
+                        self.hit_end = true;
+                        return None;
+                    }
+                    Comment::Invalid(pos) => {
+                        self.pos = pos;
+                        return Some(input[pos]);
+                    }
+                },
+                #[cfg(json5)]
+                Some(&byte) if byte >= 0x80 => match unicode_whitespace(&input[pos..]) {
+                    Some(len) => pos += len,
+                    // the character is completed with more input
+                    None if input.len() - pos < 3 && !self.eof => {
+                        self.pos = pos;
+                        self.hit_end = true;
+                        return None;
+                    }
+                    None => {
+                        self.pos = pos;
+                        return Some(byte);
+                    }
+                },
                 Some(&byte) => {
                     self.pos = pos;
                     return Some(byte);
@@ -875,6 +1093,38 @@ impl<'a> Cursor<'a> {
                 }
             }
         }
+    }
+
+    /// Skips the comment at `pos` (which is at a slash).
+    #[cfg(comments)]
+    #[cold]
+    fn skip_comment(&self, pos: usize) -> Comment {
+        let input = self.input;
+        let end = match input.get(pos + 1) {
+            Some(b'/') => match input[pos + 2..].iter().position(|&b| b == b'\n') {
+                Some(index) => pos + 2 + index + 1,
+                None if self.eof => input.len(),
+                None => return Comment::Incomplete,
+            },
+            // an unterminated comment at the end is reported as the end
+            // of the input
+            Some(b'*') => match input[pos + 2..].windows(2).position(|w| w == b"*/") {
+                Some(index) => pos + 2 + index + 2,
+                None => return Comment::Incomplete,
+            },
+            Some(_) => return Comment::Invalid(pos),
+            None if self.eof => return Comment::Invalid(pos),
+            None => return Comment::Incomplete,
+        };
+        // bytes outside of strings are validated here
+        let comment = &input[pos..end];
+        if self.validate_utf8
+            && !is_ascii(comment)
+            && let Err(err) = str::from_utf8(comment)
+        {
+            return Comment::Invalid(pos + err.valid_up_to());
+        }
+        Comment::End(end)
     }
 
     fn parse_ident(&mut self, ident: &[u8]) -> Result<(), Error> {
@@ -900,8 +1150,33 @@ impl<'a> Cursor<'a> {
                     ErrorKind::Unexpected,
                     "only a single leading 0 is allowed",
                 )),
+                #[cfg(json5)]
+                b'x' | b'X' => self.parse_hex(nonnegative),
                 _ => self.parse_number(nonnegative, 0),
             },
+            // a leading decimal point
+            #[cfg(json5)]
+            b'.' => match self.peek_or_nul() {
+                b'0'..=b'9' => {
+                    self.pos -= 1;
+                    self.parse_decimal(nonnegative, 0, 0)
+                }
+                _ => Err(Error::new(ErrorKind::Unexpected, "expected a digit")),
+            },
+            #[cfg(json5)]
+            b'I' => {
+                self.parse_ident(b"nfinity")?;
+                Ok(Number::F64(if nonnegative {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }))
+            }
+            #[cfg(json5)]
+            b'N' => {
+                self.parse_ident(b"aN")?;
+                Ok(Number::F64(f64::NAN))
+            }
             c @ b'1'..=b'9' => {
                 let mut res = u64::from(c - b'0');
 
@@ -1044,12 +1319,16 @@ impl<'a> Cursor<'a> {
         self.bump();
 
         let mut exponent = starting_exp;
+        #[cfg(not(json5))]
         let mut at_least_one_digit = false;
         let mut overflowed = false;
         while let c @ b'0'..=b'9' = self.peek_or_nul() {
             self.bump();
             let digit = u64::from(c - b'0');
-            at_least_one_digit = true;
+            #[cfg(not(json5))]
+            {
+                at_least_one_digit = true;
+            }
 
             if overflow!(significand * 10 + digit, u64::MAX) {
                 // The next multiply/add would overflow, so just ignore all
@@ -1065,6 +1344,8 @@ impl<'a> Cursor<'a> {
             exponent -= 1;
         }
 
+        //# JSON5 allows a trailing decimal point
+        #[cfg(not(json5))]
         if !at_least_one_digit {
             return Err(Error::new(ErrorKind::Unexpected, "expected a digit"));
         }
@@ -1086,6 +1367,32 @@ impl<'a> Cursor<'a> {
                     },
                 )
             }
+        }
+    }
+
+    /// Parses a hexadecimal integer, the cursor is at the `x`.
+    #[cfg(json5)]
+    fn parse_hex(&mut self, nonnegative: bool) -> Result<Number<'a>, Error> {
+        self.bump();
+        let mut value = 0u64;
+        let mut digits = 0;
+        while let Some(digit) = char::from(self.peek_or_nul()).to_digit(16) {
+            self.bump();
+            digits += 1;
+            value = value
+                .checked_mul(16)
+                .and_then(|value| value.checked_add(u64::from(digit)))
+                .ok_or_else(number_out_of_range)?;
+        }
+        if digits == 0 {
+            return Err(Error::new(ErrorKind::Unexpected, "expected a hex digit"));
+        }
+        if nonnegative {
+            Ok(Number::U64(value))
+        } else if value <= 1 << 63 {
+            Ok(Number::I64((value as i64).wrapping_neg()))
+        } else {
+            Err(number_out_of_range())
         }
     }
 
@@ -1284,8 +1591,34 @@ fn emit_literal<'i, O: Out<'i>>(
 ) -> Result<(), Error> {
     // SAFETY: numbers only consist of ASCII characters
     let text = unsafe { str::from_utf8_unchecked(&input[start..end]) };
+    #[cfg(json5)]
+    let normalized = json_number(text);
+    #[cfg(json5)]
+    let text = normalized.as_deref().unwrap_or(text);
     let number = ExactNumber::new(text, value);
     out.emit(Atom::Ext(ExtValue::borrowed_value::<ExactNumber>(&number)))
+}
+
+/// Returns the text of a number in the syntax of JSON if it differs.
+///
+/// Numbers can have a leading `+` and leading or trailing decimal points
+/// (hexadecimal numbers are integers and never passed on as text).
+#[cfg(json5)]
+fn json_number(text: &str) -> Option<String> {
+    let (sign, rest) = match text.as_bytes()[0] {
+        b'+' => ("", &text[1..]),
+        b'-' => ("-", &text[1..]),
+        _ => ("", text),
+    };
+    let (int, frac) = rest.split_once('.').unwrap_or((rest, ""));
+    let exp_start = frac.find(['e', 'E']).unwrap_or(frac.len());
+    let (frac, exp) = frac.split_at(exp_start);
+    if !text.starts_with('+') && !int.is_empty() && (!frac.is_empty() || !rest.contains('.')) {
+        return None;
+    }
+    let int = if int.is_empty() { "0" } else { int };
+    let dot = if frac.is_empty() { "" } else { "." };
+    Some(format!("{sign}{int}{dot}{frac}{exp}"))
 }
 
 /// Emits an integer that does not fit into 64 bits as extension value.
@@ -1298,6 +1631,24 @@ fn emit_big_int<'i, O: Out<'i>>(out: &mut O, text: &str) -> Result<(), Error> {
     } else {
         let value: u128 = text.parse().unwrap();
         out.emit(Atom::Ext(ExtValue::borrowed(&value)))
+    }
+}
+
+/// Returns the length of the whitespace character at the start of the
+/// bytes if it's not ASCII.
+///
+/// These are the characters of the Unicode category Zs, the line and
+/// paragraph separators and the byte order mark.
+#[cfg(json5)]
+fn unicode_whitespace(bytes: &[u8]) -> Option<usize> {
+    match bytes {
+        [0xc2, 0xa0, ..] => Some(2),
+        [0xe1, 0x9a, 0x80, ..]
+        | [0xe2, 0x80, 0x80..=0x8a | 0xa8 | 0xa9 | 0xaf, ..]
+        | [0xe2, 0x81, 0x9f, ..]
+        | [0xe3, 0x80, 0x80, ..]
+        | [0xef, 0xbb, 0xbf, ..] => Some(3),
+        _ => None,
     }
 }
 
@@ -1416,6 +1767,7 @@ mod tests {
             "{\"a\" 1}",
             "[tru]",
             "\"abc",
+            #[cfg(not(trailing_commas))]
             "[1,]",
             "{\"a\": \"\\x\"}",
         ] {
@@ -1428,5 +1780,166 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Checks that the inputs parse like the equivalent JSON, in one go
+    /// and in chunks.
+    #[cfg(any(comments, json5))]
+    fn assert_like_json(inputs: &[(&str, &str)]) {
+        for (input, json) in inputs {
+            let expected = parse_complete(json).unwrap();
+            assert_eq!(parse_complete(input), Ok(expected.clone()), "{input}");
+            for size in 1..=input.len() {
+                assert_eq!(
+                    parse_chunked(input, size),
+                    Ok(expected.clone()),
+                    "{input} size {size}"
+                );
+            }
+        }
+    }
+
+    /// Checks that the inputs fail with the given errors, in one go and
+    /// in chunks.
+    #[cfg(any(comments, json5))]
+    fn assert_errors(inputs: &[(&str, &str)]) {
+        for (input, msg) in inputs {
+            assert_eq!(parse_complete(input).unwrap_err(), *msg, "{input}");
+            for size in 1..=input.len() {
+                assert_eq!(
+                    parse_chunked(input, size).unwrap_err(),
+                    *msg,
+                    "{input} size {size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(comments)]
+    fn test_comments() {
+        assert_like_json(&[
+            ("// c\n1", "1"),
+            ("/* c */ 1 /* c */", "1"),
+            ("1 // c", "1"),
+            ("[1, /* a\n * b */ 2 // c\n, 3]", "[1, 2, 3]"),
+            ("{/**/\"a\"/**/:/**/1/**/}", "{\"a\": 1}"),
+            (
+                "[\"// no comment\", \"/* no comment */\"]",
+                "[\"// no comment\", \"/* no comment */\"]",
+            ),
+            ("/* ä */ [/* 😀 */]", "[]"),
+        ]);
+        assert_errors(&[
+            ("[1 /* c", "unexpected end of file"),
+            ("[1 / 2]", "expected a comma"),
+            ("[/", "unexpected character"),
+            ("[1 /", "expected a comma"),
+            ("/x", "unexpected character"),
+        ]);
+    }
+
+    #[test]
+    #[cfg(trailing_commas)]
+    fn test_trailing_commas() {
+        assert_like_json(&[
+            ("[1,]", "[1]"),
+            ("[1, 2 , ]", "[1, 2]"),
+            ("{\"a\": 1,}", "{\"a\": 1}"),
+            ("[[1,],{\"a\":[],},]", "[[1],{\"a\":[]}]"),
+        ]);
+        assert_errors(&[
+            ("[,]", "unexpected comma"),
+            ("[1,,]", "unexpected comma"),
+            ("{,}", "expected map key"),
+            ("{\"a\": 1,,}", "expected map key"),
+        ]);
+    }
+
+    #[test]
+    #[cfg(json5)]
+    fn test_json5() {
+        assert_like_json(&[
+            // keys
+            ("{a: 1, $b_2: 2, _: 3}", r#"{"a": 1, "$b_2": 2, "_": 3}"#),
+            (
+                "{Infinity: 1, null: 2, true: 3}",
+                r#"{"Infinity": 1, "null": 2, "true": 3}"#,
+            ),
+            ("{ä: 1, a\u{200d}b: 2}", "{\"ä\": 1, \"a\u{200d}b\": 2}"),
+            ("{'a': 1}", r#"{"a": 1}"#),
+            // strings
+            ("'a\"b'", r#""a\"b""#),
+            ("\"a'b\"", r#""a'b""#),
+            (r"'a\'b'", r#""a'b""#),
+            (r"'\v\0\x41\a\ä'", r#""\u000b\u0000Aaä""#),
+            ("'a\\\nb\\\r\nc\\\rd\\\u{2028}e'", r#""abcde""#),
+            ("'a\tb'", r#""a\tb""#),
+            // numbers
+            (
+                "[0x1F, 0XfF, -0x10, +1, +1.5, .5, -.5, 5., 5.e1]",
+                "[31, 255, -16, 1, 1.5, 0.5, -0.5, 5.0, 5e1]",
+            ),
+            (
+                "[0xFFFFFFFFFFFFFFFF, -0x8000000000000000]",
+                "[18446744073709551615, -9223372036854775808]",
+            ),
+            // whitespace
+            ("\u{feff}[1,\u{a0}2\u{2028}\u{3000}\x0b\x0c]", "[1, 2]"),
+        ]);
+        assert_errors(&[
+            ("{1: 2}", "expected map key"),
+            ("{a b: 1}", "expected colon"),
+            ("{\\u0061: 1}", "expected map key"),
+            ("{a\\u0061: 1}", "escapes in identifiers are not supported"),
+            ("[a]", "unexpected character"),
+            ("'a", "unexpected end of string"),
+            ("'a\nb'", "unexpected character in string"),
+            (r"'\01'", "invalid escape in string"),
+            (r"'\1'", "invalid escape in string"),
+            (r"'\xZ0'", "invalid hex escape"),
+            ("[.]", "expected a digit"),
+            ("[0x]", "expected a hex digit"),
+            ("0x10000000000000000", "number out of range"),
+            ("-0x8000000000000001", "number out of range"),
+            ("[Inf]", "unexpected character"),
+            ("\u{2029}x", "unexpected character"),
+        ]);
+    }
+
+    #[test]
+    #[cfg(json5)]
+    fn test_json5_number_text() {
+        for (text, json) in [
+            ("+1.5", Some("1.5")),
+            ("-.5e3", Some("-0.5e3")),
+            (".5", Some("0.5")),
+            ("5.", Some("5")),
+            ("5.e1", Some("5e1")),
+            ("+5.E1", Some("5E1")),
+            ("1.5e3", None),
+            ("-1", None),
+        ] {
+            assert_eq!(json_number(text).as_deref(), json, "{text}");
+        }
+    }
+
+    #[test]
+    #[cfg(json5)]
+    fn test_json5_non_finite() {
+        let events = parse_complete("[Infinity, -Infinity, +Infinity, NaN, -NaN]").unwrap();
+        let floats: Vec<f64> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Atom(Atom::F64(value)) => Some(*value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(floats.len(), 5);
+        assert_eq!(
+            floats[..3],
+            [f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY]
+        );
+        assert!(floats[3].is_nan() && floats[4].is_nan());
     }
 }

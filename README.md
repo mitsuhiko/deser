@@ -375,6 +375,8 @@ Core:
 Formats:
 
 * [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): JSON
+* [deser-jsonc](https://github.com/mitsuhiko/deser/tree/main/deser-jsonc): JSONC (JSON with comments)
+* [deser-json5](https://github.com/mitsuhiko/deser/tree/main/deser-json5): JSON5
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR

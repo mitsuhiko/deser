@@ -287,6 +287,7 @@ impl Parser {
             validate_utf8: options.validate_utf8,
             hit_end: false,
             partial: (0, 0),
+            eof,
         };
         match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
@@ -579,11 +580,15 @@ impl Parser {
                 match next_byte!(Expect::AfterValue) {
                     b',' => {
                         cur.bump();
-                        if container == Container::Map {
-                            let byte = next_byte!(Expect::Key);
-                            key!(byte);
+                        // the container can end after the comma
+                        let more = if container == Container::Map {
+                            open_map!()
+                        } else {
+                            open_seq!()
+                        };
+                        if more {
+                            continue 'value;
                         }
-                        continue 'value;
                     }
                     byte if byte == close => {
                         let start = cur.pos;
@@ -631,6 +636,19 @@ pub(crate) struct Cursor<'a> {
     hit_end: bool,
     // where an incomplete string continues (scan position and copy position)
     partial: (usize, usize),
+    // `true` if no input follows, a comment at the end is complete
+    eof: bool,
+}
+
+/// A comment in the input (see [`Cursor::skip_comment`]).
+enum Comment {
+    /// The comment ends at the position.
+    End(usize),
+    /// The input ends within the comment.
+    Incomplete,
+    /// The byte at the position is invalid (it's not a comment or the
+    /// comment is not valid UTF-8).
+    Invalid(usize),
 }
 
 impl<'a> Cursor<'a> {
@@ -639,9 +657,20 @@ impl<'a> Cursor<'a> {
         Cursor {
             input,
             pos,
-            validate_utf8: false,
+            validate_utf8: true,
             hit_end: false,
             partial: (0, 0),
+            eof: true,
+        }
+    }
+
+    /// Creates a cursor to skip whitespace in an input that more input
+    /// might follow.
+    #[cfg(feature = "io")]
+    pub(crate) fn new_partial(input: &'a [u8], pos: usize, eof: bool) -> Cursor<'a> {
+        Cursor {
+            eof,
+            ..Cursor::new(input, pos)
         }
     }
 
@@ -864,6 +893,19 @@ impl<'a> Cursor<'a> {
             }
             match input.get(pos) {
                 Some(b' ' | b'\n' | b'\t' | b'\r') => pos += 1,
+                Some(b'/') => match self.skip_comment(pos) {
+                    Comment::End(end) => pos = end,
+                    // the comment is scanned again with more input
+                    Comment::Incomplete => {
+                        self.pos = pos;
+                        self.hit_end = true;
+                        return None;
+                    }
+                    Comment::Invalid(pos) => {
+                        self.pos = pos;
+                        return Some(input[pos]);
+                    }
+                },
                 Some(&byte) => {
                     self.pos = pos;
                     return Some(byte);
@@ -875,6 +917,37 @@ impl<'a> Cursor<'a> {
                 }
             }
         }
+    }
+
+    /// Skips the comment at `pos` (which is at a slash).
+    #[cold]
+    fn skip_comment(&self, pos: usize) -> Comment {
+        let input = self.input;
+        let end = match input.get(pos + 1) {
+            Some(b'/') => match input[pos + 2..].iter().position(|&b| b == b'\n') {
+                Some(index) => pos + 2 + index + 1,
+                None if self.eof => input.len(),
+                None => return Comment::Incomplete,
+            },
+            // an unterminated comment at the end is reported as the end
+            // of the input
+            Some(b'*') => match input[pos + 2..].windows(2).position(|w| w == b"*/") {
+                Some(index) => pos + 2 + index + 2,
+                None => return Comment::Incomplete,
+            },
+            Some(_) => return Comment::Invalid(pos),
+            None if self.eof => return Comment::Invalid(pos),
+            None => return Comment::Incomplete,
+        };
+        // bytes outside of strings are validated here
+        let comment = &input[pos..end];
+        if self.validate_utf8
+            && !is_ascii(comment)
+            && let Err(err) = str::from_utf8(comment)
+        {
+            return Comment::Invalid(pos + err.valid_up_to());
+        }
+        Comment::End(end)
     }
 
     fn parse_ident(&mut self, ident: &[u8]) -> Result<(), Error> {
@@ -1416,7 +1489,6 @@ mod tests {
             "{\"a\" 1}",
             "[tru]",
             "\"abc",
-            "[1,]",
             "{\"a\": \"\\x\"}",
         ] {
             let expected = parse_complete(input).unwrap_err();
@@ -1428,5 +1500,75 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Checks that the inputs parse like the equivalent JSON, in one go
+    /// and in chunks.
+    fn assert_like_json(inputs: &[(&str, &str)]) {
+        for (input, json) in inputs {
+            let expected = parse_complete(json).unwrap();
+            assert_eq!(parse_complete(input), Ok(expected.clone()), "{input}");
+            for size in 1..=input.len() {
+                assert_eq!(
+                    parse_chunked(input, size),
+                    Ok(expected.clone()),
+                    "{input} size {size}"
+                );
+            }
+        }
+    }
+
+    /// Checks that the inputs fail with the given errors, in one go and
+    /// in chunks.
+    fn assert_errors(inputs: &[(&str, &str)]) {
+        for (input, msg) in inputs {
+            assert_eq!(parse_complete(input).unwrap_err(), *msg, "{input}");
+            for size in 1..=input.len() {
+                assert_eq!(
+                    parse_chunked(input, size).unwrap_err(),
+                    *msg,
+                    "{input} size {size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_comments() {
+        assert_like_json(&[
+            ("// c\n1", "1"),
+            ("/* c */ 1 /* c */", "1"),
+            ("1 // c", "1"),
+            ("[1, /* a\n * b */ 2 // c\n, 3]", "[1, 2, 3]"),
+            ("{/**/\"a\"/**/:/**/1/**/}", "{\"a\": 1}"),
+            (
+                "[\"// no comment\", \"/* no comment */\"]",
+                "[\"// no comment\", \"/* no comment */\"]",
+            ),
+            ("/* ä */ [/* 😀 */]", "[]"),
+        ]);
+        assert_errors(&[
+            ("[1 /* c", "unexpected end of file"),
+            ("[1 / 2]", "expected a comma"),
+            ("[/", "unexpected character"),
+            ("[1 /", "expected a comma"),
+            ("/x", "unexpected character"),
+        ]);
+    }
+
+    #[test]
+    fn test_trailing_commas() {
+        assert_like_json(&[
+            ("[1,]", "[1]"),
+            ("[1, 2 , ]", "[1, 2]"),
+            ("{\"a\": 1,}", "{\"a\": 1}"),
+            ("[[1,],{\"a\":[],},]", "[[1],{\"a\":[]}]"),
+        ]);
+        assert_errors(&[
+            ("[,]", "unexpected comma"),
+            ("[1,,]", "unexpected comma"),
+            ("{,}", "expected map key"),
+            ("{\"a\": 1,,}", "expected map key"),
+        ]);
     }
 }
