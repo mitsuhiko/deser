@@ -56,6 +56,12 @@ is a library, in a binary only the code that is used would be compiled.
   serializes structs 3%-8% slower.
 * **Updates** (`deserialize_update`) cost 0.35s for the 100 types even if
   they are not used, as every struct implements them.
+* **`finish`** of derived structs is the largest function of the
+  deserialization (12% of the IR).  Checking the required fields on the
+  sink before they are taken (instead of matching the taken values) makes
+  it a quarter larger.  Passing atoms by reference to the setters of unit
+  enums (so that the derived code does not drop them) saves 0.7% of the IR
+  but costs an indirect call per value.
 * **Every type** costs something even if its derived code is small: its
   sink is boxed, dropped and has a vtable, and each field type is
   instantiated for the generic helpers of the derive.  The unit enums
