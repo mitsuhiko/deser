@@ -368,7 +368,17 @@ impl<'a> Scanner<'a> {
         token
     }
 
+    #[inline]
     fn fetch_more_tokens(&mut self) -> Result<(), Error> {
+        // a token is available and no key can be inserted before it
+        if !self.tokens.is_empty() && self.possible_keys.is_empty() && self.stale_keys.is_empty() {
+            return Ok(());
+        }
+        self.fetch_more_tokens_slow()
+    }
+
+    #[inline(never)]
+    fn fetch_more_tokens_slow(&mut self) -> Result<(), Error> {
         loop {
             if self.stream_end_produced && !self.tokens.is_empty() {
                 return Ok(());
