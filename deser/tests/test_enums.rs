@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
-use deser::{Deserialize, Error, Event, Serialize};
+use deser::{Atom, Deserialize, Error, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -800,5 +800,186 @@ fn test_lifetimes_types_and_consts() {
     check_borrowed(
         Mixed::Other("x".into()),
         vec![Event::map_start(), "type".into(), "x".into(), Event::MapEnd],
+    );
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Common {
+    id: u32,
+    #[deser(default)]
+    note: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum FlattenExternal {
+    A {
+        #[deser(flatten)]
+        common: Common,
+        a: u32,
+    },
+    B {
+        name: String,
+        #[deser(flatten)]
+        extra: BTreeMap<String, u32>,
+    },
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type", skip_serializing_optionals)]
+enum FlattenInternal {
+    A {
+        #[deser(flatten)]
+        common: Common,
+        a: Option<u32>,
+    },
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "t", content = "c", deny_unknown_fields)]
+enum FlattenAdjacent {
+    A {
+        #[deser(flatten)]
+        common: Common,
+        #[deser(flatten, skip_serializing_if = Option::is_none)]
+        more: Option<Common>,
+    },
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(untagged)]
+enum FlattenUntagged {
+    A {
+        #[deser(flatten)]
+        common: Common,
+        a: u32,
+    },
+}
+
+#[test]
+fn test_flatten_in_variants() {
+    check(
+        FlattenExternal::A {
+            common: Common { id: 1, note: None },
+            a: 2,
+        },
+        vec![
+            Event::map_start(),
+            "A".into(),
+            Event::map_start(),
+            "id".into(),
+            1u64.into(),
+            "note".into(),
+            Atom::Null.into(),
+            "a".into(),
+            2u64.into(),
+            Event::MapEnd,
+            Event::MapEnd,
+        ],
+    );
+    check(
+        FlattenExternal::B {
+            name: "x".into(),
+            extra: BTreeMap::from([("k".into(), 1)]),
+        },
+        vec![
+            Event::map_start(),
+            "B".into(),
+            Event::map_start(),
+            "name".into(),
+            "x".into(),
+            "k".into(),
+            1u64.into(),
+            Event::MapEnd,
+            Event::MapEnd,
+        ],
+    );
+    // optional values of flattened fields are skipped as well
+    check(
+        FlattenInternal::A {
+            common: Common { id: 1, note: None },
+            a: None,
+        },
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "A".into(),
+            "id".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    // the fields can come before the tag
+    assert_eq!(
+        deserialize::<FlattenInternal>(vec![
+            Event::map_start(),
+            "id".into(),
+            1u64.into(),
+            "note".into(),
+            "n".into(),
+            "type".into(),
+            "A".into(),
+            "a".into(),
+            2u64.into(),
+            Event::MapEnd,
+        ])
+        .unwrap(),
+        FlattenInternal::A {
+            common: Common {
+                id: 1,
+                note: Some("n".into())
+            },
+            a: Some(2),
+        }
+    );
+    check(
+        FlattenAdjacent::A {
+            common: Common { id: 1, note: None },
+            more: None,
+        },
+        vec![
+            Event::map_start(),
+            "t".into(),
+            "A".into(),
+            "c".into(),
+            Event::map_start(),
+            "id".into(),
+            1u64.into(),
+            "note".into(),
+            Atom::Null.into(),
+            Event::MapEnd,
+            Event::MapEnd,
+        ],
+    );
+    let err = deserialize::<FlattenAdjacent>(vec![
+        Event::map_start(),
+        "t".into(),
+        "A".into(),
+        "c".into(),
+        Event::map_start(),
+        "id".into(),
+        1u64.into(),
+        "other".into(),
+        1u64.into(),
+    ])
+    .unwrap_err();
+    assert_eq!(err.message(), "unknown field `other`");
+    check(
+        FlattenUntagged::A {
+            common: Common {
+                id: 1,
+                note: Some("n".into()),
+            },
+            a: 2,
+        },
+        vec![
+            Event::map_start(),
+            "id".into(),
+            1u64.into(),
+            "note".into(),
+            "n".into(),
+            "a".into(),
+            2u64.into(),
+            Event::MapEnd,
+        ],
     );
 }

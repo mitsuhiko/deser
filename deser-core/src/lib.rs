@@ -91,7 +91,9 @@ pub mod __derive {
         Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,
         PlainSink, StructField,
     };
-    pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype, skipped_variant};
+    pub use crate::ser::enums::{
+        EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedNewtype, skipped_variant,
+    };
     pub use crate::ser::flatten::FlattenedStruct;
 
     /// Creates the error for the first missing field.

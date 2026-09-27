@@ -4,6 +4,7 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- `#[deser(flatten)]` is supported on the fields of struct variants.
 - Enums can have lifetime and const parameters, which means that enums can
   borrow from the data like structs (`enum Token<'a> { Word(&'a str) }`).
   Type parameters of enums no longer need to be `'static` to deserialize

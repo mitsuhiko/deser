@@ -98,6 +98,118 @@ impl<'a> StructEmitter for FieldsEmitter<'a> {
     }
 }
 
+/// A field of a [`FlatFieldsSer`].
+pub enum FieldSer<'a> {
+    /// A field with its name.
+    Field(&'static str, SerializeHandle<'a>),
+    /// A value whose fields are merged into the struct.
+    Flatten(&'a dyn Serialize),
+}
+
+/// Serializes a list of fields as a struct, some of which are flattened.
+///
+/// This is used for struct variants with flattened fields.  The fields of
+/// flattened values that are optional are skipped if `skip_optionals` is
+/// set (the other fields are skipped by the derive).
+pub struct FlatFieldsSer<'a> {
+    pub fields: Vec<FieldSer<'a>>,
+    pub skip_optionals: bool,
+}
+
+impl<'a> FlatFieldsSer<'a> {
+    /// Converts the fields into a chunk.
+    pub fn into_chunk(self) -> Chunk<'a> {
+        Chunk::Struct(Box::new(FlatFieldsEmitter {
+            fields: self.fields,
+            skip_optionals: self.skip_optionals,
+            index: 0,
+            nested: None,
+        }))
+    }
+}
+
+impl<'a> Serialize for FlatFieldsSer<'a> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::Struct(Box::new(FlatFieldsEmitter {
+            fields: self
+                .fields
+                .iter()
+                .map(|field| match *field {
+                    FieldSer::Field(name, ref value) => {
+                        FieldSer::Field(name, SerializeHandle::Borrowed(&**value))
+                    }
+                    FieldSer::Flatten(value) => FieldSer::Flatten(value),
+                })
+                .collect(),
+            skip_optionals: self.skip_optionals,
+            index: 0,
+            nested: None,
+        })))
+    }
+}
+
+struct FlatFieldsEmitter<'a> {
+    fields: Vec<FieldSer<'a>>,
+    skip_optionals: bool,
+    index: usize,
+    // the fields of the flattened value at `index`
+    nested: Option<FlattenedStruct<'a>>,
+}
+
+impl<'a> StructEmitter for FlatFieldsEmitter<'a> {
+    fn next(
+        &mut self,
+        state: &mut State,
+    ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
+        loop {
+            if let Some(ref mut nested) = self.nested {
+                let item = nested.next(state)?;
+                // SAFETY: the item borrows from `self.nested`.  If it's
+                // returned, `self.nested` is not touched again in this call,
+                // otherwise it's dropped before `self.nested` is replaced.
+                // The borrow checker does not understand that the borrow
+                // does not continue into the next loop iteration (this can
+                // be validated with `-Zpolonius`).
+                let item = unsafe {
+                    std::mem::transmute::<
+                        Option<(Cow<'_, str>, SerializeHandle<'_>)>,
+                        Option<(Cow<'a, str>, SerializeHandle<'a>)>,
+                    >(item)
+                };
+                match item {
+                    Some((_, ref handle)) if self.skip_optionals && handle.is_optional() => {
+                        continue;
+                    }
+                    Some(item) => return Ok(Some(item)),
+                    None => {
+                        self.nested = None;
+                        if let Some(FieldSer::Flatten(value)) = self.fields.get(self.index) {
+                            // the values it forwarded to were finished with
+                            // the last field, now the value itself
+                            value.finish(state)?;
+                        }
+                        self.index += 1;
+                        continue;
+                    }
+                }
+            }
+            match self.fields.get(self.index) {
+                None => return Ok(None),
+                Some(FieldSer::Field(name, value)) => {
+                    self.index += 1;
+                    return Ok(Some((
+                        Cow::Borrowed(*name),
+                        SerializeHandle::Borrowed(&**value),
+                    )));
+                }
+                Some(FieldSer::Flatten(value)) => {
+                    self.nested = Some(FlattenedStruct::new(*value, state)?);
+                }
+            }
+        }
+    }
+}
+
 /// Serializes a list of values as a sequence.
 pub struct SeqSer<'a>(pub Vec<SerializeHandle<'a>>);
 

@@ -331,8 +331,28 @@
 //! * `#[deser(skip_serializing)]` and `#[deser(skip_deserializing)]`: skip
 //!   the variant in one direction only.
 //!
-//! The fields of struct variants support the same attributes as struct fields,
-//! except for `flatten`.
+//! The fields of struct variants support the same attributes as struct
+//! fields, including `flatten`:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Common {
+//!     id: u64,
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "type")]
+//! pub enum Event {
+//!     // {"type": "Click", "id": 1, "x": 10}
+//!     Click {
+//!         #[deser(flatten)]
+//!         common: Common,
+//!         x: u32,
+//!     },
+//! }
+//! ```
 //!
 //! ## Adapters
 //!

@@ -987,35 +987,53 @@ fn fields_ser(
     container_attrs: &ContainerAttrs,
     tag: Option<(&Name, TokenStream)>,
 ) -> syn::Result<TokenStream> {
+    let all_attrs = info
+        .content_fields()
+        .into_iter()
+        .map(|field| Ok((field, FieldAttrs::of(field.field)?)))
+        .collect::<syn::Result<Vec<_>>>()?;
+    // variants with flattened fields merge the fields of the flattened
+    // values when they are serialized
+    let flatten = all_attrs
+        .iter()
+        .any(|(_, attrs)| attrs.flatten() && !attrs.skip_serializing());
+    let field = |name: TokenStream, handle: TokenStream| {
+        if flatten {
+            quote! { __deser::__derive::FieldSer::Field(#name, #handle) }
+        } else {
+            quote! { (#name, #handle) }
+        }
+    };
     let tag_push = tag.map(|(tag, handle)| {
+        let field = field(quote! { #tag }, handle);
         quote! {
-            __fields.push((#tag, #handle));
+            __fields.push(#field);
         }
     });
     let mut pushes = Vec::new();
-    for field in info.content_fields() {
-        let attrs = FieldAttrs::of(field.field)?;
-        if attrs.flatten() {
-            return Err(syn::Error::new_spanned(
-                field.field,
-                "flatten is not supported in enum variants",
-            ));
-        }
+    for (field_info, attrs) in &all_attrs {
         if attrs.skip_serializing() {
             continue;
         }
-        let name = attrs.plain_name();
-        let binding = &field.binding;
+        let binding = &field_info.binding;
         let mut conditions = Vec::new();
         if let Some(path) = attrs.skip_serializing_if() {
             conditions.push(quote! { #path(#binding) });
         }
-        if container_attrs.skip_serializing_optionals() {
-            conditions.push(field.is_optional());
-        }
-        let handle = field.ser_handle();
-        let push = quote! {
-            __fields.push((#name, #handle));
+        let push = if attrs.flatten() {
+            // the fields of flattened values are checked by `FlatFieldsSer`
+            quote! {
+                __fields.push(__deser::__derive::FieldSer::Flatten(#binding));
+            }
+        } else {
+            if container_attrs.skip_serializing_optionals() {
+                conditions.push(field_info.is_optional());
+            }
+            let name = attrs.plain_name();
+            let field = field(quote! { #name }, field_info.ser_handle());
+            quote! {
+                __fields.push(#field);
+            }
         };
         pushes.push(if conditions.is_empty() {
             push
@@ -1027,12 +1045,23 @@ fn fields_ser(
             }
         });
     }
+    let fields = if flatten {
+        let skip_optionals = container_attrs.skip_serializing_optionals();
+        quote! {
+            __deser::__derive::FlatFieldsSer {
+                fields: __fields,
+                skip_optionals: #skip_optionals,
+            }
+        }
+    } else {
+        quote! { __deser::__derive::FieldsSer(__fields) }
+    };
     Ok(quote! {
         {
             let mut __fields = __deser::__derive::Vec::new();
             #tag_push
             #(#pushes)*
-            __deser::__derive::FieldsSer(__fields)
+            #fields
         }
     })
 }
