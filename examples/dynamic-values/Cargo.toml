@@ -1,0 +1,20 @@
+[package]
+name = "dynamic-values"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-json = { path = "../../deser-json" }
+deser-path = { path = "../../deser-path" }
+deser-toml = { path = "../../deser-toml" }
+deser-value = { path = "../../deser-value" }
+deser-yaml = { path = "../../deser-yaml" }
+
+[[bin]]
+name = "dynamic-values"
+path = "src/main.rs"
+test = false
+doc = false

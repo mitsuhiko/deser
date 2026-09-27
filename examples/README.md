@@ -51,6 +51,9 @@ What sets deser apart:
 
 Other crates:
 
+* [`dynamic-values`](dynamic-values): inspecting, transforming and
+  converting data with `deser-value`, keeping unknown fields and merging
+  files with errors that point into the right file.
 * [`serde-types`](serde-types): using types that only implement serde
   (like `semver::Version` and `serde_json::Value`) with `deser-serde`.
 

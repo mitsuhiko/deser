@@ -23,6 +23,7 @@ members = [
   "examples/crate-path",
   "examples/debug",
   "examples/deep-nesting",
+  "examples/dynamic-values",
   "examples/enums",
   "examples/formats",
   "examples/json",
