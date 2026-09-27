@@ -216,6 +216,7 @@ impl Decoder for DeserializerConfig {
 
     fn drive<'de>(
         &self,
+        _state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -330,10 +331,12 @@ impl Decoder for DeserializerConfig {
 /// assert_eq!(writer.into_inner(), [0x01, 0x62, b'h', b'i']);
 /// ```
 impl Encoder for SerializerConfig {
+    type State = ();
+
     fn encode(
         &self,
+        _state: &mut (),
         driver: &mut SerializeDriver<'_>,
-        _index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
         let bytes = self.serialize_driver(driver)?;

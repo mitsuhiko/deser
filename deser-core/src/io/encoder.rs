@@ -12,17 +12,30 @@ use crate::ser::{Serialize, SerializeDriver};
 /// [`to_writer`](Self::to_writer) and [`io`](crate::io)).  Encoders write
 /// everything that separates the values of a stream, for instance the line
 /// breaks of JSON Lines or the markers between YAML documents.
+///
+/// Like with [`Decoder`](crate::io::Decoder), the encoder is the
+/// configuration and everything a stream needs to remember is kept in its
+/// [`State`](Self::State), for instance the number of values written or the
+/// columns of a CSV file.
 pub trait Encoder {
+    /// The state of a stream.
+    ///
+    /// Every stream starts with the default state, writers can also start
+    /// with a given state (see
+    /// [`Writer::with_state`](crate::io::Writer::with_state)).
+    type State: Default;
+
     /// Serializes a value and appends its bytes to the output.
     ///
     /// The value is serialized by driving the driver, which might have been
-    /// configured before (for instance with layers).  `index` is the number
-    /// of values that were written to the stream before.  If this fails,
-    /// the output can contain a partial value (the writers discard it).
+    /// configured before (for instance with layers).  If this fails, the
+    /// output can contain a partial value (the writers discard it) but the
+    /// state must be unchanged: the next value is written as if the failed
+    /// one was never attempted.
     fn encode(
         &self,
+        state: &mut Self::State,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error>;
 
@@ -40,7 +53,7 @@ pub trait Encoder {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         let mut out = Vec::new();
-        crate::io::encode(self, value, setup, 0, &mut out)?;
+        crate::io::encode(self, &mut Self::State::default(), value, setup, &mut out)?;
         Ok(out)
     }
 
@@ -54,12 +67,14 @@ pub trait Encoder {
 }
 
 impl<E: Encoder + ?Sized> Encoder for &E {
+    type State = E::State;
+
     fn encode(
         &self,
+        state: &mut Self::State,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        (**self).encode(driver, index, out)
+        (**self).encode(state, driver, out)
     }
 }

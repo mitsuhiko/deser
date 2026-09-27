@@ -60,13 +60,26 @@ pub enum Progress {
 /// value while its input arrives additionally implement
 /// [`feed`](Self::feed), which only needs to buffer incomplete tokens.
 ///
+/// The decoder itself is the configuration (it's shared by all streams),
+/// everything a stream needs to remember is kept in its
+/// [`State`](Self::State): the progress of the scan, and what earlier parts
+/// of the stream established for the values that follow, such as the
+/// header of a CSV file.  All methods receive the state of the stream.
+///
 /// Types which produce the events of a value from something else than bytes
 /// implement [`Deserializer`](crate::de::Deserializer) instead.
 pub trait Decoder {
     /// The state of a stream.
     ///
-    /// This holds the progress of reading a stream, for instance how far
-    /// the input was scanned.  Every stream starts with the default state.
+    /// This holds the progress of reading a stream (for instance how far the
+    /// input was scanned) and the context of the stream that values depend
+    /// on (for instance the names of the columns).  Every stream starts with
+    /// the default state, readers can also start with a given state (see
+    /// [`Reader::with_state`](crate::io::Reader::with_state)).
+    ///
+    /// Data that is only valid for a call (for instance names kept in the
+    /// state) can be emitted without copying it with
+    /// [`DeserializeDriver::emit`].
     type State: Default;
 
     /// Finds the next value in the input.
@@ -89,9 +102,14 @@ pub trait Decoder {
     /// Deserializes a value from its frame.
     ///
     /// The frame holds the bytes of a value found by
-    /// [`frame`](Self::frame).  Offsets of errors refer to the frame.
+    /// [`frame`](Self::frame), it's deserialized right after it was found
+    /// with the same state.  This allows decoders to keep what they learned
+    /// while scanning the frame (like the positions of fields) in the state
+    /// so they do not have to scan it again.  Offsets of errors refer to the
+    /// frame.
     fn drive<'de>(
         &self,
+        state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error>;
@@ -194,10 +212,11 @@ impl<D: Decoder + ?Sized> Decoder for &D {
 
     fn drive<'de>(
         &self,
+        state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        (**self).drive(frame, driver)
+        (**self).drive(state, frame, driver)
     }
 
     fn is_text(&self) -> bool {

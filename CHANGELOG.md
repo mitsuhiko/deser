@@ -332,7 +332,11 @@ All notable changes to deser are documented here.
   formats which deserialize from and serialize into streams of bytes.  The
   configurations of the formats implement them, which makes them usable in
   generic code: `Decoder::from_slice` and `Decoder::from_reader`,
-  `Encoder::to_vec` and `Encoder::to_writer`.
+  `Encoder::to_vec` and `Encoder::to_writer`.  Both keep what a stream
+  needs to remember in an associated `State` which is passed to all their
+  methods (to `Decoder::drive` too, so values can depend on earlier parts
+  of the stream).  `Reader`, `Writer` and `DecodeBuffer` expose it with
+  `state` and can continue a stream with `with_state`.
 - Added `deser::Streamed<T>`, a sequence whose elements are handed out
   while a value is read with `deser::io::Reader::read_next` (as
   `Next::Element`, followed by the value as `Next::Done`) instead of being

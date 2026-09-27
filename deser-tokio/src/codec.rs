@@ -36,10 +36,10 @@ use deser_core::ser::Serialize;
 /// (see [`Decoder::supports_feed`]), values are deserialized while their
 /// input arrives.
 #[cfg_attr(docsrs, doc(cfg(feature = "codec")))]
-pub struct Codec<D: Decoder, E, T> {
+pub struct Codec<D: Decoder, E: Encoder, T> {
     buffer: DecodeBuffer<D>,
     encoder: E,
-    written: usize,
+    encoder_state: E::State,
     // the value which is deserialized while its input arrives
     pending: Option<OwnedDriver<'static, T>>,
     _marker: PhantomData<fn() -> T>,
@@ -51,7 +51,7 @@ impl<D: Decoder, E: Encoder, T> Codec<D, E, T> {
         Codec {
             buffer: DecodeBuffer::new(decoder),
             encoder,
-            written: 0,
+            encoder_state: E::State::default(),
             pending: None,
             _marker: PhantomData,
         }
@@ -118,9 +118,14 @@ impl<D: Decoder, E: Encoder, T, V: Serialize> tokio_util::codec::Encoder<V> for 
 
     fn encode(&mut self, item: V, dst: &mut BytesMut) -> Result<(), Error> {
         let mut out = Vec::new();
-        deser_core::io::encode(&self.encoder, &item, |_| {}, self.written, &mut out)?;
+        deser_core::io::encode(
+            &self.encoder,
+            &mut self.encoder_state,
+            &item,
+            |_| {},
+            &mut out,
+        )?;
         dst.extend_from_slice(&out);
-        self.written += 1;
         Ok(())
     }
 }

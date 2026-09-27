@@ -41,7 +41,7 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// #             None => Frame::Incomplete { consumed: 0 },
 /// #         })
 /// #     }
-/// #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+/// #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 /// #         driver.emit(Event::map_start())?;
 /// #         driver.emit("items")?;
 /// #         driver.emit(Event::seq_start())?;

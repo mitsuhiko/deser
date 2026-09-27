@@ -43,7 +43,7 @@ pub enum Status {
 /// #             None => Frame::Incomplete { consumed: 0 },
 /// #         })
 /// #     }
-/// #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+/// #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 /// #         let value: u64 = std::str::from_utf8(frame).unwrap().parse().unwrap();
 /// #         driver.emit(value)
 /// #     }
@@ -97,9 +97,15 @@ pub struct DecodeBuffer<D: Decoder> {
 impl<D: Decoder> DecodeBuffer<D> {
     /// Creates an empty buffer.
     pub fn new(decoder: D) -> DecodeBuffer<D> {
+        DecodeBuffer::with_state(decoder, D::State::default())
+    }
+
+    /// Creates an empty buffer for a stream that continues with the given
+    /// state (see [`Decoder::State`]).
+    pub fn with_state(decoder: D, state: D::State) -> DecodeBuffer<D> {
         DecodeBuffer {
             decoder,
-            state: D::State::default(),
+            state,
             data: Vec::new(),
             start: 0,
             end: 0,
@@ -115,6 +121,11 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// Returns the decoder.
     pub fn decoder(&self) -> &D {
         &self.decoder
+    }
+
+    /// Returns the state of the stream (see [`Decoder::State`]).
+    pub fn state(&self) -> &D::State {
+        &self.state
     }
 
     /// Returns the number of bytes of the stream that were consumed.
@@ -244,7 +255,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// # impl Decoder for DigitsConfig {
     /// #     type State = bool;
     /// #     fn frame(&self, _: &mut bool, _: &[u8], _: bool) -> Result<Frame, Error> { unimplemented!() }
-    /// #     fn drive<'de>(&self, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
+    /// #     fn drive<'de>(&self, _: &mut bool, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
     /// #     fn supports_feed(&self) -> bool { true }
     /// #     fn feed(&self, started: &mut bool, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
     /// #         if !*started {
@@ -472,7 +483,7 @@ impl<D: Decoder> DecodeBuffer<D> {
         let (range, position) = self.take_ready();
         let frame = &self.data[range];
         self.decoder
-            .drive(frame, driver)
+            .drive(&mut self.state, frame, driver)
             .map_err(|err| err.shift_position(position))
     }
 

@@ -61,6 +61,7 @@ impl Decoder for Lines {
 
     fn drive<'de>(
         &self,
+        _scanned: &mut usize,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -76,10 +77,12 @@ impl Decoder for Lines {
 }
 
 impl Encoder for Lines {
+    type State = ();
+
     fn encode(
         &self,
+        _state: &mut (),
         driver: &mut SerializeDriver<'_>,
-        _index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
         let mut line = String::new();
@@ -289,4 +292,223 @@ fn test_provided_methods() {
     let mut out = Vec::new();
     Lines.to_writer(&mut out, &"x").unwrap();
     assert_eq!(out, b"x\n");
+}
+
+/// A format with a line of column names followed by lines of values that
+/// are separated by spaces.  Rows are maps of the column names to the
+/// values.
+struct Columns;
+
+/// The state of a stream of [`Columns`].
+#[derive(Default, Debug, Clone, PartialEq)]
+struct ColumnsState {
+    names: Option<Vec<String>>,
+}
+
+impl Decoder for Columns {
+    type State = ColumnsState;
+
+    fn frame(&self, state: &mut ColumnsState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let (end, consumed) = match input.iter().position(|&b| b == b'\n') {
+            Some(end) => (end, end + 1),
+            None if eof && input.is_empty() => return Ok(Frame::End),
+            None if eof => (input.len(), input.len()),
+            None => return Ok(Frame::Incomplete { consumed: 0 }),
+        };
+        if state.names.is_none() {
+            // the first line holds the names of the columns
+            let line = std::str::from_utf8(&input[..end]).unwrap();
+            state.names = Some(line.split(' ').map(str::to_string).collect());
+            return Ok(Frame::Incomplete { consumed });
+        }
+        Ok(Frame::Value {
+            start: 0,
+            end,
+            consumed,
+        })
+    }
+
+    fn drive<'de>(
+        &self,
+        state: &mut ColumnsState,
+        frame: &'de [u8],
+        driver: &mut DeserializeDriver<'_, 'de>,
+    ) -> Result<(), Error> {
+        let names = state.names.as_ref().expect("names are read first");
+        driver.emit(Event::map_start())?;
+        for (name, value) in names
+            .iter()
+            .zip(std::str::from_utf8(frame).unwrap().split(' '))
+        {
+            // the names are only valid for the call, the values borrow
+            driver.emit(Atom::Lexical(name.as_str().into()))?;
+            driver.emit_borrowed(Atom::Lexical(value.into()))?;
+        }
+        driver.emit(Event::MapEnd)
+    }
+}
+
+impl Encoder for Columns {
+    type State = ColumnsState;
+
+    fn encode(
+        &self,
+        state: &mut ColumnsState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let mut names = Vec::new();
+        let mut values = Vec::new();
+        let mut is_key = false;
+        driver.drive(|event, _| {
+            match event {
+                Event::MapStart(_) | Event::MapEnd => {}
+                Event::Atom(atom) => {
+                    is_key = !is_key;
+                    let text = match atom {
+                        Atom::Str(value) => value.to_string(),
+                        Atom::U64(value) => value.to_string(),
+                        _ => return Err(Error::new(ErrorKind::UnsupportedType, "unsupported")),
+                    };
+                    if is_key {
+                        names.push(text)
+                    } else {
+                        values.push(text)
+                    }
+                }
+                _ => return Err(Error::new(ErrorKind::UnsupportedType, "unsupported")),
+            }
+            Ok(())
+        })?;
+        match state.names {
+            Some(ref expected) if *expected != names => {
+                return Err(Error::new(ErrorKind::Unexpected, "different columns"));
+            }
+            Some(_) => {}
+            None => {
+                out.extend_from_slice(names.join(" ").as_bytes());
+                out.push(b'\n');
+            }
+        }
+        out.extend_from_slice(values.join(" ").as_bytes());
+        out.push(b'\n');
+        // the state is only updated once the value was serialized
+        state.names = Some(names);
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, deser::Deserialize, deser::Serialize)]
+struct Row<'a> {
+    name: &'a str,
+    age: u64,
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_state_in_drive() {
+    let input = b"name age\njane 42\njohn 23\n";
+    for size in chunk_sizes(input.len()) {
+        let mut reader = Reader::new(Chunked { input, size }, Columns);
+        assert_eq!(reader.state().names, None);
+        let row: Row = reader.read_borrowed().unwrap().unwrap();
+        assert_eq!(
+            row,
+            Row {
+                name: "jane",
+                age: 42
+            }
+        );
+        assert_eq!(
+            reader.state().names.as_deref(),
+            Some(&["name".to_string(), "age".to_string()][..])
+        );
+        let row: Row = reader.read_borrowed().unwrap().unwrap();
+        assert_eq!(
+            row,
+            Row {
+                name: "john",
+                age: 23
+            }
+        );
+        assert_eq!(reader.read_borrowed::<Row>().unwrap(), None);
+    }
+
+    // `from_slice` passes the state from the frames to the value
+    let row: Row = Columns.from_slice(b"age name\n42 jane").unwrap();
+    assert_eq!(
+        row,
+        Row {
+            name: "jane",
+            age: 42
+        }
+    );
+}
+
+#[test]
+fn test_reader_with_state() {
+    let state = ColumnsState {
+        names: Some(vec!["name".into(), "age".into()]),
+    };
+    let mut reader = Reader::with_state(&b"jane 42\n"[..], Columns, state.clone());
+    let row: Row = reader.read_borrowed().unwrap().unwrap();
+    assert_eq!(
+        row,
+        Row {
+            name: "jane",
+            age: 42
+        }
+    );
+
+    let mut buffer = DecodeBuffer::with_state(Columns, state);
+    buffer.extend_from_slice(b"john 23");
+    buffer.set_eof();
+    assert_eq!(buffer.poll().unwrap(), Status::Ready);
+    assert_eq!(
+        buffer.deserialize::<Row>().unwrap(),
+        Row {
+            name: "john",
+            age: 23
+        }
+    );
+}
+
+#[test]
+fn test_writer_state() {
+    #[derive(deser::Serialize)]
+    struct Other {
+        age: u64,
+    }
+
+    let mut writer = Writer::new(Vec::new(), Columns);
+    // a failed value leaves the state as it was: the next value writes the
+    // names
+    assert!(writer.write(&vec![1u64]).is_err());
+    assert_eq!(writer.state().names, None);
+    writer
+        .write(&Row {
+            name: "jane",
+            age: 42,
+        })
+        .unwrap();
+    assert!(writer.write(&Other { age: 1 }).is_err());
+    writer
+        .write(&Row {
+            name: "john",
+            age: 23,
+        })
+        .unwrap();
+    assert_eq!(writer.into_inner(), b"name age\njane 42\njohn 23\n");
+
+    let state = ColumnsState {
+        names: Some(vec!["name".into(), "age".into()]),
+    };
+    let mut writer = Writer::with_state(Vec::new(), Columns, state);
+    writer
+        .write(&Row {
+            name: "jane",
+            age: 42,
+        })
+        .unwrap();
+    assert_eq!(writer.into_inner(), b"jane 42\n");
 }

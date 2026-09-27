@@ -34,13 +34,14 @@
 //! #             None => Frame::Incomplete { consumed: 0 },
 //! #         })
 //! #     }
-//! #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+//! #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 //! #         let value: u64 = std::str::from_utf8(frame).unwrap().parse().unwrap();
 //! #         driver.emit(value)
 //! #     }
 //! # }
 //! # impl Encoder for LinesConfig {
-//! #     fn encode(&self, driver: &mut SerializeDriver<'_>, _: usize, out: &mut Vec<u8>) -> Result<(), Error> {
+//! #     type State = ();
+//! #     fn encode(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>) -> Result<(), Error> {
 //! #         driver.drive(|event, _| {
 //! #             if let deser::Event::Atom(deser::Atom::U64(v)) = event {
 //! #                 out.extend_from_slice(format!("{v}\n").as_bytes());
@@ -67,6 +68,15 @@
 //! deserialized from its frame with the format's regular parser (see
 //! [`Decoder::drive`]).  Types can borrow from the frame (see
 //! [`Reader::read_borrowed`]).
+//!
+//! Everything a stream needs to remember is kept in the state of the stream
+//! ([`Decoder::State`] and [`Encoder::State`]), not in the decoder or
+//! encoder (which are the configurations of the format).  This includes the
+//! progress of the scan and what earlier parts of the stream established
+//! for the values that follow, for instance the names of the columns of a
+//! CSV file.  Readers and writers expose the state (see [`Reader::state`])
+//! and can start with a given state to continue a stream (see
+//! [`Reader::with_state`]).
 //!
 //! Decoders of formats which can be parsed while the input arrives (like
 //! JSON and CBOR) can also deserialize values incrementally (see
@@ -120,7 +130,8 @@ use crate::Position;
 /// Serializes a value into a buffer with an encoder.
 ///
 /// The buffer is cleared first.  This is used by the writers of this module
-/// and of adapters for other kinds of IO.
+/// and of adapters for other kinds of IO, the state is the state of the
+/// stream that is written (see [`Encoder::State`]).
 ///
 /// ```
 /// # use deser::io::Encoder;
@@ -128,19 +139,20 @@ use crate::Position;
 /// # use deser::Error;
 /// # struct Debug;
 /// # impl Encoder for Debug {
-/// #     fn encode(&self, driver: &mut SerializeDriver<'_>, _: usize, out: &mut Vec<u8>) -> Result<(), Error> {
+/// #     type State = ();
+/// #     fn encode(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>) -> Result<(), Error> {
 /// #         driver.drive(|event, _| Ok(out.extend_from_slice(format!("{event:?};").as_bytes())))
 /// #     }
 /// # }
 /// let mut buffer = Vec::new();
-/// deser::io::encode(&Debug, &true, |_| {}, 0, &mut buffer).unwrap();
+/// deser::io::encode(&Debug, &mut (), &true, |_| {}, &mut buffer).unwrap();
 /// assert_eq!(buffer, b"Atom(Bool(true));");
 /// ```
 pub fn encode<E, F>(
     encoder: &E,
+    state: &mut E::State,
     value: &dyn Serialize,
     setup: F,
-    index: usize,
     buffer: &mut Vec<u8>,
 ) -> Result<(), Error>
 where
@@ -150,7 +162,7 @@ where
     buffer.clear();
     let mut driver = SerializeDriver::new(value);
     setup(&mut driver);
-    encoder.encode(&mut driver, index, buffer)
+    encoder.encode(state, &mut driver, buffer)
 }
 
 /// Reads values from a [`Read`].
@@ -168,9 +180,17 @@ pub struct Reader<R, D: Decoder> {
 impl<R: Read, D: Decoder> Reader<R, D> {
     /// Creates a reader.
     pub fn new(reader: R, decoder: D) -> Reader<R, D> {
+        Reader::with_state(reader, decoder, D::State::default())
+    }
+
+    /// Creates a reader for a stream that continues with the given state.
+    ///
+    /// This is useful to continue a stream whose context is known, for
+    /// instance to read a part of a CSV file with the columns of the file.
+    pub fn with_state(reader: R, decoder: D, state: D::State) -> Reader<R, D> {
         Reader {
             reader,
-            buffer: DecodeBuffer::new(decoder),
+            buffer: DecodeBuffer::with_state(decoder, state),
             pending: None,
         }
     }
@@ -284,7 +304,7 @@ impl<R: Read, D: Decoder> Reader<R, D> {
     /// #             None => Frame::Incomplete { consumed: 0 },
     /// #         })
     /// #     }
-    /// #     fn drive<'de>(&self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+    /// #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
     /// #         driver.emit_borrowed(std::str::from_utf8(frame).unwrap())
     /// #     }
     /// # }
@@ -378,6 +398,11 @@ impl<R: Read, D: Decoder> Reader<R, D> {
         self.buffer.decoder()
     }
 
+    /// Returns the state of the stream (see [`Decoder::State`]).
+    pub fn state(&self) -> &D::State {
+        self.buffer.state()
+    }
+
     /// Returns a reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
         &self.reader
@@ -430,21 +455,28 @@ impl<R: Read, D: Decoder, T: DeserializeOwned> Iterator for Iter<'_, R, D, T> {
 /// configuration of a format).  Every value is written with a single
 /// [`write_all`](Write::write_all), wrap the writer in a
 /// [`BufWriter`](std::io::BufWriter) when writing many small values.
-pub struct Writer<W, E> {
+pub struct Writer<W, E: Encoder> {
     writer: W,
     encoder: E,
+    state: E::State,
     buffer: Vec<u8>,
-    written: usize,
 }
 
 impl<W: Write, E: Encoder> Writer<W, E> {
     /// Creates a writer.
     pub fn new(writer: W, encoder: E) -> Writer<W, E> {
+        Writer::with_state(writer, encoder, E::State::default())
+    }
+
+    /// Creates a writer for a stream that continues with the given state.
+    ///
+    /// This is useful to append to a stream that was written before.
+    pub fn with_state(writer: W, encoder: E, state: E::State) -> Writer<W, E> {
         Writer {
             writer,
             encoder,
+            state,
             buffer: Vec::new(),
-            written: 0,
         }
     }
 
@@ -463,9 +495,16 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
+        // the state is only updated if the value was serialized, if the write
+        // fails the stream is broken anyways
+        encode(
+            &self.encoder,
+            &mut self.state,
+            value,
+            setup,
+            &mut self.buffer,
+        )?;
         self.writer.write_all(&self.buffer)?;
-        self.written += 1;
         Ok(())
     }
 
@@ -478,6 +517,11 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     /// Returns the encoder.
     pub fn encoder(&self) -> &E {
         &self.encoder
+    }
+
+    /// Returns the state of the stream (see [`Encoder::State`]).
+    pub fn state(&self) -> &E::State {
+        &self.state
     }
 
     /// Returns a reference to the underlying writer.
@@ -516,10 +560,10 @@ where
     let mut state = D::State::default();
 
     // finds the next value from `pos` and returns its range
-    let mut next = |pos: &mut usize| -> Result<Option<(usize, usize)>, Error> {
+    let next = |state: &mut D::State, pos: &mut usize| -> Result<Option<(usize, usize)>, Error> {
         loop {
             match decoder
-                .frame(&mut state, &input[*pos..], true)
+                .frame(state, &input[*pos..], true)
                 .map_err(|err| locate(err, *pos))?
             {
                 Frame::Value {
@@ -545,18 +589,18 @@ where
     };
 
     let mut pos = 0;
-    let (start, end) =
-        next(&mut pos)?.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))?;
+    let (start, end) = next(&mut state, &mut pos)?
+        .ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))?;
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
         setup(&mut driver);
         decoder
-            .drive(&input[start..end], &mut driver)
+            .drive(&mut state, &input[start..end], &mut driver)
             .map_err(|err| locate(err, start))?;
     }
     let value = out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))?;
-    if let Some((start, _)) = next(&mut pos)? {
+    if let Some((start, _)) = next(&mut state, &mut pos)? {
         return Err(locate(
             Error::new(ErrorKind::Unexpected, "unexpected value after the end")
                 .with_position(0, 1, 1),

@@ -108,9 +108,15 @@ impl<R, D: Decoder> Unpin for Reader<R, D> {}
 impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Creates a reader.
     pub fn new(reader: R, decoder: D) -> Reader<R, D> {
+        Reader::with_state(reader, decoder, D::State::default())
+    }
+
+    /// Creates a reader for a stream that continues with the given state
+    /// (see [`Decoder::State`]).
+    pub fn with_state(reader: R, decoder: D, state: D::State) -> Reader<R, D> {
         Reader {
             reader,
-            buffer: DecodeBuffer::new(decoder),
+            buffer: DecodeBuffer::with_state(decoder, state),
             pending: None,
         }
     }
@@ -355,6 +361,11 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         self.buffer.decoder()
     }
 
+    /// Returns the state of the stream (see [`Decoder::State`]).
+    pub fn state(&self) -> &D::State {
+        self.buffer.state()
+    }
+
     /// Returns a reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
         &self.reader
@@ -463,21 +474,27 @@ where
 /// [`write_all`](tokio::io::AsyncWriteExt::write_all), wrap the writer in a
 /// [`BufWriter`](tokio::io::BufWriter) when writing many small values (and
 /// [`flush`](Self::flush) it).
-pub struct Writer<W, E> {
+pub struct Writer<W, E: Encoder> {
     writer: W,
     encoder: E,
+    state: E::State,
     buffer: Vec<u8>,
-    written: usize,
 }
 
 impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     /// Creates a writer.
     pub fn new(writer: W, encoder: E) -> Writer<W, E> {
+        Writer::with_state(writer, encoder, E::State::default())
+    }
+
+    /// Creates a writer for a stream that continues with the given state
+    /// (see [`Encoder::State`]).
+    pub fn with_state(writer: W, encoder: E, state: E::State) -> Writer<W, E> {
         Writer {
             writer,
             encoder,
+            state,
             buffer: Vec::new(),
-            written: 0,
         }
     }
 
@@ -497,9 +514,14 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        deser_core::io::encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
+        deser_core::io::encode(
+            &self.encoder,
+            &mut self.state,
+            value,
+            setup,
+            &mut self.buffer,
+        )?;
         self.writer.write_all(&self.buffer).await?;
-        self.written += 1;
         Ok(())
     }
 
@@ -518,6 +540,11 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     /// Returns the encoder.
     pub fn encoder(&self) -> &E {
         &self.encoder
+    }
+
+    /// Returns the state of the stream (see [`Encoder::State`]).
+    pub fn state(&self) -> &E::State {
+        &self.state
     }
 
     /// Returns a reference to the underlying writer.

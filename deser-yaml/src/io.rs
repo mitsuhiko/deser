@@ -123,6 +123,7 @@ impl Decoder for DeserializerConfig {
 
     fn drive<'de>(
         &self,
+        _state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -159,14 +160,18 @@ impl Decoder for DeserializerConfig {
 /// assert_eq!(writer.into_inner(), b"a\n---\n- 1\n- 2\n");
 /// ```
 impl Encoder for SerializerConfig {
+    /// The number of documents written.
+    type State = usize;
+
     fn encode(
         &self,
+        written: &mut usize,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        let document = self.document(driver, index)?;
+        let document = self.document(driver, *written)?;
         out.extend_from_slice(document.as_bytes());
+        *written += 1;
         Ok(())
     }
 }

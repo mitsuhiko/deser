@@ -47,6 +47,7 @@ impl Decoder for DeserializerConfig {
 
     fn drive<'de>(
         &self,
+        _state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -70,13 +71,16 @@ impl Decoder for DeserializerConfig {
 ///
 /// A stream holds a single document, writing a second value fails.
 impl Encoder for SerializerConfig {
+    /// `true` once the value was written.
+    type State = bool;
+
     fn encode(
         &self,
+        written: &mut bool,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        if index > 0 {
+        if *written {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "a TOML stream holds a single document",
@@ -84,6 +88,7 @@ impl Encoder for SerializerConfig {
         }
         let toml = self.serialize_driver(driver)?;
         out.extend_from_slice(toml.as_bytes());
+        *written = true;
         Ok(())
     }
 }

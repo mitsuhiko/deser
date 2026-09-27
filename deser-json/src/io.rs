@@ -299,6 +299,7 @@ impl Decoder for DeserializerConfig {
 
     fn drive<'de>(
         &self,
+        _state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -427,13 +428,18 @@ impl Decoder for DeserializerConfig {
 ///
 /// What follows the values depends on [`SerializerConfig::trailing`].
 impl Encoder for SerializerConfig {
+    /// The number of values written.
+    type State = usize;
+
     fn encode(
         &self,
+        written: &mut usize,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        self.encode_value(driver, index, out)
+        self.encode_value(driver, *written, out)?;
+        *written += 1;
+        Ok(())
     }
 }
 

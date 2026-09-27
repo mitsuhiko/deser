@@ -45,6 +45,7 @@ impl Decoder for DeserializerConfig {
 
     fn drive<'de>(
         &self,
+        _state: &mut Self::State,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -68,13 +69,16 @@ impl Decoder for DeserializerConfig {
 ///
 /// A stream holds a single value, writing a second value fails.
 impl Encoder for SerializerConfig {
+    /// `true` once the value was written.
+    type State = bool;
+
     fn encode(
         &self,
+        written: &mut bool,
         driver: &mut SerializeDriver<'_>,
-        index: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        if index > 0 {
+        if *written {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "a form data stream holds a single value",
@@ -83,6 +87,7 @@ impl Encoder for SerializerConfig {
         let mut data = String::new();
         self.serialize_driver(driver, &mut data)?;
         out.extend_from_slice(data.as_bytes());
+        *written = true;
         Ok(())
     }
 }
