@@ -1311,6 +1311,8 @@ pub struct EnumVariantAttrs<'a> {
     aliases: Vec<VariantName>,
     other: bool,
     default: bool,
+    skip_serializing: bool,
+    skip_deserializing: bool,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -1322,8 +1324,11 @@ impl<'a> EnumVariantAttrs<'a> {
             aliases: Vec::new(),
             other: false,
             default: false,
+            skip_serializing: false,
+            skip_deserializing: false,
         };
 
+        let mut skip = false;
         let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
             "rename" => {
                 let value = VariantName::parse(meta)?;
@@ -1335,11 +1340,47 @@ impl<'a> EnumVariantAttrs<'a> {
             }
             "other" => set_flag(meta, name, &mut rv.other),
             "default" => set_flag(meta, name, &mut rv.default),
+            "skip" => set_flag(meta, name, &mut skip),
+            "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
+            "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
             _ => Err(meta.error("unsupported attribute")),
         })?;
         rv.seen = seen;
 
+        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
+            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
+                Some(other) => Err(syn::Error::new(
+                    other.span,
+                    format!("`{}` has no effect together with `{}`", other.name, name),
+                )),
+                None => Ok(()),
+            }
+        };
+        if skip {
+            if rv.skip_serializing || rv.skip_deserializing {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "skip already skips serialization and deserialization",
+                ));
+            }
+            conflict("skip", &["rename", "alias", "other", "default"])?;
+            rv.skip_serializing = true;
+            rv.skip_deserializing = true;
+        } else if rv.skip_deserializing {
+            conflict("skip_deserializing", &["alias", "other", "default"])?;
+        }
+
         Ok(rv)
+    }
+
+    /// Returns `true` if the variant cannot be serialized.
+    pub fn skip_serializing(&self) -> bool {
+        self.skip_serializing
+    }
+
+    /// Returns `true` if the variant cannot be deserialized.
+    pub fn skip_deserializing(&self) -> bool {
+        self.skip_deserializing
     }
 
     /// Returns the attributes that were used on the variant.

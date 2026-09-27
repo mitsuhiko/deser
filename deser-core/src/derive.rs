@@ -280,6 +280,12 @@
 //! * `#[deser(default)]`: marks the variant that is used if the tag is missing.
 //!   This is only supported for internally and adjacently tagged enums.  The
 //!   variant can also be marked as `other`.
+//! * `#[deser(skip)]`: the variant is neither serialized nor deserialized.
+//!   Serializing it is an error and its name is an unknown variant when
+//!   deserializing.  The types of its fields do not need to be serializable
+//!   or deserializable.
+//! * `#[deser(skip_serializing)]` and `#[deser(skip_deserializing)]`: skip
+//!   the variant in one direction only.
 //!
 //! The fields of struct variants support the same attributes as struct fields,
 //! except for `flatten`.

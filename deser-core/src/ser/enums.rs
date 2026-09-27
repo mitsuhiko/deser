@@ -224,3 +224,15 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
         }
     }
 }
+
+/// Creates the error for a variant that is skipped when serializing.
+#[cold]
+pub fn skipped_variant(type_name: &str, variant: &str) -> Error {
+    Error::new(
+        ErrorKind::UnsupportedType,
+        format!(
+            "the variant `{}` of {} cannot be serialized",
+            variant, type_name
+        ),
+    )
+}

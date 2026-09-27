@@ -147,6 +147,138 @@ fn test_skip_in_variants() {
     );
 }
 
+/// Skipped fields of generic types need a default.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum GenericVariant<T> {
+    Value {
+        value: u32,
+        #[deser(skip)]
+        extra: T,
+    },
+    Empty,
+}
+
+#[test]
+fn test_skip_generics_in_variants() {
+    let events = vec![
+        Event::map_start(),
+        "Value".into(),
+        Event::map_start(),
+        "value".into(),
+        1u64.into(),
+        Event::MapEnd,
+        Event::MapEnd,
+    ];
+    let value: GenericVariant<Vec<u32>> = deserialize(events.clone()).unwrap();
+    assert_eq!(
+        value,
+        GenericVariant::Value {
+            value: 1,
+            extra: Vec::new()
+        }
+    );
+    assert_eq!(serialize(&value), events);
+}
+
+fn try_serialize<T: Serialize>(value: &T) -> Result<(), Error> {
+    let mut driver = SerializeDriver::new(value);
+    while driver.next()?.is_some() {}
+    Ok(())
+}
+
+/// `C` is only used in skipped variants, it needs neither `Serialize` nor
+/// `Deserialize`.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(tag = "type")]
+enum Message<C> {
+    Text {
+        text: String,
+    },
+    #[deser(skip)]
+    Local(C),
+    #[deser(skip_serializing)]
+    Legacy {
+        body: String,
+    },
+    #[deser(skip_deserializing)]
+    Generated {
+        id: u32,
+    },
+}
+
+#[test]
+fn test_skip_variants() {
+    type M = Message<Cache>;
+    let rv = deserialize::<M>(map(&[("type", "Legacy".into()), ("body", "a".into())]));
+    assert_eq!(rv.unwrap(), M::Legacy { body: "a".into() });
+    // skipped variants are unknown variants
+    for name in ["Local", "Generated"] {
+        let rv = deserialize::<M>(map(&[("type", name.into())]));
+        assert_eq!(
+            rv.unwrap_err().message(),
+            format!(
+                "unknown variant `{}` of Message, expected `Text` or `Legacy`",
+                name
+            )
+        );
+    }
+    assert_eq!(
+        serialize(&M::Generated { id: 1 }),
+        map(&[("type", "Generated".into()), ("id", 1u64.into())])
+    );
+    for (value, name) in [
+        (M::Local(Cache(1)), "Local"),
+        (M::Legacy { body: "a".into() }, "Legacy"),
+    ] {
+        assert_eq!(
+            try_serialize(&value).unwrap_err().message(),
+            format!("the variant `{}` of Message cannot be serialized", name)
+        );
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum Level {
+    Low,
+    #[deser(skip)]
+    Unknown,
+    #[deser(skip_serializing)]
+    Medium,
+    #[deser(skip_deserializing, rename = 3)]
+    High,
+}
+
+#[test]
+fn test_skip_unit_variants() {
+    assert_eq!(
+        deserialize::<Level>(vec!["Medium".into()]).unwrap(),
+        Level::Medium
+    );
+    for event in [
+        Event::from("Unknown"),
+        Event::from("High"),
+        Event::from(3u64),
+    ] {
+        let err = deserialize::<Level>(vec![event]).unwrap_err();
+        assert!(err.message().starts_with("unknown variant"), "{}", err);
+        assert!(
+            err.message()
+                .ends_with("of Level, expected `Low` or `Medium`"),
+            "{}",
+            err
+        );
+    }
+    assert_eq!(serialize(&Level::High), vec![Event::from(3u64)]);
+    assert_eq!(
+        try_serialize(&Level::Unknown).unwrap_err().message(),
+        "the variant `Unknown` of Level cannot be serialized"
+    );
+    assert_eq!(
+        try_serialize(&Level::Medium).unwrap_err().message(),
+        "the variant `Medium` of Level cannot be serialized"
+    );
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct Required {
     #[deser(required)]

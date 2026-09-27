@@ -655,6 +655,46 @@
 /// }
 /// ```
 ///
+/// Skipped variants cannot be deserialized, attributes for deserializing
+/// them have no effect.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     A,
+///     #[deser(skip, alias = "b")]
+///     B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     A,
+///     #[deser(skip_deserializing, other)]
+///     B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "t")]
+/// enum Test {
+///     A,
+///     #[deser(skip, default)]
+///     B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     A,
+///     #[deser(skip, skip_serializing)]
+///     B,
+/// }
+/// ```
+///
 /// Aliases of the tag and the content need a tag and a content.
 ///
 /// ```compile_fail

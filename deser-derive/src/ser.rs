@@ -485,15 +485,27 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .iter()
         .map(|x| x.name(&container_attrs).str_expr())
         .collect::<Vec<_>>();
-    let atoms = attrs
+    let type_name = container_attrs.container_name();
+    let chunks = attrs
         .iter()
-        .map(|x| x.name(&container_attrs).atom())
+        .map(|x| {
+            if x.skip_serializing() {
+                let variant = x.variant().ident.to_string();
+                return quote! {
+                    return __deser::__derive::Err(
+                        __deser::__derive::skipped_variant(#type_name, #variant)
+                    )
+                };
+            }
+            let atom = x.name(&container_attrs).atom();
+            quote! { __deser::ser::Chunk::Atom(#atom) }
+        })
         .collect::<Vec<_>>();
     // if all variants are named by strings, the atom is built once and only
     // the name is matched
     let serialize_body = if attrs
         .iter()
-        .all(|x| x.name(&container_attrs).as_str().is_some())
+        .all(|x| x.name(&container_attrs).as_str().is_some() && !x.skip_serializing())
     {
         quote! {
             __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Str(
@@ -508,14 +520,11 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         quote! {
             __deser::__derive::Ok(match *self {
                 #(
-                    #ident::#var_idents => {
-                        __deser::ser::Chunk::Atom(#atoms)
-                    }
+                    #ident::#var_idents => { #chunks }
                 )*
             })
         }
     };
-    let type_name = container_attrs.container_name();
     let begin_without_finish = begin_without_finish();
 
     Ok(quote! {

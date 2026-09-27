@@ -20,8 +20,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
 use crate::attr::{
-    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, UnnamedFieldAttrs,
-    VariantName,
+    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault,
+    UnnamedFieldAttrs, VariantName,
 };
 use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
 
@@ -54,6 +54,8 @@ struct FieldInfo<'a> {
     tag: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
+    // skipped when deserializing and filled in with `Default`
+    needs_default: bool,
     binding: syn::Ident,
 }
 
@@ -111,6 +113,8 @@ struct VariantInfo<'a> {
     names: Vec<VariantName>,
     other: bool,
     default: bool,
+    skip_serializing: bool,
+    skip_deserializing: bool,
     shape: Shape,
     fields: Vec<FieldInfo<'a>>,
     tag_field: Option<usize>,
@@ -157,6 +161,16 @@ impl<'a> VariantInfo<'a> {
             Content::Tuple(ref idxs) | Content::Struct(ref idxs) => {
                 idxs.iter().map(|&idx| &self.fields[idx]).collect()
             }
+        }
+    }
+
+    /// Returns the pattern that matches the variant without binding fields.
+    fn wildcard_pattern(&self, enum_ident: &syn::Ident) -> TokenStream {
+        let var_ident = self.ident;
+        match self.shape {
+            Shape::Unit => quote! { #enum_ident::#var_ident },
+            Shape::Tuple => quote! { #enum_ident::#var_ident(..) },
+            Shape::Named => quote! { #enum_ident::#var_ident { .. } },
         }
     }
 
@@ -275,6 +289,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     tag: attrs.tag(),
                     skip_serializing: false,
                     skip_deserializing: false,
+                    needs_default: false,
                     binding: syn::Ident::new(&format!("__f{}", idx), Span::call_site()),
                 });
             }
@@ -289,6 +304,8 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     tag: attrs.tag(),
                     skip_serializing: attrs.skip_serializing(),
                     skip_deserializing: attrs.skip_deserializing(),
+                    needs_default: attrs.skip_deserializing()
+                        && matches!(attrs.default(), None | Some(TypeDefault::Implicit)),
                     binding: syn::Ident::new(
                         &format!("__field_{}", field.ident.as_ref().unwrap()),
                         Span::call_site(),
@@ -415,6 +432,8 @@ fn collect_variants<'a>(
             names,
             other: attrs.other(),
             default: attrs.default(),
+            skip_serializing: attrs.skip_serializing(),
+            skip_deserializing: attrs.skip_deserializing(),
             shape,
             fields,
             tag_field,
@@ -444,16 +463,18 @@ fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
 }
 
 /// Returns the fields of all variants for the purpose of bound inference.
+///
+/// The fields of skipped variants count as skipped.
 fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<BoundField<'b>> {
     variants
         .iter()
-        .flat_map(|info| info.fields.iter())
-        .map(|field| BoundField {
+        .flat_map(|info| info.fields.iter().map(move |field| (info, field)))
+        .map(|(info, field)| BoundField {
             ty: field.ty(),
             adapter: field.adapters.get(direction),
             skipped: match direction {
-                Direction::Serialize => field.skip_serializing,
-                Direction::Deserialize => field.skip_deserializing,
+                Direction::Serialize => info.skip_serializing || field.skip_serializing,
+                Direction::Deserialize => info.skip_deserializing || field.skip_deserializing,
             },
         })
         .collect()
@@ -467,7 +488,7 @@ pub fn derive_deserialize(
     let ident = &input.ident;
     check_generics(&input.generics)?;
     let repr = repr(container_attrs);
-    let variants = collect_variants(enumeration, container_attrs)?;
+    let all_variants = collect_variants(enumeration, container_attrs)?;
     let (_, ty_generics, _) = input.generics.split_for_impl();
     let de_generics = crate::bound::with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
@@ -479,8 +500,13 @@ pub fn derive_deserialize(
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
-        &bound_fields(&variants, Direction::Deserialize),
+        &bound_fields(&all_variants, Direction::Deserialize),
     );
+    // skipped variants cannot be deserialized, they are unknown variants
+    let variants = all_variants
+        .into_iter()
+        .filter(|x| !x.skip_deserializing)
+        .collect::<Vec<_>>();
     // the deserializer boxes variant builders so the type parameters must
     // be 'static even with custom bounds.
     if container_attrs.deserialize_bound().is_some() {
@@ -489,6 +515,27 @@ pub fn derive_deserialize(
             where_clause
                 .predicates
                 .push(syn::parse_quote!(#param: 'static));
+        }
+    } else {
+        // skipped fields of generic types need a default, the helper
+        // structs of the variants require it
+        let params = input
+            .generics
+            .type_params()
+            .map(|x| x.ident.to_string())
+            .collect::<HashSet<_>>();
+        for field in variants.iter().flat_map(|x| x.content_fields()) {
+            if !field.needs_default {
+                continue;
+            }
+            let ty = field.ty();
+            let mut idents = HashSet::new();
+            collect_idents(quote! { #ty }, &mut idents);
+            if idents.iter().any(|x| params.contains(x)) {
+                where_clause
+                    .predicates
+                    .push(syn::parse_quote!(#ty: __deser::__derive::Default));
+            }
         }
     }
     let enum_ty = quote! { #ident #ty_generics };
@@ -977,8 +1024,12 @@ pub fn derive_serialize(
     };
     let mut describe_arms = Vec::new();
     for info in &variants {
+        if info.skip_serializing {
+            let pattern = info.wildcard_pattern(ident);
+            describe_arms.push(quote! { #pattern => {} });
+            continue;
+        }
         let name = info.name.str_expr();
-        let var_ident = info.ident;
         let kind = match info.content {
             Content::Unit => quote! { __deser::ser::VariantKind::Unit },
             Content::Newtype(_) => quote! { __deser::ser::VariantKind::Newtype },
@@ -1003,11 +1054,7 @@ pub fn derive_serialize(
                 }
             }
             _ => {
-                let pattern = match info.shape {
-                    Shape::Unit => quote! { #ident::#var_ident },
-                    Shape::Tuple => quote! { #ident::#var_ident(..) },
-                    Shape::Named => quote! { #ident::#var_ident { .. } },
-                };
+                let pattern = info.wildcard_pattern(ident);
                 quote! { #pattern => { #describe_variant } }
             }
         });
@@ -1018,12 +1065,7 @@ pub fn derive_serialize(
         Repr::External => quote! { __deser::ContainerShape::new().with_len(1) },
         Repr::Adjacent { .. } => {
             let arms = variants.iter().map(|info| {
-                let var_ident = info.ident;
-                let pattern = match info.shape {
-                    Shape::Unit => quote! { #ident::#var_ident },
-                    Shape::Tuple => quote! { #ident::#var_ident(..) },
-                    Shape::Named => quote! { #ident::#var_ident { .. } },
-                };
+                let pattern = info.wildcard_pattern(ident);
                 let len: usize = if matches!(info.content, Content::Unit) {
                     1
                 } else {
@@ -1040,6 +1082,18 @@ pub fn derive_serialize(
 
     let mut arms = Vec::new();
     for info in &variants {
+        if info.skip_serializing {
+            let pattern = info.wildcard_pattern(ident);
+            let variant = info.ident.to_string();
+            arms.push(quote! {
+                #pattern => {
+                    return __deser::__derive::Err(
+                        __deser::__derive::skipped_variant(#type_name, #variant)
+                    );
+                }
+            });
+            continue;
+        }
         let pattern = info.pattern(ident);
 
         // the value of the tag, other variants can provide it with a field

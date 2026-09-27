@@ -930,7 +930,11 @@ pub fn derive_enum(
             }
         }
         // the names are matched to the index of the variant by a function
-        // so that the lookup (which is not generic) exists once
+        // so that the lookup (which is not generic) exists once, skipped
+        // variants are unknown variants
+        if x.skip_deserializing() {
+            continue;
+        }
         matcher.push(VariantName::tag_arms(
             &names,
             quote! { __deser::__derive::Some(#index) },
@@ -958,7 +962,10 @@ pub fn derive_enum(
         Some(index) => quote! { __deser::__derive::Some(#index) },
         None => quote! { __deser::__derive::None },
     };
-    let names = attrs.iter().map(|x| x.name(&container_attrs).str_expr());
+    let names = attrs
+        .iter()
+        .filter(|x| !x.skip_deserializing())
+        .map(|x| x.name(&container_attrs).str_expr());
     if attrs.iter().filter(|x| x.other()).count() > 1 {
         return Err(syn::Error::new(
             Span::call_site(),
