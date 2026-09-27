@@ -9,12 +9,12 @@ libraries of the formats.
 with serde, deser and miniserde.  Current results from running `make bench`:
 
 ```
-test bench_deserialize_deser_json ... bench:     385,121.88 ns/iter (+/- 8,043.67)
-test bench_deserialize_miniserde  ... bench:     419,984.38 ns/iter (+/- 7,978.88)
-test bench_deserialize_serdejson  ... bench:     382,646.61 ns/iter (+/- 8,606.28)
-test bench_serialize_deser_json   ... bench:     211,954.25 ns/iter (+/- 2,744.81)
-test bench_serialize_miniserde    ... bench:     296,743.49 ns/iter (+/- 5,854.23)
-test bench_serialize_serdejson    ... bench:     206,627.87 ns/iter (+/- 2,901.65)
+test bench_deserialize_deser_json ... bench:     440,510.45 ns/iter (+/- 9,947.53)
+test bench_deserialize_miniserde  ... bench:     439,822.95 ns/iter (+/- 10,659.55)
+test bench_deserialize_serdejson  ... bench:     397,839.59 ns/iter (+/- 5,283.65)
+test bench_serialize_deser_json   ... bench:     175,657.55 ns/iter (+/- 3,909.28)
+test bench_serialize_miniserde    ... bench:     313,294.78 ns/iter (+/- 5,118.25)
+test bench_serialize_serdejson    ... bench:     218,652.08 ns/iter (+/- 4,405.83)
 ```
 
 ## Benchmark Binary
@@ -102,6 +102,19 @@ Usage:
   different styles.
 * With the `count-allocs` feature, `allocs [FILTER]` counts the allocations
   of a single run of every benchmark.
+
+### Results
+
+The geometric mean of deser/serde over the 11 datasets, from
+`make bench-versus` (Apple M5 Max, Rust 1.98).  Below 1 deser is faster.
+The range shows the best and the worst dataset.
+
+| format | serde library  | de    | de range    | ser   | ser range   |
+|--------|----------------|-------|-------------|-------|-------------|
+| JSON   | `serde_json`   | 1.35x | 0.92x-2.70x | 0.90x | 0.37x-2.17x |
+| CBOR   | `ciborium`     | 0.92x | 0.59x-1.65x | 1.59x | 1.04x-2.87x |
+| YAML   | `serde-saphyr` | 0.49x | 0.37x-0.86x | 0.70x | 0.27x-1.42x |
+| TOML   | `toml`         | 0.61x | 0.44x-0.95x | 1.12x | 0.91x-1.96x |
 
 Notes on the comparison:
 
