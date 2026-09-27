@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 
 use crate::attr::{ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs};
 use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
-use crate::unnamed::{UnnamedField, UnnamedStruct};
+use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
 /// Returns an expression that creates a serialize handle for a value.
 /// Implements `__private_begin` for types which do not implement `finish`.
@@ -92,6 +92,9 @@ fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     if let Some(rv) = crate::forward::derive_serialize(input)? {
+        return Ok(rv);
+    }
+    if let Some(rv) = crate::transparent::derive(input, Direction::Serialize)? {
         return Ok(rv);
     }
     if let Some(st) = UnnamedStruct::of(input)? {
@@ -574,9 +577,23 @@ fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::R
         &st.bound_fields(Direction::Serialize),
     );
     let remaining = st.remaining(Direction::Serialize);
+    if container_attrs.transparent() && remaining.len() != 1 {
+        return Err(crate::transparent::field_count_error(
+            input,
+            Direction::Serialize,
+        ));
+    }
     match remaining[..] {
         [] => derive_unit_struct(input, &container_attrs, where_clause),
-        [field] => derive_newtype_struct(input, &container_attrs, field, where_clause),
+        [field] => {
+            let field = NewtypeField {
+                member: syn::Member::Unnamed(field.member.clone()),
+                ty: field.ty(),
+                adapter: field.attrs.adapters().ser(),
+                convert: TokenStream::new(),
+            };
+            derive_newtype_struct(input, &container_attrs, &field, where_clause)
+        }
         _ => derive_tuple_struct(input, &container_attrs, &remaining, where_clause),
     }
 }
@@ -683,18 +700,18 @@ fn derive_unit_struct(
 
 /// Derives a newtype struct (or a struct with one field that is serialized)
 /// which is serialized as the value of the field.
-fn derive_newtype_struct(
+pub(crate) fn derive_newtype_struct(
     input: &syn::DeriveInput,
     container_attrs: &ContainerAttrs,
-    field: &UnnamedField,
+    field: &NewtypeField,
     bounded_where_clause: syn::WhereClause,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
 
-    let adapter = field.attrs.adapters().ser();
-    let field_type = field.ty();
+    let adapter = field.adapter;
+    let field_type = field.ty;
     let member = &field.member;
     // the value serializes through the adapter or the regular implementation
     let value = match adapter {

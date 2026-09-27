@@ -502,6 +502,43 @@
 /// }
 /// ```
 ///
+/// Transparent structs have exactly one field that is not skipped.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(transparent)]
+/// struct Test {
+///     a: u32,
+///     b: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(transparent)]
+/// struct Test(u32, u32);
+/// ```
+///
+/// Field attributes other than adapters and skips have no effect on
+/// transparent structs.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(transparent)]
+/// struct Test {
+///     #[deser(rename = "b")]
+///     a: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(transparent)]
+/// enum Test {
+///     A(u32),
+/// }
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

@@ -8,7 +8,7 @@ use crate::attr::{
     ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault, VariantName,
 };
 use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
-use crate::unnamed::{UnnamedField, UnnamedStruct};
+use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
 /// Returns an expression that creates a sink handle for the slot of a field.
 ///
@@ -74,6 +74,9 @@ pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStre
     if let Some(rv) = crate::forward::derive_deserialize(input)? {
         return Ok(rv);
     }
+    if let Some(rv) = crate::transparent::derive(input, Direction::Deserialize)? {
+        return Ok(rv);
+    }
     if let Some(st) = UnnamedStruct::of(input)? {
         return derive_unnamed_struct(input, &st);
     }
@@ -114,9 +117,31 @@ fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::R
             .extend(st.default_bounds(&input.generics));
     }
     let remaining = st.remaining(Direction::Deserialize);
+    if container_attrs.transparent() && remaining.len() != 1 {
+        return Err(crate::transparent::field_count_error(
+            input,
+            Direction::Deserialize,
+        ));
+    }
     match remaining[..] {
         [] => derive_unit_struct(input, &container_attrs, st, where_clause),
-        [field] => derive_newtype_struct(input, &container_attrs, st, field, where_clause),
+        [field] => {
+            // converts the value of the field into the struct
+            let convert = if st.fields.len() == 1 {
+                let ident = &input.ident;
+                quote! { #ident }
+            } else {
+                let construct = st.construct(&[quote! { __value }]);
+                quote! { |__value| #construct }
+            };
+            let field = NewtypeField {
+                member: syn::Member::Unnamed(field.member.clone()),
+                ty: field.ty(),
+                adapter: field.attrs.adapters().de(),
+                convert,
+            };
+            derive_newtype_struct(input, &container_attrs, &field, where_clause)
+        }
         _ => derive_tuple_struct(input, &container_attrs, st, &remaining, where_clause),
     }
 }
@@ -1394,11 +1419,10 @@ pub fn derive_enum(
 
 /// Derives a newtype struct (or a struct with one field that is
 /// deserialized) which is deserialized like the field.
-fn derive_newtype_struct(
+pub(crate) fn derive_newtype_struct(
     input: &syn::DeriveInput,
     container_attrs: &ContainerAttrs,
-    st: &UnnamedStruct,
-    field: &UnnamedField,
+    field: &NewtypeField,
     bounded_where_clause: syn::WhereClause,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
@@ -1406,16 +1430,10 @@ fn derive_newtype_struct(
     let de_generics = with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
-    let adapter = field.attrs.adapters().de();
+    let adapter = field.adapter;
     let member = &field.member;
-    let field_type = field.ty();
-    // converts the value of the field into the struct
-    let convert = if st.fields.len() == 1 {
-        quote! { #ident }
-    } else {
-        let construct = st.construct(&[quote! { __value }]);
-        quote! { |__value| #construct }
-    };
+    let field_type = field.ty;
+    let convert = &field.convert;
     let make_sink = match adapter {
         Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
         None => quote! { __deser::de::OwnedSink::deserialize() },

@@ -27,6 +27,19 @@ impl UnnamedField<'_> {
     }
 }
 
+/// The field of a struct that is serialized and deserialized like the
+/// field (newtype structs and transparent structs).
+pub struct NewtypeField<'a> {
+    /// The member to access the field.
+    pub member: syn::Member,
+    pub ty: &'a syn::Type,
+    /// The adapter of the field for the direction.
+    pub adapter: Option<&'a syn::Type>,
+    /// Converts the value of the field into the struct (deserialization
+    /// only).
+    pub convert: TokenStream,
+}
+
 /// A struct with unnamed fields or a unit struct.
 pub struct UnnamedStruct<'a> {
     ident: &'a syn::Ident,

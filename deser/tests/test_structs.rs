@@ -377,3 +377,64 @@ fn test_skipped_fields() {
 
     check(Nothing(0), vec![Atom::Null.into()]);
 }
+
+#[test]
+fn test_transparent() {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(transparent)]
+    struct Id {
+        value: u64,
+    }
+
+    check(Id { value: 42 }, vec![42u64.into()]);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(transparent)]
+    struct Tagged<T> {
+        #[deser(as = DisplayFromStr)]
+        value: u32,
+        #[deser(skip)]
+        marker: PhantomData<T>,
+        #[deser(skip, default = 7)]
+        other: u32,
+    }
+
+    check(
+        Tagged::<String> {
+            value: 1,
+            marker: PhantomData,
+            other: 7,
+        },
+        vec!["1".into()],
+    );
+
+    fn positive(value: &Positive) -> Result<(), &'static str> {
+        if value.0 > 0 {
+            Ok(())
+        } else {
+            Err("not positive")
+        }
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(transparent, validate = positive)]
+    struct Positive(i32, #[deser(skip)] ());
+
+    check(Positive(1, ()), vec![1i64.into()]);
+    let err = deserialize::<Positive>(vec![0i64.into()]).unwrap_err();
+    assert_eq!(err.message(), "invalid value: not positive");
+
+    // borrowing
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(transparent)]
+    struct Name<'a> {
+        name: &'a str,
+    }
+
+    let input = String::from("x");
+    let mut out = None::<Name<'_>>;
+    DeserializeDriver::new(&mut out)
+        .emit_borrowed(input.as_str())
+        .unwrap();
+    assert_eq!(out.unwrap(), Name { name: "x" });
+}

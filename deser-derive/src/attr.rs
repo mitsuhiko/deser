@@ -420,6 +420,7 @@ pub struct ContainerAttrs<'a> {
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
     deny_unknown_fields: bool,
+    transparent: bool,
     validate: Option<syn::ExprPath>,
     tag: Option<Name>,
     tag_aliases: Vec<Name>,
@@ -676,6 +677,7 @@ impl<'a> ContainerAttrs<'a> {
             default: None,
             skip_serializing_optionals: false,
             deny_unknown_fields: false,
+            transparent: false,
             validate: None,
             tag: None,
             tag_aliases: Vec::new(),
@@ -765,6 +767,16 @@ impl<'a> ContainerAttrs<'a> {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)
             }
             "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
+            "transparent" => {
+                set_flag(meta, name, &mut rv.transparent)?;
+                match input.data {
+                    syn::Data::Struct(syn::DataStruct {
+                        fields: syn::Fields::Named(_) | syn::Fields::Unnamed(_),
+                        ..
+                    }) => Ok(()),
+                    _ => Err(meta.error("transparent is only supported on structs with fields")),
+                }
+            }
             "validate" => {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.validate, value)
@@ -928,6 +940,12 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the function that validates deserialized values.
     pub fn validate(&self) -> Option<&syn::ExprPath> {
         self.validate.as_ref()
+    }
+
+    /// Returns `true` if the struct is serialized and deserialized like its
+    /// only field.
+    pub fn transparent(&self) -> bool {
+        self.transparent
     }
 
     /// Returns `true` if keys that no field takes are rejected.

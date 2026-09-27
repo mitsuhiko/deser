@@ -112,6 +112,12 @@
 //!   deserialization says otherwise.  See [unknown fields](#unknown-fields).
 //! * `#[deser(validate = path)]`: validates the struct once it was
 //!   deserialized.  See [validation](#validation).
+//! * `#[deser(transparent)]`: serializes and deserializes the struct like
+//!   its only field that is not skipped (like a newtype struct).  The other
+//!   fields have to be skipped, the field can have an adapter.  Structs
+//!   with unnamed fields are like this without the attribute (see
+//!   [unnamed fields](#unnamed-field-attributes)), for them it only checks
+//!   that one field is not skipped.
 //! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
@@ -523,7 +529,7 @@
 //! | `#[serde(try_from = "U")]` | `#[deser(deserialize_as = TryFromInto<U>)]` |
 //! | `#[serde(into = "U")]` | `#[deser(serialize_as = FromInto<U>)]` |
 //! | `#[serde(from = "U", into = "U")]` | `#[deser(as = FromInto<U>)]` |
-//! | `#[serde(transparent)]` | newtype structs are transparent |
+//! | `#[serde(transparent)]` | `#[deser(transparent)]` (not needed for newtype structs) |
 //!
 //! The field attributes `serialize_with` and `deserialize_with` correspond
 //! to `serialize_as` and `deserialize_as` with an adapter.

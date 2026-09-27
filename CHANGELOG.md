@@ -4,6 +4,8 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(transparent)]` for structs which serializes and
+  deserializes a struct like its only field that is not skipped.
 - Added `#[deser(rename_all_fields = "...")]` for enums which renames the
   fields of all struct variants, and `#[deser(rename_all = "...")]` for
   struct variants which renames the fields of the variant.
