@@ -59,7 +59,7 @@
 //!
 //! # Borrowing
 //!
-//! Structs (and newtype structs) can borrow from the data they are
+//! Structs and enums can borrow from the data they are
 //! deserialized from.  The derive implements `Deserialize<'de>` with `'de`
 //! outliving all lifetimes of the type.  References (`&str` and `&[u8]`)
 //! always borrow, `Cow` borrows with the
@@ -81,8 +81,8 @@
 //! Data can only be borrowed if the data format passes it on borrowed.  If
 //! the data is not borrowed (for instance because a string had escape
 //! sequences) references fail to deserialize while `Cow` holds owned data.
-//! Enums with data cannot have lifetime parameters.  The lifetime `'de` is
-//! reserved for the derive.
+//! Untagged enums replay values which were recorded, the recorded data is
+//! not borrowed.  The lifetime `'de` is reserved for the derive.
 //!
 //! # Customization
 //!
@@ -712,11 +712,10 @@
 //! ## Bounds
 //!
 //! By default the derive requires every type parameter to implement the
-//! derived trait (`T: Serialize` or `T: Deserialize`, for enums also
-//! `T: 'static` when deserializing).  Type parameters which only appear in
-//! fields with adapters instead need to be `Sync` for `Serialize` and
-//! `Send` for `Deserialize` (serializables are `Sync` and deserializables
-//! are `Send`).  Types with [container adapters](#container-adapters)
+//! derived trait (`T: Serialize` or `T: Deserialize`).  Type parameters
+//! which only appear in fields with adapters instead need to be `Sync` for
+//! `Serialize` and `Send` for `Deserialize` (serializables are `Sync` and
+//! deserializables are `Send`).  Types with [container adapters](#container-adapters)
 //! instead require the adapter to support the type and the type to be
 //! `Sync` or `Send`.  This is wrong when a type parameter is not serialized
 //! itself, for instance when only an associated type is.  The bounds can

@@ -57,6 +57,23 @@ pub fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
     }
 }
 
+/// Adds the lifetime `'__s` of the slot of a value to the generics.
+///
+/// The lifetime has no bounds so that functions which take a slot with
+/// this lifetime are generic over it (it's late bound), as needed for
+/// `for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>`.
+pub fn with_slot_lifetime(generics: &syn::Generics) -> syn::Generics {
+    let mut rv = generics.clone();
+    rv.params.insert(
+        0,
+        syn::GenericParam::Lifetime(syn::LifetimeParam::new(syn::Lifetime::new(
+            "'__s",
+            Span::call_site(),
+        ))),
+    );
+    rv
+}
+
 /// Adds the `'de` lifetime of `Deserialize` to the generics.
 ///
 /// All lifetimes of the type are bounded by `'de` so that borrowed data can
@@ -126,6 +143,25 @@ pub fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
             proc_macro2::TokenTree::Group(group) => collect_idents(group.stream(), out),
             _ => {}
         }
+    }
+}
+
+/// Collects the names of all lifetimes (without the `'`) in a token stream.
+pub fn collect_lifetimes(stream: TokenStream, out: &mut HashSet<String>) {
+    let mut after_quote = false;
+    for token in stream {
+        match token {
+            proc_macro2::TokenTree::Punct(ref punct) if punct.as_char() == '\'' => {
+                after_quote = true;
+                continue;
+            }
+            proc_macro2::TokenTree::Ident(ident) if after_quote => {
+                out.insert(ident.to_string());
+            }
+            proc_macro2::TokenTree::Group(group) => collect_lifetimes(group.stream(), out),
+            _ => {}
+        }
+        after_quote = false;
     }
 }
 

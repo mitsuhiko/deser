@@ -640,8 +640,7 @@ fn test_generics() {
 #[deser(untagged)]
 enum Tree<T> {
     Leaf(T),
-    // the helper struct for this variant needs `T: 'static` to be able to
-    // deserialize the nested enum
+    // the helper struct for this variant deserializes the nested enum
     Node { children: Vec<Box<Tree<T>>> },
 }
 
@@ -682,5 +681,124 @@ fn test_generic_helper_bounds() {
             1u64.into(),
             Event::MapEnd,
         ],
+    );
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "t")]
+enum Sized<const N: usize> {
+    Array { values: [u32; N] },
+    Empty,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum ConstNewtype<const N: usize> {
+    Array([u8; N]),
+    Unit,
+}
+
+#[test]
+fn test_const_generics() {
+    check(
+        Sized::<2>::Array { values: [1, 2] },
+        vec![
+            Event::map_start(),
+            "t".into(),
+            "Array".into(),
+            "values".into(),
+            Event::seq_start(),
+            1u64.into(),
+            2u64.into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ],
+    );
+    check(
+        Sized::<2>::Empty,
+        vec![
+            Event::map_start(),
+            "t".into(),
+            "Empty".into(),
+            Event::MapEnd,
+        ],
+    );
+    check(ConstNewtype::<1>::Unit, vec!["Unit".into()]);
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type", content = "data")]
+enum Mixed<'a, T, const N: usize>
+where
+    T: Clone + 'a,
+{
+    Borrowed {
+        text: &'a str,
+        value: T,
+    },
+    Owned([T; N]),
+    #[deser(other)]
+    Other(#[deser(tag)] String),
+}
+
+#[test]
+fn test_lifetimes_types_and_consts() {
+    let input = String::from("text");
+    let mut out = None::<Mixed<'_, u32, 1>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        for event in [
+            Event::map_start(),
+            "type".into(),
+            "Borrowed".into(),
+            "data".into(),
+            Event::map_start(),
+            "text".into(),
+            input.as_str().into(),
+            "value".into(),
+            1u64.into(),
+            Event::MapEnd,
+            Event::MapEnd,
+        ] {
+            driver.emit_borrowed(event).unwrap();
+        }
+    }
+    assert_eq!(
+        out.unwrap(),
+        Mixed::Borrowed {
+            text: "text",
+            value: 1
+        }
+    );
+    // types with lifetimes are not `DeserializeOwned`
+    fn check_borrowed(value: Mixed<'_, u32, 1>, events: Vec<Event<'_>>) {
+        assert_eq!(
+            serialize(&value),
+            events.iter().map(|x| x.to_static()).collect::<Vec<_>>()
+        );
+        let mut out = None::<Mixed<'_, u32, 1>>;
+        {
+            let mut driver = DeserializeDriver::new(&mut out);
+            for event in events {
+                driver.emit(event).unwrap();
+            }
+        }
+        assert_eq!(out.unwrap(), value);
+    }
+    check_borrowed(
+        Mixed::Owned([1]),
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Owned".into(),
+            "data".into(),
+            Event::seq_start(),
+            1u64.into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ],
+    );
+    check_borrowed(
+        Mixed::Other("x".into()),
+        vec![Event::map_start(), "type".into(), "x".into(), Event::MapEnd],
     );
 }

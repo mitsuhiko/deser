@@ -23,7 +23,10 @@ use crate::attr::{
     Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault,
     UnnamedFieldAttrs, VariantName,
 };
-use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
+use crate::bound::{
+    BoundField, collect_idents, collect_lifetimes, turbofish_without_lifetimes,
+    where_clause_for_fields, with_lifetime_bound,
+};
 
 #[derive(Copy, Clone)]
 enum Repr<'a> {
@@ -179,48 +182,136 @@ impl<'a> VariantInfo<'a> {
     }
 }
 
-/// Returns the type parameters of the generics that appear in the types.
-fn used_type_params<'a>(
+/// Returns the name of a generic parameter (without the `'` of lifetimes).
+fn param_name(param: &syn::GenericParam) -> String {
+    match param {
+        syn::GenericParam::Lifetime(param) => param.lifetime.ident.to_string(),
+        syn::GenericParam::Type(param) => param.ident.to_string(),
+        syn::GenericParam::Const(param) => param.ident.to_string(),
+    }
+}
+
+/// Returns `true` if the parameter is used in the tokens.
+///
+/// `idents` and `lifetimes` are the identifiers and lifetimes of the tokens.
+fn param_used(
+    param: &syn::GenericParam,
+    idents: &HashSet<String>,
+    lifetimes: &HashSet<String>,
+) -> bool {
+    match param {
+        syn::GenericParam::Lifetime(_) => lifetimes.contains(&param_name(param)),
+        _ => idents.contains(&param_name(param)),
+    }
+}
+
+/// Returns the generic parameters of the generics that appear in the types.
+fn used_params<'a>(
     generics: &'a syn::Generics,
     types: &[TokenStream],
-) -> Vec<&'a syn::TypeParam> {
+) -> Vec<&'a syn::GenericParam> {
     let mut idents = HashSet::new();
+    let mut lifetimes = HashSet::new();
     for ty in types {
         collect_idents(ty.clone(), &mut idents);
+        collect_lifetimes(ty.clone(), &mut lifetimes);
     }
     generics
-        .type_params()
-        .filter(|param| idents.contains(&param.ident.to_string()))
+        .params
+        .iter()
+        .filter(|param| param_used(param, &idents, &lifetimes))
         .collect()
 }
 
-/// Returns the predicates which only refer to the given type parameters.
+/// Returns `true` if the tokens only refer to the given parameters (of the
+/// parameters of the generics).
+fn only_uses(generics: &syn::Generics, tokens: TokenStream, params: &[&syn::GenericParam]) -> bool {
+    let mut idents = HashSet::new();
+    let mut lifetimes = HashSet::new();
+    collect_idents(tokens.clone(), &mut idents);
+    collect_lifetimes(tokens, &mut lifetimes);
+    generics
+        .params
+        .iter()
+        .filter(|param| param_used(param, &idents, &lifetimes))
+        .all(|param| params.iter().any(|x| param_name(x) == param_name(param)))
+}
+
+/// Returns the predicates which only refer to the given parameters.
 fn filter_predicates<'a>(
     generics: &syn::Generics,
     predicates: impl IntoIterator<Item = &'a syn::WherePredicate>,
-    params: &[&syn::TypeParam],
+    params: &[&syn::GenericParam],
 ) -> Vec<&'a syn::WherePredicate> {
-    let allowed = params
-        .iter()
-        .map(|x| x.ident.to_string())
-        .collect::<HashSet<_>>();
     predicates
         .into_iter()
-        .filter(|predicate| {
-            let mut idents = HashSet::new();
-            collect_idents(quote! { #predicate }, &mut idents);
-            generics
-                .type_params()
-                .map(|x| x.ident.to_string())
-                .filter(|x| idents.contains(x))
-                .all(|x| allowed.contains(&x))
-        })
+        .filter(|predicate| only_uses(generics, quote! { #predicate }, params))
         .collect()
 }
 
+/// Returns the declaration of the parameters of a helper struct.
+///
+/// The helper struct takes the parameters of the enum that its fields use,
+/// with the bounds of the enum that only refer to them.
+fn helper_params_decl(generics: &syn::Generics, params: &[&syn::GenericParam]) -> TokenStream {
+    let decls = params.iter().map(|param| match param {
+        syn::GenericParam::Lifetime(param) => {
+            let lifetime = &param.lifetime;
+            let bounds = param
+                .bounds
+                .iter()
+                .filter(|x| only_uses(generics, quote! { #x }, params))
+                .collect::<Vec<_>>();
+            if bounds.is_empty() {
+                quote! { #lifetime }
+            } else {
+                quote! { #lifetime: #(#bounds)+* }
+            }
+        }
+        syn::GenericParam::Type(param) => {
+            let ident = &param.ident;
+            let bounds = param
+                .bounds
+                .iter()
+                .filter(|x| only_uses(generics, quote! { #x }, params))
+                .collect::<Vec<_>>();
+            if bounds.is_empty() {
+                quote! { #ident }
+            } else {
+                quote! { #ident: #(#bounds)+* }
+            }
+        }
+        syn::GenericParam::Const(param) => {
+            let ident = &param.ident;
+            let ty = &param.ty;
+            quote! { const #ident: #ty }
+        }
+    });
+    quote! { #(#decls),* }
+}
+
+/// Returns the arguments for the parameters of a helper struct.
+fn helper_params_args(params: &[&syn::GenericParam]) -> TokenStream {
+    let args = params.iter().map(|param| match param {
+        syn::GenericParam::Lifetime(param) => {
+            let lifetime = &param.lifetime;
+            quote! { #lifetime }
+        }
+        syn::GenericParam::Type(param) => {
+            let ident = &param.ident;
+            quote! { #ident }
+        }
+        syn::GenericParam::Const(param) => {
+            let ident = &param.ident;
+            quote! { #ident }
+        }
+    });
+    quote! { #(#args),* }
+}
+
 /// Returns the where clause predicates of the generics which only refer to
-/// the given type parameters.
-fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> TokenStream {
+/// the given parameters.
+fn helper_where_clause(generics: &syn::Generics, params: &[&syn::GenericParam]) -> TokenStream {
     let where_clause = match generics.where_clause {
         Some(ref where_clause) => where_clause,
         None => return TokenStream::new(),
@@ -231,22 +322,6 @@ fn helper_where_clause(generics: &syn::Generics, params: &[&syn::TypeParam]) -> 
     } else {
         quote! { where #(#predicates),* }
     }
-}
-
-fn check_generics(generics: &syn::Generics) -> syn::Result<()> {
-    if let Some(lifetime) = generics.lifetimes().next() {
-        return Err(syn::Error::new_spanned(
-            lifetime,
-            "enums with lifetime parameters are not supported",
-        ));
-    }
-    if let Some(param) = generics.const_params().next() {
-        return Err(syn::Error::new_spanned(
-            param,
-            "enums with const parameters are not supported",
-        ));
-    }
-    Ok(())
 }
 
 /// Returns `true` if the enum needs the support for enums with data.
@@ -486,17 +561,21 @@ pub fn derive_deserialize(
     container_attrs: &ContainerAttrs,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    check_generics(&input.generics)?;
     let repr = repr(container_attrs);
     let all_variants = collect_variants(enumeration, container_attrs)?;
     let (_, ty_generics, _) = input.generics.split_for_impl();
     let de_generics = crate::bound::with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
-    let turbofish = ty_generics.as_turbofish();
+    // the builders of the variants live as long as the slot of the enum
+    // (`'__a`), which the enum and its parameters outlive
+    let builder_generics = with_lifetime_bound(&de_generics, "'__a");
+    let (builder_impl_generics, _, _) = builder_generics.split_for_impl();
+    // lifetimes are inferred, the builders have more than the enum
+    let turbofish = turbofish_without_lifetimes(&input.generics);
     let mut where_clause = where_clause_for_fields(
         &input.generics,
-        quote!(__deser::Deserialize<'de> + 'static),
-        Some(quote!(__deser::__derive::Send + 'static)),
+        quote!(__deser::Deserialize<'de>),
+        Some(quote!(__deser::__derive::Send)),
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
@@ -507,16 +586,7 @@ pub fn derive_deserialize(
         .into_iter()
         .filter(|x| !x.skip_deserializing)
         .collect::<Vec<_>>();
-    // the deserializer boxes variant builders so the type parameters must
-    // be 'static even with custom bounds.
-    if container_attrs.deserialize_bound().is_some() {
-        for param in input.generics.type_params() {
-            let param = &param.ident;
-            where_clause
-                .predicates
-                .push(syn::parse_quote!(#param: 'static));
-        }
-    } else {
+    if container_attrs.deserialize_bound().is_none() {
         // skipped fields of generic types need a default, the helper
         // structs of the variants require it
         let params = input
@@ -555,9 +625,9 @@ pub fn derive_deserialize(
             Content::Unit => matches!(repr, Repr::Internal { .. }) && !info.other,
             _ => false,
         };
-        // helper structs only take the type parameters they use
+        // helper structs only take the parameters they use
         let helper_params = match info.content {
-            Content::Struct(_) => used_type_params(
+            Content::Struct(_) => used_params(
                 &input.generics,
                 &content_fields
                     .iter()
@@ -570,11 +640,11 @@ pub fn derive_deserialize(
             ),
             _ => Vec::new(),
         };
-        let helper_args = helper_params.iter().map(|x| &x.ident).collect::<Vec<_>>();
-        let helper_ty = if helper_args.is_empty() {
+        let helper_ty = if helper_params.is_empty() {
             quote! { #helper }
         } else {
-            quote! { #helper<#(#helper_args),*> }
+            let args = helper_params_args(&helper_params);
+            quote! { #helper<#args> }
         };
         if needs_helper {
             let helper_name = var_ident.to_string();
@@ -591,17 +661,12 @@ pub fn derive_deserialize(
                     quote! { #(#deser_attrs)* #name: #ty, }
                 })
                 .collect::<Vec<_>>();
-            // the helper needs the same bounds on its parameters as the enum,
-            // plus `'static` as the enum's deserialize impl requires it.
+            // the helper needs the same bounds on its parameters as the enum
             let helper_decl = if helper_params.is_empty() {
                 quote! { #helper }
             } else {
-                let params = helper_params.iter().map(|param| {
-                    let ident = &param.ident;
-                    let bounds = param.bounds.iter();
-                    quote! { #ident: 'static #(+ #bounds)* }
-                });
-                quote! { #helper<#(#params),*> }
+                let params = helper_params_decl(&input.generics, &helper_params);
+                quote! { #helper<#params> }
             };
             let helper_where = helper_where_clause(&input.generics, &helper_params);
             // the helper is derived with the same crate path and the custom
@@ -700,7 +765,7 @@ pub fn derive_deserialize(
 
     let type_name_const = type_name_const(container_attrs);
     let builder_ty = quote! {
-        __deser::__derive::BoxedVariant<'de, #enum_ty>
+        __deser::__derive::BoxedVariant<'__a, 'de, #enum_ty>
     };
 
     // makes a function for a special variant
@@ -714,13 +779,13 @@ pub fn derive_deserialize(
             Some((_, builder)) => (
                 quote! {
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn #fn_ident #impl_generics () -> #builder_ty #where_clause {
+                    fn #fn_ident #builder_impl_generics () -> #builder_ty #where_clause {
                         #builder
                     }
                 },
                 quote! {
                     __deser::__derive::Some(
-                        #fn_ident #turbofish as __deser::__derive::VariantMaker<'de, #enum_ty>
+                        #fn_ident #turbofish as __deser::__derive::VariantMaker<'_, 'de, #enum_ty>
                     )
                 },
             ),
@@ -745,7 +810,7 @@ pub fn derive_deserialize(
         (
             quote! {
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                fn __lookup #impl_generics (
+                fn __lookup #builder_impl_generics (
                     __tag: __deser::__derive::Tag<'_>,
                 ) -> __deser::__derive::Option<#builder_ty> #where_clause {
                     match __tag {
@@ -844,7 +909,7 @@ pub fn derive_deserialize(
             (
                 quote! {
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn __candidate #impl_generics (
+                    fn __candidate #builder_impl_generics (
                         __index: usize,
                     ) -> __deser::__derive::Option<#builder_ty> #where_clause {
                         match __index {
@@ -865,12 +930,14 @@ pub fn derive_deserialize(
     let (validated_support, handle) = match container_attrs.validate() {
         Some(path) => {
             let validator = crate::de::validator(path);
+            let slot_generics = crate::bound::with_slot_lifetime(&de_generics);
+            let (slot_impl_generics, _, _) = slot_generics.split_for_impl();
             (
                 quote! {
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn __unvalidated #impl_generics (
-                        __slot: &mut __deser::__derive::Option<#enum_ty>,
-                    ) -> __deser::de::SinkHandle<'_, 'de> #where_clause {
+                    fn __unvalidated #slot_impl_generics (
+                        __slot: &'__s mut __deser::__derive::Option<#enum_ty>,
+                    ) -> __deser::de::SinkHandle<'__s, 'de> #where_clause {
                         #handle
                     }
                 },
@@ -999,7 +1066,6 @@ pub fn derive_serialize(
     container_attrs: &ContainerAttrs,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    check_generics(&input.generics)?;
     let repr = repr(container_attrs);
     let variants = collect_variants(enumeration, container_attrs)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();

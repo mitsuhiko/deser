@@ -39,7 +39,10 @@ pub trait VariantBuilder<'de, E>: Send {
 }
 
 /// A boxed variant builder.
-pub type BoxedVariant<'de, E> = Box<dyn VariantBuilder<'de, E> + 'de>;
+///
+/// `'a` is the lifetime of the slot of the enum.  The enum (and with it
+/// the types of its fields) outlives it, which allows enums to borrow.
+pub type BoxedVariant<'a, 'de, E> = Box<dyn VariantBuilder<'de, E> + 'a>;
 
 /// A variant that is deserialized as `V` and then converted into `E`.
 pub struct Variant<'de, V, E> {
@@ -47,9 +50,14 @@ pub struct Variant<'de, V, E> {
     convert: fn(V) -> E,
 }
 
-impl<'de, V: Deserialize<'de> + 'de, E: 'de> Variant<'de, V, E> {
+impl<'de, V: Deserialize<'de>, E> Variant<'de, V, E> {
     /// Creates a boxed builder for a variant.
-    pub fn boxed(convert: fn(V) -> E) -> BoxedVariant<'de, E> {
+    pub fn boxed<'a>(convert: fn(V) -> E) -> BoxedVariant<'a, 'de, E>
+    where
+        'de: 'a,
+        V: 'a,
+        E: 'a,
+    {
         Box::new(Variant {
             sink: OwnedSink::deserialize(),
             convert,
@@ -73,9 +81,13 @@ pub struct IgnoredVariant<'de, E> {
     make: fn() -> E,
 }
 
-impl<'de, E: 'de> IgnoredVariant<'de, E> {
+impl<'de, E> IgnoredVariant<'de, E> {
     /// Creates a boxed builder for a variant which ignores its content.
-    pub fn boxed(make: fn() -> E) -> BoxedVariant<'de, E> {
+    pub fn boxed<'a>(make: fn() -> E) -> BoxedVariant<'a, 'de, E>
+    where
+        'de: 'a,
+        E: 'a,
+    {
         Box::new(IgnoredVariant {
             sink: SinkHandle::null(),
             make,
@@ -104,12 +116,17 @@ pub struct OtherVariant<'de, T, C, E> {
 
 impl<'de, T, C, E> OtherVariant<'de, T, C, E>
 where
-    T: Deserialize<'de> + 'de,
-    C: Deserialize<'de> + 'de,
-    E: 'de,
+    T: Deserialize<'de>,
+    C: Deserialize<'de>,
 {
     /// Creates a boxed builder for a variant which captures its tag.
-    pub fn boxed(convert: fn(T, C) -> E) -> BoxedVariant<'de, E> {
+    pub fn boxed<'a>(convert: fn(T, C) -> E) -> BoxedVariant<'a, 'de, E>
+    where
+        'de: 'a,
+        T: 'a,
+        C: 'a,
+        E: 'a,
+    {
         Box::new(OtherVariant {
             tag: None,
             content: OwnedSink::deserialize(),
@@ -336,38 +353,38 @@ pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Err
 }
 
 /// Looks up a variant by tag.
-pub type VariantLookup<'de, E> = fn(Tag<'_>) -> Option<BoxedVariant<'de, E>>;
+pub type VariantLookup<'a, 'de, E> = fn(Tag<'_>) -> Option<BoxedVariant<'a, 'de, E>>;
 
 /// Creates the builder of a special variant.
-pub type VariantMaker<'de, E> = fn() -> BoxedVariant<'de, E>;
+pub type VariantMaker<'a, 'de, E> = fn() -> BoxedVariant<'a, 'de, E>;
 
 /// Looks up a unit variant by tag.
 pub type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
 
 /// Creates the builder for the n-th variant of an untagged enum.
-pub type CandidateLookup<'de, E> = fn(usize) -> Option<BoxedVariant<'de, E>>;
+pub type CandidateLookup<'a, 'de, E> = fn(usize) -> Option<BoxedVariant<'a, 'de, E>>;
 
 /// The variants of a tagged enum.
-pub struct Variants<'de, E> {
+pub struct Variants<'a, 'de, E> {
     /// Looks up the known variants by tag.
-    pub lookup: VariantLookup<'de, E>,
+    pub lookup: VariantLookup<'a, 'de, E>,
     /// Creates the variant for unknown tags (`#[deser(other)]`).
-    pub other: Option<VariantMaker<'de, E>>,
+    pub other: Option<VariantMaker<'a, 'de, E>>,
     /// Creates the variant for missing tags (`#[deser(default)]`).
-    pub default: Option<VariantMaker<'de, E>>,
+    pub default: Option<VariantMaker<'a, 'de, E>>,
     /// The names of the variants for errors.
     pub names: &'static [&'static str],
 }
 
-impl<'de, E> Clone for Variants<'de, E> {
+impl<'a, 'de, E> Clone for Variants<'a, 'de, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'de, E> Copy for Variants<'de, E> {}
+impl<'a, 'de, E> Copy for Variants<'a, 'de, E> {}
 
-impl<'de, E> Variants<'de, E> {
+impl<'a, 'de, E> Variants<'a, 'de, E> {
     /// Returns the variant for a recorded tag.
     ///
     /// The name is the name of the enum for errors.
@@ -376,7 +393,7 @@ impl<'de, E> Variants<'de, E> {
         tag: &Recording,
         name: &str,
         state: &mut State,
-    ) -> Result<BoxedVariant<'de, E>, Error> {
+    ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
         let atom = single_atom(tag);
         if let Some(atom) = atom
             && let Some(variant) = lookup_atom(atom, self.lookup)
@@ -398,7 +415,11 @@ impl<'de, E> Variants<'de, E> {
     }
 
     /// Returns the variant for a missing tag.
-    fn resolve_missing(&self, tag: &str, state: &mut State) -> Result<BoxedVariant<'de, E>, Error> {
+    fn resolve_missing(
+        &self,
+        tag: &str,
+        state: &mut State,
+    ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
         match self.default {
             Some(default) => {
                 let mut variant = default();
@@ -441,20 +462,20 @@ fn feed_null<'de, E>(
 pub struct ExternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
     name: &'static str,
-    variants: Variants<'de, E>,
+    variants: Variants<'a, 'de, E>,
     unit: UnitLookup<E>,
     key: Recording,
     has_key: bool,
     done: bool,
-    variant: Option<BoxedVariant<'de, E>>,
+    variant: Option<BoxedVariant<'a, 'de, E>>,
 }
 
-impl<'a, 'de, E: Send + 'de> ExternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> ExternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an externally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
         name: &'static str,
-        variants: Variants<'de, E>,
+        variants: Variants<'a, 'de, E>,
         unit: UnitLookup<E>,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(ExternallyTaggedSink {
@@ -481,7 +502,7 @@ impl<'a, 'de, E: Send + 'de> ExternallyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if let Atom::Ext(_) = atom {
             // lowered to the fallback
@@ -609,16 +630,16 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     tag: EnumKey,
     content: EnumKey,
     name: &'static str,
-    variants: Variants<'de, E>,
+    variants: Variants<'a, 'de, E>,
     key: Recording,
     tag_value: Option<Recording>,
     recorded_content: Option<Recording>,
     has_content: bool,
     deny_unknown_fields: bool,
-    variant: Option<BoxedVariant<'de, E>>,
+    variant: Option<BoxedVariant<'a, 'de, E>>,
 }
 
-impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> AdjacentlyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an adjacently tagged enum.
     ///
     /// Keys other than the tag and the content are unknown fields, they are
@@ -628,7 +649,7 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
         tag: EnumKey,
         content: EnumKey,
         name: &'static str,
-        variants: Variants<'de, E>,
+        variants: Variants<'a, 'de, E>,
         deny_unknown_fields: bool,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(AdjacentlyTaggedSink {
@@ -648,7 +669,7 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
 
     fn start_variant(
         &mut self,
-        mut variant: BoxedVariant<'de, E>,
+        mut variant: BoxedVariant<'a, 'de, E>,
         state: &mut State,
     ) -> Result<(), Error> {
         if let Some(content) = self.recorded_content.take() {
@@ -670,7 +691,7 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
@@ -735,7 +756,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 pub fn untagged_handle<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
     name: &'static str,
-    candidates: CandidateLookup<'de, E>,
+    candidates: CandidateLookup<'a, 'de, E>,
 ) -> SinkHandle<'a, 'de> {
     Recording::capture(move |recording, state| {
         for index in 0.. {
@@ -768,11 +789,11 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
     tag: EnumKey,
     name: &'static str,
-    variants: Variants<'de, E>,
+    variants: Variants<'a, 'de, E>,
     key: Recording,
     pending: Vec<(Recording, Recording)>,
     tag_value: Option<Recording>,
-    variant: Option<BoxedVariant<'de, E>>,
+    variant: Option<BoxedVariant<'a, 'de, E>>,
     // if the key of the variant was recorded to look for the tag
     variant_key: bool,
     // if the enum is flattened into a struct
@@ -781,13 +802,13 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     unclaimed: Vec<Error>,
 }
 
-impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an internally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
         tag: EnumKey,
         name: &'static str,
-        variants: Variants<'de, E>,
+        variants: Variants<'a, 'de, E>,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(InternallyTaggedSink {
             out,
@@ -807,7 +828,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
     /// Starts a variant and replays the pairs recorded so far into it.
     fn start_variant(
         &mut self,
-        mut variant: BoxedVariant<'de, E>,
+        mut variant: BoxedVariant<'a, 'de, E>,
         state: &mut State,
     ) -> Result<(), Error> {
         variant.sink().map(state)?;
@@ -846,7 +867,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
+impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }

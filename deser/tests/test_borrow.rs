@@ -256,3 +256,213 @@ fn test_deserialize_owned() {
         .unwrap()
     }
 }
+
+#[test]
+fn test_borrowed_enums() {
+    use deser::Serialize;
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    enum External<'a> {
+        Unit,
+        Newtype(&'a str),
+        Tuple(&'a str, u32),
+        Struct {
+            name: &'a str,
+            #[deser(as = Borrowed)]
+            text: Cow<'a, str>,
+        },
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(tag = "type")]
+    enum Internal<'a> {
+        Struct {
+            name: &'a str,
+        },
+        #[deser(other)]
+        Other(#[deser(tag)] &'a str),
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(tag = "t", content = "c")]
+    enum Adjacent<'a> {
+        Newtype(&'a str),
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(untagged)]
+    enum Untagged<'a> {
+        Number(u32),
+        Text(&'a str),
+    }
+
+    let input = String::from("hello");
+    let s = input.as_str();
+
+    let value: External<'_> = borrowed(vec![
+        Event::map_start(),
+        "Newtype".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, External::Newtype("hello"));
+    let value: External<'_> = borrowed(vec![
+        Event::map_start(),
+        "Tuple".into(),
+        Event::seq_start(),
+        s.into(),
+        1u64.into(),
+        Event::SeqEnd,
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, External::Tuple("hello", 1));
+    let value: External<'_> = borrowed(vec![
+        Event::map_start(),
+        "Struct".into(),
+        Event::map_start(),
+        "name".into(),
+        s.into(),
+        "text".into(),
+        s.into(),
+        Event::MapEnd,
+        Event::MapEnd,
+    ])
+    .unwrap();
+    match value {
+        External::Struct { name, text } => {
+            assert!(std::ptr::eq(name, s));
+            assert!(matches!(text, Cow::Borrowed("hello")));
+        }
+        other => panic!("unexpected {:?}", other),
+    }
+    let value: External<'_> = borrowed(vec!["Unit".into()]).unwrap();
+    assert_eq!(value, External::Unit);
+
+    // the tag is recorded before it's known, the values after it are
+    // borrowed
+    let value: Internal<'_> = borrowed(vec![
+        Event::map_start(),
+        "type".into(),
+        "Struct".into(),
+        "name".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, Internal::Struct { name: "hello" });
+
+    let value: Adjacent<'_> = borrowed(vec![
+        Event::map_start(),
+        "t".into(),
+        "Newtype".into(),
+        "c".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, Adjacent::Newtype("hello"));
+
+    // untagged enums replay recorded values which are not borrowed
+    let err = borrowed::<Untagged<'_>>(vec![s.into()]).unwrap_err();
+    assert!(err.to_string().contains("did not match any variant"));
+    let value: Untagged<'_> = borrowed(vec![42u64.into()]).unwrap();
+    assert_eq!(value, Untagged::Number(42));
+}
+
+#[test]
+fn test_borrowed_enum_in_struct() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    enum Value<'a> {
+        Text(&'a str),
+        Pair { a: &'a str, b: Option<&'a str> },
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Outer<'a> {
+        value: Value<'a>,
+        values: Vec<Value<'a>>,
+    }
+
+    let input = String::from("x");
+    let s = input.as_str();
+    let value: Outer<'_> = borrowed(vec![
+        Event::map_start(),
+        "value".into(),
+        Event::map_start(),
+        "Text".into(),
+        s.into(),
+        Event::MapEnd,
+        "values".into(),
+        Event::seq_start(),
+        Event::map_start(),
+        "Pair".into(),
+        Event::map_start(),
+        "a".into(),
+        s.into(),
+        Event::MapEnd,
+        Event::MapEnd,
+        Event::SeqEnd,
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(
+        value,
+        Outer {
+            value: Value::Text("x"),
+            values: vec![Value::Pair { a: "x", b: None }],
+        }
+    );
+}
+
+#[test]
+fn test_generic_enum_with_borrowed_parameter() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    enum Either<L, R> {
+        Left(L),
+        Right { value: R },
+    }
+
+    let input = String::from("left");
+    let value: Either<&str, u32> = borrowed(vec![
+        Event::map_start(),
+        "Left".into(),
+        input.as_str().into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, Either::Left("left"));
+}
+
+#[test]
+fn test_validated_borrowed_enum() {
+    fn not_empty(value: &Name<'_>) -> Result<(), &'static str> {
+        match value {
+            Name::Plain("") => Err("empty name"),
+            _ => Ok(()),
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(validate = not_empty, tag = "kind", content = "value")]
+    enum Name<'a> {
+        Plain(&'a str),
+        #[deser(default)]
+        Missing,
+    }
+
+    let input = String::from("");
+    let err = borrowed::<Name<'_>>(vec![
+        Event::map_start(),
+        "kind".into(),
+        "Plain".into(),
+        "value".into(),
+        input.as_str().into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(err.message(), "invalid value: empty name");
+    let value: Name<'_> = borrowed(vec![Event::map_start(), Event::MapEnd]).unwrap();
+    assert_eq!(value, Name::Missing);
+}

@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Enums can have lifetime and const parameters, which means that enums can
+  borrow from the data like structs (`enum Token<'a> { Word(&'a str) }`).
+  Type parameters of enums no longer need to be `'static` to deserialize
+  them.
 - The derive supports tuple structs (`struct Pair(u32, String)`, which
   are sequences) and unit structs (`struct Marker;`, which are null).  The
   derive panicked for them before and rejects unions without a container

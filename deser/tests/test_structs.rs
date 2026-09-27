@@ -284,3 +284,27 @@ fn test_tuple_struct_phantom() {
         ],
     );
 }
+
+#[test]
+fn test_tuple_struct_borrowed_validate() {
+    fn not_empty(value: &Named<'_>) -> Result<(), &'static str> {
+        if value.0.is_empty() {
+            Err("empty name")
+        } else {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(validate = not_empty)]
+    struct Named<'a>(&'a str, u32);
+
+    let input = String::from("");
+    let mut out = None::<Named<'_>>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    driver.emit(Event::seq_start()).unwrap();
+    driver.emit_borrowed(input.as_str()).unwrap();
+    driver.emit(1u64).unwrap();
+    let err = driver.emit(Event::SeqEnd).unwrap_err();
+    assert_eq!(err.message(), "invalid value: empty name");
+}

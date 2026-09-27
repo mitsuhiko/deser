@@ -199,12 +199,14 @@ fn derive_tuple_struct(
         Some(path) => {
             let validator = validator(path);
             let turbofish = crate::bound::turbofish_without_lifetimes(&input.generics);
+            let slot_generics = crate::bound::with_slot_lifetime(&de_generics);
+            let (slot_impl_generics, _, _) = slot_generics.split_for_impl();
             (
                 quote! {
                     #[allow(clippy::multiple_bound_locations)]
-                    fn __unvalidated #impl_generics (
-                        __slot: &mut __deser::__derive::Option<#ident #ty_generics>,
-                    ) -> __deser::de::SinkHandle<'_, 'de> #where_clause {
+                    fn __unvalidated #slot_impl_generics (
+                        __slot: &'__s mut __deser::__derive::Option<#ident #ty_generics>,
+                    ) -> __deser::de::SinkHandle<'__s, 'de> #where_clause {
                         #handle
                     }
                 },
