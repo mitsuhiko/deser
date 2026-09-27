@@ -419,4 +419,5 @@ but if you find a soundness issue, please report it.
 
 - [Issue Tracker](https://github.com/mitsuhiko/deser/issues)
 - [Documentation](https://docs.rs/deser)
+- [Development Documentation](https://mitsuhiko.github.io/deser/) (all crates, built from `main`)
 - License: [Apache-2.0](https://github.com/mitsuhiko/deser/blob/master/LICENSE)
