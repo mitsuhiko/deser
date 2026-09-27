@@ -39,12 +39,12 @@ fn affected_directions(level: Level, name: &str) -> Option<(bool, bool)> {
             "as" | "serialize_as" | "deserialize_as" | "bound" | "serialize_bound"
             | "deserialize_bound" | "crate" | "rename",
         ) => return None,
-        (Level::Container, "default" | "deny_unknown_fields") => DE,
+        (Level::Container, "default" | "deny_unknown_fields" | "validate") => DE,
         (Level::Container, "skip_serializing_optionals") => SER,
         (Level::Container, _) => BOTH,
         (Level::Variant, "alias" | "default") => DE,
         (Level::Variant, _) => BOTH,
-        (Level::Field, "alias" | "default" | "deserialize_as") => DE,
+        (Level::Field, "alias" | "default" | "deserialize_as" | "validate") => DE,
         (Level::Field, "skip_serializing_if" | "serialize_as") => SER,
         (Level::Field, _) => BOTH,
     })

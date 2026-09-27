@@ -194,3 +194,17 @@ instead of rejecting them.
 * [serde: Structs with nested flattens cannot be deserialized if deny_unknown_fields is set #1547](https://github.com/serde-rs/serde/issues/1547)
 * [serde: Struct with `tag` and `deny_unknown_fields` cannot deserialize #2666](https://github.com/serde-rs/serde/issues/2666)
 * [serde: `#![serde(deny_unknown_fields)]` does not work as expected on unit variants of tagged enum #2294](https://github.com/serde-rs/serde/issues/2294)
+
+## Validation
+
+Serde has no validation hooks, values are validated with `try_from` (which
+requires a second type) or after deserialization, where the location of the
+value in the input is lost.  Deser has `#[deser(validate = path)]` on
+fields and types.  The validator runs when the value is complete and its
+errors point at the value (location and path), like the errors of the
+format.
+
+**Related issues:**
+
+* [serde: Support a #[serde(validate = "some_function")] attribute on fields #939](https://github.com/serde-rs/serde/issues/939)
+* [serde: Add finalizer attribute hook to validate a deserialized structure #642](https://github.com/serde-rs/serde/issues/642)

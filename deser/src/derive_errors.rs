@@ -478,4 +478,53 @@
 ///     }
 /// }
 /// ```
+///
+/// `validate` cannot be combined with `flatten`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Inner {
+///     field: u32,
+/// }
+///
+/// fn check(_: &Inner) -> Result<(), &'static str> {
+///     Ok(())
+/// }
+///
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(flatten, validate = check)]
+///     inner: Inner,
+/// }
+/// ```
+///
+/// `Self` is not supported in `validate`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(validate = Self::check)]
+/// struct Test {
+///     field: u32,
+/// }
+///
+/// impl Test {
+///     fn check(&self) -> Result<(), &'static str> {
+///         Ok(())
+///     }
+/// }
+/// ```
+///
+/// Validators need to accept a reference to the value.
+///
+/// ```compile_fail
+/// fn check(_: &String) -> Result<(), &'static str> {
+///     Ok(())
+/// }
+///
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(validate = check)]
+///     field: u32,
+/// }
+/// ```
 pub struct DeriveErrors;

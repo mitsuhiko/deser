@@ -798,6 +798,28 @@ pub fn derive_deserialize(
         }
     };
 
+    // validated enums deserialize into an owned sink which is validated
+    // once it finished
+    let (validated_support, handle) = match container_attrs.validate() {
+        Some(path) => {
+            let validator = crate::de::validator(path);
+            (
+                quote! {
+                    #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
+                    fn __unvalidated #impl_generics (
+                        __slot: &mut __deser::__derive::Option<#enum_ty>,
+                    ) -> __deser::de::SinkHandle<'_, 'de> #where_clause {
+                        #handle
+                    }
+                },
+                quote! {
+                    __deser::__derive::validated_with(__slot, __unvalidated #turbofish, #validator)
+                },
+            )
+        }
+        None => (quote! {}, handle),
+    };
+
     Ok(quote! {
         const _: () = {
             #(#helpers)*
@@ -805,6 +827,8 @@ pub fn derive_deserialize(
             #type_name_const
 
             #support
+
+            #validated_support
 
             #[automatically_derived]
             impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {

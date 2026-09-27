@@ -162,6 +162,9 @@ pub mod __derive {
         InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,
     };
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
+    pub use crate::de::validate::{
+        Validator, invalid_value, validate_slot, validated, validated_with,
+    };
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,

@@ -232,6 +232,8 @@ mod recording;
 mod sinkbox;
 mod source;
 pub(crate) mod unknown;
+#[cfg(feature = "derive")]
+pub(crate) mod validate;
 
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 pub use self::deserializer::Deserializer;

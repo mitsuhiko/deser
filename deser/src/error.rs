@@ -336,6 +336,12 @@ impl std::error::Error for Error {
     }
 }
 
+/// Creates the error for a value that failed to convert or validate.
+#[cold]
+pub(crate) fn conversion_error<E: fmt::Display>(err: E) -> Error {
+    Error::new(ErrorKind::Unexpected, format!("invalid value: {}", err))
+}
+
 /// Creates the error for an unknown variant.
 ///
 /// `tag` is the name that was given (if it was a string), `names` are the

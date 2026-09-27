@@ -25,4 +25,5 @@ mod test_soundness;
 mod test_std;
 mod test_tagged;
 mod test_unknown;
+mod test_validate;
 mod test_well_known;

@@ -84,6 +84,8 @@
 //!   a flattened field takes.  By default they are ignored, unless the
 //!   [`UnknownFields`](crate::de::UnknownFields) policy of the
 //!   deserialization says otherwise.  See [unknown fields](#unknown-fields).
+//! * `#[deser(validate = path)]`: validates the struct once it was
+//!   deserialized.  See [validation](#validation).
 //! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
@@ -155,6 +157,8 @@
 //!   (and the unit variants of internally tagged enums) and keys other than
 //!   the tag and the content of adjacently tagged enums.  See [unknown
 //!   fields](#unknown-fields).
+//! * `#[deser(validate = path)]`: validates the enum once it was
+//!   deserialized.  See [validation](#validation).
 //! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
 //!   set in struct variants when serializing.
 //! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
@@ -193,6 +197,8 @@
 //!   the map become fields.  A flattened `Option` is `None` if the value did
 //!   not take any key (unlike serde, errors in the value are not turned into
 //!   `None`), when serializing `None` has no fields.
+//! * `#[deser(validate = path)]`: validates the value of the field once it
+//!   was deserialized.  See [validation](#validation).
 //! * `#[deser(as = Adapter)]`: serializes and deserializes the field with an
 //!   adapter instead of the field type's own implementation.  `_` in the
 //!   adapter stands for the type's own implementation.  See
@@ -294,8 +300,9 @@
 //! ```
 //!
 //! `serialize_as` and `deserialize_as` forward only one direction, the other
-//! one is derived as usual.  A common use is to validate values when they are
-//! read while writing them with the derived implementation:
+//! one is derived as usual.  A common use is to convert values when they are
+//! read while writing them with the derived implementation (to only check
+//! values, [validation](#validation) is simpler):
 //!
 //! ```
 //! use deser::{Deserialize, Serialize};
@@ -414,6 +421,47 @@
 //! tags with invalid content are errors.  Variants with content that are
 //! represented by their tag alone (for instance a string for an externally
 //! tagged enum) receive null as content.
+//!
+//! ## Validation
+//!
+//! `#[deser(validate = path)]` invokes a function with a reference to the
+//! value once it was deserialized.  It can be placed on fields, structs,
+//! newtype structs and enums.  The function returns a `Result<(), E>` where
+//! `E` implements [`Display`](std::fmt::Display).  If it returns an error,
+//! deserialization fails with ``invalid value: {error}``.  The error points
+//! at the start of the value (the location and, with
+//! [`deser-path`](https://docs.rs/deser-path), the path), also for compound
+//! values which can only be validated once they are complete.
+//!
+//! ```
+//! use deser::Deserialize;
+//!
+//! fn non_zero(value: &u16) -> Result<(), &'static str> {
+//!     if *value == 0 { Err("port must not be zero") } else { Ok(()) }
+//! }
+//!
+//! fn ordered(value: &Ports) -> Result<(), String> {
+//!     if value.min > value.max {
+//!         return Err(format!("min {} is larger than max {}", value.min, value.max));
+//!     }
+//!     Ok(())
+//! }
+//!
+//! #[derive(Deserialize)]
+//! #[deser(validate = ordered)]
+//! pub struct Ports {
+//!     #[deser(validate = non_zero)]
+//!     min: u16,
+//!     max: u16,
+//! }
+//! ```
+//!
+//! Values that are not in the data (missing fields that are `None` or
+//! filled in with defaults) are not validated.  A validator on a field
+//! receives the field's type, for an `Option<T>` that's `&Option<T>`.  To
+//! validate every value of a type, place the validator on the type instead
+//! of the fields.  Validators run for every value that is deserialized,
+//! also in values that are replayed (for instance for untagged enums).
 //!
 //! ## Unknown Fields
 //!

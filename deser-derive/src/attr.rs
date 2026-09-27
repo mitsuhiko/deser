@@ -152,6 +152,7 @@ pub struct ContainerAttrs<'a> {
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
     deny_unknown_fields: bool,
+    validate: Option<syn::ExprPath>,
     tag: Option<String>,
     content: Option<String>,
     untagged: bool,
@@ -402,6 +403,7 @@ impl<'a> ContainerAttrs<'a> {
             default: None,
             skip_serializing_optionals: false,
             deny_unknown_fields: false,
+            validate: None,
             tag: None,
             content: None,
             untagged: false,
@@ -455,6 +457,10 @@ impl<'a> ContainerAttrs<'a> {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)
             }
             "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
+            "validate" => {
+                let value = parse_path(meta)?;
+                set_once(meta, name, &mut rv.validate, value)
+            }
             "crate" => {
                 let value = meta
                     .value()?
@@ -571,6 +577,11 @@ impl<'a> ContainerAttrs<'a> {
             .iter()
             .find(|x| x.name == name)
             .map_or_else(Span::call_site, |x| x.span)
+    }
+
+    /// Returns the function that validates deserialized values.
+    pub fn validate(&self) -> Option<&syn::ExprPath> {
+        self.validate.as_ref()
     }
 
     /// Returns `true` if keys that no field takes are rejected.
@@ -710,6 +721,7 @@ pub struct FieldAttrs<'a> {
     default: Option<TypeDefault>,
     flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
+    validate: Option<syn::ExprPath>,
     adapters: Adapters,
     tag: bool,
 }
@@ -724,6 +736,7 @@ impl<'a> FieldAttrs<'a> {
             default: None,
             flatten: false,
             skip_serializing_if: None,
+            validate: None,
             adapters: Adapters::default(),
             tag: false,
         };
@@ -751,6 +764,10 @@ impl<'a> FieldAttrs<'a> {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.skip_serializing_if, value)
             }
+            "validate" => {
+                let value = parse_path(meta)?;
+                set_once(meta, name, &mut rv.validate, value)
+            }
             "tag" => set_flag(meta, name, &mut rv.tag),
             _ => Err(meta.error("unsupported attribute")),
         })?;
@@ -761,6 +778,12 @@ impl<'a> FieldAttrs<'a> {
             return Err(syn::Error::new_spanned(
                 field,
                 "cannot combine flatten and default",
+            ));
+        }
+        if rv.flatten && rv.validate.is_some() {
+            return Err(syn::Error::new_spanned(
+                field,
+                "cannot combine flatten and validate, validate the flattened type instead",
             ));
         }
         if rv.flatten && rv.adapters.any() {
@@ -774,7 +797,8 @@ impl<'a> FieldAttrs<'a> {
                 || !rv.aliases.is_empty()
                 || rv.default.is_some()
                 || rv.flatten
-                || rv.skip_serializing_if.is_some())
+                || rv.skip_serializing_if.is_some()
+                || rv.validate.is_some())
         {
             return Err(syn::Error::new_spanned(
                 field,
@@ -823,6 +847,11 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
         self.skip_serializing_if.as_ref()
+    }
+
+    /// Returns the function that validates deserialized values.
+    pub fn validate(&self) -> Option<&syn::ExprPath> {
+        self.validate.as_ref()
     }
 
     /// Returns the adapters of the field.

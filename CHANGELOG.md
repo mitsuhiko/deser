@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(validate = path)]` for fields, structs, newtype structs
+  and enums.  The function receives a reference to the value once it was
+  deserialized and can reject it.  Errors point at the start of the value
+  and carry its path, also for compound values.
 - Added `#[deser(deny_unknown_fields)]` for structs and enums and the
   `deser::de::UnknownFields` policy which rejects or collects (with
   `deser::de::IgnoredFields`) keys that no field takes for all structs of

@@ -238,3 +238,72 @@ fn test_unknown_field_paths() {
         "Unexpected: unknown field `x` at line 1 column 8 (path: [0].x)"
     );
 }
+
+#[test]
+fn test_validation_error_paths() {
+    fn non_zero(value: &u16) -> Result<(), &'static str> {
+        if *value == 0 {
+            Err("must not be zero")
+        } else {
+            Ok(())
+        }
+    }
+
+    fn ordered(value: &Range) -> Result<(), &'static str> {
+        if value.min > value.max {
+            Err("min is larger than max")
+        } else {
+            Ok(())
+        }
+    }
+
+    fn not_empty(value: &[String]) -> Result<(), &'static str> {
+        if value.is_empty() {
+            Err("must not be empty")
+        } else {
+            Ok(())
+        }
+    }
+
+    #[derive(deser::Deserialize, Debug)]
+    #[deser(validate = ordered)]
+    #[allow(dead_code)]
+    struct Range {
+        min: u32,
+        max: u32,
+    }
+
+    #[derive(deser::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Server {
+        #[deser(validate = non_zero)]
+        port: u16,
+        #[deser(validate = not_empty)]
+        hosts: Vec<String>,
+        range: Range,
+    }
+
+    let err =
+        from_json::<Vec<Server>>(r#"[{"port": 0, "hosts": ["a"], "range": {"min": 1, "max": 2}}]"#)
+            .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: invalid value: must not be zero at line 1 column 11 (path: [0].port)"
+    );
+
+    // compound values are located at their start
+    let err =
+        from_json::<Vec<Server>>(r#"[{"port": 1, "hosts": [], "range": {"min": 1, "max": 2}}]"#)
+            .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: invalid value: must not be empty at line 1 column 23 (path: [0].hosts)"
+    );
+    let err =
+        from_json::<Vec<Server>>(r#"[{"port": 1, "hosts": ["a"], "range": {"min": 3, "max": 2}}]"#)
+            .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: invalid value: min is larger than max at line 1 column 39 (path: [0].range)"
+    );
+}

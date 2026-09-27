@@ -13,7 +13,7 @@ use crate::de::impls::MapTarget;
 use crate::de::lexical::parse_bool;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Recording, Sink, SinkHandle};
-use crate::error::{Error, ErrorKind};
+use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
 
@@ -427,10 +427,6 @@ where
 /// }
 /// ```
 pub struct TryFromInto<U>(PhantomData<fn() -> U>);
-
-fn conversion_error<E: Display>(err: E) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("invalid value: {}", err))
-}
 
 impl<'de, T, U> DeserializeAs<'de, T> for TryFromInto<U>
 where

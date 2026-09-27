@@ -121,7 +121,9 @@ impl<'de, T> OwnedSink<'de, T> {
         OwnedSink::with(A::deserialize_into_as)
     }
 
-    fn with(make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>) -> OwnedSink<'de, T> {
+    pub(crate) fn with(
+        make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+    ) -> OwnedSink<'de, T> {
         /// Creates a reference with an unbounded lifetime.
         unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
             unsafe { &mut *ptr }
