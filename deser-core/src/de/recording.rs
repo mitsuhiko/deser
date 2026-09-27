@@ -298,6 +298,7 @@ impl Recording {
 
 impl<'de> RecordBuf<'de> {
     /// Creates an empty buffer.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub fn new() -> RecordBuf<'de> {
         RecordBuf::default()
     }
@@ -318,6 +319,7 @@ impl<'de> RecordBuf<'de> {
 
     /// Returns a sink that records a value and passes the buffer to a
     /// callback once the value is complete (see [`Recording::capture`]).
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub fn capture<'a, F>(then: F) -> SinkHandle<'a, 'de>
     where
         F: FnOnce(RecordBuf<'de>, &mut State) -> Result<(), Error> + Send + 'a,
@@ -330,6 +332,7 @@ impl<'de> RecordBuf<'de> {
     ///
     /// Unlike [`capture`](Self::capture) values which are a single atom are
     /// passed on without recording them.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub(crate) fn capture_with<'a>(
         then: Box<dyn Capture<'de, RecordBuf<'de>> + 'a>,
     ) -> SinkHandle<'a, 'de>

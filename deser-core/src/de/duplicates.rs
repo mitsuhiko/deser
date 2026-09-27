@@ -67,6 +67,7 @@ pub fn mark_seen(seen: &mut [u64], index: usize) -> bool {
 }
 
 /// Returns `true` if the field with the index was seen.
+#[cfg(feature = "derive")]
 pub(crate) fn is_seen(seen: &[u64], index: usize) -> bool {
     seen[index / 64] & (1u64 << (index % 64)) != 0
 }
