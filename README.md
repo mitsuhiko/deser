@@ -361,49 +361,22 @@ threads.
 ## Crates
 
 * [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
-  providing the base functionality
-* [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive):
-  the derive macros, use them through the `derive` feature of `deser`
+* [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive): derive macros
 * [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): JSON
-  implementation for deser
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
-  implementation for deser with support for tags
-* [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack):
-  MessagePack implementation for deser with support for extensions
-* [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
-  implementation for deser
+* [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack): MessagePack
+* [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
-  implementation for deser
-* [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded):
-  query strings and form data (`application/x-www-form-urlencoded`) for deser
-* [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env):
-  environment variables for deser (`APP_SERVER__PORT=80`)
-* [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a layer
-  that tracks the path during serialization and deserialization and adds it
-  to errors
-* [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a
-  crate that provides source locations (line and column) for formats that
-  support them
-* [deser-validate](https://github.com/mitsuhiko/deser/tree/main/deser-validate):
-  validation while deserializing: the `Check` adapter
-  (`#[deser(as = Check<Email>)]`), validators from plain functions
-  (`validator!(Slug(value: &str) = check_slug)`), values that keep their
-  errors (`Validated<String, Email>`) and reports of all problems of an
-  input
-* [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats
-  a serializable to the `std::fmt` debug format
-* [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): reads
-  and writes values of all formats with tokio (for instance JSON Lines or
-  CBOR sequences on sockets)
-* [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value): a
-  dynamic value type which retains extension values, tags, formatting hints
-  and source locations
-* [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): adapters
-  to serialize and deserialize types with their serde implementations
-  (`#[deser(as = Serde)]`)
-* [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding):
-  hex and base32 encodings of bytes (`#[deser(as = Hex)]`), deser itself
-  provides base64
+* [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded): query strings and forms
+* [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env): environment variables
+* [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): paths in errors
+* [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): line and column of values
+* [deser-validate](https://github.com/mitsuhiko/deser/tree/main/deser-validate): validation
+* [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): debug formatting
+* [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): tokio support
+* [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value): dynamic values
+* [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): serde interop
+* [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding): hex and base32
 
 ## Inspiration
 
