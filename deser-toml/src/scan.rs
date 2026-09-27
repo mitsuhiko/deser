@@ -77,7 +77,7 @@ fn test_skip_plain() {
                 })
                 .collect();
             for pos in [0, 1, 7, 9].into_iter().filter(|&pos| pos <= len) {
-                for quote in [b'"', b'\''] {
+                for quote in *b"\"'" {
                     assert_eq!(
                         skip_plain(&input, pos, quote),
                         naive(&input, pos, quote),
