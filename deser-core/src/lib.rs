@@ -70,7 +70,7 @@ pub mod __derive {
     pub use crate::adapters::ser_impls::SerializeAsRef;
     pub use crate::de::atoms::{
         atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle, field_sink,
-        field_sink_as,
+        field_sink_as, field_update,
     };
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
@@ -78,7 +78,7 @@ pub mod __derive {
         IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, Variant, VariantMaker, Variants,
         lookup_atom, unknown_variant_atom, untagged_handle,
     };
-    pub use crate::de::fields::{FieldKeySink, NextField};
+    pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::de::update::replace_with;
     pub use crate::de::validate::{

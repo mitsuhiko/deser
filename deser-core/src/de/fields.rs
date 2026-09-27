@@ -6,9 +6,9 @@
 use std::borrow::Cow;
 
 use crate::State;
-use crate::de::Sink;
 use crate::de::duplicates::{duplicate_field, mark_seen};
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
+use crate::de::{Sink, SinkHandle};
 use crate::error::Error;
 use crate::event::Atom;
 
@@ -203,5 +203,104 @@ impl<'de> Sink<'de> for FieldKeySink {
 
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed("string")
+    }
+}
+
+/// The fields of a derived struct that is updated (see
+/// [`Deserialize::deserialize_update`](crate::de::Deserialize::deserialize_update)).
+///
+/// The derive implements this for structs, [`StructUpdateSink`] does
+/// everything else, it exists once for all structs.
+pub trait UpdateFields<'de>: Send {
+    /// Returns the sink that updates the field with the index.
+    fn update_field(&mut self, index: usize) -> SinkHandle<'_, 'de>;
+
+    /// Validates the struct once it was updated.
+    fn validate(&self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+/// The sink that updates a derived struct.
+///
+/// The fields that are given are updated, the others are kept.
+pub struct StructUpdateSink<'a, 'de> {
+    value: &'a mut (dyn UpdateFields<'de> + 'a),
+    key: FieldKeySink,
+    seen: Vec<u64>,
+    fields: &'static [&'static str],
+    name: &'static str,
+    deny: bool,
+    validates: bool,
+    start: Option<usize>,
+}
+
+impl<'a, 'de> StructUpdateSink<'a, 'de> {
+    /// Creates the sink that updates a struct.
+    ///
+    /// The arguments are the ones of [`FieldKeySink::new`] and
+    /// [`FieldKeySink::next_index`], the name of the struct for errors and
+    /// if the struct is validated.
+    #[allow(clippy::too_many_arguments)]
+    pub fn handle(
+        value: &'a mut (dyn UpdateFields<'de> + 'a),
+        lookup: FieldLookup,
+        retain: bool,
+        fields: &'static [&'static str],
+        name: &'static str,
+        deny: bool,
+        validates: bool,
+    ) -> SinkHandle<'a, 'de> {
+        SinkHandle::boxed(StructUpdateSink {
+            value,
+            key: FieldKeySink::new(lookup, retain),
+            seen: vec![0; fields.len().div_ceil(64)],
+            fields,
+            name,
+            deny,
+            validates,
+            start: None,
+        })
+    }
+}
+
+impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        // errors of the validation point at the start of the map
+        if self.validates {
+            self.start = state.input_range().map(|range| range.start);
+        }
+        Ok(())
+    }
+
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.key.reset();
+        Ok(SinkHandle::to(&mut self.key))
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(
+            match self
+                .key
+                .next_index(&mut self.seen, self.fields, self.deny, state)?
+            {
+                Some(index) => self.value.update_field(index),
+                None => SinkHandle::null(),
+            },
+        )
+    }
+
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+        match self.value.validate() {
+            Err(err) if err.offset().is_none() => Err(match self.start {
+                Some(start) => err.with_offset(start),
+                None => err,
+            }),
+            rv => rv,
+        }
     }
 }

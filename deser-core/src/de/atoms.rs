@@ -21,6 +21,15 @@ pub fn field_sink<'a, 'de, T: Deserialize<'de>>(slot: &'a mut Option<T>) -> Sink
     T::deserialize_into(slot)
 }
 
+/// Creates the sink that updates a field of a derived struct.
+///
+/// Like [`field_sink`] this is not inlined so that it exists once per type.
+#[cfg(feature = "derive")]
+#[inline(never)]
+pub fn field_update<'a, 'de, T: Deserialize<'de>>(value: &'a mut T) -> SinkHandle<'a, 'de> {
+    T::deserialize_update(value)
+}
+
 /// Creates the sink for a field of a derived struct with an adapter.
 #[cfg(feature = "derive")]
 #[inline(never)]

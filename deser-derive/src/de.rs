@@ -229,7 +229,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // (after validating the new value), all others are updated
         let field_ident = &x.field().ident;
         let update = if x.adapters().de().is_none() && x.validate().is_none() {
-            quote! { __deser::Deserialize::deserialize_update(&mut self.value.#field_ident) }
+            quote! { __deser::__derive::field_update(&mut self.#field_ident) }
         } else {
             let owned = match x.adapters().de() {
                 Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
@@ -242,7 +242,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
                 None => quote! { __deser::__derive::None },
             };
-            quote! { __deser::__derive::replace_with(&mut self.value.#field_ident, #owned, #validator) }
+            quote! { __deser::__derive::replace_with(&mut self.#field_ident, #owned, #validator) }
         };
         update_dispatch.push(quote! {
             #index => #update,
@@ -569,14 +569,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let update = if has_flatten {
         None
     } else {
+        // everything but the dispatch to the fields and the validation is
+        // done by `StructUpdateSink` which exists once for all structs
+        let validates = container_attrs.validate().is_some();
         let container_validate = container_attrs.validate().map(|path| {
             let validator = validator(path);
             quote! {
-                if let __deser::__derive::Err(__err) = (#validator)(&*self.value) {
-                    return __deser::__derive::Err(match self.start {
-                        __deser::__derive::Some(__start) if __err.offset().is_none() => __err.with_offset(__start),
-                        _ => __err,
-                    });
+                fn validate(&self) -> __deser::__derive::Result<()> {
+                    (#validator)(self)
                 }
             }
         });
@@ -585,62 +585,30 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn deserialize_update(
                     __value: &mut Self,
                 ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::de::SinkHandle::boxed(__UpdateSink {
-                        value: __value,
-                        key: __deser::__derive::FieldKeySink::new(__field_index, #retain_unknown),
-                        seen: [0; #seen_words],
-                        #start_init
-                        _marker: __deser::__derive::PhantomData,
-                    })
+                    __deser::__derive::StructUpdateSink::handle(
+                        __value,
+                        __field_index,
+                        #retain_unknown,
+                        __FIELDS,
+                        #type_name,
+                        #deny,
+                        #validates,
+                    )
                 }
             },
             items: quote! {
-                struct __UpdateSink #wrapper_impl_generics #where_clause {
-                    value: &'__a mut #ident #ty_generics,
-                    key: __deser::__derive::FieldKeySink,
-                    seen: [u64; #seen_words],
-                    #start_field
-                    _marker: __deser::__derive::PhantomData<&'de ()>,
-                }
-
                 #[automatically_derived]
-                impl #wrapper_impl_generics __deser::de::Sink<'de> for __UpdateSink #wrapper_ty_generics #bounded_where_clause {
-                    fn expecting(&self) -> __deser::__derive::StrCow<'_> {
-                        __deser::__derive::StrCow::Borrowed(#type_name)
+                impl #impl_generics __deser::__derive::UpdateFields<'de> for #ident #ty_generics #bounded_where_clause {
+                    fn update_field(&mut self, __index: usize) -> __deser::de::SinkHandle<'_, 'de> {
+                        match __index {
+                            #(
+                                #update_dispatch
+                            )*
+                            _ => __deser::de::SinkHandle::null(),
+                        }
                     }
 
-                    fn map(&mut self, __state: &mut __deser::State)
-                        -> __deser::__derive::Result<()>
-                    {
-                        #start_set
-                        __deser::__derive::Ok(())
-                    }
-
-                    fn next_key(&mut self, __state: &mut __deser::State)
-                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
-                    {
-                        self.key.reset();
-                        __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
-                    }
-
-                    fn next_value(&mut self, __state: &mut __deser::State)
-                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
-                    {
-                        __deser::__derive::Ok(match self.key.next_index(&mut self.seen, __FIELDS, #deny, __state)? {
-                            __deser::__derive::Some(__index) => match __index {
-                                #(
-                                    #update_dispatch
-                                )*
-                                _ => __deser::de::SinkHandle::null(),
-                            },
-                            __deser::__derive::None => __deser::de::SinkHandle::null(),
-                        })
-                    }
-
-                    fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                        #container_validate
-                        __deser::__derive::Ok(())
-                    }
+                    #container_validate
                 }
             },
         })
