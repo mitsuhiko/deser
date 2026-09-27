@@ -13,6 +13,7 @@
 //! | [`Base32NoPad`]    | base32 without padding                             |
 //! | [`Base32Hex`]      | base32 with extended hex alphabet and padding      |
 //! | [`Base32HexNoPad`] | base32 with extended hex alphabet without padding  |
+//! | [`Base32Dnssec`]   | base32 of DNSSEC, lowercase extended hex alphabet  |
 //!
 //! Like the encodings of deser they are adapters which represent bytes as
 //! strings in all formats.  They can be used with
@@ -52,11 +53,14 @@
 //! assert_eq!(HEX.to_string(&b"\x01\xff").unwrap(), r#""01ff""#);
 //! ```
 //!
-//! Both hex encodings decode lowercase and uppercase digits.
+//! All encodings decode lowercase and uppercase letters.
+use std::sync::LazyLock;
+
+use data_encoding::Encoding;
 use deser_core::adapters::BytesEncoding;
 use deser_core::{Error, ErrorKind};
 
-fn decode(encoding: &data_encoding::Encoding, name: &str, s: &str) -> Result<Vec<u8>, Error> {
+fn decode(encoding: &Encoding, name: &str, s: &str) -> Result<Vec<u8>, Error> {
     encoding.decode(s.as_bytes()).map_err(|err| {
         Error::new(
             ErrorKind::Unexpected,
@@ -65,8 +69,36 @@ fn decode(encoding: &data_encoding::Encoding, name: &str, s: &str) -> Result<Vec
     })
 }
 
+/// Returns the encoding which also decodes lowercase symbols.
+fn case_insensitive(encoding: &Encoding) -> Encoding {
+    let mut spec = encoding.specification();
+    let upper: String = spec
+        .symbols
+        .chars()
+        .filter(char::is_ascii_uppercase)
+        .collect();
+    spec.translate.from.push_str(&upper.to_ascii_lowercase());
+    spec.translate.to.push_str(&upper);
+    spec.encoding().expect("valid case insensitive encoding")
+}
+
 macro_rules! encoding {
     ($(#[$meta:meta])* $ty:ident, $name:expr, $encoding:ident) => {
+        encoding!($(#[$meta])* $ty, $name, $encoding, &data_encoding::$encoding);
+    };
+    ($(#[$meta:meta])* $ty:ident, $name:expr, $encoding:ident, case_insensitive) => {
+        encoding!(
+            $(#[$meta])* $ty,
+            $name,
+            $encoding,
+            {
+                static DECODER: LazyLock<Encoding> =
+                    LazyLock::new(|| case_insensitive(&data_encoding::$encoding));
+                &*DECODER
+            }
+        );
+    };
+    ($(#[$meta:meta])* $ty:ident, $name:expr, $encoding:ident, $decoder:expr) => {
         $(#[$meta])*
         pub struct $ty;
 
@@ -78,7 +110,7 @@ macro_rules! encoding {
             }
 
             fn decode(s: &str) -> Result<Vec<u8>, Error> {
-                decode(&data_encoding::$encoding, Self::NAME, s)
+                decode($decoder, Self::NAME, s)
             }
         }
     };
@@ -104,31 +136,54 @@ encoding!(
 
 encoding!(
     /// Base32 with padding (RFC 4648 section 6).
+    ///
+    /// Uppercase and lowercase letters are accepted when decoding.
     Base32,
     "base32",
-    BASE32
+    BASE32,
+    case_insensitive
 );
 
 encoding!(
     /// Base32 without padding.
+    ///
+    /// Uppercase and lowercase letters are accepted when decoding.
     Base32NoPad,
     "base32-nopad",
-    BASE32_NOPAD
+    BASE32_NOPAD,
+    case_insensitive
 );
 
 encoding!(
     /// Base32 with the extended hex alphabet and padding (RFC 4648
     /// section 7).
+    ///
+    /// Uppercase and lowercase letters are accepted when decoding.
     Base32Hex,
     "base32hex",
-    BASE32HEX
+    BASE32HEX,
+    case_insensitive
 );
 
 encoding!(
     /// Base32 with the extended hex alphabet without padding.
+    ///
+    /// Uppercase and lowercase letters are accepted when decoding.
     Base32HexNoPad,
     "base32hex-nopad",
-    BASE32HEX_NOPAD
+    BASE32HEX_NOPAD,
+    case_insensitive
+);
+
+encoding!(
+    /// Base32 of DNSSEC (RFC 5155 section 3.3): the extended hex alphabet
+    /// with lowercase letters and without padding.
+    ///
+    /// This is the encoding of hashed owner names in NSEC3 records.
+    /// Lowercase and uppercase letters are accepted when decoding.
+    Base32Dnssec,
+    "base32-dnssec",
+    BASE32_DNSSEC
 );
 
 #[cfg(test)]
@@ -173,9 +228,32 @@ mod tests {
         assert_eq!(Base32NoPad::decode("MZXW6").unwrap(), b"foo");
         assert_eq!(Base32Hex::decode("CPNMU===").unwrap(), b"foo");
         assert_eq!(Base32HexNoPad::decode("CPNMU").unwrap(), b"foo");
+        assert_eq!(Base32::decode("mzXw6===").unwrap(), b"foo");
+        assert_eq!(Base32NoPad::decode("mzXw6").unwrap(), b"foo");
+        assert_eq!(Base32Hex::decode("cpNmu===").unwrap(), b"foo");
+        assert_eq!(Base32HexNoPad::decode("cpNmu").unwrap(), b"foo");
+        // letters beyond the alphabet stay invalid in either case
+        assert!(Base32Hex::decode("W0======").is_err());
+        assert!(Base32Hex::decode("w0======").is_err());
+        assert!(Base32::decode("MZXW6").is_err());
+        assert!(Base32NoPad::decode("MZXW6===").is_err());
         assert_eq!(
             Base32::decode("x").unwrap_err().to_string(),
             "Unexpected: invalid base32 string: invalid length at 0"
+        );
+    }
+
+    #[test]
+    fn test_base32_dnssec() {
+        assert_eq!(encode::<Base32Dnssec>(b"foo"), "cpnmu");
+        assert_eq!(Base32Dnssec::decode("cpnmu").unwrap(), b"foo");
+        assert_eq!(Base32Dnssec::decode("CPNmu").unwrap(), b"foo");
+        assert!(Base32Dnssec::decode("cpnmu===").is_err());
+        // RFC 5155 appendix A: the hashed owner name of `example`
+        let hash = Hex::decode("065368abeed7ec6e9feba96b8c8bc3e8b791f716").unwrap();
+        assert_eq!(
+            encode::<Base32Dnssec>(&hash),
+            "0p9mhaveqvm6t7vbl5lop2u3t2rp3tom"
         );
     }
 

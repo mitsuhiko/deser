@@ -142,7 +142,8 @@ All notable changes to deser are documented here.
   `deser-encoding` crate and the `bytes-encoding` feature is gone.  deser
   keeps the base64 encodings, which bytes use by default.  `deser-encoding`
   uses `data-encoding`, which is faster for hex, up to twice for large
-  buffers.
+  buffers.  The base32 encodings decode lowercase letters too, and the
+  new `Base32Dnssec` is the lowercase, unpadded base32 of DNSSEC (RFC 5155).
 - Encoding and decoding base64 is faster, up to 1.6 times for large
   buffers.
 - `deser-yaml` decodes `!!binary` like other bytes: the padding is

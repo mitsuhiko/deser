@@ -5,8 +5,9 @@ More encodings of bytes as strings for
 
 deser writes bytes as base64 strings in formats without native bytes (like
 JSON) and provides the base64 encodings.  This crate adds `Hex`,
-`HexUpper`, `Base32`, `Base32NoPad`, `Base32Hex` and `Base32HexNoPad`.  Like
-the encodings of deser they are adapters:
+`HexUpper`, `Base32`, `Base32NoPad`, `Base32Hex`, `Base32HexNoPad` and
+`Base32Dnssec` (RFC 5155).  All of them decode lowercase and uppercase
+letters.  Like the encodings of deser they are adapters:
 
 ```rust
 use deser::adapters::BytesFallback;
