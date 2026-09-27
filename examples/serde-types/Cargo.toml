@@ -1,0 +1,23 @@
+[package]
+name = "serde-types"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-json = { path = "../../deser-json" }
+deser-path = { path = "../../deser-path" }
+deser-serde = { path = "../../deser-serde" }
+deser-toml = { path = "../../deser-toml" }
+deser-yaml = { path = "../../deser-yaml" }
+semver = { version = "1.0.20", features = ["serde"] }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.100"
+
+[[bin]]
+name = "serde-types"
+path = "src/main.rs"
+test = false
+doc = false

@@ -34,6 +34,7 @@ members = [
   "examples/optionals",
   "examples/protocol",
   "examples/query-strings",
+  "examples/serde-types",
   "examples/streams",
   "examples/tokio-server",
 ]

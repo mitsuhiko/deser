@@ -49,6 +49,11 @@ What sets deser apart:
 * [`tokio-server`](tokio-server): a JSON Lines server and client with
   tokio, using `deser-tokio`'s reader, writer and codec.
 
+Other crates:
+
+* [`serde-types`](serde-types): using types that only implement serde
+  (like `semver::Version` and `serde_json::Value`) with `deser-serde`.
+
 Advanced:
 
 * [`layers`](layers): layers that rename keys, skip nulls and redact values
