@@ -1706,6 +1706,7 @@ pub struct EnumVariantAttrs<'a> {
     aliases: Vec<VariantName>,
     other: bool,
     default: bool,
+    deny_unknown_fields: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
 }
@@ -1720,6 +1721,7 @@ impl<'a> EnumVariantAttrs<'a> {
             aliases: Vec::new(),
             other: false,
             default: false,
+            deny_unknown_fields: false,
             skip_serializing: false,
             skip_deserializing: false,
         };
@@ -1743,6 +1745,7 @@ impl<'a> EnumVariantAttrs<'a> {
             }
             "other" => set_flag(meta, name, &mut rv.other),
             "default" => set_flag(meta, name, &mut rv.default),
+            "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
             "skip" => set_flag(meta, name, &mut skip),
             "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
             "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
@@ -1768,12 +1771,22 @@ impl<'a> EnumVariantAttrs<'a> {
             }
             conflict(
                 "skip",
-                &["rename", "rename_all", "alias", "other", "default"],
+                &[
+                    "rename",
+                    "rename_all",
+                    "alias",
+                    "other",
+                    "default",
+                    "deny_unknown_fields",
+                ],
             )?;
             rv.skip_serializing = true;
             rv.skip_deserializing = true;
         } else if rv.skip_deserializing {
-            conflict("skip_deserializing", &["alias", "other", "default"])?;
+            conflict(
+                "skip_deserializing",
+                &["alias", "other", "default", "deny_unknown_fields"],
+            )?;
         }
 
         Ok(rv)
@@ -1808,6 +1821,11 @@ impl<'a> EnumVariantAttrs<'a> {
     /// Returns `true` if this is the catch-all variant for unknown tags.
     pub fn other(&self) -> bool {
         self.other
+    }
+
+    /// Returns `true` if the variant rejects unknown fields.
+    pub fn deny_unknown_fields(&self) -> bool {
+        self.deny_unknown_fields
     }
 
     /// Returns `true` if this variant is used if the tag is missing.

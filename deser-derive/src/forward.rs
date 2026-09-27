@@ -42,7 +42,7 @@ fn affected_directions(level: Level, name: &str) -> Option<(bool, bool)> {
         (Level::Container, "default" | "deny_unknown_fields" | "validate") => DE,
         (Level::Container, "skip_serializing_optionals") => SER,
         (Level::Container, _) => BOTH,
-        (Level::Variant, "alias" | "default" | "skip_deserializing") => DE,
+        (Level::Variant, "alias" | "default" | "skip_deserializing" | "deny_unknown_fields") => DE,
         (Level::Variant, "skip_serializing") => SER,
         (Level::Variant, _) => BOTH,
         (

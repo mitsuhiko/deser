@@ -539,6 +539,25 @@
 /// }
 /// ```
 ///
+/// `deny_unknown_fields` on variants is for struct variants.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(deny_unknown_fields)]
+///     A(u32),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(deny_unknown_fields)]
+///     A,
+///     B,
+/// }
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

@@ -4,6 +4,7 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- `#[deser(deny_unknown_fields)]` can be placed on struct variants.
 - `bound`, `serialize_bound` and `deserialize_bound` can be placed on
   fields where they replace the bounds inferred from the field.
 - Added `#[deser(transparent)]` for structs which serializes and

@@ -115,11 +115,13 @@ impl<'a> FieldInfo<'a> {
 }
 
 struct VariantInfo<'a> {
+    variant: &'a syn::Variant,
     ident: &'a syn::Ident,
     name: VariantName,
     names: Vec<VariantName>,
     other: bool,
     default: bool,
+    deny_unknown_fields: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
     shape: Shape,
@@ -536,11 +538,13 @@ fn collect_variants<'a>(
         }
 
         rv.push(VariantInfo {
+            variant,
             ident: &variant.ident,
             name,
             names,
             other: attrs.other(),
             default: attrs.default(),
+            deny_unknown_fields: attrs.deny_unknown_fields(),
             skip_serializing: attrs.skip_serializing(),
             skip_deserializing: attrs.skip_deserializing(),
             shape,
@@ -661,6 +665,13 @@ pub fn derive_deserialize(
             Content::Unit => matches!(repr, Repr::Internal { .. }) && !info.other,
             _ => false,
         };
+        if info.deny_unknown_fields && !needs_helper {
+            return Err(syn::Error::new_spanned(
+                info.variant,
+                "deny_unknown_fields on variants only has an effect on struct variants \
+                 (and unit variants of internally tagged enums)",
+            ));
+        }
         // helper structs only take the parameters they use
         let helper_params = match info.content {
             Content::Struct(_) => used_params(
@@ -718,7 +729,7 @@ pub fn derive_deserialize(
                 let style = style.as_str();
                 quote! { #[deser(rename_all = #style)] }
             });
-            let helper_deny = if container_attrs.deny_unknown_fields() {
+            let helper_deny = if container_attrs.deny_unknown_fields() || info.deny_unknown_fields {
                 Some(quote! { #[deser(deny_unknown_fields)] })
             } else {
                 None

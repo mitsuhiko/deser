@@ -463,3 +463,62 @@ fn test_flattened_recordings() {
     let value: WithRest = deserialize(None, map(&[("id", 3u64.into())])).unwrap();
     assert_eq!(value.rest.events().cloned().collect::<Vec<_>>(), map(&[]));
 }
+
+#[test]
+fn test_variant_deny_unknown_fields() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[deser(tag = "type")]
+    enum Message {
+        #[deser(deny_unknown_fields)]
+        Strict {
+            a: u32,
+        },
+        Lenient {
+            a: u32,
+        },
+        #[deser(deny_unknown_fields)]
+        Empty,
+    }
+
+    let rv = deserialize::<Message>(
+        None,
+        map(&[
+            ("type", "Strict".into()),
+            ("a", 1u64.into()),
+            ("b", 1u64.into()),
+        ]),
+    );
+    assert_eq!(message(rv), "unknown field `b`, expected `a`");
+    assert_eq!(
+        deserialize::<Message>(
+            None,
+            map(&[
+                ("type", "Lenient".into()),
+                ("a", 1u64.into()),
+                ("b", 1u64.into()),
+            ]),
+        )
+        .unwrap(),
+        Message::Lenient { a: 1 }
+    );
+    let rv = deserialize::<Message>(None, map(&[("type", "Empty".into()), ("x", 1u64.into())]));
+    assert_eq!(message(rv), "unknown field `x`, there are no fields");
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum External {
+        #[deser(deny_unknown_fields)]
+        Strict { a: u32 },
+    }
+
+    let rv = deserialize::<External>(
+        None,
+        vec![
+            Event::map_start(),
+            "Strict".into(),
+            Event::map_start(),
+            "c".into(),
+            1u64.into(),
+        ],
+    );
+    assert_eq!(message(rv), "unknown field `c`, expected `a`");
+}

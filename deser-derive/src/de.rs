@@ -1308,6 +1308,13 @@ pub fn derive_enum(
         });
     }
 
+    if let Some(attrs) = attrs.iter().find(|x| x.deny_unknown_fields()) {
+        return Err(syn::Error::new_spanned(
+            attrs.variant(),
+            "deny_unknown_fields on variants only has an effect on struct variants \
+             (and unit variants of internally tagged enums)",
+        ));
+    }
     if let Some(attrs) = attrs.iter().find(|x| x.default()) {
         return Err(syn::Error::new_spanned(
             attrs.variant(),
