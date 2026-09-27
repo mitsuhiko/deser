@@ -93,7 +93,7 @@ impl<'de> Sink<'de> for SlotWrapper<bool> {
                 Ok(())
             }
             Atom::Lexical(ref value) => {
-                **self = Some(lexical::parse_bool(value)?);
+                **self = Some(lexical::parse_bool(value, state)?);
                 Ok(())
             }
             other => self.unexpected_atom(other, state),
@@ -174,8 +174,9 @@ macro_rules! int_sink {
 
             #[allow(clippy::useless_conversion)]
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                let out_of_range =
-                    |value: &dyn std::fmt::Display| lexical::out_of_range(value, stringify!($ty));
+                let out_of_range = |value: &dyn std::fmt::Display| {
+                    lexical::out_of_range(value, stringify!($ty), state)
+                };
                 let value = match atom {
                     Atom::U64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
                     Atom::I64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
@@ -189,7 +190,9 @@ macro_rules! int_sink {
                     }
                     Atom::Lexical(ref value) => match value.parse::<$ty>() {
                         Ok(value) => value,
-                        Err(err) => return Err(lexical::int_error(value, err, stringify!($ty))),
+                        Err(err) => {
+                            return Err(lexical::int_error(value, err, stringify!($ty), state));
+                        }
                     },
                     other => return self.unexpected_atom(other, state),
                 };
@@ -310,7 +313,7 @@ macro_rules! float_sink {
                             **self = Some(value);
                             Ok(())
                         }
-                        Err(_) => Err(lexical::invalid(value, stringify!($ty))),
+                        Err(_) => Err(lexical::invalid(value, stringify!($ty), state)),
                     },
                     other => {
                         // text formats emit floats as numbers, these are

@@ -58,6 +58,8 @@ pub struct State {
     pub(crate) input_range: (usize, usize),
     // keyed by type as function pointers cannot be compared reliably
     error_context: Vec<(TypeId, AddContextFn)>,
+    // `true` while errors are thrown away, see `discard_errors`.
+    pub(crate) discards_errors: bool,
 }
 
 /// The function of an [`ErrorContext`].
@@ -90,7 +92,23 @@ impl State {
             is_map_key: false,
             input_range: NO_RANGE,
             error_context: Vec::new(),
+            discards_errors: false,
         }
+    }
+
+    /// Runs a function during which errors are thrown away.
+    ///
+    /// This is used while an untagged enum tries its variants: only whether
+    /// a variant accepts the value matters, so the errors that are returned
+    /// are created without a message (see
+    /// [`discarded_error`](crate::error::discarded_error)) and the driver
+    /// does not attach context to them.  Errors that are kept rather than
+    /// returned (for instance collected unknown fields) are unaffected.
+    pub(crate) fn discard_errors<R>(&mut self, f: impl FnOnce(&mut State) -> R) -> R {
+        let outer = std::mem::replace(&mut self.discards_errors, true);
+        let rv = f(self);
+        self.discards_errors = outer;
+        rv
     }
 
     /// Takes the state out, leaving an empty state that does not allocate.

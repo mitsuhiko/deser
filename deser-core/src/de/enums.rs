@@ -751,19 +751,23 @@ pub fn untagged_handle<'a, 'de, E: Send>(
     candidates: CandidateLookup<'a, 'de, E>,
 ) -> SinkHandle<'a, 'de> {
     RecordBuf::capture(move |recording, state| {
-        for index in 0.. {
-            let mut variant = match candidates(index) {
-                Some(variant) => variant,
-                None => break,
-            };
-            if recording
-                .replay(SinkHandle::to(variant.sink()), state)
-                .is_ok()
-                && let Some(value) = variant.build()
-            {
-                *out = Some(value);
-                return Ok(());
+        // only whether a variant accepts the value matters
+        let value = state.discard_errors(|state| {
+            for index in 0.. {
+                let mut variant = candidates(index)?;
+                if recording
+                    .replay(SinkHandle::to(variant.sink()), state)
+                    .is_ok()
+                    && let Some(value) = variant.build()
+                {
+                    return Some(value);
+                }
             }
+            None
+        });
+        if let Some(value) = value {
+            *out = Some(value);
+            return Ok(());
         }
         Err(Error::new(
             ErrorKind::Unexpected,
@@ -790,21 +794,28 @@ pub fn untagged_fallback<'a, 'de, E: Send>(
             Err(err) => err,
         };
         *out = None;
-        for index in 0.. {
-            let mut variant = match candidates(index) {
-                Some(variant) => variant,
-                None => break,
-            };
-            if recording
-                .replay(SinkHandle::to(variant.sink()), state)
-                .is_ok()
-                && let Some(value) = variant.build()
-            {
-                *out = Some(value);
-                return Ok(());
+        // the error of the tagged representation is returned, only whether
+        // an untagged variant accepts the value matters
+        let value = state.discard_errors(|state| {
+            for index in 0.. {
+                let mut variant = candidates(index)?;
+                if recording
+                    .replay(SinkHandle::to(variant.sink()), state)
+                    .is_ok()
+                    && let Some(value) = variant.build()
+                {
+                    return Some(value);
+                }
             }
+            None
+        });
+        match value {
+            Some(value) => {
+                *out = Some(value);
+                Ok(())
+            }
+            None => Err(err),
         }
-        Err(err)
     })
 }
 

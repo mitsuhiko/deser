@@ -4,7 +4,8 @@
 use std::fmt::Write;
 use std::num::{IntErrorKind, ParseIntError};
 
-use crate::error::{Error, ErrorKind};
+use crate::State;
+use crate::error::{Error, ErrorKind, discarded_error};
 
 /// The longest part of a value that is included in error messages.
 const MAX_QUOTED: usize = 64;
@@ -13,7 +14,7 @@ const MAX_QUOTED: usize = 64;
 ///
 /// The spellings of booleans in query strings, environment variables and
 /// command lines are accepted, ignoring ASCII case.
-pub(crate) fn parse_bool(value: &str) -> Result<bool, Error> {
+pub(crate) fn parse_bool(value: &str, state: &State) -> Result<bool, Error> {
     const TRUE: [&str; 4] = ["true", "yes", "on", "1"];
     const FALSE: [&str; 4] = ["false", "no", "off", "0"];
     if TRUE.iter().any(|x| x.eq_ignore_ascii_case(value)) {
@@ -24,24 +25,30 @@ pub(crate) fn parse_bool(value: &str) -> Result<bool, Error> {
         Err(invalid(
             value,
             "bool (true, yes, on, 1, false, no, off or 0)",
+            state,
         ))
     }
 }
 
 /// Converts the error of parsing an integer.
 #[cold]
-pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str) -> Error {
-    match err.kind() {
-        IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
-            Error::new(ErrorKind::OutOfRange, invalid_message(value, expecting))
-        }
-        _ => invalid(value, expecting),
+pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str, state: &State) -> Error {
+    let kind = match err.kind() {
+        IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => ErrorKind::OutOfRange,
+        _ => ErrorKind::Unexpected,
+    };
+    if state.discards_errors {
+        return discarded_error(kind);
     }
+    Error::new(kind, invalid_message(value, expecting))
 }
 
 /// Creates the error for a lexical atom that cannot be parsed.
 #[cold]
-pub(crate) fn invalid(value: &str, expecting: &str) -> Error {
+pub(crate) fn invalid(value: &str, expecting: &str, state: &State) -> Error {
+    if state.discards_errors {
+        return discarded_error(ErrorKind::Unexpected);
+    }
     Error::new(ErrorKind::Unexpected, invalid_message(value, expecting))
 }
 
@@ -57,7 +64,10 @@ fn invalid_message(value: &str, expecting: &str) -> String {
 
 /// Creates the error for a number that does not fit into the type.
 #[cold]
-pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str) -> Error {
+pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str, state: &State) -> Error {
+    if state.discards_errors {
+        return discarded_error(ErrorKind::OutOfRange);
+    }
     Error::new(
         ErrorKind::OutOfRange,
         format!("invalid value {}, expected {}", value, expecting),
@@ -67,19 +77,19 @@ pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str) -> Er
 #[test]
 fn test_parse_bool() {
     for value in ["true", "TRUE", "Yes", "on", "1"] {
-        assert!(parse_bool(value).unwrap(), "{}", value);
+        assert!(parse_bool(value, &State::new()).unwrap(), "{}", value);
     }
     for value in ["false", "False", "NO", "off", "0"] {
-        assert!(!parse_bool(value).unwrap(), "{}", value);
+        assert!(!parse_bool(value, &State::new()).unwrap(), "{}", value);
     }
     for value in ["", "2", "y", "n", "t", "truee", " true"] {
-        assert!(parse_bool(value).is_err(), "{}", value);
+        assert!(parse_bool(value, &State::new()).is_err(), "{}", value);
     }
 }
 
 #[test]
 fn test_invalid_truncates() {
-    let err = invalid(&"x".repeat(100), "u32");
+    let err = invalid(&"x".repeat(100), "u32", &State::new());
     assert_eq!(
         err.message(),
         format!("invalid value {:?}..., expected u32", "x".repeat(64))

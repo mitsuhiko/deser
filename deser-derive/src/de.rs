@@ -574,6 +574,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 (#(#checked_fields,)*) => return __deser::__derive::Err(__deser::__derive::missing_field(
                     &[#(#checked_fields.is_none()),*],
                     &[#(#checked_names),*],
+                    __state,
                 )),
             };
         })
@@ -603,7 +604,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     match #name {
                         __deser::__derive::Some(val) => val,
-                        __deser::__derive::None => return __deser::__derive::Err(__deser::__derive::new_missing_field_error(#str_name))
+                        __deser::__derive::None => return __deser::__derive::Err(__deser::__derive::new_missing_field_error(#str_name, __state))
                     }
                 }
             }

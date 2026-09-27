@@ -830,8 +830,7 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     ///
     /// The default implementation returns an error.
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        let _ = state;
-        default_container(self.__private_as_dyn(), "map")
+        default_container(self.__private_as_dyn(), "map", state)
     }
 
     /// Begins the receiving process for sequences.
@@ -842,8 +841,7 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     ///
     /// The default implementation returns an error.
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        let _ = state;
-        default_container(self.__private_as_dyn(), "sequence")
+        default_container(self.__private_as_dyn(), "sequence", state)
     }
 
     /// Returns a sink for the next key in a map.

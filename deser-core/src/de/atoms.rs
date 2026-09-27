@@ -7,7 +7,7 @@ use crate::State;
 #[cfg(feature = "derive")]
 use crate::de::Deserialize;
 use crate::de::{Sink, SinkHandle};
-use crate::error::{Error, ErrorKind};
+use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::Atom;
 
 /// Creates the sink that updates a field of a derived struct.
@@ -160,13 +160,23 @@ pub(crate) fn default_unexpected_atom(
             return sink.atom(fallback, state);
         }
     }
+    if state.discards_errors {
+        return Err(discarded_error(ErrorKind::Unexpected));
+    }
     Err(atom.unexpected_error(&sink.expecting()))
 }
 
 /// The default of `Sink::map` and `Sink::seq`.
 #[cold]
 #[inline(never)]
-pub(crate) fn default_container(sink: &mut dyn Sink<'_>, got: &str) -> Result<(), Error> {
+pub(crate) fn default_container(
+    sink: &mut dyn Sink<'_>,
+    got: &str,
+    state: &State,
+) -> Result<(), Error> {
+    if state.discards_errors {
+        return Err(discarded_error(ErrorKind::Unexpected));
+    }
     Err(Error::new(
         ErrorKind::Unexpected,
         format!("unexpected {}, expected {}", got, sink.expecting()),

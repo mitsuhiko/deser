@@ -341,6 +341,8 @@ impl<'de> DriverCore<'de> {
     fn finish_event(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
         let rv = match rv {
             Ok(()) => Ok(()),
+            // the error is thrown away (see `State::discard_errors`)
+            Err(err) if self.state.discards_errors => Err(err),
             Err(err) => Err(self.state.attach_error_context(err)),
         };
         self.state.clear_event();

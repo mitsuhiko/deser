@@ -336,6 +336,16 @@ impl std::error::Error for Error {
     }
 }
 
+/// Creates an error that is thrown away.
+///
+/// While errors are discarded (see `State::discard_errors`) the common
+/// errors are created with this instead of building a message nobody reads.
+#[cold]
+#[inline(never)]
+pub(crate) fn discarded_error(kind: ErrorKind) -> Error {
+    Error::new(kind, "discarded error")
+}
+
 /// Creates the error for a value that failed to convert or validate.
 #[cold]
 pub(crate) fn conversion_error<E: fmt::Display>(err: E) -> Error {

@@ -101,13 +101,16 @@ pub mod __derive {
 
     /// Creates the error for the first missing field.
     #[cold]
-    pub fn missing_field(missing: &[bool], names: &[&str]) -> super::Error {
+    pub fn missing_field(missing: &[bool], names: &[&str], state: &super::State) -> super::Error {
         let index = missing.iter().position(|x| *x).unwrap_or_default();
-        new_missing_field_error(names[index])
+        new_missing_field_error(names[index], state)
     }
 
     #[cold]
-    pub fn new_missing_field_error(name: &str) -> super::Error {
+    pub fn new_missing_field_error(name: &str, state: &super::State) -> super::Error {
+        if state.discards_errors {
+            return crate::error::discarded_error(super::ErrorKind::MissingField);
+        }
         super::Error::new(
             super::ErrorKind::MissingField,
             format!("missing field `{}`", name),

@@ -258,7 +258,7 @@ impl<'de> Sink<'de> for FlagSlot<bool> {
             Atom::Bool(value) => value,
             Atom::Null => true,
             Atom::Str(ref value) | Atom::Lexical(ref value) if value.is_empty() => true,
-            Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool(value)?,
+            Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool(value, state)?,
             other => return self.unexpected_atom(other, state),
         };
         **self = Some(value);
@@ -523,7 +523,10 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         RecordBuf::capture(move |recording, state| {
             let mut value = None;
-            let rv = recording.replay(A::deserialize_into_as(&mut value), state);
+            // the error is thrown away
+            let rv = state.discard_errors(|state| {
+                recording.replay(A::deserialize_into_as(&mut value), state)
+            });
             *out = Some(match (rv, value) {
                 (Ok(()), Some(value)) => value,
                 _ => T::default(),
@@ -543,12 +546,11 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
         state: &mut State,
     ) -> Result<(), Error> {
         let mut value = None;
-        *out = Some(
-            match (A::__private_atom_into_as(&mut value, atom, state), value) {
-                (Ok(()), Some(value)) => value,
-                _ => T::default(),
-            },
-        );
+        let rv = state.discard_errors(|state| A::__private_atom_into_as(&mut value, atom, state));
+        *out = Some(match (rv, value) {
+            (Ok(()), Some(value)) => value,
+            _ => T::default(),
+        });
         Ok(())
     }
 
@@ -559,15 +561,12 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
         state: &mut State,
     ) -> Result<(), Error> {
         let mut value = None;
-        *out = Some(
-            match (
-                A::__private_borrowed_atom_into_as(&mut value, atom, state),
-                value,
-            ) {
-                (Ok(()), Some(value)) => value,
-                _ => T::default(),
-            },
-        );
+        let rv = state
+            .discard_errors(|state| A::__private_borrowed_atom_into_as(&mut value, atom, state));
+        *out = Some(match (rv, value) {
+            (Ok(()), Some(value)) => value,
+            _ => T::default(),
+        });
         Ok(())
     }
 }
@@ -608,8 +607,9 @@ fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
 ) -> SinkHandle<'a, 'de> {
     RecordBuf::capture(move |recording, state| {
         let mut value = None;
-        if recording
-            .replay(A::deserialize_into_as(&mut value), state)
+        // errors are not reported
+        if state
+            .discard_errors(|state| recording.replay(A::deserialize_into_as(&mut value), state))
             .is_ok()
             && let Some(value) = value
         {
@@ -622,7 +622,7 @@ fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
 /// Deserializes an atom and returns the value unless it failed.
 fn try_atom<'de, T, A: DeserializeAs<'de, T>>(atom: Atom, state: &mut State) -> Option<T> {
     let mut value = None;
-    match A::__private_atom_into_as(&mut value, atom, state) {
+    match state.discard_errors(|state| A::__private_atom_into_as(&mut value, atom, state)) {
         Ok(()) => value,
         Err(_) => None,
     }
@@ -634,7 +634,8 @@ fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
     state: &mut State,
 ) -> Option<T> {
     let mut value = None;
-    match A::__private_borrowed_atom_into_as(&mut value, atom, state) {
+    match state.discard_errors(|state| A::__private_borrowed_atom_into_as(&mut value, atom, state))
+    {
         Ok(()) => value,
         Err(_) => None,
     }

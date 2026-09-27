@@ -388,6 +388,28 @@ fn test_untagged() {
     );
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[deser(untagged)]
+enum LooseUntagged {
+    Flag(bool),
+    Point(Point),
+}
+
+#[test]
+fn test_untagged_collect() {
+    // the errors of failed variants are thrown away, collected ones are kept
+    let ignored = IgnoredFields::new();
+    let value: LooseUntagged = deserialize(
+        Some(UnknownFields::Collect(ignored.clone())),
+        map(&[("x", 1u64.into()), ("z", 2u64.into()), ("y", 3u64.into())]),
+    )
+    .unwrap();
+    assert_eq!(value, LooseUntagged::Point(Point { x: 1, y: 3 }));
+    let ignored = ignored.take();
+    let messages = ignored.iter().map(|x| x.message()).collect::<Vec<_>>();
+    assert_eq!(messages, ["unknown field `z`, expected `x` or `y`"]);
+}
+
 #[derive(Debug, Deserialize)]
 #[deser(tag = "type")]
 enum Passthrough {
