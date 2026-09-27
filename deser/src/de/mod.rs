@@ -222,6 +222,8 @@ mod driver;
 pub(crate) mod duplicates;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
+#[cfg(feature = "derive")]
+pub(crate) mod fields;
 mod ignore;
 pub(crate) mod impls;
 mod layer;

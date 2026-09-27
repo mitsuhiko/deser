@@ -162,6 +162,7 @@ pub mod __derive {
         InternallyTaggedSink, OtherVariant, Tag, Variant, VariantMaker, Variants, lookup_atom,
         unknown_variant_atom, untagged_handle,
     };
+    pub use crate::de::fields::{FieldKeySink, NextField};
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::de::update::replace_with;
     pub use crate::de::validate::{
