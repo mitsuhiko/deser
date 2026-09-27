@@ -4,6 +4,11 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `Deserialize::deserialize_update`, `DeserializeDriver::update` and
+  `Deserializer::update` which update an existing value.  Derived structs
+  update the fields that are given and keep the others (nested structs are
+  merged), `Option` updates the value in it and all other types are
+  replaced.  This is useful to layer configuration files over defaults.
 - Added `#[deser(skip)]`, `#[deser(skip_serializing)]` and
   `#[deser(skip_deserializing)]` for fields.  Skipped fields are filled in
   with their default when deserializing and their types do not need to be

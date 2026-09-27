@@ -237,3 +237,15 @@ read data written with a different convention.
 * [serde: Allow rename of container with &'static str #2485](https://github.com/serde-rs/serde/issues/2485)
 * [serde: Rename With Expressions #1964](https://github.com/serde-rs/serde/issues/1964)
 * [serde: Consider supporting concat! macro in attributes #1636](https://github.com/serde-rs/serde/issues/1636)
+
+## Updating Values
+
+Serde has a hidden `deserialize_in_place` which reuses allocations but
+replaces the whole value.  Deser has `Deserialize::deserialize_update`
+which applies data on top of an existing value: derived structs update the
+fields that are given and keep the others, nested structs and options are
+merged.  This is useful to layer configuration files over defaults.
+
+**Related issues:**
+
+* [serde: Consider unhiding `deserialize_in_place` #2204](https://github.com/serde-rs/serde/issues/2204)

@@ -47,6 +47,11 @@ impl<T: ?Sized> Drop for NonuniqueBox<T> {
     }
 }
 
+/// Creates a reference with an unbounded lifetime.
+unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
+    unsafe { &mut *ptr }
+}
+
 /// Utility to bundle a sink with a slot.
 ///
 /// There are situations where one wants to be able to deserialize into
@@ -124,17 +129,38 @@ impl<'de, T> OwnedSink<'de, T> {
     pub(crate) fn with(
         make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
     ) -> OwnedSink<'de, T> {
-        /// Creates a reference with an unbounded lifetime.
-        unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
-            unsafe { &mut *ptr }
-        }
-
         let storage = NonuniqueBox::new(None);
         // SAFETY: the storage is heap allocated and not moved.  The sink is
         // dropped before the storage is accessed again or freed.
         let sink = unsafe {
             let slot = unbounded(storage.ptr.as_ptr());
             std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
+        };
+        OwnedSink {
+            storage,
+            sink: ManuallyDrop::new(sink),
+        }
+    }
+
+    /// Creates an owned sink that updates a value.
+    ///
+    /// The value is moved into the owned sink and updated with
+    /// [`Deserialize::deserialize_update`].  It can be taken out again with
+    /// [`take`](Self::take), also if the update failed.
+    pub(crate) fn update(value: T) -> OwnedSink<'de, T>
+    where
+        T: Deserialize<'de>,
+    {
+        let storage = NonuniqueBox::new(Some(value));
+        // SAFETY: like in `with`, the storage is heap allocated and not
+        // moved.  The value in it is not replaced while the sink exists, the
+        // sink is dropped before the storage is accessed again or freed.
+        let sink = unsafe {
+            let slot = unbounded(storage.ptr.as_ptr());
+            let value = slot.as_mut().unwrap_unchecked();
+            std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(T::deserialize_update(
+                value,
+            ))
         };
         OwnedSink {
             storage,

@@ -542,6 +542,59 @@
 //! of the fields.  Validators run for every value that is deserialized,
 //! also in values that are replayed (for instance for untagged enums).
 //!
+//! ## Updating Values
+//!
+//! Derived structs can update an existing value in place (see
+//! [`Deserialize::deserialize_update`](crate::Deserialize::deserialize_update)):
+//! the fields that are given are updated, all others keep their values.
+//! Fields are updated the same way which means that nested structs are
+//! merged and `Option`s which are set update their value (null clears
+//! them).  All other values (sequences, maps, enums) are replaced.  This is
+//! useful to layer configuration files:
+//!
+//! ```
+//! use deser::Deserialize;
+//! use deser::de::DeserializeDriver;
+//!
+//! #[derive(Deserialize)]
+//! pub struct Config {
+//!     server: Server,
+//!     debug: bool,
+//! }
+//!
+//! #[derive(Deserialize)]
+//! pub struct Server {
+//!     host: String,
+//!     port: u16,
+//! }
+//!
+//! let mut config = Config {
+//!     server: Server { host: "localhost".into(), port: 80 },
+//!     debug: false,
+//! };
+//! // {"server": {"port": 8080}}
+//! let mut driver = DeserializeDriver::update(&mut config);
+//! driver.emit(deser::Event::map_start()).unwrap();
+//! driver.emit("server").unwrap();
+//! driver.emit(deser::Event::map_start()).unwrap();
+//! driver.emit("port").unwrap();
+//! driver.emit(8080u64).unwrap();
+//! driver.emit(deser::Event::MapEnd).unwrap();
+//! driver.emit(deser::Event::MapEnd).unwrap();
+//! drop(driver);
+//! assert_eq!(config.server.host, "localhost");
+//! assert_eq!(config.server.port, 8080);
+//! ```
+//!
+//! With a data format this is [`Deserializer::update`](crate::de::Deserializer::update)
+//! (for instance `deser_toml::Deserializer::from_str(s).update(&mut config)`).
+//! Some things to be aware of:
+//!
+//! * Fields with adapters or validators are replaced (after validating the
+//!   new value).  Validators of the struct run after the update.
+//! * Structs with flattened fields are replaced.
+//! * If the update fails, the value might be partially updated.
+//!
 //! ## Unknown Fields
 //!
 //! Keys of a struct that no field takes are ignored by default.  They can be

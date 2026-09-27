@@ -870,3 +870,54 @@ fn test_lexical_keys() {
     let map: HashMap<bool, u8> = from_str("true = 1\nfalse = 0\n").unwrap();
     assert_eq!(map[&true], 1);
 }
+
+#[test]
+fn test_update_layers() {
+    use deser::de::Deserializer as _;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Config {
+        name: String,
+        server: Server,
+        #[deser(default)]
+        features: Vec<String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Server {
+        host: String,
+        port: u16,
+    }
+
+    let mut config: Config = from_str(
+        r#"
+        name = "app"
+        features = ["a"]
+
+        [server]
+        host = "localhost"
+        port = 80
+        "#,
+    )
+    .unwrap();
+    deser_toml::Deserializer::from_str("[server]\nport = 8080\n")
+        .update(&mut config)
+        .unwrap();
+    assert_eq!(
+        config,
+        Config {
+            name: "app".into(),
+            server: Server {
+                host: "localhost".into(),
+                port: 8080
+            },
+            features: vec!["a".into()],
+        }
+    );
+
+    // errors of layers are located in the layer
+    let err = deser_toml::Deserializer::from_str("[server]\nport = \"x\"\n")
+        .update(&mut config)
+        .unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(2), Some(8)));
+}

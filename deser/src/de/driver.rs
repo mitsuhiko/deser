@@ -105,6 +105,32 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         DeserializeDriver::from_sink(T::deserialize_into(out))
     }
 
+    /// Creates a driver that updates an existing value.
+    ///
+    /// See [`Deserialize::deserialize_update`].
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{Deserialize, Event};
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Config {
+    ///     host: String,
+    ///     port: u16,
+    /// }
+    ///
+    /// let mut config = Config { host: "localhost".into(), port: 80 };
+    /// let mut driver = DeserializeDriver::update(&mut config);
+    /// for event in [Event::map_start(), "port".into(), 8080u64.into(), Event::MapEnd] {
+    ///     driver.emit(event).unwrap();
+    /// }
+    /// drop(driver);
+    /// assert_eq!((config.host.as_str(), config.port), ("localhost", 8080));
+    /// ```
+    pub fn update<T: Deserialize<'de>>(value: &'a mut T) -> DeserializeDriver<'a, 'de> {
+        DeserializeDriver::from_sink(T::deserialize_update(value))
+    }
+
     /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver::with_state(State::new(), sink)

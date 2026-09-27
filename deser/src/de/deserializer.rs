@@ -73,4 +73,32 @@ pub trait Deserializer<'de> {
         }
         out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
     }
+
+    /// Updates an existing value with the next value.
+    ///
+    /// See [`Deserialize::deserialize_update`].  If this fails, the value
+    /// might be partially updated.
+    fn update<T: Deserialize<'de>>(&mut self, value: &mut T) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        self.update_with(value, |_| {})
+    }
+
+    /// Updates an existing value with the next value after setting up the
+    /// driver.
+    ///
+    /// This is like [`update`](Self::update) but the callback is invoked
+    /// with the driver first, like with
+    /// [`deserialize_with`](Self::deserialize_with).
+    fn update_with<T, F>(&mut self, value: &mut T, setup: F) -> Result<(), Error>
+    where
+        T: Deserialize<'de>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
+        Self: Sized,
+    {
+        let mut driver = DeserializeDriver::update(value);
+        setup(&mut driver);
+        self.drive(&mut driver)
+    }
 }

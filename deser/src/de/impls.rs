@@ -991,6 +991,10 @@ where
     fn initial_value() -> Option<Self> {
         Some(None)
     }
+
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        crate::de::update::update_option(value)
+    }
 }
 
 impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<A> {

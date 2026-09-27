@@ -59,6 +59,14 @@ fn validate_slot(path: Option<&syn::ExprPath>, slot: TokenStream) -> Option<Toke
     Some(quote! { __deser::__derive::validate_slot(#slot, #validator)? })
 }
 
+/// The generated code for updating structs in place.
+struct UpdateSink {
+    /// The `deserialize_update` method.
+    method: TokenStream,
+    /// The sink and its implementation.
+    items: TokenStream,
+}
+
 pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     if let Some(rv) = crate::forward::derive_deserialize(input)? {
         return Ok(rv);
@@ -180,6 +188,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut key_dispatch = Vec::new();
     let mut key_atom_dispatch = Vec::new();
     let mut key_borrowed_atom_dispatch = Vec::new();
+    let mut update_dispatch = Vec::new();
     for (index, (x, fieldname)) in attrs.iter().zip(sink_fieldname.iter()).enumerate() {
         if x.flatten() {
             continue;
@@ -214,6 +223,28 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             atom = quote! {{ #atom?; #validate; __deser::__derive::Ok(()) }};
             borrowed_atom = quote! {{ #borrowed_atom?; #validate; __deser::__derive::Ok(()) }};
         }
+        // in updates, fields with adapters and validators are replaced
+        // (after validating the new value), all others are updated
+        let field_ident = &x.field().ident;
+        let update = if x.adapters().de().is_none() && x.validate().is_none() {
+            quote! { __deser::Deserialize::deserialize_update(&mut self.value.#field_ident) }
+        } else {
+            let owned = match x.adapters().de() {
+                Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
+                None => quote! { __deser::de::OwnedSink::deserialize() },
+            };
+            let validator = match x.validate() {
+                Some(path) => {
+                    let validator = validator(path);
+                    quote! { __deser::__derive::Some(#validator) }
+                }
+                None => quote! { __deser::__derive::None },
+            };
+            quote! { __deser::__derive::replace_with(&mut self.value.#field_ident, #owned, #validator) }
+        };
+        update_dispatch.push(quote! {
+            __Key::Field(#index) => #update,
+        });
         key_matcher.push(Name::str_arms(&names, quote! { __Key::Field(#index) }));
         key_dispatch.push(quote! {
             __Key::Field(#index) => #sink,
@@ -514,6 +545,101 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     } else {
         (None, None, None)
     };
+    // Structs without flattened fields are updated in place: the fields
+    // that are given are updated, the others are kept.  Structs with
+    // flattened fields are replaced (the default).
+    let update = if has_flatten {
+        None
+    } else {
+        let container_validate = container_attrs.validate().map(|path| {
+            let validator = validator(path);
+            quote! {
+                if let __deser::__derive::Err(__err) = (#validator)(&*self.value) {
+                    return __deser::__derive::Err(match self.start {
+                        __deser::__derive::Some(__start) if __err.offset().is_none() => __err.with_offset(__start),
+                        _ => __err,
+                    });
+                }
+            }
+        });
+        Some(UpdateSink {
+            method: quote! {
+                fn deserialize_update(
+                    __value: &mut Self,
+                ) -> __deser::de::SinkHandle<'_, 'de> {
+                    __deser::de::SinkHandle::boxed(__UpdateSink {
+                        value: __value,
+                        key: __KeySink { key: __Key::Unknown, offset: __deser::__derive::None },
+                        seen: [0; #seen_words],
+                        #start_init
+                        _marker: __deser::__derive::PhantomData,
+                    })
+                }
+            },
+            items: quote! {
+                struct __UpdateSink #wrapper_impl_generics #where_clause {
+                    value: &'__a mut #ident #ty_generics,
+                    key: __KeySink,
+                    seen: [u64; #seen_words],
+                    #start_field
+                    _marker: __deser::__derive::PhantomData<&'de ()>,
+                }
+
+                #[automatically_derived]
+                impl #wrapper_impl_generics __deser::de::Sink<'de> for __UpdateSink #wrapper_ty_generics #bounded_where_clause {
+                    fn expecting(&self) -> __deser::__derive::StrCow<'_> {
+                        __deser::__derive::StrCow::Borrowed(#type_name)
+                    }
+
+                    fn map(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<()>
+                    {
+                        #start_set
+                        __deser::__derive::Ok(())
+                    }
+
+                    fn next_key(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
+                    {
+                        self.key.key = __Key::Unknown;
+                        __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
+                    }
+
+                    fn next_value(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
+                    {
+                        let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                        let __offset = self.key.offset;
+                        if let __Key::Field(__index) = __key
+                            && __deser::__derive::mark_seen(&mut self.seen, __index)
+                            && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
+                        {
+                            return __deser::__derive::Ok(__deser::de::SinkHandle::null());
+                        }
+                        __deser::__derive::Ok(match __key {
+                            #(
+                                #update_dispatch
+                            )*
+                            __Key::Other(__key) => {
+                                #unknown_field;
+                                __deser::de::SinkHandle::null()
+                            }
+                            __Key::Unknown | __Key::Field(_) => __deser::de::SinkHandle::null(),
+                        })
+                    }
+
+                    fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
+                        #container_validate
+                        __deser::__derive::Ok(())
+                    }
+                }
+            },
+        })
+    };
+    let (update_method, update_items) = match update {
+        Some(update) => (Some(update.method), Some(update.items)),
+        None => (None, None),
+    };
     // keys that flattened values took but did not use are unknown keys too
     let unclaimed_keys = if has_flatten {
         Some(quote! {
@@ -599,7 +725,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         _marker: __deser::__derive::PhantomData,
                     })
                 }
+
+                #update_method
             }
+
+            #update_items
 
             #[automatically_derived]
             impl #wrapper_impl_generics __deser::de::Sink<'de> for __Sink #wrapper_ty_generics #bounded_where_clause {
@@ -967,6 +1097,16 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
         None => quote! { __deser::de::OwnedSink::deserialize() },
     };
+    // newtype structs update their field, unless it's converted or validated
+    let newtype_update = if adapter.is_none() && container_attrs.validate().is_none() {
+        Some(quote! {
+            fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
+                __deser::Deserialize::deserialize_update(&mut __value.0)
+            }
+        })
+    } else {
+        None
+    };
     let newtype_validate_slot = validate_slot(container_attrs.validate(), quote! { __slot });
     let newtype_validate_self = validate_slot(container_attrs.validate(), quote! { self.slot });
     let atom_into = atom_into(field_type, adapter, quote! { &mut __inner });
@@ -1005,6 +1145,8 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                         sink: #make_sink,
                     })
                 }
+
+                #newtype_update
 
                 #[inline]
                 fn __private_atom_into(

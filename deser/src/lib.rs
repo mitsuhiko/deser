@@ -163,6 +163,7 @@ pub mod __derive {
         unknown_variant_atom, untagged_handle,
     };
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
+    pub use crate::de::update::replace_with;
     pub use crate::de::validate::{
         Validator, invalid_value, validate_slot, validated, validated_with,
     };

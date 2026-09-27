@@ -232,6 +232,7 @@ mod recording;
 mod sinkbox;
 mod source;
 pub(crate) mod unknown;
+pub(crate) mod update;
 #[cfg(feature = "derive")]
 pub(crate) mod validate;
 
@@ -664,6 +665,21 @@ pub trait Deserialize<'de>: Sized + Send {
     /// used for fields with `#[deser(default)]`.
     fn initial_value() -> Option<Self> {
         None
+    }
+
+    /// Creates a sink that updates an existing value.
+    ///
+    /// This is used to apply data on top of a value, for instance to layer a
+    /// configuration file over the defaults (see
+    /// [`DeserializeDriver::update`] and [`Deserializer::update`]).  The
+    /// default implementation replaces the value with the deserialized one.
+    /// Derived structs update the fields that are given and keep the others
+    /// (fields are updated the same way, so nested structs are merged).
+    /// `Option` updates the value in it if it's set, null clears it.
+    ///
+    /// If the update fails, the value might be partially updated.
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        update::replace_handle(value)
     }
 
     /// Deserializes an atom into the slot.
