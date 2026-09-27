@@ -243,6 +243,20 @@ impl RenameAll {
         }
     }
 
+    /// Returns the name of the style (as given to `rename_all`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RenameAll::LowerCase => "lowercase",
+            RenameAll::UpperCase => "UPPERCASE",
+            RenameAll::PascalCase => "PascalCase",
+            RenameAll::CamelCase => "camelCase",
+            RenameAll::SnakeCase => "snake_case",
+            RenameAll::ScreamingSnakeCase => "SCREAMING_SNAKE_CASE",
+            RenameAll::KebabCase => "kebab-case",
+            RenameAll::ScreamingKebabCase => "SCREAMING-KEBAB-CASE",
+        }
+    }
+
     fn parse(lit: &syn::LitStr) -> syn::Result<RenameAll> {
         match lit.value().as_str() {
             "lowercase" => Ok(RenameAll::LowerCase),
@@ -401,6 +415,7 @@ pub struct ContainerAttrs<'a> {
     adapters: Adapters,
     rename: Option<Name>,
     rename_all: Option<RenameAll>,
+    rename_all_fields: Option<RenameAll>,
     alias_all: Vec<RenameAll>,
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
@@ -656,6 +671,7 @@ impl<'a> ContainerAttrs<'a> {
             adapters: Adapters::default(),
             rename: None,
             rename_all: None,
+            rename_all_fields: None,
             alias_all: Vec::new(),
             default: None,
             skip_serializing_optionals: false,
@@ -676,6 +692,7 @@ impl<'a> ContainerAttrs<'a> {
         let mut adapters = AdapterAttrs::default();
         let mut rename = Directional::default();
         let mut rename_all = Directional::default();
+        let mut rename_all_fields = Directional::default();
 
         let seen = parse_deser_attrs(&input.attrs, |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
@@ -686,6 +703,16 @@ impl<'a> ContainerAttrs<'a> {
             }
             "rename_all" => {
                 rename_all.parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))
+            }
+            "rename_all_fields" => {
+                rename_all_fields
+                    .parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))?;
+                if !is_enum {
+                    return Err(meta.error(
+                        "rename_all_fields is only supported on enums, use rename_all on structs",
+                    ));
+                }
+                Ok(())
             }
             "alias_all" => {
                 rv.alias_all.push(RenameAll::parse(&parse_lit_str(meta)?)?);
@@ -766,6 +793,7 @@ impl<'a> ContainerAttrs<'a> {
         rv.seen = seen;
         rv.rename = rename.get(direction).cloned();
         rv.rename_all = rename_all.get(direction).copied();
+        rv.rename_all_fields = rename_all_fields.get(direction).copied();
 
         if rv.content.is_some() && rv.tag.is_none() {
             return Err(syn::Error::new(
@@ -821,6 +849,11 @@ impl<'a> ContainerAttrs<'a> {
             Some(ref name) => name.clone(),
             None => Name::Lit(self.ident.to_string()),
         }
+    }
+
+    /// Returns the name style of the fields of struct variants.
+    pub fn rename_all_fields(&self) -> Option<RenameAll> {
+        self.rename_all_fields
     }
 
     pub fn get_field_name(&self, field: &syn::Field) -> String {
@@ -1342,12 +1375,17 @@ impl<'a> FieldAttrs<'a> {
         rv
     }
 
-    /// Returns the name of the field ignoring container level renames.
-    pub fn plain_name(&self, direction: Direction) -> Name {
-        self.rename
-            .get(direction)
-            .cloned()
-            .unwrap_or_else(|| Name::Lit(self.field.ident.as_ref().unwrap().to_string()))
+    /// Returns the name of the field of a struct variant.
+    ///
+    /// `style` is the name style of the fields of the variant.
+    pub fn variant_field_name(&self, direction: Direction, style: Option<RenameAll>) -> Name {
+        self.rename.get(direction).cloned().unwrap_or_else(|| {
+            let name = self.field.ident.as_ref().unwrap().to_string();
+            Name::Lit(match style {
+                Some(style) => style.apply_to_field(&name),
+                None => name,
+            })
+        })
     }
 
     pub fn default(&self) -> Option<&TypeDefault> {
@@ -1587,6 +1625,7 @@ pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     seen: Vec<SeenAttr>,
     rename: Directional<VariantName>,
+    rename_all: Directional<RenameAll>,
     aliases: Vec<VariantName>,
     other: bool,
     default: bool,
@@ -1600,6 +1639,7 @@ impl<'a> EnumVariantAttrs<'a> {
             variant,
             seen: Vec::new(),
             rename: Directional::default(),
+            rename_all: Directional::default(),
             aliases: Vec::new(),
             other: false,
             default: false,
@@ -1610,6 +1650,16 @@ impl<'a> EnumVariantAttrs<'a> {
         let mut skip = false;
         let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
             "rename" => rv.rename.parse(meta, name, VariantName::parse),
+            "rename_all" => {
+                rv.rename_all
+                    .parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))?;
+                if !matches!(variant.fields, syn::Fields::Named(_)) {
+                    return Err(
+                        meta.error("rename_all on variants renames the fields of struct variants")
+                    );
+                }
+                Ok(())
+            }
             "alias" => {
                 rv.aliases.push(VariantName::parse(meta)?);
                 Ok(())
@@ -1639,7 +1689,10 @@ impl<'a> EnumVariantAttrs<'a> {
                     "skip already skips serialization and deserialization",
                 ));
             }
-            conflict("skip", &["rename", "alias", "other", "default"])?;
+            conflict(
+                "skip",
+                &["rename", "rename_all", "alias", "other", "default"],
+            )?;
             rv.skip_serializing = true;
             rv.skip_deserializing = true;
         } else if rv.skip_deserializing {
@@ -1662,6 +1715,17 @@ impl<'a> EnumVariantAttrs<'a> {
     /// Returns the attributes that were used on the variant.
     pub fn into_seen(self) -> Vec<SeenAttr> {
         self.seen
+    }
+
+    /// Returns the name style of the fields of the variant.
+    ///
+    /// This is the one of the variant or the one for the fields of all
+    /// variants of the enum.
+    pub fn fields_rename_all(&self, container_attrs: &ContainerAttrs) -> Option<RenameAll> {
+        self.rename_all
+            .get(container_attrs.direction())
+            .copied()
+            .or(container_attrs.rename_all_fields())
     }
 
     /// Returns `true` if this is the catch-all variant for unknown tags.

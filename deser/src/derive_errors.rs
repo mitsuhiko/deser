@@ -483,6 +483,25 @@
 /// struct Test(u32, #[deser(skip, as = deser::adapters::DisplayFromStr)] u32);
 /// ```
 ///
+/// `rename_all_fields` is for enums, `rename_all` on variants for struct
+/// variants.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(rename_all_fields = "camelCase")]
+/// struct Test {
+///     a_b: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// enum Test {
+///     #[deser(rename_all = "camelCase")]
+///     A(u32),
+/// }
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

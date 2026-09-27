@@ -427,3 +427,45 @@ fn test_directional_renames() {
         Kind::SecondKind
     );
 }
+
+#[test]
+fn test_rename_fields_of_variants() {
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(
+        tag = "type",
+        rename_all = "snake_case",
+        rename_all_fields = "camelCase"
+    )]
+    enum Request {
+        GetItem {
+            item_id: u32,
+        },
+        #[deser(rename_all = "kebab-case")]
+        PutItem {
+            item_id: u32,
+            #[deser(rename = "VALUE")]
+            item_value: String,
+        },
+    }
+
+    for (value, events) in [
+        (
+            Request::GetItem { item_id: 1 },
+            map(&[("type", "get_item".into()), ("itemId", 1u64.into())]),
+        ),
+        (
+            Request::PutItem {
+                item_id: 1,
+                item_value: "x".into(),
+            },
+            map(&[
+                ("type", "put_item".into()),
+                ("item-id", 1u64.into()),
+                ("VALUE", "x".into()),
+            ]),
+        ),
+    ] {
+        assert_eq!(serialize(&value), events);
+        assert_eq!(deserialize::<Request>(events).unwrap(), value);
+    }
+}

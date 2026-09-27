@@ -20,8 +20,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
 use crate::attr::{
-    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault,
-    UnnamedFieldAttrs, VariantName,
+    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, RenameAll,
+    TypeDefault, UnnamedFieldAttrs, VariantName,
 };
 use crate::bound::{
     BoundField, collect_idents, collect_lifetimes, turbofish_without_lifetimes,
@@ -125,6 +125,8 @@ struct VariantInfo<'a> {
     fields: Vec<FieldInfo<'a>>,
     tag_field: Option<usize>,
     content: Content,
+    // the name style of the fields of struct variants
+    fields_rename_all: Option<RenameAll>,
 }
 
 impl<'a> VariantInfo<'a> {
@@ -542,6 +544,7 @@ fn collect_variants<'a>(
             fields,
             tag_field,
             content,
+            fields_rename_all: attrs.fields_rename_all(container_attrs),
         });
     }
 
@@ -707,6 +710,10 @@ pub fn derive_deserialize(
                 let predicates = filter_predicates(&input.generics, bound, &helper_params);
                 quote! { #[deser(deserialize_bound(#(#predicates),*))] }
             });
+            let helper_rename_all = info.fields_rename_all.map(|style| {
+                let style = style.as_str();
+                quote! { #[deser(rename_all = #style)] }
+            });
             let helper_deny = if container_attrs.deny_unknown_fields() {
                 Some(quote! { #[deser(deny_unknown_fields)] })
             } else {
@@ -717,6 +724,7 @@ pub fn derive_deserialize(
                 #[deser(rename = #helper_name)]
                 #helper_crate
                 #helper_bound
+                #helper_rename_all
                 #helper_deny
                 struct #helper_decl #helper_where {
                     #(#fields)*
@@ -1077,7 +1085,7 @@ fn fields_ser(
             if container_attrs.skip_serializing_optionals() {
                 conditions.push(field_info.is_optional());
             }
-            let name = attrs.plain_name(Direction::Serialize);
+            let name = attrs.variant_field_name(Direction::Serialize, info.fields_rename_all);
             let field = field(quote! { #name }, field_info.ser_handle());
             quote! {
                 __fields.push(#field);

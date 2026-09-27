@@ -4,6 +4,9 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(rename_all_fields = "...")]` for enums which renames the
+  fields of all struct variants, and `#[deser(rename_all = "...")]` for
+  struct variants which renames the fields of the variant.
 - `rename` and `rename_all` can differ between serialization and
   deserialization: `#[deser(rename(serialize = "a", deserialize = "b"))]`.
 - The fields of tuple structs and tuple variants support `skip`,

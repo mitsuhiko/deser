@@ -229,6 +229,8 @@
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
 //! * `#[deser(alias_all = "...")]`: adds an alias in a name style to all
 //!   variants, like on structs.
+//! * `#[deser(rename_all_fields = "...")]`: renames the fields of all
+//!   struct variants to a name style (like `rename_all` on structs).
 //! * `#[deser(repr)]`: names the variants by their discriminants (see
 //!   [tags](#tags)).  This cannot be combined with `rename_all`, `alias_all`
 //!   and `rename` on variants.
@@ -341,6 +343,9 @@
 //! * `#[deser(rename = "...")]`: renames the enum variant.  Variants can
 //!   also be named by integers and booleans (`#[deser(rename = 1)]`,
 //!   `#[deser(rename = true)]`), see [tags](#tags).
+//! * `#[deser(rename_all = "...")]`: renames the fields of a struct variant
+//!   to a name style.  This takes precedence over `rename_all_fields` of
+//!   the enum.
 //! * `#[deser(alias = "...")]`: provides an alias for the variant name for deserialization.  This is ignored
 //!   for serialization.  Like `rename` it takes strings, integers and
 //!   booleans.
