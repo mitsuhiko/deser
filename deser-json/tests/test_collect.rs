@@ -252,3 +252,28 @@ fn test_collect_validation_errors() {
         ]
     );
 }
+
+#[test]
+fn test_collect_separated() {
+    use deser::adapters::{Separated, TrimWhitespace};
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct Config {
+        #[deser(as = Separated<',', TrimWhitespace>)]
+        ports: Vec<u16>,
+    }
+
+    // the pieces are the elements of the sequence, their errors are
+    // collected like the errors of elements
+    let rv = collect::<Config>(r#"{"ports": "80, x, 443, y"}"#);
+    assert_eq!(
+        errors(rv),
+        [
+            r#"Unexpected: invalid value "x", expected u16 at line 1 column 11"#,
+            r#"Unexpected: invalid value "y", expected u16 at line 1 column 11"#,
+        ]
+    );
+    let config = collect::<Config>(r#"{"ports": "80, 443"}"#).unwrap();
+    assert_eq!(config.ports, [80, 443]);
+}

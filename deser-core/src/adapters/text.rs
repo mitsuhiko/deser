@@ -143,7 +143,9 @@ fn trim_atom(atom: Atom<'_>) -> Atom<'_> {
 /// Splits text into the elements of the sequence of a sink.
 ///
 /// Invokes [`Sink::seq`] and passes the pieces on as elements, the driver
-/// invokes [`Sink::finish`] as for every atom.
+/// invokes [`Sink::finish`] as for every atom.  Like the driver does for
+/// the elements of sequences, the sink can recover from the error of an
+/// element (see [`Sink::recover`]).
 fn split_into<'de>(
     sink: &mut SinkHandle<'_, 'de>,
     text: &str,
@@ -153,10 +155,25 @@ fn split_into<'de>(
     sink.seq(state)?;
     if !text.is_empty() {
         for piece in text.split(sep) {
-            sink.__private_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state)?;
+            let rv = sink.__private_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state);
+            recover_element(sink, rv, state)?;
         }
     }
     Ok(())
+}
+
+/// Lets the sink recover from the error of an element.
+#[inline]
+fn recover_element(
+    sink: &mut SinkHandle<'_, '_>,
+    rv: Result<(), Error>,
+    state: &mut State,
+) -> Result<(), Error> {
+    match rv {
+        Ok(()) => Ok(()),
+        Err(err) if state.discards_errors => Err(err),
+        Err(err) => sink.recover(state.attach_error_context(err), state),
+    }
 }
 
 /// Splits borrowed text into the elements of the sequence of a sink.
@@ -171,7 +188,8 @@ fn split_borrowed_into<'de>(
     sink.seq(state)?;
     if !text.is_empty() {
         for piece in text.split(sep) {
-            sink.__private_borrowed_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state)?;
+            let rv = sink.__private_borrowed_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state);
+            recover_element(sink, rv, state)?;
         }
     }
     Ok(())
@@ -248,6 +266,10 @@ impl<'a, 'de> Sink<'de> for TextSink<'a, 'de> {
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         self.inner.value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.inner.recover(err, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
