@@ -10,31 +10,37 @@
 //! * A JSON API rejects a request with a list of all problems, not just
 //!   the first one.  A `Validation` collects them with their paths and the
 //!   codes of the rules that were violated.
+//!
+//! Validators are types.  `validator!` turns a function (or a condition)
+//! into one.
 use deser::Deserialize;
 use deser_validate::{
-    Checked, Collect, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, Validator,
-    Violation,
+    Check, Checked, Collect, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation,
+    validator,
 };
 
-/// A lowercase identifier like `jane-doe`.
-pub struct Slug;
-
-impl<T: AsRef<str> + ?Sized> Validator<T> for Slug {
-    fn validate(value: &T) -> Result<(), Violation> {
-        let value = value.as_ref();
-        let valid = value
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-        if valid && !value.is_empty() {
-            Ok(())
-        } else {
-            Err(Violation::new(
-                "slug",
-                "may only contain lowercase letters, digits and dashes",
-            ))
-        }
+/// Checks a lowercase identifier like `jane-doe`.
+///
+/// This is a plain function, `validator!` below turns it into the
+/// validator type `Slug`.  It returns a message if the value is invalid,
+/// the code of the violation is the name of the validator (`slug`).
+fn check_slug(value: &str) -> Result<(), &'static str> {
+    let valid = value
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if valid && !value.is_empty() {
+        Ok(())
+    } else {
+        Err("may only contain lowercase letters, digits and dashes")
     }
 }
+
+// A validator of `str` validates `String`s (and everything else that
+// borrows as `str`) too.
+validator!(pub Slug(value: &str) = check_slug);
+
+// Simple rules are a condition and a message.
+validator!(pub Quantity(quantity: &u32) => (1..=100).contains(quantity), "must be between 1 and 100");
 
 /// The signup form of a website.
 #[derive(Debug, Deserialize)]
@@ -89,16 +95,20 @@ pub struct Address {
     zip: Checked<String, Len<4, 10>>,
 }
 
+/// Validators work as adapters (`Check`), the fields keep their types.
 #[derive(Debug, Deserialize)]
 pub struct OrderLine {
-    sku: Checked<String, Slug>,
-    quantity: Checked<u32, Range<1, 100>>,
+    #[deser(as = Check<Slug>)]
+    sku: String,
+    #[deser(as = Check<Quantity>)]
+    quantity: u32,
 }
 
 /// An order submitted to a JSON API.
 #[derive(Debug, Deserialize)]
 pub struct Order {
-    customer: Checked<String, Email>,
+    #[deser(as = Check<Email>)]
+    customer: String,
     lines: Checked<Vec<OrderLine>, (NonEmpty, MaxLen<50>)>,
     shipping: Address,
     notes: Checked<Vec<String>, Each<MaxLen<200>>>,
@@ -153,7 +163,7 @@ fn api() {
         [
             "customer [email]: invalid value: must be an email address (line 2)",
             "lines[1].sku [slug]: invalid value: may only contain lowercase letters, digits and dashes (line 5)",
-            "lines[1].quantity [range]: invalid value: must be between 1 and 100 (line 5)",
+            "lines[1].quantity [quantity]: invalid value: must be between 1 and 100 (line 5)",
             "lines[2].quantity [invalid_type]: unexpected string, expected u32 (line 6)",
             "shipping.street [non_empty]: invalid value: must not be empty (line 8)",
             "shipping.zip [length]: invalid value: length must be between 4 and 10 (line 8)",

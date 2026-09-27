@@ -63,16 +63,29 @@
 //! use deser::Deserialize;
 //! use deser_validate::{Check, validator};
 //!
+//! // a condition and a message
 //! validator!(NonZero(port: &u16) => *port != 0, "must not be zero");
+//!
+//! // a function
+//! fn check_host(host: &str) -> Result<(), String> {
+//!     match host.contains(' ') {
+//!         true => Err(format!("`{}` is not a host name", host)),
+//!         false => Ok(()),
+//!     }
+//! }
+//! validator!(HostName(host: &str) = check_host);
 //!
 //! #[derive(Deserialize)]
 //! struct Server {
+//!     #[deser(as = Check<HostName>)]
+//!     host: String,
 //!     #[deser(as = Check<NonZero>)]
 //!     port: u16,
 //! }
 //! ```
 //!
-//! Custom validators can also implement [`Validator`] themselves.
+//! Validators of types with generics or lifetimes implement [`Validator`]
+//! themselves, the macro does not support them.
 //!
 //! Validators report a [`Violation`] with a code and parameters for
 //! programs and a message for humans.  Errors have the violation attached.
@@ -97,3 +110,8 @@ pub use self::validator::{Param, Validator, Violation};
 pub use self::validators::{
     Each, Email, Integer, Len, Length, Max, MaxLen, Min, MinLen, NonEmpty, Range,
 };
+
+// the examples of the readme are tested
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

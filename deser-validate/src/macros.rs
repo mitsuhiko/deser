@@ -48,8 +48,12 @@ use crate::Violation;
 /// Functions and blocks return a `Result<(), E>`, where the error is a
 /// message (`&'static str`, `String` or `Cow<'static, str>`) or a
 /// [`Violation`], or a `bool`.  Messages become violations with the name of
-/// the validator as code (`NonZero` has the code `non_zero`).  Functions
-/// that return `false` fail with the message `is not valid`.
+/// the validator in snake case as code (`NonZero` has the code `non_zero`).
+/// Functions that return `false` fail with the message `is not valid`.
+///
+/// The macro does not support types with generics or lifetimes (like
+/// `Either<T>` or `Name<'a>`).  For those, implement
+/// [`Validator`](crate::Validator) yourself (see there).
 #[macro_export]
 macro_rules! validator {
     (

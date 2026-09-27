@@ -36,6 +36,28 @@ use deser_core::{Error, ErrorAttachment, ErrorKind};
 /// assert!(Slug::validate("my-service").is_ok());
 /// assert!(Slug::validate(&"My Service".to_string()).is_err());
 /// ```
+///
+/// Most validators are easier to write with the [`validator!`](crate::validator)
+/// macro, which turns a condition or a function into a validator type.
+/// Implementing the trait is needed for types with generics or lifetimes,
+/// which the macro does not support:
+///
+/// ```
+/// use deser_validate::{Validator, Violation};
+///
+/// pub struct Name<'a>(&'a str);
+///
+/// pub struct NotEmptyName;
+///
+/// impl<'a> Validator<Name<'a>> for NotEmptyName {
+///     fn validate(value: &Name<'a>) -> Result<(), Violation> {
+///         if value.0.is_empty() {
+///             return Err(Violation::new("not_empty", "must not be empty"));
+///         }
+///         Ok(())
+///     }
+/// }
+/// ```
 pub trait Validator<T: ?Sized> {
     /// Validates the value.
     fn validate(value: &T) -> Result<(), Violation>;
