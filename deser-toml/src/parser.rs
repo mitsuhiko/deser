@@ -90,6 +90,7 @@ pub(crate) fn parse(input: &str) -> Result<Document<'_>, Error> {
         doc: Document::default(),
         next_section: 1,
         keys: Vec::new(),
+        frames: Vec::new(),
     };
     parser.parse_document()?;
     Ok(parser.doc)
@@ -103,6 +104,8 @@ struct Parser<'a> {
     next_section: u32,
     /// Scratch space for the parts of dotted keys.
     keys: Vec<Key<'a>>,
+    /// Scratch space for the stack of [`parse_value`](Self::parse_value).
+    frames: Vec<Frame>,
 }
 
 impl<'a> Parser<'a> {
@@ -519,9 +522,19 @@ impl<'a> Parser<'a> {
     /// Parses a value and places it into the target.
     ///
     /// Arrays and inline tables are parsed with an explicit stack.
-    fn parse_value(&mut self, mut target: Target<'a>) -> Result<(), Error> {
-        let mut stack: Vec<Frame> = Vec::new();
+    fn parse_value(&mut self, target: Target<'a>) -> Result<(), Error> {
+        let mut stack = std::mem::take(&mut self.frames);
+        let rv = self.parse_value_with_stack(target, &mut stack);
+        stack.clear();
+        self.frames = stack;
+        rv
+    }
 
+    fn parse_value_with_stack(
+        &mut self,
+        mut target: Target<'a>,
+        stack: &mut Vec<Frame>,
+    ) -> Result<(), Error> {
         'value: loop {
             let start = self.pos;
             match self.peek() {
