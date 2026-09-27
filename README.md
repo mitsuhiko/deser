@@ -7,32 +7,13 @@
 [![License](https://img.shields.io/github/license/mitsuhiko/deser)](https://github.com/mitsuhiko/deser/blob/main/LICENSE)
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
-Deser is an experimental serialization system for Rust for self describing
-formats such as JSON, YAML, TOML, CBOR and query strings.  If you know serde you will feel at
-home: you derive `Serialize` and `Deserialize` on your types and pick a format
-crate.  What deser does differently is what happens when data gets messy:
-
-* **Errors point at the problem:** with line, column and the path to the
-  value (`servers[1].timeout`), also inside internally tagged and untagged
-  enums which have to buffer.
-* **No stack overflows:** deeply nested (or hostile) input does not recurse
-  on the call stack, and limits for untrusted input are a layer away.
-* **Bytes, dates, UUIDs and big numbers just work:** they are native where
-  the format supports them (CBOR byte strings, TOML date-times) and fall
-  back to strings everywhere else, without in-band signalling.
-* **Text of unknown type is parsed by its type:** where the format cannot
-  say what a value is (query strings, the keys of JSON objects), the type it
-  is deserialized into decides, also in flattened structs and tagged enums.
-* **Hooks between format and types:** layers see every value and can track
-  paths, rename keys, redact values or reject input, without support from
-  the format or your types.
-* **Fast to compile:** the derive generates little code and relies on
-  dynamic dispatch instead of monomorphizing everything.
-
-It intentionally does not support non self describing formats such as
-bincode.
-
-**This is not production ready yet.**
+Deser is a serialization library for Rust for self describing formats such as
+JSON, YAML, TOML, CBOR and query strings.  It takes the user experience of
+serde, the problems that years of running serde in production turned up and the
+Rust of today, and tries to solve them with a different architecture.  If you
+know serde you will feel at home: you derive `Serialize` and `Deserialize` on
+your types, pick a format crate, and most attributes have the names you already
+know.
 
 ```rust
 use deser::{Serialize, Deserialize};
@@ -67,42 +48,159 @@ deser = { version = "0.8", features = ["derive"] }
 deser-json = "0.8"
 ```
 
-## Reading and Writing
+## Why Deser?
 
-Every format has the same pieces:
+Serde is one of the most important crates in the Rust ecosystem and its
+stability is a big part of why.  That same stability also means that some of its
+problems cannot be fixed: they are a consequence of the data model and the trait
+design, and changing those would break every format and every hand written
+implementation out there.  Many of the issues below have been open for years.
+Deser is an experiment to see what an alternative serialization system looks
+like that is allowed to start over.
 
-* Functions for single values: `from_str`, `from_slice` and `to_string`
-  (`to_vec` for CBOR).  Options are set on a `DeserializerConfig` or
-  `SerializerConfig`, which have the same methods.
-* A `Deserializer` which reads one value after another from a slice, and a
-  `Serializer` which writes more than one value (JSON Lines, CBOR
-  sequences, YAML documents).
-* With the `io` feature (enabled by default): `from_reader` and
-  `to_writer` for `std::io`, and `deser::io::Reader` and `deser::io::Writer`
-  for streams of values.  They only buffer what they need: JSON and CBOR
-  are parsed while the input arrives, and a `deser::Streamed<T>` sequence
-  hands out its elements one by one.
-  [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
+Things it can fix that is tricky for Serde to address:
+
+* **Buffering does not lose information.**  Internally tagged enums whose
+  tag is not first, untagged enums and (in serde) flattened fields have to
+  buffer values.  In serde that buffer is a lossy copy of the data model:
+  `u128` stops working, `arbitrary_precision` numbers turn into maps,
+  numeric map keys and numbers in query strings no longer parse and errors
+  lose their line and column.  In deser values are recorded as events
+  together with everything the format knows about them, and replayed as
+  such.
+* **Flattening is native.**  `#[deser(flatten)]` does not buffer at all.
+  Flattened fields take the keys they know, a flattened map receives
+  exactly the keys nobody else took, `deny_unknown_fields` works with
+  flattened structs and internally tagged enums, and errors in a flattened
+  `Option` are reported instead of silently becoming `None`.
+* **No stack overflows.**  Deser does not recurse on the call stack, so a
+  million levels of nesting deserialize, serialize and get skipped without
+  a recursion limit.  If you want a limit for untrusted input it's a
+  layer, not a hard coded constant.
+* **Enums are more capable.**  Catch-all variants can hold data and capture
+  the unknown tag so values round trip, a default variant can be picked if
+  the tag is missing, tags can be integers and booleans and
+  `#[deser(repr)]` uses the discriminants.
+* **Customizations compose.**  `#[deser(as = Option<Vec<DisplayFromStr>>)]`
+  works without writing another function, missing fields stay optional,
+  and validation, in-place updates and unknown field collection are built
+  in.
+
+[SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) goes
+through these in detail and links the open serde issues they correspond to.
+
+Deser also starts the design against a modern Rust baseline.  Serde 1.0 was
+released in 2017 and its design reflects the Rust of that time.  Deser can take
+advantage of what the language has gained since:
+
+* **Attributes are Rust, not strings.**  Defaults are expressions
+  (`default = 8080`), names can be constants or `concat!(...)`, adapters are
+  types (`as = BTreeMap<_, DisplayFromStr>`) and bounds, paths and
+  validators are written as code.  The compiler checks them and your
+  editor can navigate them.
+* **Const generics everywhere.**  Arrays of any length and `NonZero<T>` work
+  out of the box, as do newer standard library types like `OnceLock` and
+  `Infallible`.
+* **Ready for async.**  An ongoing deserialization is `Send`, can be held
+  across calls and fed while the input arrives.  JSON and CBOR are parsed
+  as the bytes come in and only incomplete tokens are buffered.
+  [`deser-tokio`](https://docs.rs/deser-tokio) reads and writes streams of
+  values on sockets.
+
+## It Comes From Experience
+
+The problems deser addresses are not hypothetical.  Many of them came up while
+building [Sentry Relay](https://github.com/getsentry/relay), which processes
+untrusted JSON at scale, and some of the serde issues about them were filed by
+the author of this crate ([#1183](https://github.com/serde-rs/serde/issues/1183)
+in 2018, [#1463](https://github.com/serde-rs/serde/issues/1463) in 2019).  That
+shows in the design:
+
+* **Errors point at the problem:** with line, column and the path to the
+  value (`servers[1].timeout`), also inside buffered values.
+* **Hooks between the format and your types:** layers see every value and
+  can track paths, enforce limits, rename keys, redact values or reject
+  input, without support from the format or your types.
+* **State flows through the whole process:** formats publish source
+  locations and formatting hints, layers and types can read and attach
+  information, and it all survives buffering.
+* **Safe defaults for untrusted input:** duplicate keys are an error by
+  default (different parsers picking different values for the same input
+  is a security problem), and limits for depth, size and length are a
+  layer away.
+* **Fast to compile:** the derive generates comparatively little code and
+  relies on dynamic dispatch instead of monomorphizing everything (see
+  [compile-times](https://github.com/mitsuhiko/deser/tree/main/compile-times)).
+
+## Foundation For Coding Agents
+
+Deser is designed so that both you and the coding agents you work with can
+reason about it, whether they use it in your code or work on deser itself:
+
+* **A small, inspectable data model.**  Everything is a stream of events
+  made of a handful of atoms.  You can feed events into a
+  `DeserializeDriver` or pull them out of a `SerializeDriver` in a test and
+  see exactly what happens, no visitor state machines involved.
+* **Mistakes fail at compile time.**  Attributes are type checked Rust, and
+  the derive rejects combinations that would silently have no effect (for
+  instance `default` on a flattened field or field attributes on a type
+  that is serialized through an adapter).
+* **Errors an agent can act on:** an error kind, a message that names the
+  type (``unknown variant `D` of Kind, expected `A` or `B` ``), a line and
+  column and the path of the value.
+
+## A Taste
+
+A single enum that shows a few things that would need hand written code or
+extra crates with serde:
 
 ```rust
-use deser::io::Reader;
-use deser_json::{DeserializerConfig, Trailing};
+use std::net::IpAddr;
+use deser::{Deserialize, Serialize};
+use deser::adapters::DisplayFromStr;
+use deser::de::Recording;
 
-const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-
-// reads one event per line, a line that fails does not end the stream
-let mut events = Reader::new(std::io::stdin(), LINES);
-while let Some(event) = events.read::<Event>()? {
-    handle(event);
+mod keys {
+    pub const KIND: &str = "@type";
 }
+
+fn non_zero(port: &u16) -> Result<(), &'static str> {
+    if *port == 0 { Err("must not be zero") } else { Ok(()) }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[deser(tag = keys::KIND, tag_alias = "type", rename_all = "snake_case")]
+pub enum Listener {
+    // picked if the tag is missing
+    #[deser(default)]
+    Tcp {
+        #[deser(as = DisplayFromStr)]
+        host: IpAddr,
+        #[deser(default = 8080, validate = non_zero)]
+        port: u16,
+    },
+    Unix { path: String },
+    // kinds this version does not know are kept and written back
+    #[deser(other)]
+    Other(#[deser(tag)] String, Recording),
+}
+
+let listener: Listener = deser_json::from_str(r#"{"host": "127.0.0.1"}"#).unwrap();
+assert!(matches!(listener, Listener::Tcp { port: 8080, .. }));
+
+let input = r#"{"@type":"quic","host":"::1","alpn":["h3"]}"#;
+let listener: Listener = deser_json::from_str(input).unwrap();
+assert_eq!(deser_json::to_string(&listener).unwrap(), input);
+
+let err = deser_json::from_str::<Listener>(r#"{"host": "::1", "port": 0}"#).unwrap_err();
+assert_eq!(err.to_string(), "Unexpected: invalid value: must not be zero at line 1 column 25");
 ```
 
 ## Errors That Help
 
-Consider a config file with an internally tagged enum where the tag comes
-last.  To deserialize it the values have to be buffered until the tag is
-known.  In serde this is where locations and paths get lost, in deser they
-are retained:
+Consider a config file with an internally tagged enum where the tag comes last.
+To deserialize it the values have to be buffered until the tag is known.  In
+serde this is where locations and paths get lost, in deser they are retained:
 
 ```rust
 use deser::Deserialize;
@@ -141,71 +239,91 @@ assert_eq!((err.line(), err.column()), (Some(8), Some(11)));
 println!("{err}");
 ```
 
-Swap `deser_toml` for `deser_yaml` or `deser_json` and you get the same
-quality of errors.  To see more practical examples have a look at the
+Swap `deser_toml` for `deser_yaml` or `deser_json` and you get the same quality
+of errors.  To see more practical examples have a look at the
 [examples](https://github.com/mitsuhiko/deser/tree/main/examples).
 
-## Design Goals
+## Reading and Writing
 
-* **Fast Compile Times:** deser avoids excessive monomorphization by encouraging
-  dynamic dispatch.  The goal is to avoid generating a lot of duplicate code that
-  produces bloat the compiler needs to churn through.
-* **Simple Data Model:** deser simplifies the data model on the serialization
-  and deserialization interface.  For instance instead of making a distinction
-  between `u8` and `u64` they are represented the same in the model.  Formats
-  that need more information can get it: maps and sequences carry their shape
-  (the order and number of elements) and values can describe their Rust shape
-  (such as struct and variant names, which `deser-debug` uses).  This helps
-  with compile times and makes using the crate easier.
-* **Native Bytes Support:** deser has built-in specialization for serializing
-  bytes and byte vectors.  A `Vec<u8>` is serialized as bytes in formats which
-  support them (such as CBOR) and as base64 in text-only formats such as JSON
-  without special handling.  Other encodings (such as hex) can be picked per
-  field or per format.
+Every format has the same pieces:
+
+* Functions for single values: `from_str`, `from_slice` and `to_string`
+  (`to_vec` for CBOR).  Options are set on a `DeserializerConfig` or
+  `SerializerConfig`, which have the same methods.
+* A `Deserializer` which reads one value after another from a slice, and a
+  `Serializer` which writes more than one value (JSON Lines, CBOR
+  sequences, YAML documents).
+* With the `io` feature (enabled by default): `from_reader` and
+  `to_writer` for `std::io`, and `deser::io::Reader` and `deser::io::Writer`
+  for streams of values.  They only buffer what they need: JSON and CBOR
+  are parsed while the input arrives, and a `deser::Streamed<T>` sequence
+  hands out its elements one by one.
+  [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
+
+```rust
+use deser::io::Reader;
+use deser_json::{DeserializerConfig, Trailing};
+
+const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+
+// reads one event per line, a line that fails does not end the stream
+let mut events = Reader::new(std::io::stdin(), LINES);
+while let Some(event) = events.read::<Event>()? {
+    handle(event);
+}
+```
+
+## How It Works
+
+* **Sinks and emitters instead of visitors:** deserializing a type creates
+  a sink for a slot (`Option<T>`) that receives events, serializing it
+  produces chunks and emitters that hand out the nested values.  Instead
+  of calling into each other recursively, the nested sinks and emitters
+  are returned to a driver which keeps them on the heap.  This is why
+  nesting cannot overflow the stack, why a deserialization can be
+  suspended between events and why updates of existing values
+  (`deserialize_update`) and adapters (`SerializeAs` and `DeserializeAs`)
+  fit into the same traits.
+* **A small data model:** values are atoms (booleans, integers, floats,
+  strings, bytes, ...), maps and sequences.  There is no distinction
+  between `u8` and `u64` in the model.  Formats that need more information
+  can get it: maps and sequences carry their shape (the order and number
+  of elements) and values can describe their Rust shape (such as struct
+  and variant names, which `deser-debug` uses).
+* **Extension atoms:** the data model can be extended with types that are
+  not native to it.  Every extension value carries a fallback into the
+  core data model.  Serializers and deserializers that understand an
+  extension handle it natively (for instance `deser-json` supports 128 bit
+  integers and exact numbers this way), everybody else transparently gets
+  the fallback.  (See [ext](https://docs.rs/deser/latest/deser/ext/) for
+  more information)
+* **Lexical atoms:** text whose type the format cannot express (the keys
+  of JSON objects, the values of query strings) is passed as a lexical
+  atom which the type it is deserialized into parses.  This keeps working
+  in flattened structs and tagged enums.
+* **Native bytes and optionals:** a `Vec<u8>` is bytes in formats which
+  support them (such as CBOR) and base64 elsewhere, other encodings can be
+  picked per field or per format.  Values know if they are optional, so a
+  struct can skip all unset fields with a single attribute and
+  `Option<Option<T>>` tells a missing value apart from null.
 * **Borrowing:** types can borrow strings and bytes from the data they are
   deserialized from (for instance `&str` fields), formats pass on slices of
   their input without copying them.
-* **Unlimited Recursion:** the real world is nasty and incoming data might be
-  badly nested.  Deser does not exhaust the call stack no matter how deep your
-  data is.  It accomplishes this by an alternative trait design to serde where
-  handles to "sinks" or "serializable" objects are returned.  This means that
-  it's up to the caller to manage the recursion.
-* **Native Optionals:** the serialization system has a built-in understanding of
-  the concept of optional data.  This means that with a single attribute a struct
-  serializer can skip over all fields currently set to null.
-* **Native Flattening Support:** deser's serialization and deserialization support
-  has native support for flattening of structs.  This means no internal buffering
-  is required for `#[deser(flatten)]`.
-* **Lossless Buffering:** where buffering cannot be avoided (for instance for
-  internally tagged enums where the tag does not come first) values are
-  recorded as events together with the state the format published for each
-  event (such as source locations) and replayed as such.  Format specific
-  behavior like integer map keys in JSON, extension values or location
-  tracking keeps working for buffered values.
-* **Extensible Data Model:** the data model can be extended with types that are
-  not native to the serialization interface through extension atoms.  Every
-  extension value carries a fallback into the core data model.  Serializers
-  and deserializers that understand an extension handle it natively (for
-  instance `deser-json` supports 128 bit integers this way), everybody else
-  transparently gets the fallback.  This avoids in-band signalling.  (See
-  [ext](https://docs.rs/deser/latest/deser/ext/) for more information)
-* **Stateful Processing:** serialization and deserialization carry a state
-  in which formats, layers and types keep information.  Formats publish the
-  location of every event in it, and data attached to events (such as tags or
-  formatting hints) travels with the events through the state.  Layers can use
-  it to keep track of the "path" to the current value.  (See
-  [deser-path](https://docs.rs/deser-path/) for a practical example)
-* **Layers:** layers sit between the data format and the types and see all
-  events.  They can observe, reject and rewrite events without support by
-  the format or the types, for instance to track the path, to limit the size
-  of untrusted input or to rename keys in the output.  Errors carry the
-  location in the input and (with the path layer) the path of the value
-  they refer to, also for values which are buffered.
+* **Lossless buffering:** where buffering cannot be avoided values are
+  recorded as events together with the state the format published for
+  each event (such as source locations) and replayed as such.  A
+  `Recording` can also be used as a raw value.
+* **State and layers:** serialization and deserialization carry a state in
+  which formats, layers and types keep information.  Layers sit between
+  the data format and the types and see all events.  They can observe,
+  reject and rewrite events, for instance to track the path (see
+  [deser-path](https://docs.rs/deser-path/)), to limit the size of
+  untrusted input or to rename keys in the output.
 
-Deser does not intend on replacing serde but it attempts to address some of its
-shortcomings.  For more information there is a document about [Serde
-Learnings](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) with
-more details.
+Deser intentionally does not support non self describing formats such as
+bincode.  Supporting both kinds of formats with the same traits is the
+source of a whole class of runtime failures and surprises in serde (see
+[SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md)).
 
 ## Known Limitations
 
@@ -214,8 +332,11 @@ sinks and emitters for many compound values.  This is the consequence of a
 certain level of flexibility and the desire to not use the call stack for
 recursion.  Deser works around most of this overhead (for instance derived
 structs and vectors serialize without allocations, and sinks are allocated
-from a per thread cache) and for JSON it is roughly on par with Serde in the
-included benchmark.
+from a per thread cache).  Compared to serde based libraries in the
+[included benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)
+YAML and TOML are two to four times as fast, CBOR is on par and JSON
+serializes faster but deserializes slower on float heavy and deeply nested
+data.
 
 Serializables are `Sync`, deserializable types and sinks are `Send` so that
 an ongoing serialization or deserialization can move between threads (for
@@ -285,4 +406,3 @@ but if you find a soundness issue, please report it.
 - [Issue Tracker](https://github.com/mitsuhiko/deser/issues)
 - [Documentation](https://docs.rs/deser)
 - License: [Apache-2.0](https://github.com/mitsuhiko/deser/blob/master/LICENSE)
-
