@@ -695,6 +695,47 @@
 /// }
 /// ```
 ///
+/// Variants of enums with `repr` are named by their discriminants, which
+/// have to be integer literals.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(repr)]
+/// enum Test {
+///     A,
+///     #[deser(rename = 5)]
+///     B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(repr, rename_all = "lowercase")]
+/// enum Test {
+///     A,
+///     B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// const B: isize = 2;
+///
+/// #[derive(deser::Deserialize)]
+/// #[deser(repr)]
+/// enum Test {
+///     A,
+///     B = B,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(repr)]
+/// struct Test {
+///     a: u32,
+/// }
+/// ```
+///
 /// Aliases of the tag and the content need a tag and a content.
 ///
 /// ```compile_fail

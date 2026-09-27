@@ -179,6 +179,25 @@
 //! `Message::V1`.  Integers are compared by value, independent of their
 //! width.
 //!
+//! With `#[deser(repr)]` the variants are named by their discriminants.
+//! The discriminants have to be integer literals (or not given):
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(repr)]
+//! #[repr(u8)]
+//! pub enum Priority {
+//!     // 1
+//!     Low = 1,
+//!     // 2
+//!     Normal,
+//!     // 10
+//!     High = 10,
+//! }
+//! ```
+//!
 //! ## Enum Attributes
 //!
 //! * `#[deser(rename = "...")]`: renames the type name hint for this enum.
@@ -188,6 +207,9 @@
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
 //! * `#[deser(alias_all = "...")]`: adds an alias in a name style to all
 //!   variants, like on structs.
+//! * `#[deser(repr)]`: names the variants by their discriminants (see
+//!   [tags](#tags)).  This cannot be combined with `rename_all`, `alias_all`
+//!   and `rename` on variants.
 //! * `#[deser(tag = "...")]`: makes the enum internally tagged with the given
 //!   tag field.
 //! * `#[deser(tag = "...", content = "...")]`: makes the enum adjacently

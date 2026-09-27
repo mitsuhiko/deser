@@ -123,3 +123,84 @@ fn test_externally_tagged() {
     assert_eq!(to_string(&Code::NotFound).unwrap(), "404");
     assert_eq!(from_str::<Code>("404").unwrap(), Code::NotFound);
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[deser(repr)]
+#[repr(i16)]
+enum Priority {
+    Lowest = -2,
+    Low,
+    Normal,
+    High = 10,
+    #[deser(alias = "urgent")]
+    Urgent,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(repr)]
+enum ReprCode {
+    A,
+    B,
+    #[deser(other)]
+    Unknown,
+}
+
+#[test]
+fn test_repr() {
+    for (value, json) in [
+        (Priority::Lowest, "-2"),
+        (Priority::Low, "-1"),
+        (Priority::Normal, "0"),
+        (Priority::High, "10"),
+        (Priority::Urgent, "11"),
+    ] {
+        assert_eq!(to_string(&value).unwrap(), json);
+        assert_eq!(from_str::<Priority>(json).unwrap(), value);
+    }
+    // aliases can be strings, names are not used
+    assert_eq!(
+        from_str::<Priority>(r#""urgent""#).unwrap(),
+        Priority::Urgent
+    );
+    assert_eq!(
+        from_str::<Priority>(r#""Normal""#).unwrap_err().message(),
+        "unknown variant `Normal` of Priority, expected one of `-2`, `-1`, `0`, `10`, `11`"
+    );
+    assert_eq!(
+        from_str::<Priority>("1").unwrap_err().message(),
+        "unknown variant `1` of Priority, expected one of `-2`, `-1`, `0`, `10`, `11`"
+    );
+    // keys of objects are parsed as integers
+    let map: BTreeMap<Priority, u32> = from_str(r#"{"10": 1, "-2": 2}"#).unwrap();
+    assert_eq!(
+        map,
+        BTreeMap::from([(Priority::Lowest, 2), (Priority::High, 1)])
+    );
+
+    assert_eq!(to_string(&ReprCode::Unknown).unwrap(), "2");
+    assert_eq!(from_str::<ReprCode>("1").unwrap(), ReprCode::B);
+    assert_eq!(from_str::<ReprCode>("7").unwrap(), ReprCode::Unknown);
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(repr, tag = "version")]
+#[repr(u8)]
+enum Versioned {
+    V1 { text: String } = 1,
+    V2 { text: String, lang: String } = 2,
+}
+
+#[test]
+fn test_repr_data_enum() {
+    let value = Versioned::V2 {
+        text: "a".into(),
+        lang: "en".into(),
+    };
+    let json = r#"{"version":2,"text":"a","lang":"en"}"#;
+    assert_eq!(to_string(&value).unwrap(), json);
+    assert_eq!(from_str::<Versioned>(json).unwrap(), value);
+    assert_eq!(
+        from_str::<Versioned>(r#"{"version":1,"text":"a"}"#).unwrap(),
+        Versioned::V1 { text: "a".into() }
+    );
+}

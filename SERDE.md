@@ -216,7 +216,9 @@ with integer or boolean tags (`{"version": 1, ...}`) need hand written
 implementations.  In deser variants can be named by integers and booleans
 (`#[deser(rename = 1)]`).  They are written as integers and booleans and
 compared by type, except for text of unknown type (such as query strings)
-which is parsed like the tag it's compared with.
+which is parsed like the tag it's compared with.  `#[deser(repr)]` names
+the variants by their discriminants, which serde needs the `serde_repr`
+crate for (which only supports enums without data).
 
 **Related issues:**
 

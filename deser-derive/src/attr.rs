@@ -345,6 +345,8 @@ pub struct ContainerAttrs<'a> {
     content: Option<Name>,
     content_aliases: Vec<Name>,
     untagged: bool,
+    // the names of the variants by their discriminants (`repr`)
+    discriminants: Option<Vec<(&'a syn::Ident, VariantName)>>,
     crate_path: Option<syn::Path>,
     bound: Option<Vec<syn::WherePredicate>>,
     serialize_bound: Option<Vec<syn::WherePredicate>>,
@@ -594,6 +596,7 @@ impl<'a> ContainerAttrs<'a> {
             content: None,
             content_aliases: Vec::new(),
             untagged: false,
+            discriminants: None,
             crate_path: None,
             bound: None,
             serialize_bound: None,
@@ -640,6 +643,17 @@ impl<'a> ContainerAttrs<'a> {
             "content_alias" => {
                 rv.content_aliases.push(Name::parse(meta)?);
                 Ok(())
+            }
+            "repr" => {
+                let mut repr = false;
+                set_flag(meta, name, &mut repr)?;
+                match input.data {
+                    syn::Data::Enum(ref data) => {
+                        rv.discriminants = Some(discriminant_names(data)?);
+                        Ok(())
+                    }
+                    _ => Err(meta.error("repr is only supported on enums")),
+                }
             }
             "untagged" => {
                 set_flag(meta, name, &mut rv.untagged)?;
@@ -708,6 +722,9 @@ impl<'a> ContainerAttrs<'a> {
             ));
         }
         rv.check_tag_keys()?;
+        if rv.discriminants.is_some() {
+            rv.check_repr(input)?;
+        }
         rv.adapters = adapters.finish(&rv.seen)?;
 
         Ok(rv)
@@ -827,6 +844,41 @@ impl<'a> ContainerAttrs<'a> {
                     self.span_of(attr),
                     format!("`{}` is used more than once as tag or content key", key),
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the name of a variant if variants are named by their
+    /// discriminants.
+    pub fn discriminant_name(&self, variant: &syn::Variant) -> Option<&VariantName> {
+        self.discriminants
+            .as_ref()?
+            .iter()
+            .find(|(ident, _)| **ident == variant.ident)
+            .map(|(_, name)| name)
+    }
+
+    /// Rejects the attributes that name variants in other ways than their
+    /// discriminants.
+    fn check_repr(&self, input: &syn::DeriveInput) -> syn::Result<()> {
+        for attr in ["rename_all", "alias_all", "untagged"] {
+            if let Some(seen) = self.seen.iter().find(|x| x.name == attr) {
+                return Err(syn::Error::new(
+                    seen.span,
+                    format!("`{}` has no effect together with `repr`", attr),
+                ));
+            }
+        }
+        if let syn::Data::Enum(ref data) = input.data {
+            for variant in &data.variants {
+                let seen = EnumVariantAttrs::of(variant)?.into_seen();
+                if let Some(seen) = seen.iter().find(|x| x.name == "rename") {
+                    return Err(syn::Error::new(
+                        seen.span,
+                        "variants are named by their discriminants with `repr`",
+                    ));
+                }
             }
         }
         Ok(())
@@ -1297,6 +1349,58 @@ impl VariantName {
     }
 }
 
+/// Returns the names of the variants of an enum by their discriminants.
+///
+/// Discriminants that are not given are the previous one plus one (or zero
+/// for the first variant), like in Rust.  Only integer literals are
+/// supported as the derive has to know the values.
+fn discriminant_names(data: &syn::DataEnum) -> syn::Result<Vec<(&syn::Ident, VariantName)>> {
+    let mut rv = Vec::new();
+    let mut next = 0i128;
+    for variant in &data.variants {
+        let value = match variant.discriminant {
+            Some((_, ref expr)) => discriminant_value(expr)?,
+            None => next,
+        };
+        let name = match u64::try_from(value) {
+            Ok(value) => VariantName::U64(value),
+            Err(_) => match i64::try_from(value) {
+                Ok(value) => VariantName::I64(value),
+                Err(_) => {
+                    return Err(syn::Error::new_spanned(
+                        variant,
+                        "discriminant is out of range",
+                    ));
+                }
+            },
+        };
+        rv.push((&variant.ident, name));
+        next = value + 1;
+    }
+    Ok(rv)
+}
+
+/// Returns the value of a discriminant that is an integer literal.
+fn discriminant_value(expr: &syn::Expr) -> syn::Result<i128> {
+    match expr {
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Int(lit),
+            ..
+        }) => lit.base10_parse(),
+        syn::Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Neg(_),
+            expr: inner,
+            ..
+        }) => discriminant_value(inner).map(|x| -x),
+        syn::Expr::Group(syn::ExprGroup { expr: inner, .. })
+        | syn::Expr::Paren(syn::ExprParen { expr: inner, .. }) => discriminant_value(inner),
+        _ => Err(syn::Error::new_spanned(
+            expr,
+            "repr requires integer literals as discriminants",
+        )),
+    }
+}
+
 fn unsupported_name(expr: &syn::Expr) -> syn::Error {
     syn::Error::new_spanned(
         expr,
@@ -1403,6 +1507,9 @@ impl<'a> EnumVariantAttrs<'a> {
     }
 
     pub fn name(&self, container_attrs: &ContainerAttrs) -> VariantName {
+        if let Some(name) = container_attrs.discriminant_name(self.variant) {
+            return name.clone();
+        }
         self.rename.clone().unwrap_or_else(|| {
             VariantName::Str(Name::Lit(container_attrs.get_variant_name(self.variant)))
         })
