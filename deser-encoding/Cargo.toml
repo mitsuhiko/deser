@@ -12,7 +12,7 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-encoding"
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 # an implementation detail, not part of the public API
 data-encoding = "2.6"
 

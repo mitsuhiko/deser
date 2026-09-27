@@ -1,9 +1,9 @@
 //! A serde serializer that emits deser events.
 use std::borrow::Cow;
 
-use deser::ext::ExtValue;
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use deser::{Atom, Bytes, ContainerShape, ErrorKind, Event, State};
+use deser_core::ext::ExtValue;
+use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser_core::{Atom, Bytes, ContainerShape, ErrorKind, Event, State};
 use serde::ser::{self, Impossible};
 
 use crate::error::Error;
@@ -467,7 +467,7 @@ impl Events {
     /// Wraps the events of a map or sequence.
     ///
     /// Fails if the events are not a single map or sequence.
-    pub(crate) fn new(events: Vec<Event<'static>>) -> Result<Events, deser::Error> {
+    pub(crate) fn new(events: Vec<Event<'static>>) -> Result<Events, deser_core::Error> {
         match events.first() {
             Some(Event::MapStart(_) | Event::SeqStart(_)) if value_len(&events) == events.len() => {
                 Ok(Events(events))
@@ -478,7 +478,7 @@ impl Events {
 }
 
 impl Serialize for Events {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser::Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
         EventsValue(&self.0).chunk()
     }
 
@@ -488,8 +488,8 @@ impl Serialize for Events {
 }
 
 #[cold]
-fn malformed() -> deser::Error {
-    deser::Error::new(ErrorKind::Unexpected, "malformed serde value")
+fn malformed() -> deser_core::Error {
+    deser_core::Error::new(ErrorKind::Unexpected, "malformed serde value")
 }
 
 /// Returns the number of events of the value the events start with.
@@ -512,7 +512,7 @@ fn value_len(events: &[Event<'static>]) -> usize {
 struct EventsValue<'a>(&'a [Event<'static>]);
 
 impl<'a> EventsValue<'a> {
-    fn chunk(&self) -> Result<Chunk<'a>, deser::Error> {
+    fn chunk(&self) -> Result<Chunk<'a>, deser_core::Error> {
         let events = self.0;
         // the content is everything between the start and the end event
         let content = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
@@ -533,7 +533,7 @@ impl<'a> EventsValue<'a> {
 }
 
 impl Serialize for EventsValue<'_> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser::Error> {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
         self.chunk()
     }
 
@@ -568,7 +568,10 @@ impl<'a> EventsEmitter<'a> {
 }
 
 impl SeqEmitter for EventsEmitter<'_> {
-    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, deser::Error> {
+    fn next(
+        &mut self,
+        _state: &mut State,
+    ) -> Result<Option<SerializeHandle<'_>>, deser_core::Error> {
         Ok(self.next_value())
     }
 }
@@ -577,11 +580,11 @@ impl MapEmitter for EventsEmitter<'_> {
     fn next_key(
         &mut self,
         _state: &mut State,
-    ) -> Result<Option<SerializeHandle<'_>>, deser::Error> {
+    ) -> Result<Option<SerializeHandle<'_>>, deser_core::Error> {
         Ok(self.next_value())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, deser::Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, deser_core::Error> {
         EventsEmitter::next_value(self).ok_or_else(malformed)
     }
 }

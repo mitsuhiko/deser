@@ -2,9 +2,9 @@ use std::marker::PhantomData;
 use std::str;
 use std::sync::Arc;
 
-use deser::adapters::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, Source};
-use deser::{Error, ErrorKind};
+use deser_core::adapters::BytesFormat;
+use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::{Error, ErrorKind};
 
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
 
@@ -97,7 +97,7 @@ impl DeserializerConfig {
     /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
     /// [`deser-encoding`](https://docs.rs/deser-encoding)).
     ///
-    /// The format is placed into the state (see [bytes](deser::adapters#bytes)).  Values
+    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).  Values
     /// that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;
@@ -162,9 +162,9 @@ impl DeserializerConfig {
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser::de::Source)) which allows resolving the
+    /// [`Source`](deser_core::de::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -177,10 +177,10 @@ impl DeserializerConfig {
     ///
     /// When enabled (which is the default) floats which lose precision as
     /// `f64` and integers that do not fit into 128 bits are emitted as
-    /// [`Number`](deser::ext::Number) extension values.  These carry the
+    /// [`Number`](deser_core::ext::Number) extension values.  These carry the
     /// text of the number together with its value as `f64`, which is what
     /// types that do not know about exact numbers receive.  Types like
-    /// [`Decimal`](deser::ext::Decimal) (and the types of `rust_decimal` or
+    /// [`Decimal`](deser_core::ext::Decimal) (and the types of `rust_decimal` or
     /// `bigdecimal`) use the text to deserialize the number exactly:
     ///
     /// ```
@@ -384,7 +384,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the next value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,
@@ -416,7 +416,7 @@ impl<'a> Deserializer<'a> {
 
     /// Parses the next value and feeds the events into the given driver.
     ///
-    /// This is useful to deserialize into a custom [`Sink`](deser::de::Sink).
+    /// This is useful to deserialize into a custom [`Sink`](deser_core::de::Sink).
     /// See also [`deserialize_with`](Self::deserialize_with).
     ///
     /// Strings without escape sequences are passed on borrowed from the

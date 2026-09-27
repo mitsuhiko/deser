@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use deser::{Atom, ContainerShape, Error, ErrorKind, State};
+use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, State};
 
 use crate::map::Map;
 use crate::seq::Seq;

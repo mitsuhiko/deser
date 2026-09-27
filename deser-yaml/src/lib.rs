@@ -36,7 +36,7 @@
 //! | floats                                | `F64`                                   |
 //! | other scalars                         | `Str`                                   |
 //! | `!!binary`                            | `Bytes`                                 |
-//! | `!!timestamp`                         | [`Datetime`](deser::ext::Datetime)      |
+//! | `!!timestamp`                         | [`Datetime`](deser_core::ext::Datetime)      |
 //! | mappings and sequences                | maps and sequences                      |
 //!
 //! Which plain (unquoted) scalars are null, booleans or numbers depends on
@@ -45,7 +45,7 @@
 //! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) determine the type of a
 //! value, all other tags are passed on out of band (see [`tag`]).
 //! Timestamps are only recognized with an explicit `!!timestamp` tag.  They
-//! are passed on as the well-known [`Datetime`](deser::ext::Datetime) type
+//! are passed on as the well-known [`Datetime`](deser_core::ext::Datetime) type
 //! (a date or an offset date-time, timestamps without time zone are in UTC)
 //! which falls back to a string.  Map keys can be of any
 //! type.
@@ -69,17 +69,17 @@
 //! | `F32`, `F64`                            | `1.5`, `1.0e+20`, `.inf`, `.nan` (the shortest text for the precision) |
 //! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
 //! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
-//! | [`Datetime`](deser::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
+//! | [`Datetime`](deser_core::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
 //! | maps and sequences                      | block mappings and sequences, flow style (`[a, b]`, `{a: 1}`) if compact (see [`FlowPolicy`]), keys that are collections or long use `? key` |
 //!
 //! The style of individual values can be requested with hints: the
-//! well-known [`Layout`](deser::hints::Layout) for collections (flow or
+//! well-known [`Layout`](deser_core::hints::Layout) for collections (flow or
 //! block) and [`ScalarStyle`](style::ScalarStyle) for strings (see
 //! [`style`]).  Values set them with adapters, layers can set them for
 //! instance by path.  Hints are preferences: a value is written in another
 //! style if the requested one cannot represent it.  When reading, flow
 //! collections are reported as compact so that they stay flow collections
-//! through a [`Recording`](deser::de::Recording).
+//! through a [`Recording`](deser_core::de::Recording).
 //!
 //! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
 //! multiple documents are written with [`Serializer`].
@@ -100,7 +100,7 @@
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
 //! or write streams of documents the configurations are used with
-//! [`deser::io`] (or an adapter for an async runtime such as
+//! [`deser::io`](deser_core::io) (or an adapter for an async runtime such as
 //! `deser-tokio`).  The reader only buffers until a document is complete:
 //!
 //! ```rust

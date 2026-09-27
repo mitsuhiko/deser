@@ -6,9 +6,9 @@
 //! strings unless they have an explicit tag.
 use std::borrow::Cow;
 
-use deser::adapters::{Base64, BytesEncoding};
-use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
-use deser::{Atom, Bytes};
+use deser_core::adapters::{Base64, BytesEncoding};
+use deser_core::ext::{Date, Datetime, ExtValue, Offset, Time};
+use deser_core::{Atom, Bytes};
 
 /// The YAML version that determines how plain scalars are resolved.
 ///
@@ -718,7 +718,7 @@ fn parse_base60_float(negative: bool, s: &str) -> Option<Atom<'static>> {
 
 /// Decodes base64 as used by `!!binary`.  Whitespace (the line breaks of
 /// block scalars) is ignored, otherwise it decodes like other bytes
-/// (leniently, see [`deser::adapters::Base64`]).
+/// (leniently, see [`deser::adapters::Base64`](deser_core::adapters::Base64)).
 fn decode_base64(s: &str) -> Option<Vec<u8>> {
     if s.bytes().any(|b| b.is_ascii_whitespace()) {
         let s: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();

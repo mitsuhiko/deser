@@ -71,7 +71,7 @@ impl Buffer {
     pub unsafe fn push_str_unchecked(&mut self, s: &str) {
         unsafe {
             let len = self.bytes.len();
-            deser::__format::copy_small(s.as_ptr(), self.bytes.as_mut_ptr().add(len), s.len());
+            deser_core::__format::copy_small(s.as_ptr(), self.bytes.as_mut_ptr().add(len), s.len());
             self.bytes.set_len(len + s.len());
         }
     }

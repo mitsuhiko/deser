@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::__format::IntBuffer;
-use deser::adapters::BytesFormat;
-use deser::ext::{BigInt, Decimal, ExtValue, Number};
-use deser::ser::{self, SerializeDriver};
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::__format::IntBuffer;
+use deser_core::adapters::BytesFormat;
+use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
+use deser_core::ser::{self, SerializeDriver};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::buf::Buffer;
 use crate::de::Trailing;
@@ -31,9 +31,9 @@ pub enum Indent {
 /// When maps and sequences are written on a single line in indented
 /// output.
 ///
-/// Maps and sequences with the [`Layout::Compact`](deser::hints::Layout)
+/// Maps and sequences with the [`Layout::Compact`](deser_core::hints::Layout)
 /// hint are always written on a single line, the ones with
-/// [`Layout::Expanded`](deser::hints::Layout) never (unless they are in a
+/// [`Layout::Expanded`](deser_core::hints::Layout) never (unless they are in a
 /// map or sequence on a single line).  See [`SerializerConfig::inline`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
@@ -69,8 +69,8 @@ pub enum InlinePolicy {
 /// ```
 ///
 /// In indented output maps and sequences with the
-/// [`Layout::Compact`](deser::hints::Layout) hint (see
-/// [`hints`](deser::hints)) are written on a single line.  The output never
+/// [`Layout::Compact`](deser_core::hints::Layout) hint (see
+/// [`hints`](deser_core::hints)) are written on a single line.  The output never
 /// ends with a line break.
 ///
 /// [`to_string`](Self::to_string) works like the
@@ -235,7 +235,7 @@ impl SerializerConfig {
     ///
     /// JSON has no bytes, by default they are written as base64 strings
     /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [bytes](deser::adapters#bytes)) which takes precedence.  Map keys cannot be
+    /// (see [bytes](deser_core::adapters#bytes)) which takes precedence.  Map keys cannot be
     /// sequences, bytes in keys are always strings.
     ///
     /// ```
@@ -268,7 +268,7 @@ impl SerializerConfig {
     /// Serializes the given value with a configured driver.
     ///
     /// The callback is invoked with the driver before the serialization
-    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
     ///
     /// ```
     /// use deser::ser::{Layer, Next};
@@ -350,7 +350,7 @@ impl SerializerConfig {
 /// ```
 ///
 /// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`] with the configuration.
+/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
@@ -390,7 +390,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -487,7 +487,7 @@ struct Writer {
 
 impl ser::EventSink for Writer {
     #[inline(always)]
-    fn event(&mut self, event: Event, _state: &mut deser::State) -> Result<(), Error> {
+    fn event(&mut self, event: Event, _state: &mut deser_core::State) -> Result<(), Error> {
         Writer::event(self, event)
     }
 }
@@ -732,7 +732,7 @@ impl Output {
             }
             #[cfg(not(feature = "speedups"))]
             {
-                self.write_str(&deser::__format::format_finite(val))
+                self.write_str(&deser_core::__format::format_finite(val))
             }
         } else {
             self.write_str("null")
@@ -932,17 +932,17 @@ static ESCAPE: [u8; 256] = [
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-trait Float: zmij::Float + deser::__format::Float {}
+trait Float: zmij::Float + deser_core::__format::Float {}
 
 #[cfg(feature = "speedups")]
-impl<F: zmij::Float + deser::__format::Float> Float for F {}
+impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-trait Float: deser::__format::Float {}
+trait Float: deser_core::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
-impl<F: deser::__format::Float> Float for F {}
+impl<F: deser_core::__format::Float> Float for F {}
 
 /// Serializes a value to JSON.
 ///

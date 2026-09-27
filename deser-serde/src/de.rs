@@ -1,7 +1,7 @@
 //! A serde deserializer that pulls deser events from a source.
 use std::borrow::Cow;
 
-use deser::{Atom, ErrorKind, Event};
+use deser_core::{Atom, ErrorKind, Event};
 use serde::de::{self, DeserializeSeed, Visitor};
 
 use crate::error::Error;
@@ -112,9 +112,9 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
 }
 
 /// Parses a lexical atom into a type with the rules of deser.
-fn parse_lexical<T: deser::de::DeserializeOwned>(value: &str) -> Result<T, Error> {
+fn parse_lexical<T: deser_core::de::DeserializeOwned>(value: &str) -> Result<T, Error> {
     let mut out = None;
-    let mut state = deser::State::new();
+    let mut state = deser_core::State::new();
     {
         let mut sink = T::deserialize_into(&mut out);
         sink.atom(Atom::Lexical(Cow::Borrowed(value)), &mut state)?;

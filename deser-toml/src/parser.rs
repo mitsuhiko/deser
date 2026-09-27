@@ -31,7 +31,7 @@
 //!   be added to them afterwards.
 use std::borrow::Cow;
 
-use deser::{Error, ErrorKind};
+use deser_core::{Error, ErrorKind};
 
 use crate::datetime::{is_datetime_start, parse_datetime};
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};

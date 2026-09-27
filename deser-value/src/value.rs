@@ -4,8 +4,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 
-use deser::ext::{BorrowedExtension, ExtValue, Extension};
-use deser::{Atom, Bytes, EventData, Position};
+use deser_core::ext::{BorrowedExtension, ExtValue, Extension};
+use deser_core::{Atom, Bytes, EventData, Position};
 
 use crate::index::ValueIndex;
 use crate::map::Map;
@@ -36,7 +36,7 @@ use crate::tree;
 /// held in the [`Meta`] of a value, which is only allocated if there is
 /// such information:
 ///
-/// * The [event data](deser::State::event) of the value, for instance CBOR
+/// * The [event data](deser_core::State::event) of the value, for instance CBOR
 ///   tags or formatting hints.  It's captured when the value is
 ///   deserialized and attached again when it's serialized.
 /// * The [`Span`] of the value in the input, if the format tracks
@@ -57,7 +57,7 @@ use crate::tree;
 ///
 /// # Extensions
 ///
-/// Values which extend the data model (see [`deser::ext`]) are held as
+/// Values which extend the data model (see [`deser::ext`](deser_core::ext)) are held as
 /// [`Kind::Ext`].  They retain their type and are serialized as extension
 /// values again.  The accessors (such as [`as_str`](Kind::as_str)) look at
 /// them through their fallback.
@@ -128,7 +128,7 @@ impl Meta {
 
     /// Returns the event data of the value.
     ///
-    /// See [`EventData`] and [`deser::State::event`].
+    /// See [`EventData`] and [`deser::State::event`](deser_core::State::event).
     pub fn event_data(&self) -> &EventData {
         &self.event_data
     }
@@ -165,7 +165,7 @@ impl Meta {
 /// The location of a value in its input.
 ///
 /// Spans are captured when values are deserialized from a format that
-/// tracks locations (see [`deser::de::Source`]), for instance with
+/// tracks locations (see [`deser::de::Source`](deser_core::de::Source)), for instance with
 /// the `track_locations` option of `deser-json`.
 #[derive(Clone)]
 pub struct Span {

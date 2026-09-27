@@ -25,8 +25,8 @@
 //! as the `f64` they widen to.
 use std::fmt;
 
-use deser::ser::{Describe, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr};
-use deser::{Atom, Event};
+use deser_core::ser::{Describe, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr};
+use deser_core::{Atom, Event};
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {

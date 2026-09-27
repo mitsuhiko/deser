@@ -13,7 +13,7 @@ documentation = "https://docs.rs/deser-value"
 autotests = false
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 indexmap = { version = "2.9", default-features = false, features = ["std"] }
 
 [dev-dependencies]

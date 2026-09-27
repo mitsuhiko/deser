@@ -1,6 +1,6 @@
 use std::fmt;
 
-use deser::ErrorKind;
+use deser_core::ErrorKind;
 
 /// The error type used with serde.
 ///
@@ -10,7 +10,7 @@ use deser::ErrorKind;
 pub(crate) struct Error(Repr);
 
 enum Repr {
-    Deser(deser::Error),
+    Deser(deser_core::Error),
     /// A missing value was requested to be deserialized as not optional.
     Missing,
     /// The serialization or deserialization was aborted.
@@ -19,7 +19,7 @@ enum Repr {
 
 impl Error {
     pub(crate) fn new<M: Into<std::borrow::Cow<'static, str>>>(kind: ErrorKind, msg: M) -> Error {
-        Error(Repr::Deser(deser::Error::new(kind, msg)))
+        Error(Repr::Deser(deser_core::Error::new(kind, msg)))
     }
 
     pub(crate) fn missing() -> Error {
@@ -30,17 +30,19 @@ impl Error {
         Error(Repr::Cancelled)
     }
 
-    pub(crate) fn into_deser(self) -> deser::Error {
+    pub(crate) fn into_deser(self) -> deser_core::Error {
         match self.0 {
             Repr::Deser(err) => err,
-            Repr::Missing => deser::Error::new(ErrorKind::MissingField, "missing value"),
-            Repr::Cancelled => deser::Error::new(ErrorKind::Unexpected, "serde value was aborted"),
+            Repr::Missing => deser_core::Error::new(ErrorKind::MissingField, "missing value"),
+            Repr::Cancelled => {
+                deser_core::Error::new(ErrorKind::Unexpected, "serde value was aborted")
+            }
         }
     }
 }
 
-impl From<deser::Error> for Error {
-    fn from(err: deser::Error) -> Error {
+impl From<deser_core::Error> for Error {
+    fn from(err: deser_core::Error) -> Error {
         Error(Repr::Deser(err))
     }
 }

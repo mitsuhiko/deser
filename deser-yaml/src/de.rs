@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deser::adapters::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, Limits, Source};
-use deser::hints::Layout;
-use deser::{Atom, Error, ErrorKind, Event};
+use deser_core::adapters::BytesFormat;
+use deser_core::de::{self, Deserialize, DeserializeDriver, Limits, Source};
+use deser_core::hints::Layout;
+use deser_core::{Atom, Error, ErrorKind, Event};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};
@@ -138,9 +138,9 @@ impl DeserializerConfig {
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser::de::Source)) which allows resolving the
+    /// [`Source`](deser_core::de::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -168,7 +168,7 @@ impl DeserializerConfig {
     /// assert_eq!(bytes, [1, 255]);
     /// ```
     ///
-    /// The format is placed into the state (see [bytes](deser::adapters#bytes)).
+    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).
     /// Values that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;
@@ -610,7 +610,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the next value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,
@@ -639,7 +639,7 @@ impl<'a> Deserializer<'a> {
     /// Parses the next document and feeds the events into the given driver.
     ///
     /// This is useful to deserialize into a custom
-    /// [`Sink`](deser::de::Sink).  See also [`deserialize_with`](Self::deserialize_with).
+    /// [`Sink`](deser_core::de::Sink).  See also [`deserialize_with`](Self::deserialize_with).
     /// Errors carry the location in the input (see [`Error::line`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(err) = self.pending_error.take() {

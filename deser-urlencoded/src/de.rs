@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use deser::adapters::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
-use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
+use deser_core::adapters::BytesFormat;
+use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::Nesting;
 use crate::encoding::{Decoded, decode};
@@ -118,7 +118,7 @@ impl DeserializerConfig {
     /// by default, both with the standard and the URL-safe alphabet and
     /// with or without padding.  Values which are not UTF-8 after
     /// percent-decoding are passed on as bytes (see
-    /// [bytes](deser::adapters#bytes)).
+    /// [bytes](deser_core::adapters#bytes)).
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;
         self
@@ -127,9 +127,9 @@ impl DeserializerConfig {
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser::de::Source)).  This copies the input.
+    /// [`Source`](deser_core::de::Source)).  This copies the input.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self
@@ -244,7 +244,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the input with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,

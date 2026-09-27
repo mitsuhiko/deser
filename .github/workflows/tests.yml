@@ -36,9 +36,9 @@ jobs:
       matrix:
         include:
           - name: deser
-            crates: deser
+            crates: deser-core deser
           - name: deser, tree borrows
-            tree-borrows-crates: deser
+            tree-borrows-crates: deser-core deser
           - name: deser-json
             crates: deser-json
           - name: other crates

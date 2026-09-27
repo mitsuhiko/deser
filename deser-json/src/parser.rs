@@ -10,9 +10,9 @@
 use std::borrow::Cow;
 use std::str;
 
-use deser::de::DeserializeDriver;
-use deser::ext::{ExtValue, Number as ExactNumber};
-use deser::{Atom, Error, ErrorKind, Event, State};
+use deser_core::de::DeserializeDriver;
+use deser_core::ext::{ExtValue, Number as ExactNumber};
+use deser_core::{Atom, Error, ErrorKind, Event, State};
 
 use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
 
@@ -1302,7 +1302,7 @@ fn number_out_of_range() -> Error {
 
 #[cfg(test)]
 mod tests {
-    use deser::de::Recording;
+    use deser_core::de::Recording;
 
     use super::*;
 

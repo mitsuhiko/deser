@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use deser::adapters::BytesFormat;
-use deser::ext::ExtValue;
-use deser::hints::Layout;
-use deser::ser::{self, SerializeDriver};
-use deser::{Atom, Error, ErrorKind, Event, Serialize, State};
+use deser_core::adapters::BytesFormat;
+use deser_core::ext::ExtValue;
+use deser_core::hints::Layout;
+use deser_core::ser::{self, SerializeDriver};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
-use deser::__format::IntBuffer;
-use deser::ext::{Datetime, Number, Timestamp};
+use deser_core::__format::IntBuffer;
+use deser_core::ext::{Datetime, Number, Timestamp};
 
 /// Configures how values are serialized to TOML.
 ///
@@ -20,8 +20,8 @@ use deser::ext::{Datetime, Number, Timestamp};
 ///
 /// Values that are maps are written as `[table]` sections and sequences of
 /// maps as `[[array]]` sections unless they are nested in other sequences or
-/// have the [`Layout::Compact`](deser::hints::Layout) hint (see
-/// [`hints`](deser::hints)) which makes them inline.  Inline tables and
+/// have the [`Layout::Compact`](deser_core::hints::Layout) hint (see
+/// [`hints`](deser_core::hints)) which makes them inline.  Inline tables and
 /// inline arrays of tables have that hint when deserialized, so they stay
 /// inline when a value is deserialized and serialized again.
 /// The output is compatible with TOML 1.0.
@@ -45,7 +45,7 @@ impl SerializerConfig {
     ///
     /// TOML has no bytes, by default they are written as base64 strings
     /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [bytes](deser::adapters#bytes)) which takes precedence.  Keys cannot be
+    /// (see [bytes](deser_core::adapters#bytes)) which takes precedence.  Keys cannot be
     /// arrays, bytes in keys are always strings.
     ///
     /// ```
@@ -81,7 +81,7 @@ impl SerializerConfig {
     /// Serializes the given value with a configured driver.
     ///
     /// The callback is invoked with the driver before the serialization
-    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -130,7 +130,7 @@ impl SerializerConfig {
 /// ```
 ///
 /// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`] with the configuration.
+/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
@@ -169,7 +169,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -681,17 +681,17 @@ impl<'d> Writer<'d> {
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-trait Float: zmij::Float + deser::__format::Float {}
+trait Float: zmij::Float + deser_core::__format::Float {}
 
 #[cfg(feature = "speedups")]
-impl<F: zmij::Float + deser::__format::Float> Float for F {}
+impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-trait Float: deser::__format::Float {}
+trait Float: deser_core::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
-impl<F: deser::__format::Float> Float for F {}
+impl<F: deser_core::__format::Float> Float for F {}
 
 /// Writes a float with the shortest text that reads back as the same value
 /// of its type (`f32` or `f64`).  The text always has a fractional part or
@@ -706,7 +706,7 @@ fn write_float<F: Float>(out: &mut String, value: F) {
         #[cfg(feature = "speedups")]
         out.push_small(zmij::Buffer::new().format_finite(value));
         #[cfg(not(feature = "speedups"))]
-        out.push_small(&deser::__format::format_finite(value));
+        out.push_small(&deser_core::__format::format_finite(value));
     }
 }
 
@@ -805,6 +805,6 @@ trait PushSmall {
 impl PushSmall for String {
     #[inline(always)]
     fn push_small(&mut self, s: &str) {
-        deser::__format::push_str(self, s);
+        deser_core::__format::push_str(self, s);
     }
 }

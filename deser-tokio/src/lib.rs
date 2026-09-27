@@ -2,7 +2,7 @@
 //! [tokio](https://tokio.rs).
 //!
 //! This crate connects the configurations of the data formats (which
-//! implement [`Decoder`] and [`Encoder`], see [`deser::io`]) to tokio's
+//! implement [`Decoder`] and [`Encoder`], see [`deser::io`](deser_core::io)) to tokio's
 //! [`AsyncRead`] and [`AsyncWrite`].  It works with every format.  Values
 //! of formats which support it (like JSON and CBOR) are deserialized while
 //! their input arrives, other values are buffered until they are complete,
@@ -74,10 +74,10 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
-use deser::io::{DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoder, Next, Status};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind};
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
+use deser_core::io::{DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoder, Next, Status};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Error, ErrorKind};
 use futures_core::Stream;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 
@@ -227,7 +227,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Reads the next value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub async fn read_with<T, F>(&mut self, setup: F) -> Result<Option<T>, Error>
     where
         T: DeserializeOwned + 'static,
@@ -237,7 +237,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         poll_fn(|cx| self.poll_read_setup(cx, &mut setup)).await
     }
 
-    /// Polls for the next element of the [`Streamed`](deser::Streamed) sequence of a value or
+    /// Polls for the next element of the [`Streamed`](deser_core::Streamed) sequence of a value or
     /// the value.
     ///
     /// This is the poll based version of [`read_next`](Self::read_next).
@@ -283,11 +283,11 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         }
     }
 
-    /// Reads the next element of the [`Streamed`](deser::Streamed) sequence of a value or
+    /// Reads the next element of the [`Streamed`](deser_core::Streamed) sequence of a value or
     /// the value.
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
-    /// [`Streamed<E>`](deser::Streamed) sequence within it.  The elements are
+    /// [`Streamed<E>`](deser_core::Streamed) sequence within it.  The elements are
     /// handed out as they are read ([`Next::Element`]), the value once it's
     /// complete ([`Next::Done`]).  The next call continues with the next
     /// value.  Resolves to `None` if there are no more values.  This is
@@ -302,7 +302,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     }
 
     /// Converts the reader into a [`Stream`] of the elements of the
-    /// [`Streamed`](deser::Streamed) sequence of values and the values.
+    /// [`Streamed`](deser_core::Streamed) sequence of values and the values.
     ///
     /// See [`read_next`](Self::read_next).  The stream ends after the first
     /// error.
@@ -413,7 +413,7 @@ impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
     }
 }
 
-/// A [`Stream`] of the elements of the [`Streamed`](deser::Streamed) sequence of values and
+/// A [`Stream`] of the elements of the [`Streamed`](deser_core::Streamed) sequence of values and
 /// the values.
 ///
 /// Created with [`Reader::into_element_stream`].
@@ -492,12 +492,12 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     /// Serializes a value with a configured driver and writes it.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub async fn write_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        deser::io::encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
+        deser_core::io::encode(&self.encoder, value, setup, self.written, &mut self.buffer)?;
         self.writer.write_all(&self.buffer).await?;
         self.written += 1;
         Ok(())

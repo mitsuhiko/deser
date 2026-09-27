@@ -5,7 +5,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::iter::FusedIterator;
 use std::sync::OnceLock;
 
-use deser::Order;
+use deser_core::Order;
 use indexmap::{Equivalent, IndexMap};
 
 use crate::tree;

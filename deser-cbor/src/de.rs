@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use deser::Error;
-use deser::de::{self, Deserialize, DeserializeDriver, Limits};
+use deser_core::Error;
+use deser_core::de::{self, Deserialize, DeserializeDriver, Limits};
 
 use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 
@@ -143,7 +143,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the next value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,
@@ -173,13 +173,13 @@ impl<'a> Deserializer<'a> {
     /// Parses the next data item and feeds the events into the given driver.
     ///
     /// This is useful to deserialize into a custom
-    /// [`Sink`](deser::de::Sink) or to wrap the sink of a value.
+    /// [`Sink`](deser_core::de::Sink) or to wrap the sink of a value.
     ///
     /// Definite length strings and byte strings are passed on borrowed from
     /// the input (see
     /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).  The byte
     /// ranges of the data items are published as input ranges (see
-    /// [`State::input_range`](deser::State::input_range)) and errors carry
+    /// [`State::input_range`](deser_core::State::input_range)) and errors carry
     /// the offset in the input (see [`Error::offset`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if let Some(max_depth) = self.config.max_depth {

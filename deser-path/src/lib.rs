@@ -3,8 +3,8 @@
 //! [`State`] (see [`Path`]).
 //!
 //! The layer can be added to both a
-//! [`DeserializeDriver`](deser::de::DeserializeDriver) and a
-//! [`SerializeDriver`](deser::ser::SerializeDriver).  Types can retrieve
+//! [`DeserializeDriver`](deser_core::de::DeserializeDriver) and a
+//! [`SerializeDriver`](deser_core::ser::SerializeDriver).  Types can retrieve
 //! the current [`Path`] from the state and errors get the path of the value
 //! they refer to attached (see [`Error::attachment`]):
 //!
@@ -31,7 +31,7 @@
 //! ```
 //!
 //! During serialization, the path is available to the
-//! [`Serialize`](deser::Serialize) implementations:
+//! [`Serialize`](deser_core::Serialize) implementations:
 //!
 //! ```rust
 //! use deser_path::{Path, PathLayer};
@@ -57,7 +57,7 @@
 //! ```
 use std::fmt;
 
-use deser::{Atom, Error, ErrorAttachment, ErrorContext, State};
+use deser_core::{Atom, Error, ErrorAttachment, ErrorContext, State};
 
 mod de;
 mod ser;
@@ -244,8 +244,8 @@ impl ErrorAttachment for Path {
 /// A layer that tracks the current [`Path`] in the state.
 ///
 /// The layer works for serialization (it implements
-/// [`deser::ser::Layer`]) and deserialization (it implements
-/// [`deser::de::Layer`]).  It attaches the path to errors which do not have
+/// [`deser::ser::Layer`](deser_core::ser::Layer)) and deserialization (it implements
+/// [`deser::de::Layer`](deser_core::de::Layer)).  It attaches the path to errors which do not have
 /// one (see [`Error::attachment`]).
 ///
 /// During deserialization the path is also correct for values which are

@@ -2,7 +2,7 @@
 //!
 //! deser writes bytes as base64 strings in formats without native bytes (like
 //! JSON) and provides the base64 encodings (see
-//! [bytes in deser](deser::adapters#bytes)).  This crate adds hexadecimal and
+//! [bytes in deser](deser_core::adapters#bytes)).  This crate adds hexadecimal and
 //! base32:
 //!
 //! | Encoding           | Description                                        |
@@ -16,9 +16,9 @@
 //!
 //! Like the encodings of deser they are adapters which represent bytes as
 //! strings in all formats.  They can be used with
-//! [`BytesFallback`](deser::adapters::BytesFallback) to keep native bytes in
+//! [`BytesFallback`](deser_core::adapters::BytesFallback) to keep native bytes in
 //! formats that have them, and with
-//! [`BytesFormat`](deser::adapters::BytesFormat) to configure formats:
+//! [`BytesFormat`](deser_core::adapters::BytesFormat) to configure formats:
 //!
 //! ```
 //! use deser::adapters::{BytesFallback, BytesFormat};
@@ -53,8 +53,8 @@
 //! ```
 //!
 //! Both hex encodings decode lowercase and uppercase digits.
-use deser::adapters::BytesEncoding;
-use deser::{Error, ErrorKind};
+use deser_core::adapters::BytesEncoding;
+use deser_core::{Error, ErrorKind};
 
 fn decode(encoding: &data_encoding::Encoding, name: &str, s: &str) -> Result<Vec<u8>, Error> {
     encoding.decode(s.as_bytes()).map_err(|err| {

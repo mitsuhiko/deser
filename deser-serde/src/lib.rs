@@ -31,8 +31,8 @@
 //! ```
 //!
 //! Adapters compose with containers (`Vec<Serde>`, `Option<Serde>`, ...),
-//! for more information see [`deser::adapters`].  To use the adapter
-//! outside of the derive, wrap values in [`As`](deser::adapters::As).
+//! for more information see [`deser::adapters`](deser_core::adapters).  To use the adapter
+//! outside of the derive, wrap values in [`As`](deser_core::adapters::As).
 //!
 //! # Data Model
 //!
@@ -71,10 +71,10 @@
 //! of compound values.  For atoms (the typical case, like `Url` or
 //! `IpAddr`) there is no buffering.
 
-use deser::State;
-use deser::adapters::{DeserializeAs, SerializeAs};
-use deser::de::SinkHandle;
-use deser::ser::Chunk;
+use deser_core::State;
+use deser_core::adapters::{DeserializeAs, SerializeAs};
+use deser_core::de::SinkHandle;
+use deser_core::ser::Chunk;
 
 mod buffered;
 mod de;
@@ -107,7 +107,7 @@ fn missing_value<'de, T: serde::Deserialize<'de>>() -> Option<T> {
 pub struct Serde;
 
 impl<T: serde::Serialize + ?Sized> SerializeAs<T> for Serde {
-    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, deser::Error> {
+    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
         buffered::serialize(value)
     }
 

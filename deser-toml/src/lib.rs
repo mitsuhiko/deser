@@ -71,7 +71,7 @@
 //! UTF-8 byte order mark at the start of the document is ignored.
 //!
 //! When serializing, maps are written as tables and sequences of maps as
-//! arrays of tables.  The well-known [`Timestamp`](deser::ext::Timestamp)
+//! arrays of tables.  The well-known [`Timestamp`](deser_core::ext::Timestamp)
 //! type is written as offset date-time in UTC, other well-known types
 //! (such as UUIDs and decimals) are written as strings.  Floats are
 //! written with the shortest text that reads back as the same value of
@@ -79,14 +79,14 @@
 //! entries with null values
 //! are skipped and null values in sequences are an error.  TOML has no
 //! bytes either, they are written as base64 strings by default (see
-//! [bytes](deser::adapters#bytes)).  See [`SerializerConfig`] for more
+//! [bytes](deser_core::adapters#bytes)).  See [`SerializerConfig`] for more
 //! information.
 //!
 //! # Streams
 //!
 //! Documents are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
-//! configurations can also be used with [`deser::io`] or an adapter for an
+//! configurations can also be used with [`deser::io`](deser_core::io) or an adapter for an
 //! async runtime (such as `deser-tokio`).  As TOML documents cannot
 //! be split, the whole document is read before it's parsed.
 //!
@@ -108,5 +108,5 @@ pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
 #[cfg(feature = "io")]
 pub use self::io::{from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_string};
-/// Re-exported from [`deser::ext`] for convenience.
-pub use deser::ext::{Date, Datetime, Offset, Time};
+/// Re-exported from [`deser::ext`](deser_core::ext) for convenience.
+pub use deser_core::ext::{Date, Datetime, Offset, Time};

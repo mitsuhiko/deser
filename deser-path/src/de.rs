@@ -1,5 +1,5 @@
-use deser::de::{Layer, LayerEvent, Next};
-use deser::{Error, Event};
+use deser_core::de::{Layer, LayerEvent, Next};
+use deser_core::{Error, Event};
 
 use crate::{Frame, Path, PathLayer, PathSegment};
 

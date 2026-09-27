@@ -1,12 +1,12 @@
 //! Reading and writing CBOR streams.
 use std::io::{Read, Write};
 
-use deser::de::Limits;
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::Encoder;
-use deser::io::{Decoder, Frame, Progress};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind, State};
+use deser_core::de::Limits;
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::io::Encoder;
+use deser_core::io::{Decoder, Frame, Progress};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::parser::{Copying, Discard, Parser, Progress as ParseProgress};
@@ -159,7 +159,7 @@ impl StreamState {
     }
 }
 
-/// Splits a stream of CBOR data items into items (see [`deser::io`]).
+/// Splits a stream of CBOR data items into items (see [`deser::io`](deser_core::io)).
 ///
 /// The stream is a [CBOR sequence](https://www.rfc-editor.org/rfc/rfc8742)
 /// of data items that follow each other.  An item is complete once its last
@@ -181,7 +181,7 @@ impl StreamState {
 /// ```
 ///
 /// Items are parsed like with a [`Deserializer`], so they can borrow from
-/// the stream's buffer (see [`deser::io::Reader::read_borrowed`]).
+/// the stream's buffer (see [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).
 impl Decoder for DeserializerConfig {
     type State = StreamState;
 
@@ -315,7 +315,7 @@ impl Decoder for DeserializerConfig {
     }
 }
 
-/// Writes CBOR data items to a stream (see [`deser::io`]).
+/// Writes CBOR data items to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// The items follow each other which makes the stream a [CBOR
 /// sequence](https://www.rfc-editor.org/rfc/rfc8742).
@@ -347,7 +347,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser::io::from_reader(reader, self)
+        deser_core::io::from_reader(reader, self)
     }
 }
 
@@ -356,7 +356,7 @@ impl SerializerConfig {
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self, value)
+        deser_core::io::to_writer(writer, self, value)
     }
 }
 
@@ -364,7 +364,7 @@ impl SerializerConfig {
 ///
 /// The reader is read to the end, no data may follow the item.  The reader
 /// does not need to be buffered.  To read more than one item (a CBOR
-/// sequence) use a [`deser::io::Reader`] with a [`DeserializerConfig`].
+/// sequence) use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
 ///
 /// ```
 /// let value: Vec<u32> = deser_cbor::from_reader(&[0x82, 0x01, 0x02][..]).unwrap();

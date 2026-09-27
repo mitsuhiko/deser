@@ -46,7 +46,7 @@
 //! # Buffering
 //!
 //! Values that are internally buffered with a
-//! [`Recording`](deser::de::Recording) (as some enum representations do)
+//! [`Recording`](deser_core::de::Recording) (as some enum representations do)
 //! retain their locations when they are replayed as recordings capture the
 //! input range of every event.
 use std::borrow::Cow;
@@ -55,13 +55,13 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use deser::State;
-use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle, Source};
-use deser::ser::{Chunk, Describe, Serialize};
-use deser::{Atom, ContainerShape, Error};
+use deser_core::State;
+use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle, Source};
+use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::{Atom, ContainerShape, Error};
 
 /// Re-exported from deser, which counts positions the same way for errors.
-pub use deser::Position;
+pub use deser_core::Position;
 
 /// A range in the input.
 ///

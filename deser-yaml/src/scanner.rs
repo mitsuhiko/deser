@@ -10,7 +10,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
-use deser::Error;
+use deser_core::Error;
 
 use crate::event::{Mark, ScalarStyle};
 use crate::parser::syntax_error;

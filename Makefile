@@ -20,10 +20,11 @@ endif
 
 # Crates tested with miri (with stacked borrows), ordered by how long they
 # take, the slowest start first.  CI splits them across jobs.
-MIRI_CRATES ?= deser deser-json deser-cbor deser-path deser-location deser-debug
+MIRI_CRATES ?= deser-core deser deser-json deser-cbor deser-path deser-location deser-debug
 # Crates also tested with tree borrows.  Almost all unsafe code is in the
-# core crate, the formats only have simple byte copies.
-MIRI_TREE_BORROWS_CRATES ?= deser
+# core crate (tested by its own tests and the integration tests of deser),
+# the formats only have simple byte copies.
+MIRI_TREE_BORROWS_CRATES ?= deser-core deser
 # every miri run is single threaded
 MIRI_JOBS ?= 6
 # Tests that are slow in miri and do not test unsafe code opt out with
@@ -58,7 +59,7 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
-	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-json -p deser-cbor -p deser-yaml -p deser-toml -p deser-urlencoded --all-targets --no-default-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-cbor -p deser-yaml -p deser-toml -p deser-urlencoded --all-targets --no-default-features"
 
 # uses its own target directory so it does not invalidate the regular builds
 msrv:

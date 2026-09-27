@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
-use deser::adapters::BytesFormat;
-use deser::ext::Number;
-use deser::ser::{self, SerializeDriver};
-use deser::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::adapters::BytesFormat;
+use deser_core::ext::Number;
+use deser_core::ser::{self, SerializeDriver};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::Nesting;
 use crate::encoding::encode;
@@ -106,7 +106,7 @@ impl SerializerConfig {
     /// Sets how bytes are represented.
     ///
     /// By default bytes are written as base64 ([`BytesFormat::BASE64`]).
-    /// Values can request a different format (see [bytes](deser::adapters#bytes))
+    /// Values can request a different format (see [bytes](deser_core::adapters#bytes))
     /// which takes precedence.
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
         self.bytes = format;
@@ -121,7 +121,7 @@ impl SerializerConfig {
     /// Serializes the given value with a configured driver.
     ///
     /// The callback is invoked with the driver before the serialization
-    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -205,7 +205,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),

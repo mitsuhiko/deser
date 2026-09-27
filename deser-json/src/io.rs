@@ -1,12 +1,12 @@
 //! Reading and writing JSON streams.
 use std::io::{Read, Write};
 
-use deser::adapters::BytesFormat;
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::Encoder;
-use deser::io::{Decoder, Frame, Progress};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind, State};
+use deser_core::adapters::BytesFormat;
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::io::Encoder;
+use deser_core::io::{Decoder, Frame, Progress};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig, Trailing};
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
@@ -249,7 +249,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
     None
 }
 
-/// Splits a JSON stream into values (see [`deser::io`]).
+/// Splits a JSON stream into values (see [`deser::io`](deser_core::io)).
 ///
 /// How the stream is split depends on [`DeserializerConfig::trailing`]:
 ///
@@ -282,7 +282,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 ///
 /// Values which are read from their frames are parsed like with a
 /// [`Deserializer`], so they can borrow from the stream's buffer (see
-/// [`deser::io::Reader::read_borrowed`]).  The input ranges (and thus
+/// [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).  The input ranges (and thus
 /// locations) of these values refer to the start of their line (or value),
 /// those of values that are deserialized while their input arrives to the
 /// stream.
@@ -423,7 +423,7 @@ impl Decoder for DeserializerConfig {
     }
 }
 
-/// Writes JSON values to a stream (see [`deser::io`]).
+/// Writes JSON values to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// What follows the values depends on [`SerializerConfig::trailing`].
 impl Encoder for SerializerConfig {
@@ -442,7 +442,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser::io::from_reader(reader, self)
+        deser_core::io::from_reader(reader, self)
     }
 }
 
@@ -451,7 +451,7 @@ impl SerializerConfig {
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self, value)
+        deser_core::io::to_writer(writer, self, value)
     }
 }
 
@@ -459,7 +459,7 @@ impl SerializerConfig {
 ///
 /// The reader is read to the end.  Only whitespace may follow the value.
 /// The reader does not need to be buffered.  To read more than one value
-/// (for instance JSON Lines) use a [`deser::io::Reader`] with a
+/// (for instance JSON Lines) use a [`deser::io::Reader`](deser_core::io::Reader) with a
 /// [`DeserializerConfig`].
 ///
 /// ```

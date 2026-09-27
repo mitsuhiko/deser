@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
 use bytes::BytesMut;
-use deser::Error;
-use deser::de::{DeserializeOwned, OwnedDriver};
-use deser::io::{DecodeBuffer, Decoder, Encoder, Status};
-use deser::ser::Serialize;
+use deser_core::Error;
+use deser_core::de::{DeserializeOwned, OwnedDriver};
+use deser_core::io::{DecodeBuffer, Decoder, Encoder, Status};
+use deser_core::ser::Serialize;
 
 /// Implements the codec traits of [`tokio-util`](https://docs.rs/tokio-util).
 ///
@@ -118,7 +118,7 @@ impl<D: Decoder, E: Encoder, T, V: Serialize> tokio_util::codec::Encoder<V> for 
 
     fn encode(&mut self, item: V, dst: &mut BytesMut) -> Result<(), Error> {
         let mut out = Vec::new();
-        deser::io::encode(&self.encoder, &item, |_| {}, self.written, &mut out)?;
+        deser_core::io::encode(&self.encoder, &item, |_| {}, self.written, &mut out)?;
         dst.extend_from_slice(&out);
         self.written += 1;
         Ok(())

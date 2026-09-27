@@ -4,6 +4,11 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Everything but the derive macros moved into the new `deser-core` crate
+  which `deser` re-exports, nothing changes for code that uses `deser`.
+  The crates of the data formats depend on `deser-core`, so they are
+  compiled in parallel with the derive macros (which speeds up clean
+  builds, a small program with JSON builds in 2.4s instead of 3.4s).
 - Added `#[deser(tag_alias = "...")]` and `#[deser(content_alias =
   "...")]` for internally and adjacently tagged enums which accept other
   keys for the tag and the content.  `tag` and `content` (and their

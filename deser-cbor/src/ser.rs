@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
-use deser::__format::extend;
-use deser::State;
-use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
-use deser::ser::{self, SerializeDriver};
-use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
+use deser_core::__format::extend;
+use deser_core::State;
+use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
+use deser_core::ser::{self, SerializeDriver};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::float::f32_to_f16;
 use crate::simple::Simple;
@@ -594,7 +594,7 @@ impl SerializerConfig {
     /// Serializes the given value with a configured driver.
     ///
     /// The callback is invoked with the driver before the serialization
-    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn to_vec_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<Vec<u8>, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -642,7 +642,7 @@ impl SerializerConfig {
 /// ```
 ///
 /// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`] with the configuration.
+/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
@@ -681,7 +681,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),

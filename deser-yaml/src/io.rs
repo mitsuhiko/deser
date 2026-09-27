@@ -1,11 +1,11 @@
 //! Reading and writing YAML streams.
 use std::io::{Read, Write};
 
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::Encoder;
-use deser::io::{Decoder, Frame};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Atom, Error, ErrorKind};
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::io::Encoder;
+use deser_core::io::{Decoder, Frame};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Atom, Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::ser::SerializerConfig;
@@ -69,7 +69,7 @@ impl StreamState {
     }
 }
 
-/// Splits a YAML stream into documents (see [`deser::io`]).
+/// Splits a YAML stream into documents (see [`deser::io`](deser_core::io)).
 ///
 /// A document ends where the next one starts (at a `---` line) or at a
 /// document end marker (`...`).  When reading a stream that stays open
@@ -89,7 +89,7 @@ impl StreamState {
 /// ```
 ///
 /// Documents are parsed like with a [`Deserializer`], so they can borrow
-/// from the stream's buffer (see [`deser::io::Reader::read_borrowed`]).
+/// from the stream's buffer (see [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).
 /// Errors (including syntax errors) only discard their document, reading
 /// continues with the next one.
 impl Decoder for DeserializerConfig {
@@ -144,7 +144,7 @@ impl Decoder for DeserializerConfig {
     }
 }
 
-/// Writes YAML documents to a stream (see [`deser::io`]).
+/// Writes YAML documents to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// Every value is written as a document, documents after the first start
 /// with `---`.
@@ -176,7 +176,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        let mut reader = deser::io::Reader::new(reader, self);
+        let mut reader = deser_core::io::Reader::new(reader, self);
         let value = match reader.read()? {
             Some(value) => value,
             None => {
@@ -199,7 +199,7 @@ impl SerializerConfig {
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self, value)
+        deser_core::io::to_writer(writer, self, value)
     }
 }
 
@@ -208,7 +208,7 @@ impl SerializerConfig {
 /// This works like [`from_str`](crate::from_str): the stream must contain
 /// at most one document, an empty stream is null.  The reader is read to
 /// the end, it does not need to be buffered.  To read more than one
-/// document use a [`deser::io::Reader`] with a [`DeserializerConfig`].
+/// document use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
 ///
 /// ```
 /// let value: Vec<u32> = deser_yaml::from_reader(&b"- 1\n- 2\n"[..]).unwrap();

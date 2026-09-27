@@ -1,7 +1,7 @@
 //! The TOML grammar for date-times.
 //!
 //! The values are represented by the well-known [`Datetime`] type of deser.
-use deser::ext::{Date, Datetime, Offset, Time};
+use deser_core::ext::{Date, Datetime, Offset, Time};
 
 /// Returns `true` if a date or time starts at the given offset.
 ///

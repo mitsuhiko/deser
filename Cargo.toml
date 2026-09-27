@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "deser",
+  "deser-core",
   "deser-debug",
   "deser-derive",
   "deser-cbor",

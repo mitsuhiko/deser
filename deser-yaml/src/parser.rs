@@ -4,7 +4,7 @@
 //! documents do not consume native stack space.
 use std::borrow::Cow;
 
-use deser::{Error, ErrorKind};
+use deser_core::{Error, ErrorKind};
 
 use crate::event::{Event, EventKind, Mark, Props, ScalarStyle};
 use crate::scanner::{Scanner, Token, TokenKind, TokenType};

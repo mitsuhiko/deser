@@ -1,3 +1,8 @@
+//! The derive macros of [deser](https://docs.rs/deser).
+//!
+//! This crate is an implementation detail of deser, use the derive macros
+//! through the [`deser`](https://docs.rs/deser) crate (with the `derive`
+//! feature) instead.
 extern crate proc_macro;
 
 mod attr;
@@ -12,12 +17,22 @@ use quote::{quote, quote_spanned};
 use syn::parse_macro_input;
 use syn::spanned::Spanned;
 
+/// Derives [`Serialize`](ser/trait.Serialize.html) for a struct or enum.
+///
+/// The attributes that customize the derive are described in the
+/// [`derive`](derive/index.html) module.
+// the links are relative to the root of deser which inlines the macro
 #[proc_macro_derive(Serialize, attributes(deser))]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as syn::DeriveInput);
     expand(&mut input, ser::derive_serialize)
 }
 
+/// Derives [`Deserialize`](de/trait.Deserialize.html) for a struct or enum.
+///
+/// The attributes that customize the derive are described in the
+/// [`derive`](derive/index.html) module.
+// the links are relative to the root of deser which inlines the macro
 #[proc_macro_derive(Deserialize, attributes(deser))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as syn::DeriveInput);

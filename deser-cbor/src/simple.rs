@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use deser::State;
-use deser::de::{Deserialize, Sink, SinkHandle};
-use deser::ext::{ExtValue, Extension};
-use deser::ser::{Chunk, Serialize};
-use deser::{Atom, Error, ErrorKind};
+use deser_core::State;
+use deser_core::de::{Deserialize, Sink, SinkHandle};
+use deser_core::ext::{ExtValue, Extension};
+use deser_core::ser::{Chunk, Serialize};
+use deser_core::{Atom, Error, ErrorKind};
 
 /// A CBOR simple value.
 ///

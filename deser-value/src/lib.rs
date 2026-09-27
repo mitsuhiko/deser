@@ -29,10 +29,10 @@
 //! * Map keys can be any value (like integers in CBOR) and maps retain the
 //!   order of their entries.
 //! * Values that extend the data model (like date-times, UUIDs or exact
-//!   numbers, see [`deser::ext`]) retain their type.
-//! * Maps and sequences retain their [`Order`](deser::Order).
-//! * Bytes retain their [fallback](deser::Bytes::fallback).
-//! * [Event data](deser::State::event), which is information that is
+//!   numbers, see [`deser::ext`](deser_core::ext)) retain their type.
+//! * Maps and sequences retain their [`Order`](deser_core::Order).
+//! * Bytes retain their [fallback](deser_core::Bytes::fallback).
+//! * [Event data](deser_core::State::event), which is information that is
 //!   attached to values but not part of the data model (for instance CBOR
 //!   tags or formatting hints), is retained in the [`Meta`] data of values.
 //! * If the format tracks locations, values retain their [`Span`] in the

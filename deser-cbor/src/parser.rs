@@ -8,9 +8,9 @@
 use std::borrow::Cow;
 use std::str;
 
-use deser::de::DeserializeDriver;
-use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
-use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
+use deser_core::de::DeserializeDriver;
+use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
 
 use crate::float::f16_to_f64;
 use crate::simple::Simple;
@@ -863,7 +863,7 @@ fn test_is_ascii() {
 
 #[cfg(test)]
 mod tests {
-    use deser::de::Recording;
+    use deser_core::de::Recording;
 
     use super::*;
 

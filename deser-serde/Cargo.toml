@@ -17,7 +17,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-deser = { version = "0.8.0", path = "../deser", default-features = false }
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 serde = { version = "1.0.200", default-features = false, features = ["std"] }
 
 [dev-dependencies]

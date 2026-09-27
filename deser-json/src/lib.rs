@@ -21,22 +21,22 @@
 //! ```
 //!
 //! Integers that do not fit into 64 bits as well as the well-known
-//! [`BigInt`](deser::ext::BigInt), [`Decimal`](deser::ext::Decimal) and
-//! [`Number`](deser::ext::Number) types are written as JSON numbers.  Other
+//! [`BigInt`](deser_core::ext::BigInt), [`Decimal`](deser_core::ext::Decimal) and
+//! [`Number`](deser_core::ext::Number) types are written as JSON numbers.  Other
 //! well-known types (such as date-times and UUIDs) are written as strings.
 //! JSON has no bytes, they are written as base64 strings by default and
 //! types that expect bytes accept strings and arrays of integers (see
-//! [bytes](deser::adapters#bytes) and [`SerializerConfig::bytes`]).  Floats
+//! [bytes](deser_core::adapters#bytes) and [`SerializerConfig::bytes`]).  Floats
 //! are written with the shortest text that reads back as the same value of
 //! their precision (`0.1f32` as `0.1`, not `0.10000000149011612`), floats
 //! that are infinite or NaN as `null`.
 //!
 //! When parsing, floats whose text cannot be recovered from their value as
 //! `f64` (like `0.10` or `1e5`) and integers that do not fit into 128 bits
-//! are passed on as [`Number`](deser::ext::Number) which carries the text of
+//! are passed on as [`Number`](deser_core::ext::Number) which carries the text of
 //! the number and its value as `f64`.  Types like `f64` get the value, types
 //! which deserialize decimal numbers exactly (like
-//! [`Decimal`](deser::ext::Decimal)) use the text.  See
+//! [`Decimal`](deser_core::ext::Decimal)) use the text.  See
 //! [`DeserializerConfig::exact_numbers`].
 //!
 //! Strings without escape sequences are borrowed from the input, so types
@@ -67,7 +67,7 @@
 //!
 //! Indentation and spaces can also be configured on their own with
 //! [`SerializerConfig::indent`] and [`SerializerConfig::compact`].  Maps
-//! and sequences with the [`Layout::Compact`](deser::hints::Layout) hint
+//! and sequences with the [`Layout::Compact`](deser_core::hints::Layout) hint
 //! are written on a single line in indented output, short ones that only
 //! contain scalars can be too (see [`SerializerConfig::inline`]).
 //!
@@ -108,7 +108,7 @@
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
 //! or write more than one value (for instance JSON Lines from a socket) the
-//! configurations are used with [`deser::io`] (or an adapter for an async
+//! configurations are used with [`deser::io`](deser_core::io) (or an adapter for an async
 //! runtime such as `deser-tokio`): [`DeserializerConfig`] splits streams
 //! into values and [`SerializerConfig`] writes them.  How values are
 //! separated depends on the `trailing` setting of the configurations (see

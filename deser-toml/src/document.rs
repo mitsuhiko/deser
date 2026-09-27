@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, BuildHasherDefault, Hasher, RandomState};
 
-use deser::ext::Datetime;
+use deser_core::ext::Datetime;
 
 /// Tables with more entries than this are indexed with a hash map.
 const INDEX_THRESHOLD: usize = 16;

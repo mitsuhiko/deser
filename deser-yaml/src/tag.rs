@@ -17,7 +17,7 @@
 //! * [`Tagged`] captures the tag of a value and writes it.
 //!
 //! Both directions use the same event data, so values which capture event
-//! data (such as [`Recording`](deser::de::Recording)) keep the tags.
+//! data (such as [`Recording`](deser_core::de::Recording)) keep the tags.
 //!
 //! Tags are reported fully resolved: `!foo` stays `!foo` but `!!set`
 //! becomes `tag:yaml.org,2002:set` and tag handles declared with `%TAG`
@@ -25,10 +25,10 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use deser::State;
-use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, Describe, Serialize};
-use deser::{Atom, ContainerShape, Error};
+use deser_core::State;
+use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::{Atom, ContainerShape, Error};
 
 /// The tag of a node, attached as event data to its first event.
 ///

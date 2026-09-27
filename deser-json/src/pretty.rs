@@ -12,8 +12,8 @@
 //! the entries is the same either way, only the separators between them
 //! change.  So instead of recording events, only the offsets of the
 //! entries are recorded.
-use deser::hints::Layout;
-use deser::{Atom, Error, ErrorKind, Event, State};
+use deser_core::hints::Layout;
+use deser_core::{Atom, Error, ErrorKind, Event, State};
 
 use crate::ser::{Indent, Output};
 

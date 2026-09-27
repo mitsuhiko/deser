@@ -1,6 +1,6 @@
-use deser::adapters::BytesFormat;
-use deser::ser::{self, SerializeDriver};
-use deser::{Error, Serialize};
+use deser_core::adapters::BytesFormat;
+use deser_core::ser::{self, SerializeDriver};
+use deser_core::{Error, Serialize};
 
 use crate::emit::Emitter;
 use crate::resolve::Version;
@@ -53,9 +53,9 @@ pub enum MultilineStyle {
 
 /// When collections are written in flow style (`[a, b]`, `{a: 1}`).
 ///
-/// Collections with the [`Layout::Compact`](deser::hints::Layout) hint are
+/// Collections with the [`Layout::Compact`](deser_core::hints::Layout) hint are
 /// always written in flow style, collections with
-/// [`Layout::Expanded`](deser::hints::Layout) never (unless they are in a
+/// [`Layout::Expanded`](deser_core::hints::Layout) never (unless they are in a
 /// flow collection, which can only contain flow collections).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
@@ -91,7 +91,7 @@ pub enum NullStyle {
 ///   sequences in mappings are indented
 ///   ([`indent_sequences`](Self::indent_sequences)), empty collections are
 ///   written as `{}` and `[]`.  Compact collections (see
-///   [`hints`](deser::hints)) are written in flow style, see
+///   [`hints`](deser_core::hints)) are written in flow style, see
 ///   [`flow`](Self::flow).
 /// * strings are plain if possible, otherwise single-quoted (double-quoted if
 ///   they need escapes).  Strings are quoted if readers of YAML 1.1 would
@@ -167,7 +167,7 @@ impl SerializerConfig {
     /// The default is [`Indent::Spaces(2)`](Indent::Spaces), values outside
     /// of `1..=9` are clamped.  With [`Indent::None`] documents are written
     /// on a single line in flow style, the [flow policy](Self::flow) and
-    /// [`Layout`](deser::hints::Layout) hints have no effect then:
+    /// [`Layout`](deser_core::hints::Layout) hints have no effect then:
     ///
     /// ```
     /// use deser::Serialize;
@@ -307,7 +307,7 @@ impl SerializerConfig {
     /// By default (`true`) YAML is a format with native bytes: bytes are
     /// written as base64 with the `!!binary` tag, also bytes that request a
     /// representation for formats without native bytes (see
-    /// [`BytesFallback`](deser::adapters::BytesFallback)).  With
+    /// [`BytesFallback`](deser_core::adapters::BytesFallback)).  With
     /// `false` bytes are represented like in JSON: in the format they request
     /// or the format configured with [`bytes`](Self::bytes).
     ///
@@ -342,7 +342,7 @@ impl SerializerConfig {
 
     /// Writes date-times with the `!!timestamp` tag.
     ///
-    /// Dates and date-times with offset ([`Datetime`](deser::ext::Datetime))
+    /// Dates and date-times with offset ([`Datetime`](deser_core::ext::Datetime))
     /// are written as YAML timestamps.  By default they are plain which YAML
     /// 1.1 readers resolve as timestamps and YAML 1.2 readers as strings
     /// (which date / time types accept).  With the tag all readers resolve
@@ -354,7 +354,7 @@ impl SerializerConfig {
 
     /// Always starts documents with `---`.
     ///
-    /// When writing a stream of documents (see [`deser::io`]), documents
+    /// When writing a stream of documents (see [`deser::io`](deser_core::io)), documents
     /// after the first one always start with `---`.
     pub const fn document_start(mut self, yes: bool) -> SerializerConfig {
         self.document_start = yes;
@@ -424,7 +424,7 @@ impl SerializerConfig {
     /// Serializes the given value with a configured driver.
     ///
     /// The callback is invoked with the driver before the serialization
-    /// starts, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
@@ -450,7 +450,7 @@ impl SerializerConfig {
 /// ```
 ///
 /// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`] with the configuration.
+/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
@@ -489,7 +489,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),

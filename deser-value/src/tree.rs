@@ -6,7 +6,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::slice;
 
-use deser::Atom;
+use deser_core::Atom;
 
 use crate::map::{Entries, Map};
 use crate::seq::Seq;

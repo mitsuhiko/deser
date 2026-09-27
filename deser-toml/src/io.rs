@@ -1,16 +1,16 @@
 //! Reading and writing TOML from and to streams.
 use std::io::{Read, Write};
 
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::Encoder;
-use deser::io::{Decoder, Frame};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind};
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::io::Encoder;
+use deser_core::io::{Decoder, Frame};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::ser::SerializerConfig;
 
-/// Reads a TOML document from a stream (see [`deser::io`]).
+/// Reads a TOML document from a stream (see [`deser::io`](deser_core::io)).
 ///
 /// TOML documents cannot be split: tables can be extended anywhere in the
 /// document.  The stream is a single document which is parsed once the
@@ -66,7 +66,7 @@ impl Decoder for DeserializerConfig {
     }
 }
 
-/// Writes a TOML document to a stream (see [`deser::io`]).
+/// Writes a TOML document to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// A stream holds a single document, writing a second value fails.
 impl Encoder for SerializerConfig {
@@ -93,7 +93,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser::io::from_reader(reader, self)
+        deser_core::io::from_reader(reader, self)
     }
 }
 
@@ -102,7 +102,7 @@ impl SerializerConfig {
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self, value)
+        deser_core::io::to_writer(writer, self, value)
     }
 }
 

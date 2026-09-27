@@ -1,5 +1,5 @@
-use deser::ser::{Layer, Next};
-use deser::{Error, Event, State};
+use deser_core::ser::{Layer, Next};
+use deser_core::{Error, Event, State};
 
 use crate::{Frame, Path, PathLayer, PathSegment};
 
@@ -8,7 +8,7 @@ use crate::{Frame, Path, PathLayer, PathSegment};
 /// The format receives the events with the path of the value they belong
 /// to (map keys with the path of the map).  After an event was passed on,
 /// the path is updated for the value that follows, so that its
-/// [`Serialize`](deser::Serialize) implementation can access it.
+/// [`Serialize`](deser_core::Serialize) implementation can access it.
 impl Layer for PathLayer {
     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
         if !self.registered {

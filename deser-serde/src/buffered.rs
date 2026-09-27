@@ -1,8 +1,8 @@
 //! Bridges serde by buffering the events of a value.
 use std::iter::Peekable;
 
-use deser::ser::{Chunk, SerializeHandle};
-use deser::{Atom, ErrorKind, Event, State};
+use deser_core::ser::{Chunk, SerializeHandle};
+use deser_core::{Atom, ErrorKind, Event, State};
 
 use crate::de::{Source, ValueDe, unexpected_end};
 use crate::error::Error;
@@ -21,7 +21,7 @@ pub(crate) struct Buffer<'de> {
 }
 
 impl<'de> Push<'de> for Buffer<'de> {
-    fn push(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error> {
+    fn push(&mut self, event: Event<'de>, state: &State) -> Result<(), deser_core::Error> {
         self.events.push(Recorded {
             event,
             offset: state.input_range().map(|range| range.start),
@@ -31,11 +31,11 @@ impl<'de> Push<'de> for Buffer<'de> {
 }
 
 impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
-    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error> {
+    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser_core::Error> {
         self.push(event, state)
     }
 
-    fn finish(&mut self) -> Result<T, deser::Error> {
+    fn finish(&mut self) -> Result<T, deser_core::Error> {
         let mut src = BufferSource {
             events: std::mem::take(&mut self.events).into_iter().peekable(),
             offset: None,
@@ -108,13 +108,13 @@ impl Emit for SerBuffer {
 /// Serializes a serde value by buffering its events.
 pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
     value: &T,
-) -> Result<Chunk<'static>, deser::Error> {
+) -> Result<Chunk<'static>, deser_core::Error> {
     let mut buffer = SerBuffer::Empty;
     value
         .serialize(EventSerializer::new(&mut buffer))
         .map_err(Error::into_deser)?;
     match buffer {
-        SerBuffer::Empty => Err(deser::Error::new(
+        SerBuffer::Empty => Err(deser_core::Error::new(
             ErrorKind::Unexpected,
             "serde serializer produced no value",
         )),

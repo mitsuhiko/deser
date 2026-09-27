@@ -33,7 +33,7 @@
 //! other date-times as plain text strings.  Timestamps are written with tag
 //! 1 unless they have a fraction of a second, then they are written as
 //! date/time string (tag 0) which retains the precision.  Other extension
-//! values (such as [`Duration`](deser::ext::Duration)) are written as their
+//! values (such as [`Duration`](deser_core::ext::Duration)) are written as their
 //! fallback.
 //!
 //! Serialization produces the preferred serialization of RFC 8949: the
@@ -52,11 +52,11 @@
 //! 8949 does not distinguish the precisions in the data model, the shortest
 //! one that preserves the value is picked when writing.
 //!
-//! [`BigInt`]: deser::ext::BigInt
-//! [`Datetime`]: deser::ext::Datetime
-//! [`Timestamp`]: deser::ext::Timestamp
-//! [`Uuid`]: deser::ext::Uuid
-//! [`Decimal`]: deser::ext::Decimal
+//! [`BigInt`]: deser_core::ext::BigInt
+//! [`Datetime`]: deser_core::ext::Datetime
+//! [`Timestamp`]: deser_core::ext::Timestamp
+//! [`Uuid`]: deser_core::ext::Uuid
+//! [`Decimal`]: deser_core::ext::Decimal
 //!
 //! # Features
 //!
@@ -70,7 +70,7 @@
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
 //! or write [CBOR sequences](https://www.rfc-editor.org/rfc/rfc8742) (data
 //! items that follow each other, for instance on a socket) the
-//! configurations are used with [`deser::io`] (or an adapter for an async
+//! configurations are used with [`deser::io`](deser_core::io) (or an adapter for an async
 //! runtime such as `deser-tokio`).  The reader only buffers until an item
 //! is complete:
 //!

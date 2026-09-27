@@ -25,7 +25,7 @@
 //!
 //! Everything in a query string is text, the type of a value is only known
 //! to the type it's deserialized into.  Keys and values are therefore
-//! passed on as [lexical atoms](deser::Atom::Lexical) which are parsed by
+//! passed on as [lexical atoms](deser_core::Atom::Lexical) which are parsed by
 //! the types they are delivered to: numbers parse them, strings take them
 //! as they are.  Lexical atoms are retained when values are buffered, so
 //! flattened structs and internally tagged and untagged enums work as well:
@@ -87,7 +87,7 @@
 //! `Option<String>`).  Booleans accept `true`, `yes`, `on` and `1` and
 //! `false`, `no`, `off` and `0` (HTML checkboxes send `on`).  Flags which
 //! are switched on by giving their key (like `?recursive`) use the
-//! [`Flag`](deser::adapters::Flag) adapter:
+//! [`Flag`](deser_core::adapters::Flag) adapter:
 //!
 //! ```rust
 //! use deser::adapters::Flag;
@@ -114,13 +114,13 @@
 //! Serializing works the other way around (see [`SerializerConfig`]), how
 //! sequences are written can be configured (see [`ArrayFormat`]).
 //!
-//! [repeated]: deser::ContainerShape::with_repeated
+//! [repeated]: deser_core::ContainerShape::with_repeated
 //!
 //! # Streams
 //!
 //! Form data is read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
-//! configurations can also be used with [`deser::io`] or an adapter for an
+//! configurations can also be used with [`deser::io`](deser_core::io) or an adapter for an
 //! async runtime (such as `deser-tokio`).  The whole stream is read before
 //! it's parsed.
 //!
@@ -139,8 +139,8 @@ pub use self::de::{Deserializer, DeserializerConfig};
 pub use self::io::{from_reader, to_writer};
 pub use self::ser::{ArrayFormat, Serializer, SerializerConfig, to_string};
 
-use deser::Error;
-use deser::de::Deserialize;
+use deser_core::Error;
+use deser_core::de::Deserialize;
 
 /// How keys are nested.
 ///

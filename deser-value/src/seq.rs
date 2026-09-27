@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
-use deser::Order;
+use deser_core::Order;
 
 use crate::tree;
 use crate::value::{Kind, Value};
@@ -15,7 +15,7 @@ use crate::value::{Kind, Value};
 /// when the sequence is serialized.  They are not considered when sequences
 /// are compared.
 ///
-/// [`ContainerShape::with_repeated`]: deser::ContainerShape::with_repeated
+/// [`ContainerShape::with_repeated`]: deser_core::ContainerShape::with_repeated
 ///
 /// ```
 /// use deser::Order;
@@ -71,7 +71,7 @@ impl Seq {
 
     /// Returns `true` if the sequence holds the values of a repeated key.
     ///
-    /// See [`ContainerShape::with_repeated`](deser::ContainerShape::with_repeated).
+    /// See [`ContainerShape::with_repeated`](deser_core::ContainerShape::with_repeated).
     pub fn is_repeated(&self) -> bool {
         self.repeated
     }

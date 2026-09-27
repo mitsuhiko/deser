@@ -3,8 +3,8 @@
 //! How a scalar is written is decided by the serializer (see
 //! [`SerializerConfig`](crate::SerializerConfig)).  Values can ask for a
 //! specific style with a [`ScalarStyle`] hint, which is
-//! [event data](deser::State::event) of the value.  The adapters of this
-//! module set it, [layers](deser::ser::Layer) can set it too (for instance
+//! [event data](deser_core::State::event) of the value.  The adapters of this
+//! module set it, [layers](deser_core::ser::Layer) can set it too (for instance
 //! by path).  Hints only apply to strings and are preferences: if a string
 //! cannot be written in the requested style without changing it, it's
 //! written in a style that can represent it.
@@ -32,10 +32,10 @@
 //! ```
 //!
 //! How collections are laid out (flow or block) is controlled with the
-//! well-known [`Layout`](deser::hints::Layout) hint.
-use deser::State;
-use deser::adapters::Same;
-use deser::hints::{Hint, Hinted};
+//! well-known [`Layout`](deser_core::hints::Layout) hint.
+use deser_core::State;
+use deser_core::adapters::Same;
+use deser_core::hints::{Hint, Hinted};
 
 /// The style of a scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,8 +70,8 @@ impl ScalarStyle {
     /// Requests the style for the value that is serialized.
     ///
     /// This is intended to be called from
-    /// [`Serialize::serialize`](deser::Serialize::serialize) or a
-    /// [`Layer`](deser::ser::Layer).
+    /// [`Serialize::serialize`](deser_core::Serialize::serialize) or a
+    /// [`Layer`](deser_core::ser::Layer).
     #[inline]
     pub fn set(self, state: &mut State) {
         state.event_mut::<StyleHint>().0 = Some(self);

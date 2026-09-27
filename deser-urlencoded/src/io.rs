@@ -1,15 +1,15 @@
 //! Reading and writing query strings and form data from and to streams.
 use std::io::{Read, Write};
 
-use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser::io::{Decoder, Encoder, Frame};
-use deser::ser::{Serialize, SerializeDriver};
-use deser::{Error, ErrorKind};
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::io::{Decoder, Encoder, Frame};
+use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::{Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::ser::SerializerConfig;
 
-/// Reads form data from a stream (see [`deser::io`]).
+/// Reads form data from a stream (see [`deser::io`](deser_core::io)).
 ///
 /// The stream is a single value (like the body of a request) which is
 /// parsed once the whole stream was read.  An empty stream is an empty map.
@@ -64,7 +64,7 @@ impl Decoder for DeserializerConfig {
     }
 }
 
-/// Writes form data to a stream (see [`deser::io`]).
+/// Writes form data to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// A stream holds a single value, writing a second value fails.
 impl Encoder for SerializerConfig {
@@ -92,7 +92,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser::io::from_reader(reader, self)
+        deser_core::io::from_reader(reader, self)
     }
 }
 
@@ -101,7 +101,7 @@ impl SerializerConfig {
     ///
     /// See [`to_writer`](crate::to_writer).
     pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser::io::to_writer(writer, self, value)
+        deser_core::io::to_writer(writer, self, value)
     }
 }
 

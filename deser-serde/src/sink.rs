@@ -1,31 +1,33 @@
 //! Sinks that collect the events of a value for serde.
 use std::borrow::Cow;
 
-use deser::de::{Sink, SinkHandle};
-use deser::{Atom, Event, State};
+use deser_core::de::{Sink, SinkHandle};
+use deser_core::{Atom, Event, State};
 
 use crate::de::{Single, ValueDe};
 use crate::error::Error;
 
 /// Receives the events of a value.
 pub(crate) trait Push<'de>: Send {
-    fn push(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error>;
+    fn push(&mut self, event: Event<'de>, state: &State) -> Result<(), deser_core::Error>;
 }
 
 /// Turns the events of a map or sequence into a serde value.
 pub(crate) trait Collector<'de, T>: Push<'de> {
     /// Begins the value with its first event.
-    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser::Error>;
+    fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser_core::Error>;
 
     /// Returns the value after the last event.
-    fn finish(&mut self) -> Result<T, deser::Error>;
+    fn finish(&mut self) -> Result<T, deser_core::Error>;
 }
 
 /// Deserializes a serde value from a single atom.
 ///
 /// Most serde values that are used with deser are atoms (like `Url` or
 /// `IpAddr`), these are deserialized directly.
-fn deserialize_atom<'de, T: serde::Deserialize<'de>>(atom: Atom<'de>) -> Result<T, deser::Error> {
+fn deserialize_atom<'de, T: serde::Deserialize<'de>>(
+    atom: Atom<'de>,
+) -> Result<T, deser_core::Error> {
     let mut src = Single(Some(Event::Atom(atom)));
     T::deserialize(ValueDe::new(&mut src)).map_err(Error::into_deser)
 }
@@ -52,43 +54,55 @@ where
     T: serde::Deserialize<'de> + Send,
     C: Collector<'de, T>,
 {
-    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), deser::Error> {
+    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), deser_core::Error> {
         *self.out = Some(deserialize_atom(atom.to_static())?);
         Ok(())
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, _state: &mut State) -> Result<(), deser::Error> {
+    fn borrowed_atom(
+        &mut self,
+        atom: Atom<'de>,
+        _state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         *self.out = Some(deserialize_atom(atom)?);
         Ok(())
     }
 
-    fn map(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         let event = Event::MapStart(state.container_shape());
         self.collector.begin(event, state)?;
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         let event = Event::SeqStart(state.container_shape());
         self.collector.begin(event, state)?;
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser::Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
         Ok(ChildSink::handle(&mut self.collector))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser::Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
         Ok(ChildSink::handle(&mut self.collector))
     }
 
-    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_key_atom(
+        &mut self,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_value_atom(
+        &mut self,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
@@ -96,7 +110,7 @@ where
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
-    ) -> Result<(), deser::Error> {
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom), state)
     }
 
@@ -104,11 +118,11 @@ where
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
-    ) -> Result<(), deser::Error> {
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom), state)
     }
 
-    fn finish(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         if let Some(end) = self.end.take() {
             self.collector.push(end, state)?;
             *self.out = Some(self.collector.finish()?);
@@ -140,41 +154,53 @@ impl<'b, C: ?Sized> ChildSink<'b, C> {
 }
 
 impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), deser::Error> {
+    fn borrowed_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom), state)
     }
 
-    fn map(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn map(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         self.collector
             .push(Event::MapStart(state.container_shape()), state)?;
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
-    fn seq(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn seq(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         self.collector
             .push(Event::SeqStart(state.container_shape()), state)?;
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser::Error> {
+    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
         Ok(ChildSink::handle(&mut *self.collector))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser::Error> {
+    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
         Ok(ChildSink::handle(&mut *self.collector))
     }
 
-    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_key_atom(
+        &mut self,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_value_atom(
+        &mut self,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
@@ -182,7 +208,7 @@ impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
-    ) -> Result<(), deser::Error> {
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom), state)
     }
 
@@ -190,11 +216,11 @@ impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
-    ) -> Result<(), deser::Error> {
+    ) -> Result<(), deser_core::Error> {
         self.collector.push(Event::Atom(atom), state)
     }
 
-    fn finish(&mut self, state: &mut State) -> Result<(), deser::Error> {
+    fn finish(&mut self, state: &mut State) -> Result<(), deser_core::Error> {
         match self.end.take() {
             Some(end) => self.collector.push(end, state),
             None => Ok(()),

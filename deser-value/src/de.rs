@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use deser::de::{Deserialize, Sink, SinkHandle, Source};
-use deser::{Atom, Error, ErrorKind, State};
+use deser_core::de::{Deserialize, Sink, SinkHandle, Source};
+use deser_core::{Atom, Error, ErrorKind, State};
 
 use crate::map::Map;
 use crate::seq::Seq;

@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use deser::de::{self, Deserialize, DeserializeDriver, Source};
-use deser::ser::{self, Serialize, SerializeDriver};
-use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
+use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::ser::{self, Serialize, SerializeDriver};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event};
 
 use crate::value::{Kind, Value};
 
 /// Deserializes types from a [`Value`].
 ///
-/// This is a [`Deserializer`](deser::de::Deserializer) which emits the
+/// This is a [`Deserializer`](deser_core::de::Deserializer) which emits the
 /// events of a value.  It's what
 /// [`from_value`] uses, use it directly to configure the deserialization,
 /// for instance to add layers:
@@ -51,7 +51,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,
@@ -154,7 +154,7 @@ fn drive<'de>(
     }
 }
 
-fn shape(len: usize, order: deser::Order) -> ContainerShape {
+fn shape(len: usize, order: deser_core::Order) -> ContainerShape {
     ContainerShape::new().with_len(len).with_order(order)
 }
 
@@ -202,7 +202,7 @@ pub fn from_value<'de, T: Deserialize<'de>>(value: &'de Value) -> Result<T, Erro
 
 /// Serializes a value into a [`Value`].
 ///
-/// The [event data](deser::State::event) of the serialized values (such
+/// The [event data](deser_core::State::event) of the serialized values (such
 /// as formatting hints) is captured in the [meta data](crate::Meta) of the
 /// values.
 ///
@@ -226,7 +226,7 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
 
 /// Serializes values into [`Value`]s.
 ///
-/// This is a [`Serializer`](deser::ser::Serializer) which builds a value
+/// This is a [`Serializer`](deser_core::ser::Serializer) which builds a value
 /// from the events of a serialized value.  It's what [`to_value`] uses, use
 /// it directly to configure the serialization, for instance to add layers.
 /// Every call to [`serialize`](Self::serialize) adds a value:
@@ -256,7 +256,7 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
 /// assert_eq!(serializer.finish(), [value!(true), value!(["1", "2"])]);
 /// ```
 ///
-/// The [event data](deser::State::event) of the serialized values (such as
+/// The [event data](deser_core::State::event) of the serialized values (such as
 /// formatting hints) is captured in the [meta data](crate::Meta) of the
 /// values.
 #[derive(Debug, Default, Clone)]
@@ -280,7 +280,7 @@ impl Serializer {
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// serialized, for instance to add [`Layer`](deser::ser::Layer)s.
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
     pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),

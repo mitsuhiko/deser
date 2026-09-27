@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use deser::adapters::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, Source};
-use deser::ext::ExtValue;
-use deser::hints::Layout;
-use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
+use deser_core::adapters::BytesFormat;
+use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::ext::ExtValue;
+use deser_core::hints::Layout;
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event};
 
 use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};
@@ -68,7 +68,7 @@ impl DeserializerConfig {
     /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
     /// [`deser-encoding`](https://docs.rs/deser-encoding)).
     ///
-    /// The format is placed into the state (see [bytes](deser::adapters#bytes)).  Values
+    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).  Values
     /// that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;
@@ -78,9 +78,9 @@ impl DeserializerConfig {
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser::State::input_range)).  When
+    /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser::de::Source)) which allows resolving the
+    /// [`Source`](deser_core::de::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -188,7 +188,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the next value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
-    /// deserialized, for instance to add [`Layer`](deser::de::Layer)s.
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
     pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
     where
         T: Deserialize<'a>,
