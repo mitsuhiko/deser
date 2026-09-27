@@ -70,6 +70,8 @@ impl ToDebug {
 enum Desc {
     Structure(String),
     Newtype(String),
+    TupleStruct(String),
+    UnitStruct(String),
     Variant {
         name: String,
         kind: VariantKind,
@@ -101,6 +103,14 @@ impl Describe for Collector {
 
     fn newtype(&mut self, name: &str) {
         self.0.push(Desc::Newtype(name.into()));
+    }
+
+    fn tuple_struct(&mut self, name: &str) {
+        self.0.push(Desc::TupleStruct(name.into()));
+    }
+
+    fn unit_struct(&mut self, name: &str) {
+        self.0.push(Desc::UnitStruct(name.into()));
     }
 
     fn variant(&mut self, variant: &Variant<'_>) {
@@ -259,6 +269,8 @@ impl fmt::Debug for Render<'_> {
             Desc::None => f.write_str("None"),
             Desc::Newtype(ref name) => f.debug_tuple(name).field(&Render(node, rest)).finish(),
             Desc::Structure(ref name) => render_struct(name, node, None, f),
+            Desc::TupleStruct(ref name) => render_tuple(name, node, f),
+            Desc::UnitStruct(ref name) => f.write_str(name),
             Desc::Tuple => render_tuple("", node, f),
             Desc::Set => match node.kind {
                 NodeKind::Seq(ref items) => f

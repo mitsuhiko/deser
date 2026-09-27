@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
-use crate::ser::{Chunk, Serialize, SerializeHandle};
+use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
 
 /// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
 pub struct Begin<'a> {
@@ -162,6 +162,26 @@ pub trait IndexedSeq: Sync {
     fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
         let _ = sink;
         Ok(false)
+    }
+}
+
+/// A sequence emitter for an [`IndexedSeq`].
+pub struct IndexedSeqEmitter<'a> {
+    seq: &'a dyn IndexedSeq,
+    index: usize,
+}
+
+impl<'a> IndexedSeqEmitter<'a> {
+    pub fn new(seq: &'a dyn IndexedSeq) -> IndexedSeqEmitter<'a> {
+        IndexedSeqEmitter { seq, index: 0 }
+    }
+}
+
+impl<'a> SeqEmitter for IndexedSeqEmitter<'a> {
+    fn next(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        let index = self.index;
+        self.index += 1;
+        self.seq.element(index, state)
     }
 }
 

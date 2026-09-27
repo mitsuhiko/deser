@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The derive supports tuple structs (`struct Pair(u32, String)`, which
+  are sequences) and unit structs (`struct Marker;`, which are null).  The
+  derive panicked for them before and rejects unions without a container
+  adapter with an error.  `Describe` has the new methods `tuple_struct`
+  and `unit_struct` which `deser-debug` uses to format them like `Debug`.
+  `rename_all`, `alias_all`, `default`, `deny_unknown_fields` and
+  `skip_serializing_optionals` are rejected on newtype, tuple and unit
+  structs as they had no effect.
 - Everything but the derive macros moved into the new `deser-core` crate
   which `deser` re-exports, nothing changes for code that uses `deser`.
   The crates of the data formats depend on `deser-core`, so they are

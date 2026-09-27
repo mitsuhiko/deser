@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
+use crate::attr::{ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
 use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
 
 /// Returns an expression that creates a serialize handle for a value.
@@ -102,8 +102,16 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
             fields: syn::Fields::Unnamed(fields),
             ..
         }) if fields.unnamed.len() == 1 => derive_newtype_struct(input, &fields.unnamed[0]),
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Unnamed(fields),
+            ..
+        }) => derive_tuple_struct(input, fields),
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Unit,
+            ..
+        }) => derive_unit_struct(input),
         syn::Data::Enum(enumeration) => derive_enum(input, enumeration),
-        _ => panic!("only structs with named fields are supported"),
+        syn::Data::Union(_) => Err(crate::unsupported_union(input)),
     }
 }
 
@@ -556,11 +564,140 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     })
 }
 
+/// Derives a tuple struct (a struct with zero or more than one unnamed
+/// field) which is serialized as sequence.
+fn derive_tuple_struct(
+    input: &syn::DeriveInput,
+    fields: &syn::FieldsUnnamed,
+) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+
+    let container_attrs = ContainerAttrs::of(input)?;
+    container_attrs.reject_named_only("tuple structs", Direction::Serialize)?;
+    let type_name = container_attrs.container_name();
+    let all_attrs = fields
+        .unnamed
+        .iter()
+        .map(|field| {
+            let attrs = UnnamedFieldAttrs::of(field)?;
+            if attrs.tag() {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "tag fields are only supported in other variants of enums",
+                ));
+            }
+            Ok((field, attrs))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    let bounded_where_clause = where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Serialize),
+        Some(quote!(__deser::__derive::Sync)),
+        quote!(__deser::adapters::SerializeAs),
+        None,
+        container_attrs.serialize_bound(),
+        &all_attrs
+            .iter()
+            .map(|(field, attrs)| BoundField {
+                ty: &field.ty,
+                adapter: attrs.adapters().ser(),
+                skipped: false,
+            })
+            .collect::<Vec<_>>(),
+    );
+
+    let element_arms = all_attrs
+        .iter()
+        .enumerate()
+        .map(|(index, (field, attrs))| {
+            let member = syn::Index::from(index);
+            let handle =
+                serialize_handle(&field.ty, attrs.adapters().ser(), quote! { &self.#member });
+            quote! {
+                #index => #handle,
+            }
+        })
+        .collect::<Vec<_>>();
+    let len = all_attrs.len();
+
+    Ok(quote! {
+        const _: () = {
+            #[automatically_derived]
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.tuple_struct(#type_name);
+                }
+
+                fn container_shape(&self) -> __deser::ContainerShape {
+                    __deser::ContainerShape::new().with_len(#len)
+                }
+
+                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                    __deser::__derive::Ok(__deser::ser::Chunk::Seq(__deser::__derive::Box::new(
+                        __deser::__derive::IndexedSeqEmitter::new(self)
+                    )))
+                }
+
+                #[inline]
+                fn __private_begin(&self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                {
+                    __deser::__derive::Ok(__deser::__derive::Begin::indexed_seq(
+                        self,
+                        __deser::ContainerShape::new().with_len(#len),
+                    ))
+                }
+            }
+
+            #[automatically_derived]
+            impl #impl_generics __deser::__derive::IndexedSeq for #ident #ty_generics #bounded_where_clause {
+                fn element(&self, __index: usize, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Option<__deser::ser::SerializeHandle<'_>>>
+                {
+                    __deser::__derive::Ok(__deser::__derive::Some(match __index {
+                        #(#element_arms)*
+                        _ => return __deser::__derive::Ok(__deser::__derive::None),
+                    }))
+                }
+            }
+        };
+    })
+}
+
+/// Derives a unit struct which is serialized as null.
+fn derive_unit_struct(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let container_attrs = ContainerAttrs::of(input)?;
+    container_attrs.reject_named_only("unit structs", Direction::Serialize)?;
+    let type_name = container_attrs.container_name();
+    let begin_without_finish = begin_without_finish();
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+            #begin_without_finish
+
+            fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                __d.unit_struct(#type_name);
+            }
+
+            fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Null))
+            }
+        }
+    })
+}
+
 fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
+    container_attrs.reject_named_only("newtype structs", Direction::Serialize)?;
     let type_name = container_attrs.container_name();
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;

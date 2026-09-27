@@ -26,6 +26,19 @@ impl<'a, 'de, T: Send + 'a, U: Send + 'a> MappedSink<'a, 'de, T, U> {
     }
 }
 
+/// Creates a handle to a sink that deserializes a value into an owned sink
+/// and converts it.
+///
+/// The derive uses this for tuple structs which are deserialized as tuples.
+#[cfg(feature = "derive")]
+pub fn mapped<'a, 'de, T: Send + 'a, U: Send + 'a>(
+    out: &'a mut Option<U>,
+    sink: OwnedSink<'de, T>,
+    convert: fn(T) -> Result<U, Error>,
+) -> SinkHandle<'a, 'de> {
+    MappedSink::handle(out, sink, convert)
+}
+
 impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().atom(atom, state)

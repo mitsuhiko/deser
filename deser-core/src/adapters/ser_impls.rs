@@ -9,7 +9,8 @@ use crate::adapters::SerializeAs;
 use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape, Order};
 use crate::ser::{
-    Begin, Chunk, Describe, IndexedSeq, MapEmitter, SeqEmitter, Serialize, SerializeHandle,
+    Begin, Chunk, Describe, IndexedSeq, IndexedSeqEmitter, MapEmitter, SeqEmitter, Serialize,
+    SerializeHandle,
 };
 
 /// A reference to a value that serializes with an adapter.
@@ -76,20 +77,6 @@ impl<A: SerializeAs<T>, T: ?Sized + Sync> Serialize for SerializeAsRef<A, T> {
 #[inline(always)]
 fn handle_as<A: SerializeAs<T>, T: Sync>(value: &T) -> SerializeHandle<'_> {
     SerializeHandle::to(SerializeAsRef::<A, T>::new(value))
-}
-
-/// Emits the elements of an indexed sequence.
-struct IndexedSeqEmitter<'a> {
-    seq: &'a dyn IndexedSeq,
-    index: usize,
-}
-
-impl<'a> SeqEmitter for IndexedSeqEmitter<'a> {
-    fn next(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-        let index = self.index;
-        self.index += 1;
-        self.seq.element(index, state)
-    }
 }
 
 /// Emits the elements of an iterator with an adapter.
@@ -267,10 +254,10 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
     fn serialize_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IndexedSeqEmitter {
-                seq: SerializeAsRef::<Vec<A>, Vec<T>>::new(value),
-                index: 0,
-            })),
+            None => Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<
+                Vec<A>,
+                Vec<T>,
+            >::new(value)))),
         })
     }
 
@@ -303,10 +290,10 @@ impl<T: Sync, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] 
     fn serialize_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IndexedSeqEmitter {
-                seq: SerializeAsRef::<[A; N], [T; N]>::new(value),
-                index: 0,
-            })),
+            None => Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<
+                [A; N],
+                [T; N],
+            >::new(value)))),
         })
     }
 
@@ -518,10 +505,7 @@ macro_rules! serialize_as_for_tuple {
 
         impl<$($name: Sync,)* $($adapter: SerializeAs<$name>),*> SerializeAs<($($name,)*)> for ($($adapter,)*) {
             fn serialize_as<'a>(value: &'a ($($name,)*), _state: &mut State) -> Result<Chunk<'a>, Error> {
-                Ok(Chunk::Seq(Box::new(IndexedSeqEmitter {
-                    seq: SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value),
-                    index: 0,
-                })))
+                Ok(Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value)))))
             }
 
             fn describe_as(_value: &($($name,)*), d: &mut dyn Describe) {

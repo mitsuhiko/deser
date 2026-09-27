@@ -5,7 +5,8 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
 use crate::attr::{
-    ContainerAttrs, EnumVariantAttrs, FieldAttrs, Name, TypeDefault, UnnamedFieldAttrs, VariantName,
+    ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault, UnnamedFieldAttrs,
+    VariantName,
 };
 use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
 
@@ -82,9 +83,210 @@ pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStre
             fields: syn::Fields::Unnamed(fields),
             ..
         }) if fields.unnamed.len() == 1 => derive_newtype_struct(input, &fields.unnamed[0]),
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Unnamed(fields),
+            ..
+        }) => derive_tuple_struct(input, fields),
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Unit,
+            ..
+        }) => derive_unit_struct(input),
         syn::Data::Enum(enumeration) => derive_enum(input, enumeration),
-        _ => panic!("only structs with named fields are supported"),
+        syn::Data::Union(_) => Err(crate::unsupported_union(input)),
     }
+}
+
+/// The maximum number of elements of tuples that implement the traits.
+pub(crate) const MAX_TUPLE_LEN: usize = 12;
+
+/// Derives a tuple struct (a struct with zero or more than one unnamed
+/// field) which is deserialized from a sequence.
+///
+/// The sequence is deserialized as a tuple of the fields (with the adapters
+/// of the fields) which is then converted into the struct.
+fn derive_tuple_struct(
+    input: &syn::DeriveInput,
+    fields: &syn::FieldsUnnamed,
+) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let de_generics = with_de_lifetime(&input.generics)?;
+    let (impl_generics, _, _) = de_generics.split_for_impl();
+
+    let container_attrs = ContainerAttrs::of(input)?;
+    container_attrs.reject_named_only("tuple structs", Direction::Deserialize)?;
+    let all_attrs = fields
+        .unnamed
+        .iter()
+        .map(|field| {
+            let attrs = UnnamedFieldAttrs::of(field)?;
+            if attrs.tag() {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "tag fields are only supported in other variants of enums",
+                ));
+            }
+            Ok((field, attrs))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    if all_attrs.len() > MAX_TUPLE_LEN {
+        return Err(syn::Error::new_spanned(
+            &fields.unnamed[MAX_TUPLE_LEN],
+            format!(
+                "tuple structs with more than {} fields are not supported",
+                MAX_TUPLE_LEN
+            ),
+        ));
+    }
+
+    let where_clause = where_clause_for_fields(
+        &input.generics,
+        quote!(__deser::Deserialize<'de>),
+        Some(quote!(__deser::__derive::Send)),
+        quote!(__deser::adapters::DeserializeAs),
+        Some(quote!('de)),
+        container_attrs.deserialize_bound(),
+        &all_attrs
+            .iter()
+            .map(|(field, attrs)| BoundField {
+                ty: &field.ty,
+                adapter: attrs.adapters().de(),
+                skipped: false,
+            })
+            .collect::<Vec<_>>(),
+    );
+
+    let types = all_attrs
+        .iter()
+        .map(|(field, _)| &field.ty)
+        .collect::<Vec<_>>();
+    let bindings = (0..all_attrs.len())
+        .map(|idx| syn::Ident::new(&format!("__f{}", idx), Span::call_site()))
+        .collect::<Vec<_>>();
+    // tuple structs without fields are empty sequences (`()` is null)
+    let (tuple_ty, pattern) = if types.is_empty() {
+        (quote! { [(); 0] }, quote! { _ })
+    } else {
+        (quote! { (#(#types,)*) }, quote! { (#(#bindings,)*) })
+    };
+    let owned = if all_attrs
+        .iter()
+        .any(|(_, attrs)| attrs.adapters().de().is_some())
+    {
+        let adapters = all_attrs
+            .iter()
+            .map(|(_, attrs)| match attrs.adapters().de() {
+                Some(adapter) => quote! { #adapter },
+                None => quote! { __deser::adapters::Same },
+            });
+        quote! {
+            __deser::de::OwnedSink::<#tuple_ty>::deserialize_as::<(#(#adapters,)*)>()
+        }
+    } else {
+        quote! { __deser::de::OwnedSink::<#tuple_ty>::deserialize() }
+    };
+    let handle = quote! {
+        __deser::__derive::mapped(
+            __slot,
+            #owned,
+            |#pattern: #tuple_ty| __deser::__derive::Ok(#ident(#(#bindings),*)),
+        )
+    };
+
+    // validated structs deserialize into an owned sink which is validated
+    // once it finished
+    let (support, handle) = match container_attrs.validate() {
+        Some(path) => {
+            let validator = validator(path);
+            let turbofish = crate::bound::turbofish_without_lifetimes(&input.generics);
+            (
+                quote! {
+                    #[allow(clippy::multiple_bound_locations)]
+                    fn __unvalidated #impl_generics (
+                        __slot: &mut __deser::__derive::Option<#ident #ty_generics>,
+                    ) -> __deser::de::SinkHandle<'_, 'de> #where_clause {
+                        #handle
+                    }
+                },
+                quote! {
+                    __deser::__derive::validated_with(__slot, __unvalidated #turbofish, #validator)
+                },
+            )
+        }
+        None => (quote! {}, handle),
+    };
+
+    Ok(quote! {
+        const _: () = {
+            #support
+
+            #[automatically_derived]
+            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+                fn deserialize_into(
+                    __slot: &mut __deser::__derive::Option<Self>,
+                ) -> __deser::de::SinkHandle<'_, 'de> {
+                    #handle
+                }
+            }
+        };
+    })
+}
+
+/// Derives a unit struct which is deserialized from null.
+fn derive_unit_struct(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+    let de_generics = with_de_lifetime(&input.generics)?;
+    let (impl_generics, _, _) = de_generics.split_for_impl();
+
+    let container_attrs = ContainerAttrs::of(input)?;
+    container_attrs.reject_named_only("unit structs", Direction::Deserialize)?;
+    let type_name = container_attrs.container_name();
+    let validate = container_attrs.validate().map(|path| {
+        let validator = validator(path);
+        quote! { (#validator)(&__value)?; }
+    });
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+            fn deserialize_into(
+                __slot: &mut __deser::__derive::Option<Self>,
+            ) -> __deser::de::SinkHandle<'_, 'de> {
+                __deser::__derive::atom_sink(
+                    __slot,
+                    |__slot: &mut __deser::__derive::Option<Self>,
+                     __atom: __deser::Atom<'_>,
+                     __state: &mut __deser::State| {
+                        <Self as __deser::Deserialize<'de>>::__private_atom_into(__slot, __atom, __state)
+                    },
+                    #type_name,
+                )
+            }
+
+            #[inline]
+            fn __private_atom_into(
+                __slot: &mut __deser::__derive::Option<Self>,
+                __atom: __deser::Atom,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                __deser::__derive::unit_struct(&__atom, #type_name)?;
+                let __value = #ident;
+                #validate
+                *__slot = __deser::__derive::Some(__value);
+                __deser::__derive::Ok(())
+            }
+
+            #[inline]
+            fn __private_borrowed_atom_into(
+                __slot: &mut __deser::__derive::Option<Self>,
+                __atom: __deser::Atom<'de>,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                <Self as __deser::Deserialize<'de>>::__private_atom_into(__slot, __atom, __state)
+            }
+        }
+    })
 }
 
 fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Result<TokenStream> {
@@ -1210,13 +1412,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
-    if container_attrs.deny_unknown_fields() {
-        return Err(syn::Error::new(
-            container_attrs.span_of("deny_unknown_fields"),
-            "deny_unknown_fields is not supported on newtype structs, they are \
-             deserialized like their field",
-        ));
-    }
+    container_attrs.reject_named_only("newtype structs", Direction::Deserialize)?;
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;
     if field_attrs.tag() {

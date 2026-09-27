@@ -35,6 +35,28 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
     }
 }
 
+/// Returns a turbofish with the type and const parameters of the generics.
+///
+/// Lifetimes are left out (and inferred), which allows the turbofish to be
+/// used for functions that have more lifetime parameters than the type
+/// (such as `'de`).
+pub fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
+    let params = generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            syn::GenericParam::Type(param) => Some(&param.ident),
+            syn::GenericParam::Const(param) => Some(&param.ident),
+            syn::GenericParam::Lifetime(_) => None,
+        })
+        .collect::<Vec<_>>();
+    if params.is_empty() {
+        TokenStream::new()
+    } else {
+        quote::quote! { ::<#(#params),*> }
+    }
+}
+
 /// Adds the `'de` lifetime of `Deserialize` to the generics.
 ///
 /// All lifetimes of the type are bounded by `'de` so that borrowed data can

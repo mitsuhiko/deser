@@ -71,6 +71,7 @@ pub mod __derive {
     pub use crate::adapters::ser_impls::SerializeAsRef;
     pub use crate::de::atoms::{
         atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle, field_update,
+        unit_struct,
     };
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
@@ -79,6 +80,7 @@ pub mod __derive {
         atom_sink, lookup_atom, unit_variant, unknown_variant_atom, untagged_handle,
     };
     pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
+    pub use crate::de::mapped::mapped;
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::de::update::{UpdateTarget, replace_with};
     pub use crate::de::validate::{
@@ -86,7 +88,8 @@ pub mod __derive {
     };
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
-        Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,
+        Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,
+        PlainSink, StructField,
     };
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype, skipped_variant};
     pub use crate::ser::flatten::FlattenedStruct;

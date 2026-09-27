@@ -17,6 +17,12 @@ fn check<T: Serialize + fmt::Debug>(value: T) {
 struct Meters(f64);
 
 #[derive(Serialize, Debug)]
+struct Pair(u32, Option<Meters>);
+
+#[derive(Serialize, Debug)]
+struct Marker;
+
+#[derive(Serialize, Debug)]
 struct Point {
     x: i32,
     y: i32,
@@ -89,6 +95,8 @@ fn test_structs() {
         tags: vec!["a".into(), "b".into()],
         extra: BTreeMap::from([("k".into(), (1, true))]),
     });
+    check(Pair(1, Some(Meters(2.0))));
+    check(vec![Marker, Marker]);
 }
 
 #[test]

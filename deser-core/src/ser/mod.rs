@@ -116,7 +116,8 @@ pub use self::serializer::Serializer;
 pub use driver::{EventSink, SerializeDriver};
 
 pub(crate) use self::begin::{
-    Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedStruct, PlainSink, StructField, plain_atom,
+    Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PlainSink,
+    StructField, plain_atom,
 };
 
 /// A handle to a [`Serialize`] type.

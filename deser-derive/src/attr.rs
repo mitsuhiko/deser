@@ -788,6 +788,27 @@ impl<'a> ContainerAttrs<'a> {
         self.skip_serializing_optionals
     }
 
+    /// Rejects the attributes that only have an effect on structs with named
+    /// fields and enums.
+    ///
+    /// `kind` describes the struct (for instance `"tuple structs"`).  Every
+    /// derive only reports the attributes that affect its own direction.
+    pub fn reject_named_only(&self, kind: &str, direction: Direction) -> syn::Result<()> {
+        let names: &[&str] = match direction {
+            Direction::Serialize => &["rename_all", "alias_all", "skip_serializing_optionals"],
+            Direction::Deserialize => {
+                &["rename_all", "alias_all", "default", "deny_unknown_fields"]
+            }
+        };
+        match self.seen.iter().find(|x| names.contains(&x.name.as_str())) {
+            Some(seen) => Err(syn::Error::new(
+                seen.span,
+                format!("`{}` has no effect on {}", seen.name, kind),
+            )),
+            None => Ok(()),
+        }
+    }
+
     /// Returns the span of an attribute that was used on the container.
     pub fn span_of(&self, name: &str) -> Span {
         self.seen

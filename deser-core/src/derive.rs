@@ -29,11 +29,33 @@
 //!
 //! # Supported Types
 //!
-//! Currently the following types can be derived:
+//! The following types can be derived:
 //!
-//! * Structs
-//! * Newtype structs
-//! * Basic enums
+//! * Structs with named fields (`struct Point { x: i32, y: i32 }`) are maps
+//!   with the names of the fields as keys.
+//! * Newtype structs (`struct Meters(f64)`) are the value of their field.
+//! * Tuple structs (`struct Pair(u32, String)`) are sequences of their
+//!   fields.  Up to 12 fields are supported.
+//! * Unit structs (`struct Marker;`) are null.
+//! * Enums, see [enums](#enums).
+//!
+//! Unions can only be derived with a [container
+//! adapter](#container-adapters).
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Pair(u32, String);
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Marker;
+//! ```
+//!
+//! The fields of newtype and tuple structs support the `as`,
+//! `serialize_as` and `deserialize_as` attributes (see
+//! [adapters](#adapters)).  Of the container attributes they support
+//! `rename`, `validate`, the adapters, the bounds and the crate path.
 //!
 //! # Borrowing
 //!
@@ -283,8 +305,8 @@
 //!   direction uses the field type's own implementation.  Both can be used
 //!   together to use different adapters, but not together with `as`.
 //!
-//! The field of newtype structs and the fields of newtype and tuple variants
-//! support `as`, `serialize_as` and `deserialize_as` as well.
+//! The fields of newtype and tuple structs and of newtype and tuple
+//! variants support `as`, `serialize_as` and `deserialize_as` as well.
 //!
 //! ## Enum Variant Attributes
 //!

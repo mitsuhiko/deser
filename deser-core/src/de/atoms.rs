@@ -48,6 +48,23 @@ pub fn borrowed_atom_into<'de, T: Deserialize<'de>>(
     T::__private_borrowed_atom_into(slot, atom, state)
 }
 
+/// Checks that an atom is the value of a unit struct.
+///
+/// Unit structs are null (and text of unknown type that is empty, like
+/// `()`).  Other atoms are rejected with `expecting` as expected type.
+#[cfg(feature = "derive")]
+pub fn unit_struct(atom: &Atom<'_>, expecting: &str) -> Result<(), Error> {
+    match atom {
+        Atom::Null => Ok(()),
+        Atom::Lexical(value) if value.is_empty() => Ok(()),
+        Atom::Ext(ext) => match ext.fallback() {
+            Atom::Ext(_) => Err(atom.unexpected_error(expecting)),
+            fallback => unit_struct(&fallback, expecting),
+        },
+        _ => Err(atom.unexpected_error(expecting)),
+    }
+}
+
 /// Deserializes an atom into a sink handle.
 ///
 /// This is intentionally not inlined as it's used by the default

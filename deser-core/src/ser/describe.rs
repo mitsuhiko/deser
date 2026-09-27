@@ -59,6 +59,21 @@ pub trait Describe {
         let _ = name;
     }
 
+    /// The value is a tuple struct (a struct with more than one unnamed
+    /// field).
+    ///
+    /// It's serialized as sequence.
+    fn tuple_struct(&mut self, name: &str) {
+        let _ = name;
+    }
+
+    /// The value is a unit struct (a struct without fields).
+    ///
+    /// It's serialized as null.
+    fn unit_struct(&mut self, name: &str) {
+        let _ = name;
+    }
+
     /// The value is a variant of an enum.
     ///
     /// How the variant is serialized depends on its [`VariantRepr`].  For

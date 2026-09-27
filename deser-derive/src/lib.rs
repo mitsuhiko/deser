@@ -39,6 +39,14 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     expand(&mut input, de::derive_deserialize)
 }
 
+/// Returns the error for unions without a container adapter.
+fn unsupported_union(input: &syn::DeriveInput) -> syn::Error {
+    syn::Error::new_spanned(
+        &input.ident,
+        "unions can only be derived with a container adapter (`#[deser(as = ...)]`)",
+    )
+}
+
 /// Invokes the derive and makes the deser crate available as `__deser`.
 ///
 /// All generated code refers to deser through `__deser` so that the path to

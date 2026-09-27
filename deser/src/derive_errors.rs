@@ -441,6 +441,43 @@
 /// struct Test(u32);
 /// ```
 ///
+/// `deny_unknown_fields`, `default`, `rename_all` and `alias_all` have no
+/// effect on tuple structs and unit structs.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deny_unknown_fields)]
+/// struct Test(u32, u32);
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(rename_all = "camelCase")]
+/// struct Test(u32, u32);
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(default)]
+/// struct Test;
+/// ```
+///
+/// Tuple structs have at most 12 fields.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test(u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8);
+/// ```
+///
+/// Unions need a container adapter.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// union Test {
+///     a: u32,
+/// }
+/// ```
+///
 /// `deny_unknown_fields` has no effect on enums with only unit variants.
 ///
 /// ```compile_fail
