@@ -50,7 +50,8 @@ use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 /// atoms are recorded as owned (see [`Atom::to_static`]).  This means that
 /// types which only accept borrowed data (like `&str`) cannot be
 /// deserialized from a replayed recording.  Types which can hold owned data
-/// (like `Cow<str>`) can.
+/// (like `Cow<str>`) can.  (The buffering of the derive, for instance for
+/// internally tagged enums, keeps borrowed data borrowed.)
 ///
 /// # Raw Values
 ///
@@ -72,15 +73,29 @@ use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 ///     payload: Recording,
 /// }
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct Recording {
-    events: Vec<RecordedEvent>,
+#[derive(Clone, Default)]
+pub struct Recording(RecordBuf<'static>);
+
+/// A recording which keeps borrowed data borrowed.
+///
+/// Atoms that are delivered borrowed (see
+/// [`Sink::borrowed_atom`]) are recorded as they are and replayed borrowed,
+/// all others are recorded as owned.  This is what [`Recording`] uses
+/// (with owned data only) and what the derive uses to buffer values, which
+/// allows types that borrow to be deserialized from buffered values (for
+/// instance the fields of internally tagged enums that come before the
+/// tag).  Not public API.
+#[derive(Clone, Default)]
+pub struct RecordBuf<'de> {
+    events: Vec<RecordedEvent<'de>>,
     is_map_key: bool,
 }
 
 #[derive(Debug, Clone)]
-struct RecordedEvent {
-    event: Event<'static>,
+struct RecordedEvent<'de> {
+    event: Event<'de>,
+    // the atom was delivered borrowed and is replayed borrowed
+    borrowed: bool,
     input_range: (usize, usize),
     snapshot: Snapshot,
 }
@@ -90,7 +105,68 @@ struct RecordedEvent {
 const _: () = {
     const fn assert_send<T: Send>() {}
     assert_send::<Recording>();
+    assert_send::<RecordBuf<'static>>();
 };
+
+impl std::fmt::Debug for Recording {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Recording")
+            .field("events", &self.0.events)
+            .field("is_map_key", &self.0.is_map_key)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for RecordBuf<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordBuf")
+            .field("events", &self.events)
+            .field("is_map_key", &self.is_map_key)
+            .finish()
+    }
+}
+
+/// Where a recorder records to.
+///
+/// Recordings keep owned data only, record buffers keep borrowed data.
+trait Target<'de>: Send {
+    /// Records an event.
+    fn push(&mut self, is_root: bool, event: Event<'static>, state: &State);
+
+    /// Records an atom that was delivered borrowed.
+    fn push_borrowed(&mut self, is_root: bool, atom: Atom<'de>, state: &State);
+
+    fn is_empty(&self) -> bool;
+}
+
+impl<'de> Target<'de> for RecordBuf<'de> {
+    fn push(&mut self, is_root: bool, event: Event<'static>, state: &State) {
+        record(self, is_root, event, false, state);
+    }
+
+    fn push_borrowed(&mut self, is_root: bool, atom: Atom<'de>, state: &State) {
+        record(self, is_root, Event::Atom(atom), true, state);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
+impl<'de> Target<'de> for Recording {
+    fn push(&mut self, is_root: bool, event: Event<'static>, state: &State) {
+        record(&mut self.0, is_root, event, false, state);
+    }
+
+    fn push_borrowed(&mut self, is_root: bool, atom: Atom<'de>, state: &State) {
+        let event = Event::Atom(atom.to_static());
+        record(&mut self.0, is_root, event, false, state);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.events.is_empty()
+    }
+}
 
 impl Recording {
     /// Creates an empty recording.
@@ -102,10 +178,10 @@ impl Recording {
     ///
     /// A previously recorded value is discarded.
     pub fn recorder<'de>(&mut self) -> SinkHandle<'_, 'de> {
-        self.events.clear();
-        self.is_map_key = false;
+        self.0.events.clear();
+        self.0.is_map_key = false;
         SinkHandle::boxed(Recorder {
-            recording: self,
+            target: self,
             end: None,
             is_root: true,
         })
@@ -167,12 +243,72 @@ impl Recording {
         })
     }
 
+    /// Returns `true` if nothing was recorded.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the recorded events.
+    pub fn events(&self) -> impl Iterator<Item = &Event<'static>> {
+        self.0.events.iter().map(|recorded| &recorded.event)
+    }
+
+    /// Returns the value if the recording is a single string.
+    ///
+    /// This is useful to look at recorded map keys.
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_str()
+    }
+
+    /// Replays the recorded value into a sink.
+    ///
+    /// The state is the state of the ongoing deserialization.  The replayable
+    /// extensions in it are restored to their current values after replaying.
+    pub fn replay<'de>(&self, sink: SinkHandle<'_, 'de>, state: &mut State) -> Result<(), Error> {
+        self.0.replay(sink, state)
+    }
+}
+
+impl<'de> RecordBuf<'de> {
+    /// Creates an empty buffer.
+    pub fn new() -> RecordBuf<'de> {
+        RecordBuf::default()
+    }
+
+    /// Returns a sink that records a value into this buffer.
+    ///
+    /// A previously recorded value is discarded.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
+    pub fn recorder(&mut self) -> SinkHandle<'_, 'de> {
+        self.events.clear();
+        self.is_map_key = false;
+        SinkHandle::boxed(Recorder {
+            target: self,
+            end: None,
+            is_root: true,
+        })
+    }
+
+    /// Returns a sink that records a value and passes the buffer to a
+    /// callback once the value is complete (see [`Recording::capture`]).
+    pub fn capture<'a, F>(then: F) -> SinkHandle<'a, 'de>
+    where
+        F: FnOnce(RecordBuf<'de>, &mut State) -> Result<(), Error> + Send + 'a,
+        'de: 'a,
+    {
+        SinkHandle::boxed(CaptureSink {
+            recording: RecordBuf::new(),
+            end: None,
+            then: Some(Box::new(then)),
+        })
+    }
+
     /// Records a single atom, discarding a previously recorded value.
     #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub(crate) fn set_atom(&mut self, atom: &Atom<'_>, state: &State) {
         self.events.clear();
         self.is_map_key = false;
-        record(self, true, Event::Atom(atom.to_static()), state);
+        record(self, true, Event::Atom(atom.to_static()), false, state);
     }
 
     /// Returns the start of the input range of the first event.
@@ -208,31 +344,32 @@ impl Recording {
         self.events.is_empty()
     }
 
-    /// Returns the recorded events.
-    pub fn events(&self) -> impl Iterator<Item = &Event<'static>> {
-        self.events.iter().map(|recorded| &recorded.event)
-    }
-
-    /// Returns the value if the recording is a single string.
-    ///
-    /// This is useful to look at recorded map keys.
-    pub fn as_str(&self) -> Option<&str> {
+    /// Returns the atom if the buffer is a single atom.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
+    pub(crate) fn single_atom(&self) -> Option<&Atom<'de>> {
         match self.events.as_slice() {
             [
                 RecordedEvent {
                     event: Event::Atom(atom),
                     ..
                 },
-            ] => atom.as_str(),
+            ] => Some(atom),
             _ => None,
         }
     }
 
+    /// Returns the value if the buffer is a single string.
+    pub fn as_str(&self) -> Option<&str> {
+        self.single_atom()?.as_str()
+    }
+
     /// Replays the recorded value into a sink.
     ///
-    /// The state is the state of the ongoing deserialization.  The replayable
-    /// extensions in it are restored to their current values after replaying.
-    pub fn replay<'de>(&self, sink: SinkHandle<'_, 'de>, state: &mut State) -> Result<(), Error> {
+    /// Atoms that were delivered borrowed are replayed borrowed.
+    pub fn replay<'a>(&self, sink: SinkHandle<'_, 'a>, state: &mut State) -> Result<(), Error>
+    where
+        'de: 'a,
+    {
         let live = state.extensions().snapshot();
         let live_range = state.input_range;
         let rv = self.replay_events(sink, state);
@@ -241,74 +378,89 @@ impl Recording {
         rv
     }
 
-    fn replay_events<'de>(
-        &self,
-        sink: SinkHandle<'_, 'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
+    fn replay_events<'a>(&self, sink: SinkHandle<'_, 'a>, state: &mut State) -> Result<(), Error>
+    where
+        'de: 'a,
+    {
         DeserializeDriver::nested(state, sink, self.is_map_key, |driver| {
             for recorded in self.events.iter() {
                 let state = driver.state_mut();
                 state.input_range = recorded.input_range;
                 state.extensions_mut().restore(&recorded.snapshot);
-                driver.emit(recorded.event.as_borrowed())?;
+                match recorded.event {
+                    Event::Atom(ref atom) if recorded.borrowed => {
+                        driver.emit_borrowed(Event::Atom(atom.clone()))?
+                    }
+                    ref event => driver.emit(event.as_borrowed())?,
+                }
             }
             Ok(())
         })
     }
 }
 
-fn record(recording: &mut Recording, is_root: bool, event: Event<'static>, state: &State) {
-    if is_root && recording.events.is_empty() {
-        recording.is_map_key = state.is_map_key();
+fn record<'de>(
+    buf: &mut RecordBuf<'de>,
+    is_root: bool,
+    event: Event<'de>,
+    borrowed: bool,
+    state: &State,
+) {
+    if is_root && buf.events.is_empty() {
+        buf.is_map_key = state.is_map_key();
     }
-    recording.events.push(RecordedEvent {
+    buf.events.push(RecordedEvent {
         event,
+        borrowed,
         input_range: state.input_range,
         snapshot: state.extensions().snapshot(),
     });
 }
 
-type CaptureCallback<'a> = Box<dyn FnOnce(Recording, &mut State) -> Result<(), Error> + Send + 'a>;
+type CaptureCallback<'a, T> = Box<dyn FnOnce(T, &mut State) -> Result<(), Error> + Send + 'a>;
 
 /// Records a value into an owned recording and invokes a callback with it.
-struct CaptureSink<'a> {
-    recording: Recording,
+struct CaptureSink<'a, T> {
+    recording: T,
     end: Option<Event<'static>>,
-    then: Option<CaptureCallback<'a>>,
+    then: Option<CaptureCallback<'a, T>>,
 }
 
-impl<'a> CaptureSink<'a> {
-    fn child<'de>(&mut self) -> SinkHandle<'_, 'de> {
+impl<'a, T> CaptureSink<'a, T> {
+    fn child<'de>(&mut self) -> SinkHandle<'_, 'de>
+    where
+        T: Target<'de>,
+    {
         SinkHandle::boxed(Recorder {
-            recording: &mut self.recording,
+            target: &mut self.recording,
             end: None,
             is_root: false,
         })
     }
 }
 
-impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
+impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        record(
-            &mut self.recording,
-            true,
-            Event::Atom(atom.to_static()),
-            state,
-        );
+        self.recording
+            .push(true, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.recording.push_borrowed(true, atom, state);
         Ok(())
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         let shape = state.container_shape();
-        record(&mut self.recording, true, Event::MapStart(shape), state);
+        self.recording.push(true, Event::MapStart(shape), state);
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         let shape = state.container_shape();
-        record(&mut self.recording, true, Event::SeqStart(shape), state);
+        self.recording.push(true, Event::SeqStart(shape), state);
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
@@ -332,38 +484,26 @@ impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
         match self.end {
             Some(Event::MapEnd) => {}
             None if self.recording.is_empty() => {
-                record(
-                    &mut self.recording,
-                    true,
-                    Event::MapStart(ContainerShape::new()),
-                    state,
-                );
+                self.recording
+                    .push(true, Event::MapStart(ContainerShape::new()), state);
                 self.end = Some(Event::MapEnd);
             }
             _ => return Ok(None),
         }
-        record(
-            &mut self.recording,
-            false,
-            Event::Atom(Atom::Str(key.to_owned().into())),
-            state,
-        );
+        self.recording
+            .push(false, Event::Atom(Atom::Str(key.to_owned().into())), state);
         Ok(Some(self.child()))
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if self.recording.is_empty() && self.end.is_none() {
             // flattened into a struct but no key was given
-            record(
-                &mut self.recording,
-                true,
-                Event::MapStart(ContainerShape::new()),
-                state,
-            );
+            self.recording
+                .push(true, Event::MapStart(ContainerShape::new()), state);
             self.end = Some(Event::MapEnd);
         }
         if let Some(end) = self.end.take() {
-            record(&mut self.recording, true, end, state);
+            self.recording.push(true, end, state);
         }
         match self.then.take() {
             Some(then) => then(std::mem::take(&mut self.recording), state),
@@ -373,40 +513,53 @@ impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
 }
 
 /// Records a single value into a recording.
-struct Recorder<'a> {
-    recording: &'a mut Recording,
+struct Recorder<'a, T> {
+    target: &'a mut T,
     end: Option<Event<'static>>,
     is_root: bool,
 }
 
-impl<'a> Recorder<'a> {
-    fn record(&mut self, event: Event<'static>, state: &State) {
-        record(self.recording, self.is_root, event, state);
-    }
-
-    fn child<'de>(&mut self) -> SinkHandle<'_, 'de> {
+impl<'a, T> Recorder<'a, T> {
+    fn child<'de>(&mut self) -> SinkHandle<'_, 'de>
+    where
+        T: Target<'de>,
+    {
         SinkHandle::boxed(Recorder {
-            recording: self.recording,
+            target: &mut *self.target,
             end: None,
             is_root: false,
         })
     }
 }
 
-impl<'a, 'de> Sink<'de> for Recorder<'a> {
+impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.record(Event::Atom(atom.to_static()), state);
+        self.target
+            .push(self.is_root, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.target.push_borrowed(self.is_root, atom, state);
         Ok(())
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.record(Event::MapStart(state.container_shape()), state);
+        self.target.push(
+            self.is_root,
+            Event::MapStart(state.container_shape()),
+            state,
+        );
         self.end = Some(Event::MapEnd);
         Ok(())
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.record(Event::SeqStart(state.container_shape()), state);
+        self.target.push(
+            self.is_root,
+            Event::SeqStart(state.container_shape()),
+            state,
+        );
         self.end = Some(Event::SeqEnd);
         Ok(())
     }
@@ -421,7 +574,7 @@ impl<'a, 'de> Sink<'de> for Recorder<'a> {
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
-            self.record(end, state);
+            self.target.push(self.is_root, end, state);
         }
         Ok(())
     }
@@ -433,11 +586,12 @@ impl<'a, 'de> Sink<'de> for Recorder<'a> {
 /// are not compared.
 impl PartialEq for Recording {
     fn eq(&self, other: &Self) -> bool {
-        self.events.len() == other.events.len()
+        self.0.events.len() == other.0.events.len()
             && self
+                .0
                 .events
                 .iter()
-                .zip(other.events.iter())
+                .zip(other.0.events.iter())
                 .all(|(a, b)| a.event == b.event)
     }
 }
@@ -452,7 +606,7 @@ impl<'de> Deserialize<'de> for Recording {
 }
 
 /// Returns the number of events of the value the events start with.
-fn value_len(events: &[RecordedEvent]) -> usize {
+fn value_len(events: &[RecordedEvent<'static>]) -> usize {
     let mut depth = 0usize;
     for (index, recorded) in events.iter().enumerate() {
         match recorded.event {
@@ -468,7 +622,7 @@ fn value_len(events: &[RecordedEvent]) -> usize {
 }
 
 /// A recorded value that is serialized.
-struct RecordedValue<'a>(&'a [RecordedEvent]);
+struct RecordedValue<'a>(&'a [RecordedEvent<'static>]);
 
 impl<'a> RecordedValue<'a> {
     fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, Error> {
@@ -524,7 +678,7 @@ impl<'a> Serialize for RecordedValue<'a> {
 
 /// Emits the values of a recorded map or sequence.
 struct RecordedEmitter<'a> {
-    rest: &'a [RecordedEvent],
+    rest: &'a [RecordedEvent<'static>],
     current: RecordedValue<'a>,
 }
 
@@ -560,16 +714,16 @@ impl<'a> MapEmitter for RecordedEmitter<'a> {
 
 impl Serialize for Recording {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        RecordedValue(&self.events).chunk(state)
+        RecordedValue(&self.0.events).chunk(state)
     }
 
     fn container_shape(&self) -> ContainerShape {
-        RecordedValue(&self.events).container_shape()
+        RecordedValue(&self.0.events).container_shape()
     }
 
     fn is_optional(&self) -> bool {
         matches!(
-            self.events.as_slice(),
+            self.0.events.as_slice(),
             [RecordedEvent {
                 event: Event::Atom(Atom::Null),
                 ..

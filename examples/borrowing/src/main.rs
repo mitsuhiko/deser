@@ -9,9 +9,9 @@
 //! * `Cow<str>` and `Cow<[u8]>` with the `Borrowed` adapter borrow when
 //!   possible and own the data otherwise.
 //!
-//! Structs and enums can borrow.  Values that have to be recorded and
-//! replayed are not borrowed: the content of untagged enums and the fields
-//! of internally tagged enums that come before the tag.
+//! Structs and enums can borrow, also when values have to be recorded and
+//! replayed (for instance the fields of internally tagged enums that come
+//! before the tag, or the content of untagged enums).
 use std::borrow::Cow;
 
 use deser::adapters::Borrowed;
@@ -79,11 +79,12 @@ fn main() {
             .unwrap_err();
     println!("\nerror: {}", err);
 
-    // enums borrow like structs
+    // enums borrow like structs, also the fields that come before the tag
+    // (they are recorded until the variant is known)
     let input = r#"[
         {"type": "word", "text": "pi"},
-        {"type": "number", "text": "3.14", "value": 3.14},
-        {"type": "punct", "char": "!"}
+        {"text": "3.14", "value": 3.14, "type": "number"},
+        {"char": "!", "type": "punct"}
     ]"#;
     let tokens: Vec<Token> = deser_json::from_str(input).unwrap();
     println!("\n{:?}", tokens);
@@ -94,11 +95,6 @@ fn main() {
         };
         assert!(is_within(text.as_bytes(), input.as_bytes()));
     }
-
-    // values before the tag are recorded until the variant is known, they
-    // cannot be borrowed (a `Cow` with `Borrowed` would hold a copy)
-    let err = deser_json::from_str::<Token>(r#"{"text": "pi", "type": "word"}"#).unwrap_err();
-    println!("error: {}", err);
 
     // CBOR has byte strings which are borrowed as well
     let cbor = deser_cbor::to_vec(&Packet {

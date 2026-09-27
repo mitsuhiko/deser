@@ -83,6 +83,7 @@ pub mod __derive {
     };
     pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
     pub use crate::de::mapped::mapped;
+    pub use crate::de::recording::RecordBuf;
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::de::update::{UpdateTarget, replace_with};
     pub use crate::de::validate::{

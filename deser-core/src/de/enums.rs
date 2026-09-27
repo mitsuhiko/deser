@@ -5,7 +5,7 @@
 //! implemented by different sinks, all of which deserialize the content of a
 //! variant through a [`VariantBuilder`].
 //!
-//! Tags are recorded (see [`Recording`]) so that they can be any value.
+//! Tags are recorded (see [`RecordBuf`]) so that they can be any value.
 //! Known variants are looked up by string, other tags go to the variant
 //! marked with `#[deser(other)]` which can capture the tag.
 use std::borrow::Cow;
@@ -14,10 +14,11 @@ use std::mem::take;
 use std::ptr::NonNull;
 
 use crate::State;
+use crate::de::recording::RecordBuf;
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
-use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
+use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, unknown_variant};
-use crate::event::{Atom, Event};
+use crate::event::Atom;
 
 /// Builds the value of an enum variant.
 pub trait VariantBuilder<'de, E>: Send {
@@ -28,7 +29,7 @@ pub trait VariantBuilder<'de, E>: Send {
     ///
     /// This is only invoked for the other variant (with the tag) and the
     /// default variant (with `None` as the tag is missing).
-    fn set_tag(&mut self, tag: Option<&Recording>, state: &mut State) -> Result<(), Error> {
+    fn set_tag(&mut self, tag: Option<&RecordBuf<'de>>, state: &mut State) -> Result<(), Error> {
         let _ = tag;
         let _ = state;
         Ok(())
@@ -144,7 +145,7 @@ where
         self.content.borrow_mut()
     }
 
-    fn set_tag(&mut self, tag: Option<&Recording>, state: &mut State) -> Result<(), Error> {
+    fn set_tag(&mut self, tag: Option<&RecordBuf<'de>>, state: &mut State) -> Result<(), Error> {
         match tag {
             Some(tag) => tag.replay(T::deserialize_into(&mut self.tag), state),
             None => {
@@ -390,11 +391,11 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
     /// The name is the name of the enum for errors.
     fn resolve(
         &self,
-        tag: &Recording,
+        tag: &RecordBuf<'de>,
         name: &str,
         state: &mut State,
     ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
-        let atom = single_atom(tag);
+        let atom = tag.single_atom();
         if let Some(atom) = atom
             && let Some(variant) = lookup_atom(atom, self.lookup)
         {
@@ -434,15 +435,6 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
     }
 }
 
-/// Returns the atom of a recording if it's a single atom.
-fn single_atom(tag: &Recording) -> Option<&Atom<'static>> {
-    let mut events = tag.events();
-    match (events.next(), events.next()) {
-        (Some(Event::Atom(atom)), None) => Some(atom),
-        _ => None,
-    }
-}
-
 /// Feeds a null to a variant which has no content.
 fn feed_null<'de, E>(
     variant: &mut dyn VariantBuilder<'de, E>,
@@ -464,7 +456,7 @@ pub struct ExternallyTaggedSink<'a, 'de, E> {
     name: &'static str,
     variants: Variants<'a, 'de, E>,
     unit: UnitLookup<E>,
-    key: Recording,
+    key: RecordBuf<'de>,
     has_key: bool,
     done: bool,
     variant: Option<BoxedVariant<'a, 'de, E>>,
@@ -483,7 +475,7 @@ impl<'a, 'de, E: Send> ExternallyTaggedSink<'a, 'de, E> {
             name,
             variants,
             unit,
-            key: Recording::new(),
+            key: RecordBuf::new(),
             has_key: false,
             done: false,
             variant: None,
@@ -517,7 +509,7 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         if variant.is_none()
             && let Some(other) = self.variants.other
         {
-            let mut tag = Recording::new();
+            let mut tag = RecordBuf::new();
             tag.set_atom(&atom, state);
             let mut other = other();
             other.set_tag(Some(&tag), state)?;
@@ -607,7 +599,7 @@ impl EnumKey {
 
     /// Checks if a recorded key is this key.
     #[inline]
-    fn matches_recorded(&self, key: &Recording) -> bool {
+    fn matches_recorded(&self, key: &RecordBuf<'_>) -> bool {
         key.as_str().is_some_and(|key| self.matches(key))
     }
 }
@@ -631,9 +623,9 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     content: EnumKey,
     name: &'static str,
     variants: Variants<'a, 'de, E>,
-    key: Recording,
-    tag_value: Option<Recording>,
-    recorded_content: Option<Recording>,
+    key: RecordBuf<'de>,
+    tag_value: Option<RecordBuf<'de>>,
+    recorded_content: Option<RecordBuf<'de>>,
     has_content: bool,
     deny_unknown_fields: bool,
     variant: Option<BoxedVariant<'a, 'de, E>>,
@@ -658,7 +650,7 @@ impl<'a, 'de, E: Send> AdjacentlyTaggedSink<'a, 'de, E> {
             content,
             name,
             variants,
-            key: Recording::new(),
+            key: RecordBuf::new(),
             tag_value: None,
             recorded_content: None,
             has_content: false,
@@ -707,7 +699,7 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("field", self.tag.name));
             }
-            Ok(self.tag_value.insert(Recording::new()).recorder())
+            Ok(self.tag_value.insert(RecordBuf::new()).recorder())
         } else if self.content.matches_recorded(&key) {
             if self.has_content {
                 return Err(duplicate_key("field", self.content.name));
@@ -715,7 +707,7 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
             self.has_content = true;
             Ok(match self.variant {
                 Some(ref mut variant) => SinkHandle::to(variant.sink()),
-                None => self.recorded_content.insert(Recording::new()).recorder(),
+                None => self.recorded_content.insert(RecordBuf::new()).recorder(),
             })
         } else {
             unknown_field(
@@ -758,7 +750,7 @@ pub fn untagged_handle<'a, 'de, E: Send>(
     name: &'static str,
     candidates: CandidateLookup<'a, 'de, E>,
 ) -> SinkHandle<'a, 'de> {
-    Recording::capture(move |recording, state| {
+    RecordBuf::capture(move |recording, state| {
         for index in 0.. {
             let mut variant = match candidates(index) {
                 Some(variant) => variant,
@@ -791,7 +783,7 @@ pub fn untagged_fallback<'a, 'de, E: Send>(
     tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
     candidates: CandidateLookup<'a, 'de, E>,
 ) -> SinkHandle<'a, 'de> {
-    Recording::capture(move |recording, state| {
+    RecordBuf::capture(move |recording, state| {
         let err = match recording.replay(tagged(out), state) {
             Ok(()) if out.is_some() => return Ok(()),
             Ok(()) => Error::new(ErrorKind::Unexpected, "enum was not deserialized"),
@@ -826,9 +818,9 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     tag: EnumKey,
     name: &'static str,
     variants: Variants<'a, 'de, E>,
-    key: Recording,
-    pending: Vec<(Recording, Recording)>,
-    tag_value: Option<Recording>,
+    key: RecordBuf<'de>,
+    pending: Vec<(RecordBuf<'de>, RecordBuf<'de>)>,
+    tag_value: Option<RecordBuf<'de>>,
     variant: Option<BoxedVariant<'a, 'de, E>>,
     // if the key of the variant was recorded to look for the tag
     variant_key: bool,
@@ -851,7 +843,7 @@ impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
             tag,
             name,
             variants,
-            key: Recording::new(),
+            key: RecordBuf::new(),
             pending: Vec::new(),
             tag_value: None,
             variant: None,
@@ -973,9 +965,9 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("tag", self.tag.name));
             }
-            return Ok(self.tag_value.insert(Recording::new()).recorder());
+            return Ok(self.tag_value.insert(RecordBuf::new()).recorder());
         }
-        self.pending.push((key, Recording::new()));
+        self.pending.push((key, RecordBuf::new()));
         Ok(self.pending.last_mut().unwrap().1.recorder())
     }
 
@@ -997,15 +989,15 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("tag", self.tag.name));
             }
-            return Ok(Some(self.tag_value.insert(Recording::new()).recorder()));
+            return Ok(Some(self.tag_value.insert(RecordBuf::new()).recorder()));
         }
         self.ensure_variant(state)?;
         if let Some(variant) = &mut self.variant {
             return variant.sink().value_for_key(key, state);
         }
-        let mut recorded_key = Recording::new();
+        let mut recorded_key = RecordBuf::new();
         recorded_key.set_atom(&Atom::Str(Cow::Borrowed(key)), state);
-        self.pending.push((recorded_key, Recording::new()));
+        self.pending.push((recorded_key, RecordBuf::new()));
         Ok(Some(self.pending.last_mut().unwrap().1.recorder()))
     }
 

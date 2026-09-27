@@ -364,11 +364,139 @@ fn test_borrowed_enums() {
     .unwrap();
     assert_eq!(value, Adjacent::Newtype("hello"));
 
-    // untagged enums replay recorded values which are not borrowed
-    let err = borrowed::<Untagged<'_>>(vec![s.into()]).unwrap_err();
-    assert!(err.to_string().contains("did not match any variant"));
+    // untagged enums replay recorded values, borrowed data stays borrowed
+    let value: Untagged<'_> = borrowed(vec![s.into()]).unwrap();
+    match value {
+        Untagged::Text(text) => assert!(std::ptr::eq(text, s)),
+        other => panic!("unexpected {:?}", other),
+    }
     let value: Untagged<'_> = borrowed(vec![42u64.into()]).unwrap();
     assert_eq!(value, Untagged::Number(42));
+    // data that was not borrowed cannot be borrowed after replaying either
+    let err = transient::<Untagged<'_>>(vec!["hello".into()]).unwrap_err();
+    assert!(err.to_string().contains("did not match any variant"));
+}
+
+#[test]
+fn test_borrowed_through_buffering() {
+    use deser::adapters::DefaultOnError;
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(tag = "type")]
+    enum Internal<'a> {
+        A {
+            name: &'a str,
+            #[deser(as = Borrowed)]
+            text: Cow<'a, str>,
+        },
+        #[deser(other)]
+        Other(#[deser(tag)] &'a str),
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(tag = "t", content = "c")]
+    enum Adjacent<'a> {
+        A(&'a str),
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(tag = "type")]
+    enum WithFallback<'a> {
+        A {
+            name: &'a str,
+        },
+        #[deser(untagged)]
+        Raw(&'a str),
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Lenient<'a> {
+        #[deser(as = DefaultOnError)]
+        name: Option<&'a str>,
+    }
+
+    let input = String::from("hello");
+    let s = input.as_str();
+    let is_borrowed = |value: &str| std::ptr::eq(value, s);
+
+    // the fields before the tag are recorded
+    let value: Internal<'_> = borrowed(vec![
+        Event::map_start(),
+        "name".into(),
+        s.into(),
+        "text".into(),
+        s.into(),
+        "type".into(),
+        "A".into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    match value {
+        Internal::A { name, text } => {
+            assert!(is_borrowed(name));
+            assert!(matches!(text, Cow::Borrowed(text) if is_borrowed(text)));
+        }
+        other => panic!("unexpected {:?}", other),
+    }
+    // so is the tag
+    let value: Internal<'_> = borrowed(vec![
+        Event::map_start(),
+        "type".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert!(matches!(value, Internal::Other(tag) if is_borrowed(tag)));
+
+    // the content before the tag
+    let value: Adjacent<'_> = borrowed(vec![
+        Event::map_start(),
+        "c".into(),
+        s.into(),
+        "t".into(),
+        "A".into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert!(matches!(value, Adjacent::A(value) if is_borrowed(value)));
+
+    // tagged enums with untagged variants record the whole value
+    let value: WithFallback<'_> = borrowed(vec![
+        Event::map_start(),
+        "type".into(),
+        "A".into(),
+        "name".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert!(matches!(value, WithFallback::A { name } if is_borrowed(name)));
+    let value: WithFallback<'_> = borrowed(vec![s.into()]).unwrap();
+    assert!(matches!(value, WithFallback::Raw(raw) if is_borrowed(raw)));
+
+    // adapters that record
+    let value: Lenient<'_> = borrowed(vec![
+        Event::map_start(),
+        "name".into(),
+        s.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert!(matches!(value.name, Some(name) if is_borrowed(name)));
+
+    // transient data is not borrowed
+    let err = transient::<Internal<'_>>(vec![
+        Event::map_start(),
+        "name".into(),
+        "x".into(),
+        "text".into(),
+        "x".into(),
+        "type".into(),
+        "A".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert!(err.to_string().contains("expected a borrowed string"));
 }
 
 #[test]

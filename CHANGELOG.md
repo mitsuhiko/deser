@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Values that are buffered by the derive keep borrowed data borrowed: the
+  fields of internally tagged enums that come before the tag, the content
+  of adjacently tagged enums that comes before the tag, the tags of other
+  variants, untagged enums, untagged variants and adapters like
+  `DefaultOnError` can be deserialized into types that borrow (like
+  `&str`).  They failed with `expected a borrowed string` before.  This
+  also makes buffering cheaper as borrowed strings are not copied.
+  `Recording` itself still holds owned data.
 - The derive explains unsupported attributes: attributes that are placed
   in the wrong place name where they are supported, attributes of serde
   point to what to use instead (for instance adapters instead of `with`

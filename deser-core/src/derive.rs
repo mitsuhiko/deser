@@ -81,8 +81,10 @@
 //! Data can only be borrowed if the data format passes it on borrowed.  If
 //! the data is not borrowed (for instance because a string had escape
 //! sequences) references fail to deserialize while `Cow` holds owned data.
-//! Untagged enums replay values which were recorded, the recorded data is
-//! not borrowed.  The lifetime `'de` is reserved for the derive.
+//! Values that are recorded and replayed (for instance the fields of
+//! internally tagged enums that come before the tag and the content of
+//! untagged enums) are borrowed as well.  The lifetime `'de` is reserved
+//! for the derive.
 //!
 //! # Customization
 //!

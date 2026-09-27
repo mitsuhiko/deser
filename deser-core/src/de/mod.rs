@@ -230,7 +230,7 @@ mod layer;
 pub(crate) mod lexical;
 pub(crate) mod mapped;
 mod owned;
-mod recording;
+pub(crate) mod recording;
 mod sinkbox;
 mod source;
 pub(crate) mod unknown;

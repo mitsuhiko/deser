@@ -12,7 +12,8 @@ use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::lexical::parse_bool;
 use crate::de::mapped::MappedSink;
-use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Recording, Sink, SinkHandle};
+use crate::de::recording::RecordBuf;
+use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
@@ -520,7 +521,7 @@ pub struct DefaultOnError<A = Same>(PhantomData<fn() -> A>);
 
 impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        Recording::capture(move |recording, state| {
+        RecordBuf::capture(move |recording, state| {
             let mut value = None;
             let rv = recording.replay(A::deserialize_into_as(&mut value), state);
             *out = Some(match (rv, value) {
@@ -605,7 +606,7 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
 fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
     then: impl FnOnce(T) + Send + 'a,
 ) -> SinkHandle<'a, 'de> {
-    Recording::capture(move |recording, state| {
+    RecordBuf::capture(move |recording, state| {
         let mut value = None;
         if recording
             .replay(A::deserialize_into_as(&mut value), state)
