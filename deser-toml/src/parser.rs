@@ -677,6 +677,9 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
         let token = &self.input[start..self.pos];
+        if let Some(value) = parse_simple_number(token) {
+            return Ok(value);
+        }
         parse_number(token).map_err(|(kind, msg)| error_at(self.input, start, kind, msg))
     }
 
@@ -921,6 +924,73 @@ fn strip_underscores(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// Parses a decimal integer or float without underscores.
+///
+/// This is the fast path for the common numbers, it validates and parses
+/// the token in one pass.  Returns `None` for all other tokens (also for
+/// invalid ones), these are handled by [`parse_number`].
+#[inline]
+fn parse_simple_number(token: &str) -> Option<Value<'static>> {
+    let bytes = token.as_bytes();
+    let (negative, int_start) = match bytes.first()? {
+        b'-' => (true, 1),
+        b'+' => (false, 1),
+        _ => (false, 0),
+    };
+
+    let mut pos = int_start;
+    let mut value = 0u64;
+    while let Some(&c @ b'0'..=b'9') = bytes.get(pos) {
+        value = value.checked_mul(10)?.checked_add(u64::from(c - b'0'))?;
+        pos += 1;
+    }
+    let int_len = pos - int_start;
+    if int_len == 0 || (int_len > 1 && bytes[int_start] == b'0') {
+        return None;
+    }
+
+    if pos == bytes.len() {
+        return if !negative {
+            Some(int_value(false, value))
+        } else if value <= i64::MIN.unsigned_abs() {
+            Some(int_value(true, value))
+        } else {
+            None
+        };
+    }
+
+    let skip_digits = |pos: &mut usize| {
+        let start = *pos;
+        while bytes.get(*pos).is_some_and(u8::is_ascii_digit) {
+            *pos += 1;
+        }
+        *pos > start
+    };
+    if bytes[pos] == b'.' {
+        pos += 1;
+        if !skip_digits(&mut pos) {
+            return None;
+        }
+    }
+    if let Some(b'e' | b'E') = bytes.get(pos) {
+        pos += 1;
+        if let Some(b'+' | b'-') = bytes.get(pos) {
+            pos += 1;
+        }
+        if !skip_digits(&mut pos) {
+            return None;
+        }
+    }
+    if pos != bytes.len() {
+        return None;
+    }
+    let value: f64 = token.parse().ok()?;
+    if value.is_infinite() {
+        return None;
+    }
+    Some(Value::Float(value))
+}
+
 /// Parses an integer or float token.
 fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
     const INVALID: NumberError = (ErrorKind::Unexpected, "invalid number");
@@ -1027,5 +1097,67 @@ fn int_value(negative: bool, value: u64) -> Value<'static> {
         Value::Int(value)
     } else {
         Value::UInt(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_number_matches_parse_number() {
+        let tokens = [
+            "0",
+            "1",
+            "+1",
+            "-1",
+            "-0",
+            "00",
+            "01",
+            "-01",
+            "123456789",
+            "9223372036854775807",
+            "9223372036854775808",
+            "-9223372036854775808",
+            "-9223372036854775809",
+            "18446744073709551615",
+            "18446744073709551616",
+            "1.5",
+            "-1.5",
+            "+1.5",
+            "0.0",
+            "00.5",
+            "1.",
+            ".5",
+            "1e5",
+            "1E5",
+            "1e+5",
+            "1e-5",
+            "1.5e-5",
+            "1e",
+            "1e+",
+            "1.e5",
+            "1e5.5",
+            "1e400",
+            "-1e400",
+            "123456789012345678901234567890.5",
+            "1_000",
+            "0x1f",
+            "inf",
+            "nan",
+            "-",
+            "+",
+            "1-2",
+            "1a",
+        ];
+        for token in tokens {
+            if let Some(fast) = parse_simple_number(token) {
+                let slow = parse_number(token).unwrap_or_else(|_| panic!("{token} is invalid"));
+                assert_eq!(format!("{fast:?}"), format!("{slow:?}"), "{token}");
+            }
+        }
+        assert!(parse_simple_number("1_000").is_none());
+        assert!(parse_simple_number("01").is_none());
+        assert!(parse_simple_number("1e400").is_none());
     }
 }
