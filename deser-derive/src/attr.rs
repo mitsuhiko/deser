@@ -340,8 +340,10 @@ pub struct ContainerAttrs<'a> {
     skip_serializing_optionals: bool,
     deny_unknown_fields: bool,
     validate: Option<syn::ExprPath>,
-    tag: Option<String>,
-    content: Option<String>,
+    tag: Option<Name>,
+    tag_aliases: Vec<Name>,
+    content: Option<Name>,
+    content_aliases: Vec<Name>,
     untagged: bool,
     crate_path: Option<syn::Path>,
     bound: Option<Vec<syn::WherePredicate>>,
@@ -411,11 +413,6 @@ fn has_value(meta: &ParseNestedMeta) -> bool {
 /// Parses the value of `name = "..."`.
 fn parse_lit_str(meta: &ParseNestedMeta) -> syn::Result<syn::LitStr> {
     meta.value()?.parse()
-}
-
-/// Parses the value of `name = "..."` as a string.
-fn parse_str(meta: &ParseNestedMeta) -> syn::Result<String> {
-    Ok(parse_lit_str(meta)?.value())
 }
 
 /// Rejects `Self` in expressions and paths.
@@ -593,7 +590,9 @@ impl<'a> ContainerAttrs<'a> {
             deny_unknown_fields: false,
             validate: None,
             tag: None,
+            tag_aliases: Vec::new(),
             content: None,
+            content_aliases: Vec::new(),
             untagged: false,
             crate_path: None,
             bound: None,
@@ -623,16 +622,24 @@ impl<'a> ContainerAttrs<'a> {
                 set_once(meta, name, &mut rv.rename, value)
             }
             "tag" => {
-                let value = parse_str(meta)?;
+                let value = Name::parse(meta)?;
                 set_once(meta, name, &mut rv.tag, value)?;
                 if !is_enum {
                     return Err(meta.error("tag is only supported on enums"));
                 }
                 Ok(())
             }
+            "tag_alias" => {
+                rv.tag_aliases.push(Name::parse(meta)?);
+                Ok(())
+            }
             "content" => {
-                let value = parse_str(meta)?;
+                let value = Name::parse(meta)?;
                 set_once(meta, name, &mut rv.content, value)
+            }
+            "content_alias" => {
+                rv.content_aliases.push(Name::parse(meta)?);
+                Ok(())
             }
             "untagged" => {
                 set_flag(meta, name, &mut rv.untagged)?;
@@ -688,6 +695,19 @@ impl<'a> ContainerAttrs<'a> {
                 "untagged cannot be combined with tag",
             ));
         }
+        if !rv.tag_aliases.is_empty() && rv.tag.is_none() {
+            return Err(syn::Error::new(
+                rv.span_of("tag_alias"),
+                "tag_alias requires a tag attribute",
+            ));
+        }
+        if !rv.content_aliases.is_empty() && rv.content.is_none() {
+            return Err(syn::Error::new(
+                rv.span_of("content_alias"),
+                "content_alias requires a content attribute",
+            ));
+        }
+        rv.check_tag_keys()?;
         rv.adapters = adapters.finish(&rv.seen)?;
 
         Ok(rv)
@@ -769,12 +789,47 @@ impl<'a> ContainerAttrs<'a> {
         self.deny_unknown_fields
     }
 
-    pub fn tag(&self) -> Option<&str> {
-        self.tag.as_deref()
+    /// Returns the key of the tag of internally and adjacently tagged enums.
+    pub fn tag(&self) -> Option<&Name> {
+        self.tag.as_ref()
     }
 
-    pub fn content(&self) -> Option<&str> {
-        self.content.as_deref()
+    /// Returns the aliases of the tag key.
+    pub fn tag_aliases(&self) -> &[Name] {
+        &self.tag_aliases
+    }
+
+    /// Returns the key of the content of adjacently tagged enums.
+    pub fn content(&self) -> Option<&Name> {
+        self.content.as_ref()
+    }
+
+    /// Returns the aliases of the content key.
+    pub fn content_aliases(&self) -> &[Name] {
+        &self.content_aliases
+    }
+
+    /// Rejects tag and content keys (with their aliases) that are given more
+    /// than once.
+    ///
+    /// Only string literals can be compared, keys from constants are
+    /// compared at runtime (the tag wins).
+    fn check_tag_keys(&self) -> syn::Result<()> {
+        let keys = (self.tag.iter().map(|x| (x, "tag")))
+            .chain(self.tag_aliases.iter().map(|x| (x, "tag_alias")))
+            .chain(self.content.iter().map(|x| (x, "content")))
+            .chain(self.content_aliases.iter().map(|x| (x, "content_alias")))
+            .filter_map(|(name, attr)| Some((name.as_lit()?, attr)))
+            .collect::<Vec<_>>();
+        for (idx, (key, attr)) in keys.iter().enumerate() {
+            if keys[..idx].iter().any(|(other, _)| other == key) {
+                return Err(syn::Error::new(
+                    self.span_of(attr),
+                    format!("`{}` is used more than once as tag or content key", key),
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn untagged(&self) -> bool {

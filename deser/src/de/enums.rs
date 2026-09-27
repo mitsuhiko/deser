@@ -521,6 +521,39 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     }
 }
 
+/// The key of the tag or the content of a tagged enum.
+///
+/// Besides its name the key can be given by one of its aliases.
+#[derive(Debug, Clone, Copy)]
+pub struct EnumKey {
+    /// The name of the key.
+    pub name: &'static str,
+    /// Other names of the key which are accepted when deserializing.
+    pub aliases: &'static [&'static str],
+}
+
+impl EnumKey {
+    /// Checks if a key is this key.
+    #[inline]
+    fn matches(&self, key: &str) -> bool {
+        key == self.name || self.aliases.contains(&key)
+    }
+
+    /// Checks if a recorded key is this key.
+    #[inline]
+    fn matches_recorded(&self, key: &Recording) -> bool {
+        key.as_str().is_some_and(|key| self.matches(key))
+    }
+}
+
+/// Creates the error for a key that is given more than once.
+fn duplicate_key(what: &str, key: &str) -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        format!("duplicate {} `{}`", what, key),
+    )
+}
+
 /// A sink for adjacently tagged enums.
 ///
 /// The variant name is stored in the tag field and the content in the content
@@ -528,8 +561,8 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
 /// once the tag is known.
 pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
-    tag: &'static str,
-    content: &'static str,
+    tag: EnumKey,
+    content: EnumKey,
     name: &'static str,
     variants: Variants<'de, E>,
     key: Recording,
@@ -547,8 +580,8 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
     /// rejected if `deny_unknown_fields` is set.
     pub fn handle(
         out: &'a mut Option<E>,
-        tag: &'static str,
-        content: &'static str,
+        tag: EnumKey,
+        content: EnumKey,
         name: &'static str,
         variants: Variants<'de, E>,
         deny_unknown_fields: bool,
@@ -590,10 +623,6 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
         };
         self.start_variant(variant, state)
     }
-
-    fn duplicate(&self, key: &str) -> Error {
-        Error::new(ErrorKind::Unexpected, format!("duplicate field `{}`", key))
-    }
 }
 
 impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
@@ -608,14 +637,14 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let key = take(&mut self.key);
-        if key.as_str() == Some(self.tag) {
+        if self.tag.matches_recorded(&key) {
             if self.tag_value.is_some() {
-                return Err(self.duplicate(self.tag));
+                return Err(duplicate_key("field", self.tag.name));
             }
             Ok(self.tag_value.insert(Recording::new()).recorder())
-        } else if key.as_str() == Some(self.content) {
+        } else if self.content.matches_recorded(&key) {
             if self.has_content {
-                return Err(self.duplicate(self.content));
+                return Err(duplicate_key("field", self.content.name));
             }
             self.has_content = true;
             Ok(match self.variant {
@@ -626,7 +655,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
             unknown_field(
                 key.as_str().unwrap_or("?"),
                 key.offset(),
-                &[self.tag, self.content],
+                &[self.tag.name, self.content.name],
                 self.deny_unknown_fields,
                 state,
             )?;
@@ -637,7 +666,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.ensure_variant(state)?;
         if self.variant.is_none() {
-            let variant = self.variants.resolve_missing(self.tag, state)?;
+            let variant = self.variants.resolve_missing(self.tag.name, state)?;
             self.start_variant(variant, state)?;
         }
         let variant = self.variant.as_mut().unwrap();
@@ -692,13 +721,15 @@ pub fn untagged_handle<'a, 'de, E: Send>(
 /// pairs are forwarded to it directly.
 pub struct InternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
-    tag: &'static str,
+    tag: EnumKey,
     name: &'static str,
     variants: Variants<'de, E>,
     key: Recording,
     pending: Vec<(Recording, Recording)>,
     tag_value: Option<Recording>,
     variant: Option<BoxedVariant<'de, E>>,
+    // if the key of the variant was recorded to look for the tag
+    variant_key: bool,
     // if the enum is flattened into a struct
     flattened: bool,
     // the errors for keys that were taken but the variant did not use
@@ -709,7 +740,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an internally tagged enum.
     pub fn handle(
         out: &'a mut Option<E>,
-        tag: &'static str,
+        tag: EnumKey,
         name: &'static str,
         variants: Variants<'de, E>,
     ) -> SinkHandle<'a, 'de> {
@@ -722,6 +753,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
             pending: Vec::new(),
             tag_value: None,
             variant: None,
+            variant_key: false,
             flattened: false,
             unclaimed: Vec::new(),
         })
@@ -774,25 +806,70 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         Ok(())
     }
 
+    /// Receives the next key.
+    ///
+    /// Once the variant is known, the keys still need to be checked for the
+    /// tag (which is given more than once then), so they are recorded and
+    /// replayed into the variant.  Keys that are atoms (the common case) are
+    /// checked without recording them in
+    /// [`__private_key_atom`](Sink::__private_key_atom).
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.ensure_variant(state)?;
-        if let Some(variant) = &mut self.variant {
-            return variant.sink().next_key(state);
-        }
+        self.variant_key = self.variant.is_some();
         Ok(self.key.recorder())
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.ensure_variant(state)?;
+        match self.variant {
+            Some(ref mut variant) => {
+                if atom.as_str().is_some_and(|key| self.tag.matches(key)) {
+                    return Err(duplicate_key("tag", self.tag.name));
+                }
+                variant.sink().__private_key_atom(atom, state)
+            }
+            None => {
+                self.key.set_atom(&atom, state);
+                Ok(())
+            }
+        }
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.ensure_variant(state)?;
+        match self.variant {
+            Some(ref mut variant) => {
+                if atom.as_str().is_some_and(|key| self.tag.matches(key)) {
+                    return Err(duplicate_key("tag", self.tag.name));
+                }
+                variant.sink().__private_borrowed_key_atom(atom, state)
+            }
+            None => {
+                self.key.set_atom(&atom, state);
+                Ok(())
+            }
+        }
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(variant) = &mut self.variant {
+            if take(&mut self.variant_key) {
+                let key = take(&mut self.key);
+                if self.tag.matches_recorded(&key) {
+                    return Err(duplicate_key("tag", self.tag.name));
+                }
+                key.replay(variant.sink().next_key(state)?, state)?;
+            }
             return variant.sink().next_value(state);
         }
         let key = take(&mut self.key);
-        if key.as_str() == Some(self.tag) {
+        if self.tag.matches_recorded(&key) {
             if self.tag_value.is_some() {
-                return Err(Error::new(
-                    ErrorKind::Unexpected,
-                    format!("duplicate tag `{}`", self.tag),
-                ));
+                return Err(duplicate_key("tag", self.tag.name));
             }
             return Ok(self.tag_value.insert(Recording::new()).recorder());
         }
@@ -814,12 +891,9 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         self.flattened = true;
-        if key == self.tag {
+        if self.tag.matches(key) {
             if self.tag_value.is_some() {
-                return Err(Error::new(
-                    ErrorKind::Unexpected,
-                    format!("duplicate tag `{}`", self.tag),
-                ));
+                return Err(duplicate_key("tag", self.tag.name));
             }
             return Ok(Some(self.tag_value.insert(Recording::new()).recorder()));
         }
@@ -836,7 +910,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.ensure_variant(state)?;
         if self.variant.is_none() {
-            let variant = self.variants.resolve_missing(self.tag, state)?;
+            let variant = self.variants.resolve_missing(self.tag.name, state)?;
             self.start_variant(variant, state)?;
         }
         let variant = self.variant.as_mut().unwrap();

@@ -192,6 +192,10 @@
 //!   tag field.
 //! * `#[deser(tag = "...", content = "...")]`: makes the enum adjacently
 //!   tagged with the given tag and content fields.
+//! * `#[deser(tag_alias = "...")]` and `#[deser(content_alias = "...")]`:
+//!   accepts other keys for the tag and the content when deserializing.  They
+//!   can be given more than once.  The tag is an error if it's given more
+//!   than once (under any of its keys).
 //! * `#[deser(untagged)]`: makes the enum untagged.
 //! * `#[deser(deny_unknown_fields)]`: rejects unknown keys in struct variants
 //!   (and the unit variants of internally tagged enums) and keys other than
@@ -476,16 +480,17 @@
 //!
 //! ## Names
 //!
-//! `rename` and `alias` take string literals or expressions that are
-//! strings at compile time: paths to constants and macro invocations such
-//! as `concat!(...)`.  This is useful for names that are shared with other
-//! code:
+//! `rename`, `alias`, `tag`, `content` and their aliases take string
+//! literals or expressions that are strings at compile time: paths to
+//! constants and macro invocations such as `concat!(...)`.  This is useful
+//! for names that are shared with other code:
 //!
 //! ```
 //! use deser::{Deserialize, Serialize};
 //!
 //! mod keys {
 //!     pub const ID: &str = "@id";
+//!     pub const TYPE: &str = "@type";
 //! }
 //!
 //! #[derive(Serialize, Deserialize)]
@@ -495,6 +500,12 @@
 //!     id: String,
 //!     #[deser(rename = concat!("x-", "parent"))]
 //!     parent: Option<String>,
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = keys::TYPE, tag_alias = "type")]
+//! pub enum Resource {
+//!     Node(Node),
 //! }
 //! ```
 //!

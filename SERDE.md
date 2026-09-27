@@ -227,9 +227,11 @@ which is parsed like the tag it's compared with.
 
 Serde only takes string literals as names, which is why names cannot be
 shared through constants or built with `concat!`.  Deser takes paths to
-constants and macro invocations as well.  `#[deser(alias_all = "...")]`
-adds aliases in a name style to all fields or variants, for instance to
-read data written with a different convention.
+constants and macro invocations as well, also for the tag and content keys
+of tagged enums.  `#[deser(alias_all = "...")]` adds aliases in a name style
+to all fields or variants, for instance to read data written with a
+different convention.  The tag and content keys can have aliases too
+(`#[deser(tag_alias = "...")]`, `#[deser(content_alias = "...")]`).
 
 **Related issues:**
 
@@ -237,6 +239,7 @@ read data written with a different convention.
 * [serde: Allow rename of container with &'static str #2485](https://github.com/serde-rs/serde/issues/2485)
 * [serde: Rename With Expressions #1964](https://github.com/serde-rs/serde/issues/1964)
 * [serde: Consider supporting concat! macro in attributes #1636](https://github.com/serde-rs/serde/issues/1636)
+* [serde: Enum tag alias #2324](https://github.com/serde-rs/serde/issues/2324)
 
 ## Updating Values
 

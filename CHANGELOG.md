@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(tag_alias = "...")]` and `#[deser(content_alias =
+  "...")]` for internally and adjacently tagged enums which accept other
+  keys for the tag and the content.  `tag` and `content` (and their
+  aliases) take paths to constants and macro invocations besides string
+  literals, like `rename`.
+- Internally tagged enums reject a tag that is given again after the
+  variant is known (``duplicate tag `type` ``).  It was passed to the
+  variant before which ignored it unless it denied unknown fields, only
+  flattened enums rejected it.
 - Added `Deserialize::deserialize_update`, `DeserializeDriver::update` and
   `Deserializer::update` which update an existing value.  Derived structs
   update the fields that are given and keep the others (nested structs are

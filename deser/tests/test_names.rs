@@ -200,3 +200,158 @@ fn test_variant_expressions() {
         TaggedCase::Upper { value: 1 }
     );
 }
+
+const KIND: &str = "kind";
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(tag = "type", tag_alias = KIND, tag_alias = "t")]
+enum Internal {
+    Circle { radius: u32 },
+    Empty,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[deser(tag = "outer")]
+enum Outer {
+    Inner(Internal),
+}
+
+#[test]
+fn test_tag_aliases() {
+    let circle = Internal::Circle { radius: 1 };
+    // the name is used for serialization
+    assert_eq!(
+        serialize(&circle),
+        map(&[("type", "Circle".into()), ("radius", 1u64.into())])
+    );
+    for tag in ["type", "kind", "t"] {
+        // the tag first and last
+        let rv = deserialize::<Internal>(map(&[(tag, "Circle".into()), ("radius", 1u64.into())]));
+        assert_eq!(rv.unwrap(), circle);
+        let rv = deserialize::<Internal>(map(&[("radius", 1u64.into()), (tag, "Circle".into())]));
+        assert_eq!(rv.unwrap(), circle);
+        let rv = deserialize::<Internal>(map(&[(tag, "Empty".into())]));
+        assert_eq!(rv.unwrap(), Internal::Empty);
+    }
+    // errors name the tag by its name
+    let rv = deserialize::<Internal>(map(&[("radius", 1u64.into())]));
+    assert_eq!(rv.unwrap_err().message(), "missing tag `type`");
+    let rv = deserialize::<Internal>(map(&[
+        ("radius", 1u64.into()),
+        ("kind", "Circle".into()),
+        ("type", "Circle".into()),
+    ]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate tag `type`");
+    // also once the variant is known
+    let events = map(&[
+        ("kind", "Circle".into()),
+        ("radius", 1u64.into()),
+        ("t", "Empty".into()),
+    ]);
+    let rv = deserialize::<Internal>(events.clone());
+    assert_eq!(rv.unwrap_err().message(), "duplicate tag `type`");
+    // and in the content of internally tagged enums: the keys before
+    // the outer tag are passed to the inner enum by `next_key`
+    let rv = deserialize::<Outer>(map(&[
+        ("kind", "Circle".into()),
+        ("radius", 1u64.into()),
+        ("t", "Empty".into()),
+        ("outer", "Inner".into()),
+    ]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate tag `type`");
+    let rv = deserialize::<Outer>(map(&[
+        ("kind", "Circle".into()),
+        ("radius", 1u64.into()),
+        ("outer", "Inner".into()),
+    ]));
+    assert_eq!(rv.unwrap(), Outer::Inner(circle));
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Flattened {
+    name: String,
+    #[deser(flatten)]
+    shape: Internal,
+}
+
+#[test]
+fn test_tag_aliases_flattened() {
+    let expected = Flattened {
+        name: "a".into(),
+        shape: Internal::Circle { radius: 1 },
+    };
+    for events in [
+        map(&[
+            ("name", "a".into()),
+            ("kind", "Circle".into()),
+            ("radius", 1u64.into()),
+        ]),
+        map(&[
+            ("radius", 1u64.into()),
+            ("t", "Circle".into()),
+            ("name", "a".into()),
+        ]),
+    ] {
+        assert_eq!(deserialize::<Flattened>(events).unwrap(), expected);
+    }
+    let rv = deserialize::<Flattened>(map(&[
+        ("name", "a".into()),
+        ("t", "Circle".into()),
+        ("type", "Circle".into()),
+        ("radius", 1u64.into()),
+    ]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate tag `type`");
+}
+
+mod keys {
+    pub const TAG: &str = "t";
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(
+    tag = keys::TAG,
+    tag_alias = "type",
+    content = "c",
+    content_alias = "data",
+    deny_unknown_fields
+)]
+enum Adjacent {
+    Value(u32),
+    Empty,
+}
+
+#[test]
+fn test_content_aliases() {
+    assert_eq!(
+        serialize(&Adjacent::Value(1)),
+        map(&[("t", "Value".into()), ("c", 1u64.into())])
+    );
+    for (tag, content) in [("t", "c"), ("type", "data"), ("t", "data")] {
+        let rv = deserialize::<Adjacent>(map(&[(tag, "Value".into()), (content, 1u64.into())]));
+        assert_eq!(rv.unwrap(), Adjacent::Value(1));
+        let rv = deserialize::<Adjacent>(map(&[(content, 1u64.into()), (tag, "Value".into())]));
+        assert_eq!(rv.unwrap(), Adjacent::Value(1));
+        let rv = deserialize::<Adjacent>(map(&[(tag, "Empty".into())]));
+        assert_eq!(rv.unwrap(), Adjacent::Empty);
+    }
+    // errors name the keys by their names
+    let rv = deserialize::<Adjacent>(map(&[("data", 1u64.into())]));
+    assert_eq!(rv.unwrap_err().message(), "missing tag `t`");
+    let rv = deserialize::<Adjacent>(map(&[
+        ("type", "Value".into()),
+        ("c", 1u64.into()),
+        ("data", 2u64.into()),
+    ]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate field `c`");
+    let rv = deserialize::<Adjacent>(map(&[
+        ("t", "Value".into()),
+        ("type", "Value".into()),
+        ("c", 1u64.into()),
+    ]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate field `t`");
+    let rv = deserialize::<Adjacent>(map(&[("t", "Empty".into()), ("x", 1u64.into())]));
+    assert_eq!(
+        rv.unwrap_err().message(),
+        "unknown field `x`, expected `t` or `c`"
+    );
+}

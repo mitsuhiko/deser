@@ -20,7 +20,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
 use crate::attr::{
-    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs,
+    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, UnnamedFieldAttrs,
     VariantName,
 };
 use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
@@ -28,8 +28,8 @@ use crate::bound::{BoundField, collect_idents, where_clause_for_fields};
 #[derive(Copy, Clone)]
 enum Repr<'a> {
     External,
-    Internal { tag: &'a str },
-    Adjacent { tag: &'a str, content: &'a str },
+    Internal { tag: &'a Name },
+    Adjacent { tag: &'a Name, content: &'a Name },
     Untagged,
 }
 
@@ -759,13 +759,14 @@ pub fn derive_deserialize(
             )
         }
         Repr::Internal { tag } => {
+            let tag_key = enum_key(tag, container_attrs.tag_aliases());
             let (table_support, table) = variants_table;
             (
                 table_support,
                 quote! {
                     __deser::__derive::InternallyTaggedSink::handle(
                         __slot,
-                        #tag,
+                        #tag_key,
                         __TYPE_NAME,
                         #table,
                     )
@@ -773,6 +774,8 @@ pub fn derive_deserialize(
             )
         }
         Repr::Adjacent { tag, content } => {
+            let tag_key = enum_key(tag, container_attrs.tag_aliases());
+            let content_key = enum_key(content, container_attrs.content_aliases());
             let (table_support, table) = variants_table;
             let deny = container_attrs.deny_unknown_fields();
             (
@@ -780,8 +783,8 @@ pub fn derive_deserialize(
                 quote! {
                     __deser::__derive::AdjacentlyTaggedSink::handle(
                         __slot,
-                        #tag,
-                        #content,
+                        #tag_key,
+                        #content_key,
                         __TYPE_NAME,
                         #table,
                         #deny,
@@ -854,11 +857,21 @@ pub fn derive_deserialize(
     })
 }
 
+/// Returns an `EnumKey` for the tag or content key of a tagged enum.
+fn enum_key(name: &Name, aliases: &[Name]) -> TokenStream {
+    quote! {
+        __deser::__derive::EnumKey {
+            name: #name,
+            aliases: &[#(#aliases),*],
+        }
+    }
+}
+
 /// Builds a `FieldsSer` for the content fields of a struct variant.
 fn fields_ser(
     info: &VariantInfo,
     container_attrs: &ContainerAttrs,
-    tag: Option<(&str, TokenStream)>,
+    tag: Option<(&Name, TokenStream)>,
 ) -> syn::Result<TokenStream> {
     let tag_push = tag.map(|(tag, handle)| {
         quote! {

@@ -654,4 +654,50 @@
 ///     field: Option<u32>,
 /// }
 /// ```
+///
+/// Aliases of the tag and the content need a tag and a content.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag_alias = "kind")]
+/// enum Test {
+///     A { a: u32 },
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "t", content_alias = "data")]
+/// enum Test {
+///     A(u32),
+/// }
+/// ```
+///
+/// The tag and the content cannot share a key.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "t", content = "c", tag_alias = "c")]
+/// enum Test {
+///     A(u32),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = "t", content = "t")]
+/// enum Test {
+///     A(u32),
+/// }
+/// ```
+///
+/// Tag keys are strings or constants.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(tag = 1)]
+/// enum Test {
+///     A { a: u32 },
+/// }
+/// ```
 pub struct DeriveErrors;
