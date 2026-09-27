@@ -679,3 +679,25 @@ fn test_error_locations() {
         "Unexpected: too many items at line 1 column 11"
     );
 }
+
+#[test]
+fn test_plain_scalars() {
+    // plain scalars are slices of the input unless lines are folded
+    let value: BTreeMap<String, String> =
+        from_str("a: äöü x  y\nb: äöü\n  ÿ z\n\n  ž  w\nc: x:y,[z]\nd: -x#y #z\ne: a\n  # b\n")
+            .unwrap();
+    assert_eq!(value["a"], "äöü x  y");
+    assert_eq!(value["b"], "äöü ÿ z\nž  w");
+    assert_eq!(value["c"], "x:y,[z]");
+    assert_eq!(value["d"], "-x#y");
+    assert_eq!(value["e"], "a");
+
+    let value: Vec<String> = from_str("[äöü x, a:b, c\n  d]").unwrap();
+    assert_eq!(value, ["äöü x", "a:b", "c d"]);
+
+    // columns count characters
+    let err = from_str::<BTreeMap<String, String>>("k: äöü: x").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(1), Some(7)));
+    let err = from_str::<Vec<String>>("[äöü x]]").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(1), Some(8)));
+}

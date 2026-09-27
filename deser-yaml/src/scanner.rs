@@ -1448,16 +1448,48 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
+    /// Finds the end of a run of characters of a plain scalar (up to
+    /// whitespace, a line break or an indicator that ends the scalar).
+    ///
+    /// Returns the offset of the end and the number of characters.
+    #[inline]
+    fn plain_scalar_run(&self, in_flow: bool) -> (usize, usize) {
+        let bytes = self.input.as_bytes();
+        let mut pos = self.mark.offset;
+        let mut columns = 0;
+        while let Some(&b) = bytes.get(pos) {
+            match b {
+                b' ' | b'\t' | b'\n' | b'\r' => break,
+                // the character after the colon is ASCII if it ends the
+                // scalar
+                b':' if matches!(
+                    bytes.get(pos + 1),
+                    None | Some(b' ' | b'\t' | b'\n' | b'\r')
+                ) || (in_flow
+                    && matches!(bytes.get(pos + 1), Some(b',' | b'[' | b']' | b'{' | b'}'))) =>
+                {
+                    break;
+                }
+                b',' | b'[' | b']' | b'{' | b'}' if in_flow => break,
+                _ => {}
+            }
+            // count characters, not UTF-8 continuation bytes
+            columns += usize::from(b & 0xc0 != 0x80);
+            pos += 1;
+        }
+        (pos, columns)
+    }
+
     fn scan_plain_scalar(&mut self) -> Result<Token<'a>, Error> {
         let start = self.mark;
         let mut end = self.mark;
         let min_indent = self.indent + 1;
         let in_flow = self.flow_level() > 0;
-        let mut string = String::new();
-        let mut multiline = false;
-        let mut leading_break = String::new();
-        let mut trailing_breaks = String::new();
-        let mut whitespaces = String::new();
+        // The value is a slice of the input unless lines are folded.  Only
+        // then it's copied into `folded`.
+        let mut folded: Option<String> = None;
+        // the number of line breaks after the first one of a fold
+        let mut trailing_breaks = 0;
         let mut leading_blanks = false;
 
         loop {
@@ -1466,40 +1498,31 @@ impl<'a> Scanner<'a> {
             }
 
             let run_start = self.mark;
-            while let Some(c) = self.peek() {
-                if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-                    break;
-                }
-                if c == ':' {
-                    let next = self.peek_at(1);
-                    if is_blankz(next) || (in_flow && is_flow_indicator(next)) {
-                        break;
-                    }
-                }
-                if in_flow && is_flow_indicator(Some(c)) {
-                    break;
-                }
-                if run_start.offset == self.mark.offset {
-                    // joining whitespace before the run
-                    if leading_blanks {
-                        // folded lines differ from the input
-                        multiline = true;
-                        if trailing_breaks.is_empty() {
-                            string.push(' ');
-                        } else {
-                            string.push_str(&trailing_breaks);
-                        }
-                        leading_break.clear();
-                        trailing_breaks.clear();
-                        leading_blanks = false;
+            let (run_end, run_columns) = self.plain_scalar_run(in_flow);
+            if run_end != run_start.offset {
+                // joining the whitespace before the run.  On the same line
+                // it's copied as is (the input already contains it).
+                if leading_blanks {
+                    let string = folded
+                        .get_or_insert_with(|| self.input[start.offset..end.offset].to_string());
+                    if trailing_breaks == 0 {
+                        string.push(' ');
                     } else {
-                        string.push_str(&whitespaces);
-                        whitespaces.clear();
+                        string.extend(std::iter::repeat_n('\n', trailing_breaks));
                     }
+                    trailing_breaks = 0;
+                    leading_blanks = false;
+                } else if let Some(ref mut string) = folded {
+                    string.push_str(&self.input[end.offset..run_start.offset]);
                 }
-                self.read(&mut string);
-            }
-            if run_start.offset != self.mark.offset {
+                if let Some(ref mut string) = folded {
+                    string.push_str(&self.input[run_start.offset..run_end]);
+                }
+                // the run has no blanks or breaks, see `skip`
+                self.mark.offset = run_end;
+                self.mark.column += run_columns;
+                self.line_has_content = true;
+                self.ws_has_tab = false;
                 end = self.mark;
             }
 
@@ -1509,16 +1532,12 @@ impl<'a> Scanner<'a> {
 
             while is_blank_or_break(self.peek()) {
                 if is_blank(self.peek()) {
-                    if !leading_blanks {
-                        whitespaces.push(self.peek().unwrap());
-                    }
                     self.skip();
                 } else {
+                    self.skip_break();
                     if leading_blanks {
-                        self.read_break(&mut trailing_breaks);
+                        trailing_breaks += 1;
                     } else {
-                        whitespaces.clear();
-                        self.read_break(&mut leading_break);
                         leading_blanks = true;
                     }
                 }
@@ -1535,10 +1554,9 @@ impl<'a> Scanner<'a> {
             self.simple_key_allowed = true;
         }
 
-        let value = if multiline {
-            Cow::Owned(string)
-        } else {
-            Cow::Borrowed(&self.input[start.offset..end.offset])
+        let value = match folded {
+            Some(string) => Cow::Owned(string),
+            None => Cow::Borrowed(&self.input[start.offset..end.offset]),
         };
         Ok(Token {
             kind: TokenKind::Scalar(ScalarStyle::Plain, value),
