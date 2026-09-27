@@ -257,6 +257,18 @@ impl Extensions {
     }
 
     /// Captures the values of the replayable extensions and the event data.
+    ///
+    /// Returns `None` if there is nothing to capture.  Most of the time
+    /// there is neither, this is cheap to check.
+    #[inline]
+    pub fn snapshot_if_any(&self) -> Option<Snapshot> {
+        if self.replayable.is_empty() && !self.has_event_data {
+            return None;
+        }
+        Some(self.snapshot()).filter(|snapshot| !snapshot.is_empty())
+    }
+
+    /// Captures the values of the replayable extensions and the event data.
     pub fn snapshot(&self) -> Snapshot {
         let mut snapshot = Snapshot::default();
         if !self.replayable.is_empty() {
@@ -344,6 +356,11 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Returns `true` if nothing was captured.
+    pub fn is_empty(&self) -> bool {
+        self.replayable.is_empty() && self.events.is_empty()
+    }
+
     /// Returns the captured event data.
     pub fn event_data(&self) -> &EventData {
         &self.events

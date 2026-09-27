@@ -133,7 +133,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
 
     /// Creates a new deserializer driver from a sink.
     pub fn from_sink(sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
-        DeserializeDriver::with_state(State::new(), sink)
+        DeserializeDriver::with_state(State::new(), sink, STACK_CAPACITY)
     }
 
     /// Runs a nested driver within an ongoing deserialization.
@@ -153,7 +153,9 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     ) -> R {
         let depth = state.depth;
         let outer_is_map_key = state.is_map_key;
-        let mut driver = DeserializeDriver::with_state(state.take(), sink);
+        // replayed values are small and often atoms, the stack is only
+        // allocated once a container is opened
+        let mut driver = DeserializeDriver::with_state(state.take(), sink, 0);
         driver.core.state.is_map_key = is_map_key;
         let rv = f(&mut driver);
         *state = driver.core.state.take();
@@ -164,11 +166,15 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         rv
     }
 
-    fn with_state(state: State, sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
+    fn with_state(
+        state: State,
+        sink: SinkHandle<'a, 'de>,
+        capacity: usize,
+    ) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver {
             core: DriverCore {
                 state,
-                sink_stack: Vec::with_capacity(STACK_CAPACITY),
+                sink_stack: Vec::with_capacity(capacity),
                 // SAFETY: the driver cannot outlive 'a
                 root: Some(unsafe { erase_lifetime(sink) }),
                 pending: None,

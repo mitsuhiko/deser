@@ -97,7 +97,20 @@ struct RecordedEvent<'de> {
     // the atom was delivered borrowed and is replayed borrowed
     borrowed: bool,
     input_range: (usize, usize),
-    snapshot: Snapshot,
+    // `None` if the snapshot is empty, which it is unless there are
+    // replayable extensions or event data.  This keeps recorded events small.
+    snapshot: Option<Box<Snapshot>>,
+}
+
+impl RecordedEvent<'_> {
+    /// Restores the replayable extensions and the event data of the event.
+    fn restore(&self, state: &mut State) {
+        match self.snapshot {
+            Some(ref snapshot) => state.extensions_mut().restore(snapshot),
+            // restoring an empty snapshot only clears the event data
+            None => state.clear_event_data(),
+        }
+    }
 }
 
 // recordings are stored in sinks, they must not prevent them from moving
@@ -137,7 +150,13 @@ trait Target<'de>: Send {
     fn push_borrowed(&mut self, is_root: bool, atom: Atom<'de>, state: &State);
 
     fn is_empty(&self) -> bool;
+
+    /// Reserves space for the events of a container.
+    fn reserve(&mut self);
 }
+
+/// The number of events reserved for a recorded container.
+const CONTAINER_CAPACITY: usize = 16;
 
 impl<'de> Target<'de> for RecordBuf<'de> {
     fn push(&mut self, is_root: bool, event: Event<'static>, state: &State) {
@@ -150,6 +169,10 @@ impl<'de> Target<'de> for RecordBuf<'de> {
 
     fn is_empty(&self) -> bool {
         self.events.is_empty()
+    }
+
+    fn reserve(&mut self) {
+        self.events.reserve(CONTAINER_CAPACITY);
     }
 }
 
@@ -165,6 +188,10 @@ impl<'de> Target<'de> for Recording {
 
     fn is_empty(&self) -> bool {
         self.0.events.is_empty()
+    }
+
+    fn reserve(&mut self) {
+        self.0.events.reserve(CONTAINER_CAPACITY);
     }
 }
 
@@ -332,7 +359,7 @@ impl<'de> RecordBuf<'de> {
         let live = state.extensions().snapshot();
         let live_range = state.input_range;
         state.input_range = first.input_range;
-        state.extensions_mut().restore(&first.snapshot);
+        first.restore(state);
         let err = state.attach_error_context(err);
         state.extensions_mut().restore(&live);
         state.input_range = live_range;
@@ -370,10 +397,14 @@ impl<'de> RecordBuf<'de> {
     where
         'de: 'a,
     {
-        let live = state.extensions().snapshot();
+        let live = state.extensions().snapshot_if_any();
         let live_range = state.input_range;
         let rv = self.replay_events(sink, state);
-        state.extensions_mut().restore(&live);
+        match live {
+            Some(live) => state.extensions_mut().restore(&live),
+            // restoring an empty snapshot only clears the event data
+            None => state.clear_event_data(),
+        }
         state.input_range = live_range;
         rv
     }
@@ -386,7 +417,7 @@ impl<'de> RecordBuf<'de> {
             for recorded in self.events.iter() {
                 let state = driver.state_mut();
                 state.input_range = recorded.input_range;
-                state.extensions_mut().restore(&recorded.snapshot);
+                recorded.restore(state);
                 match recorded.event {
                     Event::Atom(ref atom) if recorded.borrowed => {
                         driver.emit_borrowed(Event::Atom(atom.clone()))?
@@ -413,7 +444,7 @@ fn record<'de>(
         event,
         borrowed,
         input_range: state.input_range,
-        snapshot: state.extensions().snapshot(),
+        snapshot: state.extensions().snapshot_if_any().map(Box::new),
     });
 }
 
@@ -453,6 +484,8 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         let shape = state.container_shape();
+        // containers have a few events at least, skip the smallest sizes
+        self.recording.reserve();
         self.recording.push(true, Event::MapStart(shape), state);
         self.end = Some(Event::MapEnd);
         Ok(())
@@ -460,6 +493,7 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         let shape = state.container_shape();
+        self.recording.reserve();
         self.recording.push(true, Event::SeqStart(shape), state);
         self.end = Some(Event::SeqEnd);
         Ok(())
@@ -471,6 +505,38 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
 
     fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         Ok(self.child())
+    }
+
+    // atoms in the container are recorded without creating a sink for them
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.recording
+            .push(false, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.recording
+            .push(false, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.recording.push_borrowed(false, atom, state);
+        Ok(())
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.recording.push_borrowed(false, atom, state);
+        Ok(())
     }
 
     /// Takes all keys if the recording is flattened into a struct.
@@ -572,6 +638,37 @@ impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
         Ok(self.child())
     }
 
+    // atoms in the container are recorded without creating a sink for them
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.target
+            .push(false, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.target
+            .push(false, Event::Atom(atom.to_static()), state);
+        Ok(())
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.target.push_borrowed(false, atom, state);
+        Ok(())
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.target.push_borrowed(false, atom, state);
+        Ok(())
+    }
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             self.target.push(self.is_root, end, state);
@@ -636,9 +733,12 @@ impl<'a> RecordedValue<'a> {
                 ));
             }
         };
-        state
-            .extensions_mut()
-            .restore_event_data(snapshot.event_data());
+        match snapshot {
+            Some(snapshot) => state
+                .extensions_mut()
+                .restore_event_data(snapshot.event_data()),
+            None => state.clear_event_data(),
+        }
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {
             Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
