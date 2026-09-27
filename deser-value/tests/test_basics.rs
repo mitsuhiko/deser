@@ -170,6 +170,20 @@ fn test_maps() {
     // removing retains the order
     assert_eq!(map.keys().collect::<Vec<_>>(), [&value!("a"), &value!(1)]);
 
+    // removing an entry returns the key
+    map.insert("c", 5);
+    map.insert("d", 6);
+    assert_eq!(map.remove_entry("c"), Some((value!("c"), value!(5))));
+    assert_eq!(map.remove_entry("c"), None);
+    assert_eq!(
+        map.keys().collect::<Vec<_>>(),
+        [&value!("a"), &value!(1), &value!("d")]
+    );
+    assert_eq!(
+        map.remove_entry(&value!("d")),
+        Some((value!("d"), value!(6)))
+    );
+
     map.sort_by(|a, _, b, _| a.as_i64().cmp(&b.as_i64()));
     assert_eq!(map.keys().collect::<Vec<_>>(), [&value!("a"), &value!(1)]);
 
@@ -385,8 +399,70 @@ fn test_meta() {
     // empty meta data is not retained
     value.set_meta(Some(deser_value::Meta::new()));
     assert!(value.meta().is_none());
-    let value = value.with_meta(meta);
+    let mut value = value.with_meta(meta);
     assert!(value.meta().is_some());
+
+    // replacing the kind retains the meta data
+    *value.kind_mut() = Kind::Str("x".into());
+    assert_eq!(value, "x");
+    assert_eq!(value.event_data().unwrap().get::<u32>(), Some(&42));
+
+    // splitting into kind and meta data
+    let (kind, meta) = value.into_parts();
+    assert!(matches!(kind, Kind::Str(ref s) if s == "x"));
+    assert_eq!(meta.unwrap().event_data().get::<u32>(), Some(&42));
+    let (kind, meta) = value!(1).into_parts();
+    assert!(matches!(kind, Kind::U64(1)));
+    assert!(meta.is_none());
+}
+
+#[test]
+fn test_accessors() {
+    assert_eq!(value!(true).as_bool(), Some(true));
+    assert_eq!(value!(false).as_bool(), Some(false));
+    assert_eq!(value!(1).as_bool(), None);
+    assert_eq!(value!("true").as_bool(), None);
+    assert_eq!(value!(null).as_bool(), None);
+
+    assert_eq!(value!('x').as_char(), Some('x'));
+    assert_eq!(value!("x").as_char(), None);
+    assert_eq!(value!(120).as_char(), None);
+
+    let mut value = value!([1, 2]);
+    let seq = value.as_seq_mut().unwrap();
+    seq.push(value!(3));
+    seq[0] = value!("one");
+    assert_eq!(value, value!(["one", 2, 3]));
+    assert!(value!({}).as_seq_mut().is_none());
+    assert!(value!("x").as_seq_mut().is_none());
+}
+
+#[test]
+fn test_seq_repeated() {
+    let mut seq = Seq::new();
+    assert!(!seq.is_repeated());
+    seq.set_repeated(true);
+    assert!(seq.is_repeated());
+    seq.extend([1, 2]);
+
+    // the flag is retained when cloned and serialized
+    assert!(seq.clone().is_repeated());
+    let value = Value::new(Kind::Seq(seq.clone()));
+    let mut events = Vec::new();
+    deser::ser::SerializeDriver::new(&value)
+        .drive(|event, _| {
+            events.push(event.to_static());
+            Ok(())
+        })
+        .unwrap();
+    assert!(matches!(events[0], deser::Event::SeqStart(shape) if shape.is_repeated()));
+    assert!(to_value(&value).unwrap().as_seq().unwrap().is_repeated());
+
+    // but not considered for comparisons
+    assert_eq!(seq, Seq::from(vec![value!(1), value!(2)]));
+
+    seq.set_repeated(false);
+    assert!(!seq.is_repeated());
 }
 
 #[test]
