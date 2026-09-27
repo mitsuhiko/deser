@@ -598,10 +598,18 @@ fn test_bound() {
 fn test_manually_drop() {
     use std::mem::ManuallyDrop;
 
-    let value = roundtrip(&ManuallyDrop::new(vec![1u32]), {
+    let mut original = ManuallyDrop::new(vec![1u32]);
+    let mut value = roundtrip(&original, {
         vec![Event::seq_start(), 1u64.into(), Event::SeqEnd]
     });
     assert_eq!(*value, vec![1]);
+
+    // SAFETY: both values are owned here and never used again, dropping
+    // them keeps miri from reporting the vectors as leaked.
+    unsafe {
+        ManuallyDrop::drop(&mut original);
+        ManuallyDrop::drop(&mut value);
+    }
 }
 
 #[test]
