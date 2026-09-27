@@ -608,6 +608,24 @@
 //! Names that are expressions are not checked for duplicates by the
 //! derive.
 //!
+//! `rename` and `rename_all` can be given for serialization and
+//! deserialization separately, either of which can be left out (the name
+//! of the other direction is not changed then):
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(rename_all(serialize = "camelCase", deserialize = "kebab-case"))]
+//! pub struct Settings {
+//!     // written as `maxItems`, read as `max-items`
+//!     max_items: u32,
+//!     // written as `on`, read as `is-enabled`
+//!     #[deser(rename(serialize = "on"))]
+//!     is_enabled: bool,
+//! }
+//! ```
+//!
 //! ## Validation
 //!
 //! `#[deser(validate = path)]` invokes a function with a reference to the

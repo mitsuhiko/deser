@@ -355,3 +355,75 @@ fn test_content_aliases() {
         "unknown field `x`, expected `t` or `c`"
     );
 }
+
+#[test]
+fn test_directional_renames() {
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename(serialize = "Out", deserialize = "In"))]
+    #[deser(rename_all(serialize = "camelCase", deserialize = "kebab-case"))]
+    struct Renamed {
+        max_items: u32,
+        #[deser(rename(serialize = "on"), alias = "active")]
+        is_enabled: bool,
+        #[deser(rename(deserialize = "input_only"))]
+        other: u32,
+    }
+
+    let value = Renamed {
+        max_items: 1,
+        is_enabled: true,
+        other: 2,
+    };
+    assert_eq!(
+        serialize(&value),
+        map(&[
+            ("maxItems", 1u64.into()),
+            ("on", true.into()),
+            ("other", 2u64.into()),
+        ])
+    );
+    assert_eq!(
+        deserialize::<Renamed>(map(&[
+            ("max-items", 1u64.into()),
+            ("is-enabled", true.into()),
+            ("input_only", 2u64.into()),
+        ]))
+        .unwrap(),
+        value
+    );
+    assert_eq!(
+        deserialize::<Renamed>(map(&[
+            ("max-items", 1u64.into()),
+            ("active", true.into()),
+            ("input_only", 2u64.into()),
+        ]))
+        .unwrap(),
+        value
+    );
+    // the type name for errors is the one for deserialization
+    let err = deserialize::<Renamed>(vec![true.into()]).unwrap_err();
+    assert_eq!(err.message(), "unexpected bool, expected In");
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(tag = "type", rename_all(serialize = "snake_case"))]
+    enum Kind {
+        #[deser(rename(deserialize = 1))]
+        FirstKind {
+            a: u32,
+        },
+        SecondKind,
+    }
+
+    assert_eq!(
+        serialize(&Kind::FirstKind { a: 1 }),
+        map(&[("type", "first_kind".into()), ("a", 1u64.into())])
+    );
+    assert_eq!(
+        deserialize::<Kind>(map(&[("type", 1u64.into()), ("a", 1u64.into())])).unwrap(),
+        Kind::FirstKind { a: 1 }
+    );
+    assert_eq!(
+        deserialize::<Kind>(map(&[("type", "SecondKind".into())])).unwrap(),
+        Kind::SecondKind
+    );
+}

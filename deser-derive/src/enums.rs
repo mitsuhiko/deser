@@ -1077,7 +1077,7 @@ fn fields_ser(
             if container_attrs.skip_serializing_optionals() {
                 conditions.push(field_info.is_optional());
             }
-            let name = attrs.plain_name();
+            let name = attrs.plain_name(Direction::Serialize);
             let field = field(quote! { #name }, field_info.ser_handle());
             quote! {
                 __fields.push(#field);

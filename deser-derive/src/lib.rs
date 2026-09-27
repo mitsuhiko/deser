@@ -57,7 +57,8 @@ fn expand(
     derive: fn(&mut syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>,
 ) -> TokenStream {
     let rv = (|| -> syn::Result<proc_macro2::TokenStream> {
-        let import = match attr::ContainerAttrs::of(input)?.crate_path() {
+        let import = match attr::ContainerAttrs::of(input, attr::Direction::Serialize)?.crate_path()
+        {
             // spanned so that errors point to the path
             Some(path) => quote_spanned! { path.span()=> use #path as __deser; },
             None => quote! {

@@ -124,7 +124,10 @@ fn used_attrs(input: &syn::DeriveInput) -> syn::Result<Vec<(Level, Vec<SeenAttr>
         Ok(())
     }
 
-    let mut rv = vec![(Level::Container, ContainerAttrs::of(input)?.into_seen())];
+    let mut rv = vec![(
+        Level::Container,
+        ContainerAttrs::of(input, Direction::Serialize)?.into_seen(),
+    )];
     match input.data {
         syn::Data::Struct(ref data) => push_fields(&data.fields, &mut rv)?,
         syn::Data::Enum(ref data) => {
@@ -166,7 +169,7 @@ fn where_clause(
 
 /// Derives `Serialize` if the container has an adapter for it.
 pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStream>> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     let Some(adapter) = container_attrs.adapters().ser() else {
         return Ok(None);
     };
@@ -239,7 +242,7 @@ pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStr
 
 /// Derives `Deserialize` if the container has an adapter for it.
 pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStream>> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     let Some(adapter) = container_attrs.adapters().de() else {
         return Ok(None);
     };

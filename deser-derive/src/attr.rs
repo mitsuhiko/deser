@@ -49,6 +49,69 @@ impl Adapters {
     }
 }
 
+/// A value that can differ between serialization and deserialization.
+///
+/// `name = value` sets it for both directions, `name(serialize = value,
+/// deserialize = value)` for each direction on its own.
+#[derive(Clone)]
+pub struct Directional<T> {
+    ser: Option<T>,
+    de: Option<T>,
+}
+
+impl<T> Default for Directional<T> {
+    fn default() -> Self {
+        Directional {
+            ser: None,
+            de: None,
+        }
+    }
+}
+
+impl<T: Clone> Directional<T> {
+    /// Parses the value of the attribute.
+    fn parse(
+        &mut self,
+        meta: &ParseNestedMeta,
+        name: &str,
+        parse: impl Fn(&ParseNestedMeta) -> syn::Result<T>,
+    ) -> syn::Result<()> {
+        if !meta.input.peek(syn::token::Paren) {
+            if self.ser.is_some() || self.de.is_some() {
+                return Err(meta.error(format!("duplicate {} attribute", name)));
+            }
+            let value = parse(meta)?;
+            self.ser = Some(value.clone());
+            self.de = Some(value);
+            return Ok(());
+        }
+        meta.parse_nested_meta(|inner| {
+            let slot = if inner.path.is_ident("serialize") {
+                &mut self.ser
+            } else if inner.path.is_ident("deserialize") {
+                &mut self.de
+            } else {
+                return Err(inner.error("expected `serialize` or `deserialize`"));
+            };
+            let value = parse(&inner)?;
+            set_once(&inner, name, slot, value)
+        })
+    }
+
+    /// Returns the value for a direction.
+    pub fn get(&self, direction: Direction) -> Option<&T> {
+        match direction {
+            Direction::Serialize => self.ser.as_ref(),
+            Direction::Deserialize => self.de.as_ref(),
+        }
+    }
+
+    /// Returns `true` if the value is set for any direction.
+    pub fn any(&self) -> bool {
+        self.ser.is_some() || self.de.is_some()
+    }
+}
+
 /// Collects the `as`, `serialize_as` and `deserialize_as` attributes.
 #[derive(Default)]
 struct AdapterAttrs {
@@ -331,6 +394,9 @@ pub enum TypeDefault {
 
 pub struct ContainerAttrs<'a> {
     ident: &'a syn::Ident,
+    // the direction of the derive, directional attributes are resolved for
+    // it
+    direction: Direction,
     seen: Vec<SeenAttr>,
     adapters: Adapters,
     rename: Option<Name>,
@@ -579,9 +645,13 @@ fn parse_default(meta: &ParseNestedMeta) -> syn::Result<TypeDefault> {
 }
 
 impl<'a> ContainerAttrs<'a> {
-    pub fn of(input: &'a syn::DeriveInput) -> syn::Result<ContainerAttrs<'a>> {
+    pub fn of(
+        input: &'a syn::DeriveInput,
+        direction: Direction,
+    ) -> syn::Result<ContainerAttrs<'a>> {
         let mut rv = ContainerAttrs {
             ident: &input.ident,
+            direction,
             seen: Vec::new(),
             adapters: Adapters::default(),
             rename: None,
@@ -604,6 +674,8 @@ impl<'a> ContainerAttrs<'a> {
         };
         let is_enum = matches!(input.data, syn::Data::Enum(_));
         let mut adapters = AdapterAttrs::default();
+        let mut rename = Directional::default();
+        let mut rename_all = Directional::default();
 
         let seen = parse_deser_attrs(&input.attrs, |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
@@ -613,17 +685,13 @@ impl<'a> ContainerAttrs<'a> {
                 Ok(())
             }
             "rename_all" => {
-                let value = RenameAll::parse(&parse_lit_str(meta)?)?;
-                set_once(meta, name, &mut rv.rename_all, value)
+                rename_all.parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))
             }
             "alias_all" => {
                 rv.alias_all.push(RenameAll::parse(&parse_lit_str(meta)?)?);
                 Ok(())
             }
-            "rename" => {
-                let value = Name::parse(meta)?;
-                set_once(meta, name, &mut rv.rename, value)
-            }
+            "rename" => rename.parse(meta, name, Name::parse),
             "tag" => {
                 let value = Name::parse(meta)?;
                 set_once(meta, name, &mut rv.tag, value)?;
@@ -696,6 +764,8 @@ impl<'a> ContainerAttrs<'a> {
             _ => Err(meta.error("unsupported attribute")),
         })?;
         rv.seen = seen;
+        rv.rename = rename.get(direction).cloned();
+        rv.rename_all = rename_all.get(direction).copied();
 
         if rv.content.is_some() && rv.tag.is_none() {
             return Err(syn::Error::new(
@@ -739,6 +809,11 @@ impl<'a> ContainerAttrs<'a> {
     /// with.
     pub fn adapters(&self) -> &Adapters {
         &self.adapters
+    }
+
+    /// Returns the direction of the derive.
+    pub fn direction(&self) -> Direction {
+        self.direction
     }
 
     pub fn container_name(&self) -> Name {
@@ -1080,7 +1155,7 @@ impl UnnamedFieldAttrs {
 pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
     seen: Vec<SeenAttr>,
-    rename: Option<Name>,
+    rename: Directional<Name>,
     aliases: Vec<Name>,
     default: Option<TypeDefault>,
     flatten: bool,
@@ -1098,7 +1173,7 @@ impl<'a> FieldAttrs<'a> {
         let mut rv = FieldAttrs {
             field,
             seen: Vec::new(),
-            rename: None,
+            rename: Directional::default(),
             aliases: Vec::new(),
             default: None,
             flatten: false,
@@ -1118,10 +1193,7 @@ impl<'a> FieldAttrs<'a> {
                 adapters.parse(name, meta, parse_adapter)?;
                 Ok(())
             }
-            "rename" => {
-                let value = Name::parse(meta)?;
-                set_once(meta, name, &mut rv.rename, value)
-            }
+            "rename" => rv.rename.parse(meta, name, Name::parse),
             "alias" => {
                 rv.aliases.push(Name::parse(meta)?);
                 Ok(())
@@ -1226,7 +1298,7 @@ impl<'a> FieldAttrs<'a> {
             ));
         }
         if rv.tag
-            && (rv.rename.is_some()
+            && (rv.rename.any()
                 || !rv.aliases.is_empty()
                 || rv.default.is_some()
                 || rv.flatten
@@ -1253,7 +1325,8 @@ impl<'a> FieldAttrs<'a> {
 
     pub fn name(&self, container_attrs: &ContainerAttrs) -> Name {
         self.rename
-            .clone()
+            .get(container_attrs.direction())
+            .cloned()
             .unwrap_or_else(|| Name::Lit(container_attrs.get_field_name(self.field)))
     }
 
@@ -1270,9 +1343,10 @@ impl<'a> FieldAttrs<'a> {
     }
 
     /// Returns the name of the field ignoring container level renames.
-    pub fn plain_name(&self) -> Name {
+    pub fn plain_name(&self, direction: Direction) -> Name {
         self.rename
-            .clone()
+            .get(direction)
+            .cloned()
             .unwrap_or_else(|| Name::Lit(self.field.ident.as_ref().unwrap().to_string()))
     }
 
@@ -1512,7 +1586,7 @@ fn unsupported_name(expr: &syn::Expr) -> syn::Error {
 pub struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     seen: Vec<SeenAttr>,
-    rename: Option<VariantName>,
+    rename: Directional<VariantName>,
     aliases: Vec<VariantName>,
     other: bool,
     default: bool,
@@ -1525,7 +1599,7 @@ impl<'a> EnumVariantAttrs<'a> {
         let mut rv = EnumVariantAttrs {
             variant,
             seen: Vec::new(),
-            rename: None,
+            rename: Directional::default(),
             aliases: Vec::new(),
             other: false,
             default: false,
@@ -1535,10 +1609,7 @@ impl<'a> EnumVariantAttrs<'a> {
 
         let mut skip = false;
         let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
-            "rename" => {
-                let value = VariantName::parse(meta)?;
-                set_once(meta, name, &mut rv.rename, value)
-            }
+            "rename" => rv.rename.parse(meta, name, VariantName::parse),
             "alias" => {
                 rv.aliases.push(VariantName::parse(meta)?);
                 Ok(())
@@ -1611,9 +1682,12 @@ impl<'a> EnumVariantAttrs<'a> {
         if let Some(name) = container_attrs.discriminant_name(self.variant) {
             return name.clone();
         }
-        self.rename.clone().unwrap_or_else(|| {
-            VariantName::Str(Name::Lit(container_attrs.get_variant_name(self.variant)))
-        })
+        self.rename
+            .get(container_attrs.direction())
+            .cloned()
+            .unwrap_or_else(|| {
+                VariantName::Str(Name::Lit(container_attrs.get_variant_name(self.variant)))
+            })
     }
 
     /// Returns the aliases of the variant, including those of `alias_all`.

@@ -111,7 +111,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     let type_name = container_attrs.container_name();
     let all_attrs = fields
         .named
@@ -460,7 +460,7 @@ fn derive_indexed_struct(
 }
 
 fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Result<TokenStream> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     if crate::enums::is_data_enum(input, &container_attrs, enumeration) {
         return crate::enums::derive_serialize(input, enumeration, &container_attrs);
     }
@@ -562,7 +562,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
 /// fields the struct is null, with one field the value of the field and
 /// with more fields a sequence.
 fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::Result<TokenStream> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     container_attrs.reject_named_only(st.kind(), Direction::Serialize)?;
     let where_clause = where_clause_for_fields(
         &input.generics,

@@ -97,7 +97,7 @@ pub(crate) const MAX_TUPLE_LEN: usize = 12;
 /// with more fields a sequence.  Skipped fields are filled in with their
 /// default.
 fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::Result<TokenStream> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     container_attrs.reject_named_only(st.kind(), Direction::Deserialize)?;
     let mut where_clause = where_clause_for_fields(
         &input.generics,
@@ -282,7 +282,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let de_generics = with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     let type_name = container_attrs.container_name();
     let all_attrs = fields
         .named
@@ -1224,7 +1224,7 @@ pub fn derive_enum(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
 ) -> syn::Result<TokenStream> {
-    let container_attrs = ContainerAttrs::of(input)?;
+    let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     if crate::enums::is_data_enum(input, &container_attrs, enumeration) {
         return crate::enums::derive_deserialize(input, enumeration, &container_attrs);
     }

@@ -4,6 +4,8 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- `rename` and `rename_all` can differ between serialization and
+  deserialization: `#[deser(rename(serialize = "a", deserialize = "b"))]`.
 - The fields of tuple structs and tuple variants support `skip`,
   `skip_serializing`, `skip_deserializing` and `default = expr` (the value
   of skipped fields).  Skipped fields are not part of the value: with one
