@@ -22,8 +22,10 @@ export CARGO_TERM_PROGRESS_WHEN := never
 endif
 
 # Crates tested with miri (with stacked borrows), ordered by how long they
-# take, the slowest start first.  CI splits them across jobs.
-MIRI_CRATES ?= deser-core deser deser-json deser-cbor deser-msgpack deser-csv deser-path deser-location deser-debug
+# take, the slowest start first.  CI splits them across jobs.  The parsers
+# of deser-json, deser-jsonc and deser-json5 are tested by
+# deser-private-jsontemplate.
+MIRI_CRATES ?= deser-core deser deser-private-jsontemplate deser-json deser-cbor deser-msgpack deser-csv deser-path deser-location deser-debug
 # Crates also tested with tree borrows.  Almost all unsafe code is in the
 # core crate (tested by its own tests and the integration tests of deser),
 # the formats only have simple byte copies.
@@ -38,11 +40,6 @@ MIRI_TEST_ARGS ?=
 
 # keep in sync with `rust-version` in Cargo.toml
 MSRV := 1.88
-
-# the template of the JSON dialect parsers is only the source of generated
-# code (see deser-private-jsontemplate/README.md), its tests are the ones
-# of the generated crates
-TEST_EXCLUDE := --exclude deser-private-jsontemplate
 
 # the targets the crates that support `no_std` are built for (targets
 # without the standard library).  The 32 bit target checks the sizes of
@@ -65,8 +62,8 @@ all: test
 
 test:
 	@$(RUN) -j 2 \
-		"test" "cargo test --workspace $(TEST_EXCLUDE) --all-features --tests" \
-		"doctest" "cargo test --workspace $(TEST_EXCLUDE) --all-features --doc"
+		"test" "cargo test --workspace --all-features --tests" \
+		"doctest" "cargo test --workspace --all-features --doc"
 
 miri-test:
 	@$(RUN) "miri:setup" "cargo +nightly miri setup"
@@ -93,7 +90,7 @@ check-no-std:
 
 # uses its own target directory so it does not invalidate the regular builds
 msrv:
-	@$(RUN) "msrv" "rustup toolchain install $(MSRV) --profile minimal && CARGO_TARGET_DIR=target/msrv cargo +$(MSRV) test --workspace $(TEST_EXCLUDE) --all-features"
+	@$(RUN) "msrv" "rustup toolchain install $(MSRV) --profile minimal && CARGO_TARGET_DIR=target/msrv cargo +$(MSRV) test --workspace --all-features"
 
 doc:
 	@$(RUN) "doc" "cargo doc --all-features"

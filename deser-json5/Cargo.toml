@@ -33,7 +33,6 @@ unicode-ident = "1.0.12"
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
-deser-location = { version = "0.8.0", path = "../deser-location" }
 deser-value = { version = "0.8.0", path = "../deser-value" }
 
 [[test]]

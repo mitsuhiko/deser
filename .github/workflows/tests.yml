@@ -56,7 +56,7 @@ jobs:
           - name: deser, tree borrows
             tree-borrows-crates: deser-core deser
           - name: deser-json
-            crates: deser-json
+            crates: deser-private-jsontemplate deser-json
           - name: other crates
             crates: deser-cbor deser-msgpack deser-path deser-location deser-debug
 

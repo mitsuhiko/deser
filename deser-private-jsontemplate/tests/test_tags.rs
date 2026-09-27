@@ -1,8 +1,9 @@
 //! Variants named by integers and booleans.
+use super::dialect;
 use std::collections::BTreeMap;
 
 use deser::{Deserialize, Serialize};
-use deser_json::{from_str, to_string};
+use dialect::{from_str, to_string};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 enum Level {

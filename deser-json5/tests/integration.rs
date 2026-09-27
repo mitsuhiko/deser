@@ -1,6 +1,3 @@
-//! The integration tests are compiled into a single binary.
-mod test_de;
-#[cfg(feature = "io")]
-mod test_io;
-mod test_json5;
+//! The JSON5 test suite.  The other tests of reading JSON5 are shared with
+//! JSON and JSONC in `deser-private-jsontemplate`.
 mod test_suite;

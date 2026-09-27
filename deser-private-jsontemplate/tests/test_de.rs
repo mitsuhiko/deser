@@ -1,5 +1,6 @@
+use super::{DIALECT, dialect};
 use deser::Deserialize;
-use deser_json::from_str;
+use dialect::from_str;
 
 #[test]
 fn test_basic() {
@@ -100,7 +101,7 @@ fn test_flatten_map() {
             extra: BTreeMap::from([("a".into(), 1), ("b".into(), 2)]),
         }
     );
-    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+    assert_eq!(dialect::to_string(&user).unwrap(), json);
 
     let user: User = from_str(r#"{"id":42}"#).unwrap();
     assert!(user.extra.is_empty());
@@ -120,7 +121,7 @@ fn test_flatten_map() {
     let json = r#"{"name":"x","2":true}"#;
     let numbers: Numbers = from_str(json).unwrap();
     assert_eq!(numbers.numbers, HashMap::from([(2, true)]));
-    assert_eq!(deser_json::to_string(&numbers).unwrap(), json);
+    assert_eq!(dialect::to_string(&numbers).unwrap(), json);
     let err = from_str::<Numbers>(r#"{"name":"x","y":true}"#).unwrap_err();
     assert_eq!(err.message(), "invalid value \"y\", expected u32");
 }
@@ -148,7 +149,7 @@ fn test_flatten_optional() {
             attrs: Some(Attrs { is_admin: true }),
         }
     );
-    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+    assert_eq!(dialect::to_string(&user).unwrap(), json);
 
     // without any of its keys the value is missing
     let json = r#"{"id":42}"#;
@@ -160,7 +161,7 @@ fn test_flatten_optional() {
             attrs: None
         }
     );
-    assert_eq!(deser_json::to_string(&user).unwrap(), json);
+    assert_eq!(dialect::to_string(&user).unwrap(), json);
     let user: User = from_str(r#"{"id":42,"other":true}"#).unwrap();
     assert_eq!(
         user,
@@ -274,7 +275,11 @@ fn test_strings() {
     assert_eq!(s, "a longer string with \"escapes\" and \u{e9} and \\");
     let s: String = from_str("\"日本語のテキストもちゃんと動く\"").unwrap();
     assert_eq!(s, "日本語のテキストもちゃんと動く");
-    assert!(from_str::<String>("\"control \x01 character\"").is_err());
+    // JSON5 only disallows line breaks in strings
+    if !DIALECT.json5 {
+        assert!(from_str::<String>("\"control \x01 character\"").is_err());
+    }
+    assert!(from_str::<String>("\"line \n break\"").is_err());
     assert!(from_str::<String>("\"unterminated string").is_err());
 }
 
@@ -282,13 +287,16 @@ fn test_strings() {
 fn test_syntax_errors() {
     use std::collections::BTreeMap;
 
+    if !DIALECT.trailing_commas {
+        assert!(from_str::<Vec<u32>>("[1,]").is_err());
+        assert!(from_str::<BTreeMap<String, u32>>(r#"{"a":1,}"#).is_err());
+    }
     for json in [
-        "[1,]", "[,1]", "]", "[1 2]", "[1]]", "[1] x", "", "[", "[1", "[1,", "[}",
+        "[,1]", "]", "[1 2]", "[1]]", "[1] x", "", "[", "[1", "[1,", "[}", "[1,,]",
     ] {
         assert!(from_str::<Vec<u32>>(json).is_err(), "accepted {:?}", json);
     }
     for json in [
-        r#"{"a":1,}"#,
         r#"{"a" 1}"#,
         r#"{1: 2}"#,
         r#"{"a":"#,
@@ -363,7 +371,7 @@ fn test_wide_integers() {
     // roundtrip
     let values = vec![u128::MAX, 0, 1 << 100];
     assert_eq!(
-        from_str::<Vec<u128>>(&deser_json::to_string(&values).unwrap()).unwrap(),
+        from_str::<Vec<u128>>(&dialect::to_string(&values).unwrap()).unwrap(),
         values
     );
 }
@@ -456,7 +464,7 @@ fn test_enum_representations() {
 
 #[test]
 fn test_from_slice() {
-    use deser_json::from_slice;
+    use dialect::from_slice;
 
     let x: Vec<u32> = from_slice(b"[1, 2, 3]").unwrap();
     assert_eq!(x, vec![1, 2, 3]);
@@ -496,8 +504,12 @@ fn test_from_slice() {
     // to bytes that could complete it
     assert!(from_slice::<String>(b"\"\xc3\\u00a9\"").is_err());
 
-    // non-ASCII bytes outside of strings are rejected
-    assert!(from_slice::<Vec<u32>>(b"[1,\xc2\xa0 2]").is_err());
+    // non-ASCII bytes outside of strings are rejected (in JSON5 they can be
+    // whitespace)
+    if !DIALECT.json5 {
+        assert!(from_slice::<Vec<u32>>(b"[1,\xc2\xa0 2]").is_err());
+    }
+    assert!(from_slice::<Vec<u32>>(b"[1,\xc2 2]").is_err());
     assert!(from_slice::<Vec<u32>>(b"[1]\xff").is_err());
     assert!(from_slice::<bool>(b"tru\xc3").is_err());
     assert!(from_slice::<u32>(b"1\xff").is_err());
@@ -521,7 +533,7 @@ fn test_borrowing() {
     }
 
     let json = r#"{"name": "demo", "text": "a \"quoted\" text", "tags": ["x", "y"]}"#;
-    let doc: Doc = deser_json::from_str(json).unwrap();
+    let doc: Doc = dialect::from_str(json).unwrap();
     assert_eq!(doc.name, "demo");
     // strings without escapes are slices of the input
     let range = json.as_bytes().as_ptr_range();
@@ -533,10 +545,10 @@ fn test_borrowing() {
 
     // keys and values from byte slices borrow too
     let value: std::collections::BTreeMap<&str, &str> =
-        deser_json::from_slice(br#"{"a": "b"}"#).unwrap();
+        dialect::from_slice(br#"{"a": "b"}"#).unwrap();
     assert_eq!(value["a"], "b");
 
-    let err = deser_json::from_str::<&str>(r#""\n""#).unwrap_err();
+    let err = dialect::from_str::<&str>(r#""\n""#).unwrap_err();
     assert!(err.to_string().contains("expected a borrowed string"));
 }
 
@@ -546,25 +558,25 @@ fn test_exact_numbers() {
 
     // floats are emitted as numbers, types that do not know about them get
     // the float value
-    assert_eq!(deser_json::from_str::<f64>("1.5e3").unwrap(), 1500.0);
-    assert_eq!(deser_json::from_str::<f32>("0.1").unwrap(), 0.1);
+    assert_eq!(dialect::from_str::<f64>("1.5e3").unwrap(), 1500.0);
+    assert_eq!(dialect::from_str::<f32>("0.1").unwrap(), 0.1);
     assert_eq!(
-        deser_json::from_str::<Vec<f64>>("[1.0, -0.5, 2]").unwrap(),
+        dialect::from_str::<Vec<f64>>("[1.0, -0.5, 2]").unwrap(),
         [1.0, -0.5, 2.0]
     );
 
     // decimals and numbers get the exact text
-    let value: Decimal = deser_json::from_str("123456789.123456789123456789").unwrap();
+    let value: Decimal = dialect::from_str("123456789.123456789123456789").unwrap();
     assert_eq!(value.as_str(), "123456789.123456789123456789");
-    let value: Number = deser_json::from_str("1.50E+3").unwrap();
+    let value: Number = dialect::from_str("1.50E+3").unwrap();
     assert_eq!(value.as_str(), "1.50E+3");
     assert_eq!(value.value(), 1500.0);
 
     // integers that do not fit into 128 bits
     let big = "123456789012345678901234567890123456789012345";
-    let value: BigInt = deser_json::from_str(big).unwrap();
+    let value: BigInt = dialect::from_str(big).unwrap();
     assert_eq!(value.to_string(), big);
-    let value: f64 = deser_json::from_str(big).unwrap();
+    let value: f64 = dialect::from_str(big).unwrap();
     assert_eq!(value, 1.2345678901234567e44);
 
     // numbers roundtrip exactly through the serializer
@@ -574,13 +586,13 @@ fn test_exact_numbers() {
         values: Vec<Number<'a>>,
     }
     let json = r#"{"value":0.10000000000000000001,"values":[1.0,1E-400,-0.00]}"#;
-    let doc: Doc = deser_json::from_str(json).unwrap();
-    assert_eq!(deser_json::to_string(&doc).unwrap(), json);
+    let doc: Doc = dialect::from_str(json).unwrap();
+    assert_eq!(dialect::to_string(&doc).unwrap(), json);
 
     // numbers are ignored like other values
     #[derive(deser::Deserialize)]
     struct Empty {}
-    let _: Empty = deser_json::from_str(r#"{"a": 1.5, "b": [2.5]}"#).unwrap();
+    let _: Empty = dialect::from_str(r#"{"a": 1.5, "b": [2.5]}"#).unwrap();
 }
 
 #[test]
@@ -597,7 +609,7 @@ fn test_exact_number_text() {
         rng % n
     };
     let check = |text: &str| {
-        let number: Number = deser_json::from_str(text).unwrap();
+        let number: Number = dialect::from_str(text).unwrap();
         assert_eq!(number.as_str(), text);
     };
     for text in [
@@ -669,8 +681,8 @@ fn test_error_locations() {
         "Unexpected: unexpected character at line 2 column 3"
     );
     assert_eq!(
-        fails::<Vec<u32>>("[1, ]"),
-        "Unexpected: expected a value at line 1 column 5"
+        fails::<Vec<u32>>("[1, , 2]"),
+        "Unexpected: unexpected comma at line 1 column 5"
     );
     assert_eq!(
         fails::<Vec<u32>>("[1, 2"),
@@ -702,7 +714,7 @@ fn test_error_locations() {
     );
 
     // from_slice works on bytes
-    let err = deser_json::from_slice::<Vec<u32>>(b"[1,\n \"x\"]").unwrap_err();
+    let err = dialect::from_slice::<Vec<u32>>(b"[1,\n \"x\"]").unwrap_err();
     assert_eq!((err.line(), err.column()), (Some(2), Some(2)));
 }
 
@@ -712,7 +724,7 @@ fn test_limits() {
 
     let input = r#"{"a": [[1]], "b": "hello"}"#;
     let parse = |limits: Limits| {
-        deser_json::Deserializer::from_str(input)
+        dialect::Deserializer::from_str(input)
             .deserialize_with::<deser::de::Recording, _>(|driver| driver.push_layer(limits))
             .map(|_| ())
             .map_err(|err| err.to_string())
@@ -763,7 +775,7 @@ fn test_lexical_keys() {
 #[test]
 fn test_duplicate_keys() {
     use deser::de::DuplicateKeys;
-    use deser_json::Deserializer;
+    use dialect::Deserializer;
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct Config {
@@ -860,7 +872,7 @@ fn test_error_messages() {
         "lone surrogate in unicode escape in string"
     );
     assert_eq!(
-        msg(from_str::<String>(r#""\x""#).unwrap_err()),
+        msg(from_str::<String>(r#""\1""#).unwrap_err()),
         "invalid escape in string"
     );
     assert_eq!(msg(from_str::<S>("{}").unwrap_err()), "missing field `x`");

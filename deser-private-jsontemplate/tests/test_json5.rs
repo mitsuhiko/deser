@@ -1,9 +1,13 @@
+//! The syntax of JSON5 other than comments and trailing commas.
 use std::collections::BTreeMap;
 
 use deser::Deserialize;
 use deser::ext::Decimal;
-use deser_json5::{DeserializerConfig, from_slice, from_str};
 use deser_location::Spanned;
+
+use super::common::{NEWLINE, STOP, STRICT, check_stream};
+use super::dialect;
+use dialect::{DeserializerConfig, from_slice, from_str};
 
 /// The example from <https://json5.org/>.
 const EXAMPLE: &str = r#"{
@@ -133,4 +137,32 @@ fn test_errors() {
     assert_eq!(fails("{a\n  b: 1}"), "expected colon at 2:3");
     assert_eq!(fails("{a: 0x}"), "expected a hex digit at 1:7");
     assert_eq!(fails("{a: Infinit}"), "unexpected character at 1:13");
+}
+
+#[test]
+fn test_json5_stop() {
+    check_stream(
+        &STOP,
+        "{ünï: 'a]\"}', b: [.5, +1, 0xFF, Infinity,],} 'x\\'y' -Infinity\u{a0}'}' {c: \"'\"}",
+        5,
+    );
+}
+
+#[test]
+fn test_json5_strict() {
+    check_stream(
+        &STRICT,
+        "\u{feff}// c\n{key: 'val\\\nue', n: -.5e1,}\u{2028}",
+        1,
+    );
+}
+
+#[test]
+fn test_json5_newline() {
+    check_stream(&NEWLINE, "'/*'\n{a: 'b\\\nc', d: 1}\n'e\\\r\nf'\n", 3);
+}
+
+#[test]
+fn test_json5_scalars_before_unicode_whitespace() {
+    check_stream(&STOP, "1\u{a0}2\u{2028}Infinity\u{3000}0x10\u{feff}", 4);
 }

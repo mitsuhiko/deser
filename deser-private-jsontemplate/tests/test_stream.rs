@@ -1,6 +1,7 @@
+use super::dialect;
 use deser::de::Recording;
 use deser::{Deserialize, ErrorKind};
-use deser_json::{Deserializer, DeserializerConfig, Trailing};
+use dialect::{Deserializer, DeserializerConfig, Trailing};
 
 const STRICT: DeserializerConfig = DeserializerConfig::new();
 const NEWLINE: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
@@ -28,7 +29,7 @@ fn stream<'a, T: Deserialize<'a>>(
 #[test]
 fn test_default_is_strict() {
     assert_eq!(DeserializerConfig::default(), STRICT);
-    assert_eq!(deser_json::from_str::<u32>(" 1 \n").unwrap(), 1);
+    assert_eq!(dialect::from_str::<u32>(" 1 \n").unwrap(), 1);
     for (input, column) in [
         ("1\n2", "2 column 1"),
         ("[1] x", "1 column 5"),
@@ -37,7 +38,7 @@ fn test_default_is_strict() {
         ("{}{}", "1 column 3"),
     ] {
         assert_eq!(
-            deser_json::from_str::<Recording>(input)
+            dialect::from_str::<Recording>(input)
                 .unwrap_err()
                 .to_string(),
             format!("Unexpected: garbage after input at line {column}")
@@ -49,7 +50,7 @@ fn test_default_is_strict() {
                 .is_err()
         );
     }
-    assert!(deser_json::from_slice::<u32>(b"1 x").is_err());
+    assert!(dialect::from_slice::<u32>(b"1 x").is_err());
 
     // there is only one value
     let mut de = Deserializer::from_str("[1]\n");

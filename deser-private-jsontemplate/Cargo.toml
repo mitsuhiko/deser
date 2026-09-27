@@ -3,7 +3,7 @@ name = "deser-private-jsontemplate"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The template of the JSON dialect parsers (not published)"
+description = "The template and tests of the JSON dialect parsers (not published)"
 license = "Apache-2.0"
 publish = false
 autotests = false
@@ -27,3 +27,12 @@ unicode-ident = "1.0.12"
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-encoding = { path = "../deser-encoding" }
+deser-json5 = { version = "0.8.0", path = "../deser-json5" }
+deser-jsonc = { version = "0.8.0", path = "../deser-jsonc" }
+deser-location = { version = "0.8.0", path = "../deser-location" }
+
+# the tests of reading JSON, JSONC and JSON5
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

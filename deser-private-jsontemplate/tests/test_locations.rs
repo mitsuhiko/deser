@@ -1,3 +1,4 @@
+use super::dialect;
 use deser::Deserialize;
 use deser_location::Spanned;
 
@@ -23,7 +24,7 @@ const INPUT: &str = r#"{
 
 #[test]
 fn test_spans() {
-    let doc: Doc = deser_json::DeserializerConfig::new()
+    let doc: Doc = dialect::DeserializerConfig::new()
         .track_locations(true)
         .from_str(INPUT)
         .unwrap();
@@ -43,7 +44,7 @@ fn test_spans() {
 
 #[test]
 fn test_spans_from_slice() {
-    let doc: Doc = deser_json::DeserializerConfig::new()
+    let doc: Doc = dialect::DeserializerConfig::new()
         .track_locations(true)
         .from_slice(INPUT.as_bytes())
         .unwrap();
@@ -55,7 +56,7 @@ fn test_spans_from_slice() {
 
 #[test]
 fn test_no_tracking() {
-    let doc: Doc = deser_json::from_str(INPUT).unwrap();
+    let doc: Doc = dialect::from_str(INPUT).unwrap();
     assert!(doc.name.span.is_none());
     assert!(doc.nested.span.is_none());
     assert_eq!(doc.list.value[1].value, 23);
@@ -75,7 +76,7 @@ fn test_spans_through_buffering() {
     // the tag comes last, so all fields are buffered and replayed
     let input =
         "{\n  \"url\": \"http://x\",\n  \"headers\": [\"a\", \"b\"],\n  \"type\": \"Http\"\n}";
-    let backend: Backend = deser_json::DeserializerConfig::new()
+    let backend: Backend = dialect::DeserializerConfig::new()
         .track_locations(true)
         .from_str(input)
         .unwrap();
@@ -103,7 +104,7 @@ enum Adjacent {
 #[test]
 fn test_spans_through_enum_buffering() {
     let input = "[\n  \"x\",\n  {\"c\": 42, \"t\": \"Value\"}\n]";
-    let (text, adjacent): (NumberOrText, Adjacent) = deser_json::DeserializerConfig::new()
+    let (text, adjacent): (NumberOrText, Adjacent) = dialect::DeserializerConfig::new()
         .track_locations(true)
         .from_str(input)
         .unwrap();

@@ -1,11 +1,12 @@
 //! Tests for collecting errors (see `State::set_collect_errors`).
+use super::dialect;
 use std::collections::BTreeMap;
 
 use deser::{Deserialize, Error};
 
 /// Deserializes with errors collected.
 fn collect<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
-    deser_json::Deserializer::from_str(json).deserialize_with(|driver| {
+    dialect::Deserializer::from_str(json).deserialize_with(|driver| {
         driver.state_mut().set_collect_errors(true);
     })
 }
@@ -76,7 +77,7 @@ fn test_collect_without_errors() {
 
 #[test]
 fn test_collect_is_off_by_default() {
-    let err = deser_json::from_str::<Vec<u32>>(r#"[1, "a", 2, "b"]"#).unwrap_err();
+    let err = dialect::from_str::<Vec<u32>>(r#"[1, "a", 2, "b"]"#).unwrap_err();
     assert_eq!(err.error_count(), 1);
 }
 
@@ -113,7 +114,7 @@ fn test_collect_duplicate_fields() {
     // duplicate keys are rejected by default
     let input = r#"{"host": "a", "host": "b", "port": 1, "port": 2}"#;
     assert_eq!(
-        deser_json::from_str::<Server>(input)
+        dialect::from_str::<Server>(input)
             .unwrap_err()
             .error_count(),
         1
@@ -129,7 +130,7 @@ fn test_collect_duplicate_fields() {
 
 #[test]
 fn test_max_errors() {
-    let rv = deser_json::Deserializer::from_str(r#"[["a", "b"], ["c"], ["d"]]"#)
+    let rv = dialect::Deserializer::from_str(r#"[["a", "b"], ["c"], ["d"]]"#)
         .deserialize_with::<Vec<Vec<u32>>, _>(|driver| {
             driver.state_mut().set_collect_errors(true);
             driver.state_mut().set_max_errors(2);

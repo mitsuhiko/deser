@@ -1,82 +1,10 @@
-use std::io::Read;
-
 use deser::de::Recording;
-use deser::io::{Reader, Writer};
+use deser::io::Reader;
 use deser::{ErrorKind, Event};
-use deser_json::{Deserializer, DeserializerConfig, SerializerConfig, Trailing};
 
-const STRICT: DeserializerConfig = DeserializerConfig::new();
-const NEWLINE: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
-
-/// A reader that returns the input in chunks of a fixed size.
-struct Chunked<'a> {
-    input: &'a [u8],
-    size: usize,
-}
-
-impl Read for Chunked<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let len = self.size.min(buf.len()).min(self.input.len());
-        buf[..len].copy_from_slice(&self.input[..len]);
-        self.input = &self.input[len..];
-        Ok(len)
-    }
-}
-
-/// Returns the chunk sizes to read an input of `len` bytes in.
-///
-/// Miri is too slow for all sizes, it checks small sizes (which split the
-/// input at every position), powers of two and the whole input.
-fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
-    (1..=len).filter(move |&size| !cfg!(miri) || size <= 3 || size.is_power_of_two() || size == len)
-}
-
-/// A reader that returns its input at once and then blocks forever.
-///
-/// Blocking is simulated by a panic: the reader must not read while a
-/// value is complete.
-struct Blocking<'a>(&'a [u8]);
-
-impl Read for Blocking<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        assert!(!self.0.is_empty(), "read would block");
-        let len = buf.len().min(self.0.len());
-        buf[..len].copy_from_slice(&self.0[..len]);
-        self.0 = &self.0[len..];
-        Ok(len)
-    }
-}
-
-fn events(value: Recording) -> Vec<Event<'static>> {
-    value.events().cloned().collect()
-}
-
-/// Reads all values of a stream in memory.
-fn read_in_memory(config: &DeserializerConfig, input: &str) -> Vec<Vec<Event<'static>>> {
-    let mut de = Deserializer::from_str_with_config(input, config);
-    let mut rv = Vec::new();
-    while !de.is_end() {
-        rv.push(events(de.deserialize::<Recording>().unwrap()));
-    }
-    rv
-}
-
-/// Reads all values of a stream in chunks.
-fn read_chunked(config: &DeserializerConfig, input: &str, size: usize) -> Vec<Vec<Event<'static>>> {
-    let mut reader = Reader::new(
-        Chunked {
-            input: input.as_bytes(),
-            size,
-        },
-        config,
-    );
-    let mut rv = Vec::new();
-    while let Some(value) = reader.read::<Recording>().unwrap() {
-        rv.push(events(value));
-    }
-    rv
-}
+use super::common::{Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, events, read_chunked};
+use super::dialect;
+use dialect::SerializerConfig;
 
 const VALUES: &str = r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
 {"a": {"b": "}]"}, "c": [false]} "\u00e4ä" 42"#;
@@ -84,43 +12,25 @@ const VALUES: &str = r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_stop_in_chunks() {
-    let expected = read_in_memory(&STOP, VALUES);
-    assert_eq!(expected.len(), 11);
-    for size in chunk_sizes(VALUES.len()) {
-        assert_eq!(read_chunked(&STOP, VALUES, size), expected, "size {size}");
-    }
+    check_stream(&STOP, VALUES, 11);
 }
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_values_without_whitespace() {
-    let input = r#"[1]{"a":2}"x"3"#;
-    let expected = read_in_memory(&STOP, input);
-    assert_eq!(expected.len(), 4);
-    for size in chunk_sizes(input.len()) {
-        assert_eq!(read_chunked(&STOP, input, size), expected);
-    }
+    check_stream(&STOP, r#"[1]{"a":2}"x"3"#, 4);
 }
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_newline_in_chunks() {
-    let input = "[1, 2]\n\n  {\"a\": \"b\"}  \r\n\"x\"\n   \n3";
-    let expected = read_in_memory(&NEWLINE, input);
-    assert_eq!(expected.len(), 4);
-    for size in chunk_sizes(input.len()) {
-        assert_eq!(read_chunked(&NEWLINE, input, size), expected);
-    }
+    check_stream(&NEWLINE, "[1, 2]\n\n  {\"a\": \"b\"}  \r\n\"x\"\n   \n3", 4);
 }
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_strict_in_chunks() {
-    let input = " [1, {\"a\": [true]}] \n";
-    let expected = read_in_memory(&STRICT, input);
-    for size in chunk_sizes(input.len()) {
-        assert_eq!(read_chunked(&STRICT, input, size), expected);
-    }
+    check_stream(&STRICT, " [1, {\"a\": [true]}] \n", 1);
     assert_eq!(read_chunked(&STRICT, "  \n", 1), Vec::<Vec<Event>>::new());
 }
 
@@ -142,19 +52,19 @@ fn test_no_read_while_a_value_is_complete() {
 
 #[test]
 fn test_from_reader() {
-    let value: Vec<u32> = deser_json::from_reader(Chunked {
+    let value: Vec<u32> = dialect::from_reader(Chunked {
         input: b" [1, 2,\n 3] ",
         size: 2,
     })
     .unwrap();
     assert_eq!(value, [1, 2, 3]);
 
-    let err = deser_json::from_reader::<Vec<u32>, _>(&b"[1, 2]\n [3]"[..]).unwrap_err();
+    let err = dialect::from_reader::<Vec<u32>, _>(&b"[1, 2]\n [3]"[..]).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: garbage after input at line 2 column 2"
     );
-    let err = deser_json::from_reader::<Vec<u32>, _>(&b"  "[..]).unwrap_err();
+    let err = dialect::from_reader::<Vec<u32>, _>(&b"  "[..]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
 
     // `Trailing::Stop` reads the first value, but it must be the only one
@@ -243,65 +153,6 @@ fn test_errors() {
 }
 
 #[test]
-fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new().trailing(Trailing::Stop));
-    writer.write(&1).unwrap();
-    writer.write(&vec![2, 3]).unwrap();
-    let out = writer.into_inner();
-    assert_eq!(out, b"1\n[2,3]");
-
-    // the output can be read again
-    let mut reader = Reader::new(&out[..], STOP);
-    assert_eq!(reader.read::<u32>().unwrap(), Some(1));
-    assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
-
-    let mut writer = Writer::new(
-        Vec::new(),
-        SerializerConfig::new().trailing(Trailing::Newline),
-    );
-    writer.write(&"a").unwrap();
-    writer.write(&"b").unwrap();
-    assert_eq!(writer.into_inner(), b"\"a\"\n\"b\"\n");
-
-    let mut out = Vec::new();
-    deser_json::to_writer(&mut out, &vec!["x"]).unwrap();
-    assert_eq!(out, b"[\"x\"]");
-}
-
-#[test]
-fn test_writer_strict_and_layers() {
-    use deser::ser::{Layer, Next};
-    use deser::{Atom, Error};
-
-    // a strict stream holds a single value
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
-    writer.write(&1).unwrap();
-    assert!(writer.write(&2).is_err());
-    assert_eq!(writer.into_inner(), b"1");
-
-    /// Writes all numbers as strings.
-    struct NumbersAsStrings;
-
-    impl Layer for NumbersAsStrings {
-        fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
-            match event {
-                Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
-                event => next.emit(event),
-            }
-        }
-    }
-
-    let mut writer = Writer::new(
-        Vec::new(),
-        SerializerConfig::new().trailing(Trailing::Newline),
-    );
-    writer
-        .write_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
-        .unwrap();
-    assert_eq!(writer.into_inner(), b"[\"1\",\"2\"]\n");
-}
-
-#[test]
 fn test_generic_formats() {
     use deser::de::DeserializeOwned;
     use deser::io::Decoder;
@@ -323,7 +174,7 @@ fn test_generic_formats() {
     assert_eq!(roundtrip(&STRICT, &SerializerConfig::new(), &value), value);
     assert_eq!(
         roundtrip(
-            &deser_json::DeserializerConfig::new(),
+            &dialect::DeserializerConfig::new(),
             &SerializerConfig::new(),
             &value
         ),
@@ -407,8 +258,8 @@ mod streamed {
     use deser::Streamed;
     use deser::io::{Next, Reader};
     use deser::{Deserialize, Serialize};
-    use deser_json::{DeserializerConfig, Trailing};
 
+    use super::dialect::{self, DeserializerConfig, Trailing};
     use super::{Blocking, Chunked, STRICT};
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -448,7 +299,7 @@ mod streamed {
             items: (0..3).map(item).collect(),
             next: Some("cursor".into()),
         };
-        let json = deser_json::to_string(&page).unwrap();
+        let json = dialect::to_string(&page).unwrap();
         let expected = vec![
             Next::Element(item(0)),
             Next::Element(item(1)),
@@ -488,13 +339,13 @@ mod streamed {
 
     #[test]
     fn test_collected_like_a_vec() {
-        let page: Page = deser_json::from_str(
+        let page: Page = dialect::from_str(
             r#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#,
         )
         .unwrap();
         assert_eq!(page.items.as_slice(), [item(0)]);
         assert_eq!(
-            deser_json::to_string(&page).unwrap(),
+            dialect::to_string(&page).unwrap(),
             r#"{"total":1,"items":[{"id":0,"name":"item 0"}],"next":null}"#
         );
 
@@ -580,7 +431,7 @@ mod streamed {
             items: (0..10_000).map(item).collect(),
             next: None,
         };
-        let json = deser_json::to_string(&page).unwrap();
+        let json = dialect::to_string(&page).unwrap();
         let mut buffer = DecodeBuffer::new(STRICT);
         let mut reader = ElementReader::<Page, Item>::new();
         let mut chunks = json.as_bytes().chunks(1024);

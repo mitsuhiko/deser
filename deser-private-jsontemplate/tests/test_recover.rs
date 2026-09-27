@@ -3,6 +3,7 @@
 //! The errors the sinks recover from have the offset of the event that
 //! failed, formats only resolve lines and columns for the errors they
 //! return.
+use super::dialect;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -134,7 +135,7 @@ fn err<T>(msg: &str) -> Result<T, String> {
 #[test]
 fn test_recover_atoms_and_containers() {
     let items: Items<u32> =
-        deser_json::from_str(r#"[1, "x", [1, [2]], {"a": {"b": 1}}, 5, true]"#).unwrap();
+        dialect::from_str(r#"[1, "x", [1, [2]], {"a": {"b": 1}}, 5, true]"#).unwrap();
     assert_eq!(
         items,
         Items(vec![
@@ -152,7 +153,7 @@ fn test_recover_atoms_and_containers() {
 fn test_recover_nested() {
     // the error is deep inside the second item, the rest of it is skipped
     let items: Items<Vec<Vec<u32>>> =
-        deser_json::from_str(r#"[[[1]], [[1, "x", [3, {"a": 1}]], [4]], [[5]]]"#).unwrap();
+        dialect::from_str(r#"[[[1]], [[1, "x", [3, {"a": 1}]], [4]], [[5]]]"#).unwrap();
     assert_eq!(
         items,
         Items(vec![
@@ -166,8 +167,7 @@ fn test_recover_nested() {
 #[test]
 fn test_recover_nested_boundaries() {
     // the innermost container that recovers handles the error
-    let items: Items<Items<u32>> =
-        deser_json::from_str(r#"[[1, "x", 2], "y", [[3]], [4]]"#).unwrap();
+    let items: Items<Items<u32>> = dialect::from_str(r#"[[1, "x", 2], "y", [[3]], [4]]"#).unwrap();
     assert_eq!(
         items,
         Items(vec![
@@ -194,7 +194,7 @@ struct Point {
 
 #[test]
 fn test_recover_struct_errors() {
-    let items: Items<Point> = deser_json::from_str(
+    let items: Items<Point> = dialect::from_str(
         r#"[
             {"x": 1, "y": 2},
             {"x": 1},
@@ -220,7 +220,7 @@ fn test_recover_struct_errors() {
 fn test_recover_keys() {
     // after a key failed, its value is skipped (atom or container)
     let entries: Entries<u32, u32> =
-        deser_json::from_str(r#"{"1": 1, "x": 2, "3": {"a": [1]}, "y": [1, {"b": [2]}], "4": 4}"#)
+        dialect::from_str(r#"{"1": 1, "x": 2, "3": {"a": [1]}, "y": [1, {"b": [2]}], "4": 4}"#)
             .unwrap();
     assert_eq!(
         entries,
@@ -238,12 +238,12 @@ fn test_recover_keys() {
 fn test_unrecovered_errors() {
     // without a sink that recovers, errors fail the deserialization as
     // before, also inside containers that recover from other errors
-    let err = deser_json::from_str::<Vec<Vec<u32>>>(r#"[[1], [2, "x"]]"#).unwrap_err();
+    let err = dialect::from_str::<Vec<Vec<u32>>>(r#"[[1], [2, "x"]]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected string, expected u32 at line 1 column 11"
     );
-    let err = deser_json::from_str::<Items<u32>>(r#"{"a": 1}"#).unwrap_err();
+    let err = dialect::from_str::<Items<u32>>(r#"{"a": 1}"#).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected map, expected sequence at line 1 column 1"
@@ -252,17 +252,17 @@ fn test_unrecovered_errors() {
 
 #[test]
 fn test_syntax_errors_are_not_recovered() {
-    let err = deser_json::from_str::<Items<Vec<u32>>>(r#"[[1, "x", ]]"#).unwrap_err();
+    let err = dialect::from_str::<Items<Vec<u32>>>(r#"[[1, "x", , 2]]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: expected a value at line 1 column 11"
+        "Unexpected: unexpected comma at line 1 column 11"
     );
 }
 
 #[test]
 fn test_layer_errors_are_not_recovered() {
     // the limit is enforced for the skipped parts too
-    let mut de = deser_json::Deserializer::from_str(r#"[1, ["x", [[[1]]]]]"#);
+    let mut de = dialect::Deserializer::from_str(r#"[1, ["x", [[[1]]]]]"#);
     let err = de
         .deserialize_with::<Items<Vec<Vec<u32>>>, _>(|driver| {
             driver.push_layer(Limits::new().max_depth(4))
@@ -307,7 +307,7 @@ fn test_skipped_events_keep_positions() {
     // ones
     let input = r#"{"a": [{"k": 1}, {"k": {"x": [1]}, "j": 2}], "b": 3}"#;
     let positions = Positions::default();
-    let mut de = deser_json::Deserializer::from_str(input);
+    let mut de = dialect::Deserializer::from_str(input);
     de.deserialize_with::<BTreeMap<String, deser::de::Recording>, _>(|driver| {
         driver.push_layer(positions.clone())
     })
@@ -322,7 +322,7 @@ fn test_skipped_events_keep_positions() {
     }
 
     let positions = Positions::default();
-    let mut de = deser_json::Deserializer::from_str(input);
+    let mut de = dialect::Deserializer::from_str(input);
     let doc = de
         .deserialize_with::<Doc, _>(|driver| driver.push_layer(positions.clone()))
         .unwrap();
@@ -336,13 +336,13 @@ fn test_skipped_events_keep_positions() {
 fn test_skipped_values_of_keys_keep_positions() {
     let input = r#"{"1": [1], "x": [2, {"y": [3]}], "z": 5, "2": [4]}"#;
     let positions = Positions::default();
-    let mut de = deser_json::Deserializer::from_str(input);
+    let mut de = dialect::Deserializer::from_str(input);
     de.deserialize_with::<deser::de::Recording, _>(|driver| driver.push_layer(positions.clone()))
         .unwrap();
     let expected = positions.0.lock().unwrap().clone();
 
     let positions = Positions::default();
-    let mut de = deser_json::Deserializer::from_str(input);
+    let mut de = dialect::Deserializer::from_str(input);
     let entries = de
         .deserialize_with::<Entries<u32, Vec<u32>>, _>(|driver| {
             driver.push_layer(positions.clone())
@@ -367,7 +367,7 @@ enum Tagged {
 fn test_recover_in_replayed_values() {
     // the tag comes last so the content is recorded and replayed
     let value: Tagged =
-        deser_json::from_str(r#"{"items": [1, {"x": [2]}, 3], "rest": 4, "type": "a"}"#).unwrap();
+        dialect::from_str(r#"{"items": [1, {"x": [2]}, 3], "rest": 4, "type": "a"}"#).unwrap();
     let Tagged::A { items, rest } = value;
     assert_eq!(rest, 4);
     assert_eq!(items.0.len(), 3);
@@ -389,7 +389,7 @@ struct Lenient {
 
 #[test]
 fn test_adapters() {
-    let value: Lenient = deser_json::from_str(
+    let value: Lenient = dialect::from_str(
         r#"{
             "point": {"x": 1, "y": {"deep": [1, 2, {"deeper": null}]}},
             "points": [{"x": 1, "y": 2}, {"x": [[]], "y": 2}, {"x": 3, "y": 4}],
@@ -416,7 +416,7 @@ fn test_adapters() {
 
 #[test]
 fn test_adapters_do_not_hide_syntax_errors() {
-    let err = deser_json::from_str::<Lenient>(r#"{"point": {"x": [1, }, "after": 1}"#).unwrap_err();
+    let err = dialect::from_str::<Lenient>(r#"{"point": {"x": [1, }, "after": 1}"#).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: expected a value at line 1 column 21"
@@ -425,7 +425,7 @@ fn test_adapters_do_not_hide_syntax_errors() {
 
 #[test]
 fn test_default_on_error_with_limits() {
-    let mut de = deser_json::Deserializer::from_str(r#"{"point": [[[[1]]]], "after": 1}"#);
+    let mut de = dialect::Deserializer::from_str(r#"{"point": [[[[1]]]], "after": 1}"#);
     let err = de
         .deserialize_with::<Lenient, _>(|driver| driver.push_layer(Limits::new().max_depth(3)))
         .unwrap_err();

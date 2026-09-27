@@ -1,9 +1,10 @@
+use super::dialect;
 use std::collections::BTreeMap;
 
 use deser::adapters::{Base64UrlNoPad, BytesFallback, BytesFormat, IntSeq};
 use deser::{Deserialize, Serialize};
 use deser_encoding::Hex;
-use deser_json::{DeserializerConfig, SerializerConfig, from_str, to_string};
+use dialect::{DeserializerConfig, SerializerConfig, from_str, to_string};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {

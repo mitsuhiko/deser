@@ -6,6 +6,9 @@
 //! generated from with `generate.py` (see there and the README).  This file
 //! mirrors the `lib.rs` of the dialect crates just enough for the template
 //! to compile (as the dialect with all capabilities).
+//!
+//! The integration tests of this crate are the tests of reading JSON, JSONC
+//! and JSON5 (see `tests/integration.rs`).
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 extern crate alloc;

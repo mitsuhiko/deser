@@ -1,15 +1,10 @@
 //! The integration tests are compiled into a single binary.  Every test
 //! binary has to be linked and on macOS the first launch of a new binary
 //! is slow, so separate binaries make the tests slower.
-mod test_bytes;
-mod test_collect;
-mod test_de;
-#[cfg(feature = "io")]
-mod test_io;
-mod test_locations;
-mod test_nesting;
+//!
+//! These are the tests of writing JSON.  Reading is tested for all dialects
+//! (JSON, JSONC and JSON5) by `deser-private-jsontemplate`.
 mod test_pretty;
-mod test_recover;
 mod test_ser;
-mod test_stream;
-mod test_tags;
+#[cfg(feature = "io")]
+mod test_write;

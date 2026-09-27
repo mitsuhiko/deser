@@ -49,6 +49,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "src"
+TESTS = Path(__file__).resolve().parent / "tests"
 TEMPLATE_CRATE = "deser_private_jsontemplate"
 
 # the capabilities that the dialects are made of
@@ -481,6 +482,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="check that the files are up to date")
     args = parser.parse_args()
+
+    # the tests of the dialects know their capabilities
+    for dialect, caps in sorted(DIALECTS.items()):
+        tests = TESTS / (dialect.removeprefix("deser-") + ".rs")
+        text = tests.read_text()
+        for cap in sorted(CAPABILITIES):
+            if f"{cap}: {str(cap in caps).lower()}," not in text:
+                sys.exit(f"{tests}: the capability {cap} does not match {dialect}")
 
     outdated = []
     for dialect, caps in sorted(DIALECTS.items()):

@@ -10,7 +10,6 @@ keywords = ["serialization", "deserialization", "jsonc"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-jsonc"
-autotests = false
 
 [features]
 default = ["std", "io"]
@@ -29,8 +28,3 @@ simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
-deser-location = { version = "0.8.0", path = "../deser-location" }
-
-[[test]]
-name = "integration"
-path = "tests/integration.rs"

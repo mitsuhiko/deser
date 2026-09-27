@@ -1,8 +1,14 @@
+//! Comments and trailing commas (JSONC and JSON5).
 use std::collections::BTreeMap;
 
 use deser::Deserialize;
-use deser_json5::{Deserializer, DeserializerConfig, Trailing, from_slice, from_str};
+use deser::de::Recording;
+use deser::io::Reader;
 use deser_location::Spanned;
+
+use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream};
+use super::dialect;
+use dialect::{Deserializer, DeserializerConfig, Trailing, from_slice, from_str};
 
 #[test]
 fn test_comments_and_trailing_commas() {
@@ -101,4 +107,74 @@ fn test_values_separated_by_comments() {
     let de = Deserializer::from_str("/* unterminated");
     assert!(!de.is_end());
     assert!(de.end().is_err());
+}
+
+#[test]
+fn test_stop() {
+    check_stream(
+        &STOP,
+        r#"// values
+        1 /* ] */ [1, /* ] */ 2,] {"a": "/*", /* } */ "b": [],} // "
+        "x"/**/3 // end"#,
+        5,
+    );
+}
+
+#[test]
+fn test_strict() {
+    check_stream(&STRICT, "/* a */ [1, // b\n 2,] // c", 1);
+    check_stream(&STRICT, "// only a comment", 0);
+}
+
+#[test]
+fn test_end_after_comments() {
+    // comments after the value can be split across reads
+    let input = b"[1] /* a */ // b\n/* c */";
+    for size in 1..=input.len() {
+        let mut reader = Reader::new(Chunked { input, size }, STRICT);
+        reader.read::<Vec<u32>>().unwrap();
+        reader.end().unwrap();
+    }
+    let input = b"[1] /* unterminated";
+    for size in 1..=input.len() {
+        let mut reader = Reader::new(Chunked { input, size }, STRICT);
+        reader.read::<Vec<u32>>().unwrap();
+        assert!(reader.end().is_err(), "size {size}");
+    }
+}
+
+#[test]
+fn test_newline() {
+    check_stream(
+        &NEWLINE,
+        "// header\n[1, 2,] // a\n\n{\"a\": 1} /* b */\n",
+        2,
+    );
+    // line breaks in comments do not end the line, strings can contain
+    // what looks like a comment
+    check_stream(
+        &NEWLINE,
+        "/* a\n b */ [1, /* c\n */ 2]\n\"/*\"\n{\"a\": \"*/\"} // d\n/* e\n*/\n3",
+        4,
+    );
+}
+
+#[test]
+fn test_unterminated_comment() {
+    for config in [&STRICT, &STOP] {
+        for size in 1..=8 {
+            let mut reader = Reader::new(
+                Chunked {
+                    input: b"[1] /* x",
+                    size,
+                },
+                config,
+            );
+            let rv = (|| {
+                while reader.read::<Recording>()?.is_some() {}
+                Ok::<_, deser::Error>(())
+            })();
+            assert!(rv.is_err(), "size {size}");
+        }
+    }
 }

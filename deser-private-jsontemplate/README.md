@@ -1,9 +1,9 @@
 # deser-private-jsontemplate
 
-The source of the parsers of `deser-json`, `deser-jsonc` and `deser-json5`.
-This crate is not published and nothing depends on it.  It only exists so
-that the template is Rust code that compiles, can be tested and works in
-editors.
+The source of the parsers of `deser-json`, `deser-jsonc` and `deser-json5`
+and their tests.  This crate is not published and nothing depends on it.
+It only exists so that the template is Rust code that compiles, can be
+tested and works in editors.
 
 The three crates share one parser.  The code that only some dialects have
 is marked with `#[cfg]` attributes on made up *capabilities*:
@@ -37,11 +37,35 @@ JSON5 and editors analyze all of the code.
 * Edit the files in `src/` (never the generated files, they start with an
   `@generated` comment).
 * Run `make codegen` (or `python3 deser-private-jsontemplate/generate.py`).
-* Test the generated crates (`cargo test -p deser-json -p deser-jsonc -p
-  deser-json5`).  Tests of the parser for a capability go into the template
-  with the same `#[cfg]`.
+* Test the generated crates (`cargo test -p deser-private-jsontemplate`,
+  see below).  Unit tests of the parser for a capability go into the
+  template with the same `#[cfg]`.
 
 `make format-check` (and CI) fails if the generated files are out of date.
+
+## Tests
+
+The integration tests of this crate (`tests/`) are the tests of reading
+JSON, JSONC and JSON5.  Every test file is a module of the dialects it
+applies to (see `tests/json.rs`, `tests/jsonc.rs` and `tests/json5.rs`), so
+it's compiled once per dialect and the tests show up as
+`jsonc::test_de::test_strings`.  The files import the crate under test as
+`dialect` and the capabilities of the dialect as `DIALECT` for the few
+tests that differ:
+
+```rust
+use super::{DIALECT, dialect};
+
+if !DIALECT.trailing_commas {
+    assert!(dialect::from_str::<Vec<u32>>("[1,]").is_err());
+}
+```
+
+The tests of a capability are in their own file which is only a module of
+the dialects with the capability (`test_comments.rs` and `test_json5.rs`).
+`generate.py` checks that the capabilities in the tests match the dialects.
+The tests of writing JSON are in `deser-json` and the JSON5 test suite
+(with its vendored data) is in `deser-json5`.
 
 ## Template Syntax
 
