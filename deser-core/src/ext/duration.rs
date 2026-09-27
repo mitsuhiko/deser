@@ -1,11 +1,12 @@
-use std::fmt;
-use std::str::FromStr;
+use alloc::string::ToString;
+use core::fmt;
+use core::str::FromStr;
 
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
 use crate::ext::datetime::write_fraction;
-use crate::ext::known::{WellKnown, impl_well_known, invalid, out_of_range};
+use crate::ext::known::{WellKnown, impl_well_known, invalid, out_of_range, round, trunc};
 
 /// A signed, exact length of time.
 ///
@@ -109,7 +110,7 @@ impl FromStr for Duration {
             if int_len == 0 {
                 return Err(invalid("invalid duration"));
             }
-            let value: i64 = std::str::from_utf8(&rest[..int_len])
+            let value: i64 = core::str::from_utf8(&rest[..int_len])
                 .unwrap()
                 .parse()
                 .map_err(|_| overflow())?;
@@ -195,10 +196,10 @@ impl WellKnown for Duration {
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("duration out of range"));
                 }
-                let seconds = value.trunc();
+                let seconds = trunc(value);
                 Duration {
                     seconds: seconds as i64,
-                    nanosecond: ((value - seconds) * 1e9).round() as i32,
+                    nanosecond: round((value - seconds) * 1e9) as i32,
                 }
             }
             _ => return Ok(None),

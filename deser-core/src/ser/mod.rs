@@ -89,8 +89,9 @@
 //!     }
 //! }
 //! ```
-use std::borrow::Cow;
-use std::ops::Deref;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use core::ops::Deref;
 
 use crate::State;
 use crate::error::Error;
@@ -332,7 +333,7 @@ pub trait Serialize: Sync {
 #[test]
 fn test_serialize() {
     let mut v = Vec::new();
-    let mut m = std::collections::BTreeMap::new();
+    let mut m = alloc::collections::BTreeMap::new();
     m.insert(true, vec![vec![&b"x"[..], b"yyy"], vec![b"zzzz"]]);
     m.insert(false, vec![]);
 

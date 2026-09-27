@@ -1,5 +1,5 @@
-use std::fmt;
-use std::sync::Arc;
+use alloc::sync::Arc;
+use core::fmt;
 
 use crate::State;
 

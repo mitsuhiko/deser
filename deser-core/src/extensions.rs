@@ -1,5 +1,7 @@
-use std::any::{Any, TypeId, type_name};
-use std::fmt::{self, Debug};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::any::{Any, TypeId, type_name};
+use core::fmt::{self, Debug};
 
 #[derive(Copy, Clone)]
 pub struct TypeKey(TypeId, &'static str);
@@ -568,8 +570,8 @@ fn test_extensions() {
         format!("{:?}", other),
         format!(
             "{{{}: A(42), {}: B(\"hello\")}}",
-            std::any::type_name::<A>(),
-            std::any::type_name::<B>()
+            core::any::type_name::<A>(),
+            core::any::type_name::<B>()
         )
     );
 }

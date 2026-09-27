@@ -1,5 +1,7 @@
-use std::borrow::Cow;
-use std::fmt;
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::string::ToString;
+use core::fmt;
 
 use crate::State;
 use crate::de::{Deserialize, Sink, SinkHandle};

@@ -1,5 +1,9 @@
-use std::marker::PhantomData;
-use std::sync::Arc;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use deser_core::Text;
 use deser_core::adapters::BytesFormat;
@@ -500,7 +504,7 @@ impl StreamState {
             } else {
                 text
             };
-            match std::str::from_utf8(text) {
+            match core::str::from_utf8(text) {
                 Ok(name) => names.push(name.to_string()),
                 Err(_) => {
                     return Err(Error::new(ErrorKind::Unexpected, "name is not valid UTF-8")
@@ -575,7 +579,7 @@ impl StreamState {
             record,
             // the special characters are ASCII, so if the record is UTF-8
             // all of its fields are
-            record_is_utf8: record.is_ascii() || std::str::from_utf8(record).is_ok(),
+            record_is_utf8: record.is_ascii() || core::str::from_utf8(record).is_ok(),
             base,
         };
         // the start and end of the record are at its start and end (for
@@ -662,17 +666,17 @@ impl<'de> FieldEmitter<'_, 'de> {
         if field.flags & UNESCAPE != 0 {
             unescape(self.dialect, text, field.flags & QUOTED != 0, scratch);
             // the decoded text is only valid for the call
-            match std::str::from_utf8(scratch) {
+            match core::str::from_utf8(scratch) {
                 Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(text))),
                 Err(_) => driver.emit(Atom::Bytes(Bytes::borrowed(scratch))),
             }
         } else if self.record_is_utf8 {
             // SAFETY: the record is UTF-8 and fields start and end at ASCII
             // characters (or the start and end of the record)
-            let text = unsafe { std::str::from_utf8_unchecked(text) };
+            let text = unsafe { core::str::from_utf8_unchecked(text) };
             driver.emit_borrowed(Atom::Lexical(Text::borrowed(text)))
         } else {
-            match std::str::from_utf8(text) {
+            match core::str::from_utf8(text) {
                 Ok(text) => driver.emit_borrowed(Atom::Lexical(Text::borrowed(text))),
                 Err(_) => driver.emit_borrowed(Atom::Bytes(Bytes::borrowed(text))),
             }

@@ -11,6 +11,7 @@ use crate::de::lexical::is_empty_null;
 use crate::de::{Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::{Atom, Implicit};
+use alloc::format;
 
 /// Creates the sink that updates a field of a derived struct.
 ///

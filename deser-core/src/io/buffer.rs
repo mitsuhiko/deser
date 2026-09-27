@@ -426,7 +426,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// Takes the frame of the ready value.
     ///
     /// Returns the range of the frame in the data and its position.
-    fn take_ready(&mut self) -> (std::ops::Range<usize>, Position) {
+    fn take_ready(&mut self) -> (core::ops::Range<usize>, Position) {
         let (start, end, consumed) = self
             .ready
             .take()

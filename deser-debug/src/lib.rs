@@ -1,5 +1,5 @@
-//! This library takes a [`Serialize`] and formats it with [`std::fmt`] like
-//! the [`Debug`](std::fmt::Debug) implementation of Rust types would.
+//! This library takes a [`Serialize`] and formats it with [`core::fmt`] like
+//! the [`Debug`](core::fmt::Debug) implementation of Rust types would.
 //!
 //! The Rust shape of the values (struct and variant names, `Option`,
 //! tuples, ...) is taken from their description (see
@@ -29,7 +29,13 @@
 //!
 //! As all floats are `f64` in the data model, `f32` values are formatted
 //! as the `f64` they widen to.
-use std::fmt;
+#![cfg_attr(not(test), no_std)]
+
+extern crate alloc;
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use deser_core::ser::{Describe, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr};
 use deser_core::{Atom, Event};
@@ -436,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_debug_format() {
-        let mut m = std::collections::BTreeMap::new();
+        let mut m = alloc::collections::BTreeMap::new();
         m.insert(true, vec![vec![&b"x"[..], b"yyy"], vec![b"zzzz\x00\x01"]]);
         m.insert(false, vec![]);
         assert_eq!(ToDebug::new(&m).to_string(), format!("{:?}", m));
@@ -466,8 +472,8 @@ mod tests {
         check(None::<u32>);
         check((1, "two", Some(3.5)));
         check(vec![Some(1), None]);
-        check(std::collections::BTreeSet::from([1, 2, 3]));
-        check(std::collections::BTreeMap::from([("a", (1, 2))]));
+        check(alloc::collections::BTreeSet::from([1, 2, 3]));
+        check(alloc::collections::BTreeMap::from([("a", (1, 2))]));
         check(Box::new(Some(vec![true])));
         check(());
     }

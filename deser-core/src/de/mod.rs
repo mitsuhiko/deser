@@ -211,7 +211,8 @@
 //! to an `Option`.  In certain situations it can become necessary to "make up a slot
 //! on the spot" to temporarily deserialize into.  For more information see
 //! [`OwnedSink`].
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;

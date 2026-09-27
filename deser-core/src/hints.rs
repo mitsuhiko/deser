@@ -27,8 +27,9 @@
 //!     point: BTreeMap<String, u32>,
 //! }
 //! ```
-use std::borrow::Cow;
-use std::marker::PhantomData;
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};

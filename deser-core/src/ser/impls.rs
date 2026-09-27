@@ -1,8 +1,15 @@
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
-use std::hash::BuildHasher;
-use std::marker::PhantomData;
-use std::sync::Arc;
+use alloc::borrow::Cow;
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use core::hash::BuildHasher;
+use core::marker::PhantomData;
+#[cfg(feature = "std")]
+use std::collections::{HashMap, HashSet};
 
 use crate::State;
 use crate::Text;
@@ -200,7 +207,7 @@ macro_rules! serialize_slice {
                     if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
                         Ok($crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))))
                     } else {
-                        Ok($crate::ser::Chunk::Seq(Box::new(
+                        Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
                             $crate::ser::impls::SliceEmitter(self[..].iter()),
                         )))
                     }
@@ -307,7 +314,7 @@ pub(crate) fn emit_plain_elements<'a, T: Serialize + 'a>(
     Ok(true)
 }
 
-pub(crate) struct SliceEmitter<'a, T>(pub(crate) std::slice::Iter<'a, T>);
+pub(crate) struct SliceEmitter<'a, T>(pub(crate) core::slice::Iter<'a, T>);
 
 impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
@@ -515,7 +522,7 @@ macro_rules! serialize_map {
                     &self,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Map(Box::new(
+                    Ok($crate::ser::Chunk::Map(alloc::boxed::Box::new(
                         $crate::ser::impls::MapIterEmitter {
                             iter: self.iter(),
                             value: None,
@@ -556,6 +563,10 @@ pub(crate) use serialize_map;
 
 serialize_map! {
     [K, V] BTreeMap<K, V> => Sorted;
+}
+
+#[cfg(feature = "std")]
+serialize_map! {
     [K, V, H: BuildHasher + Sync] HashMap<K, V, H> => Arbitrary;
 }
 
@@ -596,8 +607,8 @@ macro_rules! serialize_set {
                     &self,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Seq(Box::new(
-                        $crate::ser::impls::IterEmitter(self.iter(), std::marker::PhantomData),
+                    Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
+                        $crate::ser::impls::IterEmitter(self.iter(), core::marker::PhantomData),
                     )))
                 }
 
@@ -632,6 +643,10 @@ pub(crate) use serialize_set;
 
 serialize_set! {
     [T] BTreeSet<T> => Sorted;
+}
+
+#[cfg(feature = "std")]
+serialize_set! {
     [T, H: BuildHasher + Sync] HashSet<T, H> => Arbitrary;
 }
 

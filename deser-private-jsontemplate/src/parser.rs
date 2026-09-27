@@ -7,7 +7,12 @@
 //! parses a value in one go.  The state of the current container is held
 //! in locals while parsing and only stored in the parser when it's
 //! suspended.
-use std::str;
+#[cfg(json5)]
+use alloc::format;
+#[cfg(json5)]
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;

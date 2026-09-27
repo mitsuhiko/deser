@@ -1,4 +1,7 @@
-use std::mem::ManuallyDrop;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::mem::ManuallyDrop;
 
 use deser_core::__format::IntBuffer;
 use deser_core::adapters::BytesFormat;
@@ -401,7 +404,7 @@ impl Serializer {
     /// Returns the output written so far.
     pub fn output(&self) -> &str {
         // SAFETY: the output is valid UTF-8, see `SerializerConfig::encode_value`
-        unsafe { std::str::from_utf8_unchecked(&self.out) }
+        unsafe { core::str::from_utf8_unchecked(&self.out) }
     }
 
     /// Returns the output.
@@ -840,7 +843,7 @@ impl Output {
     }
 
     #[cfg(not(feature = "speedups"))]
-    fn write_int<I: std::fmt::Display>(&mut self, val: I) {
+    fn write_int<I: core::fmt::Display>(&mut self, val: I) {
         self.write_str(&val.to_string())
     }
 

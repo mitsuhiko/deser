@@ -8,10 +8,14 @@
 //! Tags are recorded (see [`RecordBuf`]) so that they can be any value.
 //! Known variants are looked up by string, other tags go to the variant
 //! marked with `#[deser(other)]` which can capture the tag.
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::mem::take;
-use std::ptr::NonNull;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::mem::take;
+use core::ptr::NonNull;
 
 use crate::State;
 use crate::Text;
@@ -1266,7 +1270,7 @@ pub fn atom_sink<'a, 'de, T: Send + 'a>(
     // SAFETY: `&mut T` and `NonNull<()>` are ABI compatible (both are
     // pointers to sized types), and the setter is only ever called with
     // the target which is a valid `&'a mut T` for the lifetime of the sink.
-    let set = unsafe { std::mem::transmute::<AtomSetter<T>, ErasedAtomSetter>(set) };
+    let set = unsafe { core::mem::transmute::<AtomSetter<T>, ErasedAtomSetter>(set) };
     SinkHandle::boxed(AtomSink {
         target: NonNull::from(target).cast(),
         set,

@@ -4,7 +4,9 @@
 //! everything else as sequence.  `ArrayString` is serialized like `String`.
 //! Deserializing more elements or a longer string than the capacity is an
 //! error.
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::vec::Vec;
 
 use ::arrayvec::{ArrayString, ArrayVec};
 

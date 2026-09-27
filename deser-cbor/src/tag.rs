@@ -25,9 +25,10 @@
 //! 4), UUIDs (tag 37) and full-date strings (tag 1004) are converted to and
 //! from the respective [well-known types](deser_core::ext) if their content is
 //! valid.  Otherwise they are passed on as tagged values.
-use std::fmt;
+use alloc::vec::Vec;
+use core::fmt;
 
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 use deser_core::State;
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};

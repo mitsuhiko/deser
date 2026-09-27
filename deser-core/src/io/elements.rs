@@ -1,12 +1,51 @@
-use std::any::TypeId;
-use std::collections::VecDeque;
-use std::marker::PhantomData;
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use core::any::{Any, TypeId};
+use core::fmt;
+use core::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
+use crate::State;
 use crate::de::{DeserializeOwned, OwnedDriver};
 use crate::error::Error;
 use crate::io::{DecodeBuffer, Decoder, Status};
-use crate::streamed::{ElementQueue, Queue};
+
+/// The queue elements of [`Streamed`] are handed out through.
+struct Queue {
+    type_id: TypeId,
+    elements: Mutex<VecDeque<Box<dyn Any + Send>>>,
+}
+
+impl Queue {
+    fn pop(&self) -> Option<Box<dyn Any + Send>> {
+        self.elements.lock().unwrap().pop_front()
+    }
+}
+
+/// The queue registered in the state of a value whose elements are handed
+/// out (see `deser::io::ElementReader`).
+#[derive(Clone, Default)]
+struct ElementQueue(Option<Arc<Queue>>);
+
+impl fmt::Debug for ElementQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ElementQueue").finish_non_exhaustive()
+    }
+}
+
+/// Hands out a complete element if the value is read by an
+/// [`ElementReader`] which hands out elements of its type.
+///
+/// Returns the element back if it's not handed out.
+pub(crate) fn hand_out<T: Send + 'static>(value: T, state: &State) -> Result<(), T> {
+    match state.get::<ElementQueue>() {
+        Some(ElementQueue(Some(queue))) if queue.type_id == TypeId::of::<T>() => {
+            queue.elements.lock().unwrap().push_back(Box::new(value));
+            Ok(())
+        }
+        _ => Err(value),
+    }
+}
 
 /// The result of [`Reader::read_next`](crate::io::Reader::read_next).
 #[derive(Debug, Clone, PartialEq, Eq)]

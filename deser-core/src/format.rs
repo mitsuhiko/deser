@@ -7,7 +7,11 @@
 //!   produces the same text, so the output does not depend on the feature.
 //! * [`extend`] and [`push_str`] append short bytes and strings without
 //!   calling into `memcpy`.
-use std::fmt::{Debug, LowerExp};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::fmt::{Debug, LowerExp};
 
 /// The floats that can be formatted (`f32` and `f64`).
 pub trait Float: Copy + LowerExp + Debug + sealed::Sealed {
@@ -104,7 +108,7 @@ pub fn format_finite<F: Float>(val: F) -> String {
     if 0 <= k && kk <= F::MAX_PLAIN {
         // 1234e7 -> 12340000000.0
         out.push_str(&digits);
-        out.extend(std::iter::repeat_n('0', k as usize));
+        out.extend(core::iter::repeat_n('0', k as usize));
         out.push_str(".0");
     } else if 0 < kk && kk <= F::MAX_PLAIN {
         // 1234e-2 -> 12.34
@@ -114,7 +118,7 @@ pub fn format_finite<F: Float>(val: F) -> String {
     } else if F::MIN_PLAIN < kk && kk <= 0 {
         // 1234e-6 -> 0.001234
         out.push_str("0.");
-        out.extend(std::iter::repeat_n('0', -kk as usize));
+        out.extend(core::iter::repeat_n('0', -kk as usize));
         out.push_str(&digits);
     } else {
         // 1e30, 1234e30 -> 1.234e+33
@@ -181,7 +185,7 @@ impl IntBuffer {
     pub fn format_u64(&mut self, value: u64) -> &str {
         let start = self.write_digits(value);
         // SAFETY: only ASCII digits were written
-        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..]) }
+        unsafe { core::str::from_utf8_unchecked(&self.bytes[start..]) }
     }
 
     /// Formats a signed integer.
@@ -194,7 +198,7 @@ impl IntBuffer {
             self.bytes[start] = b'-';
         }
         // SAFETY: only ASCII digits and the sign were written
-        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..]) }
+        unsafe { core::str::from_utf8_unchecked(&self.bytes[start..]) }
     }
 
     /// Writes the digits to the end of the buffer and returns the start.
@@ -259,7 +263,7 @@ pub fn push_str(out: &mut String, s: &str) {
 #[inline(always)]
 pub unsafe fn copy_small(src: *const u8, dst: *mut u8, len: usize) {
     unsafe {
-        use std::ptr::{read_unaligned as read, write_unaligned as write};
+        use core::ptr::{read_unaligned as read, write_unaligned as write};
         if len >= 16 {
             if len <= 32 {
                 let a = read(src.cast::<u128>());
@@ -267,7 +271,7 @@ pub unsafe fn copy_small(src: *const u8, dst: *mut u8, len: usize) {
                 write(dst.cast::<u128>(), a);
                 write(dst.add(len - 16).cast::<u128>(), b);
             } else {
-                std::ptr::copy_nonoverlapping(src, dst, len);
+                core::ptr::copy_nonoverlapping(src, dst, len);
             }
         } else if len >= 8 {
             let a = read(src.cast::<u64>());

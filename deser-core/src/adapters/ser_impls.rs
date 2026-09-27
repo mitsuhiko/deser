@@ -1,8 +1,13 @@
 //! Serialization adapters for the standard containers.
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
-use std::hash::BuildHasher;
-use std::marker::PhantomData;
-use std::sync::Arc;
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use core::hash::BuildHasher;
+use core::marker::PhantomData;
+#[cfg(feature = "std")]
+use std::collections::{HashMap, HashSet};
 
 use crate::State;
 use crate::adapters::SerializeAs;
@@ -83,7 +88,7 @@ pub(crate) fn handle_as<A: SerializeAs<T>, T: Sync>(value: &T) -> SerializeHandl
 #[allow(clippy::type_complexity)]
 pub(crate) struct IterEmitter<'a, I, A>(
     pub(crate) I,
-    pub(crate) std::marker::PhantomData<(&'a (), fn() -> A)>,
+    pub(crate) core::marker::PhantomData<(&'a (), fn() -> A)>,
 );
 
 impl<'a, I, T, A> SeqEmitter for IterEmitter<'a, I, A>
@@ -101,7 +106,7 @@ where
 pub(crate) struct MapIterEmitter<'a, I, V, KA, VA> {
     pub(crate) iter: I,
     pub(crate) value: Option<&'a V>,
-    pub(crate) _marker: std::marker::PhantomData<fn() -> (KA, VA)>,
+    pub(crate) _marker: core::marker::PhantomData<fn() -> (KA, VA)>,
 }
 
 impl<'a, I, K, V, KA, VA> MapEmitter for MapIterEmitter<'a, I, V, KA, VA>
@@ -222,7 +227,7 @@ macro_rules! serialize_as_iter_seq {
                 fn serialize_as<'a>(value: &'a $ty<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
                     Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
                         value.iter(),
-                        std::marker::PhantomData,
+                        core::marker::PhantomData,
                     ))))
                 }
 
@@ -273,7 +278,7 @@ macro_rules! serialize_as_slice {
                         Some(bytes) => {
                             $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
                         }
-                        None => $crate::ser::Chunk::Seq(Box::new(
+                        None => $crate::ser::Chunk::Seq(alloc::boxed::Box::new(
                             $crate::ser::IndexedSeqEmitter::new(
                                 $crate::adapters::ser_impls::SerializeAsRef::<$adapter, $ty>::new(
                                     value,
@@ -360,7 +365,7 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
             None => Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
                 value.iter(),
-                std::marker::PhantomData,
+                core::marker::PhantomData,
             ))),
         })
     }
@@ -397,11 +402,11 @@ macro_rules! serialize_as_map {
                     value: &'a $ty,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Map(Box::new(
+                    Ok($crate::ser::Chunk::Map(alloc::boxed::Box::new(
                         $crate::adapters::ser_impls::MapIterEmitter::<_, V, KA, VA> {
                             iter: value.iter(),
                             value: None,
-                            _marker: std::marker::PhantomData,
+                            _marker: core::marker::PhantomData,
                         },
                     )))
                 }
@@ -435,6 +440,10 @@ pub(crate) use serialize_as_map;
 
 serialize_as_map! {
     [K, V, KA, VA] BTreeMap<K, V> => BTreeMap<KA, VA>, Sorted;
+}
+
+#[cfg(feature = "std")]
+serialize_as_map! {
     [K, V, H: BuildHasher + Sync, KA, VA] HashMap<K, V, H> => HashMap<KA, VA>, Arbitrary;
 }
 
@@ -453,10 +462,10 @@ macro_rules! serialize_as_set {
                     value: &'a $ty,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Seq(Box::new(
+                    Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
                         $crate::adapters::ser_impls::IterEmitter::<'_, _, A>(
                             value.iter(),
-                            std::marker::PhantomData,
+                            core::marker::PhantomData,
                         ),
                     )))
                 }
@@ -494,6 +503,10 @@ pub(crate) use serialize_as_set;
 
 serialize_as_set! {
     [T, A] BTreeSet<T> => BTreeSet<A>, Sorted;
+}
+
+#[cfg(feature = "std")]
+serialize_as_set! {
     [T, H: BuildHasher + Sync, A] HashSet<T, H> => HashSet<A>, Arbitrary;
 }
 

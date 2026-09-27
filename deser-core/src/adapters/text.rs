@@ -1,9 +1,16 @@
 //! Adapters that work on the text of values: [`Separated`] and
 //! [`TrimWhitespace`].
-use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet, VecDeque};
-use std::hash::{BuildHasher, Hash};
-use std::marker::PhantomData;
+use alloc::borrow::Cow;
+use alloc::collections::{BTreeSet, VecDeque};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use core::hash::{BuildHasher, Hash};
+use core::marker::PhantomData;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
 
 use crate::State;
 use crate::Text;
@@ -495,5 +502,9 @@ separated_impls! {
     [T: Send] [T] Vec<T> => Vec<A>;
     [T: Send] [T] VecDeque<T> => VecDeque<A>;
     [T: Ord + Send] [T] BTreeSet<T> => BTreeSet<A>;
+}
+
+#[cfg(feature = "std")]
+separated_impls! {
     [T: Hash + Eq + Send, H: BuildHasher + Default + Send] [T, H] HashSet<T, H> => HashSet<A>;
 }

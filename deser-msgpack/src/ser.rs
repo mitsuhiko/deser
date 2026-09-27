@@ -1,4 +1,6 @@
-use std::mem::ManuallyDrop;
+use alloc::format;
+use alloc::vec::Vec;
+use core::mem::ManuallyDrop;
 
 use deser_core::__format::extend;
 use deser_core::State;
@@ -162,7 +164,7 @@ impl Writer {
                 offsets_start: self.offsets.len(),
             });
         }
-        self.stack.push(std::mem::replace(
+        self.stack.push(core::mem::replace(
             &mut self.frame,
             Frame { remaining, info },
         ));
@@ -174,7 +176,7 @@ impl Writer {
         let Some(parent) = self.stack.pop() else {
             return Err(Error::new(ErrorKind::Unexpected, "unexpected end"));
         };
-        let frame = std::mem::replace(&mut self.frame, parent);
+        let frame = core::mem::replace(&mut self.frame, parent);
         if frame.remaining == 0 && !self.canonical {
             Ok(())
         } else {

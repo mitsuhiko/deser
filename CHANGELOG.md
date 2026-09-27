@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** the standard library is optional (the new `std` feature,
+  enabled by default).  Without it `deser`, `deser-json`, `deser-jsonc`,
+  `deser-json5`, `deser-cbor`, `deser-msgpack`, `deser-csv`, `deser-path`
+  and `deser-debug` only need `alloc` and build for targets without an
+  operating system.  `io` requires `std`.  Without `std` the
+  implementations for `HashMap`, `HashSet`, `Path`, `OsStr`,
+  `SystemTime`, `Mutex`, `RwLock` and `OnceLock` and the adapters of
+  `IndexMap` and `IndexSet` are not available, and sinks are not cached.  Crates that depend on deser with
+  `default-features = false` and need these have to enable `std`.
 - Added `Atom::Implicit` for values whose type the format inferred from
   their text.  It carries the value (`ImplicitValue`: null, bool,
   integers or float) and the text: types that accept the value receive

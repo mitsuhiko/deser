@@ -1,6 +1,9 @@
 //! The base64 encodings of bytes.
 use crate::adapters::bytes::BytesEncoding;
 use crate::error::{Error, ErrorKind};
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[cold]
 fn invalid() -> Error {

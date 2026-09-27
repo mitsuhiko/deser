@@ -43,6 +43,7 @@ members = [
   "examples/layers",
   "examples/located",
   "examples/manual-struct",
+  "examples/no-std",
   "examples/optionals",
   "examples/protocol",
   "examples/query-strings",

@@ -1,5 +1,8 @@
-use std::fmt;
-use std::str::FromStr;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use core::fmt;
+use core::str::FromStr;
 
 use crate::error::Error;
 use crate::event::Atom;
@@ -67,7 +70,7 @@ impl Decimal {
                 rv.push_str(&digits[digits.len() - scale..]);
             } else {
                 rv.push_str("0.");
-                rv.extend(std::iter::repeat_n('0', scale - digits.len()));
+                rv.extend(core::iter::repeat_n('0', scale - digits.len()));
                 rv.push_str(&digits);
             }
         } else {

@@ -15,20 +15,30 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["io"]
+default = ["std", "io"]
+# the standard library.  Without it deser needs `alloc`, the types of the
+# standard library that are not in `alloc` (like `HashMap` and `Path`) are
+# not supported and there is no cache for the sinks.
+std = [
+  "bigdecimal?/std",
+  "jiff?/std",
+  "num-bigint?/std",
+  "rust_decimal?/std",
+  "indexmap?/std",
+]
 # the support code of derived implementations (the derive macros are in
 # deser-derive and re-exported by deser)
 derive = []
 # reading and writing values from and to streams (`deser::io`)
-io = []
+io = ["std"]
 
 [dependencies]
 # types of these crates serialize as well-known extension types
-bigdecimal = { version = "0.4", optional = true, default-features = false, features = ["std"] }
+bigdecimal = { version = "0.4", optional = true, default-features = false }
 chrono = { version = "0.4.38", optional = true, default-features = false }
-jiff = { version = "0.2.14", optional = true, default-features = false, features = ["std"] }
-num-bigint = { version = "0.4", optional = true, default-features = false, features = ["std"] }
-rust_decimal = { version = "1.33", optional = true, default-features = false, features = ["std"] }
+jiff = { version = "0.2.14", optional = true, default-features = false, features = ["alloc"] }
+num-bigint = { version = "0.4", optional = true, default-features = false }
+rust_decimal = { version = "1.33", optional = true, default-features = false }
 time = { version = "0.3.40", optional = true, default-features = false }
 uuid = { version = "1", optional = true, default-features = false }
 # collections and byte buffers of these crates serialize like the standard
@@ -37,7 +47,7 @@ arrayvec = { version = "0.7", optional = true, default-features = false }
 bstr = { version = "1", optional = true, default-features = false, features = ["alloc"] }
 bytes = { version = "1.7", optional = true, default-features = false }
 hashbrown = { version = "0.17", optional = true, default-features = false }
-indexmap = { version = "2", optional = true, default-features = false, features = ["std"] }
+indexmap = { version = "2", optional = true, default-features = false }
 smallvec = { version = "1.6", optional = true, default-features = false, features = ["const_generics"] }
 
 [dev-dependencies]

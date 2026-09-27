@@ -1,6 +1,7 @@
-use std::marker::PhantomData;
-use std::str;
-use std::sync::Arc;
+use alloc::string::String;
+use alloc::sync::Arc;
+use core::marker::PhantomData;
+use core::str;
 
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, SinkHandle, Source};
@@ -361,14 +362,14 @@ impl<'a> Deserializer<'a> {
     }
 
     /// Returns the input as string for the source.
-    fn source(&self) -> std::borrow::Cow<'a, str> {
+    fn source(&self) -> alloc::borrow::Cow<'a, str> {
         if self.validate_utf8 {
             // invalid UTF-8 fails the parsing when reached, the offsets of
             // the tokens before it are not affected by the replacements.
             String::from_utf8_lossy(self.input)
         } else {
             // SAFETY: the input was created from a string
-            std::borrow::Cow::Borrowed(unsafe { str::from_utf8_unchecked(self.input) })
+            alloc::borrow::Cow::Borrowed(unsafe { str::from_utf8_unchecked(self.input) })
         }
     }
 

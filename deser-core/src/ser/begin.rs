@@ -4,7 +4,7 @@
 //! implementations in this crate and by the derive (through
 //! `deser::__derive`).
 #[cfg(feature = "derive")]
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 use crate::State;
 use crate::error::Error;

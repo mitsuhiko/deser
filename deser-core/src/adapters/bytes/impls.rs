@@ -1,6 +1,8 @@
 //! The adapters for bytes.
-use std::borrow::Cow;
-use std::marker::PhantomData;
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use crate::State;
 use crate::adapters::bytes::{BytesEncoding, BytesFormat};
@@ -173,7 +175,7 @@ macro_rules! encoding_adapter {
                     value: &'a $ty,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    let mut rv = String::new();
+                    let mut rv = alloc::string::String::new();
                     E::encode(
                         $crate::adapters::bytes::BytesBufImpl::bytes(value),
                         &mut rv,

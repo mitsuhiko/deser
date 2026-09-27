@@ -1,11 +1,14 @@
 // most of this is only used by derived structs
 #![cfg_attr(not(feature = "derive"), allow(dead_code))]
-use std::fmt;
-use std::sync::{Arc, Mutex};
+use alloc::format;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::fmt;
 
 use crate::State;
 use crate::de::Source;
 use crate::error::{Error, ErrorKind, push_expected};
+use crate::sync::{Mutex, MutexGuard};
 
 /// What happens with keys of structs that no field takes.
 ///
@@ -98,7 +101,7 @@ impl IgnoredFields {
 
     /// Takes the ignored keys reported so far.
     pub fn take(&self) -> Vec<Error> {
-        std::mem::take(&mut *self.lock())
+        core::mem::take(&mut *self.lock())
     }
 
     /// Returns the number of ignored keys reported so far.
@@ -111,9 +114,8 @@ impl IgnoredFields {
         self.lock().is_empty()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Error>> {
-        // the lock is never held while code runs that could panic
-        self.errors.lock().unwrap_or_else(|err| err.into_inner())
+    fn lock(&self) -> MutexGuard<'_, Vec<Error>> {
+        self.errors.lock()
     }
 
     fn push(&self, err: Error) {
@@ -238,7 +240,9 @@ pub fn unclaimed_keys(standalone: bool, deny: bool, state: &mut State) -> Result
         return Ok(());
     }
     let keys = match state.get::<UnclaimedKeys>() {
-        Some(keys) if !keys.0.is_empty() => std::mem::take(&mut state.get_mut::<UnclaimedKeys>().0),
+        Some(keys) if !keys.0.is_empty() => {
+            core::mem::take(&mut state.get_mut::<UnclaimedKeys>().0)
+        }
         _ => return Ok(()),
     };
     for err in keys {

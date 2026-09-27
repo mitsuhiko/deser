@@ -1,4 +1,9 @@
-use std::io::Write as _;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::{self, Write as _};
 
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
@@ -286,9 +291,9 @@ impl SerializerConfig {
             has_key: false,
             fields: 0,
             record_start: 0,
-            field_ends: std::mem::take(&mut state.buffers.field_ends),
-            record: std::mem::take(&mut state.buffers.record),
-            scratch: std::mem::take(&mut state.buffers.scratch),
+            field_ends: core::mem::take(&mut state.buffers.field_ends),
+            record: core::mem::take(&mut state.buffers.record),
+            scratch: core::mem::take(&mut state.buffers.scratch),
             out,
         };
         let had_names = writer.names.is_some();
@@ -323,8 +328,8 @@ struct Buffers {
     scratch: Vec<u8>,
 }
 
-impl std::fmt::Debug for Buffers {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Buffers {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Buffers").finish_non_exhaustive()
     }
 }
@@ -450,7 +455,7 @@ impl Serializer {
     /// Returns the output written so far.
     pub fn output(&self) -> &str {
         // SAFETY: the output is valid UTF-8, see `into_string`
-        unsafe { std::str::from_utf8_unchecked(&self.out) }
+        unsafe { core::str::from_utf8_unchecked(&self.out) }
     }
 
     /// Returns the output.
@@ -480,7 +485,7 @@ impl ser::Serializer for Serializer {
 /// The output only holds text and ASCII special characters (which the
 /// dialect checks), so it's valid UTF-8.
 fn into_string(out: Vec<u8>) -> String {
-    debug_assert!(std::str::from_utf8(&out).is_ok());
+    debug_assert!(core::str::from_utf8(&out).is_ok());
     // SAFETY: see above
     unsafe { String::from_utf8_unchecked(out) }
 }
@@ -1013,11 +1018,11 @@ impl FieldEncoder<'_> {
             }
             // writing into a vector does not fail
             Atom::F32(value) => {
-                let _ = write!(scratch, "{}", value);
+                let _ = write!(ByteWriter(scratch), "{}", value);
                 true
             }
             Atom::F64(value) => {
-                let _ = write!(scratch, "{}", value);
+                let _ = write!(ByteWriter(scratch), "{}", value);
                 true
             }
             Atom::Bytes(ref bytes) => {
@@ -1034,9 +1039,9 @@ impl FieldEncoder<'_> {
                     // numbers keep their text
                     scratch.extend_from_slice(number.as_str().as_bytes());
                 } else if let Some(value) = ext.downcast_ref::<u128>() {
-                    let _ = write!(scratch, "{}", value);
+                    let _ = write!(ByteWriter(scratch), "{}", value);
                 } else if let Some(value) = ext.downcast_ref::<i128>() {
-                    let _ = write!(scratch, "{}", value);
+                    let _ = write!(ByteWriter(scratch), "{}", value);
                 } else {
                     return match ext.fallback() {
                         Atom::Ext(_) => Err(Error::new(
@@ -1092,6 +1097,16 @@ impl FieldEncoder<'_> {
 }
 
 /// Writes an integer (faster than formatting it).
+/// Formats into a byte buffer (`std::io::Write` is not in `core`).
+struct ByteWriter<'a>(&'a mut Vec<u8>);
+
+impl fmt::Write for ByteWriter<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+}
+
 fn write_u64(out: &mut Vec<u8>, mut value: u64) {
     let mut buf = [0u8; 20];
     let mut pos = buf.len();

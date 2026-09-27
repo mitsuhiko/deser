@@ -55,7 +55,13 @@
 //! driver.push_layer(PathLayer::new());
 //! driver.drive(|_event, _state| Ok(())).unwrap();
 //! ```
-use std::fmt;
+#![no_std]
+
+extern crate alloc;
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use deser_core::{Atom, Error, ErrorAttachment, ErrorContext, State};
 
@@ -150,7 +156,7 @@ impl Path {
         }
         let segment = self.key_segment(atom);
         if let Some(last) = self.segments.last_mut()
-            && let PathSegment::Key(buf) = std::mem::replace(last, segment)
+            && let PathSegment::Key(buf) = core::mem::replace(last, segment)
         {
             self.recycle(buf);
         }

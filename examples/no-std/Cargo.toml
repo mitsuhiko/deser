@@ -1,0 +1,23 @@
+[package]
+name = "no-std"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# without the default features (`std` and `io`) only `alloc` is needed
+deser = { path = "../../deser", default-features = false, features = ["derive"] }
+deser-cbor = { path = "../../deser-cbor", default-features = false }
+deser-json = { path = "../../deser-json", default-features = false }
+
+[lib]
+path = "src/lib.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "no-std"
+path = "src/main.rs"
+test = false
+doc = false

@@ -1,8 +1,9 @@
 //! Support for updating existing values (see
 //! [`Deserialize::deserialize_update`]).
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::ptr::NonNull;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
@@ -461,8 +462,8 @@ impl<'a, 'de, T> Drop for OptionUpdateSink<'a, 'de, T> {
 #[cfg(feature = "derive")]
 #[doc(hidden)]
 pub struct UpdateTarget<'a, T> {
-    ptr: std::ptr::NonNull<T>,
-    _marker: std::marker::PhantomData<&'a mut T>,
+    ptr: core::ptr::NonNull<T>,
+    _marker: core::marker::PhantomData<&'a mut T>,
 }
 
 // SAFETY: this is a mutable reference to `T`.
@@ -475,8 +476,8 @@ impl<'a, T> UpdateTarget<'a, T> {
     #[inline]
     pub fn new(value: &'a mut T) -> UpdateTarget<'a, T> {
         UpdateTarget {
-            ptr: std::ptr::NonNull::from(value),
-            _marker: std::marker::PhantomData,
+            ptr: core::ptr::NonNull::from(value),
+            _marker: core::marker::PhantomData,
         }
     }
 

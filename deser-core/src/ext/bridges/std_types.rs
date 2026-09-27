@@ -1,8 +1,12 @@
-use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
+use core::time::Duration as StdDuration;
+#[cfg(feature = "std")]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::Error;
+use crate::ext::Duration;
+#[cfg(feature = "std")]
+use crate::ext::Timestamp;
 use crate::ext::known::{Bridge, impl_bridge, out_of_range};
-use crate::ext::{Duration, Timestamp};
 
 impl Bridge for StdDuration {
     type Known = Duration;
@@ -26,6 +30,7 @@ impl Bridge for StdDuration {
     }
 }
 
+#[cfg(feature = "std")]
 impl Bridge for SystemTime {
     type Known = Timestamp;
 
@@ -57,4 +62,6 @@ impl Bridge for SystemTime {
     }
 }
 
-impl_bridge!(StdDuration, SystemTime);
+impl_bridge!(StdDuration);
+#[cfg(feature = "std")]
+impl_bridge!(SystemTime);

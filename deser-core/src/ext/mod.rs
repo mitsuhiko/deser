@@ -114,9 +114,10 @@
 //!     }
 //! }
 //! ```
-use std::any::{Any, TypeId};
-use std::fmt;
-use std::sync::Arc;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use core::any::{Any, TypeId};
+use core::fmt;
 
 use crate::event::Atom;
 
@@ -307,7 +308,7 @@ impl<'x, K: BorrowedExtension> ErasedExtension for Holder<'x, K> {
             // lifetime.
             K::shorten(&self.0) as *const K::Value<'_> as *const ()
         } else {
-            std::ptr::null()
+            core::ptr::null()
         }
     }
 

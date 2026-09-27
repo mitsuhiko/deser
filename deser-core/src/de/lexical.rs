@@ -1,8 +1,10 @@
 //! Parsing of lexical atoms.
 //!
 //! See [`Atom::Lexical`](crate::Atom::Lexical) and [`LexicalRules`].
-use std::fmt::Write;
-use std::num::{IntErrorKind, ParseIntError};
+use alloc::format;
+use alloc::string::String;
+use core::fmt::Write;
+use core::num::{IntErrorKind, ParseIntError};
 
 use crate::State;
 use crate::error::{Error, ErrorKind, discarded_error};
@@ -216,7 +218,11 @@ fn invalid_message(value: &str, expecting: &str) -> String {
 
 /// Creates the error for a number that does not fit into the type.
 #[cold]
-pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str, state: &State) -> Error {
+pub(crate) fn out_of_range(
+    value: &dyn core::fmt::Display,
+    expecting: &str,
+    state: &State,
+) -> Error {
     if state.discards_errors {
         return discarded_error(ErrorKind::OutOfRange);
     }

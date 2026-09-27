@@ -89,7 +89,7 @@ pub fn validate_utf8_slice(bytes: &[u8]) -> bool {
     }
     #[cfg(not(feature = "speedups"))]
     {
-        std::str::from_utf8(bytes).is_ok()
+        core::str::from_utf8(bytes).is_ok()
     }
 }
 

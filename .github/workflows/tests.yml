@@ -15,6 +15,22 @@ jobs:
       - name: Test
         run: make test
 
+  check-no-std:
+    name: Check (no_std)
+    runs-on: ubuntu-latest
+    env:
+      # unused imports and the like only show up in these builds
+      RUSTFLAGS: -D warnings
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: thumbv7em-none-eabihf, aarch64-unknown-none
+      - name: Check
+        run: make check-no-std
+
   test-msrv:
     name: Test (MSRV)
     runs-on: ubuntu-latest

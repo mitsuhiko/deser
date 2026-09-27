@@ -1,9 +1,7 @@
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::collections::VecDeque;
-use std::fmt;
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
+use core::fmt;
+use core::ops::{Deref, DerefMut};
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
@@ -127,7 +125,7 @@ impl<T> FromIterator<T> for Streamed<T> {
 
 impl<T> IntoIterator for Streamed<T> {
     type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
+    type IntoIter = alloc::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter()
@@ -136,7 +134,7 @@ impl<T> IntoIterator for Streamed<T> {
 
 impl<'a, T> IntoIterator for &'a Streamed<T> {
     type Item = &'a T;
-    type IntoIter = std::slice::Iter<'a, T>;
+    type IntoIter = core::slice::Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.items.iter()
@@ -180,39 +178,15 @@ impl<T: Serialize> Serialize for Streamed<T> {
     }
 }
 
-/// The queue elements of [`Streamed`] are handed out through.
-pub(crate) struct Queue {
-    pub(crate) type_id: TypeId,
-    pub(crate) elements: Mutex<VecDeque<Box<dyn Any + Send>>>,
-}
-
-impl Queue {
-    #[cfg(feature = "io")]
-    pub(crate) fn pop(&self) -> Option<Box<dyn Any + Send>> {
-        self.elements.lock().unwrap().pop_front()
-    }
-}
-
-/// The queue registered in the state of a value whose elements are handed
-/// out (see `deser::io::ElementReader`).
-#[derive(Clone, Default)]
-pub(crate) struct ElementQueue(pub(crate) Option<Arc<Queue>>);
-
-impl fmt::Debug for ElementQueue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ElementQueue").finish_non_exhaustive()
-    }
-}
-
 /// Hands out a complete element or collects it.
 fn complete<T: Send + 'static>(value: T, items: &mut Vec<T>, state: &State) {
-    if let Some(ElementQueue(Some(queue))) = state.get::<ElementQueue>()
-        && queue.type_id == TypeId::of::<T>()
-    {
-        queue.elements.lock().unwrap().push_back(Box::new(value));
-    } else {
-        items.push(value);
-    }
+    #[cfg(feature = "io")]
+    let Err(value) = crate::io::elements::hand_out(value, state) else {
+        return;
+    };
+    #[cfg(not(feature = "io"))]
+    let _ = state;
+    items.push(value);
 }
 
 impl<'de, T: Deserialize<'de> + 'static> Deserialize<'de> for Streamed<T> {
@@ -269,7 +243,7 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for StreamedSink<'a, T> {
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         *self.out = Some(Streamed {
-            items: std::mem::take(&mut self.items),
+            items: core::mem::take(&mut self.items),
         });
         Ok(())
     }

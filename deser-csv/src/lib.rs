@@ -145,7 +145,13 @@
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//!   [streams](#streams).  Requires `std`.
+//! * `std` (enabled by default): uses the standard library.  Without it
+//!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
+
 mod de;
 #[cfg(feature = "io")]
 mod io;

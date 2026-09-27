@@ -1,6 +1,8 @@
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::ptr::NonNull;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 use crate::Text;
 use crate::error::Error;
@@ -108,7 +110,7 @@ impl Held {
                 }
             };
             Held {
-                ptr: std::mem::transmute::<NonNull<dyn Serialize + '_>, NonNull<dyn Serialize>>(
+                ptr: core::mem::transmute::<NonNull<dyn Serialize + '_>, NonNull<dyn Serialize>>(
                     ptr,
                 ),
                 owned,
@@ -885,7 +887,7 @@ impl<'a> SerializeDriver<'a> {
                             // which stays alive until the next call.
                             self.next_value = Some(unsafe { Held::new(value) });
                             let key = unsafe {
-                                std::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
+                                core::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
                             };
                             self.state.is_map_key = true;
                             return Ok(Some((Event::Atom(Atom::Str(key.into())), &FIELD_KEY)));
@@ -1054,7 +1056,7 @@ fn test_seq_emitting() {
 
 #[test]
 fn test_map_emitting() {
-    let mut map = std::collections::BTreeMap::new();
+    let mut map = alloc::collections::BTreeMap::new();
     map.insert((1u32, 2u32), "first");
     map.insert((2, 3), "second");
 

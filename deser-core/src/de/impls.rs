@@ -1,12 +1,18 @@
-use std::borrow::Cow;
-use std::collections::{
-    BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque, btree_map, hash_map,
-};
-use std::hash::BuildHasher;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::mem::{MaybeUninit, take};
-use std::sync::Arc;
+use alloc::borrow::Cow;
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque, btree_map};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use core::hash::{BuildHasher, Hash};
+use core::marker::PhantomData;
+use core::mem::{MaybeUninit, take};
+#[cfg(feature = "std")]
+use std::collections::{HashMap, HashSet, hash_map};
 
 use crate::State;
 use crate::Text;
@@ -152,7 +158,7 @@ fn copy_str(value: &str) -> String {
     // The copies of the head and tail overlap within the regions if the
     // length is not a power of two.
     unsafe {
-        use std::ptr::{read_unaligned as read, write_unaligned as write};
+        use core::ptr::{read_unaligned as read, write_unaligned as write};
         if len >= 8 {
             let a = read(src.cast::<u64>());
             let b = read(src.add(len - 8).cast::<u64>());
@@ -183,7 +189,7 @@ macro_rules! int_sink {
 
             #[allow(clippy::useless_conversion)]
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                let out_of_range = |value: &dyn std::fmt::Display| {
+                let out_of_range = |value: &dyn core::fmt::Display| {
                     lexical::out_of_range(value, stringify!($ty), state)
                 };
                 let value = match atom {
@@ -344,7 +350,7 @@ macro_rules! float_sink {
                 };
                 // Only variants with Copy payloads reach here. Avoid calling
                 // Atom's out-of-line drop glue, which has nothing to drop.
-                std::mem::forget(atom);
+                core::mem::forget(atom);
                 **self = Some(value);
                 Ok(())
             }
@@ -610,7 +616,7 @@ const MAX_PREALLOCATION: usize = 1024 * 1024;
 #[inline]
 fn cautious_capacity<T>(state: &State) -> usize {
     match state.container_shape().len() {
-        Some(len) => len.min(MAX_PREALLOCATION / std::mem::size_of::<T>().max(1)),
+        Some(len) => len.min(MAX_PREALLOCATION / core::mem::size_of::<T>().max(1)),
         None => 0,
     }
 }
@@ -661,6 +667,7 @@ impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K, V>
     for HashMap<K, V, H>
 {
@@ -690,7 +697,7 @@ impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K,
     fn merge(&mut self, mut other: Self) {
         // the smaller map is moved into the larger one
         if other.len() > self.len() {
-            std::mem::swap(self, &mut other);
+            core::mem::swap(self, &mut other);
             for (key, value) in other {
                 self.entry(key).or_insert(value);
             }
@@ -884,6 +891,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de, K, V, H> Deserialize<'de> for HashMap<K, V, H>
 where
     K: Hash + Eq + Deserialize<'de>,
@@ -902,6 +910,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de, K, V, H, KA, VA> DeserializeAs<'de, HashMap<K, V, H>> for HashMap<KA, VA>
 where
     K: Hash + Eq + Send,
@@ -934,6 +943,7 @@ impl<T: Ord + Send> SetTarget<T> for BTreeSet<T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<T: Hash + Eq + Send, H: BuildHasher + Default + Send> SetTarget<T> for HashSet<T, H> {
     const NAME: &'static str = "HashSet";
 
@@ -1056,6 +1066,7 @@ impl<'de, T: Ord + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de, T, H> Deserialize<'de> for HashSet<T, H>
 where
     T: Deserialize<'de> + Hash + Eq,
@@ -1067,6 +1078,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de, T, H, A> DeserializeAs<'de, HashSet<T, H>> for HashSet<A>
 where
     T: Hash + Eq + Send,

@@ -1,10 +1,12 @@
-use std::fmt;
-use std::str::FromStr;
+use alloc::format;
+use alloc::string::ToString;
+use core::fmt;
+use core::str::FromStr;
 
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::Extension;
-use crate::ext::known::{WellKnown, impl_well_known, invalid, out_of_range};
+use crate::ext::known::{WellKnown, floor, impl_well_known, invalid, out_of_range, round};
 
 /// A calendar date (`1979-05-27`).
 ///
@@ -227,6 +229,7 @@ impl Datetime {
 impl Timestamp {
     /// Creates a timestamp from seconds and nanoseconds that can be out of
     /// range or negative.
+    #[cfg(feature = "std")]
     pub(crate) fn normalized(seconds: i64, nanosecond: i64) -> Option<Timestamp> {
         let seconds = seconds.checked_add(nanosecond.div_euclid(1_000_000_000))?;
         Some(Timestamp {
@@ -705,10 +708,10 @@ impl WellKnown for Timestamp {
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("timestamp out of range"));
                 }
-                let seconds = value.floor();
+                let seconds = floor(value);
                 Timestamp {
                     seconds: seconds as i64,
-                    nanosecond: (((value - seconds) * 1e9).round() as u32).min(999_999_999),
+                    nanosecond: (round((value - seconds) * 1e9) as u32).min(999_999_999),
                 }
             }
             _ => return Ok(None),

@@ -1,6 +1,7 @@
-use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
-use std::ptr::NonNull;
+use alloc::boxed::Box;
+use core::mem::ManuallyDrop;
+use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 
 use crate::adapters::DeserializeAs;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
@@ -134,7 +135,7 @@ impl<'de, T> OwnedSink<'de, T> {
         // dropped before the storage is accessed again or freed.
         let sink = unsafe {
             let slot = unbounded(storage.ptr.as_ptr());
-            std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
         };
         OwnedSink {
             storage,
@@ -158,9 +159,9 @@ impl<'de, T> OwnedSink<'de, T> {
         let sink = unsafe {
             let slot = unbounded(storage.ptr.as_ptr());
             let value = slot.as_mut().unwrap_unchecked();
-            std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(T::deserialize_update(
-                value,
-            ))
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(
+                T::deserialize_update(value),
+            )
         };
         OwnedSink {
             storage,
@@ -239,7 +240,7 @@ impl<'de, T: Deserialize<'de>> OwnedDriver<'de, T> {
         // is dropped before the storage is accessed again or freed.
         let driver = unsafe {
             let slot = &mut *storage.ptr.as_ptr();
-            std::mem::transmute::<DeserializeDriver<'_, 'de>, DeserializeDriver<'de, 'de>>(
+            core::mem::transmute::<DeserializeDriver<'_, 'de>, DeserializeDriver<'de, 'de>>(
                 DeserializeDriver::new(slot),
             )
         };
@@ -283,7 +284,7 @@ impl<'de, T> OwnedDriver<'de, T> {
         // exactly once.
         let mut storage = unsafe {
             ManuallyDrop::drop(&mut this.driver);
-            std::ptr::read(&this.storage)
+            core::ptr::read(&this.storage)
         };
         storage
             .take()

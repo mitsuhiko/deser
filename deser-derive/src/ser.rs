@@ -242,7 +242,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             __deser::__derive::Some((__key, __handle)) => {
                                 #optional_skip
                                 return __deser::__derive::Ok(__deser::__derive::Some(unsafe {
-                                    ::std::mem::transmute::<
+                                    ::core::mem::transmute::<
                                         (__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>),
                                         (__deser::__derive::StrCow<'_>, __deser::ser::SerializeHandle<'_>),
                                     >((

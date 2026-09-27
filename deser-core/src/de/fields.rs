@@ -3,7 +3,10 @@
 //! The logic that does not depend on the types of the fields lives here so
 //! that it exists once instead of once per derived struct.  This is not part
 //! of the public API, it's used by the derive through `deser::__derive`.
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::State;
 use crate::Text;
@@ -135,7 +138,7 @@ impl FieldKeySink {
         deny: bool,
         state: &mut State,
     ) -> Result<Option<usize>, Error> {
-        let index = std::mem::replace(&mut self.index, UNKNOWN);
+        let index = core::mem::replace(&mut self.index, UNKNOWN);
         if index != UNKNOWN {
             Ok(
                 if !mark_seen(seen, index) || duplicate_field(fields[index], state)? {
@@ -172,7 +175,7 @@ impl FieldKeySink {
         fields: &[&str],
         state: &State,
     ) -> Result<NextField, Error> {
-        let index = std::mem::replace(&mut self.index, UNKNOWN);
+        let index = core::mem::replace(&mut self.index, UNKNOWN);
         Ok(if index != UNKNOWN {
             if !mark_seen(seen, index) || duplicate_field(fields[index], state)? {
                 NextField::Field(index)

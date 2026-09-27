@@ -1,4 +1,5 @@
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 use deser_core::State;
 use deser_core::de::{Deserialize, Sink, SinkHandle};

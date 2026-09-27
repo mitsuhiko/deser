@@ -9,8 +9,11 @@
 //! serde implementation of `bstr`).  Besides strings, byte strings accept
 //! bytes and sequences of integers.  `&BStr` borrows strings and bytes from
 //! the data.
-use std::borrow::Cow;
-use std::mem::take;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::mem::take;
 
 use ::bstr::{BStr, BString};
 
@@ -29,7 +32,7 @@ make_slot_wrapper!(SlotWrapper);
 /// Returns the atom of a byte string.
 #[inline]
 fn bstr_atom(bytes: &[u8]) -> Atom<'_> {
-    match std::str::from_utf8(bytes) {
+    match core::str::from_utf8(bytes) {
         Ok(value) => Atom::Str(Text::borrowed(value)),
         Err(_) => Atom::Bytes(Bytes::borrowed(bytes).with_fallback(const { &BytesFormat::SEQ })),
     }

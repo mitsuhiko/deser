@@ -3,11 +3,13 @@
 //! Deserializing compound values requires a heap allocated sink for most
 //! containers.  These sinks are short lived and are typically created and
 //! destroyed in quick succession with the same sizes, so freed blocks are
-//! cached per thread and size class and reused for the next sinks.
-use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
-use std::cell::UnsafeCell;
-use std::marker::PhantomData;
-use std::ptr::{self, NonNull};
+//! cached per thread and size class and reused for the next sinks.  Without
+//! `std` there are no thread locals and blocks are not cached.
+use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
+use alloc::boxed::Box;
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
+use core::ptr::{self, NonNull};
 
 use crate::de::Sink;
 
@@ -56,7 +58,8 @@ impl Drop for Cache {
     }
 }
 
-thread_local! {
+#[cfg(feature = "std")]
+std::thread_local! {
     static CACHE: Cache = const {
         Cache {
             lists: UnsafeCell::new(
@@ -67,6 +70,23 @@ thread_local! {
             ),
         }
     };
+}
+
+/// Calls `f` with the block cache of the current thread.
+///
+/// Returns `None` if there is no cache (while the thread is shutting down
+/// or without `std`).
+#[inline(always)]
+fn with_cache<R>(f: impl FnOnce(&Cache) -> R) -> Option<R> {
+    #[cfg(feature = "std")]
+    {
+        CACHE.try_with(f).ok()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let _ = f;
+        None
+    }
 }
 
 /// Returns the size class for a layout if it can be cached.
@@ -95,17 +115,16 @@ fn alloc_block(layout: Layout) -> NonNull<u8> {
     if let Some(class) = size_class(layout) {
         // SAFETY: the cache is only accessed from this thread and no
         // references into it are held across calls.
-        let cached = CACHE
-            .try_with(|cache| unsafe {
-                let list = &mut (*cache.lists.get())[class];
-                let block = list.head;
-                if !block.is_null() {
-                    list.head = (*block).next;
-                    list.len -= 1;
-                }
-                block
-            })
-            .unwrap_or(ptr::null_mut());
+        let cached = with_cache(|cache| unsafe {
+            let list = &mut (*cache.lists.get())[class];
+            let block = list.head;
+            if !block.is_null() {
+                list.head = (*block).next;
+                list.len -= 1;
+            }
+            block
+        })
+        .unwrap_or(ptr::null_mut());
         if let Some(block) = NonNull::new(cached) {
             return block.cast();
         }
@@ -135,20 +154,19 @@ unsafe fn free_block(block: NonNull<u8>, layout: Layout) {
     unsafe {
         let layout = match size_class(layout) {
             Some(class) => {
-                let cached = CACHE
-                    .try_with(|cache| {
-                        let list = &mut (*cache.lists.get())[class];
-                        if list.len < MAX_PER_CLASS {
-                            let block = block.as_ptr().cast::<FreeBlock>();
-                            (*block).next = list.head;
-                            list.head = block;
-                            list.len += 1;
-                            true
-                        } else {
-                            false
-                        }
-                    })
-                    .unwrap_or(false);
+                let cached = with_cache(|cache| {
+                    let list = &mut (*cache.lists.get())[class];
+                    if list.len < MAX_PER_CLASS {
+                        let block = block.as_ptr().cast::<FreeBlock>();
+                        (*block).next = list.head;
+                        list.head = block;
+                        list.len += 1;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
                 if cached {
                     return;
                 }
@@ -237,7 +255,7 @@ fn test_sink_box() {
     use crate::State;
     use crate::de::SinkHandle;
     use crate::{Atom, Error};
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     struct Tracked<const N: usize>(#[allow(dead_code)] Arc<()>, [u8; N]);
 

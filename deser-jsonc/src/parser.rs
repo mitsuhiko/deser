@@ -1,15 +1,7 @@
 // @generated from deser-private-jsontemplate/src/parser.rs by
 // deser-private-jsontemplate/generate.py.  Do not edit.
-//! The JSON parser.
-//!
-//! The parser is a state machine which can be suspended between tokens: if
-//! the input ends within a token and more input can follow, the parser
-//! returns how much of the input it consumed (up to the start of the token)
-//! and continues with more input.  With the complete input (`eof`) it
-//! parses a value in one go.  The state of the current container is held
-//! in locals while parsing and only stored in the parser when it's
-//! suspended.
-use std::str;
+use alloc::vec::Vec;
+use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;

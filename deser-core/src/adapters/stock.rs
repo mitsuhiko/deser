@@ -1,11 +1,17 @@
 //! The adapters provided by deser.
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Display;
-use std::hash::{BuildHasher, Hash};
-use std::marker::PhantomData;
-use std::mem::take;
-use std::str::FromStr;
+use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::fmt::Display;
+#[cfg(feature = "std")]
+use core::hash::{BuildHasher, Hash};
+use core::marker::PhantomData;
+use core::mem::take;
+use core::str::FromStr;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 use crate::State;
 use crate::Text;
@@ -1058,6 +1064,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de, K, V, H, KA, VA> DeserializeAs<'de, HashMap<K, V, H>> for MapSkipError<KA, VA>
 where
     K: Hash + Eq + Send,
@@ -1091,6 +1098,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<K, V, H, KA, VA> SerializeAs<HashMap<K, V, H>> for MapSkipError<KA, VA>
 where
     K: Sync,

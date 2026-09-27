@@ -4,6 +4,8 @@
 //! their positions, the deserializer emits them from there.  It can be
 //! suspended at any byte (when more input is needed) and continues where it
 //! stopped once the input is longer.
+use alloc::format;
+use alloc::vec::Vec;
 use deser_core::{Error, ErrorKind};
 
 use crate::{Escape, Terminator};
@@ -38,8 +40,8 @@ pub(crate) struct Dialect {
     specials: [u64; 5],
 }
 
-impl std::fmt::Debug for Dialect {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Dialect {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Dialect")
             .field("delimiter", &self.delimiter)
             .field("quote", &self.quote)
@@ -157,7 +159,7 @@ impl Dialect {
 }
 
 #[cold]
-fn config_error<M: Into<std::borrow::Cow<'static, str>>>(msg: M) -> Error {
+fn config_error<M: Into<alloc::borrow::Cow<'static, str>>>(msg: M) -> Error {
     Error::new(ErrorKind::Unexpected, msg)
 }
 

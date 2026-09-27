@@ -1,5 +1,7 @@
 //! The adapters and encodings for bytes (see [`adapters`](super#bytes)).
-use std::fmt;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use crate::State;
 use crate::error::Error;

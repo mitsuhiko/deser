@@ -5,7 +5,9 @@
 //! follow, the parser returns how much of the input it consumed (up to the
 //! start of the item) and continues with more input.  With the complete
 //! input (`eof`) it parses a data item in one go.
-use std::str;
+use alloc::format;
+use alloc::vec::Vec;
+use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
@@ -208,12 +210,12 @@ impl Parser {
             hit_end: false,
             sink_failed: false,
             opened: None,
-            tags: std::mem::take(&mut self.tags),
+            tags: core::mem::take(&mut self.tags),
         };
         let rv = self.run(&mut cur, eof, out);
         self.position = cur.pos;
         // the allocation of the tags is reused
-        self.tags = std::mem::take(&mut cur.tags);
+        self.tags = core::mem::take(&mut cur.tags);
         self.tags.clear();
         rv
     }
@@ -230,7 +232,7 @@ impl Parser {
             return Ok(Progress::Done(cur.pos));
         }
         // the stack is held in a local while parsing
-        let mut stack = std::mem::take(&mut self.stack);
+        let mut stack = core::mem::take(&mut self.stack);
         let scratch = &mut self.scratch;
         let mut frame = self.frame;
 
@@ -530,7 +532,7 @@ impl<'a> Cursor<'a> {
     #[cold]
     fn attach_tags<O: Out<'a>>(&mut self, out: &mut O) {
         // swapping retains the memory of both vectors
-        std::mem::swap(&mut out.state_mut().event_mut::<Tags>().0, &mut self.tags);
+        core::mem::swap(&mut out.state_mut().event_mut::<Tags>().0, &mut self.tags);
         self.tags.clear();
     }
 

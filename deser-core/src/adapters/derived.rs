@@ -1,5 +1,6 @@
 //! The derived implementation of a type as adapter (see [`Derived`]).
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, SerializeAs};

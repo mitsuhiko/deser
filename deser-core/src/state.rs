@@ -1,6 +1,7 @@
 //! The state shared between data formats and the types they process.
-use std::any::TypeId;
-use std::fmt;
+use alloc::vec::Vec;
+use core::any::TypeId;
+use core::fmt;
 
 use crate::de::DuplicateKeys;
 use crate::error::Error;
@@ -171,7 +172,7 @@ impl State {
     /// [`set_max_errors`](Self::set_max_errors) to limit the number of
     /// errors that are collected.
     pub fn set_collect_errors(&mut self, yes: bool) -> bool {
-        std::mem::replace(&mut self.collect_errors, yes)
+        core::mem::replace(&mut self.collect_errors, yes)
     }
 
     /// Returns `true` if the errors of items are collected.
@@ -236,7 +237,7 @@ impl State {
     /// does not attach context to them.  Errors that are kept rather than
     /// returned (for instance collected unknown fields) are unaffected.
     pub(crate) fn discard_errors<R>(&mut self, f: impl FnOnce(&mut State) -> R) -> R {
-        let outer = std::mem::replace(&mut self.discards_errors, true);
+        let outer = core::mem::replace(&mut self.discards_errors, true);
         let rv = f(self);
         self.discards_errors = outer;
         rv
@@ -244,7 +245,7 @@ impl State {
 
     /// Takes the state out, leaving an empty state that does not allocate.
     pub(crate) fn take(&mut self) -> State {
-        std::mem::replace(self, State::new())
+        core::mem::replace(self, State::new())
     }
 
     #[inline]
@@ -415,7 +416,7 @@ impl State {
     /// the [`Source`](crate::de::Source) and can be resolved into lines and columns for
     /// instance with the `deser-location` crate.
     #[inline]
-    pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
+    pub fn input_range(&self) -> Option<core::ops::Range<usize>> {
         let (start, end) = self.input_range;
         if start == NO_RANGE.0 {
             None

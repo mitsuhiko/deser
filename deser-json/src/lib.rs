@@ -136,10 +136,16 @@
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//!   [streams](#streams).  Requires `std`.
 //! * `speedups`: uses the `zmij` and `itoa` crates for number formatting and
 //!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
 //!   crate has no dependencies other than `deser`.
+//! * `std` (enabled by default): uses the standard library.  Without it
+//!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
+
 mod buf;
 mod escape;
 mod pretty;

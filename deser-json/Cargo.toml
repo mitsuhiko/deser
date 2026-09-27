@@ -13,16 +13,18 @@ documentation = "https://docs.rs/deser-json"
 autotests = false
 
 [features]
-default = ["io"]
+default = ["std", "io"]
+# the standard library, without it only `alloc` is needed
+std = ["deser-core/std", "simdutf8?/std"]
 # reading and writing values from and to streams (with `deser::io`)
-io = ["deser-core/io"]
+io = ["std", "deser-core/io"]
 # faster number formatting (itoa and zmij) and UTF-8 validation (simdutf8)
 speedups = ["dep:itoa", "dep:simdutf8", "dep:zmij"]
 
 [dependencies]
 deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 itoa = { version = "1.0.1", optional = true }
-simdutf8 = { version = "0.1.5", optional = true }
+simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 zmij = { version = "1.0.23", optional = true }
 
 [dev-dependencies]

@@ -1,7 +1,10 @@
 //! Serialization support for enums with data.
 //!
 //! These are used by the derive.
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::vec::Vec;
 
 use crate::State;
 use crate::error::{Error, ErrorKind};
@@ -171,7 +174,7 @@ impl<'a> StructEmitter for FlatFieldsEmitter<'a> {
                 // does not continue into the next loop iteration (this can
                 // be validated with `-Zpolonius`).
                 let item = unsafe {
-                    std::mem::transmute::<
+                    core::mem::transmute::<
                         Option<(Cow<'_, str>, SerializeHandle<'_>)>,
                         Option<(Cow<'a, str>, SerializeHandle<'a>)>,
                     >(item)

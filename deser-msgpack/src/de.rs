@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use deser_core::Error;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Limits};

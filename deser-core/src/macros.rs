@@ -49,7 +49,7 @@ macro_rules! __make_slot_wrapper {
             }
         }
 
-        impl<T> std::ops::Deref for $name<T> {
+        impl<T> core::ops::Deref for $name<T> {
             type Target = Option<T>;
 
             fn deref(&self) -> &Self::Target {
@@ -57,7 +57,7 @@ macro_rules! __make_slot_wrapper {
             }
         }
 
-        impl<T> std::ops::DerefMut for $name<T> {
+        impl<T> core::ops::DerefMut for $name<T> {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.0
             }

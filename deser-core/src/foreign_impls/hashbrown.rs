@@ -1,7 +1,7 @@
 //! `HashMap` and `HashSet` of `hashbrown`.
 //!
 //! They are serialized like the maps and sets of the standard library.
-use std::hash::{BuildHasher, Hash};
+use core::hash::{BuildHasher, Hash};
 
 use ::hashbrown::{HashMap, HashSet, hash_map};
 
@@ -55,7 +55,7 @@ where
     fn merge(&mut self, mut other: Self) {
         // the smaller map is moved into the larger one
         if other.len() > self.len() {
-            std::mem::swap(self, &mut other);
+            core::mem::swap(self, &mut other);
             for (key, value) in other {
                 self.entry(key).or_insert(value);
             }

@@ -200,12 +200,13 @@
 //!
 //! Adapters need to be `'static`.  This is the case for all types that do not
 //! hold references.
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::fmt;
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle};

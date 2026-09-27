@@ -69,7 +69,7 @@ pub fn find_escape(input: &[u8]) -> usize {
 #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
 #[inline(always)]
 fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
-    use std::arch::aarch64::*;
+    use core::arch::aarch64::*;
     let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
     // SAFETY: neon is available and the block is 16 bytes long
     let nibbles = unsafe {
@@ -94,7 +94,7 @@ fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
 #[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
 #[inline(always)]
 fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
-    use std::arch::x86_64::*;
+    use core::arch::x86_64::*;
     let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
     // SAFETY: sse2 is available and the block is 16 bytes long
     let mask = unsafe {

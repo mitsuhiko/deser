@@ -1,6 +1,9 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::ops::Deref;
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::ops::Deref;
 
 use crate::adapters::BytesFormat;
 use crate::error::{Error, ErrorKind};
@@ -899,9 +902,18 @@ pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
 }
 
 // Every value goes through atoms and events, they have to stay small.
-const _: () = assert!(std::mem::size_of::<Atom<'static>>() == 32);
-const _: () = assert!(std::mem::size_of::<Event<'static>>() == 32);
-const _: () = assert!(std::mem::size_of::<Implicit<'static>>() == 24);
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(core::mem::size_of::<Atom<'static>>() == 32);
+    assert!(core::mem::size_of::<Event<'static>>() == 32);
+    assert!(core::mem::size_of::<Implicit<'static>>() == 24);
+};
+#[cfg(target_pointer_width = "32")]
+const _: () = {
+    assert!(core::mem::size_of::<Atom<'static>>() == 24);
+    assert!(core::mem::size_of::<Event<'static>>() == 24);
+    assert!(core::mem::size_of::<Implicit<'static>>() == 16);
+};
 
 #[test]
 fn test_implicit_packing() {

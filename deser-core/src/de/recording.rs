@@ -4,6 +4,9 @@ use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 use crate::extensions::Snapshot;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 /// A recorded value that can be replayed into a sink later.
 ///
@@ -121,8 +124,8 @@ const _: () = {
     assert_send::<RecordBuf<'static>>();
 };
 
-impl std::fmt::Debug for Recording {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Recording {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Recording")
             .field("events", &self.0.events)
             .field("is_map_key", &self.0.is_map_key)
@@ -130,8 +133,8 @@ impl std::fmt::Debug for Recording {
     }
 }
 
-impl std::fmt::Debug for RecordBuf<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for RecordBuf<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("RecordBuf")
             .field("events", &self.events)
             .field("is_map_key", &self.is_map_key)
@@ -637,7 +640,7 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, 'de, T> {
         if let Some(end) = self.end.take() {
             self.recording.push(true, end, state);
         }
-        then.recorded(std::mem::take(&mut self.recording), state)
+        then.recorded(core::mem::take(&mut self.recording), state)
     }
 }
 

@@ -108,9 +108,9 @@
 //! The input ranges formats publish into the [`State`](crate::State) (and
 //! the locations derived from them, for instance by `deser-location`)
 //! refer to the frame of the value.
-use std::any::Any;
+use core::any::Any;
+use core::marker::PhantomData;
 use std::io::{Read, Write};
-use std::marker::PhantomData;
 
 use crate::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use crate::error::{Error, ErrorKind};
@@ -118,7 +118,7 @@ use crate::ser::{Serialize, SerializeDriver};
 
 mod buffer;
 mod decoder;
-mod elements;
+pub(crate) mod elements;
 mod encoder;
 
 pub use self::buffer::{DecodeBuffer, Status};

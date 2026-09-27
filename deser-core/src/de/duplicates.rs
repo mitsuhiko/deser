@@ -1,5 +1,7 @@
 use crate::State;
 use crate::error::{Error, ErrorKind};
+use alloc::format;
+use alloc::string::String;
 
 /// What happens if a key is given more than once.
 ///

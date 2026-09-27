@@ -6,6 +6,9 @@
 //! data formats depend on this crate so that they can be compiled without
 //! waiting for the derive macros.
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
 
 #[macro_use]
 mod macros;
@@ -25,7 +28,10 @@ mod foreign_impls;
 mod position;
 mod state;
 mod std_impls;
+#[cfg(feature = "std")]
+mod std_only_impls;
 mod streamed;
+mod sync;
 mod text;
 
 pub use self::error::{Error, ErrorAttachment, ErrorKind};
@@ -56,19 +62,19 @@ pub mod __format;
 #[cfg(feature = "derive")]
 #[doc(hidden)]
 pub mod __derive {
-    pub use std::borrow::Cow;
-    pub use std::boxed::Box;
-    pub use std::convert::Into;
-    pub use std::default::Default;
-    pub use std::marker::{PhantomData, Send, Sync};
-    pub use std::mem::replace;
-    pub use std::option::Option::{self, None, Some};
-    pub use std::primitive::{str, u8};
-    pub use std::result::Result::{Err, Ok};
-    pub use std::string::String;
-    pub use std::unreachable;
-    pub use std::vec::Vec;
-    pub type Result<T> = std::result::Result<T, super::Error>;
+    pub use alloc::borrow::Cow;
+    pub use alloc::boxed::Box;
+    pub use alloc::string::String;
+    pub use alloc::vec::Vec;
+    pub use core::convert::Into;
+    pub use core::default::Default;
+    pub use core::marker::{PhantomData, Send, Sync};
+    pub use core::mem::replace;
+    pub use core::option::Option::{self, None, Some};
+    pub use core::primitive::{str, u8};
+    pub use core::result::Result::{Err, Ok};
+    pub use core::unreachable;
+    pub type Result<T> = core::result::Result<T, super::Error>;
     pub type StrCow<'a> = Cow<'a, str>;
 
     pub use crate::adapters::ser_impls::SerializeAsRef;
@@ -153,7 +159,7 @@ pub mod __derive {
         }
         super::Error::new(
             super::ErrorKind::MissingField,
-            format!("missing field `{}`", name),
+            alloc::format!("missing field `{}`", name),
         )
     }
 }

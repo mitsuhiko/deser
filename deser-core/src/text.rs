@@ -10,13 +10,15 @@
 //! The three bits below the owned bit are a small tag that other types can
 //! store in the slice (like the type of the value of an
 //! [`Implicit`](crate::Implicit)).  Slices ignore it.
-use std::borrow::{Borrow, Cow};
-use std::cmp::Ordering;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::ptr::NonNull;
+use alloc::borrow::{Borrow, Cow};
+use alloc::boxed::Box;
+use alloc::string::String;
+use core::cmp::Ordering;
+use core::fmt;
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::ops::Deref;
+use core::ptr::NonNull;
 
 /// The bit of the length that marks owned data.
 const OWNED: usize = 1 << (usize::BITS - 1);
@@ -102,7 +104,7 @@ impl<'a> Slice<'a> {
     pub(crate) fn as_slice(&self) -> &[u8] {
         // SAFETY: the pointer and length are the ones of a slice that is
         // borrowed for `'a` or owned by this value.
-        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len()) }
+        unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len()) }
     }
 
     /// Returns the data if it's borrowed for `'a`.
@@ -112,7 +114,7 @@ impl<'a> Slice<'a> {
             None
         } else {
             // SAFETY: borrowed data lives for `'a`
-            Some(unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len()) })
+            Some(unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len()) })
         }
     }
 
@@ -128,10 +130,10 @@ impl<'a> Slice<'a> {
         if self.is_owned() {
             let len = self.len();
             let ptr = self.ptr.as_ptr();
-            std::mem::forget(self);
+            core::mem::forget(self);
             // SAFETY: owned data was created from a box with this pointer
             // and length.  `self` was forgotten so the box is not freed.
-            unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) }
+            unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
         } else {
             Box::from(self.as_slice())
         }
@@ -167,7 +169,7 @@ impl Drop for Slice<'_> {
             // SAFETY: owned data was created from a box with this pointer
             // and length.
             drop(unsafe {
-                Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                Box::from_raw(core::ptr::slice_from_raw_parts_mut(
                     self.ptr.as_ptr(),
                     self.len(),
                 ))
@@ -245,7 +247,7 @@ impl<'a> Text<'a> {
     #[inline]
     pub fn as_str(&self) -> &str {
         // SAFETY: the data is always valid UTF-8
-        unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) }
+        unsafe { core::str::from_utf8_unchecked(self.0.as_slice()) }
     }
 
     /// Returns the text if it borrows for `'a`.
@@ -257,7 +259,7 @@ impl<'a> Text<'a> {
         // SAFETY: the data is always valid UTF-8
         self.0
             .borrowed_slice()
-            .map(|data| unsafe { std::str::from_utf8_unchecked(data) })
+            .map(|data| unsafe { core::str::from_utf8_unchecked(data) })
     }
 
     /// Returns `true` if the text borrows for `'a`.
@@ -285,7 +287,7 @@ impl<'a> Text<'a> {
     pub fn into_cow(self) -> Cow<'a, str> {
         match self.0.into_cow() {
             // SAFETY: the data is always valid UTF-8
-            Cow::Borrowed(data) => Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(data) }),
+            Cow::Borrowed(data) => Cow::Borrowed(unsafe { core::str::from_utf8_unchecked(data) }),
             Cow::Owned(data) => Cow::Owned(unsafe { String::from_utf8_unchecked(data) }),
         }
     }
@@ -460,8 +462,8 @@ impl PartialEq<Text<'_>> for &str {
 
 #[test]
 fn test_text() {
-    assert_eq!(std::mem::size_of::<Text>(), 16);
-    assert_eq!(std::mem::size_of::<Option<Text>>(), 16);
+    assert_eq!(core::mem::size_of::<Text>(), 16);
+    assert_eq!(core::mem::size_of::<Option<Text>>(), 16);
 
     let borrowed = Text::from("borrowed");
     assert!(borrowed.is_borrowed());

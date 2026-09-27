@@ -83,7 +83,7 @@ pub struct Account {
 //! * [`deser-location`](https://docs.rs/deser-location): resolves the source
 //!   locations (line and column) of values while they are deserialized.
 //! * [`deser-debug`](https://docs.rs/deser-debug): formats serializable values
-//!   like their [`Debug`](std::fmt::Debug) implementation would.
+//!   like their [`Debug`](core::fmt::Debug) implementation would.
 //! * [`deser-tokio`](https://docs.rs/deser-tokio): reads and writes values with
 //!   tokio's asynchronous streams.
 //! * [`deser-serde`](https://docs.rs/deser-serde): adapters to use serde types.
@@ -102,8 +102,30 @@ pub struct Account {
 //!   [`Serialize`] and [`Deserialize`] for the collections and byte buffers of these
 //!   crates.  They behave like their counterparts in the standard library, including
 //!   the [adapters](crate::adapters) (for instance `IndexMap<_, DisplayFromStr>`).
+//!   Without `std` the adapters of `IndexMap` and `IndexSet` are not available.
 //! * `io` (enabled by default) adds [`io`][io-module] to read values from and
-//!   write values to streams.
+//!   write values to streams.  It requires `std`.
+//! * `std` (enabled by default) uses the standard library, see below.
+//!
+//! # `no_std`
+//!
+//! Without the `std` feature deser only needs `alloc` (a global allocator)
+//! and works on targets without an operating system.  Disable the default
+//! features of deser and of the formats (`deser-json`, `deser-jsonc`,
+//! `deser-json5`, `deser-cbor`, `deser-msgpack` and `deser-csv` support
+//! this):
+//!
+//! ```toml
+//! [dependencies]
+//! deser = { version = "0.8", default-features = false, features = ["derive"] }
+//! deser-cbor = { version = "0.8", default-features = false }
+//! ```
+//!
+//! Everything that is not in `core` and `alloc` is not available: `io`,
+//! the implementations for `HashMap` and `HashSet` (use the `hashbrown`
+//! feature instead), `Path`, `OsStr`, `SystemTime`, `Mutex`, `RwLock` and
+//! `OnceLock`.  Sinks are allocated from the global allocator directly,
+//! with `std` freed sinks are cached per thread.
 //!
 #![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
 #![cfg_attr(feature = "io", doc = "[io-module]: crate::io")]
@@ -116,6 +138,7 @@ pub struct Account {
     doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![no_std]
 
 // Everything but the derive macros lives in deser-core, so that the crates
 // of the data formats (which only depend on deser-core) can be compiled in

@@ -13,14 +13,15 @@ autotests = false
 doc = false
 
 [features]
-default = ["io"]
-io = ["deser-core/io", "deser-json/io"]
+default = ["std", "io"]
+std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
+io = ["std", "deser-core/io", "deser-json/io"]
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]
 deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
-simdutf8 = { version = "0.1.5", optional = true }
+simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 # the characters of identifiers (map keys without quotes)
 unicode-ident = "1.0.12"
 

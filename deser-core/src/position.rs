@@ -1,4 +1,4 @@
-use std::fmt;
+use core::fmt;
 
 /// A position in the input.
 ///

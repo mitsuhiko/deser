@@ -1,7 +1,11 @@
 //! Error interface.
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::fmt;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::any::{Any, TypeId};
+use core::fmt;
 
 use crate::Position;
 
@@ -142,7 +146,7 @@ enum ErrorInner {
 struct ErrorData {
     kind: ErrorKind,
     msg: Cow<'static, str>,
-    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    source: Option<Box<dyn core::error::Error + Send + Sync>>,
     offset: Option<usize>,
     // line and column (1-based)
     line_column: Option<(usize, usize)>,
@@ -210,7 +214,7 @@ impl Error {
     /// Turns the error into one that holds multiple errors.
     fn make_multiple(&mut self) -> &mut Vec<Error> {
         if let ErrorInner::Single(_) = *self.inner {
-            let first = std::mem::replace(&mut *self.inner, ErrorInner::Multiple(Vec::new()));
+            let first = core::mem::replace(&mut *self.inner, ErrorInner::Multiple(Vec::new()));
             if let ErrorInner::Multiple(ref mut errors) = *self.inner {
                 errors.push(Error {
                     inner: Box::new(first),
@@ -229,7 +233,7 @@ impl Error {
     /// The errors that are returned hold a single error each.
     pub fn errors(&self) -> impl Iterator<Item = &Error> {
         match *self.inner {
-            ErrorInner::Single(_) => std::slice::from_ref(self).iter(),
+            ErrorInner::Single(_) => core::slice::from_ref(self).iter(),
             ErrorInner::Multiple(ref errors) => errors.iter(),
         }
     }
@@ -262,7 +266,7 @@ impl Error {
     pub(crate) fn map_each(mut self, mut f: impl FnMut(Error) -> Error) -> Error {
         if let ErrorInner::Multiple(ref mut errors) = *self.inner {
             for err in errors.iter_mut() {
-                let taken = std::mem::replace(err, Error::new(ErrorKind::Unexpected, ""));
+                let taken = core::mem::replace(err, Error::new(ErrorKind::Unexpected, ""));
                 *err = f(taken);
             }
             self
@@ -287,7 +291,7 @@ impl Error {
     }
 
     /// Attaches another error as source to this error.
-    pub fn with_source<E: std::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
+    pub fn with_source<E: core::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
         self.data_mut().source = Some(Box::new(source));
         self
     }
@@ -508,14 +512,15 @@ impl fmt::Debug for DebugAttachments<'_> {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Error {
         Error::new(ErrorKind::Io, err.to_string()).with_source(err)
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for Error {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         self.data().source.as_ref().map(|err| err.as_ref() as _)
     }
 }

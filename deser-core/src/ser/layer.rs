@@ -2,6 +2,7 @@ use crate::State;
 use crate::error::Error;
 use crate::event::Event;
 use crate::ser::Serialize;
+use alloc::boxed::Box;
 
 /// The function that receives the events of a [`SerializeDriver`](crate::ser::SerializeDriver).
 pub(crate) type EventFn<'f> =
@@ -126,7 +127,7 @@ impl<'n> Next<'n> {
     /// map keys and emit them later, when the state already describes the
     /// value.
     pub fn emit_key(&mut self, event: Event<'_>) -> Result<(), Error> {
-        let was_key = std::mem::replace(&mut self.state.is_map_key, true);
+        let was_key = core::mem::replace(&mut self.state.is_map_key, true);
         let rv = self.emit(event);
         self.state.is_map_key = was_key;
         rv

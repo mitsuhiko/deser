@@ -12,6 +12,9 @@
 # * Benchmarks never run in parallel with anything as that would skew the
 #   numbers.
 RUN := ./scripts/utility-runner
+comma := ,
+empty :=
+space := $(empty) $(empty)
 
 # In CI the runner streams the output where cargo's progress bar is noise.
 ifeq ($(CI),true)
@@ -41,6 +44,20 @@ MSRV := 1.88
 # of the generated crates
 TEST_EXCLUDE := --exclude deser-private-jsontemplate
 
+# the targets the crates that support `no_std` are built for (targets
+# without the standard library).  The 32 bit target checks the sizes of
+# the types, the 64 bit one the SIMD code of the speedups.
+NO_STD_TARGET := thumbv7em-none-eabihf
+NO_STD_TARGET_64 := aarch64-unknown-none
+# crates that support `no_std` (their `std` feature is off), the no-std
+# example uses the derive
+NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-msgpack deser-path deser-debug no-std
+# the features of deser-core that work without `std`
+NO_STD_FEATURES := derive,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
+# the crates with speedups that work without `std`
+NO_STD_SPEEDUPS := deser-cbor deser-json deser-jsonc deser-json5 deser-msgpack
+NO_STD_SPEEDUPS_FEATURES := $(subst $(space),$(comma),$(foreach crate,$(NO_STD_SPEEDUPS),$(crate)/speedups))
+
 # standalone workspaces that are not part of the main workspace
 EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version compile-times/miniserde-version
 
@@ -65,6 +82,14 @@ miri-test-full:
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
 	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv --all-targets --no-default-features"
+
+# builds without the standard library for a target that does not have one
+check-no-std:
+	@$(RUN) "check-no-std:setup" "rustup target add $(NO_STD_TARGET) $(NO_STD_TARGET_64)"
+	@$(RUN) \
+		"check-no-std" "cargo build --target $(NO_STD_TARGET) --no-default-features --lib $(foreach crate,$(NO_STD_CRATES),-p $(crate))" \
+		"check-no-std:features" "cargo build --target $(NO_STD_TARGET) --no-default-features --lib -p deser-core $(foreach crate,$(NO_STD_SPEEDUPS),-p $(crate)) --features deser-core/$(subst $(comma),$(comma)deser-core/,$(NO_STD_FEATURES)),$(NO_STD_SPEEDUPS_FEATURES)" \
+		"check-no-std:64" "cargo build --target $(NO_STD_TARGET_64) --no-default-features --lib -p deser-core $(foreach crate,$(NO_STD_SPEEDUPS),-p $(crate)) --features deser-core/derive,$(NO_STD_SPEEDUPS_FEATURES)"
 
 # uses its own target directory so it does not invalidate the regular builds
 msrv:
@@ -109,4 +134,4 @@ bench-versus:
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test miri-test-full check msrv doc format format-check lint codegen bench bench-versus bench-compile-times
+.PHONY: all test miri-test miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times

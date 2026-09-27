@@ -2,6 +2,8 @@ use crate::State;
 use crate::de::driver::DriverCore;
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 /// A layer between a format and the sinks.
 ///

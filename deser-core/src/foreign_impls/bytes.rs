@@ -4,6 +4,7 @@
 //! native bytes represent as strings (base64 by default).  When
 //! deserialized, they accept what `Vec<u8>` accepts.
 use ::bytes::{Bytes, BytesMut};
+use alloc::vec::Vec;
 
 use crate::State;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};

@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::ext::Decimal;
 use crate::ext::known::{Bridge, impl_bridge, invalid};
+use alloc::format;
+use alloc::string::ToString;
 
 impl Bridge for ::rust_decimal::Decimal {
     type Known = Decimal;

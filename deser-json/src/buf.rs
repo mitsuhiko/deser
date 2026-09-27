@@ -1,5 +1,8 @@
 //! A byte buffer optimized for many small writes.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// An output buffer for UTF-8 text.
 ///
 /// The buffer only ever contains valid UTF-8 as long as it's only written
@@ -85,7 +88,7 @@ impl Buffer {
     /// Returns the written text.
     pub fn as_str(&self) -> &str {
         // SAFETY: the buffer only contains valid UTF-8, see above.
-        unsafe { std::str::from_utf8_unchecked(&self.bytes) }
+        unsafe { core::str::from_utf8_unchecked(&self.bytes) }
     }
 
     /// Shortens the buffer to the given length.
@@ -110,7 +113,7 @@ fn test_copy_small() {
         for len in 0..(100 - start) {
             let mut buffer = Buffer::with_capacity(0);
             buffer.push(b'x');
-            let s = std::str::from_utf8(&source[start..start + len]).unwrap();
+            let s = core::str::from_utf8(&source[start..start + len]).unwrap();
             buffer.push_str(s);
             buffer.push(b'y');
             let out = buffer.into_string();

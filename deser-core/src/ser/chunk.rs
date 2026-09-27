@@ -1,6 +1,8 @@
 use crate::Text;
 use crate::event::{Atom, Bytes};
 use crate::ser::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
+use alloc::boxed::Box;
+use alloc::string::String;
 
 /// A chunk represents the minimum state necessary to serialize a value.
 ///
@@ -104,4 +106,7 @@ impl From<String> for Chunk<'static> {
     }
 }
 
-const _: () = assert!(std::mem::size_of::<Chunk<'static>>() == 32);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<Chunk<'static>>() == 32);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<Chunk<'static>>() == 24);

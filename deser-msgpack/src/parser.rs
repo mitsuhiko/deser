@@ -5,7 +5,9 @@
 //! returns how much of the input it consumed (up to the start of the item)
 //! and continues with more input.  With the complete input (`eof`) it parses
 //! an item in one go.
-use std::str;
+use alloc::format;
+use alloc::vec::Vec;
+use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
@@ -195,7 +197,7 @@ impl Parser {
             return Ok(Progress::Done(cur.pos));
         }
         // the stack is held in a local while parsing
-        let mut stack = std::mem::take(&mut self.stack);
+        let mut stack = core::mem::take(&mut self.stack);
         let mut frame = self.frame;
 
         // returns from the function with the stack put back

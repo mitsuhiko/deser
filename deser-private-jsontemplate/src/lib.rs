@@ -6,6 +6,10 @@
 //! generated from with `generate.py` (see there and the README).  This file
 //! mirrors the `lib.rs` of the dialect crates just enough for the template
 //! to compile (as the dialect with all capabilities).
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
+
 mod de;
 #[cfg(feature = "io")]
 mod io;

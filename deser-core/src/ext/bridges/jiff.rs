@@ -1,6 +1,7 @@
 use ::jiff::civil;
 use ::jiff::tz::{self, TimeZone};
 use ::jiff::{SignedDuration, Zoned};
+use alloc::string::ToString;
 
 use crate::error::Error;
 use crate::ext::known::{Bridge, impl_bridge, invalid, out_of_range};
@@ -8,7 +9,11 @@ use crate::ext::{Date, Datetime, Duration, Offset, Time, Timestamp};
 
 #[cold]
 fn jiff_error(err: ::jiff::Error) -> Error {
-    invalid(err.to_string()).with_source(err)
+    let rv = invalid(err.to_string());
+    // the errors of jiff only implement `Error` with `std`
+    #[cfg(feature = "std")]
+    let rv = rv.with_source(err);
+    rv
 }
 
 fn date_to_known(value: civil::Date) -> Result<Date, Error> {

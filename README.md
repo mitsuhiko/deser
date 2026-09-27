@@ -270,6 +270,10 @@ Every format has the same pieces:
   MessagePack are parsed while the input arrives, and a `deser::Streamed<T>` sequence
   hands out its elements one by one.
   [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
+* Without the `std` feature (enabled by default) deser and the JSON, JSONC,
+  JSON5, CBOR, MessagePack and CSV crates only need `alloc` and work on
+  targets without an operating system (see
+  [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 
 ```rust
 use deser::io::Reader;

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 use crate::State;
 use crate::de::{OwnedSink, Sink, SinkHandle};

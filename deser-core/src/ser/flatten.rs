@@ -2,7 +2,11 @@
 //!
 //! This is used by the derive for flattened fields and by internally tagged
 //! enums for the content of newtype variants.
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use crate::State;
 use crate::error::{Error, ErrorKind};

@@ -87,6 +87,8 @@ Advanced:
   `Deserialize` by hand.
 * [`crate-path`](crate-path): using the derive when deser is renamed or
   re-exported.
+* [`no-std`](no-std): a library that does not use the standard library
+  (only `alloc`) and builds for targets without an operating system.
 * [`generic-types`](generic-types): custom bounds for type parameters
   that are not serialized themselves (on types and fields), and enums with
   lifetime and const parameters.

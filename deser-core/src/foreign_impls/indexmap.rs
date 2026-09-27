@@ -3,26 +3,20 @@
 //! They are serialized like `HashMap` and `HashSet` except that the entries
 //! are emitted in their order (which is the natural order of maps and
 //! sequences).  When deserialized, the entries keep the order of the data.
-use std::hash::{BuildHasher, Hash};
+//!
+//! The adapters (`IndexMap<KA, VA>` and `IndexSet<A>`) need the default
+//! hasher of `indexmap`, which requires `std`.
+use core::hash::{BuildHasher, Hash};
 
 use ::indexmap::{IndexMap, IndexSet, map};
 
-use crate::State;
-use crate::adapters::ser_impls::{serialize_as_map, serialize_as_set};
-use crate::adapters::{DeserializeAs, MapSkipError, Same, SerializeAs, skip_map_sink};
+use crate::adapters::{DeserializeAs, MapSkipError, Same, skip_map_sink};
 use crate::de::impls::{MapOut, MapTarget, SetTarget, map_sink, set_sink};
 use crate::de::{Deserialize, SinkHandle};
-use crate::error::Error;
-use crate::event::ContainerShape;
 use crate::ser::impls::{serialize_map, serialize_set};
-use crate::ser::{Chunk, Describe};
 
 serialize_map! {
     [K, V, S: Sync] IndexMap<K, V, S> => Natural;
-}
-
-serialize_as_map! {
-    [K, V, S: Sync, KA, VA] IndexMap<K, V, S> => IndexMap<KA, VA>, Natural;
 }
 
 impl<K, V, S> MapTarget<K, V> for IndexMap<K, V, S>
@@ -82,19 +76,6 @@ where
     }
 }
 
-impl<'de, K, V, S, KA, VA> DeserializeAs<'de, IndexMap<K, V, S>> for IndexMap<KA, VA>
-where
-    K: Hash + Eq + Send,
-    V: Send,
-    S: BuildHasher + Default + Send,
-    KA: DeserializeAs<'de, K>,
-    VA: DeserializeAs<'de, V>,
-{
-    fn deserialize_into_as(out: &mut Option<IndexMap<K, V, S>>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
-    }
-}
-
 impl<'de, K, V, S, KA, VA> DeserializeAs<'de, IndexMap<K, V, S>> for MapSkipError<KA, VA>
 where
     K: Hash + Eq + Send,
@@ -108,36 +89,8 @@ where
     }
 }
 
-impl<K, V, S, KA, VA> SerializeAs<IndexMap<K, V, S>> for MapSkipError<KA, VA>
-where
-    K: Sync,
-    V: Sync,
-    S: Sync,
-    KA: SerializeAs<K>,
-    VA: SerializeAs<V>,
-{
-    fn serialize_as<'a>(
-        value: &'a IndexMap<K, V, S>,
-        state: &mut State,
-    ) -> Result<Chunk<'a>, Error> {
-        <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::serialize_as(value, state)
-    }
-
-    fn container_shape_as(value: &IndexMap<K, V, S>) -> ContainerShape {
-        <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::container_shape_as(value)
-    }
-
-    fn describe_as(value: &IndexMap<K, V, S>, d: &mut dyn Describe) {
-        <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::describe_as(value, d)
-    }
-}
-
 serialize_set! {
     [T, S: Sync] IndexSet<T, S> => Natural;
-}
-
-serialize_as_set! {
-    [T, S: Sync, A] IndexSet<T, S> => IndexSet<A>, Natural;
 }
 
 impl<T, S> SetTarget<T> for IndexSet<T, S>
@@ -169,13 +122,75 @@ where
     }
 }
 
-impl<'de, T, S, A> DeserializeAs<'de, IndexSet<T, S>> for IndexSet<A>
-where
-    T: Hash + Eq + Send,
-    S: BuildHasher + Default + Send,
-    A: DeserializeAs<'de, T>,
-{
-    fn deserialize_into_as(out: &mut Option<IndexSet<T, S>>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, A>(out)
+/// The adapters, they need the default hasher.
+#[cfg(feature = "std")]
+mod adapters {
+    use core::hash::{BuildHasher, Hash};
+
+    use ::indexmap::{IndexMap, IndexSet};
+
+    use crate::State;
+    use crate::adapters::ser_impls::{serialize_as_map, serialize_as_set};
+    use crate::adapters::{DeserializeAs, MapSkipError, SerializeAs};
+    use crate::de::SinkHandle;
+    use crate::de::impls::{MapOut, map_sink, set_sink};
+    use crate::error::Error;
+    use crate::event::ContainerShape;
+    use crate::ser::{Chunk, Describe};
+
+    serialize_as_map! {
+        [K, V, S: Sync, KA, VA] IndexMap<K, V, S> => IndexMap<KA, VA>, Natural;
+    }
+
+    impl<'de, K, V, S, KA, VA> DeserializeAs<'de, IndexMap<K, V, S>> for IndexMap<KA, VA>
+    where
+        K: Hash + Eq + Send,
+        V: Send,
+        S: BuildHasher + Default + Send,
+        KA: DeserializeAs<'de, K>,
+        VA: DeserializeAs<'de, V>,
+    {
+        fn deserialize_into_as(out: &mut Option<IndexMap<K, V, S>>) -> SinkHandle<'_, 'de> {
+            map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
+        }
+    }
+
+    impl<K, V, S, KA, VA> SerializeAs<IndexMap<K, V, S>> for MapSkipError<KA, VA>
+    where
+        K: Sync,
+        V: Sync,
+        S: Sync,
+        KA: SerializeAs<K>,
+        VA: SerializeAs<V>,
+    {
+        fn serialize_as<'a>(
+            value: &'a IndexMap<K, V, S>,
+            state: &mut State,
+        ) -> Result<Chunk<'a>, Error> {
+            <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::serialize_as(value, state)
+        }
+
+        fn container_shape_as(value: &IndexMap<K, V, S>) -> ContainerShape {
+            <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::container_shape_as(value)
+        }
+
+        fn describe_as(value: &IndexMap<K, V, S>, d: &mut dyn Describe) {
+            <IndexMap<KA, VA> as SerializeAs<IndexMap<K, V, S>>>::describe_as(value, d)
+        }
+    }
+
+    serialize_as_set! {
+        [T, S: Sync, A] IndexSet<T, S> => IndexSet<A>, Natural;
+    }
+
+    impl<'de, T, S, A> DeserializeAs<'de, IndexSet<T, S>> for IndexSet<A>
+    where
+        T: Hash + Eq + Send,
+        S: BuildHasher + Default + Send,
+        A: DeserializeAs<'de, T>,
+    {
+        fn deserialize_into_as(out: &mut Option<IndexSet<T, S>>) -> SinkHandle<'_, 'de> {
+            set_sink::<_, T, A>(out)
+        }
     }
 }

@@ -1,4 +1,6 @@
-use std::marker::PhantomData;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use crate::State;
 use crate::de::layer::{Layer, LayerEvent, Next};
@@ -112,7 +114,7 @@ impl Container {
 /// The caller must ensure that the handle is dropped before the data it
 /// borrows from.
 unsafe fn erase_lifetime<'de>(handle: SinkHandle<'_, 'de>) -> SinkHandle<'de, 'de> {
-    unsafe { std::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle) }
+    unsafe { core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle) }
 }
 
 impl<'a, 'de> DeserializeDriver<'a, 'de> {
@@ -677,7 +679,7 @@ impl<'de> Drop for DriverCore<'de> {
 
 #[test]
 fn test_driver() {
-    let mut out: Option<std::collections::BTreeMap<u32, String>> = None;
+    let mut out: Option<alloc::collections::BTreeMap<u32, String>> = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
         driver.emit(Event::map_start()).unwrap();

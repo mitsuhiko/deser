@@ -1,6 +1,6 @@
 //! Shared machinery for the well-known extension types and the types that
 //! are bridged onto them.
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 use crate::State;
 use crate::de::Sink;
@@ -61,6 +61,74 @@ pub(crate) fn invalid(msg: impl Into<Cow<'static, str>>) -> Error {
 #[cold]
 pub(crate) fn out_of_range(msg: impl Into<Cow<'static, str>>) -> Error {
     Error::new(ErrorKind::OutOfRange, msg)
+}
+
+// `f64::trunc`, `f64::floor` and `f64::round` are not in `core`.  These
+// are exact for finite values that fit into an `i64`, which is all the
+// conversions of float seconds need.
+
+/// Rounds towards zero.
+pub(crate) fn trunc(value: f64) -> f64 {
+    debug_assert!(value.is_finite() && value.abs() < 9.2e18);
+    value as i64 as f64
+}
+
+/// Rounds towards negative infinity.
+pub(crate) fn floor(value: f64) -> f64 {
+    let rv = trunc(value);
+    if rv > value { rv - 1.0 } else { rv }
+}
+
+/// Rounds to the nearest integer, half way cases away from zero.
+pub(crate) fn round(value: f64) -> f64 {
+    let rv = trunc(value);
+    // exact, the difference is the fraction of the value
+    let fraction = value - rv;
+    if fraction >= 0.5 {
+        rv + 1.0
+    } else if fraction <= -0.5 {
+        rv - 1.0
+    } else {
+        rv
+    }
+}
+
+#[test]
+fn test_rounding() {
+    let mut values = vec![
+        0.0,
+        -0.0,
+        0.5,
+        -0.5,
+        1.5,
+        -1.5,
+        2.5,
+        -2.5,
+        0.49999999999999994,
+        -0.49999999999999994,
+        1.0 - f64::EPSILON / 2.0,
+        4503599627370495.5,
+        -4503599627370495.5,
+        4503599627370497.0,
+        9.1e18,
+        -9.1e18,
+        1e-300,
+        -1e-300,
+        123.456,
+        -123.456,
+        999999999.5,
+        0.9999999995,
+    ];
+    let mut x = 0.1f64;
+    while x < 1e18 {
+        values.extend([x, -x, x + 0.5, -x - 0.5]);
+        x *= 1.7;
+    }
+    for value in values {
+        assert_eq!(trunc(value), value.trunc(), "trunc {value}");
+        assert_eq!(floor(value), value.floor(), "floor {value}");
+        assert_eq!(round(value), value.round(), "round {value}");
+    }
 }
 
 /// Deserializes a well-known type.

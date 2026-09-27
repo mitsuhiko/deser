@@ -9,7 +9,10 @@
 //! parses a value in one go.  The state of the current container is held
 //! in locals while parsing and only stored in the parser when it's
 //! suspended.
-use std::str;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;

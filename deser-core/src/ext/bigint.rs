@@ -1,6 +1,8 @@
-use std::cmp::Ordering;
-use std::fmt;
-use std::str::FromStr;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::fmt;
+use core::str::FromStr;
 
 use crate::error::Error;
 use crate::event::Atom;
@@ -134,8 +136,8 @@ impl PartialEq for BigInt {
 
 impl Eq for BigInt {}
 
-impl std::hash::Hash for BigInt {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for BigInt {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.is_negative().hash(state);
         self.significant_magnitude().hash(state);
     }
@@ -241,7 +243,7 @@ impl FromStr for BigInt {
         let chunks = (first != 0).then(|| &digits[..first]).into_iter().chain(
             digits.as_bytes()[first..].chunks(9).map(|x| {
                 // the digits are ASCII
-                std::str::from_utf8(x).unwrap()
+                core::str::from_utf8(x).unwrap()
             }),
         );
         for chunk in chunks {

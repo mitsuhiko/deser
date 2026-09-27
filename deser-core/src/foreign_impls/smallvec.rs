@@ -5,6 +5,7 @@
 //! (`SmallVec<[T; N]>`) which requires the `const_generics` feature of
 //! `smallvec`.
 use ::smallvec::SmallVec;
+use alloc::vec::Vec;
 
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::adapters::ser_impls::serialize_as_slice;

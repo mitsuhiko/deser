@@ -61,8 +61,10 @@
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//!   [streams](#streams).  Requires `std`.
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
+//! * `std` (enabled by default): uses the standard library.  Without it
+//!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 //!
 //! # Streams
 //!
@@ -96,6 +98,10 @@
 //! Tags are not part of the data model.  Unknown tags are transparent: a
 //! tagged value deserializes like the untagged value.  To read or write tags
 //! use [`Tagged`] or see the [`tag`] module.
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
+
 mod de;
 mod float;
 #[cfg(feature = "io")]

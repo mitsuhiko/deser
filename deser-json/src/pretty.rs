@@ -12,6 +12,8 @@
 //! the entries is the same either way, only the separators between them
 //! change.  So instead of recording events, only the offsets of the
 //! entries are recorded.
+use alloc::string::String;
+use alloc::vec::Vec;
 use deser_core::hints::Layout;
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 
@@ -184,7 +186,7 @@ impl PrettyWriter {
     /// Writes the separator before an entry (a sequence item or a map key).
     fn begin_entry(&mut self) {
         let frame = self.stack.last_mut().unwrap();
-        let first = std::mem::replace(&mut frame.first, false);
+        let first = core::mem::replace(&mut frame.first, false);
         if !first {
             self.ser.write_char(',');
         }
@@ -211,7 +213,7 @@ impl PrettyWriter {
     #[cold]
     fn abort_attempt(&mut self) {
         let attempt = self.attempt.take().unwrap();
-        let mut text = std::mem::take(&mut self.scratch);
+        let mut text = core::mem::take(&mut self.scratch);
         text.clear();
         text.push_str(&self.ser.out.as_str()[attempt.start..]);
         self.ser.out.truncate(attempt.start);
@@ -219,7 +221,7 @@ impl PrettyWriter {
         // the bracket
         self.ser.write_str(&text[..1]);
         let separator = if self.compact { 1 } else { 2 };
-        let entries = std::mem::take(&mut self.entries);
+        let entries = core::mem::take(&mut self.entries);
         for (idx, &entry) in entries.iter().enumerate() {
             if idx > 0 {
                 self.ser.write_char(',');

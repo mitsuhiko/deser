@@ -30,8 +30,14 @@
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams.
+//! * `io` (enabled by default): reading and writing streams.  Requires
+//!   `std`.
 //! * `speedups`: faster UTF-8 validation and serialization.
+//! * `std` (enabled by default): uses the standard library.  Without it
+//!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+
+extern crate alloc;
 
 // These are generated from `deser-private-jsontemplate`.
 mod de;
