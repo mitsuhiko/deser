@@ -1,0 +1,17 @@
+[package]
+name = "protocol"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-cbor = { path = "../../deser-cbor" }
+deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "protocol"
+path = "src/main.rs"
+test = false
+doc = false

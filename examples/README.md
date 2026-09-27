@@ -34,6 +34,9 @@ What sets deser apart:
   overflowing the stack, and limits for untrusted input.
 * [`config-errors`](config-errors): errors with line, column and path,
   also for buffered values, in TOML and YAML.
+* [`protocol`](protocol): a wire protocol with integer tags, enums named
+  by their discriminants, tag aliases and forwarding of unknown messages
+  without losing data.
 * [`json-lines`](json-lines): reading JSON Lines with per-line error
   recovery and writing them.
 * [`json-numbers`](json-numbers): exact decimal numbers and timestamps in

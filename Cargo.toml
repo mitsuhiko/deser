@@ -32,6 +32,7 @@ members = [
   "examples/located",
   "examples/manual-struct",
   "examples/optionals",
+  "examples/protocol",
   "examples/streams",
   "examples/tokio-server",
 ]
