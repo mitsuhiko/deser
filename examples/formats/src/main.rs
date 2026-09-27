@@ -1,10 +1,10 @@
 //! One type, many formats.
 //!
-//! The same derived type is written as JSON, YAML, TOML and CBOR.  Types
-//! that are not part of the core data model (UUIDs, timestamps, dates,
-//! durations) are passed through deser as extension
+//! The same derived type is written as JSON, YAML, TOML, CBOR and
+//! MessagePack.  Types that are not part of the core data model (UUIDs,
+//! timestamps, dates, durations) are passed through deser as extension
 //! values.  Every format handles the ones it supports natively (TOML dates,
-//! CBOR tags) and writes the fallback (typically a
+//! CBOR tags, MessagePack timestamps) and writes the fallback (typically a
 //! string) for the others.  The same goes for types reading the data: the
 //! `Plain` struct does not know about date-times and gets the fallbacks.
 //!
@@ -64,6 +64,15 @@ fn main() {
     let cbor = deser_cbor::to_vec(&release).unwrap();
     println!("CBOR: {} bytes\n", cbor.len());
     assert_eq!(deser_cbor::from_slice::<Release>(&cbor).unwrap(), release);
+
+    // MessagePack only has a timestamp extension, the UUID and the date are
+    // written as strings
+    let msgpack = deser_msgpack::to_vec(&release).unwrap();
+    println!("MessagePack: {} bytes\n", msgpack.len());
+    assert_eq!(
+        deser_msgpack::from_slice::<Release>(&msgpack).unwrap(),
+        release
+    );
 
     // TOML has native date-times, a type that does not know them gets
     // their fallback (a string)

@@ -1,15 +1,16 @@
 //! Bytes in formats with and without native bytes.
 //!
 //! Bytes (`Vec<u8>`, `[u8; N]`, `Cow<[u8]>`) are part of the data model.
-//! CBOR has byte strings, JSON and TOML do not.  There they are written as
-//! base64 strings by default and can be configured per format or per value:
+//! CBOR and MessagePack have native bytes, JSON and TOML do not.  There they
+//! are written as base64 strings by default and can be configured per format
+//! or per value:
 //!
 //! * a plain `Vec<u8>` uses the format's configuration (base64 unless
-//!   configured otherwise) and native bytes in CBOR,
+//!   configured otherwise) and native bytes in CBOR and MessagePack,
 //! * `#[deser(as = Hex)]` makes it a hex string in all formats (also CBOR).
 //!   deser provides the base64 encodings, `Hex` comes from `deser-encoding`,
 //! * `#[deser(as = BytesFallback<Hex>)]` keeps native bytes in CBOR and
-//!   picks hex only where bytes are not supported,
+//!   MessagePack and picks hex only where bytes are not supported,
 //! * `#[deser(as = BytesFallback<IntSeq>)]` writes arrays of integers
 //!   instead (like `serde_json` does).
 //!
@@ -21,15 +22,15 @@ use deser_encoding::Hex;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Blob {
-    /// base64 in JSON and TOML (configurable), bytes in CBOR
+    /// base64 in JSON and TOML (configurable), bytes in CBOR and MessagePack
     data: Vec<u8>,
     /// a hex string everywhere
     #[deser(as = Hex)]
     digest: [u8; 8],
-    /// hex in JSON and TOML, bytes in CBOR
+    /// hex in JSON and TOML, bytes in CBOR and MessagePack
     #[deser(as = BytesFallback<Hex>)]
     signature: Vec<u8>,
-    /// arrays of integers in JSON and TOML, bytes in CBOR
+    /// arrays of integers in JSON and TOML, bytes in CBOR and MessagePack
     #[deser(as = BytesFallback<IntSeq>)]
     legacy: Vec<u8>,
 }
@@ -92,6 +93,14 @@ fn main() {
     assert!(contains(&cbor, b"\x44\xde\xad\xbe\xef"));
     assert!(contains(&cbor, b"\x70\x32\x63\x66"));
     assert_eq!(deser_cbor::from_slice::<Blob>(&cbor).unwrap(), blob);
+
+    // the same in MessagePack: bytes are bin 8 (0xc4) and strings fixstr
+    // (0xa0 to 0xbf)
+    let msgpack = deser_msgpack::to_vec(&blob).unwrap();
+    println!("MessagePack:\n{}\n", hex(&msgpack));
+    assert!(contains(&msgpack, b"\xc4\x04\xde\xad\xbe\xef"));
+    assert!(contains(&msgpack, b"\xb0\x32\x63\x66"));
+    assert_eq!(deser_msgpack::from_slice::<Blob>(&msgpack).unwrap(), blob);
 }
 
 fn hex(bytes: &[u8]) -> String {

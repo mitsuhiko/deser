@@ -8,7 +8,7 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is a serialization library for Rust for self describing formats such as
-JSON, YAML, TOML, CBOR and query strings.  It takes the user experience of
+JSON, YAML, TOML, CBOR, MessagePack and query strings.  It takes the user experience of
 serde, the problems that years of running serde in production turned up and the
 Rust of today, and tries to solve them with a different architecture.  If you
 know serde you will feel at home: you derive `Serialize` and `Deserialize` on
@@ -39,7 +39,8 @@ assert_eq!(
 The same type works unchanged with
 [`deser-yaml`](https://docs.rs/deser-yaml),
 [`deser-toml`](https://docs.rs/deser-toml),
-[`deser-cbor`](https://docs.rs/deser-cbor) and
+[`deser-cbor`](https://docs.rs/deser-cbor),
+[`deser-msgpack`](https://docs.rs/deser-msgpack) and
 [`deser-urlencoded`](https://docs.rs/deser-urlencoded).  Deriving requires the `derive`
 feature, which is not enabled by default:
 
@@ -103,8 +104,8 @@ advantage of what the language has gained since:
   out of the box, as do newer standard library types like `OnceLock` and
   `Infallible`.
 * **Ready for async.**  An ongoing deserialization is `Send`, can be held
-  across calls and fed while the input arrives.  JSON and CBOR are parsed
-  as the bytes come in and only incomplete tokens are buffered.
+  across calls and fed while the input arrives.  JSON, CBOR and MessagePack
+  are parsed as the bytes come in and only incomplete tokens are buffered.
   [`deser-tokio`](https://docs.rs/deser-tokio) reads and writes streams of
   values on sockets.
 
@@ -258,15 +259,15 @@ of errors.  To see more practical examples have a look at the
 Every format has the same pieces:
 
 * Functions for single values: `from_str`, `from_slice` and `to_string`
-  (`to_vec` for CBOR).  Options are set on a `DeserializerConfig` or
+  (`to_vec` for CBOR and MessagePack).  Options are set on a `DeserializerConfig` or
   `SerializerConfig`, which have the same methods.
 * A `Deserializer` which reads one value after another from a slice, and a
   `Serializer` which writes more than one value (JSON Lines, CBOR
-  sequences, YAML documents).
+  sequences, MessagePack streams, YAML documents).
 * With the `io` feature (enabled by default): `from_reader` and
   `to_writer` for `std::io`, and `deser::io::Reader` and `deser::io::Writer`
-  for streams of values.  They only buffer what they need: JSON and CBOR
-  are parsed while the input arrives, and a `deser::Streamed<T>` sequence
+  for streams of values.  They only buffer what they need: JSON, CBOR and
+  MessagePack are parsed while the input arrives, and a `deser::Streamed<T>` sequence
   hands out its elements one by one.
   [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
 
@@ -313,7 +314,7 @@ while let Some(event) = events.read::<Event>()? {
   atom which the type it is deserialized into parses.  This keeps working
   in flattened structs and tagged enums.
 * **Native bytes and optionals:** a `Vec<u8>` is bytes in formats which
-  support them (such as CBOR) and base64 elsewhere, other encodings can be
+  support them (such as CBOR and MessagePack) and base64 elsewhere, other encodings can be
   picked per field or per format.  Values know if they are optional, so a
   struct can skip all unset fields with a single attribute and
   `Option<Option<T>>` tells a missing value apart from null.
@@ -367,6 +368,8 @@ threads.
   implementation for deser
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
   implementation for deser with support for tags
+* [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack):
+  MessagePack implementation for deser with support for extensions
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML 1.1
   implementation for deser
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML

@@ -10,6 +10,7 @@ deser = { path = "../../deser", features = ["derive"] }
 deser-cbor = { path = "../../deser-cbor" }
 deser-encoding = { path = "../../deser-encoding" }
 deser-json = { path = "../../deser-json" }
+deser-msgpack = { path = "../../deser-msgpack" }
 deser-toml = { path = "../../deser-toml" }
 
 [[bin]]

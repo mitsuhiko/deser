@@ -10,7 +10,7 @@
 //!   are forwarded unchanged instead of being dropped,
 //! * messages that borrow their strings from the input without copying.
 //!
-//! The same types work with JSON and CBOR.
+//! The same types work with JSON, CBOR and MessagePack.
 use std::borrow::Cow;
 
 use deser::adapters::Borrowed;
@@ -105,6 +105,17 @@ fn main() {
     let cbor = deser_cbor::to_vec(&message).unwrap();
     let back: Message = deser_cbor::from_slice(&cbor).unwrap();
     println!("CBOR: {} bytes, {:?}", cbor.len(), back);
+    assert!(matches!(
+        back,
+        Message::Error {
+            code: ErrorCode::Forbidden
+        }
+    ));
+
+    // and so does MessagePack
+    let msgpack = deser_msgpack::to_vec(&message).unwrap();
+    let back: Message = deser_msgpack::from_slice(&msgpack).unwrap();
+    println!("MessagePack: {} bytes, {:?}", msgpack.len(), back);
     assert!(matches!(
         back,
         Message::Error {

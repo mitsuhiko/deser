@@ -10,9 +10,9 @@ Getting started:
 * [`enums`](enums): the enum representations (externally, internally and
   adjacently tagged, untagged), catch-all variants, untagged fallback
   variants and flattened fields in variants.
-* [`formats`](formats): one type written as JSON, YAML, TOML and CBOR,
-  with UUIDs, timestamps and dates handled natively where a format
-  supports them, and layout hints.
+* [`formats`](formats): one type written as JSON, YAML, TOML, CBOR and
+  MessagePack, with UUIDs, timestamps and dates handled natively where a
+  format supports them, and layout hints.
 * [`adapters`](adapters): `#[deser(as = ...)]` to serialize types on
   behalf of others, composed with containers, and adapters that tolerate
   errors.
@@ -38,7 +38,8 @@ What sets deser apart:
 * [`config`](config): layered configuration (defaults, files and command
   line overrides) with updates, validation and warnings for unknown keys.
 * [`bytes`](bytes): bytes in JSON and TOML (base64, hex, arrays of
-  integers) configured per format and per field, and native bytes in CBOR.
+  integers) configured per format and per field, and native bytes in CBOR
+  and MessagePack.
 * [`deep-nesting`](deep-nesting): a million levels of nesting without
   overflowing the stack, and limits for untrusted input.
 * [`config-errors`](config-errors): errors with line, column and path,

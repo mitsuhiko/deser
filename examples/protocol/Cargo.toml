@@ -9,6 +9,7 @@ publish = false
 deser = { path = "../../deser", features = ["derive"] }
 deser-cbor = { path = "../../deser-cbor" }
 deser-json = { path = "../../deser-json" }
+deser-msgpack = { path = "../../deser-msgpack" }
 
 [[bin]]
 name = "protocol"
