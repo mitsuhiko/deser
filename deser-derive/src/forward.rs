@@ -7,6 +7,12 @@
 //!
 //! Attributes which only affect the directions that forward to the adapter
 //! would be silently ignored, they are rejected instead.
+//!
+//! Adapters can wrap the derived implementation (`_`, the `Derived`
+//! adapter).  The derived implementation is then derived as
+//! `DerivedSerialize` or `DerivedDeserialize` in addition to the
+//! implementation that forwards to the adapter (see [`serialize_trait`] and
+//! [`deserialize_trait`]).
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
@@ -70,7 +76,11 @@ fn check_attrs(
     direction: Direction,
 ) -> syn::Result<()> {
     let adapters = container_attrs.adapters();
-    let forwards = (adapters.ser().is_some(), adapters.de().is_some());
+    // the attributes are used by derived implementations that adapters wrap
+    let forwards = (
+        adapters.ser().is_some() && !adapters.uses_derived(Direction::Serialize),
+        adapters.de().is_some() && !adapters.uses_derived(Direction::Deserialize),
+    );
     let mut errors: Option<syn::Error> = None;
     for (level, seen) in used_attrs(input)? {
         for attr in &seen {
@@ -171,12 +181,46 @@ fn where_clause(
     generics.where_clause.unwrap()
 }
 
+/// Returns the trait the derived implementation of `Serialize` implements.
+///
+/// This is `Serialize` unless an adapter wraps it, see the module.
+pub fn serialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
+    if container_attrs
+        .adapters()
+        .uses_derived(Direction::Serialize)
+    {
+        quote! { __deser::__derive::DerivedSerialize }
+    } else {
+        quote! { __deser::Serialize }
+    }
+}
+
+/// Returns the trait the derived implementation of `Deserialize` implements.
+///
+/// This is `Deserialize` unless an adapter wraps it, see the module.
+pub fn deserialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
+    if container_attrs
+        .adapters()
+        .uses_derived(Direction::Deserialize)
+    {
+        quote! { __deser::__derive::DerivedDeserialize<'de> }
+    } else {
+        quote! { __deser::Deserialize<'de> }
+    }
+}
+
 /// Derives `Serialize` if the container has an adapter for it.
-pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStream>> {
+///
+/// Returns the implementation and whether the derived implementation is
+/// needed as well.
+pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<(TokenStream, bool)>> {
     let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     let Some(adapter) = container_attrs.adapters().ser() else {
         return Ok(None);
     };
+    let derived = container_attrs
+        .adapters()
+        .uses_derived(Direction::Serialize);
     check_attrs(input, &container_attrs, Direction::Serialize)?;
 
     let ident = &input.ident;
@@ -197,59 +241,68 @@ pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStr
         <#adapter as __deser::adapters::SerializeAs<Self>>
     };
 
-    Ok(Some(quote! {
-        #[automatically_derived]
-        impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
-            #[inline]
-            fn serialize(&self, __state: &mut __deser::State)
-                -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
-            {
-                #adapter::serialize_as(self, __state)
-            }
+    Ok(Some((
+        quote! {
+            #[automatically_derived]
+            impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+                #[inline]
+                fn serialize(&self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
+                {
+                    #adapter::serialize_as(self, __state)
+                }
 
-            #[inline]
-            fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                #adapter::finish_as(self, __state)
-            }
+                #[inline]
+                fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
+                    #adapter::finish_as(self, __state)
+                }
 
-            #[inline]
-            fn is_optional(&self) -> bool {
-                #adapter::is_optional_as(self)
-            }
+                #[inline]
+                fn is_optional(&self) -> bool {
+                    #adapter::is_optional_as(self)
+                }
 
-            #[inline]
-            fn container_shape(&self) -> __deser::ContainerShape {
-                #adapter::container_shape_as(self)
-            }
+                #[inline]
+                fn container_shape(&self) -> __deser::ContainerShape {
+                    #adapter::container_shape_as(self)
+                }
 
-            fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                __d.newtype(#type_name);
-                #adapter::describe_as(self, __d)
-            }
+                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    __d.newtype(#type_name);
+                    #adapter::describe_as(self, __d)
+                }
 
-            #[inline]
-            fn __private_begin(&self, __state: &mut __deser::State)
-                -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
-            {
-                #adapter::__private_begin_as(self, __state)
-            }
+                #[inline]
+                fn __private_begin(&self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                {
+                    #adapter::__private_begin_as(self, __state)
+                }
 
-            #[inline]
-            fn __private_slice_as_bytes(__values: &[Self])
-                -> __deser::__derive::Option<__deser::__derive::Cow<'_, [__deser::__derive::u8]>>
-            {
-                #adapter::__private_slice_as_bytes_as(__values)
+                #[inline]
+                fn __private_slice_as_bytes(__values: &[Self])
+                    -> __deser::__derive::Option<__deser::__derive::Cow<'_, [__deser::__derive::u8]>>
+                {
+                    #adapter::__private_slice_as_bytes_as(__values)
+                }
             }
-        }
-    }))
+        },
+        derived,
+    )))
 }
 
 /// Derives `Deserialize` if the container has an adapter for it.
-pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenStream>> {
+///
+/// Returns the implementation and whether the derived implementation is
+/// needed as well.
+pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(TokenStream, bool)>> {
     let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     let Some(adapter) = container_attrs.adapters().de() else {
         return Ok(None);
     };
+    let derived = container_attrs
+        .adapters()
+        .uses_derived(Direction::Deserialize);
     check_attrs(input, &container_attrs, Direction::Deserialize)?;
 
     let ident = &input.ident;
@@ -270,57 +323,65 @@ pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<TokenS
         <#adapter as __deser::adapters::DeserializeAs<'de, Self>>
     };
 
-    Ok(Some(quote! {
-        #[automatically_derived]
-        impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
-            #[inline]
-            fn deserialize_into(__slot: &mut __deser::__derive::Option<Self>)
-                -> __deser::de::SinkHandle<'_, 'de>
-            {
-                #adapter::deserialize_into_as(__slot)
-            }
+    Ok(Some((
+        quote! {
+            #[automatically_derived]
+            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+                #[inline]
+                fn deserialize_into(__slot: &mut __deser::__derive::Option<Self>)
+                    -> __deser::de::SinkHandle<'_, 'de>
+                {
+                    #adapter::deserialize_into_as(__slot)
+                }
 
-            #[inline]
-            fn initial_value() -> __deser::__derive::Option<Self> {
-                #adapter::initial_value_as()
-            }
+                #[inline]
+                fn initial_value() -> __deser::__derive::Option<Self> {
+                    #adapter::initial_value_as()
+                }
 
-            #[inline]
-            fn __private_atom_into(
-                __slot: &mut __deser::__derive::Option<Self>,
-                __atom: __deser::Atom,
-                __state: &mut __deser::State,
-            ) -> __deser::__derive::Result<()> {
-                #adapter::__private_atom_into_as(__slot, __atom, __state)
-            }
+                #[inline]
+                fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
+                    #adapter::deserialize_update_as(__value)
+                }
 
-            #[inline]
-            fn __private_borrowed_atom_into(
-                __slot: &mut __deser::__derive::Option<Self>,
-                __atom: __deser::Atom<'de>,
-                __state: &mut __deser::State,
-            ) -> __deser::__derive::Result<()> {
-                #adapter::__private_borrowed_atom_into_as(__slot, __atom, __state)
-            }
+                #[inline]
+                fn __private_atom_into(
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    #adapter::__private_atom_into_as(__slot, __atom, __state)
+                }
 
-            #[inline]
-            fn __private_is_bytes() -> bool {
-                #adapter::__private_is_bytes_as()
-            }
+                #[inline]
+                fn __private_borrowed_atom_into(
+                    __slot: &mut __deser::__derive::Option<Self>,
+                    __atom: __deser::Atom<'de>,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    #adapter::__private_borrowed_atom_into_as(__slot, __atom, __state)
+                }
 
-            #[inline]
-            fn __private_vec_from_bytes(__bytes: __deser::__derive::Vec<__deser::__derive::u8>)
-                -> __deser::__derive::Option<__deser::__derive::Vec<Self>>
-            {
-                #adapter::__private_vec_from_bytes_as(__bytes)
-            }
+                #[inline]
+                fn __private_is_bytes() -> bool {
+                    #adapter::__private_is_bytes_as()
+                }
 
-            #[inline]
-            fn __private_array_from_bytes<const __N: usize>(__bytes: &[__deser::__derive::u8])
-                -> __deser::__derive::Option<[Self; __N]>
-            {
-                #adapter::__private_array_from_bytes_as::<__N>(__bytes)
+                #[inline]
+                fn __private_vec_from_bytes(__bytes: __deser::__derive::Vec<__deser::__derive::u8>)
+                    -> __deser::__derive::Option<__deser::__derive::Vec<Self>>
+                {
+                    #adapter::__private_vec_from_bytes_as(__bytes)
+                }
+
+                #[inline]
+                fn __private_array_from_bytes<const __N: usize>(__bytes: &[__deser::__derive::u8])
+                    -> __deser::__derive::Option<[Self; __N]>
+                {
+                    #adapter::__private_array_from_bytes_as::<__N>(__bytes)
+                }
             }
-        }
-    }))
+        },
+        derived,
+    )))
 }

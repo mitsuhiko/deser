@@ -7,7 +7,8 @@
 //!
 //! * The [`Check<V>`](Check) adapter (`#[deser(as = Check<V>)]`) fails the
 //!   deserialization if the value is invalid.  The type of the field does
-//!   not change.
+//!   not change.  On a type (`#[deser(deserialize_as = Check<V, _>)]`) it
+//!   checks the whole value, for rules that span fields.
 //! * [`Checked<T, V>`](Checked) does the same, a `Checked` value is always
 //!   valid.
 //! * [`Validated<T, V>`](Validated) keeps the errors of the value in it

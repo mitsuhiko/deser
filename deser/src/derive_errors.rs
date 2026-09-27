@@ -227,15 +227,8 @@
 /// ```
 ///
 /// Adapters on containers cannot use the implementation of the container
-/// itself (`_`, `Same` or the type) as it forwards to the adapter.
-///
-/// ```compile_fail
-/// #[derive(deser::Serialize)]
-/// #[deser(as = _)]
-/// struct Test {
-///     field: u32,
-/// }
-/// ```
+/// itself (`Same` or the type) as it forwards to the adapter.  `_` stands
+/// for the derived implementation (see `deser::adapters::Derived`).
 ///
 /// ```compile_fail
 /// #[derive(deser::Serialize)]

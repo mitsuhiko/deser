@@ -906,3 +906,147 @@ fn test_bytes_hooks() {
     let bytes: [As<u8, Same>; 2] = deserialize(vec![Event::from(&b"\x01\x02"[..])]).unwrap();
     assert_eq!(bytes.map(|x| x.into_inner()), [1, 2]);
 }
+
+#[test]
+fn test_derived() {
+    use deser::adapters::DefaultOnError;
+
+    // `_` is the derived implementation, which the adapter wraps
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[deser(as = DefaultOnError<_>)]
+    struct Point {
+        x: u32,
+        #[deser(rename = "Y")]
+        y: u32,
+    }
+
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[deser(as = DefaultOnError<_>, rename_all = "lowercase")]
+    enum Kind {
+        #[default]
+        Unknown,
+        Circle,
+        Square(u32),
+    }
+
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[deser(as = DefaultOnError<_>)]
+    struct Pair(u32, u32);
+
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[deser(as = DefaultOnError<_>)]
+    struct Wrapper<T>(T);
+
+    check(
+        Point { x: 1, y: 2 },
+        vec![
+            Event::map_start(),
+            "x".into(),
+            1u64.into(),
+            "Y".into(),
+            2u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(Kind::Circle, vec!["circle".into()]);
+    check(
+        Kind::Square(2),
+        vec![
+            Event::map_start(),
+            "square".into(),
+            2u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(
+        Pair(1, 2),
+        vec![Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd],
+    );
+    check(Wrapper(true), vec![true.into()]);
+
+    // the adapter handles the errors of the derived implementation
+    let point: Point = deserialize(vec![
+        Event::map_start(),
+        "x".into(),
+        "no".into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(point, Point::default());
+    let kind: Kind = deserialize(vec!["triangle".into()]).unwrap();
+    assert_eq!(kind, Kind::Unknown);
+    let wrapper: Wrapper<u32> = deserialize(vec!["x".into()]).unwrap();
+    assert_eq!(wrapper, Wrapper(0));
+}
+
+#[test]
+fn test_derived_updates() {
+    use deser::adapters::Derived;
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Inner {
+        a: u32,
+        b: u32,
+    }
+
+    // updates go through the adapter, `Derived` updates in place
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(deserialize_as = _)]
+    struct Outer {
+        name: String,
+        inner: Inner,
+        // fields with adapters are updated by the adapter, `Same` updates in
+        // place as well
+        #[deser(as = _)]
+        other: Inner,
+        #[deser(as = Derived)]
+        more: Wrapped,
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(deserialize_as = Derived)]
+    struct Wrapped {
+        c: u32,
+        d: u32,
+    }
+
+    let mut value = Outer {
+        name: "x".into(),
+        inner: Inner { a: 1, b: 2 },
+        other: Inner { a: 3, b: 4 },
+        more: Wrapped { c: 5, d: 6 },
+    };
+    {
+        let mut driver = DeserializeDriver::update(&mut value);
+        for event in [
+            Event::map_start(),
+            "inner".into(),
+            Event::map_start(),
+            "a".into(),
+            10u64.into(),
+            Event::MapEnd,
+            "other".into(),
+            Event::map_start(),
+            "b".into(),
+            40u64.into(),
+            Event::MapEnd,
+            "more".into(),
+            Event::map_start(),
+            "d".into(),
+            60u64.into(),
+            Event::MapEnd,
+            Event::MapEnd,
+        ] {
+            driver.emit(event).unwrap();
+        }
+    }
+    assert_eq!(
+        value,
+        Outer {
+            name: "x".into(),
+            inner: Inner { a: 10, b: 2 },
+            other: Inner { a: 3, b: 40 },
+            more: Wrapped { c: 5, d: 60 },
+        }
+    );
+}

@@ -316,14 +316,78 @@ fn test_check_adapter_update() {
     use deser::de::Deserializer;
 
     let mut listener: Listener = deser_json::from_str(r#"{"port": 80, "admins": []}"#).unwrap();
-    // fields with adapters are replaced in updates, the new value is checked
+    // fields are updated and then checked, the value keeps the update
     let err = deser_json::Deserializer::from_str(r#"{"port": 0}"#)
         .update(&mut listener)
         .unwrap_err();
     assert_eq!(err.message(), "invalid value: must not be zero");
-    assert_eq!(listener.port, 80);
+    assert_eq!(listener.port, 0);
     deser_json::Deserializer::from_str(r#"{"port": 8080}"#)
         .update(&mut listener)
         .unwrap();
     assert_eq!(listener.port, 8080);
+}
+
+#[derive(Debug, Deserialize)]
+#[deser(deserialize_as = deser_validate::Check<BoundsRules, _>)]
+struct Bounds {
+    min: u32,
+    max: u32,
+}
+
+deser_validate::validator!(BoundsRules(bounds: &Bounds) => bounds.min <= bounds.max, "min is larger than max");
+
+#[derive(Debug, Deserialize)]
+struct ServerLimits {
+    connections: Bounds,
+    #[deser(as = deser_validate::Check<NonZero>)]
+    port: u16,
+}
+
+#[test]
+fn test_check_container() {
+    let limits: ServerLimits =
+        deser_json::from_str(r#"{"connections": {"min": 1, "max": 5}, "port": 80}"#).unwrap();
+    assert_eq!(limits.connections.max, 5);
+
+    // the error points at the start of the value
+    let err = with_paths::<ServerLimits>(r#"{"connections": {"min": 6, "max": 5}, "port": 80}"#)
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: invalid value: min is larger than max at line 1 column 17 (path: connections)"
+    );
+    assert_eq!(
+        err.attachment::<Violation>().unwrap().code(),
+        "bounds_rules"
+    );
+
+    // values that keep their errors
+    let bounds: Validated<Bounds> = deser_json::from_str(r#"{"min": 6, "max": 5}"#).unwrap();
+    assert_eq!(
+        bounds.error().unwrap().message(),
+        "invalid value: min is larger than max"
+    );
+}
+
+#[test]
+fn test_check_container_update() {
+    use deser::de::Deserializer;
+
+    let mut limits: ServerLimits =
+        deser_json::from_str(r#"{"connections": {"min": 1, "max": 5}, "port": 80}"#).unwrap();
+
+    // the update merges into the value, which is checked once it's complete
+    deser_json::Deserializer::from_str(r#"{"connections": {"max": 10}}"#)
+        .update(&mut limits)
+        .unwrap();
+    assert_eq!((limits.connections.min, limits.connections.max), (1, 10));
+
+    let err = deser_json::Deserializer::from_str(r#"{"connections": {"min": 20}}"#)
+        .update_with(&mut limits, |driver| driver.push_layer(PathLayer::new()))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: invalid value: min is larger than max at line 1 column 17 (path: connections)"
+    );
 }

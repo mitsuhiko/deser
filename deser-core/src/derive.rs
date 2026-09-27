@@ -481,8 +481,7 @@
 //!
 //! `serialize_as` and `deserialize_as` forward only one direction, the other
 //! one is derived as usual.  A common use is to convert values when they are
-//! read while writing them with the derived implementation (to only check
-//! values, [validation](#validation) is simpler):
+//! read while writing them with the derived implementation:
 //!
 //! ```
 //! use deser::{Deserialize, Serialize};
@@ -513,6 +512,31 @@
 //! }
 //! ```
 //!
+//! ### Wrapping the Derived Implementation
+//!
+//! Adapters that wrap another adapter can wrap the derived implementation of
+//! the type: `_` stands for it (the [`Derived`](crate::adapters::Derived)
+//! adapter).  The type is derived as usual (all attributes apply) and the
+//! adapter decides what happens with it, for instance to use the default for
+//! values that cannot be deserialized or to check values once they are
+//! complete (see `Check` in `deser-validate`):
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::DefaultOnError;
+//!
+//! #[derive(Default, Serialize, Deserialize)]
+//! #[deser(as = DefaultOnError<_>, rename_all = "camelCase")]
+//! pub struct Theme {
+//!     accent_color: String,
+//!     dark_mode: bool,
+//! }
+//! ```
+//!
+//! Updates (see [`Deserialize::deserialize_update`](crate::Deserialize::deserialize_update))
+//! go through the adapter as well, the derived implementation updates the
+//! value in place.
+//!
 //! Some things to be aware of:
 //!
 //! * Attributes that only affect the directions which forward to the adapter
@@ -522,9 +546,10 @@
 //!   crate path.  With `deserialize_as` for instance `alias` and `default`
 //!   are rejected but `rename` and `skip_serializing_if` are fine.
 //! * The adapter cannot use the implementation of the type itself as that
-//!   implementation forwards to the adapter: `_`, `Same` and the type are
+//!   implementation forwards to the adapter: `Same` and the type are
 //!   rejected as adapter and as its direct type arguments (as in
-//!   `FromInto<Self>`).  Adapters with a default for the inner adapter such
+//!   `FromInto<Self>`).  `_` is the derived implementation there, which
+//!   does not forward to the adapter.  Adapters with a default for the inner adapter such
 //!   as a plain [`DefaultOnError`](crate::adapters::DefaultOnError) use
 //!   `Same` implicitly which is not detected.  The type can be used indirectly,
 //!   for instance a tree can be `FromInto<Vec<Tree>>`.

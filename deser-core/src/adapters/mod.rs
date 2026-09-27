@@ -214,6 +214,7 @@ use crate::event::{Atom, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize};
 
 pub(crate) mod bytes;
+mod derived;
 pub(crate) mod ser_impls;
 mod stock;
 mod text;
@@ -222,6 +223,9 @@ pub use self::bytes::{
     Base64, Base64NoPad, Base64Url, Base64UrlNoPad, BytesBuf, BytesEncoding, BytesFallback,
     BytesFallbackFormat, BytesFormat, IntSeq,
 };
+pub use self::derived::Derived;
+#[doc(hidden)]
+pub use self::derived::{DerivedDeserialize, DerivedSerialize};
 pub(crate) use self::ser_impls::SerializeAsRef;
 pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
@@ -247,6 +251,20 @@ pub trait DeserializeAs<'de, T>: 'static {
     /// See [`Deserialize::initial_value`].
     fn initial_value_as() -> Option<T> {
         None
+    }
+
+    /// Creates a sink that updates an existing value.
+    ///
+    /// This is the adapter's version of
+    /// [`Deserialize::deserialize_update`], the derive uses it to update
+    /// fields with adapters.  The default implementation replaces the value
+    /// with the deserialized one.
+    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+        Self: Sized,
+    {
+        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>(), None)
     }
 
     #[doc(hidden)]
@@ -373,6 +391,14 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
     fn initial_value_as() -> Option<T> {
         T::initial_value()
+    }
+
+    #[inline]
+    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+    {
+        T::deserialize_update(value)
     }
 
     #[inline]

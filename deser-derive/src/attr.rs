@@ -47,6 +47,25 @@ impl Adapters {
     pub fn any(&self) -> bool {
         self.ser.is_some() || self.de.is_some()
     }
+
+    /// Returns `true` if the adapter of a container for the direction
+    /// wraps the derived implementation (`_` in the attribute).
+    ///
+    /// The derived implementation is then implemented as
+    /// `DerivedSerialize` or `DerivedDeserialize` (see the `Derived`
+    /// adapter) and the implementation of the trait forwards to the
+    /// adapter.
+    pub fn uses_derived(&self, direction: Direction) -> bool {
+        fn contains_derived(tokens: TokenStream) -> bool {
+            tokens.into_iter().any(|token| match token {
+                TokenTree::Ident(ref ident) => ident == "Derived",
+                TokenTree::Group(group) => contains_derived(group.stream()),
+                _ => false,
+            })
+        }
+        self.get(direction)
+            .is_some_and(|ty| contains_derived(ty.to_token_stream()))
+    }
 }
 
 /// A value that can differ between serialization and deserialization.
@@ -821,15 +840,16 @@ fn parse_adapter(meta: &ParseNestedMeta) -> syn::Result<syn::Type> {
 /// Parses the value of `as = Type` on a container.
 ///
 /// The implementations of the container forward to the adapter.  Adapters
-/// that use the implementation of the container would recurse forever: `_`
-/// and `Same` (which stand for the type's own implementation) and the type
+/// that use the implementation of the container would recurse forever:
+/// `Same` (which stands for the type's own implementation) and the type
 /// itself are rejected as adapter and as direct type argument of the
-/// adapter (as in `FromInto<Self>` or `DefaultOnError<_>`).  Nested uses
-/// such as `FromInto<Vec<Node>>` are fine.
+/// adapter (as in `FromInto<Self>` or `DefaultOnError<Same>`).  Nested uses
+/// such as `FromInto<Vec<Node>>` are fine.  `_` stands for the derived
+/// implementation (the `Derived` adapter) in these places, as in
+/// `Check<Rules, _>`.  Deeper in the type it stands for `Same` as usual.
 fn parse_container_adapter(meta: &ParseNestedMeta, ident: &syn::Ident) -> syn::Result<syn::Type> {
     fn is_own_impl(ty: &syn::Type, ident: &syn::Ident) -> bool {
         match ty {
-            syn::Type::Infer(_) => true,
             syn::Type::Paren(ty) => is_own_impl(&ty.elem, ident),
             syn::Type::Group(ty) => is_own_impl(&ty.elem, ident),
             syn::Type::Path(ty) if ty.qself.is_none() => ty
@@ -866,12 +886,33 @@ fn parse_container_adapter(meta: &ParseNestedMeta, ident: &syn::Ident) -> syn::R
             bad,
             format!(
                 "{} refers to the implementation of `{}` which forwards to this adapter, \
-                 this would recurse forever",
+                 this would recurse forever (`_` refers to the derived implementation)",
                 what, ident
             ),
         ));
     }
 
+    // `_` as the adapter or a direct type argument is the derived
+    // implementation
+    fn derived(span: proc_macro2::Span) -> syn::Type {
+        syn::parse_quote_spanned! { span=> __deser::adapters::Derived }
+    }
+    let mut ty = ty;
+    match ty {
+        syn::Type::Infer(ref infer) => ty = derived(infer.underscore_token.span),
+        syn::Type::Path(ref mut path) => {
+            if let Some(segment) = path.path.segments.last_mut()
+                && let syn::PathArguments::AngleBracketed(ref mut args) = segment.arguments
+            {
+                for arg in args.args.iter_mut() {
+                    if let syn::GenericArgument::Type(syn::Type::Infer(ref infer)) = *arg {
+                        *arg = syn::GenericArgument::Type(derived(infer.underscore_token.span));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
     syn::parse2(replace_infer(ty.to_token_stream()))
 }
 

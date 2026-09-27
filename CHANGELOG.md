@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Adapters on types can wrap the derived implementation: `_` (the
+  `Derived` adapter) stands for it, as in `#[deser(as = DefaultOnError<_>)]`
+  or `#[deser(deserialize_as = Check<Rules, _>)]`.
+- Added `DeserializeAs::deserialize_update_as`.  Derived structs update
+  fields with adapters with it and types with adapters forward updates to
+  it.  It replaces the value by default, `Same` and `Derived` update in
+  place.  `checked_update` updates a value and checks it once the update
+  is complete.
 - Added `deser-validate` for validation.  Validators are types
   (`Email`, `Len<1, 32>`, `Range<1, 65535>`, `Each<V>`, tuples for all
   of them) with violations that have a code, parameters and a message.

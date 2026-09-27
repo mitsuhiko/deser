@@ -2,12 +2,12 @@
 use std::marker::PhantomData;
 
 use deser_core::adapters::{DeserializeAs, Same, SerializeAs};
-use deser_core::de::{OwnedSink, SinkHandle};
+use deser_core::de::{OwnedSink, SinkHandle, checked_update};
 use deser_core::ser::{Chunk, Describe};
 use deser_core::{Atom, ContainerShape, Error, State};
 
-use crate::Validator;
 use crate::checked::CheckSink;
+use crate::{Validator, Violation};
 
 /// An adapter that validates values with `V`.
 ///
@@ -53,6 +53,38 @@ use crate::checked::CheckSink;
 /// Values that are missing (see [`DeserializeAs::initial_value_as`]) are
 /// only used if they are valid, otherwise the value is required.
 /// Serialization uses the inner adapter.
+///
+/// # Checks Across Fields
+///
+/// On a type, `Check` wraps its derived implementation (written as `_`).
+/// The validator then sees the whole value:
+///
+/// ```
+/// use deser::Deserialize;
+/// use deser_validate::{Check, validator};
+///
+/// #[derive(Deserialize, Debug)]
+/// #[deser(deserialize_as = Check<PortRangeRules, _>)]
+/// struct PortRange {
+///     min: u16,
+///     max: u16,
+/// }
+///
+/// validator!(PortRangeRules(range: &PortRange) => range.min <= range.max, "min is larger than max");
+///
+/// let err = deser_json::from_str::<PortRange>(r#"{"min": 90, "max": 80}"#).unwrap_err();
+/// assert_eq!(err.to_string(), "Unexpected: invalid value: min is larger than max at line 1 column 1");
+/// ```
+///
+/// # Updates
+///
+/// When a value is updated (see
+/// [`Deserialize::deserialize_update`](deser_core::Deserialize::deserialize_update)),
+/// it's updated with `A` and validated once the update is complete.  Types
+/// that update in place (like derived structs) are merged and then
+/// validated as a whole.  If the updated value is invalid, the update fails
+/// but the value keeps the update, like values keep what an update changed
+/// before it failed.
 pub struct Check<V, A = Same>(PhantomData<fn() -> (V, A)>);
 
 impl<'de, T, V, A> DeserializeAs<'de, T> for Check<V, A>
@@ -67,6 +99,17 @@ where
 
     fn initial_value_as() -> Option<T> {
         A::initial_value_as().filter(|value| V::validate(value).is_ok())
+    }
+
+    /// Updates the value with `A` and validates it once the update is
+    /// complete.
+    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    where
+        T: Send,
+    {
+        checked_update(value, A::deserialize_update_as, |value| {
+            V::validate(value).map_err(Violation::into_error)
+        })
     }
 
     #[inline]

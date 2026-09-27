@@ -1,6 +1,8 @@
 //! Support for updating existing values (see
 //! [`Deserialize::deserialize_update`]).
 use std::borrow::Cow;
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
@@ -132,6 +134,183 @@ struct ReplaceSink<'a, 'de> {
 /// [`Deserialize::deserialize_update`].
 pub fn replace_handle<'a, 'de, T: Deserialize<'de>>(out: &'a mut T) -> SinkHandle<'a, 'de> {
     replace_with(out, OwnedSink::deserialize(), None)
+}
+
+/// Creates a sink handle that replaces a value with a value that is
+/// deserialized with a sink the function creates.
+pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
+    out: &'a mut T,
+    make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+) -> SinkHandle<'a, 'de> {
+    replace_with(out, OwnedSink::with(make), None)
+}
+
+/// Creates a sink handle that updates a value and checks it once the update
+/// is complete.
+///
+/// `update` creates the sink that updates the value (for instance
+/// [`Deserialize::deserialize_update`] or
+/// [`DeserializeAs::deserialize_update_as`](crate::adapters::DeserializeAs::deserialize_update_as)).
+/// Once the update is complete, `check` is invoked with the updated value.
+/// Errors it returns point at the start of the value in the input.  The
+/// value is updated in place, if the check fails it's updated anyway (like
+/// when an update fails, see [`Deserialize::deserialize_update`]).  This is
+/// for adapters that check values to support updates:
+///
+/// ```
+/// use deser::de::{DeserializeDriver, checked_update};
+/// use deser::{Deserialize, Error, ErrorKind, Event};
+///
+/// #[derive(Deserialize)]
+/// struct Range {
+///     min: u32,
+///     max: u32,
+/// }
+///
+/// fn check(range: &Range) -> Result<(), Error> {
+///     if range.min > range.max {
+///         return Err(Error::new(ErrorKind::Unexpected, "min is larger than max"));
+///     }
+///     Ok(())
+/// }
+///
+/// let mut range = Range { min: 1, max: 5 };
+/// let mut driver = DeserializeDriver::from_sink(checked_update(
+///     &mut range,
+///     Range::deserialize_update,
+///     check,
+/// ));
+/// driver.emit(Event::map_start()).unwrap();
+/// driver.emit("min").unwrap();
+/// driver.emit(10u64).unwrap();
+/// let err = driver.emit(Event::MapEnd).unwrap_err();
+/// assert_eq!(err.message(), "min is larger than max");
+/// ```
+pub fn checked_update<'a, 'de, T: Send + 'a>(
+    value: &'a mut T,
+    update: for<'x> fn(&'x mut T) -> SinkHandle<'x, 'de>,
+    check: fn(&T) -> Result<(), Error>,
+) -> SinkHandle<'a, 'de> {
+    let ptr = NonNull::from(value);
+    // SAFETY: the sink borrows the value for 'a, the pointer is only used
+    // again once the sink was dropped (in `finish`).
+    let sink = update(unsafe { &mut *ptr.as_ptr() });
+    SinkHandle::boxed(CheckedUpdateSink {
+        value: ptr,
+        sink: Some(sink),
+        check,
+        start: None,
+        _marker: PhantomData,
+    })
+}
+
+/// The sink of [`checked_update`].
+struct CheckedUpdateSink<'a, 'de, T> {
+    value: NonNull<T>,
+    // borrows the value, `None` once the update is complete
+    sink: Option<SinkHandle<'a, 'de>>,
+    check: fn(&T) -> Result<(), Error>,
+    // the start of the value in the input
+    start: Option<usize>,
+    _marker: PhantomData<&'a mut T>,
+}
+
+// SAFETY: the sink holds a mutable reference to the value (as pointer).
+unsafe impl<T: Send> Send for CheckedUpdateSink<'_, '_, T> {}
+
+impl<'a, 'de, T> CheckedUpdateSink<'a, 'de, T> {
+    fn sink(&mut self) -> &mut SinkHandle<'a, 'de> {
+        self.sink.as_mut().expect("update is complete")
+    }
+
+    fn begin(&mut self, state: &State) -> &mut SinkHandle<'a, 'de> {
+        if self.start.is_none() {
+            self.start = state.input_range().map(|x| x.start);
+        }
+        self.sink()
+    }
+}
+
+impl<'a, 'de, T: Send> Sink<'de> for CheckedUpdateSink<'a, 'de, T> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.begin(state).atom(atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.begin(state).borrowed_atom(atom, state)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        self.begin(state).map(state)
+    }
+
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        self.begin(state).seq(state)
+    }
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.sink().next_key(state)
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.sink().next_value(state)
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink().__private_key_atom(atom, state)
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink().__private_value_atom(atom, state)
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink().__private_borrowed_key_atom(atom, state)
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink().__private_borrowed_value_atom(atom, state)
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        self.sink().value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.sink().recover(err, state)
+    }
+
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        let rv = self.sink().finish(state);
+        // the sink borrows the value, it's dropped before the value is used
+        self.sink = None;
+        rv?;
+        // SAFETY: nothing borrows the value anymore
+        let value = unsafe { self.value.as_ref() };
+        (self.check)(value).map_err(|err| match (err.offset(), self.start) {
+            (None, Some(start)) => err.with_offset(start),
+            _ => err,
+        })
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        match self.sink {
+            Some(ref sink) => sink.expecting(),
+            None => Cow::Borrowed("compatible type"),
+        }
+    }
 }
 
 /// Creates a sink handle that replaces a value with the value of an owned

@@ -70,6 +70,7 @@ pub mod __derive {
     pub type StrCow<'a> = Cow<'a, str>;
 
     pub use crate::adapters::ser_impls::SerializeAsRef;
+    pub use crate::adapters::{DerivedDeserialize, DerivedSerialize};
     pub use crate::de::atoms::{
         atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle, field_update,
         unit_struct,

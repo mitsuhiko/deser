@@ -92,9 +92,22 @@ fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
 }
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
-    if let Some(rv) = crate::forward::derive_serialize(input)? {
-        return Ok(rv);
-    }
+    // with an adapter that wraps the derived implementation, both are
+    // needed
+    let forward = match crate::forward::derive_serialize(input)? {
+        Some((rv, false)) => return Ok(rv),
+        Some((rv, true)) => Some(rv),
+        None => None,
+    };
+    let derived = derive_serialize_impl(input)?;
+    Ok(quote! {
+        #forward
+        #derived
+    })
+}
+
+/// Derives the implementation (as `Serialize` or `DerivedSerialize`).
+fn derive_serialize_impl(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     if let Some(rv) = crate::transparent::derive(input, Direction::Serialize)? {
         return Ok(rv);
     }
@@ -249,10 +262,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
     let begin_without_finish = begin_without_finish();
 
+    let ser_trait = crate::forward::serialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 #begin_without_finish
 
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
@@ -403,10 +417,11 @@ fn derive_indexed_struct(
         quote! { __deser::ContainerShape::new().with_len(#len) }
     };
 
+    let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
                     __d.structure(#type_name);
                 }
@@ -531,10 +546,11 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     };
     let begin_without_finish = begin_without_finish();
 
+    let ser_trait = crate::forward::serialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl __deser::Serialize for #ident {
+            impl #ser_trait for #ident {
                 #begin_without_finish
 
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
@@ -627,10 +643,11 @@ fn derive_tuple_struct(
         .collect::<Vec<_>>();
     let len = fields.len();
 
+    let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
                     __d.tuple_struct(#type_name);
                 }
@@ -683,9 +700,10 @@ fn derive_unit_struct(
     let type_name = container_attrs.container_name();
     let begin_without_finish = begin_without_finish();
 
+    let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         #[automatically_derived]
-        impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+        impl #impl_generics #ser_trait for #ident #ty_generics #where_clause {
             #begin_without_finish
 
             fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
@@ -722,10 +740,11 @@ pub(crate) fn derive_newtype_struct(
         None => quote! { &self.#member },
     };
 
+    let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics __deser::Serialize for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 fn container_shape(&self) -> __deser::ContainerShape {
                     __deser::ser::Serialize::container_shape(#value)
                 }

@@ -1127,6 +1127,7 @@ pub fn derive_deserialize(
         None => (quote! {}, handle),
     };
 
+    let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #(#helpers)*
@@ -1140,7 +1141,7 @@ pub fn derive_deserialize(
             #validated_support
 
             #[automatically_derived]
-            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+            impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>,
                 ) -> __deser::de::SinkHandle<'_, 'de> {
@@ -1460,10 +1461,11 @@ pub fn derive_serialize(
         arms.push(quote! { #pattern => #chunk, });
     }
 
+    let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
+            impl #impl_generics #ser_trait for #ident #ty_generics #where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
                     match *self {
                         #(#describe_arms)*

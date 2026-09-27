@@ -71,9 +71,22 @@ struct UpdateSink {
 }
 
 pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
-    if let Some(rv) = crate::forward::derive_deserialize(input)? {
-        return Ok(rv);
-    }
+    // with an adapter that wraps the derived implementation, both are
+    // needed
+    let forward = match crate::forward::derive_deserialize(input)? {
+        Some((rv, false)) => return Ok(rv),
+        Some((rv, true)) => Some(rv),
+        None => None,
+    };
+    let derived = derive_deserialize_impl(input)?;
+    Ok(quote! {
+        #forward
+        #derived
+    })
+}
+
+/// Derives the implementation (as `Deserialize` or `DerivedDeserialize`).
+fn derive_deserialize_impl(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     if let Some(rv) = crate::transparent::derive(input, Direction::Deserialize)? {
         return Ok(rv);
     }
@@ -224,12 +237,13 @@ fn derive_tuple_struct(
         None => (quote! {}, handle),
     };
 
+    let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #support
 
             #[automatically_derived]
-            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+            impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>,
                 ) -> __deser::de::SinkHandle<'_, 'de> {
@@ -260,9 +274,10 @@ fn derive_unit_struct(
         quote! { (#validator)(&__value)?; }
     });
 
+    let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         #[automatically_derived]
-        impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
+        impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
             fn deserialize_into(
                 __slot: &mut __deser::__derive::Option<Self>,
             ) -> __deser::de::SinkHandle<'_, 'de> {
@@ -271,7 +286,7 @@ fn derive_unit_struct(
                     |__slot: &mut __deser::__derive::Option<Self>,
                      __atom: __deser::Atom<'_>,
                      __state: &mut __deser::State| {
-                        <Self as __deser::Deserialize<'de>>::__private_atom_into(__slot, __atom, __state)
+                        <Self as #de_trait>::__private_atom_into(__slot, __atom, __state)
                     },
                     #type_name,
                 )
@@ -296,7 +311,7 @@ fn derive_unit_struct(
                 __atom: __deser::Atom<'de>,
                 __state: &mut __deser::State,
             ) -> __deser::__derive::Result<()> {
-                <Self as __deser::Deserialize<'de>>::__private_atom_into(__slot, __atom, __state)
+                <Self as #de_trait>::__private_atom_into(__slot, __atom, __state)
             }
         }
     })
@@ -448,6 +463,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         let field_ident = &x.field().ident;
         let update = if x.adapters().de().is_none() && x.validate().is_none() {
             quote! { __deser::__derive::field_update(__field) }
+        } else if let (Some(adapter), None) = (x.adapters().de(), x.validate()) {
+            // the adapter decides how the field is updated (by default it's
+            // replaced)
+            quote_spanned! { adapter.span()=>
+                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(__field)
+            }
         } else {
             let owned = match x.adapters().de() {
                 Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
@@ -1089,6 +1110,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         (None, None, None)
     };
 
+    let de_trait = crate::forward::deserialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
             fn __field_index(__key: &__deser::__derive::str) -> __deser::__derive::Option<usize> {
@@ -1120,7 +1142,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
 
             #[automatically_derived]
-            impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>,
                 ) -> __deser::de::SinkHandle<'_, 'de> {
@@ -1427,6 +1449,7 @@ pub fn derive_enum(
 
     // Unit enums only generate the function which maps an atom to the value
     // and two setters, the sink (`atom_sink`) exists once for all types.
+    let de_trait = crate::forward::deserialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
             fn __lookup(__tag: __deser::__derive::Tag<'_>) -> __deser::__derive::Option<usize> {
@@ -1473,7 +1496,7 @@ pub fn derive_enum(
             }
 
             #[automatically_derived]
-            impl<'de> __deser::de::Deserialize<'de> for #ident {
+            impl<'de> #de_trait for #ident {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
                 ) -> __deser::de::SinkHandle<'_, 'de> {
@@ -1546,6 +1569,7 @@ pub(crate) fn derive_newtype_struct(
     let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
 
+    let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             struct __Sink #wrapper_impl_generics #where_clause {
@@ -1554,7 +1578,7 @@ pub(crate) fn derive_newtype_struct(
             }
 
             #[automatically_derived]
-            impl #impl_generics __deser::de::Deserialize<'de> for #ident #ty_generics #bounded_where_clause {
+            impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
                 ) -> __deser::de::SinkHandle<'_, 'de> {

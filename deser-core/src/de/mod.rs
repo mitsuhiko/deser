@@ -254,6 +254,7 @@ pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
 pub use self::source::Source;
 pub use self::unknown::{IgnoredFields, UnknownFields};
+pub use self::update::checked_update;
 use crate::State;
 
 __make_slot_wrapper!((pub), SlotWrapper);
