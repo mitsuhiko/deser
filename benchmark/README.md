@@ -44,43 +44,8 @@ For the Twitter JSON document `cargo bench` also compares with miniserde:
 | serde_json | 398.4 us | 219.0 us |
 | miniserde  | 439.8 us | 313.3 us |
 
-## Areas of Interest
-
-* **The cost of an event in the deserialize driver.**  This is what
-  separates JSON, CBOR and MessagePack from serde on floats and nesting,
-  the parsers themselves are about as fast.  Every nested container gets
-  a boxed sink (a `[f64; 2]` included), elements go through a slot before
-  they are pushed and every event is a virtual call.  Allocating and freeing the
-  boxes from the block cache (including two thread local lookups on
-  macOS) is about 6% of tree and canada.  Storing sinks of up to 32 or 128
-  bytes inline in their handles (moved to blocks of the driver while their
-  containers are open) was tried and is 5%-25% slower: the handles are
-  copied several times on the way to the driver, and driving the sinks
-  through raw pointers instead of the handles alone costs 3%-6%.
-* **The serialize driver.**  `DATASET/events/ser` only produces the events
-  of a value, without a format.  It is more than half of the time of CBOR
-  on canada (329 of 611 us) and tree (595 of 802 us), which is why CBOR
-  and MessagePack serialize slower than ciborium and rmp-serde.
-* **Untagged enums** buffer the value and replay it for every variant.
-* **YAML** is still about six times slower than JSON on the same data.
-  The remaining cost is spread over the libyaml style token machinery
-  (simple key tracking, a queue of tokens) and large tokens and events
-  that are moved by value.
-* **TOML** documents are parsed into a tree (tables can be defined out of
-  order), which costs one allocation per inline array (58k for canada).
-  An arena was tried and did not pay off.
-* **CSV** is compared with the `csv` crate on a table only (see
-  `src/table.rs`): reading is 1.60x (5.91 ms vs 3.69 ms) and writing 2.87x
-  (4.76 ms vs 1.66 ms) of it.  The parser finds the fields of a record in
-  one pass and they are emitted from there, most of the time is spent in
-  the drivers and the sinks (`table/events/ser`, the serialize driver
-  alone, is about 1 ms).  Formatting floats with the standard library is
-  about 8% of writing.  Empty optional numbers used to build an error
-  message for every field that was thrown away (a third of reading).
-* **Exact numbers** in JSON (on by default) pass floats with more than 15
-  digits or an exponent as number extension values.  Float sinks read
-  their values with a single dynamic call, which makes this as fast as
-  plain floats (canada).
+Profiling findings, attempted optimizations and follow-up ideas are tracked
+in [PERF_NOTES.md](PERF_NOTES.md).
 
 ## Full Results
 
@@ -161,6 +126,7 @@ For the Twitter JSON document `cargo bench` also compares with miniserde:
 | point-cloud/toml         | 3.88 ms  | 8.39 ms  | 0.46x | 2.75 ms  | 3.22 ms  | 0.85x |
 | registry/toml            | 2.01 ms  | 3.66 ms  | 0.55x | 1.39 ms  | 1.50 ms  | 0.92x |
 | tree/toml                | 6.44 ms  | 15.03 ms | 0.43x | 6.14 ms  | 7.88 ms  | 0.78x |
+| table/csv                | 5.91 ms  | 3.69 ms  | 1.60x | 4.76 ms  | 1.66 ms  | 2.87x |
 
 `blobs` has no serde counterpart (serde has no bytes for `Vec<u8>`):
 de/ser take 746/515 us in JSON, 512/181 us in CBOR, 449/180 us in
@@ -223,4 +189,6 @@ serialize driver without a format.  Always use `--release`:
 * `list`, `sizes` and `interop` list the benchmarks, print the input sizes
   and check that deser and serde read each other's output.  With the
   `count-allocs` feature `allocs [FILTER]` counts allocations.
+* `cargo run --release --example msgpack` isolates primitive and small-container
+  deserialization overhead; see [PERF_NOTES.md](PERF_NOTES.md).
 * `make bench` runs `cargo bench` (Twitter JSON with miniserde).

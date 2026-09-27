@@ -35,6 +35,61 @@ fn test_floats() {
 }
 
 #[test]
+fn test_float_atom_paths() {
+    use deser::ext::{ExtValue, Number};
+
+    let number = Number::parse("1.25").unwrap();
+    for (atom, expected) in [
+        (Atom::U64(42), 42.0),
+        (Atom::I64(-42), -42.0),
+        (Atom::F32(0.25), 0.25),
+        (Atom::F64(0.5), 0.5),
+        (Atom::F64(f64::INFINITY), f64::INFINITY),
+        (Atom::Lexical(Cow::Borrowed("1.5")), 1.5),
+        (Atom::Lexical(Cow::Owned("-1.5".into())), -1.5),
+        (Atom::Ext(ExtValue::owned(42u128)), 42.0),
+        (Atom::Ext(ExtValue::owned(-42i128)), -42.0),
+        (Atom::Ext(ExtValue::borrowed_value::<Number>(&number)), 1.25),
+        (
+            Atom::Ext(ExtValue::owned_value::<Number>(number.clone())),
+            1.25,
+        ),
+    ] {
+        // Exercise both the root sink and the inlined container atom path.
+        assert_eq!(
+            deserialize::<f32>(vec![atom.clone().into()]),
+            expected as f32
+        );
+        assert_eq!(deserialize::<f64>(vec![atom.clone().into()]), expected);
+        let events = vec![Event::seq_start(), atom.into(), Event::SeqEnd];
+        assert_eq!(deserialize::<Vec<f32>>(events.clone()), [expected as f32]);
+        assert_eq!(deserialize::<Vec<f64>>(events), [expected]);
+    }
+    for atom in [Atom::F32(-0.0), Atom::F64(-0.0)] {
+        assert!(deserialize::<f32>(vec![atom.clone().into()]).is_sign_negative());
+        assert!(deserialize::<f64>(vec![atom.into()]).is_sign_negative());
+    }
+    for atom in [Atom::F32(f32::NAN), Atom::F64(f64::NAN)] {
+        assert!(deserialize::<f32>(vec![atom.clone().into()]).is_nan());
+        assert!(deserialize::<f64>(vec![atom.into()]).is_nan());
+    }
+
+    for atom in [
+        Atom::Lexical(Cow::Owned("not a float".into())),
+        Atom::Str(Cow::Owned("1.5".into())),
+        Atom::Bool(true),
+        Atom::Null,
+    ] {
+        let mut out = None::<f32>;
+        assert!(DeserializeDriver::new(&mut out).emit(atom.clone()).is_err());
+        assert!(out.is_none());
+        let mut out = None::<f64>;
+        assert!(DeserializeDriver::new(&mut out).emit(atom).is_err());
+        assert!(out.is_none());
+    }
+}
+
+#[test]
 fn test_f32_fallback() {
     // sinks that only know `F64` get single precision floats widened
     struct F64Only(f64);

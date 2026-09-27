@@ -282,28 +282,43 @@ macro_rules! float_sink {
                 Cow::Borrowed(stringify!($ty))
             }
 
+            #[inline]
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+                // Keep the owning variants out of the inlined numeric path.
+                // This is not cold: JSON commonly emits Number extensions.
+                #[inline(never)]
+                fn other(
+                    sink: &mut SlotWrapper<$ty>,
+                    atom: Atom,
+                    state: &mut State,
+                ) -> Result<(), Error> {
+                    let value = match atom {
+                        Atom::Ext(ext) => match number_value(&ext) {
+                            Some(value) => value as $ty,
+                            None if ext.is::<u128>() => *ext.downcast_ref::<u128>().unwrap() as $ty,
+                            None if ext.is::<i128>() => *ext.downcast_ref::<i128>().unwrap() as $ty,
+                            None => return sink.unexpected_atom(Atom::Ext(ext), state),
+                        },
+                        Atom::Lexical(value) => match value.parse::<$ty>() {
+                            Ok(value) => value,
+                            Err(_) => return Err(lexical::invalid(&value, stringify!($ty), state)),
+                        },
+                        other => return sink.unexpected_atom(other, state),
+                    };
+                    **sink = Some(value);
+                    Ok(())
+                }
+
                 let value = match atom {
                     Atom::U64(value) => value as $ty,
                     Atom::I64(value) => value as $ty,
                     Atom::F64(value) => value as $ty,
                     Atom::F32(value) => value as $ty,
-                    // text formats emit floats that need more than 15
-                    // digits as numbers.  The extension value is matched by
-                    // value so that dropping the atom does not need the
-                    // drop glue of atoms.
-                    Atom::Ext(ext) => match number_value(&ext) {
-                        Some(value) => value as $ty,
-                        None if ext.is::<u128>() => *ext.downcast_ref::<u128>().unwrap() as $ty,
-                        None if ext.is::<i128>() => *ext.downcast_ref::<i128>().unwrap() as $ty,
-                        None => return self.unexpected_atom(Atom::Ext(ext), state),
-                    },
-                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
-                        Ok(value) => value,
-                        Err(_) => return Err(lexical::invalid(value, stringify!($ty), state)),
-                    },
-                    other => return self.unexpected_atom(other, state),
+                    atom => return other(self, atom, state),
                 };
+                // Only variants with Copy payloads reach here. Avoid calling
+                // Atom's out-of-line drop glue, which has nothing to drop.
+                std::mem::forget(atom);
                 **self = Some(value);
                 Ok(())
             }
