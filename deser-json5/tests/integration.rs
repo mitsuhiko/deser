@@ -3,3 +3,4 @@ mod test_de;
 #[cfg(feature = "io")]
 mod test_io;
 mod test_json5;
+mod test_suite;

@@ -38,6 +38,87 @@ pub fn skip_to_escape_single(input: &[u8], mut pos: usize) -> usize {
     pos
 }
 
+/// Finds the ends of lines (for JSON Lines) in input with comments.
+///
+/// Only line breaks outside of comments and strings end a line, so a
+/// comment can span lines and a string can contain what looks like a
+/// comment.  The scan can be continued with more input.
+#[cfg(comments)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LineScan {
+    #[default]
+    Code,
+    /// After a slash.
+    Slash,
+    LineComment,
+    BlockComment,
+    /// After a star in a block comment.
+    BlockCommentStar,
+    /// In a string with the quote.
+    Str(u8),
+    /// After a backslash in a string.
+    StrEscape(u8),
+    /// After an escaped carriage return (a line break continues).
+    #[cfg(json5)]
+    StrEscapeCr(u8),
+}
+
+#[cfg(comments)]
+impl LineScan {
+    /// Returns the position of the line feed that ends the line.
+    ///
+    /// The input is scanned from `pos`, if it does not contain the end of
+    /// the line, the scan continues where it stopped with more input.
+    pub fn find_end(&mut self, input: &[u8], mut pos: usize) -> Option<usize> {
+        while pos < input.len() {
+            let byte = input[pos];
+            *self = match (*self, byte) {
+                // a line feed in a string is invalid, it still ends the line
+                (LineScan::Code | LineScan::LineComment | LineScan::Str(_), b'\n') => {
+                    *self = LineScan::Code;
+                    return Some(pos);
+                }
+                (LineScan::Code, b'/') => LineScan::Slash,
+                (LineScan::Code, b'"') => LineScan::Str(b'"'),
+                #[cfg(json5)]
+                (LineScan::Code, b'\'') => LineScan::Str(b'\''),
+                (LineScan::Code, _) => LineScan::Code,
+                (LineScan::Slash, b'/') => LineScan::LineComment,
+                (LineScan::Slash, b'*') => LineScan::BlockComment,
+                // the byte after a slash that does not start a comment is
+                // scanned again
+                (LineScan::Slash, _) => {
+                    *self = LineScan::Code;
+                    continue;
+                }
+                (LineScan::LineComment, b'\r') => LineScan::Code,
+                (LineScan::LineComment, _) => LineScan::LineComment,
+                (LineScan::BlockComment | LineScan::BlockCommentStar, b'*') => {
+                    LineScan::BlockCommentStar
+                }
+                (LineScan::BlockCommentStar, b'/') => LineScan::Code,
+                (LineScan::BlockComment | LineScan::BlockCommentStar, _) => LineScan::BlockComment,
+                (LineScan::Str(quote), b'\\') => LineScan::StrEscape(quote),
+                (LineScan::Str(quote), _) if byte == quote => LineScan::Code,
+                (LineScan::Str(quote), _) => LineScan::Str(quote),
+                #[cfg(json5)]
+                (LineScan::StrEscape(quote), b'\r') => LineScan::StrEscapeCr(quote),
+                (LineScan::StrEscape(quote), _) => LineScan::Str(quote),
+                // `\r\n` in a string is a single line break
+                #[cfg(json5)]
+                (LineScan::StrEscapeCr(quote), b'\n') => LineScan::Str(quote),
+                #[cfg(json5)]
+                (LineScan::StrEscapeCr(quote), _) => {
+                    *self = LineScan::Str(quote);
+                    continue;
+                }
+            };
+            pos += 1;
+        }
+        None
+    }
+}
+
 pub const ONE_BYTES: u64 = u64::MAX / 255;
 
 /// Flags the bytes in a word (in little endian order) which need escaping.

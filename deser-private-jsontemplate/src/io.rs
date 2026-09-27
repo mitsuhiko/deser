@@ -11,6 +11,8 @@ use crate::de::{Deserializer, DeserializerConfig};
 #[cfg(comments)]
 use crate::parser::Cursor;
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
+#[cfg(comments)]
+use crate::scan::LineScan;
 use crate::scan::skip_to_escape;
 #[cfg(json5)]
 use crate::scan::skip_to_escape_single;
@@ -68,6 +70,9 @@ pub struct StreamState {
     ended: bool,
     // the position up to which the input was scanned
     pos: usize,
+    // `Trailing::Newline`: the scan of the current line
+    #[cfg(comments)]
+    line: LineScan,
     // `Trailing::Stop`: the value being scanned
     value: Option<Value>,
 }
@@ -97,15 +102,15 @@ fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, 
         // only whitespace may follow the value
         return trailing_whitespace(input, 0, eof).map(|progress| match progress {
             Progress::End => Frame::End,
-            _ => Frame::Incomplete {
-                consumed: input.len(),
-            },
+            //#(comments) an incomplete comment is scanned again with more input
+            Progress::NeedMore { consumed } => Frame::Incomplete { consumed },
+            Progress::Done { .. } => unreachable!(),
         });
     }
     if !eof {
         return Ok(Frame::Incomplete { consumed: 0 });
     }
-    // an unterminated comment is reported by the parser
+    //#(comments) an unterminated comment is reported by the parser
     let (start, _) = skip_whitespace(input, 0, eof);
     Ok(if start < input.len() {
         state.done = true;
@@ -125,7 +130,7 @@ fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, 
 fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progress, Error> {
     match skip_whitespace(input, 0, eof) {
         (pos, _) if pos == input.len() && eof => Ok(Progress::End),
-        // an incomplete comment is scanned again with more input
+        //#(comments) an incomplete comment is scanned again with more input
         (pos, false) if !eof => Ok(Progress::NeedMore { consumed: pos }),
         (pos, _) => {
             Err(Error::new(ErrorKind::Unexpected, "garbage after input").with_offset(offset + pos))
@@ -134,8 +139,16 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
 }
 
 fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
-    let end = match input[state.pos..].iter().position(|&b| b == b'\n') {
-        Some(index) => state.pos + index,
+    #[cfg(not(comments))]
+    let end = input[state.pos..]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map(|index| state.pos + index);
+    // line breaks in comments and strings do not end the line
+    #[cfg(comments)]
+    let end = state.line.find_end(input, state.pos);
+    let end = match end {
+        Some(end) => end,
         None if eof => input.len(),
         None => {
             state.pos = input.len();
@@ -143,6 +156,10 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
         }
     };
     state.pos = 0;
+    #[cfg(comments)]
+    {
+        state.line = LineScan::default();
+    }
     let consumed = (end + 1).min(input.len());
     match skip_whitespace(&input[..end], 0, true) {
         (start, _) if start < end => Frame::Value {
@@ -202,6 +219,9 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                 b'/' => true,
                 #[cfg(json5)]
                 b'\'' => true,
+                // scalars are ASCII, this is Unicode whitespace
+                #[cfg(json5)]
+                0x80..=0xff => true,
                 _ => is_whitespace(b),
             });
             match end {
@@ -461,8 +481,8 @@ impl Decoder for DeserializerConfig {
                     progress => Ok(progress),
                 };
             }
-            // a new value, skip the whitespace before it.  An incomplete
-            // comment is scanned again with more input.
+            // a new value, skip the whitespace before it
+            //#(comments) (an incomplete comment is scanned again with more input)
             let token;
             (pos, token) = skip_whitespace(input, pos, eof);
             if !token && (pos == input.len() || !eof) {

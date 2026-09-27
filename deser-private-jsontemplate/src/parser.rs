@@ -38,6 +38,12 @@ pub(crate) enum Number<'a> {
     /// cannot be recovered from the value.  This is passed on as number
     /// extension value if exact numbers are enabled.
     Literal(f64),
+    /// A hexadecimal integer that does not fit into 64 bits.
+    #[cfg(json5)]
+    U128(u128),
+    /// A negative hexadecimal integer that does not fit into 64 bits.
+    #[cfg(json5)]
+    I128(i128),
 }
 
 impl Number<'_> {
@@ -389,9 +395,9 @@ impl Parser {
                         string!(start, Expect::Key)
                     }
                     #[cfg(json5)]
-                    b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' | 0x80..=0xff => {
+                    b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' | b'\\' | 0x80..=0xff => {
                         cur.hit_end = false;
-                        let rv = cur.parse_identifier();
+                        let rv = cur.parse_identifier(scratch);
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Key)
                         }
@@ -969,12 +975,42 @@ impl<'a> Cursor<'a> {
     }
 
     /// Parses an identifier (a map key without quotes).
+    ///
+    /// Identifiers are borrowed from the input unless they contain
+    /// escapes, then they are copied into the buffer.
     #[cfg(json5)]
-    fn parse_identifier<'b>(&mut self) -> Result<Str<'a, 'b>, Error> {
+    fn parse_identifier<'b>(&mut self, buffer: &'b mut Vec<u8>) -> Result<Str<'a, 'b>, Error> {
         let start = self.pos;
+        // the first byte not yet copied into the buffer after an escape
+        let mut copied = None;
         loop {
+            let first = self.pos == start;
             match self.peek() {
-                Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'$') => self.bump(),
+                Some(b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$') => self.bump(),
+                Some(b'0'..=b'9') if !first => self.bump(),
+                Some(b'\\') => {
+                    let from = match copied {
+                        Some(from) => from,
+                        None => {
+                            buffer.clear();
+                            start
+                        }
+                    };
+                    buffer.extend_from_slice(&self.input[from..self.pos]);
+                    let escape = self.pos;
+                    self.bump();
+                    let c = match self.next_or_eof()? {
+                        b'u' => char::from_u32(u32::from(self.decode_hex_escape()?)),
+                        _ => None,
+                    };
+                    // the error is reported at the escape
+                    let Some(c) = c.filter(|&c| is_identifier_char(c, first)) else {
+                        self.pos = escape;
+                        return Err(invalid_identifier());
+                    };
+                    buffer.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
+                    copied = Some(self.pos);
+                }
                 Some(byte @ 0x80..=0xff) => {
                     let len = match byte {
                         0xc0..=0xdf => 2,
@@ -985,22 +1021,11 @@ impl<'a> Cursor<'a> {
                         self.hit_end = true;
                         return Err(eof_error());
                     };
-                    // letters, digits and the zero width (non-)joiner
                     match str::from_utf8(bytes).ok().and_then(|s| s.chars().next()) {
-                        Some(c) if c.is_alphanumeric() || c == '\u{200c}' || c == '\u{200d}' => {
-                            self.pos += len;
-                        }
+                        Some(c) if is_identifier_char(c, first) => self.pos += len,
                         Some(_) => break,
-                        None => {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8"));
-                        }
+                        None => return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8")),
                     }
-                }
-                Some(b'\\') => {
-                    return Err(Error::new(
-                        ErrorKind::Unexpected,
-                        "escapes in identifiers are not supported",
-                    ));
                 }
                 _ => break,
             }
@@ -1008,10 +1033,18 @@ impl<'a> Cursor<'a> {
         if self.pos == start {
             return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
         }
-        // SAFETY: the identifier is ASCII or was validated above
-        Ok(Str::Borrowed(unsafe {
-            str::from_utf8_unchecked(&self.input[start..self.pos])
-        }))
+        match copied {
+            Some(from) => {
+                buffer.extend_from_slice(&self.input[from..self.pos]);
+                // SAFETY: the buffer holds validated characters and the
+                // decoded escapes
+                Ok(Str::Scratch(unsafe { str::from_utf8_unchecked(buffer) }))
+            }
+            // SAFETY: the identifier is ASCII or was validated above
+            None => Ok(Str::Borrowed(unsafe {
+                str::from_utf8_unchecked(&self.input[start..self.pos])
+            })),
+        }
     }
 
     fn decode_hex_escape(&mut self) -> Result<u16, Error> {
@@ -1101,8 +1134,8 @@ impl<'a> Cursor<'a> {
     fn skip_comment(&self, pos: usize) -> Comment {
         let input = self.input;
         let end = match input.get(pos + 1) {
-            Some(b'/') => match input[pos + 2..].iter().position(|&b| b == b'\n') {
-                Some(index) => pos + 2 + index + 1,
+            Some(b'/') => match line_comment_len(&input[pos + 2..]) {
+                Some(len) => pos + 2 + len,
                 None if self.eof => input.len(),
                 None => return Comment::Incomplete,
             },
@@ -1371,29 +1404,36 @@ impl<'a> Cursor<'a> {
     }
 
     /// Parses a hexadecimal integer, the cursor is at the `x`.
+    ///
+    /// Integers that do not fit into 128 bits are approximated as floats
+    /// (like JavaScript does for all integers beyond 53 bits).
     #[cfg(json5)]
     fn parse_hex(&mut self, nonnegative: bool) -> Result<Number<'a>, Error> {
         self.bump();
-        let mut value = 0u64;
+        let mut value = Some(0u128);
+        let mut float = 0f64;
         let mut digits = 0;
         while let Some(digit) = char::from(self.peek_or_nul()).to_digit(16) {
             self.bump();
             digits += 1;
+            float = float * 16.0 + f64::from(digit);
             value = value
-                .checked_mul(16)
-                .and_then(|value| value.checked_add(u64::from(digit)))
-                .ok_or_else(number_out_of_range)?;
+                .and_then(|value| value.checked_mul(16))
+                .and_then(|value| value.checked_add(u128::from(digit)));
         }
         if digits == 0 {
             return Err(Error::new(ErrorKind::Unexpected, "expected a hex digit"));
         }
-        if nonnegative {
-            Ok(Number::U64(value))
-        } else if value <= 1 << 63 {
-            Ok(Number::I64((value as i64).wrapping_neg()))
-        } else {
-            Err(number_out_of_range())
-        }
+        Ok(match value {
+            Some(value) if nonnegative => match u64::try_from(value) {
+                Ok(value) => Number::U64(value),
+                Err(_) => Number::U128(value),
+            },
+            Some(value) if value <= 1 << 63 => Number::I64((value as i64).wrapping_neg()),
+            Some(value) if value <= 1 << 127 => Number::I128((value as i128).wrapping_neg()),
+            _ if float.is_infinite() => return Err(number_out_of_range()),
+            _ => Number::F64(if nonnegative { float } else { -float }),
+        })
     }
 
     fn parse_exponent(
@@ -1575,6 +1615,10 @@ fn emit_number<'i, O: Out<'i>>(
         Number::Literal(val) if exact_numbers => emit_literal(out, input, val, start, end),
         Number::Literal(val) => out.emit(Event::from(val)),
         Number::BigInt(val) => emit_big_int(out, val),
+        #[cfg(json5)]
+        Number::U128(val) => out.emit(Atom::Ext(ExtValue::borrowed(&val))),
+        #[cfg(json5)]
+        Number::I128(val) => out.emit(Atom::Ext(ExtValue::borrowed(&val))),
     }
 }
 
@@ -1634,6 +1678,25 @@ fn emit_big_int<'i, O: Out<'i>>(out: &mut O, text: &str) -> Result<(), Error> {
     }
 }
 
+/// Returns the length of the rest of a line comment (after the slashes)
+/// including the line break that ends it.
+#[cfg(comments)]
+fn line_comment_len(bytes: &[u8]) -> Option<usize> {
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\n' | b'\r' => return Some(index + 1),
+            // the line and paragraph separators
+            #[cfg(json5)]
+            0xe2 if matches!(bytes.get(index + 1..index + 3), Some([0x80, 0xa8 | 0xa9])) => {
+                return Some(index + 3);
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
 /// Returns the length of the whitespace character at the start of the
 /// bytes if it's not ASCII.
 ///
@@ -1650,6 +1713,24 @@ fn unicode_whitespace(bytes: &[u8]) -> Option<usize> {
         | [0xef, 0xbb, 0xbf, ..] => Some(3),
         _ => None,
     }
+}
+
+/// Returns `true` if the character can be part of an identifier.
+///
+/// These are the characters of ECMAScript identifiers: `$`, `_` and the
+/// characters with the Unicode property `ID_Start` and (except for the
+/// first character) `ID_Continue` and the zero width (non-)joiner.
+#[cfg(json5)]
+fn is_identifier_char(c: char, first: bool) -> bool {
+    matches!(c, '$' | '_')
+        || unicode_ident::is_xid_start(c)
+        || (!first && (unicode_ident::is_xid_continue(c) || matches!(c, '\u{200c}' | '\u{200d}')))
+}
+
+#[cold]
+#[cfg(json5)]
+fn invalid_identifier() -> Error {
+    Error::new(ErrorKind::Unexpected, "invalid escape in identifier")
 }
 
 #[cold]
@@ -1867,6 +1948,15 @@ mod tests {
                 r#"{"Infinity": 1, "null": 2, "true": 3}"#,
             ),
             ("{ä: 1, a\u{200d}b: 2}", "{\"ä\": 1, \"a\u{200d}b\": 2}"),
+            // combining marks and other digits continue identifiers
+            (
+                "{u\u{308}ber: 1, x\u{665}: 2}",
+                "{\"u\u{308}ber\": 1, \"x\u{665}\": 2}",
+            ),
+            (
+                r"{sig\u03A3ma: 1, \u0061b: 2, a\u0062: 3}",
+                r#"{"sigΣma": 1, "ab": 2, "ab": 3}"#,
+            ),
             ("{'a': 1}", r#"{"a": 1}"#),
             // strings
             ("'a\"b'", r#""a\"b""#),
@@ -1884,14 +1974,28 @@ mod tests {
                 "[0xFFFFFFFFFFFFFFFF, -0x8000000000000000]",
                 "[18446744073709551615, -9223372036854775808]",
             ),
-            // whitespace
+            (
+                "[0x10000000000000000, -0x8000000000000001]",
+                "[18446744073709551616, -9223372036854775809]",
+            ),
+            (
+                "[0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF, -0x80000000000000000000000000000000]",
+                "[340282366920938463463374607431768211455, \
+                 -170141183460469231731687303715884105728]",
+            ),
+            // whitespace and line breaks
             ("\u{feff}[1,\u{a0}2\u{2028}\u{3000}\x0b\x0c]", "[1, 2]"),
+            ("[1, // a\u{2028}2, // b\u{2029}3]", "[1, 2, 3]"),
         ]);
         assert_errors(&[
             ("{1: 2}", "expected map key"),
+            ("{\u{308}u: 1}", "expected map key"),
             ("{a b: 1}", "expected colon"),
-            ("{\\u0061: 1}", "expected map key"),
-            ("{a\\u0061: 1}", "escapes in identifiers are not supported"),
+            (r"{\u0031: 1}", "invalid escape in identifier"),
+            (r"{a\u0020: 1}", "invalid escape in identifier"),
+            (r"{a\x41: 1}", "invalid escape in identifier"),
+            (r"{a\uD800: 1}", "invalid escape in identifier"),
+            (r"{a\u00: 1}", "invalid hex escape"),
             ("[a]", "unexpected character"),
             ("'a", "unexpected end of string"),
             ("'a\nb'", "unexpected character in string"),
@@ -1900,11 +2004,53 @@ mod tests {
             (r"'\xZ0'", "invalid hex escape"),
             ("[.]", "expected a digit"),
             ("[0x]", "expected a hex digit"),
-            ("0x10000000000000000", "number out of range"),
-            ("-0x8000000000000001", "number out of range"),
             ("[Inf]", "unexpected character"),
             ("\u{2029}x", "unexpected character"),
         ]);
+    }
+
+    #[test]
+    #[cfg(json5)]
+    fn test_json5_large_hex() {
+        // hexadecimal integers beyond 128 bits are approximated as floats
+        let events = parse_complete(&format!("[0x1{}, -0x1{0}]", "0".repeat(32))).unwrap();
+        assert_eq!(
+            events[1..3],
+            [Event::from(2f64.powi(128)), Event::from(-(2f64.powi(128)))]
+        );
+        assert_errors(&[(&format!("0x1{}", "0".repeat(256)), "number out of range")]);
+    }
+
+    #[test]
+    #[cfg(comments)]
+    fn test_line_scan() {
+        fn lines(input: &str) -> Vec<&str> {
+            let mut rv = Vec::new();
+            let mut start = 0;
+            let mut scan = crate::scan::LineScan::default();
+            while let Some(end) = scan.find_end(input.as_bytes(), start) {
+                rv.push(&input[start..end]);
+                start = end + 1;
+            }
+            rv.push(&input[start..]);
+            rv
+        }
+
+        assert_eq!(lines("1\n2"), ["1", "2"]);
+        assert_eq!(lines("1 /* a\nb */\n2"), ["1 /* a\nb */", "2"]);
+        assert_eq!(lines("1 // a\n2"), ["1 // a", "2"]);
+        assert_eq!(lines("\"/*\"\n2 */"), ["\"/*\"", "2 */"]);
+        assert_eq!(lines("\"a\n\"b"), ["\"a", "\"b"]);
+        assert_eq!(lines("1 / 2\n3"), ["1 / 2", "3"]);
+        assert_eq!(lines("1 /\"a\n\"\n2"), ["1 /\"a", "\"", "2"]);
+        #[cfg(json5)]
+        {
+            assert_eq!(lines("'/*'\n2 */"), ["'/*'", "2 */"]);
+            assert_eq!(
+                lines("'a\\\nb'\n'c\\\r\nd'\n2"),
+                ["'a\\\nb'", "'c\\\r\nd'", "2"]
+            );
+        }
     }
 
     #[test]

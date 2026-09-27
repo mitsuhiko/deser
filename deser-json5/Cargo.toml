@@ -10,6 +10,8 @@ keywords = ["serialization", "deserialization", "json5"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-json5"
+# the vendored test suite is only needed for development
+exclude = ["tests/data"]
 autotests = false
 
 [features]
@@ -24,10 +26,13 @@ deser-core = { version = "0.8.0", path = "../deser-core", default-features = fal
 # the serializer (JSON is valid JSON5)
 deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
 simdutf8 = { version = "0.1.5", optional = true }
+# the characters of identifiers (map keys without quotes)
+unicode-ident = "1.0.12"
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
 deser-location = { version = "0.8.0", path = "../deser-location" }
+deser-value = { version = "0.8.0", path = "../deser-value" }
 
 [[test]]
 name = "integration"

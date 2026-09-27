@@ -29,7 +29,9 @@ separates them).  If a block statement is kept, it is unwrapped:
 becomes `return Err(...);` for dialects without `json5`.  A file with
 `#![cfg(...)]` at the top is only generated for the dialects that match.
 Lines with comments that start with `//#` are only in the template (for
-instance to explain why code is conditional), they are removed.
+instance to explain why code is conditional), they are removed.  Comments
+that start with `//#(capability)` are only kept (as regular comments) for
+the dialects with the capability.
 The generated files are formatted with rustfmt.
 
 Usage:
@@ -79,6 +81,8 @@ ITEM_KEYWORDS = {
 
 # comments that only exist in the template
 TEMPLATE_COMMENT_RE = re.compile(r"^[ \t]*//#.*\n", re.MULTILINE)
+# comments that only exist in the dialects with a capability
+CAPABILITY_COMMENT_RE = re.compile(r"^([ \t]*)//#\((\w+)\) ?(.*\n)", re.MULTILINE)
 
 
 class TemplateError(Exception):
@@ -443,7 +447,14 @@ def generate(source, caps, crate):
         out.append(text)
         pos = end
     out.append(source[pos:])
-    out = TEMPLATE_COMMENT_RE.sub("", "".join(out))
+
+    def capability_comment(m):
+        if m.group(2) not in CAPABILITIES:
+            raise TemplateError(f"unknown capability in comment {m.group(0)!r}")
+        return f"{m.group(1)}// {m.group(3)}" if m.group(2) in caps else ""
+
+    out = CAPABILITY_COMMENT_RE.sub(capability_comment, "".join(out))
+    out = TEMPLATE_COMMENT_RE.sub("", out)
     return out.replace(TEMPLATE_CRATE, crate)
 
 

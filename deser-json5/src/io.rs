@@ -12,6 +12,7 @@ use crate::Trailing;
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::parser::Cursor;
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
+use crate::scan::LineScan;
 use crate::scan::skip_to_escape;
 use crate::scan::skip_to_escape_single;
 
@@ -50,6 +51,8 @@ pub struct StreamState {
     ended: bool,
     // the position up to which the input was scanned
     pos: usize,
+    // `Trailing::Newline`: the scan of the current line
+    line: LineScan,
     // `Trailing::Stop`: the value being scanned
     value: Option<Value>,
 }
@@ -78,9 +81,9 @@ fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, 
         // only whitespace may follow the value
         return trailing_whitespace(input, 0, eof).map(|progress| match progress {
             Progress::End => Frame::End,
-            _ => Frame::Incomplete {
-                consumed: input.len(),
-            },
+            // an incomplete comment is scanned again with more input
+            Progress::NeedMore { consumed } => Frame::Incomplete { consumed },
+            Progress::Done { .. } => unreachable!(),
         });
     }
     if !eof {
@@ -115,8 +118,10 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
 }
 
 fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
-    let end = match input[state.pos..].iter().position(|&b| b == b'\n') {
-        Some(index) => state.pos + index,
+    // line breaks in comments and strings do not end the line
+    let end = state.line.find_end(input, state.pos);
+    let end = match end {
+        Some(end) => end,
         None if eof => input.len(),
         None => {
             state.pos = input.len();
@@ -124,6 +129,7 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
         }
     };
     state.pos = 0;
+    state.line = LineScan::default();
     let consumed = (end + 1).min(input.len());
     match skip_whitespace(&input[..end], 0, true) {
         (start, _) if start < end => Frame::Value {
@@ -179,6 +185,8 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                 // a comment
                 b'/' => true,
                 b'\'' => true,
+                // scalars are ASCII, this is Unicode whitespace
+                0x80..=0xff => true,
                 _ => is_whitespace(b),
             });
             match end {
@@ -425,8 +433,8 @@ impl Decoder for DeserializerConfig {
                     progress => Ok(progress),
                 };
             }
-            // a new value, skip the whitespace before it.  An incomplete
-            // comment is scanned again with more input.
+            // a new value, skip the whitespace before it
+            // (an incomplete comment is scanned again with more input)
             let token;
             (pos, token) = skip_whitespace(input, pos, eof);
             if !token && (pos == input.len() || !eof) {

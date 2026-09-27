@@ -4,16 +4,21 @@
 //!
 //! * `//` and `/* */` comments,
 //! * commas after the last element of sequences and maps,
-//! * map keys which are identifiers (`{name: "api"}`),
+//! * map keys which are ECMAScript identifiers (`{name: "api"}`, with
+//!   Unicode letters and `\u` escapes),
 //! * strings in single quotes, escaped line breaks within strings and the
 //!   escapes `\'`, `\v`, `\0` and `\xFF`,
-//! * hexadecimal numbers, numbers with a leading `+` or a leading or
-//!   trailing decimal point, `Infinity` and `NaN`,
+//! * hexadecimal numbers (those that do not fit into 64 bits are 128 bit
+//!   integers and floats beyond that), numbers with a leading `+` or a
+//!   leading or trailing decimal point, `Infinity` and `NaN`,
 //! * more whitespace characters.
 //!
 //! Otherwise this works like [`deser-json`](https://docs.rs/deser-json):
-//! strings without escape sequences (and identifiers) are borrowed from the
-//! input and the positions of errors and values refer to the input.
+//! strings and identifiers without escape sequences are borrowed from the
+//! input and the positions of errors and values refer to the input.  In
+//! [JSON Lines](Trailing::Newline) only line breaks outside of comments and
+//! strings end a value.  The parser passes the [JSON5 test
+//! suite](https://github.com/json5/json5-tests).
 //!
 //! ```rust
 //! #[derive(deser::Deserialize)]

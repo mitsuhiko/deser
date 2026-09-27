@@ -529,7 +529,6 @@ impl<'a> Deserializer<'a> {
             Trailing::Newline => "expected end of line after value",
             Trailing::Stop => return Ok(()),
         };
-        // an unterminated comment does not reach the end of the input
         self.skip_whitespace();
         if self.pos < self.input.len() {
             return Err(Error::new(ErrorKind::Unexpected, msg));

@@ -68,7 +68,10 @@ The template is regular Rust.  The generator understands:
 * `#![cfg(...)]` at the top of a file only generates the file for the
   dialects that match.
 * Comments that start with `//#` are only in the template (for instance to
-  explain why code is conditional).
+  explain why code is conditional).  Comments that start with
+  `//#(capability)` are only in the dialects with the capability (as
+  regular comments), for instance to explain how code that all dialects
+  share handles comments.
 * `deser_private_jsontemplate` (in doc tests) becomes the name of the
   dialect crate.
 

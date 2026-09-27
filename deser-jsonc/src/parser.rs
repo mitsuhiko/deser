@@ -924,8 +924,8 @@ impl<'a> Cursor<'a> {
     fn skip_comment(&self, pos: usize) -> Comment {
         let input = self.input;
         let end = match input.get(pos + 1) {
-            Some(b'/') => match input[pos + 2..].iter().position(|&b| b == b'\n') {
-                Some(index) => pos + 2 + index + 1,
+            Some(b'/') => match line_comment_len(&input[pos + 2..]) {
+                Some(len) => pos + 2 + len,
                 None if self.eof => input.len(),
                 None => return Comment::Incomplete,
             },
@@ -1374,6 +1374,19 @@ fn emit_big_int<'i, O: Out<'i>>(out: &mut O, text: &str) -> Result<(), Error> {
     }
 }
 
+/// Returns the length of the rest of a line comment (after the slashes)
+/// including the line break that ends it.
+fn line_comment_len(bytes: &[u8]) -> Option<usize> {
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\n' | b'\r' => return Some(index + 1),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
 #[cold]
 fn invalid_escape() -> Error {
     Error::new(ErrorKind::Unexpected, "invalid escape in string")
@@ -1570,5 +1583,28 @@ mod tests {
             ("{,}", "expected map key"),
             ("{\"a\": 1,,}", "expected map key"),
         ]);
+    }
+
+    #[test]
+    fn test_line_scan() {
+        fn lines(input: &str) -> Vec<&str> {
+            let mut rv = Vec::new();
+            let mut start = 0;
+            let mut scan = crate::scan::LineScan::default();
+            while let Some(end) = scan.find_end(input.as_bytes(), start) {
+                rv.push(&input[start..end]);
+                start = end + 1;
+            }
+            rv.push(&input[start..]);
+            rv
+        }
+
+        assert_eq!(lines("1\n2"), ["1", "2"]);
+        assert_eq!(lines("1 /* a\nb */\n2"), ["1 /* a\nb */", "2"]);
+        assert_eq!(lines("1 // a\n2"), ["1 // a", "2"]);
+        assert_eq!(lines("\"/*\"\n2 */"), ["\"/*\"", "2 */"]);
+        assert_eq!(lines("\"a\n\"b"), ["\"a", "\"b"]);
+        assert_eq!(lines("1 / 2\n3"), ["1 / 2", "3"]);
+        assert_eq!(lines("1 /\"a\n\"\n2"), ["1 /\"a", "\"", "2"]);
     }
 }

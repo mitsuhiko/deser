@@ -21,6 +21,8 @@ speedups = ["dep:simdutf8", "deser-json/speedups"]
 deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
 deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
 simdutf8 = { version = "0.1.5", optional = true }
+# the characters of identifiers (map keys without quotes)
+unicode-ident = "1.0.12"
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }

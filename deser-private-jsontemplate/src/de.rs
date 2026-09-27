@@ -8,6 +8,8 @@ use deser_core::{Error, ErrorKind};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
+#[cfg(comments)]
+use crate::scan::LineScan;
 
 /// Configures how JSON is deserialized.
 ///
@@ -456,10 +458,16 @@ impl<'a> Deserializer<'a> {
         let input = self.input;
         let line_end = if self.config.trailing == Trailing::Newline {
             self.skip_whitespace();
+            #[cfg(not(comments))]
             let end = input[self.pos..]
                 .iter()
                 .position(|&b| b == b'\n')
                 .map_or(input.len(), |idx| self.pos + idx);
+            // line breaks in comments and strings do not end the line
+            #[cfg(comments)]
+            let end = LineScan::default()
+                .find_end(input, self.pos)
+                .unwrap_or(input.len());
             self.input = &input[..end];
             Some(end)
         } else {
@@ -527,7 +535,7 @@ impl<'a> Deserializer<'a> {
             Trailing::Newline => "expected end of line after value",
             Trailing::Stop => return Ok(()),
         };
-        // an unterminated comment does not reach the end of the input
+        //#(comments) an unterminated comment does not reach the end of the input
         self.skip_whitespace();
         if self.pos < self.input.len() {
             return Err(Error::new(ErrorKind::Unexpected, msg));

@@ -10,6 +10,7 @@ use deser_core::{Error, ErrorKind};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
+use crate::scan::LineScan;
 
 /// Configures how JSON is deserialized.
 ///
@@ -458,10 +459,10 @@ impl<'a> Deserializer<'a> {
         let input = self.input;
         let line_end = if self.config.trailing == Trailing::Newline {
             self.skip_whitespace();
-            let end = input[self.pos..]
-                .iter()
-                .position(|&b| b == b'\n')
-                .map_or(input.len(), |idx| self.pos + idx);
+            // line breaks in comments and strings do not end the line
+            let end = LineScan::default()
+                .find_end(input, self.pos)
+                .unwrap_or(input.len());
             self.input = &input[..end];
             Some(end)
         } else {

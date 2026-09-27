@@ -5,7 +5,8 @@
 //! `tsconfig.json` or the settings of VS Code.  Otherwise this works like
 //! [`deser-json`](https://docs.rs/deser-json): strings without escape
 //! sequences are borrowed from the input and the positions of errors and
-//! values refer to the input.
+//! values refer to the input.  In [JSON Lines](Trailing::Newline) only
+//! line breaks outside of comments end a value.
 //!
 //! ```rust
 //! #[derive(deser::Deserialize)]
