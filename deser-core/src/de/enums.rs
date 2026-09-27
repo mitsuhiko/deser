@@ -9,7 +9,9 @@
 //! Known variants are looked up by string, other tags go to the variant
 //! marked with `#[deser(other)]` which can capture the tag.
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::mem::take;
+use std::ptr::NonNull;
 
 use crate::State;
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
@@ -260,6 +262,32 @@ pub fn lookup_atom<T>(atom: &Atom, lookup: impl Fn(Tag<'_>) -> Option<T>) -> Opt
         Atom::Lexical(text) => lookup(Tag::Str(text)).or_else(|| lookup(Tag::parse_lexical(text)?)),
         Atom::Ext(ext) => lookup_atom(&ext.fallback(), lookup),
         atom => lookup(Tag::of_atom(atom)?),
+    }
+}
+
+/// Returns the index of the variant of a unit enum for an atom.
+///
+/// Extension values are lowered to their fallback.  Atoms that are not the
+/// name of a variant are the `other` variant if there is one, otherwise
+/// they are an error.  This does everything but the lookup of the names for
+/// the unit enums of the derive, it's not inlined so that it exists once.
+#[inline(never)]
+pub fn unit_variant(
+    atom: &Atom<'_>,
+    lookup: fn(Tag<'_>) -> Option<usize>,
+    names: &[&str],
+    expecting: &str,
+    other: Option<usize>,
+) -> Result<usize, Error> {
+    if let Atom::Ext(ext) = atom {
+        return match ext.fallback() {
+            Atom::Ext(_) => Err(atom.unexpected_error(expecting)),
+            fallback => unit_variant(&fallback, lookup, names, expecting, other),
+        };
+    }
+    match lookup_atom(atom, lookup).or(other) {
+        Some(index) => Ok(index),
+        None => Err(unknown_variant_atom(atom, names, expecting)),
     }
 }
 
@@ -920,6 +948,58 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             report_unclaimed_key(err, state);
         }
         Ok(())
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
+    }
+}
+
+/// A function that sets a value from an atom.
+pub type AtomSetter<T> = for<'x> fn(&mut T, Atom<'x>, &mut State) -> Result<(), Error>;
+
+/// [`AtomSetter`] with the type of the value erased.
+type ErasedAtomSetter = for<'x> fn(NonNull<()>, Atom<'x>, &mut State) -> Result<(), Error>;
+
+/// A sink that sets a value from an atom with a function.
+///
+/// Unit enums of the derive use this for their sinks (to deserialize and
+/// to update them), all they have to generate is the function.  The sink
+/// exists once for all types.
+struct AtomSink<'a> {
+    target: NonNull<()>,
+    set: ErasedAtomSetter,
+    name: &'static str,
+    _marker: PhantomData<&'a mut ()>,
+}
+
+// SAFETY: the sink only allows the setter to mutate the target (a
+// `&'a mut T` with `T: Send`, see `atom_sink`).
+unsafe impl Send for AtomSink<'_> {}
+
+/// Creates a sink that sets the target from an atom with the setter.
+///
+/// Other data is rejected with `name` as expected type.
+pub fn atom_sink<'a, 'de, T: Send + 'a>(
+    target: &'a mut T,
+    set: AtomSetter<T>,
+    name: &'static str,
+) -> SinkHandle<'a, 'de> {
+    // SAFETY: `&mut T` and `NonNull<()>` are ABI compatible (both are
+    // pointers to sized types), and the setter is only ever called with
+    // the target which is a valid `&'a mut T` for the lifetime of the sink.
+    let set = unsafe { std::mem::transmute::<AtomSetter<T>, ErasedAtomSetter>(set) };
+    SinkHandle::boxed(AtomSink {
+        target: NonNull::from(target).cast(),
+        set,
+        name,
+        _marker: PhantomData,
+    })
+}
+
+impl<'de> Sink<'de> for AtomSink<'_> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        (self.set)(self.target, atom, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {

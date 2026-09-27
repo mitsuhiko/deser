@@ -916,7 +916,8 @@ pub fn derive_enum(
 
     let mut seen_names = HashSet::new();
     let mut matcher = Vec::new();
-    for (x, var_ident) in attrs.iter().zip(var_idents.iter()) {
+    let mut variant_arms = Vec::new();
+    for (index, (x, var_ident)) in attrs.iter().zip(var_idents.iter()).enumerate() {
         let names = std::iter::once(x.name(&container_attrs))
             .chain(x.aliases(&container_attrs))
             .collect::<Vec<_>>();
@@ -928,10 +929,15 @@ pub fn derive_enum(
                 ));
             }
         }
+        // the names are matched to the index of the variant by a function
+        // so that the lookup (which is not generic) exists once
         matcher.push(VariantName::tag_arms(
             &names,
-            quote! { __deser::__derive::Some(#ident::#var_ident) },
+            quote! { __deser::__derive::Some(#index) },
         ));
+        variant_arms.push(quote! {
+            #index => #ident::#var_ident,
+        });
     }
 
     if let Some(attrs) = attrs.iter().find(|x| x.default()) {
@@ -946,21 +952,13 @@ pub fn derive_enum(
         quote! { (#validator)(&value)?; }
     });
     let type_name = container_attrs.container_name();
-    let fallback = match attrs.iter().find(|x| x.other()) {
-        // all other atoms are unknown tags too
-        Some(other) => {
-            let var_ident = &other.variant().ident;
-            quote! { #ident::#var_ident }
-        }
-        None => {
-            let names = attrs.iter().map(|x| x.name(&container_attrs).str_expr());
-            quote! {
-                return __deser::__derive::Err(
-                    __deser::__derive::unknown_variant_atom(&__atom, &[#(#names),*], #type_name)
-                )
-            }
-        }
+    // atoms that are not the name of a variant are the other variant (if
+    // there is one), or an error with the names
+    let other = match attrs.iter().position(|x| x.other()) {
+        Some(index) => quote! { __deser::__derive::Some(#index) },
+        None => quote! { __deser::__derive::None },
     };
+    let names = attrs.iter().map(|x| x.name(&container_attrs).str_expr());
     if attrs.iter().filter(|x| x.other()).count() > 1 {
         return Err(syn::Error::new(
             Span::call_site(),
@@ -968,11 +966,51 @@ pub fn derive_enum(
         ));
     }
 
+    // Unit enums only generate the function which maps an atom to the value
+    // and two setters, the sink (`atom_sink`) exists once for all types.
     Ok(quote! {
         const _: () = {
-            #[repr(transparent)]
-            struct __SlotWrapper {
-                slot: __deser::__derive::Option<#ident>,
+            fn __lookup(__tag: __deser::__derive::Tag<'_>) -> __deser::__derive::Option<usize> {
+                match __tag {
+                    #( #matcher )*
+                    _ => __deser::__derive::None,
+                }
+            }
+
+            fn __from_atom(
+                __atom: __deser::Atom<'_>,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<#ident> {
+                let value = match __deser::__derive::unit_variant(
+                    &__atom,
+                    __lookup,
+                    &[#(#names),*],
+                    #type_name,
+                    #other,
+                )? {
+                    #( #variant_arms )*
+                    _ => __deser::__derive::unreachable!(),
+                };
+                #unit_validate
+                __deser::__derive::Ok(value)
+            }
+
+            fn __set_slot(
+                __slot: &mut __deser::__derive::Option<#ident>,
+                __atom: __deser::Atom<'_>,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                *__slot = __deser::__derive::Some(__from_atom(__atom, __state)?);
+                __deser::__derive::Ok(())
+            }
+
+            fn __set_value(
+                __value: &mut #ident,
+                __atom: __deser::Atom<'_>,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                *__value = __from_atom(__atom, __state)?;
+                __deser::__derive::Ok(())
             }
 
             #[automatically_derived]
@@ -980,13 +1018,11 @@ pub fn derive_enum(
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
                 ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::de::SinkHandle::to(unsafe {
-                        &mut *{
-                            __slot
-                            as *mut __deser::__derive::Option<Self>
-                            as *mut __SlotWrapper
-                        }
-                    })
+                    __deser::__derive::atom_sink(__slot, __set_slot, #type_name)
+                }
+
+                fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
+                    __deser::__derive::atom_sink(__value, __set_value, #type_name)
                 }
 
                 #[inline]
@@ -995,15 +1031,7 @@ pub fn derive_enum(
                     __atom: __deser::Atom,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    let __sink = unsafe {
-                        &mut *{
-                            __slot
-                            as *mut __deser::__derive::Option<Self>
-                            as *mut __SlotWrapper
-                        }
-                    };
-                    __deser::de::Sink::<'de>::atom(__sink, __atom, __state)?;
-                    __deser::de::Sink::<'de>::finish(__sink, __state)
+                    __set_slot(__slot, __atom, __state)
                 }
 
                 #[inline]
@@ -1012,35 +1040,7 @@ pub fn derive_enum(
                     __atom: __deser::Atom<'de>,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    Self::__private_atom_into(__slot, __atom, __state)
-                }
-            }
-
-            impl<'de> __deser::de::Sink<'de> for __SlotWrapper {
-                fn atom(
-                    &mut self,
-                    __atom: __deser::Atom,
-                    __state: &mut __deser::State
-                ) -> __deser::__derive::Result<()> {
-                    if let __deser::Atom::Ext(_) = __atom {
-                        // lowered to the fallback
-                        return self.unexpected_atom(__atom, __state);
-                    }
-                    let __found = __deser::__derive::lookup_atom(&__atom, |__tag| match __tag {
-                        #( #matcher )*
-                        _ => __deser::__derive::None,
-                    });
-                    let value = match __found {
-                        __deser::__derive::Some(value) => value,
-                        __deser::__derive::None => #fallback,
-                    };
-                    #unit_validate
-                    self.slot = __deser::__derive::Some(value);
-                    __deser::__derive::Ok(())
-                }
-
-                fn expecting(&self) -> __deser::__derive::StrCow<'_> {
-                    __deser::__derive::StrCow::Borrowed(#type_name)
+                    __set_slot(__slot, __atom, __state)
                 }
             }
         };

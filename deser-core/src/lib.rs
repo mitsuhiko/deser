@@ -63,6 +63,7 @@ pub mod __derive {
     pub use std::primitive::{str, u8};
     pub use std::result::Result::{Err, Ok};
     pub use std::string::String;
+    pub use std::unreachable;
     pub use std::vec::Vec;
     pub type Result<T> = std::result::Result<T, super::Error>;
     pub type StrCow<'a> = Cow<'a, str>;
@@ -76,7 +77,7 @@ pub mod __derive {
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
         IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, Variant, VariantMaker, Variants,
-        lookup_atom, unknown_variant_atom, untagged_handle,
+        atom_sink, lookup_atom, unit_variant, unknown_variant_atom, untagged_handle,
     };
     pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
