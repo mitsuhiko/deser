@@ -18,6 +18,7 @@ members = [
   "examples/adapters",
   "examples/borrowing",
   "examples/bytes",
+  "examples/config",
   "examples/config-errors",
   "examples/crate-path",
   "examples/debug",

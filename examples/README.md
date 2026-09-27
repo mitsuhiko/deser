@@ -26,6 +26,8 @@ What sets deser apart:
 
 * [`borrowing`](borrowing): borrowing strings and bytes from the input
   with `&str`, `&[u8]` and `Cow`, in structs and enums.
+* [`config`](config): layered configuration (defaults, files and command
+  line overrides) with updates, validation and warnings for unknown keys.
 * [`bytes`](bytes): bytes in JSON and TOML (base64, hex, arrays of
   integers) configured per format and per field, and native bytes in CBOR.
 * [`deep-nesting`](deep-nesting): a million levels of nesting without
