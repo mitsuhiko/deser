@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added the `Separated` adapter for sequences that are written as text
+  with a separator (`#[deser(as = Separated)]` reads `a,b,c` and
+  `Separated<':'>` reads `/usr/bin:/bin`).  Strings are split and the
+  pieces parse like lexical atoms, sequences are accepted as they are.
+  Serializing joins the elements and fails for values that would not read
+  back.
+- Added the `TrimWhitespace` adapter which trims strings before they are
+  deserialized, also to trim the pieces of `Separated`
+  (`Separated<',', TrimWhitespace>`).
 - Values that are buffered by the derive keep borrowed data borrowed: the
   fields of internally tagged enums that come before the tag, the content
   of adjacently tagged enums that comes before the tag, the tags of other

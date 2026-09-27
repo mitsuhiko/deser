@@ -57,6 +57,10 @@
 //!   data if possible.
 //! * [`Flag`]: a `bool` which is set by giving its key (like `?recursive`
 //!   in a query string).
+//! * [`Separated`]: a sequence written as text with a separator (like
+//!   `a,b,c` in an environment variable).
+//! * [`TrimWhitespace`]: trims whitespace from strings before they are
+//!   deserialized.
 //! * The adapters for bytes: the base64 encodings (for instance
 //!   [`Base64Url`]) and [`BytesFallback`] (see [bytes](#bytes)).
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
@@ -212,6 +216,7 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 pub(crate) mod bytes;
 pub(crate) mod ser_impls;
 mod stock;
+mod text;
 
 pub use self::bytes::{
     Base64, Base64NoPad, Base64Url, Base64UrlNoPad, BytesBuf, BytesEncoding, BytesFallback,
@@ -222,6 +227,7 @@ pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
     VecSkipError,
 };
+pub use self::text::{Separated, TrimWhitespace};
 // used for the maps of other crates
 #[allow(unused_imports)]
 pub(crate) use self::stock::skip_map_sink;

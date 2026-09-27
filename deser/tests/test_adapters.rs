@@ -984,3 +984,285 @@ fn test_flag() {
         ]
     );
 }
+
+#[test]
+fn test_separated() {
+    use deser::adapters::{Separated, TrimWhitespace};
+    use std::collections::{HashSet, VecDeque};
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Config {
+        #[deser(as = Separated)]
+        hosts: Vec<String>,
+        #[deser(as = Separated<':'>)]
+        path: VecDeque<String>,
+        #[deser(as = Separated<',', TrimWhitespace>)]
+        ports: BTreeSet<u16>,
+        #[deser(as = Option<Separated<',', DisplayFromStr>>, default)]
+        addrs: Option<Vec<IpAddr>>,
+    }
+
+    let config = |hosts: Event<'static>, path: Event<'static>, ports: Event<'static>| {
+        deserialize::<Config>(vec![
+            Event::map_start(),
+            "hosts".into(),
+            hosts,
+            "path".into(),
+            path,
+            "ports".into(),
+            ports,
+            Event::MapEnd,
+        ])
+    };
+    let lexical = |text: &'static str| Event::from(Atom::Lexical(text.into()));
+
+    // strings and lexical atoms are split, the pieces parse
+    let value = config(
+        lexical("a,b"),
+        Event::from("/usr/bin:/bin"),
+        lexical("80, 443 ,80"),
+    )
+    .unwrap();
+    assert_eq!(value.hosts, ["a", "b"]);
+    assert_eq!(value.path, ["/usr/bin", "/bin"]);
+    assert_eq!(value.ports, BTreeSet::from([80, 443]));
+    assert_eq!(value.addrs, None);
+
+    // the empty string is empty, empty pieces are kept
+    let value = config(lexical(""), lexical("a::b"), lexical("")).unwrap();
+    assert!(value.hosts.is_empty());
+    assert_eq!(value.path, ["a", "", "b"]);
+    assert!(value.ports.is_empty());
+
+    // sequences are accepted as they are, their elements are not split
+    let value = deserialize::<Config>(vec![
+        Event::map_start(),
+        "hosts".into(),
+        Event::seq_start(),
+        "a,b".into(),
+        "c".into(),
+        Event::SeqEnd,
+        "path".into(),
+        Event::seq_start(),
+        Event::SeqEnd,
+        "ports".into(),
+        Event::seq_start(),
+        80u64.into(),
+        lexical(" 443 "),
+        Event::SeqEnd,
+        "addrs".into(),
+        lexical("127.0.0.1,::1"),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value.hosts, ["a,b", "c"]);
+    assert!(value.path.is_empty());
+    assert_eq!(value.ports, BTreeSet::from([80, 443]));
+    assert_eq!(
+        value.addrs,
+        Some(vec![
+            "127.0.0.1".parse::<IpAddr>().unwrap(),
+            "::1".parse().unwrap()
+        ])
+    );
+
+    // pieces are not trimmed without the adapter
+    let err = deserialize::<As<Vec<u16>, Separated>>(vec![lexical("1, 2")]).unwrap_err();
+    assert_eq!(err.message(), "invalid value \" 2\", expected u16");
+    let err = deserialize::<As<Vec<u16>, Separated>>(vec![Event::from(true)]).unwrap_err();
+    assert_eq!(err.message(), "unexpected bool, expected vec");
+
+    // elements are joined when serializing
+    let value = Config {
+        hosts: vec!["a".into(), "b".into()],
+        path: VecDeque::from(["/bin".to_string()]),
+        ports: BTreeSet::from([80, 443]),
+        addrs: None,
+    };
+    check(
+        value,
+        vec![
+            Event::map_start(),
+            "hosts".into(),
+            "a,b".into(),
+            "path".into(),
+            "/bin".into(),
+            "ports".into(),
+            "80,443".into(),
+            "addrs".into(),
+            ().into(),
+            Event::MapEnd,
+        ],
+    );
+    let joined = |value: &dyn Serialize| serialize(value);
+    assert_eq!(
+        joined(&As::<_, Separated<';'>>::new(vec![1.5f64, 2.0])),
+        [Event::from("1.5;2")]
+    );
+    assert_eq!(
+        joined(&As::<HashSet<bool>, Separated>::new(HashSet::from([true]))),
+        [Event::from("true")]
+    );
+    assert_eq!(
+        joined(&As::<Vec<String>, Separated>::new(vec![])),
+        [Event::from("")]
+    );
+
+    // values that would not read back are errors
+    let fails = |value: &dyn Serialize| SerializeDriver::new(value).drive(|_, _| Ok(()));
+    let err = fails(&As::<_, Separated>::new(vec!["a", "b,c"])).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "cannot join \"b,c\", it contains the separator ','"
+    );
+    let err = fails(&As::<_, Separated>::new(vec![""])).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "cannot join a single empty string, it would read back as no elements"
+    );
+    assert!(fails(&As::<_, Separated>::new(vec!["", ""])).is_ok());
+    let err = fails(&As::<_, Separated>::new(vec![vec![1u32]])).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "cannot join sequence, elements must be strings, numbers, booleans or chars"
+    );
+    let err = fails(&As::<_, Separated>::new(vec![None::<u32>])).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "cannot join null, elements must be strings, numbers, booleans or chars"
+    );
+}
+
+#[test]
+fn test_separated_borrowed() {
+    use deser::adapters::{Separated, TrimWhitespace};
+
+    #[derive(Debug, Deserialize)]
+    struct Hosts<'a> {
+        #[deser(as = Separated<',', TrimWhitespace>)]
+        hosts: Vec<&'a str>,
+    }
+
+    let input = String::from("a, b ,c");
+    let mut out = None::<Hosts<'_>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        driver.emit(Event::map_start()).unwrap();
+        driver.emit("hosts").unwrap();
+        driver
+            .emit_borrowed(Atom::Lexical(input.as_str().into()))
+            .unwrap();
+        driver.emit(Event::MapEnd).unwrap();
+    }
+    assert_eq!(out.unwrap().hosts, ["a", "b", "c"]);
+
+    // owned text cannot be borrowed
+    let mut out = None::<Hosts<'_>>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    driver.emit(Event::map_start()).unwrap();
+    driver.emit("hosts").unwrap();
+    assert!(driver.emit(Atom::Lexical("a,b".into())).is_err());
+}
+
+#[test]
+fn test_trim_whitespace() {
+    use deser::adapters::TrimWhitespace;
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Login {
+        #[deser(as = TrimWhitespace)]
+        username: String,
+        // trimmed first, so blank values are `None`
+        #[deser(as = TrimWhitespace<Option<_>>)]
+        port: Option<u16>,
+        #[deser(as = TrimWhitespace, default)]
+        tags: Vec<String>,
+        #[deser(as = Option<TrimWhitespace>, default)]
+        timeout: Option<u32>,
+    }
+
+    let login = |username: Event<'static>, port: Event<'static>| {
+        deserialize::<Login>(vec![
+            Event::map_start(),
+            "username".into(),
+            username,
+            "port".into(),
+            port,
+            Event::MapEnd,
+        ])
+    };
+    let lexical = |text: &'static str| Event::from(Atom::Lexical(text.into()));
+
+    let value = login(Event::from("  jane\t"), lexical(" 8080 ")).unwrap();
+    assert_eq!(value.username, "jane");
+    assert_eq!(value.port, Some(8080));
+
+    // a string stays a string, only lexical atoms parse as numbers
+    let err = login(Event::from("jane"), Event::from(" 8080 ")).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected u16");
+    // blank values are empty which is `None` for numbers
+    assert_eq!(login(lexical(" "), lexical("  ")).unwrap().port, None);
+    assert_eq!(login(lexical(" "), lexical("  ")).unwrap().username, "");
+    // with the option outside, only values that are empty before trimming
+    // are `None`
+    let timeout = |value: Event<'static>| {
+        deserialize::<Login>(vec![
+            Event::map_start(),
+            "username".into(),
+            "x".into(),
+            "timeout".into(),
+            value,
+            Event::MapEnd,
+        ])
+        .map(|login| login.timeout)
+    };
+    assert_eq!(timeout(lexical(" 5 ")).unwrap(), Some(5));
+    assert_eq!(timeout(lexical("")).unwrap(), None);
+    assert_eq!(
+        timeout(lexical(" ")).unwrap_err().message(),
+        "invalid value \"\", expected u32"
+    );
+    // other values are passed on
+    assert_eq!(
+        login(lexical("x"), Event::from(1u64)).unwrap().port,
+        Some(1)
+    );
+
+    // compound values are passed on (elements are not trimmed)
+    let value = deserialize::<Login>(vec![
+        Event::map_start(),
+        "username".into(),
+        "x".into(),
+        "tags".into(),
+        Event::seq_start(),
+        " a ".into(),
+        Event::SeqEnd,
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value.tags, [" a "]);
+    assert_eq!(value.port, None);
+
+    // serialization is not affected
+    assert_eq!(
+        serialize(&Login {
+            username: " jane ".into(),
+            port: None,
+            tags: vec![],
+            timeout: Some(1),
+        }),
+        vec![
+            Event::map_start(),
+            "username".into(),
+            " jane ".into(),
+            "port".into(),
+            ().into(),
+            "tags".into(),
+            Event::seq_start(),
+            Event::SeqEnd,
+            "timeout".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ]
+    );
+}
