@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::de::{self, Deserialize, DeserializeDriver, Limits, Source};
 use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event};
@@ -160,7 +160,7 @@ impl DeserializerConfig {
     /// another format.
     ///
     /// ```
-    /// use deser::adapters::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::{BytesFormat, Hex};
     /// use deser_yaml::DeserializerConfig;
     ///
     /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
@@ -168,7 +168,7 @@ impl DeserializerConfig {
     /// assert_eq!(bytes, [1, 255]);
     /// ```
     ///
-    /// The format is placed into the state (see [`deser::adapters::bytes`]).
+    /// The format is placed into the state (see [bytes](deser::adapters#bytes)).
     /// Values that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;

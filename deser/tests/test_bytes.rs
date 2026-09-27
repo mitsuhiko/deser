@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use deser::adapters::bytes::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::adapters::{As, Borrowed};
+use deser::adapters::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
@@ -330,7 +330,7 @@ fn test_custom_encoding() {
 #[cfg(feature = "bytes-encoding")]
 #[test]
 fn test_data_encoding_adapters() {
-    use deser::adapters::bytes::Base32;
+    use deser::adapters::Base32;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Key {

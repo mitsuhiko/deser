@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::ext::Number;
 use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
@@ -106,7 +106,7 @@ impl SerializerConfig {
     /// Sets how bytes are represented.
     ///
     /// By default bytes are written as base64 ([`BytesFormat::BASE64`]).
-    /// Values can request a different format (see [`deser::adapters::bytes`])
+    /// Values can request a different format (see [bytes](deser::adapters#bytes))
     /// which takes precedence.
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
         self.bytes = format;

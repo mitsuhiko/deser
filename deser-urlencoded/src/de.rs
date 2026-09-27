@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
 use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
@@ -118,7 +118,7 @@ impl DeserializerConfig {
     /// by default, both with the standard and the URL-safe alphabet and
     /// with or without padding.  Values which are not UTF-8 after
     /// percent-decoding are passed on as bytes (see
-    /// [`deser::adapters::bytes`]).
+    /// [bytes](deser::adapters#bytes)).
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;
         self

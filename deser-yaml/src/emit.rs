@@ -12,7 +12,7 @@ use std::borrow::Cow;
 use std::fmt::{self, Write};
 
 use deser::__format::IntBuffer;
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event, State};

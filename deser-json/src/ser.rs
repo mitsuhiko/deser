@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
 use deser::__format::IntBuffer;
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::ext::{BigInt, Decimal, ExtValue, Number};
 use deser::ser::{self, SerializeDriver};
 use deser::{Atom, Error, ErrorKind, Event, Serialize};
@@ -235,11 +235,11 @@ impl SerializerConfig {
     ///
     /// JSON has no bytes, by default they are written as base64 strings
     /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [`deser::adapters::bytes`]) which takes precedence.  Map keys cannot be
+    /// (see [bytes](deser::adapters#bytes)) which takes precedence.  Map keys cannot be
     /// sequences, bytes in keys are always strings.
     ///
     /// ```
-    /// use deser::adapters::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::{BytesFormat, Hex};
     /// use deser_json::SerializerConfig;
     ///
     /// assert_eq!(deser_json::to_string(&b"\x01\xff").unwrap(), r#""Af8=""#);

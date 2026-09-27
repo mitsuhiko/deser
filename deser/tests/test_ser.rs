@@ -348,7 +348,7 @@ fn test_drive_like_next() {
         skipped: u32,
         inner: Inner,
         inners: Vec<Inner>,
-        #[deser(as = deser::adapters::bytes::BytesFallback<deser::adapters::bytes::Hex>)]
+        #[deser(as = deser::adapters::BytesFallback<deser::adapters::Hex>)]
         bytes: Vec<u8>,
         tags: BTreeMap<String, Vec<u32>>,
         last: Option<i8>,

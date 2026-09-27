@@ -1,7 +1,7 @@
 //! Reading and writing JSON streams.
 use std::io::{Read, Write};
 
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser::io::Encoder;
 use deser::io::{Decoder, Frame, Progress};

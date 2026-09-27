@@ -1,4 +1,4 @@
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::ser::{self, SerializeDriver};
 use deser::{Error, Serialize};
 
@@ -307,12 +307,12 @@ impl SerializerConfig {
     /// By default (`true`) YAML is a format with native bytes: bytes are
     /// written as base64 with the `!!binary` tag, also bytes that request a
     /// representation for formats without native bytes (see
-    /// [`BytesFallback`](deser::adapters::bytes::BytesFallback)).  With
+    /// [`BytesFallback`](deser::adapters::BytesFallback)).  With
     /// `false` bytes are represented like in JSON: in the format they request
     /// or the format configured with [`bytes`](Self::bytes).
     ///
     /// ```
-    /// use deser::adapters::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::{BytesFormat, Hex};
     /// use deser_yaml::SerializerConfig;
     ///
     /// assert_eq!(deser_yaml::to_string(&b"\x01\xff").unwrap(), "!!binary Af8=\n");

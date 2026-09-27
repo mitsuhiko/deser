@@ -172,7 +172,7 @@ encoding!(
     /// Base64 with the standard alphabet and padding (RFC 4648 section 4).
     ///
     /// This is the default representation of bytes.  Decoding is lenient
-    /// (see [module documentation](crate::adapters::bytes)).
+    /// (see [adapters documentation](crate::adapters#bytes)).
     Base64,
     "base64",
     |bytes, out| encode_base64(bytes, STANDARD, true, out),
@@ -182,7 +182,7 @@ encoding!(
 encoding!(
     /// Base64 with the standard alphabet without padding.
     ///
-    /// Decoding is lenient (see [module documentation](crate::adapters::bytes)).
+    /// Decoding is lenient (see [adapters documentation](crate::adapters#bytes)).
     Base64NoPad,
     "base64-nopad",
     |bytes, out| encode_base64(bytes, STANDARD, false, out),
@@ -192,7 +192,7 @@ encoding!(
 encoding!(
     /// Base64 with the URL-safe alphabet and padding (RFC 4648 section 5).
     ///
-    /// Decoding is lenient (see [module documentation](crate::adapters::bytes)).
+    /// Decoding is lenient (see [adapters documentation](crate::adapters#bytes)).
     Base64Url,
     "base64url",
     |bytes, out| encode_base64(bytes, URL_SAFE, true, out),
@@ -202,7 +202,7 @@ encoding!(
 encoding!(
     /// Base64 with the URL-safe alphabet without padding.
     ///
-    /// Decoding is lenient (see [module documentation](crate::adapters::bytes)).
+    /// Decoding is lenient (see [adapters documentation](crate::adapters#bytes)).
     Base64UrlNoPad,
     "base64url-nopad",
     |bytes, out| encode_base64(bytes, URL_SAFE, false, out),

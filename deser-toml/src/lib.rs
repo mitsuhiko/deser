@@ -79,7 +79,7 @@
 //! entries with null values
 //! are skipped and null values in sequences are an error.  TOML has no
 //! bytes either, they are written as base64 strings by default (see
-//! [`deser::adapters::bytes`]).  See [`SerializerConfig`] for more
+//! [bytes](deser::adapters#bytes)).  See [`SerializerConfig`] for more
 //! information.
 //!
 //! # Streams

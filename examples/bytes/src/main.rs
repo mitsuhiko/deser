@@ -14,7 +14,7 @@
 //!
 //! When reading, all of them accept native bytes and strings in their
 //! encoding, plain bytes also accept arrays of integers.
-use deser::adapters::bytes::{Base64Url, BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{Base64Url, BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

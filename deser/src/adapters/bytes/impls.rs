@@ -208,7 +208,7 @@ encoding_adapter!(
 /// [`BytesBuf`].
 ///
 /// ```
-/// use deser::adapters::bytes::{BytesFallback, Hex, IntSeq};
+/// use deser::adapters::{BytesFallback, Hex, IntSeq};
 /// use deser::{Deserialize, Serialize};
 ///
 /// #[derive(Serialize, Deserialize)]

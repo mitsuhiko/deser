@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::adapters::bytes::{BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{BytesFallback, BytesFormat, Hex, IntSeq};
 use deser::ext::Datetime;
 use deser::hints::{Compact, Expanded, Layout};
 use deser::ser::{Layer, Next};

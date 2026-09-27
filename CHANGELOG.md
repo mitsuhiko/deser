@@ -4,6 +4,9 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The adapters and encodings for bytes moved from `deser::adapters::bytes`
+  into `deser::adapters` (for instance `deser::adapters::BytesFallback` and
+  `deser::adapters::BytesFormat`), the `bytes` module is gone.
 - Encoding and decoding base64 is faster, up to 1.6 times for large
   buffers.
 - Added `deser::ser::EventSink` and `SerializeDriver::drive_sink`.  Like

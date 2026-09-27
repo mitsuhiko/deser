@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
 
-use crate::adapters::bytes::BytesFormat;
+use crate::adapters::BytesFormat;
 use crate::error::{Error, ErrorKind};
 use crate::ext::ExtValue;
 
@@ -355,7 +355,7 @@ impl fmt::Debug for Event<'_> {
 /// Bytes can carry a [`BytesFormat`] as fallback which formats without
 /// native bytes (such as JSON) use instead of their configured format.
 /// Formats with native bytes ignore it.  This is set by
-/// [`BytesFallback`](crate::adapters::bytes::BytesFallback).
+/// [`BytesFallback`](crate::adapters::BytesFallback).
 #[derive(Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Bytes<'a> {

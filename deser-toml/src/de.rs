@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser::adapters::bytes::BytesFormat;
+use deser::adapters::BytesFormat;
 use deser::de::{self, Deserialize, DeserializeDriver, Source};
 use deser::ext::ExtValue;
 use deser::hints::Layout;
@@ -57,7 +57,7 @@ impl DeserializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser::adapters::bytes::{BytesFormat, Hex};
+    /// use deser::adapters::{BytesFormat, Hex};
     /// use deser_toml::DeserializerConfig;
     ///
     /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = \"Af8=\"").unwrap();
@@ -68,7 +68,7 @@ impl DeserializerConfig {
     /// assert_eq!(value["a"], [1, 255]);
     /// ```
     ///
-    /// The format is placed into the state (see [`deser::adapters::bytes`]).  Values
+    /// The format is placed into the state (see [bytes](deser::adapters#bytes)).  Values
     /// that use an adapter for bytes are not affected.
     pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
         self.bytes = format;

@@ -2,7 +2,7 @@
 use crate::common;
 
 use common::{de, ser};
-use deser::adapters::bytes::{BytesFallback, Hex, IntSeq};
+use deser::adapters::{BytesFallback, Hex, IntSeq};
 use deser::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

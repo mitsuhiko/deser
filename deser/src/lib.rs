@@ -65,7 +65,7 @@ pub struct Account {
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
 //! * `bytes-encoding` adds more encodings for bytes (such as base32) to
-//!   [`adapters::bytes`].
+//!   [`adapters`](crate::adapters#bytes).
 //! * `io` (enabled by default) adds [`io`][io-module] to read values from and
 //!   write values to streams.
 //!

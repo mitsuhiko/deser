@@ -1,84 +1,4 @@
-//! Adapters for bytes and how bytes are represented in formats without
-//! native bytes.
-//!
-//! Bytes (`Vec<u8>`, `[u8; N]`, `&[u8]` and `Cow<[u8]>`) are part of the
-//! data model as [`Atom::Bytes`](crate::Atom::Bytes).  Formats which support
-//! bytes natively (such as CBOR) use that, text formats like JSON and TOML
-//! have to represent them differently.  In deser the convention is:
-//!
-//! * Formats without native bytes write bytes as base64 strings (RFC 4648,
-//!   standard alphabet with padding).  They can be configured with a
-//!   different [`BytesFormat`] (for instance to write sequences of integers).
-//! * Types that expect bytes accept a string and decode it.  By default
-//!   this is lenient base64: both the standard and the URL-safe alphabet
-//!   are accepted and the padding is optional.  Sequences of integers are
-//!   always accepted.
-//!
-//! # Adapters
-//!
-//! How the bytes of an individual value are represented can be changed with
-//! the adapters of this module.  They support `Vec<u8>`, `[u8; N]` and
-//! `Cow<[u8]>` (see [`BytesBuf`]).
-//!
-//! * The encodings (such as [`Hex`]) are adapters which represent bytes as
-//!   strings in the encoding in all formats, also in formats with native
-//!   bytes.
-//! * [`BytesFallback`] keeps bytes as bytes in formats with native bytes and
-//!   only picks the representation for formats without them.  This can be
-//!   an encoding (`BytesFallback<Hex>`) or sequences of integers
-//!   (`BytesFallback<IntSeq>`).
-//!
-//! ```
-//! use deser::adapters::bytes::{BytesFallback, Hex, IntSeq};
-//! use deser::{Deserialize, Serialize};
-//!
-//! #[derive(Serialize, Deserialize)]
-//! pub struct Blob {
-//!     // base64 in JSON and TOML, bytes in CBOR
-//!     data: Vec<u8>,
-//!     // a hex string in all formats
-//!     #[deser(as = Hex)]
-//!     sha256: [u8; 32],
-//!     // hex in JSON and TOML, bytes in CBOR
-//!     #[deser(as = BytesFallback<Hex>)]
-//!     signature: Vec<u8>,
-//!     // `[1, 2]` in JSON and TOML, bytes in CBOR
-//!     #[deser(as = BytesFallback<IntSeq>)]
-//!     legacy: Vec<u8>,
-//! }
-//! ```
-//!
-//! When deserializing, all of these accept native bytes and strings in
-//! their encoding.
-//!
-//! # Encodings
-//!
-//! These encodings are always available:
-//!
-//! | Encoding           | Description                                        |
-//! |--------------------|----------------------------------------------------|
-//! | [`Base64`]         | base64, standard alphabet with padding             |
-//! | [`Base64NoPad`]    | base64, standard alphabet without padding          |
-//! | [`Base64Url`]      | base64, URL-safe alphabet with padding             |
-//! | [`Base64UrlNoPad`] | base64, URL-safe alphabet without padding          |
-//! | [`Hex`]            | hexadecimal, lowercase                             |
-//! | [`HexUpper`]       | hexadecimal, uppercase                             |
-//!
-//! All base64 encodings decode leniently like the default: both alphabets
-//! are accepted and the padding is optional.  Both hex encodings accept
-//! lowercase and uppercase digits.
-//!
-//! With the `bytes-encoding` feature more encodings are available:
-//!
-//! | Encoding           | Description                                        |
-//! |--------------------|----------------------------------------------------|
-//! | `Base32`           | base32 with padding                                |
-//! | `Base32NoPad`      | base32 without padding                             |
-//! | `Base32Hex`        | base32 with extended hex alphabet and padding      |
-//! | `Base32HexNoPad`   | base32 with extended hex alphabet without padding  |
-//!
-//! Other encodings can be added by implementing [`BytesEncoding`].  They
-//! are adapters like the encodings provided by deser.
+//! The adapters and encodings for bytes (see [`adapters`](super#bytes)).
 use std::fmt;
 
 use crate::State;
@@ -100,11 +20,11 @@ pub(crate) use self::encodings::decode_base64;
 /// Encodings are types which are not instantiated.  They are used with
 /// [`BytesFormat::encoded`] and every encoding is an adapter which
 /// represents bytes as strings in the encoding (see the
-/// [module documentation](self)).  With [`BytesFallback`] the encoding is
+/// [adapters documentation](super#bytes)).  With [`BytesFallback`] the encoding is
 /// only used in formats without native bytes.
 ///
 /// ```
-/// use deser::adapters::bytes::BytesEncoding;
+/// use deser::adapters::BytesEncoding;
 /// use deser::{Error, ErrorKind};
 ///
 /// /// Writes bytes as decimal numbers separated by dots.
@@ -162,7 +82,7 @@ pub trait BytesEncoding: 'static {
 ///   are decoded as base64 for [`BytesFormat::SEQ`].
 ///
 /// ```
-/// use deser::adapters::bytes::{BytesFormat, Hex};
+/// use deser::adapters::{BytesFormat, Hex};
 ///
 /// const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
 /// assert_eq!(HEX.encode(b"\x01\xff").as_deref(), Some("01ff"));
