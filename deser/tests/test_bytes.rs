@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use deser::adapters::{As, Borrowed};
-use deser::adapters::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, IntSeq};
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
@@ -64,6 +64,27 @@ fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)
     events
 }
 
+/// A custom encoding: decimal numbers separated by dots.
+struct Dotted;
+
+impl BytesEncoding for Dotted {
+    const NAME: &'static str = "dotted";
+
+    fn encode(bytes: &[u8], out: &mut String) {
+        let parts = bytes.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        out.push_str(&parts.join("."));
+    }
+
+    fn decode(s: &str) -> Result<Vec<u8>, Error> {
+        s.split('.')
+            .map(|x| {
+                x.parse()
+                    .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid byte"))
+            })
+            .collect()
+    }
+}
+
 fn bytes(value: &[u8]) -> Event<'static> {
     Event::Atom(Atom::Bytes(deser::Bytes::new(Cow::Owned(value.to_vec()))))
 }
@@ -119,50 +140,50 @@ fn test_borrowed_bytes_from_strings() {
 
 #[test]
 fn test_bytes_format_in_state() {
-    let hex = Some(BytesFormat::encoded::<Hex>());
-    let value: Vec<u8> = deserialize_with(vec!["01ff".into()], hex).unwrap();
+    let dotted = Some(BytesFormat::encoded::<Dotted>());
+    let value: Vec<u8> = deserialize_with(vec!["1.255".into()], dotted).unwrap();
     assert_eq!(value, [1, 255]);
-    let value: [u8; 2] = deserialize_with(vec!["01ff".into()], hex).unwrap();
+    let value: [u8; 2] = deserialize_with(vec!["1.255".into()], dotted).unwrap();
     assert_eq!(value, [1, 255]);
-    let value: Cow<'static, [u8]> = deserialize_with(vec!["01ff".into()], hex).unwrap();
+    let value: Cow<'static, [u8]> = deserialize_with(vec!["1.255".into()], dotted).unwrap();
     assert_eq!(&*value, [1, 255]);
     let value: Vec<u8> = deserialize_with(vec!["Af8=".into()], Some(BytesFormat::SEQ)).unwrap();
     assert_eq!(value, [1, 255]);
 
     // adapters are not affected
-    let value: As<Vec<u8>, Base64Url> = deserialize_with(vec!["Af8".into()], hex).unwrap();
+    let value: As<Vec<u8>, Base64Url> = deserialize_with(vec!["Af8".into()], dotted).unwrap();
     assert_eq!(*value, [1, 255]);
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {
     plain: Vec<u8>,
-    #[deser(as = BytesFallback<Hex>)]
-    hex: [u8; 2],
-    #[deser(as = BytesFallback<Hex>)]
+    #[deser(as = BytesFallback<Dotted>)]
+    array: [u8; 2],
+    #[deser(as = BytesFallback<Dotted>)]
     encoded: Vec<u8>,
-    #[deser(as = Hex)]
+    #[deser(as = Dotted)]
     forced: Vec<u8>,
     #[deser(as = BytesFallback<IntSeq>)]
     seq: Vec<u8>,
-    #[deser(as = Option<BytesFallback<Hex>>)]
+    #[deser(as = Option<BytesFallback<Dotted>>)]
     optional: Option<Vec<u8>>,
-    #[deser(as = Vec<BytesFallback<Hex>>)]
+    #[deser(as = Vec<BytesFallback<Dotted>>)]
     many: Vec<Vec<u8>>,
-    #[deser(as = BTreeMap<BytesFallback<Hex>, _>)]
+    #[deser(as = BTreeMap<BytesFallback<Dotted>, _>)]
     keys: BTreeMap<Vec<u8>, u32>,
-    #[deser(as = BytesFallback<Hex>)]
+    #[deser(as = BytesFallback<Dotted>)]
     cow: Cow<'static, [u8]>,
-    #[deser(as = Option<Hex>)]
+    #[deser(as = Option<Dotted>)]
     forced_optional: Option<[u8; 1]>,
-    #[deser(as = Hex)]
+    #[deser(as = Dotted)]
     forced_cow: Cow<'static, [u8]>,
 }
 
 fn blob() -> Blob {
     Blob {
         plain: vec![1],
-        hex: [2, 3],
+        array: [2, 3],
         encoded: vec![4],
         forced: vec![5],
         seq: vec![6],
@@ -177,42 +198,42 @@ fn blob() -> Blob {
 
 #[test]
 fn test_adapters_serialize() {
-    let hex = Some(BytesFormat::encoded::<Hex>());
+    let dotted = Some(BytesFormat::encoded::<Dotted>());
     let seq = Some(BytesFormat::SEQ);
     let events = serialize(&blob());
     let expected = vec![
         (Event::map_start(), None),
         ("plain".into(), None),
         (bytes(&[1]), None),
-        ("hex".into(), None),
-        (bytes(&[2, 3]), hex),
+        ("array".into(), None),
+        (bytes(&[2, 3]), dotted),
         ("encoded".into(), None),
-        (bytes(&[4]), hex),
+        (bytes(&[4]), dotted),
         ("forced".into(), None),
         // forced strings are strings for all formats
-        ("05".into(), None),
+        ("5".into(), None),
         ("seq".into(), None),
         (bytes(&[6]), seq),
         ("optional".into(), None),
-        (bytes(&[7]), hex),
+        (bytes(&[7]), dotted),
         ("many".into(), None),
         (Event::seq_start(), None),
-        (bytes(&[8]), hex),
+        (bytes(&[8]), dotted),
         (Event::SeqEnd, None),
         ("keys".into(), None),
         (
             Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
             None,
         ),
-        (bytes(&[9]), hex),
+        (bytes(&[9]), dotted),
         (10u64.into(), None),
         (Event::MapEnd, None),
         ("cow".into(), None),
-        (bytes(&[11]), hex),
+        (bytes(&[11]), dotted),
         ("forced_optional".into(), None),
-        ("0c".into(), None),
+        ("12".into(), None),
         ("forced_cow".into(), None),
-        ("0d".into(), None),
+        ("13".into(), None),
         (Event::MapEnd, None),
     ];
     assert_eq!(events, expected);
@@ -232,67 +253,46 @@ fn test_adapters_deserialize() {
         Event::map_start(),
         "plain".into(),
         "AQ==".into(),
-        "hex".into(),
-        "0203".into(),
+        "array".into(),
+        "2.3".into(),
         "encoded".into(),
-        "04".into(),
+        "4".into(),
         "forced".into(),
-        "05".into(),
+        "5".into(),
         "seq".into(),
         Event::seq_start(),
         6u64.into(),
         Event::SeqEnd,
         "optional".into(),
-        "07".into(),
+        "7".into(),
         "many".into(),
         Event::seq_start(),
-        "08".into(),
+        "8".into(),
         Event::SeqEnd,
         "keys".into(),
         Event::map_start(),
-        "09".into(),
+        "9".into(),
         10u64.into(),
         Event::MapEnd,
         "cow".into(),
-        "0B".into(),
+        "11".into(),
         "forced_optional".into(),
-        "0C".into(),
+        "12".into(),
         "forced_cow".into(),
-        "0d".into(),
+        "13".into(),
         Event::MapEnd,
     ];
     assert_eq!(deserialize::<Blob>(events).unwrap(), blob());
 
-    let err = deserialize::<As<[u8; 2], Hex>>(vec!["zz".into()]).unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid hex string");
-    let err = deserialize::<As<[u8; 2], Hex>>(vec!["01".into()]).unwrap_err();
+    let err = deserialize::<As<[u8; 2], Dotted>>(vec!["x".into()]).unwrap_err();
+    assert_eq!(err.to_string(), "Unexpected: invalid byte");
+    let err = deserialize::<As<[u8; 2], Dotted>>(vec!["1".into()]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::WrongLength);
-    let err = deserialize::<As<Vec<u8>, Hex>>(vec![1u64.into()]).unwrap_err();
+    let err = deserialize::<As<Vec<u8>, Dotted>>(vec![1u64.into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected unsigned integer, expected bytes or hex string"
+        "Unexpected: unexpected unsigned integer, expected bytes or dotted string"
     );
-}
-
-/// A custom encoding.
-struct Dotted;
-
-impl BytesEncoding for Dotted {
-    const NAME: &'static str = "dotted";
-
-    fn encode(bytes: &[u8], out: &mut String) {
-        let parts = bytes.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        out.push_str(&parts.join("."));
-    }
-
-    fn decode(s: &str) -> Result<Vec<u8>, Error> {
-        s.split('.')
-            .map(|x| {
-                x.parse()
-                    .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid byte"))
-            })
-            .collect()
-    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -325,36 +325,4 @@ fn test_custom_encoding() {
     .unwrap();
     assert_eq!(value.hint, [1, 2]);
     assert_eq!(value.forced, [3, 4]);
-}
-
-#[cfg(feature = "bytes-encoding")]
-#[test]
-fn test_data_encoding_adapters() {
-    use deser::adapters::Base32;
-
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    struct Key {
-        #[deser(as = Base32)]
-        a: Vec<u8>,
-        #[deser(as = BytesFallback<Base32>)]
-        b: Vec<u8>,
-    }
-
-    let value = Key {
-        a: b"foo".to_vec(),
-        b: b"bar".to_vec(),
-    };
-    let events = serialize(&value);
-    assert_eq!(events[2].0, "MZXW6===".into());
-    assert_eq!(events[4].1, Some(BytesFormat::encoded::<Base32>()));
-    let value: Key = deserialize(vec![
-        Event::map_start(),
-        "a".into(),
-        "MZXW6===".into(),
-        "b".into(),
-        "MJQXE===".into(),
-        Event::MapEnd,
-    ])
-    .unwrap();
-    assert_eq!(value.b, b"bar");
 }

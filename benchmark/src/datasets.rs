@@ -9,8 +9,9 @@
 //! `Vec<u8>` (they are sequences of integers) and no `BytesFallback`.
 use std::collections::HashMap;
 
-use deser::adapters::{BytesFallback, Hex};
+use deser::adapters::BytesFallback;
 use deser::{Deserialize, Serialize};
+use deser_encoding::Hex;
 
 /// A small deterministic pseudo random number generator (xorshift64*).
 struct Rng(u64);

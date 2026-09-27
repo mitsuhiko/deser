@@ -157,14 +157,14 @@ impl DeserializerConfig {
     /// expect bytes (like `Vec<u8>`) receive are decoded as base64 by
     /// default.  This is only needed to read bytes written with
     /// [`SerializerConfig::binary`](crate::SerializerConfig::binary) off and
-    /// another format.
+    /// another format than base64, for instance hex
+    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
+    /// [`deser-encoding`](https://docs.rs/deser-encoding)).
     ///
     /// ```
-    /// use deser::adapters::{BytesFormat, Hex};
-    /// use deser_yaml::DeserializerConfig;
-    ///
-    /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
-    /// let bytes: Vec<u8> = HEX.from_str("01ff").unwrap();
+    /// let bytes: Vec<u8> = deser_yaml::from_str("!!binary Af8=").unwrap();
+    /// assert_eq!(bytes, [1, 255]);
+    /// let bytes: Vec<u8> = deser_yaml::from_str("Af8").unwrap();
     /// assert_eq!(bytes, [1, 255]);
     /// ```
     ///

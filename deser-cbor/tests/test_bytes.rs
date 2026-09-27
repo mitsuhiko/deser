@@ -2,8 +2,9 @@
 use crate::common;
 
 use common::{de, ser};
-use deser::adapters::{BytesFallback, Hex, IntSeq};
+use deser::adapters::{BytesFallback, IntSeq};
 use deser::{Deserialize, Serialize};
+use deser_encoding::Hex;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {

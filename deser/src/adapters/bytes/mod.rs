@@ -7,11 +7,8 @@ use crate::error::Error;
 mod encodings;
 mod impls;
 
-pub use self::encodings::{Base64, Base64NoPad, Base64Url, Base64UrlNoPad, Hex, HexUpper};
+pub use self::encodings::{Base64, Base64NoPad, Base64Url, Base64UrlNoPad};
 pub use self::impls::{BytesBuf, BytesFallback, BytesFallbackFormat, IntSeq};
-
-#[cfg(feature = "bytes-encoding")]
-pub use self::encodings::{Base32, Base32Hex, Base32HexNoPad, Base32NoPad};
 
 pub(crate) use self::encodings::decode_base64;
 
@@ -82,11 +79,12 @@ pub trait BytesEncoding: 'static {
 ///   are decoded as base64 for [`BytesFormat::SEQ`].
 ///
 /// ```
-/// use deser::adapters::{BytesFormat, Hex};
+/// use deser::adapters::{Base64UrlNoPad, BytesFormat};
 ///
-/// const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
-/// assert_eq!(HEX.encode(b"\x01\xff").as_deref(), Some("01ff"));
-/// assert_eq!(HEX.decode("01FF").unwrap(), b"\x01\xff");
+/// const URL_SAFE: BytesFormat = BytesFormat::encoded::<Base64UrlNoPad>();
+/// assert_eq!(URL_SAFE.encode(b"\xfb\xff").as_deref(), Some("-_8"));
+/// // decoding is lenient
+/// assert_eq!(URL_SAFE.decode("+/8=").unwrap(), b"\xfb\xff");
 /// assert_eq!(BytesFormat::SEQ.encode(b"\x01\xff"), None);
 /// ```
 ///
@@ -205,7 +203,7 @@ mod tests {
     fn test_format() {
         assert_eq!(BytesFormat::default(), BytesFormat::BASE64);
         assert_eq!(BytesFormat::encoded::<Base64>(), BytesFormat::BASE64);
-        assert_ne!(BytesFormat::encoded::<Hex>(), BytesFormat::BASE64);
+        assert_ne!(BytesFormat::encoded::<Base64Url>(), BytesFormat::BASE64);
         assert_ne!(BytesFormat::SEQ, BytesFormat::BASE64);
         assert_eq!(format!("{:?}", BytesFormat::SEQ), "BytesFormat(\"seq\")");
         assert_eq!(BytesFormat::SEQ.decode("AQ==").unwrap(), b"\x01");

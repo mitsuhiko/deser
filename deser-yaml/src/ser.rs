@@ -312,17 +312,19 @@ impl SerializerConfig {
     /// or the format configured with [`bytes`](Self::bytes).
     ///
     /// ```
-    /// use deser::adapters::{BytesFormat, Hex};
+    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
     /// use deser_yaml::SerializerConfig;
     ///
-    /// assert_eq!(deser_yaml::to_string(&b"\x01\xff").unwrap(), "!!binary Af8=\n");
-    /// const HEX: SerializerConfig = SerializerConfig::new()
+    /// assert_eq!(deser_yaml::to_string(&b"\xfb\xff").unwrap(), "!!binary +/8=\n");
+    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
     ///     .binary(false)
-    ///     .bytes(BytesFormat::encoded::<Hex>());
-    /// assert_eq!(HEX.to_string(&b"\x01\xff").unwrap(), "01ff\n");
+    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// assert_eq!(URL_SAFE.to_string(&b"\xfb\xff").unwrap(), "-_8\n");
     /// ```
     ///
-    /// Bytes in other formats than base64 (or sequences) need to be
+    /// More encodings (such as hex) are provided by
+    /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
+    /// formats than base64 (or sequences) need to be
     /// deserialized with the same format (see
     /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
     pub const fn binary(mut self, yes: bool) -> SerializerConfig {

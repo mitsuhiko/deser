@@ -6,7 +6,8 @@
 //!
 //! * a plain `Vec<u8>` uses the format's configuration (base64 unless
 //!   configured otherwise) and native bytes in CBOR,
-//! * `#[deser(as = Hex)]` makes it a hex string in all formats (also CBOR),
+//! * `#[deser(as = Hex)]` makes it a hex string in all formats (also CBOR).
+//!   deser provides the base64 encodings, `Hex` comes from `deser-encoding`,
 //! * `#[deser(as = BytesFallback<Hex>)]` keeps native bytes in CBOR and
 //!   picks hex only where bytes are not supported,
 //! * `#[deser(as = BytesFallback<IntSeq>)]` writes arrays of integers
@@ -14,8 +15,9 @@
 //!
 //! When reading, all of them accept native bytes and strings in their
 //! encoding, plain bytes also accept arrays of integers.
-use deser::adapters::{Base64Url, BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{Base64Url, BytesFallback, BytesFormat, IntSeq};
 use deser::{Deserialize, Serialize};
+use deser_encoding::Hex;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Blob {

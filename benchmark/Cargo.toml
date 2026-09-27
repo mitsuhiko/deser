@@ -14,6 +14,7 @@ count-allocs = []
 [dependencies]
 deser = { path = "../deser", features = ["derive"] }
 deser-cbor = { path = "../deser-cbor", features = ["speedups"] }
+deser-encoding = { path = "../deser-encoding" }
 deser-json = { path = "../deser-json", features = ["speedups"] }
 deser-toml = { path = "../deser-toml", features = ["speedups"] }
 deser-value = { path = "../deser-value" }

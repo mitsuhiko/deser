@@ -50,19 +50,22 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser::adapters::{BytesFormat, Hex};
+    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
     /// use deser_toml::SerializerConfig;
     ///
     /// let mut value = BTreeMap::new();
-    /// value.insert("a", vec![1u8, 255]);
-    /// assert_eq!(deser_toml::to_string(&value).unwrap(), "a = \"Af8=\"\n");
-    /// const HEX: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
-    /// assert_eq!(HEX.to_string(&value).unwrap(), "a = \"01ff\"\n");
+    /// value.insert("a", vec![251u8, 255]);
+    /// assert_eq!(deser_toml::to_string(&value).unwrap(), "a = \"+/8=\"\n");
+    /// const URL_SAFE: SerializerConfig =
+    ///     SerializerConfig::new().bytes(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// assert_eq!(URL_SAFE.to_string(&value).unwrap(), "a = \"-_8\"\n");
     /// const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
-    /// assert_eq!(SEQ.to_string(&value).unwrap(), "a = [1, 255]\n");
+    /// assert_eq!(SEQ.to_string(&value).unwrap(), "a = [251, 255]\n");
     /// ```
     ///
-    /// Bytes in other formats than base64 (or arrays) need to be
+    /// More encodings (such as hex) are provided by
+    /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
+    /// formats than base64 (or arrays) need to be
     /// deserialized with the same format (see
     /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {

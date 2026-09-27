@@ -239,15 +239,20 @@ impl SerializerConfig {
     /// sequences, bytes in keys are always strings.
     ///
     /// ```
-    /// use deser::adapters::{BytesFormat, Hex};
+    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
     /// use deser_json::SerializerConfig;
     ///
-    /// assert_eq!(deser_json::to_string(&b"\x01\xff").unwrap(), r#""Af8=""#);
-    /// const HEX: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
-    /// assert_eq!(HEX.to_string(&b"\x01\xff").unwrap(), r#""01ff""#);
+    /// assert_eq!(deser_json::to_string(&b"\xfb\xff").unwrap(), r#""+/8=""#);
+    /// const URL_SAFE: SerializerConfig =
+    ///     SerializerConfig::new().bytes(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// assert_eq!(URL_SAFE.to_string(&b"\xfb\xff").unwrap(), r#""-_8""#);
+    /// const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
+    /// assert_eq!(SEQ.to_string(&b"\xfb\xff").unwrap(), "[251,255]");
     /// ```
     ///
-    /// Bytes in other formats than base64 (or sequences) need to be
+    /// More encodings (such as hex) are provided by
+    /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
+    /// formats than base64 (or sequences) need to be
     /// deserialized with the same format (see
     /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {

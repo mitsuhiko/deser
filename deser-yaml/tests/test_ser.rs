@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
-use deser::adapters::{BytesFallback, BytesFormat, Hex, IntSeq};
+use deser::adapters::{BytesFallback, BytesFormat, IntSeq};
 use deser::ext::Datetime;
 use deser::hints::{Compact, Expanded, Layout};
 use deser::ser::{Layer, Next};
 use deser::{Deserialize, Serialize};
+use deser_encoding::Hex;
 use deser_yaml::style::{DoubleQuoted, Folded, Literal, Plain, ScalarStyle, SingleQuoted};
 use deser_yaml::{
     DeserializerConfig, FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle,

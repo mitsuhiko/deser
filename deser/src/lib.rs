@@ -54,7 +54,10 @@ pub struct Account {
 //! How individual values are serialized and deserialized can be customized
 //! with adapters, which compose with containers.  For more information see
 //! [`adapters`].  Types which only implement serde's traits can be used with
-//! the adapters of [`deser-serde`](https://docs.rs/deser-serde).
+//! the adapters of [`deser-serde`](https://docs.rs/deser-serde).  Bytes are
+//! base64 strings in formats without native bytes, more encodings (such as
+//! hexadecimal and base32) are provided by
+//! [`deser-encoding`](https://docs.rs/deser-encoding).
 //!
 //! # Features
 //!
@@ -64,8 +67,6 @@ pub struct Account {
 //!   implement [`Serialize`] and [`Deserialize`] for the types of these crates.  They
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
-//! * `bytes-encoding` adds more encodings for bytes (such as base32) to
-//!   [`adapters`](crate::adapters#bytes).
 //! * `io` (enabled by default) adds [`io`][io-module] to read values from and
 //!   write values to streams.
 //!

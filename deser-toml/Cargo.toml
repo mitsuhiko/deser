@@ -28,6 +28,7 @@ zmij = { version = "1.0.23", optional = true }
 
 [dev-dependencies]
 deser = { version = "0.8.0", path = "../deser", features = ["derive", "jiff"] }
+deser-encoding = { path = "../deser-encoding" }
 deser-location = { version = "0.8.0", path = "../deser-location" }
 jiff = "0.2.14"
 deser-json = { version = "0.8.0", path = "../deser-json" }

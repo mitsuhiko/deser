@@ -57,16 +57,16 @@ impl DeserializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser::adapters::{BytesFormat, Hex};
-    /// use deser_toml::DeserializerConfig;
     ///
     /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = \"Af8=\"").unwrap();
     /// assert_eq!(value["a"], [1, 255]);
-    ///
-    /// const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
-    /// let value: BTreeMap<String, Vec<u8>> = HEX.from_str("a = \"01ff\"").unwrap();
+    /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = [1, 255]").unwrap();
     /// assert_eq!(value["a"], [1, 255]);
     /// ```
+    ///
+    /// Strings in other encodings than base64 need this, for instance hex
+    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
+    /// [`deser-encoding`](https://docs.rs/deser-encoding)).
     ///
     /// The format is placed into the state (see [bytes](deser::adapters#bytes)).  Values
     /// that use an adapter for bytes are not affected.

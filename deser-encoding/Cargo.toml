@@ -1,0 +1,22 @@
+[package]
+name = "deser-encoding"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Hex and base32 encodings of bytes for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "hex", "base32"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-encoding"
+
+[dependencies]
+deser = { version = "0.8.0", path = "../deser", default-features = false }
+# an implementation detail, not part of the public API
+data-encoding = "2.6"
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-cbor = { path = "../deser-cbor" }
+deser-json = { path = "../deser-json" }

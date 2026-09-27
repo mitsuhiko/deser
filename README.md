@@ -258,6 +258,9 @@ threads.
 * [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): adapters
   to serialize and deserialize types with their serde implementations
   (`#[deser(as = Serde)]`)
+* [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding):
+  hex and base32 encodings of bytes (`#[deser(as = Hex)]`), deser itself
+  provides base64
 
 ## Inspiration
 

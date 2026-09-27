@@ -117,8 +117,8 @@ pub trait Hint: 'static {
 /// that the adapter `A` supports, by default ([`Same`]) the value is
 /// serialized with its own [`Serialize`](crate::Serialize) implementation.
 /// It's transparent when deserializing.  [`Compact`] and [`Expanded`] are
-/// such adapters: `Compact<Vec<Hex>>` serializes a `Vec<Vec<u8>>` as hex
-/// strings with [`Layout::Compact`].
+/// such adapters: `Compact<Vec<Base64>>` serializes a `Vec<Vec<u8>>` as
+/// base64 strings with [`Layout::Compact`].
 pub struct Hinted<H, A = Same>(PhantomData<fn() -> (H, A)>);
 
 impl<T: ?Sized, H: Hint, A: SerializeAs<T>> SerializeAs<T> for Hinted<H, A> {

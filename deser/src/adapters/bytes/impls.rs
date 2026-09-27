@@ -208,15 +208,15 @@ encoding_adapter!(
 /// [`BytesBuf`].
 ///
 /// ```
-/// use deser::adapters::{BytesFallback, Hex, IntSeq};
+/// use deser::adapters::{Base64Url, BytesFallback, IntSeq};
 /// use deser::{Deserialize, Serialize};
 ///
 /// #[derive(Serialize, Deserialize)]
 /// pub struct Blob {
-///     // hex in JSON and TOML, bytes in CBOR
-///     #[deser(as = BytesFallback<Hex>)]
+///     // URL-safe base64 in JSON and TOML, bytes in CBOR
+///     #[deser(as = BytesFallback<Base64Url>)]
 ///     sha1: [u8; 20],
-///     #[deser(as = Option<BytesFallback<Hex>>)]
+///     #[deser(as = Option<BytesFallback<Base64Url>>)]
 ///     signature: Option<Vec<u8>>,
 ///     // `[1, 2]` in JSON and TOML, bytes in CBOR
 ///     #[deser(as = BytesFallback<IntSeq>)]
@@ -225,7 +225,7 @@ encoding_adapter!(
 /// ```
 ///
 /// To use an encoding in all formats, use the encoding as adapter (for
-/// instance `#[deser(as = Hex)]`).  To change the representation of all
+/// instance `#[deser(as = Base64Url)]`).  To change the representation of all
 /// bytes, configure the format instead.
 pub struct BytesFallback<F>(PhantomData<fn() -> F>);
 

@@ -57,8 +57,8 @@
 //!   data if possible.
 //! * [`Flag`]: a `bool` which is set by giving its key (like `?recursive`
 //!   in a query string).
-//! * The adapters for bytes: the encodings (for instance [`Hex`]) and
-//!   [`BytesFallback`] (see [bytes](#bytes)).
+//! * The adapters for bytes: the base64 encodings (for instance
+//!   [`Base64Url`]) and [`BytesFallback`] (see [bytes](#bytes)).
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
 //!   `Arc<U>`, `Vec<U>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>`,
 //!   `[U]`, `[U; N]`, `Box<[U]>`, `Arc<[U]>`, `BTreeMap<K, V>`,
@@ -85,27 +85,27 @@
 //! these adapters.  They support `Vec<u8>`, `[u8; N]` and
 //! `Cow<[u8]>` (see [`BytesBuf`]).
 //!
-//! * The encodings (such as [`Hex`]) are adapters which represent bytes as
-//!   strings in the encoding in all formats, also in formats with native
-//!   bytes.
+//! * The encodings (such as [`Base64Url`]) are adapters which represent
+//!   bytes as strings in the encoding in all formats, also in formats with
+//!   native bytes.
 //! * [`BytesFallback`] keeps bytes as bytes in formats with native bytes and
 //!   only picks the representation for formats without them.  This can be
-//!   an encoding (`BytesFallback<Hex>`) or sequences of integers
+//!   an encoding (`BytesFallback<Base64Url>`) or sequences of integers
 //!   (`BytesFallback<IntSeq>`).
 //!
 //! ```
-//! use deser::adapters::{BytesFallback, Hex, IntSeq};
+//! use deser::adapters::{Base64Url, Base64UrlNoPad, BytesFallback, IntSeq};
 //! use deser::{Deserialize, Serialize};
 //!
 //! #[derive(Serialize, Deserialize)]
 //! pub struct Blob {
 //!     // base64 in JSON and TOML, bytes in CBOR
 //!     data: Vec<u8>,
-//!     // a hex string in all formats
-//!     #[deser(as = Hex)]
-//!     sha256: [u8; 32],
-//!     // hex in JSON and TOML, bytes in CBOR
-//!     #[deser(as = BytesFallback<Hex>)]
+//!     // a URL-safe base64 string in all formats
+//!     #[deser(as = Base64UrlNoPad)]
+//!     token: [u8; 32],
+//!     // URL-safe base64 in JSON and TOML, bytes in CBOR
+//!     #[deser(as = BytesFallback<Base64Url>)]
 //!     signature: Vec<u8>,
 //!     // `[1, 2]` in JSON and TOML, bytes in CBOR
 //!     #[deser(as = BytesFallback<IntSeq>)]
@@ -118,7 +118,7 @@
 //!
 //! ## Encodings
 //!
-//! These encodings are always available:
+//! deser provides the base64 encodings:
 //!
 //! | Encoding           | Description                                        |
 //! |--------------------|----------------------------------------------------|
@@ -126,31 +126,21 @@
 //! | [`Base64NoPad`]    | base64, standard alphabet without padding          |
 //! | [`Base64Url`]      | base64, URL-safe alphabet with padding             |
 //! | [`Base64UrlNoPad`] | base64, URL-safe alphabet without padding          |
-//! | [`Hex`]            | hexadecimal, lowercase                             |
-//! | [`HexUpper`]       | hexadecimal, uppercase                             |
 //!
-//! All base64 encodings decode leniently like the default: both alphabets
-//! are accepted and the padding is optional.  Both hex encodings accept
-//! lowercase and uppercase digits.
+//! They all decode leniently like the default: both alphabets are accepted
+//! and the padding is optional.
 //!
-//! With the `bytes-encoding` feature more encodings are available:
-//!
-//! | Encoding           | Description                                        |
-//! |--------------------|----------------------------------------------------|
-//! | `Base32`           | base32 with padding                                |
-//! | `Base32NoPad`      | base32 without padding                             |
-//! | `Base32Hex`        | base32 with extended hex alphabet and padding      |
-//! | `Base32HexNoPad`   | base32 with extended hex alphabet without padding  |
-//!
-//! Other encodings can be added by implementing [`BytesEncoding`].  They
-//! are adapters like the encodings provided by deser.
+//! More encodings (hexadecimal and base32) are provided by
+//! [`deser-encoding`](https://docs.rs/deser-encoding).  Other encodings can
+//! be added by implementing [`BytesEncoding`].  They are adapters like the
+//! encodings provided by deser.
 //!
 //! # Implementing Adapters
 //!
 //! Adapters are implemented like [`Deserialize`] and [`Serialize`] except
 //! that the value is not `Self`.  This example serializes a byte vector
-//! into a hex string (deser provides this as
-//! [`Hex`]):
+//! into a hex string (`deser-encoding` provides this as `Hex`, and for
+//! bytes implementing [`BytesEncoding`] is less work):
 //!
 //! ```
 //! use deser::adapters::{DeserializeAs, SerializeAs};
@@ -220,11 +210,9 @@ pub(crate) mod bytes;
 pub(crate) mod ser_impls;
 mod stock;
 
-#[cfg(feature = "bytes-encoding")]
-pub use self::bytes::{Base32, Base32Hex, Base32HexNoPad, Base32NoPad};
 pub use self::bytes::{
     Base64, Base64NoPad, Base64Url, Base64UrlNoPad, BytesBuf, BytesEncoding, BytesFallback,
-    BytesFallbackFormat, BytesFormat, Hex, HexUpper, IntSeq,
+    BytesFallbackFormat, BytesFormat, IntSeq,
 };
 pub(crate) use self::ser_impls::SerializeAsRef;
 pub use self::stock::{
