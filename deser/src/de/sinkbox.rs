@@ -87,30 +87,36 @@ fn class_layout(class: usize) -> Layout {
 }
 
 /// Allocates a block for the given (non zero sized) layout.
+///
+/// Only taking a cached block is inlined, this exists for every sink type
+/// that is boxed.
 #[inline]
 fn alloc_block(layout: Layout) -> NonNull<u8> {
-    let layout = match size_class(layout) {
-        Some(class) => {
-            // SAFETY: the cache is only accessed from this thread and no
-            // references into it are held across calls.
-            let cached = CACHE
-                .try_with(|cache| unsafe {
-                    let list = &mut (*cache.lists.get())[class];
-                    let block = list.head;
-                    if !block.is_null() {
-                        list.head = (*block).next;
-                        list.len -= 1;
-                    }
-                    block
-                })
-                .unwrap_or(ptr::null_mut());
-            if let Some(block) = NonNull::new(cached) {
-                return block.cast();
-            }
-            class_layout(class)
+    if let Some(class) = size_class(layout) {
+        // SAFETY: the cache is only accessed from this thread and no
+        // references into it are held across calls.
+        let cached = CACHE
+            .try_with(|cache| unsafe {
+                let list = &mut (*cache.lists.get())[class];
+                let block = list.head;
+                if !block.is_null() {
+                    list.head = (*block).next;
+                    list.len -= 1;
+                }
+                block
+            })
+            .unwrap_or(ptr::null_mut());
+        if let Some(block) = NonNull::new(cached) {
+            return block.cast();
         }
-        None => layout,
-    };
+        return alloc_uncached(class_layout(class));
+    }
+    alloc_uncached(layout)
+}
+
+/// Allocates a block from the global allocator.
+#[inline(never)]
+fn alloc_uncached(layout: Layout) -> NonNull<u8> {
     // SAFETY: the layout is non zero sized
     match NonNull::new(unsafe { alloc(layout) }) {
         Some(block) => block,

@@ -1,4 +1,4 @@
-use crate::de::{Deserialize, DeserializeDriver};
+use crate::de::{Deserialize, DeserializeDriver, SinkHandle};
 use crate::error::{Error, ErrorKind};
 
 /// Deserializes values from an input.
@@ -65,13 +65,16 @@ pub trait Deserializer<'de> {
         F: FnOnce(&mut DeserializeDriver<'_, 'de>),
         Self: Sized,
     {
+        // only creating the sink and taking the value depend on the type,
+        // the driver is created and run by a function that exists once.
         let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            setup(&mut driver);
-            self.drive(&mut driver)?;
-        }
-        out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+        let mut setup = Some(setup);
+        drive_sink(self, T::deserialize_into(&mut out), &mut |driver| {
+            if let Some(setup) = setup.take() {
+                setup(driver);
+            }
+        })?;
+        out.ok_or_else(empty_input)
     }
 
     /// Updates an existing value with the next value.
@@ -101,4 +104,21 @@ pub trait Deserializer<'de> {
         setup(&mut driver);
         self.drive(&mut driver)
     }
+}
+
+/// Drives a deserializer into a sink.
+#[inline(never)]
+fn drive_sink<'de>(
+    de: &mut dyn Deserializer<'de>,
+    sink: SinkHandle<'_, 'de>,
+    setup: &mut dyn FnMut(&mut DeserializeDriver<'_, 'de>),
+) -> Result<(), Error> {
+    let mut driver = DeserializeDriver::from_sink(sink);
+    setup(&mut driver);
+    de.drive(&mut driver)
+}
+
+#[cold]
+fn empty_input() -> Error {
+    Error::new(ErrorKind::EndOfFile, "empty input")
 }
