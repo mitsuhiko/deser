@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use deser::adapters::bytes::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, Limits};
+use deser::de::{self, Deserialize, DeserializeDriver, Limits, Source};
 use deser::hints::Layout;
 use deser::{Atom, Error, ErrorKind, Event};
 
@@ -140,7 +140,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// [`Source`](deser::de::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -670,7 +670,7 @@ impl<'a> Deserializer<'a> {
 
         if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
-            driver.state_mut().set_source(source.clone());
+            *driver.state_mut().get_mut::<Source>() = Source(source.clone());
         }
         if let Some(max_depth) = self.config.max_depth {
             driver.push_layer(Limits::new().max_depth(max_depth));

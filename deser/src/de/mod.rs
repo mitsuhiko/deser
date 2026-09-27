@@ -230,6 +230,7 @@ pub(crate) mod mapped;
 mod owned;
 mod recording;
 mod sinkbox;
+mod source;
 
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 pub use self::deserializer::Deserializer;
@@ -239,6 +240,7 @@ pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
+pub use self::source::Source;
 use crate::State;
 
 __make_slot_wrapper!((pub), SlotWrapper);
@@ -504,30 +506,6 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         self.sink_mut().next_value(state)
     }
 
-    /// Forwards to [`Sink::key_atom`].
-    #[inline]
-    pub fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().key_atom(atom, state)
-    }
-
-    /// Forwards to [`Sink::value_atom`].
-    #[inline]
-    pub fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().value_atom(atom, state)
-    }
-
-    /// Forwards to [`Sink::borrowed_key_atom`].
-    #[inline]
-    pub fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().borrowed_key_atom(atom, state)
-    }
-
-    /// Forwards to [`Sink::borrowed_value_atom`].
-    #[inline]
-    pub fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().borrowed_value_atom(atom, state)
-    }
-
     /// Forwards to [`Sink::value_for_key`].
     pub fn value_for_key(
         &mut self,
@@ -585,23 +563,31 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     }
 
     #[inline]
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        SinkHandle::key_atom(self, atom, state)
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink_mut().__private_key_atom(atom, state)
     }
 
     #[inline]
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        SinkHandle::value_atom(self, atom, state)
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink_mut().__private_value_atom(atom, state)
     }
 
     #[inline]
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        SinkHandle::borrowed_key_atom(self, atom, state)
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink_mut().__private_borrowed_key_atom(atom, state)
     }
 
     #[inline]
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        SinkHandle::borrowed_value_atom(self, atom, state)
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink_mut().__private_borrowed_value_atom(atom, state)
     }
 
     fn value_for_key(
@@ -861,7 +847,8 @@ pub trait Sink<'de>: Send {
     /// but the behavior must be the same as with the default implementation.
     /// In particular, sinks that override [`next_key`](Self::next_key) must
     /// either not override this method or apply the same logic.
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    #[doc(hidden)]
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         atom_into_handle(self.next_key(state)?, atom, state)
     }
 
@@ -870,24 +857,35 @@ pub trait Sink<'de>: Send {
     /// This is a shortcut for invoking [`next_value`](Self::next_value) and
     /// then [`atom`](Self::atom) and [`finish`](Self::finish) on the returned
     /// sink, which is exactly what the default implementation does.  See
-    /// [`key_atom`](Self::key_atom) for more information.
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    /// [`__private_key_atom`](Self::__private_key_atom) for more information.
+    #[doc(hidden)]
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         atom_into_handle(self.next_value(state)?, atom, state)
     }
 
     /// Receives a borrowed atom as the next key in a map.
     ///
-    /// Like [`key_atom`](Self::key_atom) but the atom is passed to
-    /// [`borrowed_atom`](Self::borrowed_atom).
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    /// Like [`__private_key_atom`](Self::__private_key_atom) but the atom is
+    /// passed to [`borrowed_atom`](Self::borrowed_atom).
+    #[doc(hidden)]
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         borrowed_atom_into_handle(self.next_key(state)?, atom, state)
     }
 
     /// Receives a borrowed atom as the next value in a map or sequence.
     ///
-    /// Like [`value_atom`](Self::value_atom) but the atom is passed to
-    /// [`borrowed_atom`](Self::borrowed_atom).
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    /// Like [`__private_value_atom`](Self::__private_value_atom) but the atom
+    /// is passed to [`borrowed_atom`](Self::borrowed_atom).
+    #[doc(hidden)]
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         borrowed_atom_into_handle(self.next_value(state)?, atom, state)
     }
 

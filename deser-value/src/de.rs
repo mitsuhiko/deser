@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use deser::de::{Deserialize, Sink, SinkHandle};
-use deser::{Atom, Error, ErrorKind, EventData, State};
+use deser::de::{Deserialize, Sink, SinkHandle, Source};
+use deser::{Atom, Error, ErrorKind, State};
 
 use crate::map::Map;
 use crate::seq::Seq;
@@ -148,24 +148,32 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         Ok(Value::deserialize_into(&mut self.slot))
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.flush();
         self.slot = Some(atom_value(atom, state)?);
         Ok(())
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.begin_value()?;
         self.slot = Some(atom_value(atom, state)?);
         Ok(())
     }
 
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.key_atom(atom, state)
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.__private_key_atom(atom, state)
     }
 
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.value_atom(atom, state)
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.__private_value_atom(atom, state)
     }
 
     /// Takes all keys when the value is flattened into a struct.
@@ -236,18 +244,14 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 
 /// Captures the meta data of the current event.
 fn capture_meta(state: &State) -> Option<Box<Meta>> {
-    let span = match (state.input_range(), state.source()) {
-        (Some(range), Some(source)) => Some(Span::new(range, source.clone())),
+    let span = match (state.input_range(), state.get::<Source>()) {
+        (Some(range), Some(source)) => Some(Span::new(range, source.0.clone())),
         _ => None,
     };
-    if span.is_none() && !state.has_event_data() {
+    let event_data = state.capture_event_data();
+    if span.is_none() && event_data.is_empty() {
         return None;
     }
-    let event_data = if state.has_event_data() {
-        state.capture_event_data()
-    } else {
-        EventData::new()
-    };
     Some(Box::new(Meta::from_parts(event_data, span)))
 }
 

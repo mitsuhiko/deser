@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use deser::de::{self, Deserialize, DeserializeDriver};
+use deser::de::{self, Deserialize, DeserializeDriver, Source};
 use deser::ser::{self, Serialize, SerializeDriver};
 use deser::{Atom, ContainerShape, Error, ErrorKind, Event};
 
@@ -89,7 +89,7 @@ fn set_range<'de>(
     (start, end): (usize, usize),
 ) {
     if !current.is_some_and(|current| Arc::ptr_eq(current, new)) {
-        driver.state_mut().set_source(new.clone());
+        *driver.state_mut().get_mut::<Source>() = Source(new.clone());
         *current = Some(new);
     }
     driver.state_mut().set_input_range(start, end);
@@ -305,10 +305,8 @@ impl ser::Serializer for Serializer {
         {
             let mut de = DeserializeDriver::new(&mut out);
             driver.drive(|event, state| {
-                if state.has_event_data() {
-                    de.state_mut()
-                        .attach_event_data(&state.capture_event_data());
-                }
+                de.state_mut()
+                    .attach_event_data(&state.capture_event_data());
                 de.emit(event)
             })?;
         }

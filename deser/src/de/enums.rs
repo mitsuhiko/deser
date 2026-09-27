@@ -168,15 +168,19 @@ impl<'de> Deserialize<'de> for IgnoredContent {
                 Ok(())
             }
 
-            fn key_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
+            fn __private_key_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn value_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
+            fn __private_value_atom(
+                &mut self,
+                _atom: Atom,
+                _state: &mut State,
+            ) -> Result<(), Error> {
                 Ok(())
             }
 
-            fn borrowed_key_atom(
+            fn __private_borrowed_key_atom(
                 &mut self,
                 _atom: Atom<'de>,
                 _state: &mut State,
@@ -184,7 +188,7 @@ impl<'de> Deserialize<'de> for IgnoredContent {
                 Ok(())
             }
 
-            fn borrowed_value_atom(
+            fn __private_borrowed_value_atom(
                 &mut self,
                 _atom: Atom<'de>,
                 _state: &mut State,
@@ -396,14 +400,18 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         Ok(self.key.recorder())
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.begin_key()?;
         self.key.set_atom(&atom, state);
         Ok(())
     }
 
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.key_atom(atom, state)
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.__private_key_atom(atom, state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {

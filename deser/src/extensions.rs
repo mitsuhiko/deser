@@ -175,7 +175,7 @@ impl Extensions {
     }
 
     /// Returns `true` if data is attached to the current event.
-    #[inline(always)]
+    #[cfg(test)]
     pub fn has_event_data(&self) -> bool {
         self.has_event_data
     }

@@ -89,7 +89,7 @@ impl<'a> FieldInfo<'a> {
         let ty = self.ty();
         match self.adapters.ser() {
             Some(adapter) => quote! {
-                __deser::adapters::SerializeAsRef::<#adapter, #ty>::new(#binding)
+                __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#binding)
             },
             None => quote! { #binding },
         }

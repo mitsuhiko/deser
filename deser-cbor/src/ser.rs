@@ -142,9 +142,7 @@ impl Writer {
         if self.canonical && self.frame.is_map() {
             self.offsets.push(self.out.len());
         }
-        if state.has_event_data() {
-            self.write_tags(state);
-        }
+        self.write_tags(state);
     }
 
     /// Writes the tags attached to the current event.

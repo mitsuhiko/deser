@@ -245,7 +245,7 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for StreamedSink<'a, T> {
         }))
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let mut value = None;
         T::__private_atom_into(&mut value, atom, state)?;
         if let Some(value) = value {
@@ -254,7 +254,11 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for StreamedSink<'a, T> {
         Ok(())
     }
 
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         let mut value = None;
         T::__private_borrowed_atom_into(&mut value, atom, state)?;
         if let Some(value) = value {
@@ -302,20 +306,32 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for ElementSink<'a, 'de, 
         self.sink.borrow_mut().next_value(state)
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().key_atom(atom, state)
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink.borrow_mut().__private_key_atom(atom, state)
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().value_atom(atom, state)
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink.borrow_mut().__private_value_atom(atom, state)
     }
 
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().borrowed_key_atom(atom, state)
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink
+            .borrow_mut()
+            .__private_borrowed_key_atom(atom, state)
     }
 
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().borrowed_value_atom(atom, state)
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink
+            .borrow_mut()
+            .__private_borrowed_value_atom(atom, state)
     }
 
     fn value_for_key(

@@ -388,7 +388,7 @@ where
             })
         }
 
-        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             match self.variant {
                 Some(ResultVariant::Ok) => TA::__private_atom_into_as(&mut self.ok, atom, state),
                 Some(ResultVariant::Err) => EA::__private_atom_into_as(&mut self.err, atom, state),
@@ -396,7 +396,11 @@ where
             }
         }
 
-        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_value_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             match self.variant {
                 Some(ResultVariant::Ok) => {
                     TA::__private_borrowed_atom_into_as(&mut self.ok, atom, state)

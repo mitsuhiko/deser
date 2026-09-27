@@ -4,6 +4,17 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Slimmed down the public API of the core.  `Sink::key_atom`,
+  `value_atom`, `borrowed_key_atom` and `borrowed_value_atom` are no
+  longer public API: they only exist for performance and have to behave
+  like their default implementations.  `SerializeAsRef` is no longer
+  public.  `State::has_event_data` and `State::clear_event_data` were
+  removed (looking up event data is cheap if there is none).  The policy
+  for duplicate keys and the source of the input ranges are regular
+  extension values in the state now: `State::set_duplicate_keys` and
+  `State::duplicate_keys` are replaced by
+  `state.get_mut::<DuplicateKeys>()`, `State::set_source` and
+  `State::source` by the new `deser::de::Source`.
 - Added `deser::ser::EventSink` and `SerializeDriver::drive_sink`.  Like
   `drive` with a callback, but formats can mark `EventSink::event` as
   `#[inline(always)]` so that it's specialized for every kind of event the

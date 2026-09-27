@@ -240,14 +240,10 @@ impl<'c> Emitter<'c> {
     }
 
     pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
-        let hints = if state.has_event_data() {
-            Hints {
-                tag: state.event::<NodeTag>().and_then(|x| x.0.clone()),
-                layout: Layout::of(state),
-                style: state.event::<StyleHint>().and_then(|x| x.0),
-            }
-        } else {
-            Hints::default()
+        let hints = Hints {
+            tag: state.event::<NodeTag>().and_then(|x| x.0.clone()),
+            layout: Layout::of(state),
+            style: state.event::<StyleHint>().and_then(|x| x.0),
         };
         self.emit(event, hints)
     }

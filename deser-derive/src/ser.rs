@@ -35,7 +35,7 @@ pub fn serialize_handle(
         // spanned so that errors about unsupported types point to the adapter
         Some(adapter) => quote_spanned! { adapter.span()=>
             __deser::ser::SerializeHandle::to(
-                __deser::adapters::SerializeAsRef::<#adapter, #ty>::new(#value)
+                __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#value)
             )
         },
         None => quote! { __deser::ser::SerializeHandle::to(#value) },
@@ -535,7 +535,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     // the value serializes through the adapter or the regular implementation
     let value = match adapter {
         Some(adapter) => quote! {
-            __deser::adapters::SerializeAsRef::<#adapter, #field_type>::new(&self.0)
+            __deser::__derive::SerializeAsRef::<#adapter, #field_type>::new(&self.0)
         },
         None => quote! { &self.0 },
     };

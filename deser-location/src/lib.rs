@@ -2,7 +2,7 @@
 //!
 //! Formats publish the byte range in the input of every event they emit
 //! into the [`State`] (see [`State::input_range`]) and, if location tracking
-//! is requested, the source these ranges refer to (see [`State::source`]).
+//! is requested, the source these ranges refer to (see [`Source`]).
 //! This crate resolves the ranges into lines and columns with a
 //! [`SourceMap`] (see [`Locations`]) and types can pick them up while they
 //! are deserialized.  The simplest way to do that is the [`Spanned`]
@@ -22,11 +22,11 @@
 //!
 //! Formats do not depend on this crate.  They publish the byte range of
 //! every event with [`State::set_input_range`] before they emit it and set
-//! the source with [`State::set_source`] if locations are requested.  The source map is built when a consumer asks for a location
-//! for the first time:
+//! the [`Source`] if locations are requested.  The source map is built when
+//! a consumer asks for a location for the first time:
 //!
 //! ```
-//! use deser::de::DeserializeDriver;
+//! use deser::de::{DeserializeDriver, Source};
 //! use deser::Event;
 //! use deser_location::Spanned;
 //!
@@ -34,7 +34,7 @@
 //! let mut out = None::<Spanned<bool>>;
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
-//!     driver.state_mut().set_source(input);
+//!     *driver.state_mut().get_mut::<Source>() = Source(input.into());
 //!     driver.state_mut().set_input_range(0, 4);
 //!     driver.emit(Event::from(true)).unwrap();
 //! }
@@ -56,7 +56,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use deser::State;
-use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser::de::{Deserialize, OwnedSink, Sink, SinkHandle, Source};
 use deser::ser::{Chunk, Describe, Serialize};
 use deser::{Atom, ContainerShape, Error};
 
@@ -186,7 +186,7 @@ impl SourceMap {
 ///
 /// This resolves the input ranges of the events (see
 /// [`State::input_range`]) into lines and columns with a [`SourceMap`] of the
-/// source (see [`State::source`]).  The source map is built on first use and
+/// [`Source`].  The source map is built on first use and
 /// cached in the state.  Consumers retrieve the resolved span of the current
 /// event with [`current_span`](Self::current_span).
 #[derive(Debug, Default, Clone)]
@@ -210,7 +210,7 @@ impl Locations {
     }
 
     fn cached_source_map(state: &mut State) -> Option<&Arc<SourceMap>> {
-        let source = state.source()?;
+        let source = &state.get::<Source>()?.0;
         let is_cached = matches!(
             state.get::<Locations>(),
             Some(Locations { source_map: Some(source_map) })

@@ -502,12 +502,16 @@ where
             Ok(A::deserialize_into_as(&mut self.element))
         }
 
-        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.flush();
             A::__private_atom_into_as(&mut self.element, atom, state)
         }
 
-        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_value_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             self.flush();
             A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
         }
@@ -696,21 +700,29 @@ where
             Ok(VA::deserialize_into_as(&mut self.value))
         }
 
-        fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.flush()?;
             KA::__private_atom_into_as(&mut self.key, atom, state)
         }
 
-        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             VA::__private_atom_into_as(&mut self.value, atom, state)
         }
 
-        fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_key_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             self.flush()?;
             KA::__private_borrowed_atom_into_as(&mut self.key, atom, state)
         }
 
-        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_value_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             VA::__private_borrowed_atom_into_as(&mut self.value, atom, state)
         }
 
@@ -883,12 +895,16 @@ where
             Ok(A::deserialize_into_as(&mut self.element))
         }
 
-        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.flush();
             A::__private_atom_into_as(&mut self.element, atom, state)
         }
 
-        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_value_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             self.flush();
             A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
         }
@@ -1079,7 +1095,7 @@ macro_rules! deserialize_for_tuple {
                         Err(Error::new(ErrorKind::WrongLength, "too many elements in tuple"))
                     }
 
-                    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+                    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -1092,7 +1108,7 @@ macro_rules! deserialize_for_tuple {
                         Err(Error::new(ErrorKind::WrongLength, "too many elements in tuple"))
                     }
 
-                    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+                    fn __private_borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
@@ -1223,7 +1239,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                     // a single value of a key given once in a query string
                     Atom::Lexical(_) if !A::__private_is_bytes_as() => {
                         self.is_seq = true;
-                        self.value_atom(atom, state)
+                        self.__private_value_atom(atom, state)
                     }
                     other => self.unexpected_atom(other, state),
                 }
@@ -1233,7 +1249,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                 match atom {
                     Atom::Lexical(_) if !A::__private_is_bytes_as() => {
                         self.is_seq = true;
-                        self.borrowed_value_atom(atom, state)
+                        self.__private_borrowed_value_atom(atom, state)
                     }
                     other => self.atom(other, state),
                 }
@@ -1256,7 +1272,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                 }
             }
 
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 self.flush();
                 if self.index >= N {
                     Err(Error::new(
@@ -1268,7 +1284,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                 }
             }
 
-            fn borrowed_value_atom(
+            fn __private_borrowed_value_atom(
                 &mut self,
                 atom: Atom<'de>,
                 state: &mut State,

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::State;
 use crate::de::layer::{Layer, LayerEvent, Next};
-use crate::de::{Deserialize, DuplicateKeys, SinkHandle};
+use crate::de::{Deserialize, DuplicateKeys, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 
@@ -362,14 +362,14 @@ impl<'de> DriverCore<'de> {
                 *is_key = !key;
                 self.state.is_map_key = key;
                 if key {
-                    sink.borrowed_key_atom(atom, &mut self.state)
+                    sink.__private_borrowed_key_atom(atom, &mut self.state)
                 } else {
-                    sink.borrowed_value_atom(atom, &mut self.state)
+                    sink.__private_borrowed_value_atom(atom, &mut self.state)
                 }
             }
             Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
-                sink.borrowed_value_atom(atom, &mut self.state)
+                sink.__private_borrowed_value_atom(atom, &mut self.state)
             }
             Some((_, Container::Collapse(policy, count))) => {
                 self.state.is_map_key = false;
@@ -397,14 +397,14 @@ impl<'de> DriverCore<'de> {
                 *is_key = !key;
                 self.state.is_map_key = key;
                 if key {
-                    sink.key_atom(atom, &mut self.state)
+                    sink.__private_key_atom(atom, &mut self.state)
                 } else {
-                    sink.value_atom(atom, &mut self.state)
+                    sink.__private_value_atom(atom, &mut self.state)
                 }
             }
             Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
-                sink.value_atom(atom, &mut self.state)
+                sink.__private_value_atom(atom, &mut self.state)
             }
             Some((_, Container::Collapse(policy, count))) => {
                 self.state.is_map_key = false;

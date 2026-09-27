@@ -691,14 +691,14 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
                 Ok(try_deserialize::<T, A>(move |value| vec.push(value)))
             }
 
-            fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
                 if let Some(value) = try_atom::<T, A>(atom, state) {
                     self.vec.push(value);
                 }
                 Ok(())
             }
 
-            fn borrowed_value_atom(
+            fn __private_borrowed_value_atom(
                 &mut self,
                 atom: Atom<'de>,
                 state: &mut State,
@@ -808,12 +808,16 @@ where
             Ok(try_deserialize::<K, KA>(move |value| *key = Some(value)))
         }
 
-        fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.key = try_atom::<K, KA>(atom, state);
             Ok(())
         }
 
-        fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_key_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             self.key = try_borrowed_atom::<K, KA>(atom, state);
             Ok(())
         }
@@ -830,7 +834,7 @@ where
             }))
         }
 
-        fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             if let Some(key) = self.key.take()
                 && let Some(value) = try_atom::<V, VA>(atom, state)
             {
@@ -839,7 +843,11 @@ where
             Ok(())
         }
 
-        fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        fn __private_borrowed_value_atom(
+            &mut self,
+            atom: Atom<'de>,
+            state: &mut State,
+        ) -> Result<(), Error> {
             if let Some(key) = self.key.take()
                 && let Some(value) = try_borrowed_atom::<V, VA>(atom, state)
             {

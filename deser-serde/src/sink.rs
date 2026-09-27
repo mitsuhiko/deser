@@ -84,15 +84,15 @@ where
         Ok(ChildSink::handle(&mut self.collector))
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn borrowed_key_atom(
+    fn __private_borrowed_key_atom(
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
@@ -100,7 +100,7 @@ where
         self.collector.push(Event::Atom(atom), state)
     }
 
-    fn borrowed_value_atom(
+    fn __private_borrowed_value_atom(
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
@@ -170,15 +170,15 @@ impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
         Ok(ChildSink::handle(&mut *self.collector))
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
         self.collector.push(Event::Atom(atom.to_static()), state)
     }
 
-    fn borrowed_key_atom(
+    fn __private_borrowed_key_atom(
         &mut self,
         atom: Atom<'de>,
         state: &mut State,
@@ -186,7 +186,7 @@ impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
         self.collector.push(Event::Atom(atom), state)
     }
 
-    fn borrowed_value_atom(
+    fn __private_borrowed_value_atom(
         &mut self,
         atom: Atom<'de>,
         state: &mut State,

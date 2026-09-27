@@ -485,14 +485,14 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     })
                 }
 
-                fn key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
+                fn __private_key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
                     self.key.key = __Key::Unknown;
                     __deser::de::Sink::atom(&mut self.key, __atom, __state)
                 }
 
-                fn value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
+                fn __private_value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
                     let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
@@ -512,7 +512,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                 }
 
-                fn borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                fn __private_borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
                     // keys are only matched, they do not need to be borrowed
@@ -520,7 +520,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     __deser::de::Sink::atom(&mut self.key, __atom, __state)
                 }
 
-                fn borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                fn __private_borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
                     let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
@@ -903,28 +903,28 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
                     self.sink.borrow_mut().next_value(__state)
                 }
 
-                fn key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
+                fn __private_key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().key_atom(__atom, __state)
+                    self.sink.borrow_mut().__private_key_atom(__atom, __state)
                 }
 
-                fn value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
+                fn __private_value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().value_atom(__atom, __state)
+                    self.sink.borrow_mut().__private_value_atom(__atom, __state)
                 }
 
-                fn borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                fn __private_borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().borrowed_key_atom(__atom, __state)
+                    self.sink.borrow_mut().__private_borrowed_key_atom(__atom, __state)
                 }
 
-                fn borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
+                fn __private_borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().borrowed_value_atom(__atom, __state)
+                    self.sink.borrow_mut().__private_borrowed_value_atom(__atom, __state)
                 }
 
                 fn value_for_key(

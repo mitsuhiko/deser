@@ -51,20 +51,32 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
         self.sink.borrow_mut().next_value(state)
     }
 
-    fn key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().key_atom(atom, state)
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink.borrow_mut().__private_key_atom(atom, state)
     }
 
-    fn value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().value_atom(atom, state)
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.sink.borrow_mut().__private_value_atom(atom, state)
     }
 
-    fn borrowed_key_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().borrowed_key_atom(atom, state)
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink
+            .borrow_mut()
+            .__private_borrowed_key_atom(atom, state)
     }
 
-    fn borrowed_value_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().borrowed_value_atom(atom, state)
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink
+            .borrow_mut()
+            .__private_borrowed_value_atom(atom, state)
     }
 
     fn value_for_key(

@@ -64,9 +64,6 @@ impl ScalarStyle {
     /// Returns the style requested for the current event.
     #[inline]
     pub fn of(state: &State) -> Option<ScalarStyle> {
-        if !state.has_event_data() {
-            return None;
-        }
         state.event::<StyleHint>().and_then(|x| x.0)
     }
 

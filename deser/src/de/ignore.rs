@@ -18,11 +18,11 @@ impl<'de> Sink<'de> for Ignore {
         Ok(())
     }
 
-    fn key_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
+    fn __private_key_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
-    fn value_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
+    fn __private_value_atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {
         Ok(())
     }
 
@@ -30,11 +30,19 @@ impl<'de> Sink<'de> for Ignore {
         Ok(())
     }
 
-    fn borrowed_key_atom(&mut self, _atom: Atom<'de>, _state: &mut State) -> Result<(), Error> {
+    fn __private_borrowed_key_atom(
+        &mut self,
+        _atom: Atom<'de>,
+        _state: &mut State,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn borrowed_value_atom(&mut self, _atom: Atom<'de>, _state: &mut State) -> Result<(), Error> {
+    fn __private_borrowed_value_atom(
+        &mut self,
+        _atom: Atom<'de>,
+        _state: &mut State,
+    ) -> Result<(), Error> {
         Ok(())
     }
 

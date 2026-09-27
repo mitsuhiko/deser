@@ -597,7 +597,7 @@ impl ContainerShape {
     ///
     /// let mut out = None::<u32>;
     /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver.state_mut().set_duplicate_keys(DuplicateKeys::Last);
+    /// *driver.state_mut().get_mut::<DuplicateKeys>() = DuplicateKeys::Last;
     /// driver.emit(Event::SeqStart(ContainerShape::new().with_repeated(true))).unwrap();
     /// driver.emit(Atom::Lexical("1".into())).unwrap();
     /// driver.emit(Atom::Lexical("2".into())).unwrap();

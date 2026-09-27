@@ -12,7 +12,7 @@ fn deserialize<T: DeserializeOwned>(
     {
         let mut driver = DeserializeDriver::new(&mut out);
         if let Some(policy) = policy {
-            driver.state_mut().set_duplicate_keys(policy);
+            *driver.state_mut().get_mut::<DuplicateKeys>() = policy;
         }
         for event in events {
             driver.emit(event)?;

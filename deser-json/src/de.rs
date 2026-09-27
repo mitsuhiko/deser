@@ -3,7 +3,7 @@ use std::str;
 use std::sync::Arc;
 
 use deser::adapters::bytes::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver};
+use deser::de::{self, Deserialize, DeserializeDriver, Source};
 use deser::{Error, ErrorKind};
 
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -165,7 +165,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`State::source`](deser::State::source)) which allows resolving the
+    /// [`Source`](deser::de::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -439,7 +439,7 @@ impl<'a> Deserializer<'a> {
                     source
                 }
             };
-            driver.state_mut().set_source(source);
+            *driver.state_mut().get_mut::<Source>() = Source(source);
         }
         if self.config.bytes != BytesFormat::BASE64 {
             *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;

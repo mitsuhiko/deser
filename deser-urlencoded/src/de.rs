@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use deser::adapters::bytes::BytesFormat;
-use deser::de::{self, Deserialize, DeserializeDriver, DuplicateKeys};
+use deser::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
 use deser::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::Nesting;
@@ -129,7 +129,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`State::source`](deser::State::source)).  This copies the input.
+    /// [`Source`](deser::de::Source)).  This copies the input.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self
@@ -266,12 +266,12 @@ impl<'a> Deserializer<'a> {
         let tree = Tree::parse(self.input, &self.config)?;
         let state = driver.state_mut();
         if self.config.track_locations {
-            state.set_source(self.input);
+            *state.get_mut::<Source>() = Source(self.input.into());
         }
         if self.config.bytes != BytesFormat::BASE64 {
             *state.get_mut::<BytesFormat>() = self.config.bytes;
         }
-        state.set_duplicate_keys(self.config.duplicate_keys);
+        *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
         tree.emit(driver)
             .map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

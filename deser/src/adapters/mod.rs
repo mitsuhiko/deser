@@ -136,9 +136,10 @@ use crate::event::{Atom, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize};
 
 pub mod bytes;
-mod ser_impls;
+pub(crate) mod ser_impls;
 mod stock;
 
+pub(crate) use self::ser_impls::SerializeAsRef;
 pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
     VecSkipError,
@@ -357,74 +358,6 @@ impl<T: Serialize + ?Sized> SerializeAs<T> for Same {
         T: Sized,
     {
         T::__private_slice_as_bytes(val)
-    }
-}
-
-/// A reference to a value that serializes with an adapter.
-///
-/// This is a transparent wrapper which can be created from a reference to
-/// the value without copying it.  It's the building block to serialize
-/// values with adapters, for instance from emitters of container adapters.
-///
-/// ```
-/// use deser::adapters::{DisplayFromStr, SerializeAsRef};
-/// use deser::ser::SerializeHandle;
-///
-/// let value = 42u32;
-/// let handle = SerializeHandle::to(SerializeAsRef::<DisplayFromStr, _>::new(&value));
-/// # drop(handle);
-/// ```
-#[repr(transparent)]
-pub struct SerializeAsRef<A, T: ?Sized> {
-    _marker: PhantomData<fn() -> A>,
-    value: T,
-}
-
-impl<A, T: ?Sized> SerializeAsRef<A, T> {
-    /// Wraps a reference to a value.
-    #[inline(always)]
-    pub fn new(value: &T) -> &SerializeAsRef<A, T> {
-        // SAFETY: the wrapper is transparent over `T` (the marker is zero
-        // sized and has an alignment of one).
-        unsafe { &*(value as *const T as *const SerializeAsRef<A, T>) }
-    }
-
-    /// Returns the wrapped value.
-    #[inline(always)]
-    pub fn get(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<A: SerializeAs<T>, T: ?Sized + Sync> Serialize for SerializeAsRef<A, T> {
-    #[inline]
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        A::serialize_as(&self.value, state)
-    }
-
-    #[inline]
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        A::finish_as(&self.value, state)
-    }
-
-    #[inline]
-    fn is_optional(&self) -> bool {
-        A::is_optional_as(&self.value)
-    }
-
-    #[inline]
-    fn container_shape(&self) -> ContainerShape {
-        A::container_shape_as(&self.value)
-    }
-
-    #[inline]
-    fn describe(&self, d: &mut dyn Describe) {
-        A::describe_as(&self.value, d)
-    }
-
-    #[inline]
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        A::__private_begin_as(&self.value, state)
     }
 }
 

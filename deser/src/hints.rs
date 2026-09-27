@@ -65,9 +65,6 @@ impl Layout {
     /// Returns the layout of the current event.
     #[inline]
     pub fn of(state: &State) -> Layout {
-        if !state.has_event_data() {
-            return Layout::Auto;
-        }
         state.event::<Layout>().copied().unwrap_or_default()
     }
 

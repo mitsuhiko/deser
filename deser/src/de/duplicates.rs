@@ -5,8 +5,8 @@ use crate::error::{Error, ErrorKind};
 ///
 /// JSON objects can contain the same key more than once and query strings
 /// commonly repeat keys.  Where a single value is expected (the field of a
-/// struct or an entry of a map) the policy in the [`State`] decides what
-/// happens (see [`State::set_duplicate_keys`]).  The default is
+/// struct or an entry of a map) the policy decides what happens.  It's an
+/// extension value in the [`State`] (see [`State::get_mut`]).  The default is
 /// [`Error`](Self::Error): if the same key could mean different values to
 /// different parsers (a proxy might use the first value, the application the
 /// last) the input is rejected.
@@ -18,7 +18,7 @@ use crate::error::{Error, ErrorKind};
 ///
 /// let mut out = None::<BTreeMap<String, u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.state_mut().set_duplicate_keys(DuplicateKeys::Error);
+/// *driver.state_mut().get_mut::<DuplicateKeys>() = DuplicateKeys::Error;
 /// driver.emit(Event::map_start()).unwrap();
 /// for value in [1u64, 2] {
 ///     driver.emit("a").unwrap();

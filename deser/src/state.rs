@@ -1,7 +1,6 @@
 //! The state shared between data formats and the types they process.
 use std::any::TypeId;
 use std::fmt;
-use std::sync::Arc;
 
 use crate::de::DuplicateKeys;
 use crate::error::Error;
@@ -32,6 +31,10 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///   event was delivered.  It is used for information about an individual
 ///   value, such as a tag.
 ///
+/// Some extension values are well-known: the policy for keys that are
+/// given more than once ([`DuplicateKeys`]) and the source the input ranges
+/// refer to ([`Source`](crate::de::Source)).
+///
 /// Additionally formats can publish the byte range in the input of every
 /// event (see [`input_range`](Self::input_range)) and extensions can
 /// register types that add context to errors (see
@@ -49,11 +52,9 @@ pub struct State {
     // the shape of the container that is currently started
     pub(crate) container_shape: ContainerShape,
     pub(crate) is_map_key: bool,
-    duplicate_keys: DuplicateKeys,
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
-    source: Option<Arc<str>>,
     // keyed by type as function pointers cannot be compared reliably
     error_context: Vec<(TypeId, AddContextFn)>,
 }
@@ -86,28 +87,14 @@ impl State {
             depth: 0,
             container_shape: ContainerShape::new(),
             is_map_key: false,
-            duplicate_keys: DuplicateKeys::Error,
             input_range: NO_RANGE,
-            source: None,
             error_context: Vec::new(),
         }
     }
 
     /// Takes the state out, leaving an empty state that does not allocate.
     pub(crate) fn take(&mut self) -> State {
-        std::mem::replace(
-            self,
-            State {
-                extensions: Extensions::default(),
-                depth: 0,
-                container_shape: ContainerShape::new(),
-                is_map_key: false,
-                duplicate_keys: DuplicateKeys::Error,
-                input_range: NO_RANGE,
-                source: None,
-                error_context: Vec::new(),
-            },
-        )
+        std::mem::replace(self, State::new())
     }
 
     #[inline]
@@ -223,20 +210,11 @@ impl State {
         self.extensions.attach_event_data(data);
     }
 
-    /// Returns `true` if any data is attached to the current event.
-    ///
-    /// This is a cheap check that formats can use to skip looking up event
-    /// data for the vast majority of events that have none.
-    #[inline(always)]
-    pub fn has_event_data(&self) -> bool {
-        self.extensions.has_event_data()
-    }
-
     /// Detaches all data from the current event.
     ///
     /// The drivers call this after every event.
     #[inline(always)]
-    pub fn clear_event_data(&mut self) {
+    pub(crate) fn clear_event_data(&mut self) {
         self.extensions.clear_event_data();
     }
 
@@ -274,25 +252,18 @@ impl State {
 
     /// Returns what happens if a key is given more than once.
     ///
-    /// See [`DuplicateKeys`] for more information.
+    /// This is the [`DuplicateKeys`] extension value or the default.
     #[inline]
-    pub fn duplicate_keys(&self) -> DuplicateKeys {
-        self.duplicate_keys
-    }
-
-    /// Sets what happens if a key is given more than once.
-    ///
-    /// See [`DuplicateKeys`] for more information.
-    pub fn set_duplicate_keys(&mut self, policy: DuplicateKeys) {
-        self.duplicate_keys = policy;
+    pub(crate) fn duplicate_keys(&self) -> DuplicateKeys {
+        self.get::<DuplicateKeys>().copied().unwrap_or_default()
     }
 
     /// Returns the byte range in the input of the current event.
     ///
     /// This is only available if the format provides it (see
     /// [`set_input_range`](Self::set_input_range)).  The range refers to
-    /// the [`source`](Self::source) and can be resolved into lines and
-    /// columns for instance with the `deser-location` crate.
+    /// the [`Source`](crate::de::Source) and can be resolved into lines and columns for
+    /// instance with the `deser-location` crate.
     #[inline]
     pub fn input_range(&self) -> Option<std::ops::Range<usize>> {
         let (start, end) = self.input_range;
@@ -396,25 +367,6 @@ impl State {
         }
         err
     }
-
-    /// Returns the source the input ranges refer to.
-    ///
-    /// Input ranges are cheap to publish, but resolving them into lines and
-    /// columns requires the source.  As this requires a copy of the input,
-    /// formats only provide it when asked to (for instance with their
-    /// `track_locations` option).
-    #[inline]
-    pub fn source(&self) -> Option<&Arc<str>> {
-        self.source.as_ref()
-    }
-
-    /// Sets the source the input ranges refer to.
-    ///
-    /// See [`source`](Self::source).  Formats call this before emitting the
-    /// first event.
-    pub fn set_source<S: Into<Arc<str>>>(&mut self, source: S) {
-        self.source = Some(source.into());
-    }
 }
 
 // the state must never prevent an ongoing serialization or deserialization
@@ -431,10 +383,6 @@ impl fmt::Debug for State {
             .field("depth", &self.depth)
             .field("is_map_key", &self.is_map_key)
             .field("input_range", &self.input_range())
-            .field(
-                "source_len",
-                &self.source.as_ref().map(|source| source.len()),
-            )
             .finish()
     }
 }

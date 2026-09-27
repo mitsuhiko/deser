@@ -48,7 +48,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<(Event<'_>, Option<u32>)>) -> T 
                 driver.state_mut().event_mut::<Marker>().0 = marker;
             }
             driver.emit(event).unwrap();
-            assert!(!driver.state().has_event_data());
+            assert!(driver.state().capture_event_data().is_empty());
         }
     }
     out.unwrap()

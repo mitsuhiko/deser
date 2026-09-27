@@ -13,7 +13,7 @@ use crate::event::Atom;
 /// Deserializes an atom into a slot.
 ///
 /// This is equivalent to what the default implementation of
-/// [`Sink::value_atom`](crate::de::Sink::value_atom) does with the sink of the slot.
+/// `Sink::__private_value_atom` does with the sink of the slot.
 #[cfg(feature = "derive")]
 #[inline]
 pub fn atom_into<'de, T: Deserialize<'de>>(
@@ -27,7 +27,7 @@ pub fn atom_into<'de, T: Deserialize<'de>>(
 /// Deserializes a borrowed atom into a slot.
 ///
 /// This is equivalent to what the default implementation of
-/// [`Sink::borrowed_value_atom`](crate::de::Sink::borrowed_value_atom) does with the sink of the slot.
+/// `Sink::__private_borrowed_value_atom` does with the sink of the slot.
 #[cfg(feature = "derive")]
 #[inline]
 pub fn borrowed_atom_into<'de, T: Deserialize<'de>>(

@@ -771,7 +771,7 @@ fn test_duplicate_keys() {
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
     let config = Deserializer::from_str(json)
         .deserialize_with::<Config, _>(|driver| {
-            driver.state_mut().set_duplicate_keys(DuplicateKeys::Last)
+            *driver.state_mut().get_mut::<DuplicateKeys>() = DuplicateKeys::Last
         })
         .unwrap();
     assert_eq!(config, Config { port: 81 });
