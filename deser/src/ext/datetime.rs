@@ -189,7 +189,7 @@ impl Datetime {
     }
 
     /// Returns the date if this is a local date.
-    #[allow(dead_code)]
+    #[cfg(any(feature = "chrono", feature = "time", feature = "jiff"))]
     pub(crate) fn expect_local_date(&self) -> Result<Date, Error> {
         match (self.date, self.time) {
             (Some(date), None) => Ok(date),
@@ -198,7 +198,7 @@ impl Datetime {
     }
 
     /// Returns the time if this is a local time.
-    #[allow(dead_code)]
+    #[cfg(any(feature = "chrono", feature = "time", feature = "jiff"))]
     pub(crate) fn expect_local_time(&self) -> Result<Time, Error> {
         match (self.date, self.time) {
             (None, Some(time)) => Ok(time),
@@ -207,7 +207,7 @@ impl Datetime {
     }
 
     /// Returns date and time if this is a local date-time.
-    #[allow(dead_code)]
+    #[cfg(any(feature = "chrono", feature = "time", feature = "jiff"))]
     pub(crate) fn expect_local_datetime(&self) -> Result<(Date, Time), Error> {
         match (self.date, self.time, self.offset) {
             (Some(date), Some(time), None) => Ok((date, time)),

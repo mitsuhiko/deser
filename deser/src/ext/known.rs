@@ -127,7 +127,6 @@ macro_rules! impl_well_known {
 }
 
 /// Implements `Serialize` and `Deserialize` for a bridged type.
-#[allow(unused_macros)]
 macro_rules! impl_bridge {
     ($($ty:ty),* $(,)?) => {
         $(
