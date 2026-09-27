@@ -276,24 +276,21 @@ impl Builder {
                     // map entries with null values are skipped
                     Converted::Null => return Ok(()),
                 };
-                if self.doc.find(id, &key).is_some() {
-                    return Err(Error::new(
-                        ErrorKind::Unexpected,
-                        format!("duplicate key `{}`", key),
-                    ));
-                }
-                self.doc.insert(
-                    id,
-                    Entry {
-                        key: Cow::Owned(key),
-                        key_span: Span::default(),
-                        item: Item {
-                            value,
-                            span: Span::default(),
-                        },
+                let entry = Entry {
+                    key: Cow::Owned(key),
+                    key_span: Span::default(),
+                    item: Item {
+                        value,
+                        span: Span::default(),
                     },
-                );
-                Ok(())
+                };
+                match self.doc.insert_new(id, entry) {
+                    Ok(()) => Ok(()),
+                    Err(entry) => Err(Error::new(
+                        ErrorKind::Unexpected,
+                        format!("duplicate key `{}`", entry.key),
+                    )),
+                }
             }
             Frame::Array(id) => {
                 if event == Event::SeqEnd {

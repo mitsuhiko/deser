@@ -130,14 +130,22 @@ impl KeyIndex {
     }
 
     fn insert(&mut self, key: &str, idx: usize) {
-        debug_assert_eq!(idx, self.chain.len());
         let hash = self.state.hash_one(key);
+        self.insert_hashed(hash, idx);
+    }
+
+    fn insert_hashed(&mut self, hash: u64, idx: usize) {
+        debug_assert_eq!(idx, self.chain.len());
         let prev = self.heads.insert(hash, idx).unwrap_or(NO_ENTRY);
         self.chain.push(prev);
     }
 
     fn find(&self, entries: &[Entry<'_>], key: &str) -> Option<usize> {
-        let mut idx = *self.heads.get(&self.state.hash_one(key))?;
+        self.find_hashed(entries, key, self.state.hash_one(key))
+    }
+
+    fn find_hashed(&self, entries: &[Entry<'_>], key: &str, hash: u64) -> Option<usize> {
+        let mut idx = *self.heads.get(&hash)?;
         while idx != NO_ENTRY {
             if entries[idx].key == key {
                 return Some(idx);
@@ -192,6 +200,35 @@ impl<'a> Document<'a> {
                 .map(|idx| &table.entries[idx]),
             None => table.entries.iter().find(|x| x.key == key),
         }
+    }
+
+    /// Adds an entry to a table unless the key exists already.
+    ///
+    /// If the key exists the entry is returned.  This is the same as
+    /// [`find`](Self::find) followed by [`insert`](Self::insert) but hashes
+    /// the key only once.
+    pub fn insert_new(&mut self, table: usize, entry: Entry<'a>) -> Result<(), Entry<'a>> {
+        let table_ref = &mut self.tables[table];
+        match table_ref.index {
+            Some(ref mut index) => {
+                let hash = index.state.hash_one(&*entry.key);
+                if index
+                    .find_hashed(&table_ref.entries, &entry.key, hash)
+                    .is_some()
+                {
+                    return Err(entry);
+                }
+                index.insert_hashed(hash, table_ref.entries.len());
+                table_ref.entries.push(entry);
+            }
+            None => {
+                if table_ref.entries.iter().any(|x| x.key == entry.key) {
+                    return Err(entry);
+                }
+                self.insert(table, entry);
+            }
+        }
+        Ok(())
     }
 
     /// Adds an entry to a table.  The key must not exist yet.

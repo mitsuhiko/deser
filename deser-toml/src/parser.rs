@@ -629,20 +629,17 @@ impl<'a> Parser<'a> {
                 self.doc.arrays[array].items.push(Item { value, span });
             }
             Target::Entry { table, key } => {
-                if self.doc.find(table, &key.name).is_some() {
+                let entry = Entry {
+                    key: key.name,
+                    key_span: key.span,
+                    item: Item { value, span },
+                };
+                if let Err(entry) = self.doc.insert_new(table, entry) {
                     return Err(self.error(
-                        key.span.start,
-                        &format!("key `{}` is already defined", key.name),
+                        entry.key_span.start,
+                        &format!("key `{}` is already defined", entry.key),
                     ));
                 }
-                self.doc.insert(
-                    table,
-                    Entry {
-                        key: key.name,
-                        key_span: key.span,
-                        item: Item { value, span },
-                    },
-                );
             }
         }
         Ok(())
