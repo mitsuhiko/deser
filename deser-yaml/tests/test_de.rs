@@ -701,3 +701,36 @@ fn test_plain_scalars() {
     let err = from_str::<Vec<String>>("[äöü x]]").unwrap_err();
     assert_eq!((err.line(), err.column()), (Some(1), Some(8)));
 }
+
+#[test]
+fn test_quoted_scalars() {
+    // quoted scalars are slices of the input unless they have escapes or
+    // line breaks
+    let value: BTreeMap<String, String> = from_str(concat!(
+        "a: 'äöü x  y'\n",
+        "b: 'it''s  ä'\n",
+        "c: \"x\\ty\\u00e4 z\"\n",
+        "d: \"äöü  \n  ÿ z\n\n  ž  w\"\n",
+        "e: 'a  \n  b'\n",
+        "f: \"a\\\n   b  c\"\n",
+        "g: \"a \\\n\n  b\"\n",
+        "h: \"\\\\ \\\" '\"\n",
+        "i: '\\ \" \"'\n",
+    ))
+    .unwrap();
+    assert_eq!(value["a"], "äöü x  y");
+    assert_eq!(value["b"], "it's  ä");
+    assert_eq!(value["c"], "x\tyä z");
+    assert_eq!(value["d"], "äöü ÿ z\nž  w");
+    assert_eq!(value["e"], "a b");
+    assert_eq!(value["f"], "ab  c");
+    assert_eq!(value["g"], "a \nb");
+    assert_eq!(value["h"], "\\ \" '");
+    assert_eq!(value["i"], "\\ \" \"");
+
+    // columns count characters
+    let err = from_str::<BTreeMap<String, String>>("k: 'äöü' x").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(1), Some(10)));
+    let err = from_str::<BTreeMap<String, String>>("k: \"ä\\q\"").unwrap_err();
+    assert_eq!((err.line(), err.column()), (Some(1), Some(6)));
+}

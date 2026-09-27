@@ -1233,16 +1233,40 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    /// Finds the end of a run of characters of a quoted scalar without
+    /// blanks, line breaks, quotes and (in double quoted scalars) escapes.
+    ///
+    /// Returns the offset of the end and the number of characters.
+    #[inline]
+    fn quoted_scalar_run(&self, single: bool) -> (usize, usize) {
+        let bytes = self.input.as_bytes();
+        let quote = if single { b'\'' } else { b'"' };
+        let mut pos = self.mark.offset;
+        let mut columns = 0;
+        while let Some(&b) = bytes.get(pos) {
+            if matches!(b, b' ' | b'\t' | b'\n' | b'\r') || b == quote || (b == b'\\' && !single) {
+                break;
+            }
+            // count characters, not UTF-8 continuation bytes
+            columns += usize::from(b & 0xc0 != 0x80);
+            pos += 1;
+        }
+        (pos, columns)
+    }
+
     fn scan_flow_scalar(&mut self, single: bool) -> Result<Token<'a>, Error> {
         let start = self.mark;
         self.skip();
         let content_start = self.mark.offset;
-        let mut string = String::new();
-        // as long as the scalar is a plain slice of the input it is borrowed
-        let mut borrowed = true;
-        let mut leading_break = String::new();
-        let mut trailing_breaks = String::new();
-        let mut whitespaces = String::new();
+        // The value is a slice of the input as long as it has no escapes and
+        // no line breaks.  Afterwards it's copied into `owned`.
+        let mut owned: Option<String> = None;
+        let input = self.input;
+        let to_owned = |owned: &mut Option<String>, end: usize| {
+            owned
+                .take()
+                .unwrap_or_else(|| input[content_start..end].to_string())
+        };
 
         loop {
             if self.is_document_indicator() {
@@ -1254,29 +1278,41 @@ impl<'a> Scanner<'a> {
 
             let mut leading_blanks = false;
             // non blank characters
-            while !is_blank_or_break(self.peek()) {
+            loop {
+                let run_start = self.mark.offset;
+                let (run_end, run_columns) = self.quoted_scalar_run(single);
+                if run_end != run_start {
+                    if let Some(ref mut string) = owned {
+                        string.push_str(&self.input[run_start..run_end]);
+                    }
+                    // the run has no blanks or breaks, see `skip`
+                    self.mark.offset = run_end;
+                    self.mark.column += run_columns;
+                    self.line_has_content = true;
+                    self.ws_has_tab = false;
+                }
                 match self.peek() {
-                    None => break,
                     Some('\'') if single && self.peek_at(1) == Some('\'') => {
-                        borrowed = false;
+                        let mut string = to_owned(&mut owned, self.mark.offset);
                         string.push('\'');
+                        owned = Some(string);
                         self.skip();
                         self.skip();
                     }
-                    Some('\'') if single => break,
-                    Some('"') if !single => break,
                     Some('\\') if !single && is_break(self.peek_at(1)) => {
-                        borrowed = false;
+                        owned = Some(to_owned(&mut owned, self.mark.offset));
                         self.skip();
                         self.skip_break();
                         leading_blanks = true;
                         break;
                     }
                     Some('\\') if !single => {
-                        borrowed = false;
+                        let mut string = to_owned(&mut owned, self.mark.offset);
                         self.scan_escape(&mut string)?;
+                        owned = Some(string);
                     }
-                    Some(_) => self.read(&mut string),
+                    // quotes, blanks, breaks and the end
+                    _ => break,
                 }
             }
 
@@ -1287,19 +1323,21 @@ impl<'a> Scanner<'a> {
             }
 
             // whitespace and line breaks
+            let blanks_start = self.mark.offset;
+            // `true` if there is a line break that is not escaped
+            let mut leading_break = false;
+            let mut trailing_breaks = 0;
             while is_blank_or_break(self.peek()) {
                 if is_blank(self.peek()) {
-                    if !leading_blanks {
-                        whitespaces.push(self.peek().unwrap());
-                    }
                     self.skip();
                 } else {
-                    borrowed = false;
+                    // blanks before the break are not part of the value
+                    owned = Some(to_owned(&mut owned, blanks_start));
+                    self.skip_break();
                     if leading_blanks {
-                        self.read_break(&mut trailing_breaks);
+                        trailing_breaks += 1;
                     } else {
-                        whitespaces.clear();
-                        self.read_break(&mut leading_break);
+                        leading_break = true;
                         leading_blanks = true;
                     }
                 }
@@ -1313,26 +1351,22 @@ impl<'a> Scanner<'a> {
                 {
                     return self.error("invalid indentation of quoted scalar continuation");
                 }
-                if leading_break.is_empty() {
-                    // escaped line break
-                    string.push_str(&trailing_breaks);
-                } else if trailing_breaks.is_empty() {
+                // a line break makes the value owned
+                let string = owned.as_mut().unwrap();
+                if leading_break && trailing_breaks == 0 {
                     string.push(' ');
                 } else {
-                    string.push_str(&trailing_breaks);
+                    string.extend(std::iter::repeat_n('\n', trailing_breaks));
                 }
-                leading_break.clear();
-                trailing_breaks.clear();
-            } else {
-                string.push_str(&whitespaces);
-                whitespaces.clear();
+            } else if let Some(ref mut string) = owned {
+                // blanks on the same line are copied as is
+                string.push_str(&self.input[blanks_start..self.mark.offset]);
             }
         }
 
-        let value = if borrowed {
-            Cow::Borrowed(&self.input[content_start..self.mark.offset])
-        } else {
-            Cow::Owned(string)
+        let value = match owned {
+            Some(string) => Cow::Owned(string),
+            None => Cow::Borrowed(&self.input[content_start..self.mark.offset]),
         };
         self.skip();
         Ok(Token {
