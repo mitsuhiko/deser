@@ -1053,3 +1053,129 @@ fn test_skipped_tuple_fields() {
         ],
     );
 }
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type")]
+enum WithFallback {
+    Circle {
+        radius: u32,
+    },
+    Empty,
+    #[deser(untagged)]
+    Raw(BTreeMap<String, u32>),
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum ExternalWithFallback {
+    Number(u32),
+    Unit,
+    #[deser(untagged)]
+    Text(String),
+    #[deser(untagged)]
+    Nothing,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "t", content = "c")]
+enum AdjacentWithFallback {
+    A(u32),
+    #[deser(untagged)]
+    Other {
+        value: String,
+    },
+}
+
+#[test]
+fn test_untagged_variants() {
+    check(
+        WithFallback::Circle { radius: 1 },
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Circle".into(),
+            "radius".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(
+        WithFallback::Empty,
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Empty".into(),
+            Event::MapEnd,
+        ],
+    );
+    // unknown tags and maps without tag go to the untagged variant
+    check(
+        WithFallback::Raw(BTreeMap::from([("x".into(), 1)])),
+        vec![Event::map_start(), "x".into(), 1u64.into(), Event::MapEnd],
+    );
+    assert_eq!(
+        deserialize::<WithFallback>(vec![
+            Event::map_start(),
+            "type".into(),
+            "Square".into(),
+            Event::MapEnd,
+        ])
+        .unwrap_err()
+        .message(),
+        "unknown variant `Square` of WithFallback, expected `Circle` or `Empty`"
+    );
+
+    check(
+        ExternalWithFallback::Number(1),
+        vec![
+            Event::map_start(),
+            "Number".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(ExternalWithFallback::Unit, vec!["Unit".into()]);
+    check(ExternalWithFallback::Text("x".into()), vec!["x".into()]);
+    check(ExternalWithFallback::Nothing, vec![Atom::Null.into()]);
+
+    check(
+        AdjacentWithFallback::A(1),
+        vec![
+            Event::map_start(),
+            "t".into(),
+            "A".into(),
+            "c".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(
+        AdjacentWithFallback::Other { value: "x".into() },
+        vec![
+            Event::map_start(),
+            "value".into(),
+            "x".into(),
+            Event::MapEnd,
+        ],
+    );
+    // the error of the tagged representation if nothing matches
+    assert_eq!(
+        deserialize::<AdjacentWithFallback>(vec![true.into()])
+            .unwrap_err()
+            .message(),
+        "unexpected bool, expected AdjacentWithFallback"
+    );
+}
+
+#[test]
+fn test_untagged_variant_shapes() {
+    let text = ExternalWithFallback::Text("x".into());
+    let mut driver = SerializeDriver::new(&text);
+    let (event, _, _) = driver.next().unwrap().unwrap();
+    assert_eq!(event.to_static(), Event::from("x"));
+    let mut driver = SerializeDriver::new(&ExternalWithFallback::Number(1));
+    let (event, _, _) = driver.next().unwrap().unwrap();
+    assert_eq!(
+        event.to_static(),
+        Event::MapStart(deser::ContainerShape::new().with_len(1))
+    );
+}

@@ -558,6 +558,26 @@
 /// }
 /// ```
 ///
+/// `untagged` on variants is for tagged enums and the variants have no
+/// names.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(untagged)]
+/// enum Test {
+///     #[deser(untagged)]
+///     A(u32),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(untagged, rename = "a")]
+///     A(u32),
+/// }
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

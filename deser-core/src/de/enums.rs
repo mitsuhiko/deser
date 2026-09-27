@@ -780,6 +780,42 @@ pub fn untagged_handle<'a, 'de, E: Send>(
     })
 }
 
+/// Creates a sink handle for a tagged enum with untagged variants.
+///
+/// The value is recorded and replayed into the sink of the tagged
+/// representation which `tagged` creates.  If that fails, it's replayed
+/// into the untagged variants in order until one of them accepts it.  If
+/// none does, the error of the tagged representation is returned.
+pub fn untagged_fallback<'a, 'de, E: Send>(
+    out: &'a mut Option<E>,
+    tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
+    candidates: CandidateLookup<'a, 'de, E>,
+) -> SinkHandle<'a, 'de> {
+    Recording::capture(move |recording, state| {
+        let err = match recording.replay(tagged(out), state) {
+            Ok(()) if out.is_some() => return Ok(()),
+            Ok(()) => Error::new(ErrorKind::Unexpected, "enum was not deserialized"),
+            Err(err) => err,
+        };
+        *out = None;
+        for index in 0.. {
+            let mut variant = match candidates(index) {
+                Some(variant) => variant,
+                None => break,
+            };
+            if recording
+                .replay(SinkHandle::to(variant.sink()), state)
+                .is_ok()
+                && let Some(value) = variant.build()
+            {
+                *out = Some(value);
+                return Ok(());
+            }
+        }
+        Err(err)
+    })
+}
+
 /// A sink for internally tagged enums.
 ///
 /// Until the tag is known, all key value pairs are recorded.  Once the tag

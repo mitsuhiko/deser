@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(untagged)]` for variants of tagged enums which are
+  represented by their content alone.  They are tried in order if the
+  tagged representation fails to deserialize, for instance to fall back to
+  a raw value for unknown tags.
 - `#[deser(deny_unknown_fields)]` can be placed on struct variants.
 - `bound`, `serialize_bound` and `deserialize_bound` can be placed on
   fields where they replace the bounds inferred from the field.

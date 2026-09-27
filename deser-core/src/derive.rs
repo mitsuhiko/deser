@@ -361,6 +361,12 @@
 //! * `#[deser(default)]`: marks the variant that is used if the tag is missing.
 //!   This is only supported for internally and adjacently tagged enums.  The
 //!   variant can also be marked as `other`.
+//! * `#[deser(untagged)]`: the variant of a tagged enum is represented by
+//!   its content alone, like the variants of untagged enums.  When
+//!   deserializing, the untagged variants are tried in order if the tagged
+//!   representation fails (for instance because the tag is unknown or
+//!   missing).  If none matches, the error of the tagged representation is
+//!   reported.  The value is recorded for this (like for untagged enums).
 //! * `#[deser(deny_unknown_fields)]`: rejects unknown keys in a struct
 //!   variant (or a unit variant of an internally tagged enum), like the
 //!   attribute on the enum does for all variants.

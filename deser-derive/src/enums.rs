@@ -124,6 +124,9 @@ struct VariantInfo<'a> {
     deny_unknown_fields: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
+    // an untagged variant of a tagged enum (or a variant of an untagged
+    // enum)
+    untagged: bool,
     shape: Shape,
     fields: Vec<FieldInfo<'a>>,
     tag_field: Option<usize>,
@@ -344,10 +347,10 @@ pub fn is_data_enum(
     container_attrs.tag().is_some()
         || container_attrs.untagged()
         || !input.generics.params.is_empty()
-        || enumeration
-            .variants
-            .iter()
-            .any(|x| !matches!(x.fields, syn::Fields::Unit))
+        || enumeration.variants.iter().any(|x| {
+            !matches!(x.fields, syn::Fields::Unit)
+                || EnumVariantAttrs::of(x).is_ok_and(|x| x.untagged())
+        })
 }
 
 fn repr<'a>(container_attrs: &'a ContainerAttrs) -> Repr<'a> {
@@ -424,8 +427,29 @@ fn collect_variants<'a>(
     for variant in &enumeration.variants {
         let attrs = EnumVariantAttrs::of(variant)?;
         let name = attrs.name(container_attrs);
+        if attrs.untagged() && matches!(repr, Repr::Untagged) {
+            return Err(syn::Error::new_spanned(
+                variant,
+                "untagged has no effect on variants of untagged enums",
+            ));
+        }
+        // untagged variants of tagged enums are represented like the
+        // variants of untagged enums
+        let repr = if attrs.untagged() {
+            Repr::Untagged
+        } else {
+            repr
+        };
         let mut names = Vec::new();
-        for name in std::iter::once(name.clone()).chain(attrs.aliases(container_attrs)) {
+        // untagged variants are not selected by their name
+        let tags = if attrs.untagged() {
+            Vec::new()
+        } else {
+            std::iter::once(name.clone())
+                .chain(attrs.aliases(container_attrs))
+                .collect()
+        };
+        for name in tags {
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     variant,
@@ -545,6 +569,7 @@ fn collect_variants<'a>(
             other: attrs.other(),
             default: attrs.default(),
             deny_unknown_fields: attrs.deny_unknown_fields(),
+            untagged: matches!(repr, Repr::Untagged),
             skip_serializing: attrs.skip_serializing(),
             skip_deserializing: attrs.skip_deserializing(),
             shape,
@@ -662,7 +687,7 @@ pub fn derive_deserialize(
         // regular struct derive.
         let needs_helper = match info.content {
             Content::Struct(_) => true,
-            Content::Unit => matches!(repr, Repr::Internal { .. }) && !info.other,
+            Content::Unit => matches!(repr, Repr::Internal { .. }) && !info.other && !info.untagged,
             _ => false,
         };
         if info.deny_unknown_fields && !needs_helper {
@@ -860,7 +885,7 @@ pub fn derive_deserialize(
         let arms = variants
             .iter()
             .zip(builders.iter())
-            .filter(|(info, _)| !info.other)
+            .filter(|(info, _)| !info.other && !info.untagged)
             .map(|(info, builder)| {
                 VariantName::tag_arms(&info.names, quote! { __deser::__derive::Some(#builder) })
             });
@@ -868,7 +893,7 @@ pub fn derive_deserialize(
         let (default_fn, default) = special_variant("__default", |info| info.default);
         let names = variants
             .iter()
-            .filter(|info| !info.other)
+            .filter(|info| !info.other && !info.untagged)
             .map(|info| info.name.str_expr());
         (
             quote! {
@@ -900,7 +925,9 @@ pub fn derive_deserialize(
         Repr::External => {
             let unit_arms = variants
                 .iter()
-                .filter(|info| matches!(info.content, Content::Unit) && !info.other)
+                .filter(|info| {
+                    matches!(info.content, Content::Unit) && !info.other && !info.untagged
+                })
                 .map(|info| {
                     // the fields of unit variants are skipped
                     let values = info
@@ -975,25 +1002,65 @@ pub fn derive_deserialize(
                 },
             )
         }
-        Repr::Untagged => {
-            let indexes = 0..builders.len();
-            (
-                quote! {
-                    #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn __candidate #builder_impl_generics (
-                        __index: usize,
-                    ) -> __deser::__derive::Option<#builder_ty> #where_clause {
-                        match __index {
-                            #(#indexes => __deser::__derive::Some(#builders),)*
-                            _ => __deser::__derive::None,
-                        }
-                    }
-                },
-                quote! {
-                    __deser::__derive::untagged_handle(__slot, __TYPE_NAME, __candidate #turbofish)
-                },
-            )
-        }
+        Repr::Untagged => (
+            quote! {},
+            quote! {
+                __deser::__derive::untagged_handle(__slot, __TYPE_NAME, __candidate #turbofish)
+            },
+        ),
+    };
+
+    // the untagged variants are tried in order (all variants of untagged
+    // enums)
+    let candidates = variants
+        .iter()
+        .zip(builders.iter())
+        .filter(|(info, _)| info.untagged)
+        .map(|(_, builder)| builder)
+        .collect::<Vec<_>>();
+    let candidate_support = if candidates.is_empty() {
+        None
+    } else {
+        let indexes = 0..candidates.len();
+        Some(quote! {
+            #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
+            fn __candidate #builder_impl_generics (
+                __index: usize,
+            ) -> __deser::__derive::Option<#builder_ty> #where_clause {
+                match __index {
+                    #(#indexes => __deser::__derive::Some(#candidates),)*
+                    _ => __deser::__derive::None,
+                }
+            }
+        })
+    };
+
+    // tagged enums with untagged variants try the untagged variants if the
+    // tagged representation fails
+    let (support, handle) = if !matches!(repr, Repr::Untagged) && candidate_support.is_some() {
+        let slot_generics = crate::bound::with_slot_lifetime(&de_generics);
+        let (slot_impl_generics, _, _) = slot_generics.split_for_impl();
+        (
+            quote! {
+                #support
+
+                #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
+                fn __tagged #slot_impl_generics (
+                    __slot: &'__s mut __deser::__derive::Option<#enum_ty>,
+                ) -> __deser::de::SinkHandle<'__s, 'de> #where_clause {
+                    #handle
+                }
+            },
+            quote! {
+                __deser::__derive::untagged_fallback(
+                    __slot,
+                    __tagged #turbofish,
+                    __candidate #turbofish,
+                )
+            },
+        )
+    } else {
+        (support, handle)
     };
 
     // validated enums deserialize into an owned sink which is validated
@@ -1027,6 +1094,8 @@ pub fn derive_deserialize(
             #type_name_const
 
             #support
+
+            #candidate_support
 
             #validated_support
 
@@ -1180,16 +1249,22 @@ pub fn derive_serialize(
     );
 
     let type_name = container_attrs.container_name();
-    let repr_tokens = match repr {
-        Repr::External => quote! { __deser::ser::VariantRepr::External },
-        Repr::Internal { tag } => quote! { __deser::ser::VariantRepr::Internal { tag: #tag } },
-        Repr::Adjacent { tag, content } => quote! {
-            __deser::ser::VariantRepr::Adjacent { tag: #tag, content: #content }
-        },
-        Repr::Untagged => quote! { __deser::ser::VariantRepr::Untagged },
+    // untagged variants of tagged enums are represented like the variants
+    // of untagged enums
+    let repr_of = |info: &VariantInfo| {
+        if info.untagged { Repr::Untagged } else { repr }
     };
     let mut describe_arms = Vec::new();
     for info in &variants {
+        let repr = repr_of(info);
+        let repr_tokens = match repr {
+            Repr::External => quote! { __deser::ser::VariantRepr::External },
+            Repr::Internal { tag } => quote! { __deser::ser::VariantRepr::Internal { tag: #tag } },
+            Repr::Adjacent { tag, content } => quote! {
+                __deser::ser::VariantRepr::Adjacent { tag: #tag, content: #content }
+            },
+            Repr::Untagged => quote! { __deser::ser::VariantRepr::Untagged },
+        };
         if info.skip_serializing {
             let pattern = info.wildcard_pattern(ident);
             describe_arms.push(quote! { #pattern => {} });
@@ -1227,23 +1302,25 @@ pub fn derive_serialize(
     }
 
     // the number of entries of the maps is fixed for these representations
-    let container_shape = match repr {
-        Repr::External => quote! { __deser::ContainerShape::new().with_len(1) },
-        Repr::Adjacent { .. } => {
-            let arms = variants.iter().map(|info| {
-                let pattern = info.wildcard_pattern(ident);
-                let len: usize = if matches!(info.content, Content::Unit) {
-                    1
-                } else {
-                    2
-                };
-                quote! { #pattern => #len, }
-            });
-            quote! {
-                __deser::ContainerShape::new().with_len(match *self { #(#arms)* })
+    let len_of = |info: &VariantInfo| match repr_of(info) {
+        Repr::External => Some(1usize),
+        Repr::Adjacent { .. } if matches!(info.content, Content::Unit) => Some(1),
+        Repr::Adjacent { .. } => Some(2),
+        _ => None,
+    };
+    let container_shape = if variants.iter().all(|info| len_of(info) == Some(1)) {
+        quote! { __deser::ContainerShape::new().with_len(1) }
+    } else if variants.iter().all(|info| len_of(info).is_none()) {
+        quote! { __deser::ContainerShape::new() }
+    } else {
+        let arms = variants.iter().map(|info| {
+            let pattern = info.wildcard_pattern(ident);
+            match len_of(info) {
+                Some(len) => quote! { #pattern => __deser::ContainerShape::new().with_len(#len), },
+                None => quote! { #pattern => __deser::ContainerShape::new(), },
             }
-        }
-        _ => quote! { __deser::ContainerShape::new() },
+        });
+        quote! { match *self { #(#arms)* } }
     };
 
     let mut arms = Vec::new();
@@ -1268,7 +1345,7 @@ pub fn derive_serialize(
             None => info.name.ser_handle(),
         };
         let is_unit = matches!(info.content, Content::Unit);
-        let chunk = match repr {
+        let chunk = match repr_of(info) {
             Repr::External if is_unit => match info.tag_field() {
                 Some(_) => quote! { __deser::ser::Chunk::Forward(#tag_handle) },
                 None => {

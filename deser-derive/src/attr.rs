@@ -1706,6 +1706,7 @@ pub struct EnumVariantAttrs<'a> {
     aliases: Vec<VariantName>,
     other: bool,
     default: bool,
+    untagged: bool,
     deny_unknown_fields: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
@@ -1721,6 +1722,7 @@ impl<'a> EnumVariantAttrs<'a> {
             aliases: Vec::new(),
             other: false,
             default: false,
+            untagged: false,
             deny_unknown_fields: false,
             skip_serializing: false,
             skip_deserializing: false,
@@ -1746,6 +1748,7 @@ impl<'a> EnumVariantAttrs<'a> {
             "other" => set_flag(meta, name, &mut rv.other),
             "default" => set_flag(meta, name, &mut rv.default),
             "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
+            "untagged" => set_flag(meta, name, &mut rv.untagged),
             "skip" => set_flag(meta, name, &mut skip),
             "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
             "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
@@ -1778,6 +1781,7 @@ impl<'a> EnumVariantAttrs<'a> {
                     "other",
                     "default",
                     "deny_unknown_fields",
+                    "untagged",
                 ],
             )?;
             rv.skip_serializing = true;
@@ -1789,7 +1793,17 @@ impl<'a> EnumVariantAttrs<'a> {
             )?;
         }
 
+        if rv.untagged {
+            // untagged variants have no name and are not selected by tags
+            conflict("untagged", &["rename", "alias", "other", "default"])?;
+        }
+
         Ok(rv)
+    }
+
+    /// Returns `true` if the variant is not tagged (in an enum which is).
+    pub fn untagged(&self) -> bool {
+        self.untagged
     }
 
     /// Returns `true` if the variant cannot be serialized.
