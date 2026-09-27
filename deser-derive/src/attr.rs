@@ -854,11 +854,14 @@ fn parse_container_adapter(meta: &ParseNestedMeta, ident: &syn::Ident) -> syn::R
         match ty {
             syn::Type::Paren(ty) => is_own_impl(&ty.elem, ident),
             syn::Type::Group(ty) => is_own_impl(&ty.elem, ident),
-            syn::Type::Path(ty) if ty.qself.is_none() => ty
-                .path
-                .segments
-                .last()
-                .is_some_and(|x| x.ident == "Same" || x.ident == *ident),
+            // `Same` is the implementation of the type wherever it's from,
+            // the type itself can only be named without a path (qualified
+            // names like `validators::Email` are other types)
+            syn::Type::Path(ty) if ty.qself.is_none() => {
+                let segments = &ty.path.segments;
+                segments.last().is_some_and(|x| x.ident == "Same")
+                    || (segments.len() == 1 && segments[0].ident == *ident)
+            }
             _ => false,
         }
     }
