@@ -4,6 +4,16 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-validate` for validation.  Validators are types
+  (`Email`, `Len<1, 32>`, `Range<1, 65535>`, `Each<V>`, tuples for all
+  of them) with violations that have a code, parameters and a message.
+  `Checked<T, V>` fails the deserialization if the value is invalid,
+  `Validated<T, V>` keeps the errors of the value in it (also type errors
+  and errors deep inside the value) and `Collect<T>` collects all errors
+  of a value.  `Validation` reports all problems of an input with their
+  paths and locations.
+- `State::attach_error_context` and `State::discards_errors` are public
+  for sinks that handle the errors of their values themselves.
 - Errors can hold multiple errors (`Error::errors`, `Error::from_errors`
   and `Error::push_error`).  The accessors refer to the first one, the
   display output mentions how many more there are and `{:#}` lists all

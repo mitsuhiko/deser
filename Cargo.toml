@@ -15,6 +15,7 @@ members = [
   "deser-yaml",
   "deser-toml",
   "deser-urlencoded",
+  "deser-validate",
   "deser-env",
   "deser-tokio",
   "examples/adapters",

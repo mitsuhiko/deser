@@ -384,6 +384,9 @@ threads.
 * [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): a
   crate that provides source locations (line and column) for formats that
   support them
+* [deser-validate](https://github.com/mitsuhiko/deser/tree/main/deser-validate):
+  validation while deserializing, with values that keep their errors
+  (`Validated<String, Email>`) and reports of all problems of an input
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): formats
   a serializable to the `std::fmt` debug format
 * [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): reads
