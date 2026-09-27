@@ -735,8 +735,14 @@ fn test_lexical_keys() {
     // keys are lexical, they parse into the type of the key
     let map: BTreeMap<u16, bool> = from_str(r#"{"80": true, "443": false}"#).unwrap();
     assert_eq!(map, BTreeMap::from([(80, true), (443, false)]));
-    let map: BTreeMap<bool, u8> = from_str(r#"{"true": 1, "no": 0}"#).unwrap();
+    let map: BTreeMap<bool, u8> = from_str(r#"{"true": 1, "false": 0}"#).unwrap();
     assert_eq!(map, BTreeMap::from([(true, 1), (false, 0)]));
+    // keys are strict, the spellings of query strings are not booleans
+    let err = from_str::<BTreeMap<bool, u8>>(r#"{"no": 0}"#).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "invalid value \"no\", expected bool (true or false)"
+    );
 
     // keys without escapes are borrowed
     let input = String::from(r#"{"a": 1, "b": 2}"#);

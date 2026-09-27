@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use deser_core::Text;
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules, Source};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};
@@ -542,6 +542,8 @@ impl StreamState {
         if config.bytes != BytesFormat::BASE64 {
             *driver.state_mut().get_mut::<BytesFormat>() = config.bytes;
         }
+        // everything in a CSV file is text, like in a query string
+        LexicalRules::LENIENT.set(driver.state_mut());
         let fields = &scanner.fields[..];
         // with `Headers::Skip` the names are known but not used
         let names = match config.headers {

@@ -1,6 +1,6 @@
 //! Parsing of lexical atoms.
 //!
-//! See [`Atom::Lexical`](crate::Atom::Lexical) for the rules.
+//! See [`Atom::Lexical`](crate::Atom::Lexical) and [`LexicalRules`].
 use std::fmt::Write;
 use std::num::{IntErrorKind, ParseIntError};
 
@@ -10,24 +10,176 @@ use crate::error::{Error, ErrorKind, discarded_error};
 /// The longest part of a value that is included in error messages.
 const MAX_QUOTED: usize = 64;
 
+/// How [lexical atoms](crate::Atom::Lexical) are interpreted.
+///
+/// Lexical atoms are text whose type the format cannot express.  The types
+/// they are delivered to interpret them: numbers and booleans parse them,
+/// strings take them as they are.  What text means beyond that depends on
+/// where it comes from.  Keys of JSON objects are strict (a `bool` key is
+/// `true` or `false`), everything in a query string or an environment
+/// variable is text so `on` and `yes` are booleans too, empty values are
+/// missing values and a key given once can stand for a sequence of one
+/// value.
+///
+/// The rules are an extension value in the [`State`] (see
+/// [`State::get_mut`]) which formats set, the default are the
+/// [strict](Self::STRICT) rules.  As they are part of the state (and not of
+/// the atoms), lexical atoms that are buffered and replayed are
+/// interpreted with the rules of the deserialization they are replayed in.
+///
+/// ```
+/// use deser::de::{DeserializeDriver, LexicalRules};
+/// use deser::{Atom, Text};
+///
+/// let mut out = None::<bool>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// LexicalRules::LENIENT.set(driver.state_mut());
+/// driver.emit(Atom::Lexical(Text::borrowed("on"))).unwrap();
+/// drop(driver);
+/// assert_eq!(out, Some(true));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LexicalRules {
+    lenient_bools: bool,
+    empty_is_null: bool,
+    single_is_seq: bool,
+}
+
+impl LexicalRules {
+    /// The rules for text that happens to be text, like the keys of JSON
+    /// objects.  This is the default.
+    ///
+    /// * booleans are `true` and `false`
+    /// * integers and floats are parsed with [`str::parse`]
+    /// * empty text is not a missing value
+    /// * text is not a sequence
+    pub const STRICT: LexicalRules = LexicalRules {
+        lenient_bools: false,
+        empty_is_null: false,
+        single_is_seq: false,
+    };
+
+    /// The rules for formats where everything is text, like query strings
+    /// and environment variables.
+    ///
+    /// * booleans are `true`, `yes`, `on` and `1` and `false`, `no`, `off`
+    ///   and `0` (ignoring ASCII case)
+    /// * integers and floats are parsed with [`str::parse`]
+    /// * empty text is a missing value for types that do not accept it:
+    ///   `None` for an `Option<u32>`, `Some("")` for an `Option<String>`
+    ///   and `()`
+    /// * text is a sequence of one element for types that expect
+    ///   sequences (like `Vec<T>`), as keys that are given once in a query
+    ///   string can stand for a sequence
+    pub const LENIENT: LexicalRules = LexicalRules {
+        lenient_bools: true,
+        empty_is_null: true,
+        single_is_seq: true,
+    };
+
+    /// Returns the rules of a deserialization.
+    #[inline]
+    pub fn of(state: &State) -> LexicalRules {
+        state.get::<LexicalRules>().copied().unwrap_or_default()
+    }
+
+    /// Sets the rules of a deserialization.
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<LexicalRules>() = self;
+    }
+
+    /// Sets if booleans are also `yes`, `on` and `1` and `no`, `off` and
+    /// `0` (ignoring ASCII case).
+    pub const fn with_lenient_bools(mut self, yes: bool) -> LexicalRules {
+        self.lenient_bools = yes;
+        self
+    }
+
+    /// Sets if empty text is a missing value for types that do not accept
+    /// it.
+    pub const fn with_empty_is_null(mut self, yes: bool) -> LexicalRules {
+        self.empty_is_null = yes;
+        self
+    }
+
+    /// Sets if text is a sequence of one element for types that expect
+    /// sequences.
+    pub const fn with_single_is_seq(mut self, yes: bool) -> LexicalRules {
+        self.single_is_seq = yes;
+        self
+    }
+
+    /// Returns `true` if booleans are also `yes`, `on`, `1`, `no`, `off`
+    /// and `0`.
+    pub const fn lenient_bools(&self) -> bool {
+        self.lenient_bools
+    }
+
+    /// Returns `true` if empty text is a missing value for types that do
+    /// not accept it.
+    pub const fn empty_is_null(&self) -> bool {
+        self.empty_is_null
+    }
+
+    /// Returns `true` if text is a sequence of one element for types that
+    /// expect sequences.
+    pub const fn single_is_seq(&self) -> bool {
+        self.single_is_seq
+    }
+}
+
+impl Default for LexicalRules {
+    fn default() -> LexicalRules {
+        LexicalRules::STRICT
+    }
+}
+
+/// Parses the lexical form of a boolean with the rules of the state.
+pub(crate) fn parse_bool(value: &str, state: &State) -> Result<bool, Error> {
+    parse_bool_with(value, LexicalRules::of(state).lenient_bools, state)
+}
+
 /// Parses the lexical form of a boolean.
 ///
-/// The spellings of booleans in query strings, environment variables and
-/// command lines are accepted, ignoring ASCII case.
-pub(crate) fn parse_bool(value: &str, state: &State) -> Result<bool, Error> {
-    const TRUE: [&str; 4] = ["true", "yes", "on", "1"];
-    const FALSE: [&str; 4] = ["false", "no", "off", "0"];
-    if TRUE.iter().any(|x| x.eq_ignore_ascii_case(value)) {
-        Ok(true)
-    } else if FALSE.iter().any(|x| x.eq_ignore_ascii_case(value)) {
-        Ok(false)
+/// If `lenient` is set, the spellings of booleans in query strings,
+/// environment variables and command lines are accepted, ignoring ASCII
+/// case.
+pub(crate) fn parse_bool_with(value: &str, lenient: bool, state: &State) -> Result<bool, Error> {
+    if lenient {
+        const TRUE: [&str; 4] = ["true", "yes", "on", "1"];
+        const FALSE: [&str; 4] = ["false", "no", "off", "0"];
+        if TRUE.iter().any(|x| x.eq_ignore_ascii_case(value)) {
+            Ok(true)
+        } else if FALSE.iter().any(|x| x.eq_ignore_ascii_case(value)) {
+            Ok(false)
+        } else {
+            Err(invalid(
+                value,
+                "bool (true, yes, on, 1, false, no, off or 0)",
+                state,
+            ))
+        }
     } else {
-        Err(invalid(
-            value,
-            "bool (true, yes, on, 1, false, no, off or 0)",
-            state,
-        ))
+        match value {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(invalid(value, "bool (true or false)", state)),
+        }
     }
+}
+
+/// Returns `true` if the text of a lexical atom is empty and empty text is
+/// a missing value.
+#[inline]
+pub(crate) fn is_empty_null(value: &str, state: &State) -> bool {
+    value.is_empty() && LexicalRules::of(state).empty_is_null
+}
+
+/// Returns `true` if text is a sequence of one element.
+#[inline]
+pub(crate) fn single_is_seq(state: &State) -> bool {
+    LexicalRules::of(state).single_is_seq
 }
 
 /// Converts the error of parsing an integer.
@@ -76,14 +228,21 @@ pub(crate) fn out_of_range(value: &dyn std::fmt::Display, expecting: &str, state
 
 #[test]
 fn test_parse_bool() {
+    let state = State::new();
     for value in ["true", "TRUE", "Yes", "on", "1"] {
-        assert!(parse_bool(value, &State::new()).unwrap(), "{}", value);
+        assert!(parse_bool_with(value, true, &state).unwrap(), "{}", value);
     }
     for value in ["false", "False", "NO", "off", "0"] {
-        assert!(!parse_bool(value, &State::new()).unwrap(), "{}", value);
+        assert!(!parse_bool_with(value, true, &state).unwrap(), "{}", value);
     }
     for value in ["", "2", "y", "n", "t", "truee", " true"] {
-        assert!(parse_bool(value, &State::new()).is_err(), "{}", value);
+        assert!(parse_bool_with(value, true, &state).is_err(), "{}", value);
+    }
+    assert!(parse_bool(" true", &state).is_err());
+    assert!(parse_bool("true", &state).unwrap());
+    assert!(!parse_bool("false", &state).unwrap());
+    for value in ["TRUE", "yes", "on", "1", "0", "off"] {
+        assert!(parse_bool(value, &state).is_err(), "{}", value);
     }
 }
 

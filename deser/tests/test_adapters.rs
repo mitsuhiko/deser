@@ -35,6 +35,20 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     Ok(out.unwrap())
 }
 
+/// Deserializes with the lexical rules of formats where everything is text
+/// (like query strings).
+fn deserialize_lenient<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
+    let mut out = None;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        deser::de::LexicalRules::LENIENT.set(driver.state_mut());
+        for event in events {
+            driver.emit(event)?;
+        }
+    }
+    Ok(out.unwrap())
+}
+
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
@@ -1181,8 +1195,9 @@ fn test_trim_whitespace() {
         timeout: Option<u32>,
     }
 
+    // like in a query string, blank values are missing values
     let login = |username: Event<'static>, port: Event<'static>| {
-        deserialize::<Login>(vec![
+        deserialize_lenient::<Login>(vec![
             Event::map_start(),
             "username".into(),
             username,
@@ -1206,7 +1221,7 @@ fn test_trim_whitespace() {
     // with the option outside, only values that are empty before trimming
     // are `None`
     let timeout = |value: Event<'static>| {
-        deserialize::<Login>(vec![
+        deserialize_lenient::<Login>(vec![
             Event::map_start(),
             "username".into(),
             "x".into(),

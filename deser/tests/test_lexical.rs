@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use deser::de::{DeserializeDriver, DeserializeOwned};
+use deser::de::{DeserializeDriver, DeserializeOwned, LexicalRules};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Text};
 
 fn lexical(value: &str) -> Event<'_> {
     Event::Atom(Atom::Lexical(Text::borrowed(value)))
 }
 
+/// Deserializes with the lenient rules of formats where everything is
+/// text (like query strings).
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     deserialize_with_policy(events, deser::de::DuplicateKeys::default())
 }
@@ -16,10 +18,28 @@ fn deserialize_with_policy<T: DeserializeOwned>(
     events: Vec<Event<'_>>,
     policy: deser::de::DuplicateKeys,
 ) -> Result<T, Error> {
+    deserialize_with_rules(events, policy, LexicalRules::LENIENT)
+}
+
+/// Deserializes with the default (strict) rules, like JSON keys.
+fn deserialize_strict<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
+    deserialize_with_rules(
+        events,
+        deser::de::DuplicateKeys::default(),
+        LexicalRules::STRICT,
+    )
+}
+
+fn deserialize_with_rules<T: DeserializeOwned>(
+    events: Vec<Event<'_>>,
+    policy: deser::de::DuplicateKeys,
+    rules: LexicalRules,
+) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
         *driver.state_mut().get_mut::<deser::de::DuplicateKeys>() = policy;
+        rules.set(driver.state_mut());
         for event in events {
             driver.emit(event)?;
         }
@@ -93,6 +113,42 @@ fn test_bool() {
         err.message(),
         "invalid value \"\", expected bool (true, yes, on, 1, false, no, off or 0)"
     );
+}
+
+#[test]
+fn test_strict_rules() {
+    // the default rules are the ones of text that happens to be text,
+    // like the keys of JSON objects
+    assert!(deserialize_strict::<bool>(vec![lexical("true")]).unwrap());
+    assert!(!deserialize_strict::<bool>(vec![lexical("false")]).unwrap());
+    for value in ["True", "yes", "on", "1", "0", "off", ""] {
+        let err = deserialize_strict::<bool>(vec![lexical(value)]).unwrap_err();
+        assert_eq!(
+            err.message(),
+            format!("invalid value {:?}, expected bool (true or false)", value)
+        );
+    }
+    assert_eq!(deserialize_strict::<u32>(vec![lexical("42")]).unwrap(), 42);
+    assert_eq!(deserialize_strict::<String>(vec![lexical("")]).unwrap(), "");
+
+    // empty text is not a missing value
+    assert!(deserialize_strict::<()>(vec![lexical("")]).is_err());
+    assert!(deserialize_strict::<Option<u32>>(vec![lexical("")]).is_err());
+    assert_eq!(
+        deserialize_strict::<Option<String>>(vec![lexical("")]).unwrap(),
+        Some(String::new())
+    );
+
+    // text is not a sequence
+    let err = deserialize_strict::<Vec<u32>>(vec![lexical("42")]).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected vec");
+    assert!(deserialize_strict::<std::collections::BTreeSet<u32>>(vec![lexical("42")]).is_err());
+    assert!(deserialize_strict::<[u32; 1]>(vec![lexical("42")]).is_err());
+
+    // map keys parse the same way
+    let map = deserialize_strict::<BTreeMap<bool, u32>>(lexical_map(&[("true", "1")])).unwrap();
+    assert_eq!(map, BTreeMap::from([(true, 1)]));
+    assert!(deserialize_strict::<BTreeMap<bool, u32>>(lexical_map(&[("on", "1")])).is_err());
 }
 
 #[test]
@@ -326,6 +382,7 @@ fn test_single_value_sequences() {
     let mut out = None::<Vec<&str>>;
     {
         let mut driver = DeserializeDriver::new(&mut out);
+        LexicalRules::LENIENT.set(driver.state_mut());
         driver
             .emit_borrowed(Atom::Lexical(Text::borrowed(&input)))
             .unwrap();

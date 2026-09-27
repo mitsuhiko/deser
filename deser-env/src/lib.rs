@@ -197,7 +197,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use deser_core::Text;
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
+use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned, LexicalRules};
 use deser_core::{Atom, Error, ErrorAttachment, ErrorKind};
 
 pub use self::de::{Deserializer, DeserializerConfig};
@@ -363,6 +363,7 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
+        LexicalRules::LENIENT.set(driver.state_mut());
         match value.into_string() {
             Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),
             Err(value) => match de::os_bytes(value) {

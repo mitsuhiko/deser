@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use deser_core::Text;
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, Source};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::Nesting;
@@ -273,6 +273,7 @@ impl<'a> Deserializer<'a> {
             *state.get_mut::<BytesFormat>() = self.config.bytes;
         }
         *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        LexicalRules::LENIENT.set(state);
         tree.emit(driver)
             .map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

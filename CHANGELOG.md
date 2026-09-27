@@ -4,6 +4,17 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- How lexical atoms are interpreted is decided by the `LexicalRules` of
+  the deserialization (an extension value in the state) instead of being
+  the same for all formats.  The default are the strict rules for text
+  that happens to be text, like the keys of JSON and TOML: booleans are
+  `true` and `false`, empty text is not a missing value and text is not
+  a sequence.  Query strings, environment variables and CSV use the
+  lenient rules (`yes`, `on` and `1` are booleans, empty values are
+  `None` for optionals of types that do not accept them, a single value
+  is a sequence of one element).  This fixes JSON keys like `"on"` being
+  accepted as booleans.  `deser-serde` parses lexical atoms with the rules
+  of the deserialization.
 - The text of `Atom::Str` and `Atom::Lexical` is a `Text` and the data
   of `Bytes` is private (`Bytes::data`, `Bytes::into_data` and
   `Bytes::borrowed_data`).  Both are borrowed or owned like a `Cow` but

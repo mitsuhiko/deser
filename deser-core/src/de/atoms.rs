@@ -6,6 +6,8 @@
 use crate::State;
 #[cfg(feature = "derive")]
 use crate::de::Deserialize;
+#[cfg(feature = "derive")]
+use crate::de::lexical::is_empty_null;
 use crate::de::{Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::Atom;
@@ -50,16 +52,18 @@ pub fn borrowed_atom_into<'de, T: Deserialize<'de>>(
 
 /// Checks that an atom is the value of a unit struct.
 ///
-/// Unit structs are null (and text of unknown type that is empty, like
-/// `()`).  Other atoms are rejected with `expecting` as expected type.
+/// Unit structs are null (and empty lexical atoms if empty text is a
+/// missing value, like for `()`, see
+/// [`LexicalRules`](crate::de::LexicalRules)).  Other atoms are rejected
+/// with `expecting` as expected type.
 #[cfg(feature = "derive")]
-pub fn unit_struct(atom: &Atom<'_>, expecting: &str) -> Result<(), Error> {
+pub fn unit_struct(atom: &Atom<'_>, expecting: &str, state: &State) -> Result<(), Error> {
     match atom {
         Atom::Null => Ok(()),
-        Atom::Lexical(value) if value.is_empty() => Ok(()),
+        Atom::Lexical(value) if is_empty_null(value, state) => Ok(()),
         Atom::Ext(ext) => match ext.fallback() {
             Atom::Ext(_) => Err(atom.unexpected_error(expecting)),
-            fallback => unit_struct(&fallback, expecting),
+            fallback => unit_struct(&fallback, expecting, state),
         },
         _ => Err(atom.unexpected_error(expecting)),
     }

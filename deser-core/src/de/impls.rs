@@ -72,7 +72,7 @@ impl<'de> Sink<'de> for SlotWrapper<()> {
                 **self = Some(());
                 Ok(())
             }
-            Atom::Lexical(ref value) if value.is_empty() => {
+            Atom::Lexical(ref value) if lexical::is_empty_null(value, state) => {
                 **self = Some(());
                 Ok(())
             }
@@ -471,7 +471,9 @@ where
                     }
                 }
                 // a single value of a key given once in a query string
-                Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                Atom::Lexical(_)
+                    if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
+                {
                     self.is_seq = true;
                     A::__private_atom_into_as(&mut self.element, atom, state)
                 }
@@ -481,7 +483,9 @@ where
 
         fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
             match atom {
-                Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                Atom::Lexical(_)
+                    if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
+                {
                     self.is_seq = true;
                     A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
                 }
@@ -952,14 +956,16 @@ where
         fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             match atom {
                 // a single value of a key given once in a query string
-                Atom::Lexical(_) => A::__private_atom_into_as(&mut self.element, atom, state),
+                Atom::Lexical(_) if lexical::single_is_seq(state) => {
+                    A::__private_atom_into_as(&mut self.element, atom, state)
+                }
                 other => self.unexpected_atom(other, state),
             }
         }
 
         fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
             match atom {
-                Atom::Lexical(_) => {
+                Atom::Lexical(_) if lexical::single_is_seq(state) => {
                     A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
                 }
                 other => self.atom(other, state),
@@ -1104,7 +1110,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
             // for nested options where the inner one becomes `Some(None)`.
             drop(A::deserialize_into_as(inner));
             Ok(())
-        } else if is_empty_lexical(&atom) {
+        } else if is_empty_lexical(&atom, state) {
             if !empty_lexical_or_none(atom, state, |atom, state| {
                 A::__private_atom_into_as(inner, atom, state)
             })? {
@@ -1126,7 +1132,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
         if is_null_atom(&atom) {
             drop(A::deserialize_into_as(inner));
             Ok(())
-        } else if is_empty_lexical(&atom) {
+        } else if is_empty_lexical(&atom, state) {
             if !empty_lexical_or_none(atom, state, |atom, state| {
                 A::__private_borrowed_atom_into_as(inner, atom, state)
             })? {
@@ -1336,7 +1342,9 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                         }
                     }
                     // a single value of a key given once in a query string
-                    Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                    Atom::Lexical(_)
+                        if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
+                    {
                         self.is_seq = true;
                         self.__private_value_atom(atom, state)
                     }
@@ -1346,7 +1354,9 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
 
             fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
                 match atom {
-                    Atom::Lexical(_) if !A::__private_is_bytes_as() => {
+                    Atom::Lexical(_)
+                        if !A::__private_is_bytes_as() && lexical::single_is_seq(state) =>
+                    {
                         self.is_seq = true;
                         self.__private_borrowed_value_atom(atom, state)
                     }

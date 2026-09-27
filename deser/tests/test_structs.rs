@@ -31,6 +31,20 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     Ok(out.unwrap())
 }
 
+/// Deserializes with the lexical rules of formats where everything is text
+/// (like query strings).
+fn deserialize_lenient<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
+    let mut out = None;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        deser::de::LexicalRules::LENIENT.set(driver.state_mut());
+        for event in events {
+            driver.emit(event)?;
+        }
+    }
+    Ok(out.unwrap())
+}
+
 fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
     let mut events = Vec::new();
     let mut driver = SerializeDriver::new(value);
@@ -180,11 +194,14 @@ fn test_unit_struct() {
 
     check(Unit, vec![Atom::Null.into()]);
     assert_eq!(describe(&Unit), ["unit struct Unit"]);
-    // text of unknown type which is empty is null (like for `()`)
+    // text of unknown type which is empty is null (like for `()`) if empty
+    // text is a missing value
     assert_eq!(
-        deserialize::<Unit>(vec![Atom::Lexical("".into()).into()]).unwrap(),
+        deserialize_lenient::<Unit>(vec![Atom::Lexical("".into()).into()]).unwrap(),
         Unit
     );
+    let err = deserialize::<Unit>(vec![Atom::Lexical("".into()).into()]).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected Unit");
     let err = deserialize::<Unit>(vec![42u64.into()]).unwrap_err();
     assert_eq!(err.message(), "unexpected unsigned integer, expected Unit");
     let err = deserialize::<Unit>(vec![Event::seq_start()]).unwrap_err();

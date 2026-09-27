@@ -1,7 +1,7 @@
 //! Sinks that collect the events of a value for serde.
 use std::borrow::Cow;
 
-use deser_core::de::{Sink, SinkHandle};
+use deser_core::de::{LexicalRules, Sink, SinkHandle};
 use deser_core::{Atom, Event, State};
 
 use crate::de::{Single, ValueDe};
@@ -27,8 +27,9 @@ pub(crate) trait Collector<'de, T>: Push<'de> {
 /// `IpAddr`), these are deserialized directly.
 fn deserialize_atom<'de, T: serde::Deserialize<'de>>(
     atom: Atom<'de>,
+    state: &State,
 ) -> Result<T, deser_core::Error> {
-    let mut src = Single(Some(Event::Atom(atom)));
+    let mut src = Single(Some(Event::Atom(atom)), LexicalRules::of(state));
     T::deserialize(ValueDe::new(&mut src)).map_err(Error::into_deser)
 }
 
@@ -54,17 +55,17 @@ where
     T: serde::Deserialize<'de> + Send,
     C: Collector<'de, T>,
 {
-    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), deser_core::Error> {
-        *self.out = Some(deserialize_atom(atom.to_static())?);
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser_core::Error> {
+        *self.out = Some(deserialize_atom(atom.to_static(), state)?);
         Ok(())
     }
 
     fn borrowed_atom(
         &mut self,
         atom: Atom<'de>,
-        _state: &mut State,
+        state: &mut State,
     ) -> Result<(), deser_core::Error> {
-        *self.out = Some(deserialize_atom(atom)?);
+        *self.out = Some(deserialize_atom(atom, state)?);
         Ok(())
     }
 

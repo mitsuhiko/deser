@@ -33,7 +33,10 @@
 //! Everything in a CSV file is text, only the type a field is deserialized
 //! into knows what it means.  Fields are therefore passed on as [lexical
 //! atoms](deser_core::Atom::Lexical) which are parsed by the types they are
-//! delivered to: numbers parse them, strings take them as they are.  This
+//! delivered to: numbers parse them, strings take them as they are.  They
+//! are interpreted with the [lenient
+//! rules](deser_core::de::LexicalRules::LENIENT): `yes`, `on` and `1` are
+//! booleans too and empty fields are `None` for optional numbers.  This
 //! also works when values are buffered, so flattened structs and
 //! internally tagged and untagged enums work:
 //!

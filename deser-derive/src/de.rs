@@ -249,7 +249,7 @@ fn derive_unit_struct(
                 __atom: __deser::Atom,
                 __state: &mut __deser::State,
             ) -> __deser::__derive::Result<()> {
-                __deser::__derive::unit_struct(&__atom, #type_name)?;
+                __deser::__derive::unit_struct(&__atom, #type_name, __state)?;
                 *__slot = __deser::__derive::Some(#construct);
                 __deser::__derive::Ok(())
             }

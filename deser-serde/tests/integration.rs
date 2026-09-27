@@ -264,9 +264,12 @@ macro_rules! adapter_tests {
                 }
                 assert_eq!(*out.unwrap(), Point { x: 1, y: -2 });
 
+                // with the lexical rules of the deserialization, `on` is a
+                // bool in a query string
                 let mut out = None::<As<(bool, String, IpAddr), A>>;
                 {
                     let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                    deser::de::LexicalRules::LENIENT.set(driver.state_mut());
                     for event in [
                         deser::Event::seq_start(),
                         lexical("on"),
@@ -281,6 +284,11 @@ macro_rules! adapter_tests {
                 assert!(flag);
                 assert_eq!(s, "42");
                 assert_eq!(addr, "::1".parse::<IpAddr>().unwrap());
+
+                // but not with the default rules
+                let mut out = None::<As<bool, A>>;
+                let mut driver = deser::de::DeserializeDriver::new(&mut out);
+                assert!(driver.emit(lexical("on")).is_err());
             }
 
             #[test]

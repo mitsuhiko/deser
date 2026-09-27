@@ -55,14 +55,12 @@ pub enum Atom<'a> {
     /// not borrow for the lifetime of the input.  Serializers write it as
     /// string.
     ///
-    /// The following types parse lexical atoms:
-    ///
-    /// * integers and floats with [`str::parse`]
-    /// * `bool` from `true`, `yes`, `on` and `1` and `false`, `no`, `off`
-    ///   and `0` (ignoring ASCII case)
-    /// * `()` from the empty string
-    ///
-    /// All other types that accept strings accept lexical atoms as string.
+    /// Integers and floats parse lexical atoms with [`str::parse`], how
+    /// booleans are spelled, if empty text is a missing value and if text is
+    /// a sequence of one element depends on the
+    /// [`LexicalRules`](crate::de::LexicalRules) of the deserialization,
+    /// which the format sets.  All other types that accept strings accept
+    /// lexical atoms as string.
     Lexical(Text<'a>),
     Bytes(Bytes<'a>),
     Char(char),

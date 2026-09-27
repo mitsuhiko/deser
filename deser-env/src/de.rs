@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use deser_core::Text;
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, DeserializeOwned, DuplicateKeys};
+use deser_core::de::{
+    self, Deserialize, DeserializeDriver, DeserializeOwned, DuplicateKeys, LexicalRules,
+};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::{Case, EnvVar};
@@ -340,6 +342,7 @@ impl<'a> Deserializer<'a> {
             *state.get_mut::<BytesFormat>() = self.config.bytes;
         }
         *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        LexicalRules::LENIENT.set(state);
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)
     }

@@ -1,6 +1,7 @@
 //! Bridges serde by buffering the events of a value.
 use std::iter::Peekable;
 
+use deser_core::de::LexicalRules;
 use deser_core::ser::{Chunk, SerializeHandle};
 use deser_core::{Atom, ErrorKind, Event, State};
 
@@ -18,6 +19,7 @@ struct Recorded<'de> {
 #[derive(Default)]
 pub(crate) struct Buffer<'de> {
     events: Vec<Recorded<'de>>,
+    rules: LexicalRules,
 }
 
 impl<'de> Push<'de> for Buffer<'de> {
@@ -32,6 +34,7 @@ impl<'de> Push<'de> for Buffer<'de> {
 
 impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
     fn begin(&mut self, event: Event<'de>, state: &State) -> Result<(), deser_core::Error> {
+        self.rules = LexicalRules::of(state);
         self.push(event, state)
     }
 
@@ -39,6 +42,7 @@ impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
         let mut src = BufferSource {
             events: std::mem::take(&mut self.events).into_iter().peekable(),
             offset: None,
+            rules: self.rules,
         };
         T::deserialize(ValueDe::new(&mut src)).map_err(|err| {
             // the error refers to the event that was consumed last.  The
@@ -55,6 +59,7 @@ impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
 struct BufferSource<'de> {
     events: Peekable<std::vec::IntoIter<Recorded<'de>>>,
     offset: Option<usize>,
+    rules: LexicalRules,
 }
 
 impl<'de> Source<'de> for BufferSource<'de> {
@@ -69,6 +74,10 @@ impl<'de> Source<'de> for BufferSource<'de> {
             Some(recorded) => Ok(&recorded.event),
             None => Err(unexpected_end()),
         }
+    }
+
+    fn lexical_rules(&self) -> LexicalRules {
+        self.rules
     }
 }
 

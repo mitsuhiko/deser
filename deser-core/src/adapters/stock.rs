@@ -11,7 +11,7 @@ use crate::State;
 use crate::Text;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
-use crate::de::lexical::parse_bool;
+use crate::de::lexical::parse_bool_with;
 use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, conversion_error};
@@ -258,7 +258,7 @@ impl<'de> Sink<'de> for FlagSlot<bool> {
             Atom::Bool(value) => value,
             Atom::Null => true,
             Atom::Str(ref value) | Atom::Lexical(ref value) if value.is_empty() => true,
-            Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool(value, state)?,
+            Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool_with(value, true, state)?,
             other => return self.unexpected_atom(other, state),
         };
         **self = Some(value);

@@ -247,6 +247,7 @@ pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
+pub use self::lexical::LexicalRules;
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
@@ -411,13 +412,13 @@ pub(crate) fn is_null_atom(atom: &Atom) -> bool {
     }
 }
 
-/// Checks if an atom is an empty lexical atom.
+/// Checks if an atom is an empty lexical atom that is a missing value.
 ///
 /// Optionals are `None` for these if the value rejects them (like the
-/// empty value of a number in a query string).
+/// empty value of a number in a query string), see [`LexicalRules`].
 #[inline]
-pub(crate) fn is_empty_lexical(atom: &Atom) -> bool {
-    matches!(atom, Atom::Lexical(value) if value.is_empty())
+pub(crate) fn is_empty_lexical(atom: &Atom, state: &State) -> bool {
+    matches!(atom, Atom::Lexical(value) if lexical::is_empty_null(value, state))
 }
 
 /// Delivers an empty lexical atom to an optional value.
@@ -452,7 +453,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         if self.skip_null(&atom) {
             return Ok(());
         }
-        if self.is_optional() && is_empty_lexical(&atom) {
+        if self.is_optional() && is_empty_lexical(&atom, state) {
             if !empty_lexical_or_none(atom, state, |atom, state| self.sink_mut().atom(atom, state))?
             {
                 *self = SinkHandle::null();
@@ -468,7 +469,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         if self.skip_null(&atom) {
             return Ok(());
         }
-        if self.is_optional() && is_empty_lexical(&atom) {
+        if self.is_optional() && is_empty_lexical(&atom, state) {
             let delivered = empty_lexical_or_none(atom, state, |atom, state| {
                 self.sink_mut().borrowed_atom(atom, state)
             })?;

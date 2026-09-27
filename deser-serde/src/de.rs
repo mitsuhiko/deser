@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 
 use deser_core::Text;
+use deser_core::de::LexicalRules;
 use deser_core::{Atom, ErrorKind, Event};
 use serde::de::{self, DeserializeSeed, Visitor};
 
@@ -17,10 +18,13 @@ pub(crate) trait Source<'de> {
 
     /// Returns the next event without consuming it.
     fn peek(&mut self) -> Result<&Event<'de>, Error>;
+
+    /// Returns the rules lexical atoms are parsed with.
+    fn lexical_rules(&self) -> LexicalRules;
 }
 
 /// A source holding a single event.
-pub(crate) struct Single<'de>(pub Option<Event<'de>>);
+pub(crate) struct Single<'de>(pub Option<Event<'de>>, pub LexicalRules);
 
 impl<'de> Source<'de> for Single<'de> {
     fn next(&mut self) -> Result<Event<'de>, Error> {
@@ -29,6 +33,10 @@ impl<'de> Source<'de> for Single<'de> {
 
     fn peek(&mut self) -> Result<&Event<'de>, Error> {
         self.0.as_ref().ok_or_else(unexpected_end)
+    }
+
+    fn lexical_rules(&self) -> LexicalRules {
+        self.1
     }
 }
 
@@ -113,9 +121,13 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
 }
 
 /// Parses a lexical atom into a type with the rules of deser.
-fn parse_lexical<T: deser_core::de::DeserializeOwned>(value: &str) -> Result<T, Error> {
+fn parse_lexical<T: deser_core::de::DeserializeOwned>(
+    value: &str,
+    rules: LexicalRules,
+) -> Result<T, Error> {
     let mut out = None;
     let mut state = deser_core::State::new();
+    rules.set(&mut state);
     {
         let mut sink = T::deserialize_into(&mut out);
         sink.atom(Atom::Lexical(Text::borrowed(value)), &mut state)?;
@@ -142,8 +154,9 @@ macro_rules! parse_lexical {
     ($($method:ident => $ty:ty, $visit:ident;)*) => {
         $(
             fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+                let rules = self.src.lexical_rules();
                 if let Event::Atom(Atom::Lexical(s)) = self.src.peek()? {
-                    let value = parse_lexical::<$ty>(s)?;
+                    let value = parse_lexical::<$ty>(s, rules)?;
                     self.src.next()?;
                     return visitor.$visit(value);
                 }
@@ -385,7 +398,7 @@ impl<'de, 's, S: Source<'de>> de::EnumAccess<'de> for EnumAccess<'s, 'de, S> {
         self,
         seed: V,
     ) -> Result<(V::Value, Self::Variant), Error> {
-        let mut variant = Single(Some(Event::Atom(self.variant)));
+        let mut variant = Single(Some(Event::Atom(self.variant)), self.src.lexical_rules());
         let value = seed.deserialize(ValueDe::new(&mut variant))?;
         Ok((
             value,
