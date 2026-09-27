@@ -361,24 +361,41 @@ threads.
 
 ## Crates
 
-* [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the core crate
-* [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive): derive macros
+Core:
+
+* [deser](https://github.com/mitsuhiko/deser/tree/main/deser): the
+  crate you depend on, re-exports the core and the derive macros
+* [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive):
+  derive macros (enabled with the `derive` feature of `deser`)
+* [deser-core](https://github.com/mitsuhiko/deser/tree/main/deser-core): an
+  internal crate with everything but the derive macros.  Format crates
+  depend on it so they compile in parallel with the derive macros.  Use
+  `deser` instead.
+
+Formats:
+
 * [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): JSON
+* [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
+* [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR
 * [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack): MessagePack
-* [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
-* [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
 * [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv): CSV and TSV
 * [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded): query strings and forms
 * [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env): environment variables
+* [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): debug formatting
+
+Layers and adapters:
+
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): paths in errors
 * [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location): line and column of values
 * [deser-validate](https://github.com/mitsuhiko/deser/tree/main/deser-validate): validation
-* [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): debug formatting
-* [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): tokio support
+* [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding): hex and base32 encodings of bytes
+
+Integrations:
+
 * [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value): dynamic values
+* [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): async IO with tokio
 * [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): serde interop
-* [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding): hex and base32
 
 ## Inspiration
 
