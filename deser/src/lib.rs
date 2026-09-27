@@ -33,6 +33,11 @@ pub struct Account {
 //!
 //! * [`deser-json`](https://docs.rs/deser-json): implements JSON serialization and
 //!   deserialization.
+//! * [`deser-jsonc`](https://docs.rs/deser-jsonc): implements deserialization of
+//!   JSONC (JSON with comments, as used by configuration files) and serialization
+//!   as JSON.
+//! * [`deser-json5`](https://docs.rs/deser-json5): implements deserialization of
+//!   [JSON5](https://json5.org/) and serialization as JSON.
 //! * [`deser-cbor`](https://docs.rs/deser-cbor): implements CBOR serialization and
 //!   deserialization.
 //! * [`deser-msgpack`](https://docs.rs/deser-msgpack): implements MessagePack
