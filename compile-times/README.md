@@ -12,9 +12,9 @@ Clean builds of a small program with one struct and one enum
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.62s | 2.78s | 3.18s           |
-| miniserde | 1.91s | 2.15s | 2.36s           |
-| deser     | 2.96s | 3.44s | 3.49s           |
+| serde     | 2.44s | 2.83s | 2.96s           |
+| miniserde | 1.93s | 2.08s | 2.25s           |
+| deser     | 2.93s | 3.38s | 3.50s           |
 
 A program with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -22,39 +22,41 @@ enums which are all read and written as JSON, without the dependencies
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.33s | 0.45s | 8.12s           |
+| serde     | 0.33s | 0.45s | 8.06s           |
 | miniserde | 0.15s | 0.24s | 1.59s           |
-| deser     | 0.34s | 0.47s | 6.72s           |
+| deser     | 0.30s | 0.44s | 4.33s           |
 
-* Clean builds are slower than with serde (0.3s-0.7s), they are dominated
-  by the dependencies.
-* Debug builds of derived code cost the same as with serde.
-* Release builds of derived code are 17% faster than with serde, but four
-  times slower than with miniserde.  deser does not generate less code
-  than serde (505k lines of LLVM IR according to `cargo llvm-lines`,
-  serde 410k, miniserde 128k) and the binary is larger (2.2 MiB, serde
-  1.5 MiB, miniserde 0.9 MiB), the code is just cheaper to optimize as
-  it's less generic.
+* Clean builds are the slowest of the three (0.5s-1.3s slower than
+  serde and miniserde).  This is the order in which the crates are
+  compiled, not the amount of code (see below).
+* Release builds of derived code are almost twice as fast as with serde
+  but still almost three times slower than with miniserde.  deser
+  generates 291k lines of LLVM IR (`cargo llvm-lines`) for the 100
+  types, serde 410k and miniserde 128k.  Most of it is deserialization,
+  a program that only derives `Deserialize` takes 3.0s to build, one that
+  only derives `Serialize` 1.5s.
 
 ## Areas of Interest
 
 * **The derive macro is on the critical path of clean builds.**  `deser`
   re-exports the derive macros, so it only starts compiling after `syn`
-  and `deser-derive` are done: syn, deser-derive, deser (1.3s in debug
-  builds), deser-json and the program are compiled one after the other.
-  serde avoids this with `serde_core` which compiles in parallel with the
-  proc macro.  A core crate without the macros would take an estimated
-  1s off a clean debug build.
-* **Default methods of `Sink` are compiled for every sink.**  A quarter
-  of the LLVM IR of the 100 types comes from default methods that are
-  instantiated for every sink type because they are in its vtable:
-  `unexpected_atom` (180 lines, for three sinks per type, 10% of the
-  total), the `__private_*_atom` shortcuts (70 lines each, for the key
-  and enum sinks) and `map`/`seq` (55 lines each).  Only small parts of
-  them depend on the sink, moving the rest into shared non-generic
-  functions would shrink the code of every derived type.
-* **The derived `finish` and `value_for_key`** are the largest functions
-  that are unique to a type (about 380 lines each for eight fields).
+  and `deser-derive` are done: syn, deser-derive, deser (1.2s-1.5s in
+  debug builds), deser-json and the program are compiled one after the
+  other.  serde avoids this with `serde_core` which compiles in parallel
+  with the proc macro.  With a core crate that does not depend on
+  `deser-derive` (and the formats depending on it) the clean debug build
+  of the small program takes 2.2s, as fast as miniserde.
+* **`deser-derive` itself** takes 0.64s to compile (miniserde's derive
+  0.15s).  After the core crate it would be the critical path.
+* **The atom shortcuts of derived structs** (`__private_value_atom`)
+  inline the conversion of every field's type into every struct and are
+  the largest part of the derived deserialization that remains.  They
+  are worth 5%-11% at runtime for struct heavy data, calling the
+  conversions out of line saves little.
+* **The plain fields of derived structs** (`emit_plain_fields`) are half
+  of the derived serialization code.  Emitting them through a function
+  that exists once per type builds 20% faster but serializes structs
+  3%-8% slower, so it's not done.
 
 ## Running
 
