@@ -4,6 +4,12 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(alias_all = "...")]` for structs and enums which adds an
+  alias in a name style (like `rename_all`) to all fields or variants.  It
+  can be given more than once.
+- `rename` and `alias` take paths to constants and macro invocations (such
+  as `concat!(...)`) besides string literals, for fields, variants and
+  types.
 - Variants can be named by integers and booleans (`#[deser(rename = 1)]`,
   `#[deser(rename = true)]`, also for `alias`).  They are written as such
   in all enum representations.  Tags of unknown type (the keys of JSON

@@ -559,4 +559,51 @@
 ///     field: u32,
 /// }
 /// ```
+///
+/// Names are strings, paths to constants or macro invocations, other
+/// expressions are not supported.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(rename = "a".trim())]
+///     field: u32,
+/// }
+/// ```
+///
+/// `Self` is not supported in names.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(rename = Self::NAME)]
+///     field: u32,
+/// }
+///
+/// impl Test {
+///     const NAME: &'static str = "name";
+/// }
+/// ```
+///
+/// Names that are expressions need to be strings.
+///
+/// ```compile_fail
+/// const NAME: u32 = 1;
+///
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(rename = NAME)]
+///     field: u32,
+/// }
+/// ```
+///
+/// `alias_all` takes the same styles as `rename_all`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(alias_all = "Title Case")]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
 pub struct DeriveErrors;

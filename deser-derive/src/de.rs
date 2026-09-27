@@ -4,7 +4,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, EnumVariantAttrs, FieldAttrs, TypeDefault, UnnamedFieldAttrs};
+use crate::attr::{
+    ContainerAttrs, EnumVariantAttrs, FieldAttrs, Name, TypeDefault, UnnamedFieldAttrs, VariantName,
+};
 use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
 
 /// Returns an expression that creates a sink handle for a slot.
@@ -154,20 +156,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             continue;
         }
 
-        let name = x.name(&container_attrs).to_string();
-        if first_duplicate_name.is_none() && seen_names.contains(&name) {
-            first_duplicate_name = Some((name.clone(), x.field()));
-        }
-        seen_names.insert(name.clone());
-
-        let mut rv = quote! { #name };
-        for alias in x.aliases() {
-            let alias = alias.clone();
-            if first_duplicate_name.is_none() && seen_names.contains(&alias) {
-                first_duplicate_name = Some((alias.clone(), x.field()));
+        let names = std::iter::once(x.name(&container_attrs))
+            .chain(x.aliases(&container_attrs))
+            .collect::<Vec<_>>();
+        for name in &names {
+            if first_duplicate_name.is_none() && !seen_names.insert(name.clone()) {
+                first_duplicate_name = Some((name.display(), x.field()));
             }
-            seen_names.insert(alias.clone());
-            rv = quote! { #rv | #alias };
         }
         let ty = &x.field().ty;
         let mut sink = deserialize_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
@@ -190,9 +185,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             atom = quote! {{ #atom?; #validate; __deser::__derive::Ok(()) }};
             borrowed_atom = quote! {{ #borrowed_atom?; #validate; __deser::__derive::Ok(()) }};
         }
-        key_matcher.push(quote! {
-            #rv => __Key::Field(#index),
-        });
+        key_matcher.push(Name::str_arms(&names, quote! { __Key::Field(#index) }));
         key_dispatch.push(quote! {
             __Key::Field(#index) => #sink,
         });
@@ -251,7 +244,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 // this should never happen unless the inner deserializer fucked up
                 let error = format!(
                     "failed to deserialize flattened field `{}`",
-                    attrs.name(&container_attrs)
+                    attrs.field().ident.as_ref().unwrap()
                 );
                 quote! {
                     match #name {
@@ -351,9 +344,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         .iter()
         .map(|x| {
             if x.flatten() {
-                String::new()
+                quote! { "" }
             } else {
-                x.name(&container_attrs).to_string()
+                let name = x.name(&container_attrs);
+                quote! { #name }
             }
         })
         .collect::<Vec<_>>();
@@ -763,18 +757,22 @@ pub fn derive_enum(
 
     let mut seen_names = HashSet::new();
     let mut matcher = Vec::new();
-    for x in attrs.iter() {
-        let mut patterns = Vec::new();
-        for name in std::iter::once(x.name(&container_attrs)).chain(x.aliases().iter().cloned()) {
+    for (x, var_ident) in attrs.iter().zip(var_idents.iter()) {
+        let names = std::iter::once(x.name(&container_attrs))
+            .chain(x.aliases(&container_attrs))
+            .collect::<Vec<_>>();
+        for name in &names {
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     x.variant(),
                     format!("variant name `{}` used more than once", name.display()),
                 ));
             }
-            patterns.push(name.tag_pattern());
         }
-        matcher.push(quote! { #(#patterns)|* });
+        matcher.push(VariantName::tag_arms(
+            &names,
+            quote! { __deser::__derive::Some(#ident::#var_ident) },
+        ));
     }
 
     if let Some(attrs) = attrs.iter().find(|x| x.default()) {
@@ -796,7 +794,7 @@ pub fn derive_enum(
             quote! { #ident::#var_ident }
         }
         None => {
-            let names = attrs.iter().map(|x| x.name(&container_attrs).display());
+            let names = attrs.iter().map(|x| x.name(&container_attrs).str_expr());
             quote! {
                 return __deser::__derive::Err(
                     __deser::__derive::unknown_variant_atom(&__atom, &[#(#names),*], #type_name)
@@ -870,7 +868,7 @@ pub fn derive_enum(
                         return self.unexpected_atom(__atom, __state);
                     }
                     let __found = __deser::__derive::lookup_atom(&__atom, |__tag| match __tag {
-                        #( #matcher => __deser::__derive::Some(#ident::#var_idents), )*
+                        #( #matcher )*
                         _ => __deser::__derive::None,
                     });
                     let value = match __found {

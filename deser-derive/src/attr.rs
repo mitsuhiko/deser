@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use syn::meta::ParseNestedMeta;
@@ -121,6 +119,67 @@ pub enum RenameAll {
 }
 
 impl RenameAll {
+    /// Converts the name of a field (in snake case) to the style.
+    fn apply_to_field(self, name: &str) -> String {
+        match self {
+            RenameAll::LowerCase | RenameAll::SnakeCase => name.to_string(),
+            RenameAll::UpperCase | RenameAll::ScreamingSnakeCase => name.to_ascii_uppercase(),
+            RenameAll::PascalCase | RenameAll::CamelCase => {
+                let mut rv = String::new();
+                let mut capitalize = matches!(self, RenameAll::PascalCase);
+                for ch in name.chars() {
+                    if ch == '_' {
+                        capitalize = true;
+                    } else if capitalize {
+                        rv.push(ch.to_ascii_uppercase());
+                        capitalize = false;
+                    } else {
+                        rv.push(ch);
+                    }
+                }
+                rv
+            }
+            RenameAll::KebabCase => name.replace("_", "-"),
+            RenameAll::ScreamingKebabCase => name.replace("_", "-").to_ascii_uppercase(),
+        }
+    }
+
+    /// Converts the name of a variant (in pascal case) to the style.
+    fn apply_to_variant(self, name: &str) -> String {
+        match self {
+            RenameAll::PascalCase => name.to_string(),
+            RenameAll::LowerCase => name.to_ascii_lowercase(),
+            RenameAll::UpperCase => name.to_ascii_uppercase(),
+            RenameAll::CamelCase => name[..1].to_ascii_lowercase() + &name[1..],
+            RenameAll::SnakeCase
+            | RenameAll::ScreamingSnakeCase
+            | RenameAll::KebabCase
+            | RenameAll::ScreamingKebabCase => {
+                let sep = if matches!(self, RenameAll::SnakeCase | RenameAll::ScreamingSnakeCase) {
+                    '_'
+                } else {
+                    '-'
+                };
+                let upper = matches!(
+                    self,
+                    RenameAll::ScreamingKebabCase | RenameAll::ScreamingSnakeCase
+                );
+                let mut rv = String::new();
+                for (i, ch) in name.char_indices() {
+                    if i > 0 && ch.is_uppercase() {
+                        rv.push(sep);
+                    }
+                    rv.push(if upper {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        ch.to_ascii_lowercase()
+                    });
+                }
+                rv
+            }
+        }
+    }
+
     fn parse(lit: &syn::LitStr) -> syn::Result<RenameAll> {
         match lit.value().as_str() {
             "lowercase" => Ok(RenameAll::LowerCase),
@@ -136,6 +195,133 @@ impl RenameAll {
     }
 }
 
+/// The name of a field or a type.
+///
+/// Names are string literals or expressions that evaluate to a
+/// `&'static str` at compile time: paths to constants and macro
+/// invocations (such as `concat!(...)`).
+#[derive(Clone)]
+pub enum Name {
+    Lit(String),
+    Expr(syn::Expr),
+}
+
+impl Name {
+    /// Parses the value of `name = ...`.
+    fn parse(meta: &ParseNestedMeta) -> syn::Result<Name> {
+        let expr: syn::Expr = meta.value()?.parse()?;
+        Name::from_expr(expr)
+    }
+
+    fn from_expr(expr: syn::Expr) -> syn::Result<Name> {
+        match expr {
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(ref lit),
+                ..
+            }) => Ok(Name::Lit(lit.value())),
+            syn::Expr::Path(_) | syn::Expr::Macro(_) => {
+                reject_self(expr.to_token_stream())?;
+                Ok(Name::Expr(expr))
+            }
+            _ => Err(syn::Error::new_spanned(
+                expr,
+                "expected a string, a path to a constant or a macro invocation",
+            )),
+        }
+    }
+
+    /// Returns the name if it's a string literal.
+    pub fn as_lit(&self) -> Option<&str> {
+        match self {
+            Name::Lit(name) => Some(name),
+            Name::Expr(_) => None,
+        }
+    }
+
+    /// Returns the name for messages of the derive.
+    ///
+    /// For expressions this is the expression.
+    pub fn display(&self) -> String {
+        match self {
+            Name::Lit(name) => name.clone(),
+            Name::Expr(expr) => expr.to_token_stream().to_string(),
+        }
+    }
+
+    /// Returns match arms for names as `&str` that evaluate to `result`.
+    ///
+    /// Expressions cannot be used as patterns, they are compared in guards.
+    pub fn str_arms(names: &[Name], result: TokenStream) -> TokenStream {
+        name_arms(
+            names,
+            result,
+            |name| quote! { #name },
+            |binding| quote! { #binding },
+        )
+    }
+}
+
+/// Returns match arms for names that evaluate to `result`.
+///
+/// `lit_pattern` makes a pattern for a literal, `binding_pattern` a pattern
+/// that binds the `&str` to compare expressions with.
+fn name_arms(
+    names: &[Name],
+    result: TokenStream,
+    lit_pattern: impl Fn(&str) -> TokenStream,
+    binding_pattern: impl Fn(&syn::Ident) -> TokenStream,
+) -> TokenStream {
+    let lits = names
+        .iter()
+        .filter_map(|x| x.as_lit())
+        .map(&lit_pattern)
+        .collect::<Vec<_>>();
+    let binding = syn::Ident::new("__name", Span::call_site());
+    let pattern = binding_pattern(&binding);
+    let exprs = names.iter().filter_map(|x| match x {
+        Name::Expr(expr) => Some(expr),
+        Name::Lit(_) => None,
+    });
+    let mut rv = if lits.is_empty() {
+        TokenStream::new()
+    } else {
+        quote! { #(#lits)|* => #result, }
+    };
+    for expr in exprs {
+        rv.extend(quote! { #pattern if #binding == (#expr) => #result, });
+    }
+    rv
+}
+
+impl ToTokens for Name {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Name::Lit(name) => name.to_tokens(tokens),
+            Name::Expr(expr) => quote! { (#expr) }.to_tokens(tokens),
+        }
+    }
+}
+
+impl PartialEq for Name {
+    fn eq(&self, other: &Name) -> bool {
+        match (self, other) {
+            (Name::Lit(a), Name::Lit(b)) => a == b,
+            // expressions are compared by their tokens
+            (Name::Expr(_), Name::Expr(_)) => self.display() == other.display(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Name {}
+
+impl std::hash::Hash for Name {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_lit().is_some().hash(state);
+        self.display().hash(state);
+    }
+}
+
 #[derive(Clone)]
 pub enum TypeDefault {
     Implicit,
@@ -147,8 +333,9 @@ pub struct ContainerAttrs<'a> {
     ident: &'a syn::Ident,
     seen: Vec<SeenAttr>,
     adapters: Adapters,
-    rename: Option<String>,
+    rename: Option<Name>,
     rename_all: Option<RenameAll>,
+    alias_all: Vec<RenameAll>,
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
     deny_unknown_fields: bool,
@@ -400,6 +587,7 @@ impl<'a> ContainerAttrs<'a> {
             adapters: Adapters::default(),
             rename: None,
             rename_all: None,
+            alias_all: Vec::new(),
             default: None,
             skip_serializing_optionals: false,
             deny_unknown_fields: false,
@@ -426,8 +614,12 @@ impl<'a> ContainerAttrs<'a> {
                 let value = RenameAll::parse(&parse_lit_str(meta)?)?;
                 set_once(meta, name, &mut rv.rename_all, value)
             }
+            "alias_all" => {
+                rv.alias_all.push(RenameAll::parse(&parse_lit_str(meta)?)?);
+                Ok(())
+            }
             "rename" => {
-                let value = parse_str(meta)?;
+                let value = Name::parse(meta)?;
                 set_once(meta, name, &mut rv.rename, value)
             }
             "tag" => {
@@ -512,55 +704,43 @@ impl<'a> ContainerAttrs<'a> {
         &self.adapters
     }
 
-    pub fn container_name(&self) -> String {
+    pub fn container_name(&self) -> Name {
         match self.rename {
             Some(ref name) => name.clone(),
-            None => self.ident.to_string(),
+            None => Name::Lit(self.ident.to_string()),
         }
     }
 
     pub fn get_field_name(&self, field: &syn::Field) -> String {
         let name = field.ident.as_ref().unwrap().to_string();
-        if let Some(rename_all) = self.rename_all {
-            match rename_all {
-                RenameAll::LowerCase | RenameAll::SnakeCase => name,
-                RenameAll::UpperCase | RenameAll::ScreamingSnakeCase => name.to_ascii_uppercase(),
-                RenameAll::PascalCase => {
-                    let mut pascal = String::new();
-                    let mut capitalize = true;
-                    for ch in name.chars() {
-                        if ch == '_' {
-                            capitalize = true;
-                        } else if capitalize {
-                            pascal.push(ch.to_ascii_uppercase());
-                            capitalize = false;
-                        } else {
-                            pascal.push(ch);
-                        }
-                    }
-                    pascal
-                }
-                RenameAll::CamelCase => {
-                    let mut camel = String::new();
-                    let mut capitalize = false;
-                    for ch in name.chars() {
-                        if ch == '_' {
-                            capitalize = true;
-                        } else if capitalize {
-                            camel.push(ch.to_ascii_uppercase());
-                            capitalize = false;
-                        } else {
-                            camel.push(ch);
-                        }
-                    }
-                    camel
-                }
-                RenameAll::KebabCase => name.replace("_", "-"),
-                RenameAll::ScreamingKebabCase => name.replace("_", "-").to_ascii_uppercase(),
-            }
-        } else {
-            name
+        match self.rename_all {
+            Some(rename_all) => rename_all.apply_to_field(&name),
+            None => name,
         }
+    }
+
+    /// Returns the aliases of a field from `alias_all`.
+    ///
+    /// Aliases that are the same as the name of the field are skipped.
+    pub fn field_aliases(&self, field: &syn::Field, name: &Name) -> Vec<Name> {
+        let ident = field.ident.as_ref().unwrap().to_string();
+        let styles = self.alias_all.iter().map(|x| x.apply_to_field(&ident));
+        unique_aliases(styles, name)
+    }
+
+    /// Returns the aliases of a variant from `alias_all`.
+    ///
+    /// Aliases that are the same as the name of the variant are skipped.
+    pub fn variant_aliases(&self, variant: &syn::Variant, name: &VariantName) -> Vec<VariantName> {
+        let ident = variant.ident.to_string();
+        let mut rv: Vec<VariantName> = Vec::new();
+        for alias in self.alias_all.iter().map(|x| x.apply_to_variant(&ident)) {
+            let alias = VariantName::Str(Name::Lit(alias));
+            if alias != *name && !rv.contains(&alias) {
+                rv.push(alias);
+            }
+        }
+        rv
     }
 
     pub fn default(&self) -> Option<&TypeDefault> {
@@ -628,46 +808,22 @@ impl<'a> ContainerAttrs<'a> {
 
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
         let name = variant.ident.to_string();
-        if let Some(rename_all) = self.rename_all {
-            match rename_all {
-                RenameAll::PascalCase => name,
-                RenameAll::LowerCase => name.to_ascii_lowercase(),
-                RenameAll::UpperCase => name.to_ascii_uppercase(),
-                RenameAll::CamelCase => name[..1].to_ascii_lowercase() + &name[1..],
-                RenameAll::SnakeCase
-                | RenameAll::ScreamingSnakeCase
-                | RenameAll::KebabCase
-                | RenameAll::ScreamingKebabCase => {
-                    let sep = if matches!(
-                        rename_all,
-                        RenameAll::SnakeCase | RenameAll::ScreamingSnakeCase
-                    ) {
-                        '_'
-                    } else {
-                        '-'
-                    };
-                    let upper = matches!(
-                        rename_all,
-                        RenameAll::ScreamingKebabCase | RenameAll::ScreamingSnakeCase
-                    );
-                    let mut rv = String::new();
-                    for (i, ch) in name.char_indices() {
-                        if i > 0 && ch.is_uppercase() {
-                            rv.push(sep);
-                        }
-                        rv.push(if upper {
-                            ch.to_ascii_uppercase()
-                        } else {
-                            ch.to_ascii_lowercase()
-                        });
-                    }
-                    rv
-                }
-            }
-        } else {
-            name
+        match self.rename_all {
+            Some(rename_all) => rename_all.apply_to_variant(&name),
+            None => name,
         }
     }
+}
+
+/// Returns the aliases that differ from the name, without duplicates.
+fn unique_aliases(aliases: impl Iterator<Item = String>, name: &Name) -> Vec<Name> {
+    let mut rv: Vec<Name> = Vec::new();
+    for alias in aliases {
+        if name.as_lit() != Some(alias.as_str()) && !rv.iter().any(|x| x.as_lit() == Some(&alias)) {
+            rv.push(Name::Lit(alias));
+        }
+    }
+    rv
 }
 
 /// The attributes of unnamed fields (of newtype structs and tuple variants).
@@ -716,8 +872,8 @@ impl UnnamedFieldAttrs {
 pub struct FieldAttrs<'a> {
     field: &'a syn::Field,
     seen: Vec<SeenAttr>,
-    rename: Option<String>,
-    aliases: Vec<String>,
+    rename: Option<Name>,
+    aliases: Vec<Name>,
     default: Option<TypeDefault>,
     flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
@@ -748,11 +904,11 @@ impl<'a> FieldAttrs<'a> {
                 Ok(())
             }
             "rename" => {
-                let value = parse_str(meta)?;
+                let value = Name::parse(meta)?;
                 set_once(meta, name, &mut rv.rename, value)
             }
             "alias" => {
-                rv.aliases.push(parse_str(meta)?);
+                rv.aliases.push(Name::parse(meta)?);
                 Ok(())
             }
             "default" => {
@@ -818,23 +974,29 @@ impl<'a> FieldAttrs<'a> {
         self.seen
     }
 
-    pub fn name(&self, container_attrs: &ContainerAttrs) -> Cow<'_, str> {
+    pub fn name(&self, container_attrs: &ContainerAttrs) -> Name {
         self.rename
-            .as_deref()
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| container_attrs.get_field_name(self.field).into())
+            .clone()
+            .unwrap_or_else(|| Name::Lit(container_attrs.get_field_name(self.field)))
     }
 
-    pub fn aliases(&self) -> &[String] {
-        &self.aliases
+    /// Returns the aliases of the field, including those of `alias_all`.
+    pub fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<Name> {
+        let mut rv = self.aliases.clone();
+        let name = self.name(container_attrs);
+        for alias in container_attrs.field_aliases(self.field, &name) {
+            if !rv.contains(&alias) {
+                rv.push(alias);
+            }
+        }
+        rv
     }
 
     /// Returns the name of the field ignoring container level renames.
-    pub fn plain_name(&self) -> Cow<'_, str> {
+    pub fn plain_name(&self) -> Name {
         self.rename
-            .as_deref()
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| self.field.ident.as_ref().unwrap().to_string().into())
+            .clone()
+            .unwrap_or_else(|| Name::Lit(self.field.ident.as_ref().unwrap().to_string()))
     }
 
     pub fn default(&self) -> Option<&TypeDefault> {
@@ -870,7 +1032,7 @@ impl<'a> FieldAttrs<'a> {
 /// Variants are named by strings, integers or booleans.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum VariantName {
-    Str(String),
+    Str(Name),
     U64(u64),
     I64(i64),
     Bool(bool),
@@ -893,10 +1055,13 @@ impl VariantName {
                 }) => (true, lit),
                 _ => return Err(unsupported_name(&expr)),
             },
+            syn::Expr::Path(_) | syn::Expr::Macro(_) => {
+                return Ok(VariantName::Str(Name::from_expr(expr)?));
+            }
             _ => return Err(unsupported_name(&expr)),
         };
         Ok(match lit {
-            syn::Lit::Str(lit) => VariantName::Str(lit.value()),
+            syn::Lit::Str(lit) => VariantName::Str(Name::Lit(lit.value())),
             syn::Lit::Bool(lit) => VariantName::Bool(lit.value),
             syn::Lit::Int(lit) if negative => {
                 let value: i128 = lit.base10_parse()?;
@@ -910,32 +1075,62 @@ impl VariantName {
         })
     }
 
-    /// Returns the name as string if it is one.
-    pub fn as_str(&self) -> Option<&str> {
+    /// Returns the name if it's a string.
+    pub fn as_str(&self) -> Option<&Name> {
         match self {
             VariantName::Str(name) => Some(name),
             _ => None,
         }
     }
 
-    /// Returns the name as it appears in descriptions and errors.
+    /// Returns the name as it appears in messages of the derive.
     pub fn display(&self) -> String {
         match self {
-            VariantName::Str(name) => name.clone(),
+            VariantName::Str(name) => name.display(),
             VariantName::U64(value) => value.to_string(),
             VariantName::I64(value) => value.to_string(),
             VariantName::Bool(value) => value.to_string(),
         }
     }
 
-    /// Returns a pattern that matches the name as `__deser::__derive::Tag`.
-    pub fn tag_pattern(&self) -> TokenStream {
+    /// Returns an expression for the name as `&str` for descriptions and
+    /// errors.
+    pub fn str_expr(&self) -> TokenStream {
         match self {
-            VariantName::Str(name) => quote! { __deser::__derive::Tag::Str(#name) },
-            VariantName::U64(value) => quote! { __deser::__derive::Tag::U64(#value) },
-            VariantName::I64(value) => quote! { __deser::__derive::Tag::I64(#value) },
-            VariantName::Bool(value) => quote! { __deser::__derive::Tag::Bool(#value) },
+            VariantName::Str(name) => quote! { #name },
+            other => {
+                let name = other.display();
+                quote! { #name }
+            }
         }
+    }
+
+    /// Returns match arms for names as `__deser::__derive::Tag` that
+    /// evaluate to `result`.
+    pub fn tag_arms(names: &[VariantName], result: TokenStream) -> TokenStream {
+        let strs = names
+            .iter()
+            .filter_map(|x| x.as_str().cloned())
+            .collect::<Vec<_>>();
+        let mut rv = name_arms(
+            &strs,
+            result.clone(),
+            |name| quote! { __deser::__derive::Tag::Str(#name) },
+            |binding| quote! { __deser::__derive::Tag::Str(#binding) },
+        );
+        let others = names
+            .iter()
+            .filter_map(|x| match x {
+                VariantName::Str(_) => None,
+                VariantName::U64(value) => Some(quote! { __deser::__derive::Tag::U64(#value) }),
+                VariantName::I64(value) => Some(quote! { __deser::__derive::Tag::I64(#value) }),
+                VariantName::Bool(value) => Some(quote! { __deser::__derive::Tag::Bool(#value) }),
+            })
+            .collect::<Vec<_>>();
+        if !others.is_empty() {
+            rv.extend(quote! { #(#others)|* => #result, });
+        }
+        rv
     }
 
     /// Returns an expression for the name as atom.
@@ -1027,12 +1222,20 @@ impl<'a> EnumVariantAttrs<'a> {
     }
 
     pub fn name(&self, container_attrs: &ContainerAttrs) -> VariantName {
-        self.rename
-            .clone()
-            .unwrap_or_else(|| VariantName::Str(container_attrs.get_variant_name(self.variant)))
+        self.rename.clone().unwrap_or_else(|| {
+            VariantName::Str(Name::Lit(container_attrs.get_variant_name(self.variant)))
+        })
     }
 
-    pub fn aliases(&self) -> &[VariantName] {
-        &self.aliases
+    /// Returns the aliases of the variant, including those of `alias_all`.
+    pub fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<VariantName> {
+        let mut rv = self.aliases.clone();
+        let name = self.name(container_attrs);
+        for alias in container_attrs.variant_aliases(self.variant, &name) {
+            if !rv.contains(&alias) {
+                rv.push(alias);
+            }
+        }
+        rv
     }
 }

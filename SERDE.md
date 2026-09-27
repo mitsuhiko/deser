@@ -222,3 +222,18 @@ which is parsed like the tag it's compared with.
 
 * [serde: Allow integer tags for internally tagged enums #745](https://github.com/serde-rs/serde/issues/745)
 * [serde: Allow integers (or custom types) to be used as names/keys #1773](https://github.com/serde-rs/serde/issues/1773)
+
+## Names
+
+Serde only takes string literals as names, which is why names cannot be
+shared through constants or built with `concat!`.  Deser takes paths to
+constants and macro invocations as well.  `#[deser(alias_all = "...")]`
+adds aliases in a name style to all fields or variants, for instance to
+read data written with a different convention.
+
+**Related issues:**
+
+* [serde: Add alias_all attribute for containers similar to rename_all #1530](https://github.com/serde-rs/serde/issues/1530)
+* [serde: Allow rename of container with &'static str #2485](https://github.com/serde-rs/serde/issues/2485)
+* [serde: Rename With Expressions #1964](https://github.com/serde-rs/serde/issues/1964)
+* [serde: Consider supporting concat! macro in attributes #1636](https://github.com/serde-rs/serde/issues/1636)

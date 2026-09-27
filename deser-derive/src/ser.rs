@@ -476,7 +476,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .collect::<syn::Result<Vec<_>>>()?;
     let names = attrs
         .iter()
-        .map(|x| x.name(&container_attrs).display())
+        .map(|x| x.name(&container_attrs).str_expr())
         .collect::<Vec<_>>();
     let atoms = attrs
         .iter()

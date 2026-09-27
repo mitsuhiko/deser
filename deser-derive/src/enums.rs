@@ -309,7 +309,7 @@ fn collect_variants<'a>(
         let attrs = EnumVariantAttrs::of(variant)?;
         let name = attrs.name(container_attrs);
         let mut names = Vec::new();
-        for name in std::iter::once(name.clone()).chain(attrs.aliases().iter().cloned()) {
+        for name in std::iter::once(name.clone()).chain(attrs.aliases(container_attrs)) {
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     variant,
@@ -677,15 +677,14 @@ pub fn derive_deserialize(
             .zip(builders.iter())
             .filter(|(info, _)| !info.other)
             .map(|(info, builder)| {
-                let names = info.names.iter().map(|x| x.tag_pattern());
-                quote! { #(#names)|* => __deser::__derive::Some(#builder), }
+                VariantName::tag_arms(&info.names, quote! { __deser::__derive::Some(#builder) })
             });
         let (other_fn, other) = special_variant("__other", |info| info.other);
         let (default_fn, default) = special_variant("__default", |info| info.default);
         let names = variants
             .iter()
             .filter(|info| !info.other)
-            .map(|info| info.name.display());
+            .map(|info| info.name.str_expr());
         (
             quote! {
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
@@ -718,9 +717,11 @@ pub fn derive_deserialize(
                 .iter()
                 .filter(|info| matches!(info.content, Content::Unit) && !info.other)
                 .map(|info| {
-                    let names = info.names.iter().map(|x| x.tag_pattern());
                     let construct = info.construct(ident, &[]);
-                    quote! { #(#names)|* => __deser::__derive::Some(#construct), }
+                    VariantName::tag_arms(
+                        &info.names,
+                        quote! { __deser::__derive::Some(#construct) },
+                    )
                 });
             let (table_support, table) = variants_table;
             (
@@ -863,7 +864,7 @@ fn fields_ser(
                 "flatten is not supported in enum variants",
             ));
         }
-        let name = attrs.plain_name().to_string();
+        let name = attrs.plain_name();
         let binding = &field.binding;
         let mut conditions = Vec::new();
         if let Some(path) = attrs.skip_serializing_if() {
@@ -950,7 +951,7 @@ pub fn derive_serialize(
     };
     let mut describe_arms = Vec::new();
     for info in &variants {
-        let name = info.name.display();
+        let name = info.name.str_expr();
         let var_ident = info.ident;
         let kind = match info.content {
             Content::Unit => quote! { __deser::ser::VariantKind::Unit },

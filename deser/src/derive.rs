@@ -75,6 +75,10 @@
 //!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
 //!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
+//! * `#[deser(alias_all = "...")]`: adds an alias in a name style to all
+//!   fields.  It takes the same styles as `rename_all`, is applied to the
+//!   names of the fields in Rust (independent of renames) and can be given
+//!   more than once.
 //! * `#[deser(default)]`: Instructs the deserializer to fill in all missing fields from [`Default`].
 //!   Default will be lazily invoked if any of the fields is not filled in.
 //! * `#[deser(default = expr)]`: like `default` but fills in from the given
@@ -182,6 +186,8 @@
 //!   specific name style.  The possible values are `"lowercase"`, `"UPPERCASE"`,
 //!   `"PascalCase"`, `"camelCase"`, `"snake_case"`, `"SCREAMING_SNAKE_CASE"`,
 //!   `"kebab-case"`, and `"SCREAMING-KEBAB-CASE"`.
+//! * `#[deser(alias_all = "...")]`: adds an alias in a name style to all
+//!   variants, like on structs.
 //! * `#[deser(tag = "...")]`: makes the enum internally tagged with the given
 //!   tag field.
 //! * `#[deser(tag = "...", content = "...")]`: makes the enum adjacently
@@ -458,6 +464,33 @@
 //! tags with invalid content are errors.  Variants with content that are
 //! represented by their tag alone (for instance a string for an externally
 //! tagged enum) receive null as content.
+//!
+//! ## Names
+//!
+//! `rename` and `alias` take string literals or expressions that are
+//! strings at compile time: paths to constants and macro invocations such
+//! as `concat!(...)`.  This is useful for names that are shared with other
+//! code:
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//!
+//! mod keys {
+//!     pub const ID: &str = "@id";
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(rename = concat!(module_path!(), "::Node"))]
+//! pub struct Node {
+//!     #[deser(rename = keys::ID)]
+//!     id: String,
+//!     #[deser(rename = concat!("x-", "parent"))]
+//!     parent: Option<String>,
+//! }
+//! ```
+//!
+//! Names that are expressions are not checked for duplicates by the
+//! derive.
 //!
 //! ## Validation
 //!
