@@ -6,6 +6,7 @@
 //! strings unless they have an explicit tag.
 use std::borrow::Cow;
 
+use deser::adapters::{Base64, BytesEncoding};
 use deser::ext::{Date, Datetime, ExtValue, Offset, Time};
 use deser::{Atom, Bytes};
 
@@ -685,48 +686,16 @@ fn parse_base60_float(negative: bool, s: &str) -> Option<Atom<'static>> {
     Some(Atom::F64(if negative { -value } else { value }))
 }
 
-/// Decodes base64 as used by `!!binary`.  Whitespace is ignored.
+/// Decodes base64 as used by `!!binary`.  Whitespace (the line breaks of
+/// block scalars) is ignored, otherwise it decodes like other bytes
+/// (leniently, see [`deser::adapters::Base64`]).
 fn decode_base64(s: &str) -> Option<Vec<u8>> {
-    fn value(b: u8) -> Option<u32> {
-        Some(match b {
-            b'A'..=b'Z' => b - b'A',
-            b'a'..=b'z' => b - b'a' + 26,
-            b'0'..=b'9' => b - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        } as u32)
+    if s.bytes().any(|b| b.is_ascii_whitespace()) {
+        let s: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        Base64::decode(&s).ok()
+    } else {
+        Base64::decode(s).ok()
     }
-
-    let mut out = Vec::with_capacity(s.len() / 4 * 3);
-    let mut acc = 0u32;
-    let mut bits = 0;
-    let mut padding = 0;
-    let mut count = 0;
-    for b in s.bytes() {
-        if b.is_ascii_whitespace() {
-            continue;
-        }
-        count += 1;
-        if b == b'=' {
-            padding += 1;
-            continue;
-        }
-        if padding > 0 {
-            return None;
-        }
-        acc = (acc << 6) | value(b)?;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
-            acc &= (1 << bits) - 1;
-        }
-    }
-    if count % 4 != 0 || padding > 2 {
-        return None;
-    }
-    Some(out)
 }
 
 #[test]
@@ -736,9 +705,16 @@ fn test_base64() {
     assert_eq!(decode_base64("Zm8=").unwrap(), b"fo");
     assert_eq!(decode_base64("Zm9v").unwrap(), b"foo");
     assert_eq!(decode_base64("Zm9v\n YmFy").unwrap(), b"foobar");
+    assert_eq!(decode_base64("Zm9v\n YmE=\n").unwrap(), b"fooba");
+    // lenient like other bytes
+    assert_eq!(decode_base64("Zm8").unwrap(), b"fo");
+    assert_eq!(decode_base64("-_8=").unwrap(), b"\xfb\xff");
     assert_eq!(decode_base64("Zm9"), None);
     assert_eq!(decode_base64("Z=9v"), None);
     assert_eq!(decode_base64("Zm9!"), None);
+    assert_eq!(decode_base64("Zm8=="), None);
+    // unused bits have to be zero
+    assert_eq!(decode_base64("Zh=="), None);
 }
 
 #[test]
