@@ -27,12 +27,16 @@ mod sealed {
     }
 }
 
-use self::sealed::{BytesBufImpl, BytesFallbackFormatImpl};
+pub(crate) use self::sealed::BytesBufImpl;
+use self::sealed::BytesFallbackFormatImpl;
 
 /// The types that the bytes adapters support.
 ///
-/// These are `Vec<u8>`, `[u8; N]` and `Cow<[u8]>`.  The trait is
-/// sealed, it cannot be implemented outside of deser.
+/// These are `Vec<u8>`, `[u8; N]` and `Cow<[u8]>`.  With the features of
+/// the same name also `bytes::Bytes`, `bytes::BytesMut`,
+/// `bstr::BString`, `smallvec::SmallVec<[u8; N]>` and
+/// `arrayvec::ArrayVec<u8, N>`.  The trait is sealed, it cannot be
+/// implemented outside of deser.
 pub trait BytesBuf: BytesBufImpl {}
 
 impl<T: BytesBufImpl> BytesBuf for T {}
@@ -147,7 +151,7 @@ impl<'a, 'de, T: BytesBufImpl, E: BytesEncoding> Sink<'de> for EncodedSink<'a, T
 }
 
 #[inline]
-fn encoded_handle<'a, 'de, T: BytesBufImpl, E: BytesEncoding>(
+pub(crate) fn encoded_handle<'a, 'de, T: BytesBufImpl, E: BytesEncoding>(
     out: &'a mut Option<T>,
 ) -> SinkHandle<'a, 'de> {
     SinkHandle::boxed(EncodedSink::<T, E> {
@@ -164,32 +168,49 @@ fn encoded_handle<'a, 'de, T: BytesBufImpl, E: BytesEncoding>(
 macro_rules! encoding_adapter {
     ($([$($gen:tt)*] $ty:ty),* $(,)?) => {
         $(
-            impl<$($gen)* E: BytesEncoding> SerializeAs<$ty> for E {
-                fn serialize_as<'a>(value: &'a $ty, _state: &mut State) -> Result<Chunk<'a>, Error> {
+            impl<$($gen)* E: $crate::adapters::BytesEncoding> $crate::adapters::SerializeAs<$ty> for E {
+                fn serialize_as<'a>(
+                    value: &'a $ty,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
                     let mut rv = String::new();
-                    E::encode(value.bytes(), &mut rv);
-                    Ok(Chunk::Atom(Atom::Str(Cow::Owned(rv))))
+                    E::encode(
+                        $crate::adapters::bytes::BytesBufImpl::bytes(value),
+                        &mut rv,
+                    );
+                    Ok($crate::ser::Chunk::Atom($crate::Atom::Str(std::borrow::Cow::Owned(rv))))
                 }
 
                 #[inline]
-                fn __private_begin_as<'a>(value: &'a $ty, state: &mut State) -> Result<Begin<'a>, Error> {
-                    Ok(Begin::chunk(
+                fn __private_begin_as<'a>(
+                    value: &'a $ty,
+                    state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
+                    Ok($crate::ser::Begin::chunk(
                         Self::serialize_as(value, state)?,
-                        ContainerShape::new(),
+                        $crate::ContainerShape::new(),
                         false,
                     ))
                 }
             }
 
-            impl<'de, $($gen)* E: BytesEncoding> DeserializeAs<'de, $ty> for E {
+            impl<'de, $($gen)* E: $crate::adapters::BytesEncoding>
+                $crate::adapters::DeserializeAs<'de, $ty> for E
+            {
                 #[inline]
-                fn deserialize_into_as<'a>(out: &'a mut Option<$ty>) -> SinkHandle<'a, 'de> {
-                    encoded_handle::<$ty, E>(out)
+                fn deserialize_into_as<'a>(
+                    out: &'a mut Option<$ty>,
+                ) -> $crate::de::SinkHandle<'a, 'de> {
+                    $crate::adapters::bytes::encoded_handle::<$ty, E>(out)
                 }
             }
         )*
     };
 }
+
+// also used for the byte buffers of other crates
+#[allow(unused_imports)]
+pub(crate) use encoding_adapter;
 
 encoding_adapter!(
     [] Vec<u8>,

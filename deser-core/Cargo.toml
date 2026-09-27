@@ -31,6 +31,14 @@ num-bigint = { version = "0.4", optional = true, default-features = false, featu
 rust_decimal = { version = "1.33", optional = true, default-features = false, features = ["std"] }
 time = { version = "0.3.40", optional = true, default-features = false }
 uuid = { version = "1", optional = true, default-features = false }
+# collections and byte buffers of these crates serialize like the standard
+# containers
+arrayvec = { version = "0.7", optional = true, default-features = false }
+bstr = { version = "1", optional = true, default-features = false, features = ["alloc"] }
+bytes = { version = "1.7", optional = true, default-features = false }
+hashbrown = { version = "0.17", optional = true, default-features = false }
+indexmap = { version = "2", optional = true, default-features = false, features = ["std"] }
+smallvec = { version = "1.6", optional = true, default-features = false, features = ["const_generics"] }
 
 [dev-dependencies]
 # the examples in the documentation use deser (with derive)

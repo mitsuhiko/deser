@@ -29,6 +29,14 @@ num-bigint = ["deser-core/num-bigint"]
 rust_decimal = ["deser-core/rust_decimal"]
 time = ["deser-core/time"]
 uuid = ["deser-core/uuid"]
+# collections and byte buffers of these crates serialize like the standard
+# containers
+arrayvec = ["deser-core/arrayvec"]
+bstr = ["deser-core/bstr"]
+bytes = ["deser-core/bytes"]
+hashbrown = ["deser-core/hashbrown"]
+indexmap = ["deser-core/indexmap"]
+smallvec = ["deser-core/smallvec"]
 
 [dependencies]
 # everything but the derive macros is in deser-core.  The formats depend on
@@ -47,6 +55,13 @@ num-bigint = { version = "0.4", default-features = false, features = ["std"] }
 rust_decimal = { version = "1.33", default-features = false, features = ["std"] }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }
 uuid = { version = "1", default-features = false }
+# the tests of the collections and byte buffers of other crates
+arrayvec = { version = "0.7", default-features = false }
+bstr = { version = "1", default-features = false, features = ["alloc"] }
+bytes = { version = "1.7", default-features = false }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
+indexmap = { version = "2", default-features = false, features = ["std"] }
+smallvec = { version = "1.6", default-features = false, features = ["const_generics"] }
 
 [[test]]
 name = "integration"

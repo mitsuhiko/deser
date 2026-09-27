@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::State;
 use crate::adapters::SerializeAs;
 use crate::error::Error;
-use crate::event::{Atom, Bytes, ContainerShape, Order};
+use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{
     Begin, Chunk, Describe, IndexedSeq, IndexedSeqEmitter, MapEmitter, SeqEmitter, Serialize,
     SerializeHandle,
@@ -75,13 +75,16 @@ impl<A: SerializeAs<T>, T: ?Sized + Sync> Serialize for SerializeAsRef<A, T> {
 
 /// Returns a handle to a value that serializes with an adapter.
 #[inline(always)]
-fn handle_as<A: SerializeAs<T>, T: Sync>(value: &T) -> SerializeHandle<'_> {
+pub(crate) fn handle_as<A: SerializeAs<T>, T: Sync>(value: &T) -> SerializeHandle<'_> {
     SerializeHandle::to(SerializeAsRef::<A, T>::new(value))
 }
 
 /// Emits the elements of an iterator with an adapter.
 #[allow(clippy::type_complexity)]
-struct IterEmitter<'a, I, A>(I, std::marker::PhantomData<(&'a (), fn() -> A)>);
+pub(crate) struct IterEmitter<'a, I, A>(
+    pub(crate) I,
+    pub(crate) std::marker::PhantomData<(&'a (), fn() -> A)>,
+);
 
 impl<'a, I, T, A> SeqEmitter for IterEmitter<'a, I, A>
 where
@@ -95,10 +98,10 @@ where
 }
 
 /// Emits the entries of a map iterator with adapters.
-struct MapIterEmitter<'a, I, V, KA, VA> {
-    iter: I,
-    value: Option<&'a V>,
-    _marker: std::marker::PhantomData<fn() -> (KA, VA)>,
+pub(crate) struct MapIterEmitter<'a, I, V, KA, VA> {
+    pub(crate) iter: I,
+    pub(crate) value: Option<&'a V>,
+    pub(crate) _marker: std::marker::PhantomData<fn() -> (KA, VA)>,
 }
 
 impl<'a, I, K, V, KA, VA> MapEmitter for MapIterEmitter<'a, I, V, KA, VA>
@@ -239,40 +242,80 @@ macro_rules! serialize_as_iter_seq {
 
 serialize_as_iter_seq!(VecDeque, LinkedList, BinaryHeap);
 
-impl<T: Sync, A: SerializeAs<T>> IndexedSeq for SerializeAsRef<Vec<A>, Vec<T>> {
-    #[inline]
-    fn element(
-        &self,
-        index: usize,
-        _state: &mut State,
-    ) -> Result<Option<SerializeHandle<'_>>, Error> {
-        Ok(self.get().get(index).map(handle_as::<A, T>))
-    }
+/// Implements `SerializeAs` for the containers of slices with an element
+/// adapter.
+///
+/// The containers need to support `len` and indexing with `[..]`.
+macro_rules! serialize_as_slice {
+    ($([$($gen:tt)*] $ty:ty => $adapter:ty;)*) => {
+        $(
+            impl<$($gen)*> $crate::ser::IndexedSeq
+                for $crate::adapters::ser_impls::SerializeAsRef<$adapter, $ty>
+            {
+                #[inline]
+                fn element(
+                    &self,
+                    index: usize,
+                    _state: &mut $crate::State,
+                ) -> Result<Option<$crate::ser::SerializeHandle<'_>>, $crate::Error> {
+                    Ok(self.get()[..]
+                        .get(index)
+                        .map($crate::adapters::ser_impls::handle_as::<A, T>))
+                }
+            }
+
+            impl<$($gen)*> $crate::adapters::SerializeAs<$ty> for $adapter {
+                fn serialize_as<'a>(
+                    value: &'a $ty,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                    Ok(match A::__private_slice_as_bytes_as(&value[..]) {
+                        Some(bytes) => {
+                            $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
+                        }
+                        None => $crate::ser::Chunk::Seq(Box::new(
+                            $crate::ser::IndexedSeqEmitter::new(
+                                $crate::adapters::ser_impls::SerializeAsRef::<$adapter, $ty>::new(
+                                    value,
+                                ),
+                            ),
+                        )),
+                    })
+                }
+
+                fn container_shape_as(value: &$ty) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new().with_len(value.len())
+                }
+
+                #[inline]
+                fn __private_begin_as<'a>(
+                    value: &'a $ty,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
+                    let shape = Self::container_shape_as(value);
+                    Ok(match A::__private_slice_as_bytes_as(&value[..]) {
+                        Some(bytes) => $crate::ser::Begin::chunk(
+                            $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))),
+                            shape,
+                            false,
+                        ),
+                        None => $crate::ser::Begin::indexed_seq(
+                            $crate::adapters::ser_impls::SerializeAsRef::<$adapter, $ty>::new(value),
+                            shape,
+                        ),
+                    })
+                }
+            }
+        )*
+    };
 }
 
-impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for Vec<A> {
-    fn serialize_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<
-                Vec<A>,
-                Vec<T>,
-            >::new(value)))),
-        })
-    }
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_as_slice;
 
-    fn container_shape_as(value: &Vec<T>) -> ContainerShape {
-        ContainerShape::new().with_len(value.len())
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a Vec<T>, _state: &mut State) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(match A::__private_slice_as_bytes_as(value) {
-            Some(bytes) => Begin::chunk(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))), shape, false),
-            None => Begin::indexed_seq(SerializeAsRef::<Vec<A>, Vec<T>>::new(value), shape),
-        })
-    }
+serialize_as_slice! {
+    [T: Sync, A: SerializeAs<T>] Vec<T> => Vec<A>;
 }
 
 impl<T: Sync, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[A; N], [T; N]> {
@@ -337,142 +380,121 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
     }
 }
 
-impl<K, V, KA, VA> SerializeAs<BTreeMap<K, V>> for BTreeMap<KA, VA>
-where
-    K: Sync,
-    V: Sync,
-    KA: SerializeAs<K>,
-    VA: SerializeAs<V>,
-{
-    fn serialize_as<'a>(value: &'a BTreeMap<K, V>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Map(Box::new(MapIterEmitter::<_, V, KA, VA> {
-            iter: value.iter(),
-            value: None,
-            _marker: std::marker::PhantomData,
-        })))
-    }
+/// Implements `SerializeAs` for maps with key and value adapters.
+///
+/// The maps need to support `len` and `iter`.
+macro_rules! serialize_as_map {
+    ($([$($gen:tt)*] $ty:ty => $adapter:ty, $order:ident;)*) => {
+        $(
+            impl<$($gen)*> $crate::adapters::SerializeAs<$ty> for $adapter
+            where
+                K: Sync,
+                V: Sync,
+                KA: $crate::adapters::SerializeAs<K>,
+                VA: $crate::adapters::SerializeAs<V>,
+            {
+                fn serialize_as<'a>(
+                    value: &'a $ty,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                    Ok($crate::ser::Chunk::Map(Box::new(
+                        $crate::adapters::ser_impls::MapIterEmitter::<_, V, KA, VA> {
+                            iter: value.iter(),
+                            value: None,
+                            _marker: std::marker::PhantomData,
+                        },
+                    )))
+                }
 
-    fn container_shape_as(value: &BTreeMap<K, V>) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Sorted)
-            .with_len(value.len())
-    }
+                fn container_shape_as(value: &$ty) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new()
+                        .with_order($crate::Order::$order)
+                        .with_len(value.len())
+                }
 
-    #[inline]
-    fn __private_begin_as<'a>(
-        value: &'a BTreeMap<K, V>,
-        state: &mut State,
-    ) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
-            shape,
-            false,
-        ))
-    }
+                #[inline]
+                fn __private_begin_as<'a>(
+                    value: &'a $ty,
+                    state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
+                    let shape = Self::container_shape_as(value);
+                    Ok($crate::ser::Begin::chunk(
+                        Self::serialize_as(value, state)?,
+                        shape,
+                        false,
+                    ))
+                }
+            }
+        )*
+    };
 }
 
-impl<K, V, H, KA, VA> SerializeAs<HashMap<K, V, H>> for HashMap<KA, VA>
-where
-    K: Sync,
-    V: Sync,
-    H: BuildHasher + Sync,
-    KA: SerializeAs<K>,
-    VA: SerializeAs<V>,
-{
-    fn serialize_as<'a>(
-        value: &'a HashMap<K, V, H>,
-        _state: &mut State,
-    ) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Map(Box::new(MapIterEmitter::<_, V, KA, VA> {
-            iter: value.iter(),
-            value: None,
-            _marker: std::marker::PhantomData,
-        })))
-    }
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_as_map;
 
-    fn container_shape_as(value: &HashMap<K, V, H>) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Arbitrary)
-            .with_len(value.len())
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(
-        value: &'a HashMap<K, V, H>,
-        state: &mut State,
-    ) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
-            shape,
-            false,
-        ))
-    }
+serialize_as_map! {
+    [K, V, KA, VA] BTreeMap<K, V> => BTreeMap<KA, VA>, Sorted;
+    [K, V, H: BuildHasher + Sync, KA, VA] HashMap<K, V, H> => HashMap<KA, VA>, Arbitrary;
 }
 
-impl<T: Sync, A: SerializeAs<T>> SerializeAs<BTreeSet<T>> for BTreeSet<A> {
-    fn serialize_as<'a>(value: &'a BTreeSet<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
-            value.iter(),
-            std::marker::PhantomData,
-        ))))
-    }
+/// Implements `SerializeAs` for sets with an element adapter.
+///
+/// The sets need to support `len` and `iter`.
+macro_rules! serialize_as_set {
+    ($([$($gen:tt)*] $ty:ty => $adapter:ty, $order:ident;)*) => {
+        $(
+            impl<$($gen)*> $crate::adapters::SerializeAs<$ty> for $adapter
+            where
+                T: Sync,
+                A: $crate::adapters::SerializeAs<T>,
+            {
+                fn serialize_as<'a>(
+                    value: &'a $ty,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                    Ok($crate::ser::Chunk::Seq(Box::new(
+                        $crate::adapters::ser_impls::IterEmitter::<'_, _, A>(
+                            value.iter(),
+                            std::marker::PhantomData,
+                        ),
+                    )))
+                }
 
-    fn container_shape_as(value: &BTreeSet<T>) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Sorted)
-            .with_len(value.len())
-    }
+                fn container_shape_as(value: &$ty) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new()
+                        .with_order($crate::Order::$order)
+                        .with_len(value.len())
+                }
 
-    fn describe_as(_value: &BTreeSet<T>, d: &mut dyn Describe) {
-        d.set();
-    }
+                fn describe_as(_value: &$ty, d: &mut dyn $crate::ser::Describe) {
+                    d.set();
+                }
 
-    #[inline]
-    fn __private_begin_as<'a>(
-        value: &'a BTreeSet<T>,
-        state: &mut State,
-    ) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
-            shape,
-            false,
-        ))
-    }
+                #[inline]
+                fn __private_begin_as<'a>(
+                    value: &'a $ty,
+                    state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
+                    let shape = Self::container_shape_as(value);
+                    Ok($crate::ser::Begin::chunk(
+                        Self::serialize_as(value, state)?,
+                        shape,
+                        false,
+                    ))
+                }
+            }
+        )*
+    };
 }
 
-impl<T: Sync, H: BuildHasher + Sync, A: SerializeAs<T>> SerializeAs<HashSet<T, H>> for HashSet<A> {
-    fn serialize_as<'a>(value: &'a HashSet<T, H>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
-            value.iter(),
-            std::marker::PhantomData,
-        ))))
-    }
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_as_set;
 
-    fn container_shape_as(value: &HashSet<T, H>) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Arbitrary)
-            .with_len(value.len())
-    }
-
-    fn describe_as(_value: &HashSet<T, H>, d: &mut dyn Describe) {
-        d.set();
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(
-        value: &'a HashSet<T, H>,
-        state: &mut State,
-    ) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
-            shape,
-            false,
-        ))
-    }
+serialize_as_set! {
+    [T, A] BTreeSet<T> => BTreeSet<A>, Sorted;
+    [T, H: BuildHasher + Sync, A] HashSet<T, H> => HashSet<A>, Arbitrary;
 }
 
 /// Counts as one, used to count repetitions.

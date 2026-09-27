@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::error::Error;
-use crate::event::{Atom, Bytes, ContainerShape, Order};
+use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ext::ExtValue;
 use crate::ser::{
     Begin, Chunk, Describe, IndexedSeq, MapEmitter, PlainSink, SeqEmitter, Serialize,
@@ -164,51 +164,44 @@ where
     }
 }
 
-/// Implements `__private_begin` for containers which begin as plain value
-/// if their contents are plain (see `PlainSink`).
-macro_rules! begin_plain_if {
-    () => {
-        #[inline]
-        fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-            let shape = self.container_shape();
-            if Serialize::__private_is_plain_value(self) {
-                Ok(Begin::plain(self, shape))
-            } else {
-                Ok(Begin::chunk(self.serialize(state)?, shape, false))
-            }
-        }
-    };
-}
-
 /// Implements `Serialize` for the containers of slices.
 ///
 /// `[T]` itself does not implement `Serialize` as the containers provide
-/// the elements by index which requires a sized value.
+/// the elements by index which requires a sized value.  The containers
+/// need to support `len` and indexing with `[..]`.
 macro_rules! serialize_slice {
     ($([$($gen:tt)*] $ty:ty),* $(,)?) => {
         $(
-            impl<$($gen)*> Serialize for $ty {
+            impl<$($gen)*> $crate::ser::Serialize for $ty {
                 #[inline]
-                fn __private_begin(&self, _state: &mut State) -> Result<Begin<'_>, Error> {
+                fn __private_begin(
+                    &self,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'_>, $crate::Error> {
                     Ok(match T::__private_slice_as_bytes(&self[..]) {
-                        Some(bytes) => Begin::chunk(
-                            Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-                            ContainerShape::new(),
+                        Some(bytes) => $crate::ser::Begin::chunk(
+                            $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))),
+                            $crate::ContainerShape::new(),
                             false,
                         ),
-                        None => Begin::indexed_seq(self, self.container_shape()),
+                        None => $crate::ser::Begin::indexed_seq(self, self.container_shape()),
                     })
                 }
 
-                fn container_shape(&self) -> ContainerShape {
-                    ContainerShape::new().with_len(self.len())
+                fn container_shape(&self) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new().with_len(self.len())
                 }
 
-                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+                fn serialize(
+                    &self,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
                     if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
-                        Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
+                        Ok($crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))))
                     } else {
-                        Ok(Chunk::Seq(Box::new(SliceEmitter(self[..].iter()))))
+                        Ok($crate::ser::Chunk::Seq(Box::new(
+                            $crate::ser::impls::SliceEmitter(self[..].iter()),
+                        )))
                     }
                 }
 
@@ -222,28 +215,38 @@ macro_rules! serialize_slice {
                     T::__private_is_plain() || self.is_empty()
                 }
 
-                fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-                    emit_plain_slice(&self[..], self.container_shape(), sink)
+                fn __private_emit_plain(
+                    &self,
+                    sink: &mut dyn $crate::ser::PlainSink,
+                ) -> Result<(), $crate::Error> {
+                    $crate::ser::impls::emit_plain_slice(&self[..], self.container_shape(), sink)
                 }
             }
 
-            impl<$($gen)*> IndexedSeq for $ty {
+            impl<$($gen)*> $crate::ser::IndexedSeq for $ty {
                 #[inline]
                 fn element(
                     &self,
                     index: usize,
-                    _state: &mut State,
-                ) -> Result<Option<SerializeHandle<'_>>, Error> {
-                    Ok(self[..].get(index).map(SerializeHandle::to))
+                    _state: &mut $crate::State,
+                ) -> Result<Option<$crate::ser::SerializeHandle<'_>>, $crate::Error> {
+                    Ok(self[..].get(index).map($crate::ser::SerializeHandle::to))
                 }
 
-                fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
-                    emit_plain_elements(self[..].iter(), sink)
+                fn emit_plain(
+                    &self,
+                    sink: &mut dyn $crate::ser::PlainSink,
+                ) -> Result<bool, $crate::Error> {
+                    $crate::ser::impls::emit_plain_elements(self[..].iter(), sink)
                 }
             }
         )*
     };
 }
+
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_slice;
 
 serialize_slice!(
     [T: Serialize] Vec<T>,
@@ -270,7 +273,7 @@ impl<T: Serialize, const N: usize> IndexedSeq for [T; N] {
 
 /// Emits a slice of plain values, as bytes or as sequence.
 #[inline]
-fn emit_plain_slice<T: Serialize>(
+pub(crate) fn emit_plain_slice<T: Serialize>(
     slice: &[T],
     shape: ContainerShape,
     sink: &mut dyn PlainSink,
@@ -290,7 +293,7 @@ fn emit_plain_slice<T: Serialize>(
 /// Emits the elements of a sequence if they are plain (or if there are
 /// none).
 #[inline]
-fn emit_plain_elements<'a, T: Serialize + 'a>(
+pub(crate) fn emit_plain_elements<'a, T: Serialize + 'a>(
     values: impl ExactSizeIterator<Item = &'a T>,
     sink: &mut dyn PlainSink,
 ) -> Result<bool, Error> {
@@ -303,7 +306,7 @@ fn emit_plain_elements<'a, T: Serialize + 'a>(
     Ok(true)
 }
 
-struct SliceEmitter<'a, T>(std::slice::Iter<'a, T>);
+pub(crate) struct SliceEmitter<'a, T>(pub(crate) std::slice::Iter<'a, T>);
 
 impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
@@ -312,7 +315,7 @@ impl<'a, T: Serialize> SeqEmitter for SliceEmitter<'a, T> {
 }
 
 /// Emits the elements of an iterator.
-struct IterEmitter<'a, I>(I, PhantomData<&'a ()>);
+pub(crate) struct IterEmitter<'a, I>(pub(crate) I, pub(crate) PhantomData<&'a ()>);
 
 impl<'a, I, T> SeqEmitter for IterEmitter<'a, I>
 where
@@ -453,227 +456,182 @@ impl<T: Serialize> IndexedSeq for BinaryHeap<T> {
     }
 }
 
-impl<K, V> Serialize for BTreeMap<K, V>
+/// Emits the entries of a map iterator.
+pub(crate) struct MapIterEmitter<'a, I, V> {
+    pub(crate) iter: I,
+    pub(crate) value: Option<&'a V>,
+}
+
+impl<'a, I, K, V> MapEmitter for MapIterEmitter<'a, I, V>
 where
-    K: Serialize,
-    V: Serialize,
+    I: Iterator<Item = (&'a K, &'a V)> + Send,
+    K: Serialize + 'a,
+    V: Serialize + 'a,
 {
-    begin_plain_if!();
-
-    fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Sorted)
-            .with_len(self.len())
+    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+        Ok(self.iter.next().map(|(k, v)| {
+            self.value = Some(v);
+            SerializeHandle::to(k)
+        }))
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        struct Emitter<'a, K, V>(std::collections::btree_map::Iter<'a, K, V>, Option<&'a V>);
-
-        impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
-        where
-            K: Serialize,
-            V: Serialize,
-        {
-            fn next_key(
-                &mut self,
-                _state: &mut State,
-            ) -> Result<Option<SerializeHandle<'_>>, Error> {
-                Ok(self.0.next().map(|(k, v)| {
-                    self.1 = Some(v);
-                    SerializeHandle::to(k)
-                }))
-            }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
-                Ok(SerializeHandle::to(self.1.unwrap()))
-            }
-        }
-
-        Ok(Chunk::Map(Box::new(Emitter(self.iter(), None))))
-    }
-
-    #[inline]
-    fn __private_is_plain() -> bool {
-        K::__private_is_plain() && V::__private_is_plain()
-    }
-
-    #[inline]
-    fn __private_is_plain_value(&self) -> bool {
-        (K::__private_is_plain() && V::__private_is_plain()) || self.is_empty()
-    }
-
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        sink.map_start(self.container_shape())?;
-        for (key, value) in self {
-            sink.key();
-            key.__private_emit_plain(sink)?;
-            value.__private_emit_plain(sink)?;
-        }
-        sink.map_end()
+    fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
+        Ok(SerializeHandle::to(self.value.unwrap()))
     }
 }
 
-impl<K, V, H> Serialize for HashMap<K, V, H>
-where
-    K: Serialize,
-    V: Serialize,
-    H: Sync,
-    H: BuildHasher,
-{
-    begin_plain_if!();
+/// Implements `Serialize` for maps.
+///
+/// The maps need to support `len`, `is_empty` and `iter`.
+macro_rules! serialize_map {
+    ($([$($gen:tt)*] $ty:ty => $order:ident;)*) => {
+        $(
+            impl<$($gen)*> $crate::ser::Serialize for $ty
+            where
+                K: $crate::ser::Serialize,
+                V: $crate::ser::Serialize,
+            {
+                #[inline]
+                fn __private_begin(
+                    &self,
+                    state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'_>, $crate::Error> {
+                    let shape = self.container_shape();
+                    if $crate::ser::Serialize::__private_is_plain_value(self) {
+                        Ok($crate::ser::Begin::plain(self, shape))
+                    } else {
+                        Ok($crate::ser::Begin::chunk(self.serialize(state)?, shape, false))
+                    }
+                }
 
-    fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Arbitrary)
-            .with_len(self.len())
-    }
+                fn container_shape(&self) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new()
+                        .with_order($crate::Order::$order)
+                        .with_len(self.len())
+                }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        struct Emitter<'a, K, V>(std::collections::hash_map::Iter<'a, K, V>, Option<&'a V>);
+                fn serialize(
+                    &self,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
+                    Ok($crate::ser::Chunk::Map(Box::new(
+                        $crate::ser::impls::MapIterEmitter {
+                            iter: self.iter(),
+                            value: None,
+                        },
+                    )))
+                }
 
-        impl<'a, K, V> MapEmitter for Emitter<'a, K, V>
-        where
-            K: Serialize,
-            V: Serialize,
-        {
-            fn next_key(
-                &mut self,
-                _state: &mut State,
-            ) -> Result<Option<SerializeHandle<'_>>, Error> {
-                Ok(self.0.next().map(|(k, v)| {
-                    self.1 = Some(v);
-                    SerializeHandle::to(k)
-                }))
+                #[inline]
+                fn __private_is_plain() -> bool {
+                    K::__private_is_plain() && V::__private_is_plain()
+                }
+
+                #[inline]
+                fn __private_is_plain_value(&self) -> bool {
+                    (K::__private_is_plain() && V::__private_is_plain()) || self.is_empty()
+                }
+
+                fn __private_emit_plain(
+                    &self,
+                    sink: &mut dyn $crate::ser::PlainSink,
+                ) -> Result<(), $crate::Error> {
+                    sink.map_start(self.container_shape())?;
+                    for (key, value) in self.iter() {
+                        sink.key();
+                        key.__private_emit_plain(sink)?;
+                        value.__private_emit_plain(sink)?;
+                    }
+                    sink.map_end()
+                }
             }
-
-            fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
-                Ok(SerializeHandle::to(self.1.unwrap()))
-            }
-        }
-
-        Ok(Chunk::Map(Box::new(Emitter(self.iter(), None))))
-    }
-
-    #[inline]
-    fn __private_is_plain() -> bool {
-        K::__private_is_plain() && V::__private_is_plain()
-    }
-
-    #[inline]
-    fn __private_is_plain_value(&self) -> bool {
-        (K::__private_is_plain() && V::__private_is_plain()) || self.is_empty()
-    }
-
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        sink.map_start(self.container_shape())?;
-        for (key, value) in self {
-            sink.key();
-            key.__private_emit_plain(sink)?;
-            value.__private_emit_plain(sink)?;
-        }
-        sink.map_end()
-    }
+        )*
+    };
 }
 
-impl<T> Serialize for BTreeSet<T>
-where
-    T: Serialize,
-{
-    begin_plain_if!();
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_map;
 
-    fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Sorted)
-            .with_len(self.len())
-    }
-
-    fn describe(&self, d: &mut dyn Describe) {
-        d.set();
-    }
-
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        struct Emitter<'a, T>(std::collections::btree_set::Iter<'a, T>);
-
-        impl<'a, T> SeqEmitter for Emitter<'a, T>
-        where
-            T: Serialize,
-        {
-            fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-                Ok(self.0.next().map(SerializeHandle::to))
-            }
-        }
-
-        Ok(Chunk::Seq(Box::new(Emitter(self.iter()))))
-    }
-
-    #[inline]
-    fn __private_is_plain() -> bool {
-        T::__private_is_plain()
-    }
-
-    #[inline]
-    fn __private_is_plain_value(&self) -> bool {
-        T::__private_is_plain() || self.is_empty()
-    }
-
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        sink.seq_start(self.container_shape())?;
-        for value in self {
-            value.__private_emit_plain(sink)?;
-        }
-        sink.seq_end()
-    }
+serialize_map! {
+    [K, V] BTreeMap<K, V> => Sorted;
+    [K, V, H: BuildHasher + Sync] HashMap<K, V, H> => Arbitrary;
 }
 
-impl<T, H> Serialize for HashSet<T, H>
-where
-    T: Serialize,
-    H: BuildHasher + Sync,
-{
-    begin_plain_if!();
+/// Implements `Serialize` for sets.
+///
+/// The sets need to support `len`, `is_empty` and `iter`.
+macro_rules! serialize_set {
+    ($([$($gen:tt)*] $ty:ty => $order:ident;)*) => {
+        $(
+            impl<$($gen)*> $crate::ser::Serialize for $ty
+            where
+                T: $crate::ser::Serialize,
+            {
+                #[inline]
+                fn __private_begin(
+                    &self,
+                    state: &mut $crate::State,
+                ) -> Result<$crate::ser::Begin<'_>, $crate::Error> {
+                    let shape = self.container_shape();
+                    if $crate::ser::Serialize::__private_is_plain_value(self) {
+                        Ok($crate::ser::Begin::plain(self, shape))
+                    } else {
+                        Ok($crate::ser::Begin::chunk(self.serialize(state)?, shape, false))
+                    }
+                }
 
-    fn container_shape(&self) -> ContainerShape {
-        ContainerShape::new()
-            .with_order(Order::Arbitrary)
-            .with_len(self.len())
-    }
+                fn container_shape(&self) -> $crate::ContainerShape {
+                    $crate::ContainerShape::new()
+                        .with_order($crate::Order::$order)
+                        .with_len(self.len())
+                }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        d.set();
-    }
+                fn describe(&self, d: &mut dyn $crate::ser::Describe) {
+                    d.set();
+                }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        struct Emitter<'a, T>(std::collections::hash_set::Iter<'a, T>);
+                fn serialize(
+                    &self,
+                    _state: &mut $crate::State,
+                ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
+                    Ok($crate::ser::Chunk::Seq(Box::new(
+                        $crate::ser::impls::IterEmitter(self.iter(), std::marker::PhantomData),
+                    )))
+                }
 
-        impl<'a, T> SeqEmitter for Emitter<'a, T>
-        where
-            T: Serialize,
-        {
-            fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-                Ok(self.0.next().map(SerializeHandle::to))
+                #[inline]
+                fn __private_is_plain() -> bool {
+                    T::__private_is_plain()
+                }
+
+                #[inline]
+                fn __private_is_plain_value(&self) -> bool {
+                    T::__private_is_plain() || self.is_empty()
+                }
+
+                fn __private_emit_plain(
+                    &self,
+                    sink: &mut dyn $crate::ser::PlainSink,
+                ) -> Result<(), $crate::Error> {
+                    sink.seq_start(self.container_shape())?;
+                    for value in self.iter() {
+                        value.__private_emit_plain(sink)?;
+                    }
+                    sink.seq_end()
+                }
             }
-        }
+        )*
+    };
+}
 
-        Ok(Chunk::Seq(Box::new(Emitter(self.iter()))))
-    }
+// also used for the containers of other crates
+#[allow(unused_imports)]
+pub(crate) use serialize_set;
 
-    #[inline]
-    fn __private_is_plain() -> bool {
-        T::__private_is_plain()
-    }
-
-    #[inline]
-    fn __private_is_plain_value(&self) -> bool {
-        T::__private_is_plain() || self.is_empty()
-    }
-
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        sink.seq_start(self.container_shape())?;
-        for value in self {
-            value.__private_emit_plain(sink)?;
-        }
-        sink.seq_end()
-    }
+serialize_set! {
+    [T] BTreeSet<T> => Sorted;
+    [T, H: BuildHasher + Sync] HashSet<T, H> => Arbitrary;
 }
 
 impl<T> Serialize for Option<T>

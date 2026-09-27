@@ -355,15 +355,17 @@ pub(crate) trait SeqTarget<T>: Sized + Send {
     const NAME: &'static str;
 
     /// Converts the vector into the sequence.
-    fn from_vec(vec: Vec<T>) -> Self;
+    ///
+    /// This fails for sequences with a fixed capacity.
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error>;
 }
 
 impl<T: Send> SeqTarget<T> for Vec<T> {
     const NAME: &'static str = "vec";
 
     #[inline(always)]
-    fn from_vec(vec: Vec<T>) -> Self {
-        vec
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(vec)
     }
 }
 
@@ -371,8 +373,8 @@ impl<T: Send> SeqTarget<T> for VecDeque<T> {
     const NAME: &'static str = "VecDeque";
 
     #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        VecDeque::from(vec)
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(VecDeque::from(vec))
     }
 }
 
@@ -380,8 +382,8 @@ impl<T: Send> SeqTarget<T> for LinkedList<T> {
     const NAME: &'static str = "LinkedList";
 
     #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        vec.into_iter().collect()
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(vec.into_iter().collect())
     }
 }
 
@@ -389,8 +391,8 @@ impl<T: Ord + Send> SeqTarget<T> for BinaryHeap<T> {
     const NAME: &'static str = "BinaryHeap";
 
     #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        BinaryHeap::from(vec)
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(BinaryHeap::from(vec))
     }
 }
 
@@ -398,8 +400,8 @@ impl<T: Send> SeqTarget<T> for Box<[T]> {
     const NAME: &'static str = "slice";
 
     #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        vec.into_boxed_slice()
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(vec.into_boxed_slice())
     }
 }
 
@@ -407,8 +409,8 @@ impl<T: Send + Sync> SeqTarget<T> for Arc<[T]> {
     const NAME: &'static str = "slice";
 
     #[inline]
-    fn from_vec(vec: Vec<T>) -> Self {
-        Arc::from(vec)
+    fn from_vec(vec: Vec<T>) -> Result<Self, Error> {
+        Ok(Arc::from(vec))
     }
 }
 
@@ -416,7 +418,7 @@ impl<T: Send + Sync> SeqTarget<T> for Arc<[T]> {
 ///
 /// The elements are collected into a vector which is converted into the
 /// sequence at the end.  For elements of type `u8` bytes are accepted.
-fn seq_sink<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
+pub(crate) fn seq_sink<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
 where
     C: SeqTarget<T> + 'a,
     T: Send + 'a,
@@ -453,7 +455,7 @@ where
             match atom {
                 Atom::Bytes(value) => match A::__private_vec_from_bytes_as(value.into_owned()) {
                     Some(vec) => {
-                        *self.slot = Some(C::from_vec(vec));
+                        *self.slot = Some(C::from_vec(vec)?);
                         Ok(())
                     }
                     None => Err(Error::new(
@@ -466,7 +468,7 @@ where
                     let bytes = crate::adapters::bytes::decode_str(value, state)?;
                     match A::__private_vec_from_bytes_as(bytes) {
                         Some(vec) => {
-                            *self.slot = Some(C::from_vec(vec));
+                            *self.slot = Some(C::from_vec(vec)?);
                             Ok(())
                         }
                         None => self.unexpected_atom(atom, state),
@@ -519,7 +521,7 @@ where
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
             if self.is_seq {
                 self.flush();
-                *self.slot = Some(C::from_vec(take(&mut self.vec)));
+                *self.slot = Some(C::from_vec(take(&mut self.vec))?);
             }
             Ok(())
         }
@@ -566,7 +568,6 @@ deserialize_seq! {
     [T: Send + Sync] Arc<[T]> => Arc<[A]>;
 }
 
-/// Maps that can be deserialized.
 /// The maximum number of bytes that are preallocated for the declared
 /// length of a container.
 ///
@@ -582,8 +583,10 @@ fn cautious_capacity<T>(state: &State) -> usize {
     }
 }
 
+/// Maps that can be deserialized.
 pub(crate) trait MapTarget<K, V>: Default + Send {
-    const UNORDERED: bool;
+    /// The name of the type for error messages.
+    const NAME: &'static str;
     /// Inserts an entry.
     ///
     /// If the key exists, the value is only replaced if `replace` is set.
@@ -598,7 +601,7 @@ pub(crate) trait MapTarget<K, V>: Default + Send {
 }
 
 impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
-    const UNORDERED: bool = false;
+    const NAME: &'static str = "BTreeMap";
 
     #[inline]
     fn insert_entry(&mut self, key: K, value: V, replace: bool) -> bool {
@@ -629,7 +632,7 @@ impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
 impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K, V>
     for HashMap<K, V, H>
 {
-    const UNORDERED: bool = true;
+    const NAME: &'static str = "HashMap";
 
     #[inline]
     fn insert_entry(&mut self, key: K, value: V, replace: bool) -> bool {
@@ -666,7 +669,7 @@ impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K,
 }
 
 /// Where a map sink puts the map.
-enum MapOut<'a, M> {
+pub(crate) enum MapOut<'a, M> {
     /// The map is stored in the slot.
     Slot(&'a mut Option<M>),
     /// The entries are merged into an existing map.
@@ -674,7 +677,7 @@ enum MapOut<'a, M> {
 }
 
 /// Creates the sink for a map with key and value adapters.
-fn map_sink<'a, 'de, M, K, V, KA, VA>(out: MapOut<'a, M>) -> SinkHandle<'a, 'de>
+pub(crate) fn map_sink<'a, 'de, M, K, V, KA, VA>(out: MapOut<'a, M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,
@@ -718,7 +721,7 @@ where
         VA: DeserializeAs<'de, V>,
     {
         fn expecting(&self) -> Cow<'_, str> {
-            Cow::Borrowed(if M::UNORDERED { "HashMap" } else { "BTreeMap" })
+            Cow::Borrowed(M::NAME)
         }
 
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
@@ -860,8 +863,9 @@ where
 }
 
 /// Sets that can be deserialized.
-trait SetTarget<T>: Default + Send {
-    const UNORDERED: bool;
+pub(crate) trait SetTarget<T>: Default + Send {
+    /// The name of the type for error messages.
+    const NAME: &'static str;
     fn insert_element(&mut self, value: T);
     fn reserve_elements(&mut self, additional: usize) {
         let _ = additional;
@@ -869,7 +873,7 @@ trait SetTarget<T>: Default + Send {
 }
 
 impl<T: Ord + Send> SetTarget<T> for BTreeSet<T> {
-    const UNORDERED: bool = false;
+    const NAME: &'static str = "BTreeSet";
 
     #[inline]
     fn insert_element(&mut self, value: T) {
@@ -878,7 +882,7 @@ impl<T: Ord + Send> SetTarget<T> for BTreeSet<T> {
 }
 
 impl<T: Hash + Eq + Send, H: BuildHasher + Default + Send> SetTarget<T> for HashSet<T, H> {
-    const UNORDERED: bool = true;
+    const NAME: &'static str = "HashSet";
 
     #[inline]
     fn insert_element(&mut self, value: T) {
@@ -892,7 +896,7 @@ impl<T: Hash + Eq + Send, H: BuildHasher + Default + Send> SetTarget<T> for Hash
 }
 
 /// Creates the sink for a set with an element adapter.
-fn set_sink<'a, 'de, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a, 'de>
+pub(crate) fn set_sink<'a, 'de, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a, 'de>
 where
     S: SetTarget<T> + 'a,
     T: Send + 'a,
@@ -917,7 +921,7 @@ where
         for SetSink<'a, S, T, A>
     {
         fn expecting(&self) -> Cow<'_, str> {
-            Cow::Borrowed(if S::UNORDERED { "HashSet" } else { "BTreeSet" })
+            Cow::Borrowed(S::NAME)
         }
 
         fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {

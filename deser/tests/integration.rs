@@ -20,6 +20,7 @@ mod test_layers;
 mod test_lexical;
 mod test_names;
 mod test_other;
+mod test_other_crates;
 mod test_ser;
 mod test_ser_derive;
 mod test_skip;

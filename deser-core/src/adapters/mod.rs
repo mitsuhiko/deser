@@ -62,7 +62,10 @@
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
 //!   `Arc<U>`, `Vec<U>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>`,
 //!   `[U]`, `[U; N]`, `Box<[U]>`, `Arc<[U]>`, `BTreeMap<K, V>`,
-//!   `HashMap<K, V>`, `BTreeSet<U>`, `HashSet<U>` and tuples.
+//!   `HashMap<K, V>`, `BTreeSet<U>`, `HashSet<U>` and tuples.  With the
+//!   features of the same names also the collections of `indexmap`,
+//!   `hashbrown`, `smallvec` and `arrayvec` (for instance `IndexMap<K, V>`
+//!   and `SmallVec<[U; N]>`).
 //!
 //! # Bytes
 //!
@@ -219,6 +222,9 @@ pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
     VecSkipError,
 };
+// used for the maps of other crates
+#[allow(unused_imports)]
+pub(crate) use self::stock::skip_map_sink;
 
 /// Deserializes a value of type `T` on behalf of it.
 ///

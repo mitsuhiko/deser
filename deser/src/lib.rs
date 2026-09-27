@@ -84,6 +84,10 @@ pub struct Account {
 //!   implement [`Serialize`] and [`Deserialize`] for the types of these crates.  They
 //!   are serialized as [well-known types](crate::ext#well-known-types) which data
 //!   formats can support natively.
+//! * `indexmap`, `hashbrown`, `smallvec`, `arrayvec`, `bytes` and `bstr` implement
+//!   [`Serialize`] and [`Deserialize`] for the collections and byte buffers of these
+//!   crates.  They behave like their counterparts in the standard library, including
+//!   the [adapters](crate::adapters) (for instance `IndexMap<_, DisplayFromStr>`).
 //! * `io` (enabled by default) adds [`io`][io-module] to read values from and
 //!   write values to streams.
 //!

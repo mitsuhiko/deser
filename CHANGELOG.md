@@ -808,6 +808,19 @@ All notable changes to deser are documented here.
   adapters that serialize as a struct.
 - `As` forwards the specialization for bytes to its adapter, so for
   instance a `Vec<As<u8, Same>>` serializes as bytes.
+- Added support for the collections and byte buffers of other crates with
+  the new features of the same names: `indexmap` (`IndexMap` and
+  `IndexSet`, which keep their order), `hashbrown` (`HashMap` and
+  `HashSet`), `smallvec` (`SmallVec<[T; N]>`), `arrayvec` (`ArrayVec`,
+  which rejects more elements than its capacity, and `ArrayString`),
+  `bytes` (`Bytes` and `BytesMut`) and `bstr` (`BString`, `Box<BStr>` and
+  `&BStr`).  They behave like their counterparts in the standard library:
+  the collections are adapters for their elements (`IndexMap<_,
+  DisplayFromStr>`), the maps support updates and `MapSkipError`, and the
+  byte buffers (and `SmallVec` and `ArrayVec` of `u8`) are bytes which
+  support the bytes adapters.  Byte strings of `bstr` are strings if they
+  are valid UTF-8 and bytes otherwise (written as sequences of integers in
+  JSON), strings are deserialized as their UTF-8 bytes like serde does.
 
 ## 0.8.0
 

@@ -766,7 +766,7 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 /// ```
 pub struct MapSkipError<KA = Same, VA = Same>(PhantomData<fn() -> (KA, VA)>);
 
-fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
+pub(crate) fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,

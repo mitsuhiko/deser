@@ -21,6 +21,7 @@ pub mod io;
 pub mod ser;
 
 mod extensions;
+mod foreign_impls;
 mod position;
 mod state;
 mod std_impls;
