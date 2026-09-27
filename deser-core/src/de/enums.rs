@@ -270,9 +270,26 @@ pub fn lookup_atom<T>(atom: &Atom, lookup: impl Fn(Tag<'_>) -> Option<T>) -> Opt
 /// Extension values are lowered to their fallback.  Atoms that are not the
 /// name of a variant are the `other` variant if there is one, otherwise
 /// they are an error.  This does everything but the lookup of the names for
-/// the unit enums of the derive, it's not inlined so that it exists once.
-#[inline(never)]
+/// the unit enums of the derive.  Names given as strings (the common case)
+/// are looked up inline, everything else in a function that exists once.
+#[inline]
 pub fn unit_variant(
+    atom: &Atom<'_>,
+    lookup: fn(Tag<'_>) -> Option<usize>,
+    names: &[&str],
+    expecting: &str,
+    other: Option<usize>,
+) -> Result<usize, Error> {
+    if let Atom::Str(name) = atom
+        && let Some(index) = lookup(Tag::Str(name))
+    {
+        return Ok(index);
+    }
+    unit_variant_slow(atom, lookup, names, expecting, other)
+}
+
+#[inline(never)]
+fn unit_variant_slow(
     atom: &Atom<'_>,
     lookup: fn(Tag<'_>) -> Option<usize>,
     names: &[&str],
@@ -282,7 +299,7 @@ pub fn unit_variant(
     if let Atom::Ext(ext) = atom {
         return match ext.fallback() {
             Atom::Ext(_) => Err(atom.unexpected_error(expecting)),
-            fallback => unit_variant(&fallback, lookup, names, expecting, other),
+            fallback => unit_variant_slow(&fallback, lookup, names, expecting, other),
         };
     }
     match lookup_atom(atom, lookup).or(other) {
