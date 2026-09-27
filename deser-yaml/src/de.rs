@@ -670,7 +670,7 @@ impl<'a> Deserializer<'a> {
 
         if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
-            *driver.state_mut().get_mut::<Source>() = Source(source.clone());
+            Source::set(driver.state_mut(), source.clone());
         }
         if let Some(max_depth) = self.config.max_depth {
             driver.push_layer(Limits::new().max_depth(max_depth));

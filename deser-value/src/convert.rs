@@ -89,7 +89,7 @@ fn set_range<'de>(
     (start, end): (usize, usize),
 ) {
     if !current.is_some_and(|current| Arc::ptr_eq(current, new)) {
-        *driver.state_mut().get_mut::<Source>() = Source(new.clone());
+        Source::set(driver.state_mut(), new.clone());
         *current = Some(new);
     }
     driver.state_mut().set_input_range(start, end);

@@ -211,7 +211,7 @@ impl<'a> Deserializer<'a> {
         let doc = parse(self.input)?;
 
         if self.config.track_locations {
-            *driver.state_mut().get_mut::<Source>() = Source(self.input.into());
+            Source::set(driver.state_mut(), self.input);
         }
         if self.config.bytes != BytesFormat::BASE64 {
             *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;

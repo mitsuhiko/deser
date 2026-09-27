@@ -439,7 +439,7 @@ impl<'a> Deserializer<'a> {
                     source
                 }
             };
-            *driver.state_mut().get_mut::<Source>() = Source(source);
+            Source::set(driver.state_mut(), source);
         }
         if self.config.bytes != BytesFormat::BASE64 {
             *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;

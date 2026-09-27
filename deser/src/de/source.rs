@@ -1,6 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::State;
+
 /// The source the input ranges refer to.
 ///
 /// Formats can publish the byte range in the input of every event (see
@@ -8,19 +10,26 @@ use std::sync::Arc;
 /// resolving the ranges into lines and columns requires the source.  As
 /// this requires a copy of the input, formats only provide it when asked to
 /// (for instance with their `track_locations` option).  They store it in
-/// the [`State`](crate::State) as an extension value before they emit the
-/// first event:
+/// the [`State`] as an extension value with [`set`](Self::set) before they
+/// emit the first event:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Source};
 ///
 /// let mut out = None::<bool>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// *driver.state_mut().get_mut::<Source>() = Source("true".into());
+/// Source::set(driver.state_mut(), "true");
 /// assert_eq!(&*driver.state().get::<Source>().unwrap().0, "true");
 /// ```
 #[derive(Clone, Default)]
 pub struct Source(pub Arc<str>);
+
+impl Source {
+    /// Sets the source in the state.
+    pub fn set<S: Into<Arc<str>>>(state: &mut State, source: S) {
+        *state.get_mut::<Source>() = Source(source.into());
+    }
+}
 
 impl fmt::Debug for Source {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
