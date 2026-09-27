@@ -184,7 +184,7 @@ fn test_variant_expressions() {
     assert_eq!(deserialize::<Case>(events).unwrap(), upper);
     assert_eq!(
         deserialize::<Case>(vec!["x".into()]).unwrap_err().message(),
-        "unknown variant `x`, expected `lower` or `UPPER`"
+        "unknown variant `x` of Case, expected `lower` or `UPPER`"
     );
 
     assert_eq!(

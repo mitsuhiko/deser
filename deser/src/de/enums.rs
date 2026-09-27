@@ -285,7 +285,7 @@ fn tag_display<'a>(atom: &'a Atom<'_>) -> Option<Cow<'a, str>> {
 #[cold]
 pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Error {
     match tag_display(atom) {
-        Some(name) => unknown_variant(Some(&name), names),
+        Some(name) => unknown_variant(Some(&name), expecting, names),
         None => atom.unexpected_error(expecting),
     }
 }
@@ -324,7 +324,14 @@ impl<'de, E> Copy for Variants<'de, E> {}
 
 impl<'de, E> Variants<'de, E> {
     /// Returns the variant for a recorded tag.
-    fn resolve(&self, tag: &Recording, state: &mut State) -> Result<BoxedVariant<'de, E>, Error> {
+    ///
+    /// The name is the name of the enum for errors.
+    fn resolve(
+        &self,
+        tag: &Recording,
+        name: &str,
+        state: &mut State,
+    ) -> Result<BoxedVariant<'de, E>, Error> {
         let atom = single_atom(tag);
         if let Some(atom) = atom
             && let Some(variant) = lookup_atom(atom, self.lookup)
@@ -339,6 +346,7 @@ impl<'de, E> Variants<'de, E> {
             }
             None => Err(unknown_variant(
                 atom.and_then(tag_display).as_deref(),
+                name,
                 self.names,
             )),
         }
@@ -489,7 +497,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        let variant = self.variants.resolve(&self.key, state)?;
+        let variant = self.variants.resolve(&self.key, self.name, state)?;
         Ok(SinkHandle::to(self.variant.insert(variant).sink()))
     }
 
@@ -577,7 +585,7 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, state)?,
+            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)
@@ -754,7 +762,7 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
             return Ok(());
         }
         let variant = match self.tag_value {
-            Some(ref tag) => self.variants.resolve(tag, state)?,
+            Some(ref tag) => self.variants.resolve(tag, self.name, state)?,
             None => return Ok(()),
         };
         self.start_variant(variant, state)

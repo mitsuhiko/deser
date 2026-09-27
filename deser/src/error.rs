@@ -344,16 +344,18 @@ pub(crate) fn conversion_error<E: fmt::Display>(err: E) -> Error {
 
 /// Creates the error for an unknown variant.
 ///
-/// `tag` is the name that was given (if it was a string), `names` are the
-/// names of the variants.
+/// `tag` is the name that was given (if it can be a name), `type_name` the
+/// name of the enum and `names` are the names of the variants.
 #[cold]
-pub fn unknown_variant(tag: Option<&str>, names: &[&str]) -> Error {
+pub fn unknown_variant(tag: Option<&str>, type_name: &str, names: &[&str]) -> Error {
     let mut msg = String::from("unknown variant");
     if let Some(tag) = tag {
         msg.push_str(" `");
         msg.push_str(tag);
         msg.push('`');
     }
+    msg.push_str(" of ");
+    msg.push_str(type_name);
     push_expected(&mut msg, names, "variants");
     Error::new(ErrorKind::Unexpected, msg)
 }

@@ -424,7 +424,7 @@ fn test_default_variant() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `quic`, expected `http` or `tls`"
+        "Unexpected: unknown variant `quic` of Bind, expected `http` or `tls`"
     );
 
     assert_eq!(

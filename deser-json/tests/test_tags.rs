@@ -30,11 +30,11 @@ fn test_unit_enums() {
     // strings are not integers
     assert_eq!(
         from_str::<Level>(r#""1""#).unwrap_err().message(),
-        "unknown variant `1`, expected one of `0`, `1`, `-1`, `high`"
+        "unknown variant `1` of Level, expected one of `0`, `1`, `-1`, `high`"
     );
     assert_eq!(
         from_str::<Level>("2").unwrap_err().message(),
-        "unknown variant `2`, expected one of `0`, `1`, `-1`, `high`"
+        "unknown variant `2` of Level, expected one of `0`, `1`, `-1`, `high`"
     );
     assert_eq!(
         from_str::<Level>("1.5").unwrap_err().message(),
@@ -100,7 +100,7 @@ fn test_adjacently_tagged() {
         from_str::<Outcome>(r#"{"ok":"yes","value":1}"#)
             .unwrap_err()
             .message(),
-        "unknown variant `yes`, expected `true` or `false`"
+        "unknown variant `yes` of Outcome, expected `true` or `false`"
     );
 }
 

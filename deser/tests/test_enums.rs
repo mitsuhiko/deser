@@ -118,7 +118,7 @@ fn test_externally_tagged() {
     let err = deserialize::<External>(vec!["Nope".into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `Nope`, expected one of `Unit`, `Newtype`, `Tuple`, `Struct`"
+        "Unexpected: unknown variant `Nope` of External, expected one of `Unit`, `Newtype`, `Tuple`, `Struct`"
     );
     let err = deserialize::<External>(vec![
         Event::map_start(),

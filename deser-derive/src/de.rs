@@ -85,17 +85,44 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
-    let attrs = fields
+    let all_attrs = fields
         .named
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    if let Some(attrs) = attrs.iter().find(|x| x.tag()) {
+    if let Some(attrs) = all_attrs.iter().find(|x| x.tag()) {
         return Err(syn::Error::new_spanned(
             attrs.field(),
             "tag fields are only supported in other variants of enums",
         ));
     }
+    // skipped fields are not deserialized, they are filled in when the
+    // struct is built
+    let attrs = all_attrs
+        .iter()
+        .filter(|x| !x.skip_deserializing())
+        .collect::<Vec<_>>();
+    let mut default_bounds = Vec::new();
+    let (skipped_name, skipped_value): (Vec<_>, Vec<_>) = all_attrs
+        .iter()
+        .filter(|x| x.skip_deserializing())
+        .map(|x| {
+            let name = &x.field().ident;
+            let ty = &x.field().ty;
+            let value = match (x.default(), container_attrs.default()) {
+                (Some(TypeDefault::Explicit(expr)), _) => expr.clone(),
+                (None, Some(TypeDefault::Explicit(expr))) => quote! { (#expr).#name },
+                (None, Some(TypeDefault::Implicit)) => quote! {
+                    <#ident #ty_generics as __deser::__derive::Default>::default().#name
+                },
+                (Some(TypeDefault::Implicit), _) | (None, None) => {
+                    default_bounds.push(quote! { #ty: __deser::__derive::Default });
+                    quote! { <#ty as __deser::__derive::Default>::default() }
+                }
+            };
+            (name, value)
+        })
+        .unzip();
     let fieldname = attrs.iter().map(|x| &x.field().ident).collect::<Vec<_>>();
     let sink_fieldname = attrs
         .iter()
@@ -128,7 +155,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! {
                     __deser::de::OwnedSink::deserialize()
                 }
-            } else if f.default().is_some() {
+            } else if f.default().is_some() || f.required() {
+                // required fields are missing even if their type has a
+                // value for missing fields
                 quote! {
                     __deser::__derive::None
                 }
@@ -206,21 +235,39 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bounded_where_clause = where_clause_for_fields(
+    let mut bounded_where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Deserialize<'de>),
         Some(quote!(__deser::__derive::Send)),
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
-        &attrs
+        &all_attrs
             .iter()
             .map(|x| BoundField {
                 ty: &x.field().ty,
                 adapter: x.adapters().de(),
+                skipped: x.skip_deserializing(),
             })
             .collect::<Vec<_>>(),
     );
+    // skipped fields of generic types need a default
+    if container_attrs.deserialize_bound().is_none() {
+        let params = input
+            .generics
+            .type_params()
+            .map(|x| x.ident.to_string())
+            .collect::<HashSet<_>>();
+        for bound in default_bounds {
+            let mut idents = HashSet::new();
+            crate::bound::collect_idents(bound.clone(), &mut idents);
+            if idents.iter().any(|x| params.contains(x)) {
+                bounded_where_clause
+                    .predicates
+                    .push(syn::parse_quote!(#bound));
+            }
+        }
+    }
 
     let field_stage1_default = attrs
         .iter()
@@ -712,6 +759,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         #(
                             #fieldname: #field_take,
                         )*
+                        #(
+                            #skipped_name: #skipped_value,
+                        )*
                     };
                     #container_validate
                     *self.slot = __deser::__derive::Some(__value);
@@ -934,6 +984,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         &[BoundField {
             ty: field_type,
             adapter,
+            skipped: false,
         }],
     );
 

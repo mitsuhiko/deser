@@ -4,6 +4,15 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(skip)]`, `#[deser(skip_serializing)]` and
+  `#[deser(skip_deserializing)]` for fields.  Skipped fields are filled in
+  with their default when deserializing and their types do not need to be
+  serializable.
+- Added `#[deser(required)]` for fields which makes fields of types with a
+  value for missing fields (like `Option`) required.
+- Added `Serialize` and `Deserialize` for `ManuallyDrop` (like the inner
+  value), `OnceLock` (like an `Option`) and `Infallible` (which fails to
+  deserialize).
 - Added `#[deser(alias_all = "...")]` for structs and enums which adds an
   alias in a name style (like `rename_all`) to all fields or variants.  It
   can be given more than once.
@@ -15,7 +24,7 @@ All notable changes to deser are documented here.
   in all enum representations.  Tags of unknown type (the keys of JSON
   objects, query strings) are parsed into the type of the names.
 - Unknown variants given as integers or booleans report the value
-  (``unknown variant `2`, expected `A` or `B` ``) and enums with only unit
+  (``unknown variant `2` of Kind, expected `A` or `B` ``) and enums with only unit
   variants report their name when they receive a value that cannot be a
   tag (`unexpected float, expected Level`, it was `expected compatible
   type` before).
@@ -73,13 +82,13 @@ All notable changes to deser are documented here.
   `Mutex` and `RwLock` can be deserialized, they cannot be serialized as the
   lock guard would have to be held while the serialization moves between
   threads.
-- Improved error messages.  Unknown variants list the expected variants
-  (``unknown variant `D`, expected `A` or `B` ``, enums with only unit
-  variants reported `unexpected value for enum` before), integers that do
-  not fit into their type report the value and the type (`invalid value
-  300, expected u8` instead of `value out of range for type`).  Names are
-  quoted with backticks (``missing field `x` `` instead of `Missing field
-  'x'`) and messages are lowercase.  JSON reports numbers out of range and
+- Improved error messages.  Unknown variants name the enum and list the
+  expected variants (``unknown variant `D` of Kind, expected `A` or `B` ``,
+  enums with only unit variants reported `unexpected value for enum`
+  before), integers that do not fit into their type report the value and
+  the type (`invalid value 300, expected u8` instead of `value out of
+  range for type`).  Names are quoted with backticks (``missing field `x`
+  `` instead of `Missing field 'x'`) and messages are lowercase.  JSON reports numbers out of range and
   invalid escapes in strings more precisely.
 - JSON and TOML serialize `bool` map keys as strings (`{"true": 1}`) like
   `serde_json`, which they can also be deserialized from.

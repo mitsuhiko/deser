@@ -606,4 +606,52 @@
 ///     field: u32,
 /// }
 /// ```
+///
+/// Attributes that have no effect on skipped fields are rejected.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(skip, rename = "other")]
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(skip_serializing, skip_serializing_if = Option::is_none)]
+///     field: Option<u32>,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(skip, skip_deserializing)]
+///     field: u32,
+/// }
+/// ```
+///
+/// Skipped fields need a default.
+///
+/// ```compile_fail
+/// struct NoDefault;
+///
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(skip)]
+///     field: NoDefault,
+/// }
+/// ```
+///
+/// Required fields cannot have a default.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test {
+///     #[deser(required, default)]
+///     field: Option<u32>,
+/// }
+/// ```
 pub struct DeriveErrors;

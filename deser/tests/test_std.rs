@@ -312,7 +312,7 @@ fn test_result() {
             Event::MapEnd,
         ],
         ErrorKind::Unexpected,
-        "unknown variant \"Nope\", expected Ok or Err",
+        "unknown variant `Nope` of Result, expected `Ok` or `Err`",
     );
     assert_err::<Result<u32, u32>>(
         vec![
@@ -580,7 +580,7 @@ fn test_bound() {
     assert_err::<Bound<u32>>(
         string("Nope"),
         ErrorKind::Unexpected,
-        "unknown variant `Nope`, expected one of `Unbounded`, `Included`, `Excluded`",
+        "unknown variant `Nope` of Bound, expected one of `Unbounded`, `Included`, `Excluded`",
     );
     assert_err::<Bound<u32>>(
         fields(&[("Included", 1), ("Excluded", 2)]),
@@ -591,5 +591,62 @@ fn test_bound() {
         fields(&[]),
         ErrorKind::Unexpected,
         "expected a map with a single key for Bound",
+    );
+}
+
+#[test]
+fn test_manually_drop() {
+    use std::mem::ManuallyDrop;
+
+    let value = roundtrip(&ManuallyDrop::new(vec![1u32]), {
+        vec![Event::seq_start(), 1u64.into(), Event::SeqEnd]
+    });
+    assert_eq!(*value, vec![1]);
+}
+
+#[test]
+fn test_once_lock() {
+    use std::sync::OnceLock;
+
+    let set = OnceLock::from(1u32);
+    assert_eq!(roundtrip(&set, vec![1u64.into()]).get(), Some(&1));
+    let empty = OnceLock::<u32>::new();
+    assert!(empty.is_optional());
+    assert_eq!(roundtrip(&empty, vec![Event::from(())]).get(), None);
+
+    // missing fields are not set
+    #[derive(Deserialize, Serialize)]
+    #[deser(skip_serializing_optionals)]
+    struct Cache {
+        value: OnceLock<u32>,
+    }
+    let cache: Cache = deserialize(vec![Event::map_start(), Event::MapEnd]).unwrap();
+    assert_eq!(cache.value.get(), None);
+    assert_eq!(
+        serialize(&cache).unwrap(),
+        vec![Event::map_start(), Event::MapEnd]
+    );
+}
+
+#[test]
+fn test_infallible() {
+    use std::convert::Infallible;
+
+    let err = deserialize::<Infallible>(vec![1u64.into()]).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "unexpected unsigned integer, expected nothing"
+    );
+    let value: Result<u32, Infallible> = deserialize(vec![
+        Event::map_start(),
+        "Ok".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(value, Ok(1));
+    assert_eq!(
+        serialize(&value).unwrap(),
+        vec![Event::map_start(), "Ok".into(), 1u64.into(), Event::MapEnd]
     );
 }

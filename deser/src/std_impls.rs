@@ -4,20 +4,22 @@
 //! `ser::impls` and `de::impls`.
 use std::borrow::Cow;
 use std::cmp::Reverse;
+use std::convert::Infallible;
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fmt::Display;
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::num::{NonZero, Saturating, Wrapping};
 use std::ops::{Bound, Range, RangeFrom, RangeInclusive, RangeTo};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same, SerializeAs, SerializeAsRef};
 use crate::de::duplicates::duplicate_field;
-use crate::de::impls::{Via, deserialize_via};
+use crate::de::impls::{Via, deserialize_via, via_handle};
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Bytes};
@@ -120,6 +122,131 @@ macro_rules! newtype_wrapper {
 }
 
 newtype_wrapper!(Wrapping, Saturating, Reverse);
+
+// ManuallyDrop
+
+/// Serializes as the inner value.
+impl<T: Serialize> Serialize for ManuallyDrop<T> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        (**self).serialize(state)
+    }
+
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
+        (**self).finish(state)
+    }
+
+    #[inline]
+    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
+        (**self).__private_begin(state)
+    }
+
+    fn is_optional(&self) -> bool {
+        (**self).is_optional()
+    }
+
+    fn container_shape(&self) -> crate::ContainerShape {
+        (**self).container_shape()
+    }
+
+    fn describe(&self, d: &mut dyn Describe) {
+        (**self).describe(d);
+    }
+}
+
+impl<T: Send> Via<T> for ManuallyDrop<T> {
+    #[inline]
+    fn convert(value: T) -> Result<Self, Error> {
+        Ok(ManuallyDrop::new(value))
+    }
+}
+
+deserialize_via! {
+    [T: Deserialize<'de>] ManuallyDrop<T> => T;
+}
+
+// OnceLock
+
+/// Serializes like an `Option`: as the value if it's set, as null if not.
+impl<T: Serialize + Send> Serialize for OnceLock<T> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        match self.get() {
+            Some(value) => value.serialize(state),
+            None => Ok(Chunk::Atom(Atom::Null)),
+        }
+    }
+
+    fn finish(&self, state: &mut State) -> Result<(), Error> {
+        match self.get() {
+            Some(value) => value.finish(state),
+            None => Ok(()),
+        }
+    }
+
+    fn is_optional(&self) -> bool {
+        self.get().is_none()
+    }
+
+    fn container_shape(&self) -> crate::ContainerShape {
+        match self.get() {
+            Some(value) => value.container_shape(),
+            None => crate::ContainerShape::new(),
+        }
+    }
+
+    fn describe(&self, d: &mut dyn Describe) {
+        match self.get() {
+            Some(value) => {
+                d.some();
+                value.describe(d);
+            }
+            None => d.none(),
+        }
+    }
+}
+
+impl<T: Send> Via<Option<T>> for OnceLock<T> {
+    #[inline]
+    fn convert(value: Option<T>) -> Result<Self, Error> {
+        Ok(match value {
+            Some(value) => OnceLock::from(value),
+            None => OnceLock::new(),
+        })
+    }
+}
+
+/// Deserializes like an `Option`: null and missing values are not set.
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for OnceLock<T> {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        via_handle::<Option<T>, Self, Same>(out)
+    }
+
+    fn initial_value() -> Option<Self> {
+        Some(OnceLock::new())
+    }
+}
+
+// Infallible
+
+/// Values of `Infallible` do not exist, they are never serialized.
+impl Serialize for Infallible {
+    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        match *self {}
+    }
+}
+
+impl<'de> Sink<'de> for SlotWrapper<Infallible> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("nothing")
+    }
+}
+
+/// Deserializing `Infallible` always fails, for instance to rule out a
+/// variant of a generic enum (`Result<T, Infallible>`).
+impl<'de> Deserialize<'de> for Infallible {
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        SlotWrapper::make_handle(out)
+    }
+}
 
 // NonZero
 
@@ -325,12 +452,7 @@ impl<'de> Sink<'de> for ResultVariantSlot<ResultVariant> {
                 **self = Some(match &**name {
                     "Ok" => ResultVariant::Ok,
                     "Err" => ResultVariant::Err,
-                    other => {
-                        return Err(Error::new(
-                            ErrorKind::Unexpected,
-                            format!("unknown variant {other:?}, expected Ok or Err"),
-                        ));
-                    }
+                    other => return Err(unknown_variant(Some(other), "Result", &["Ok", "Err"])),
                 });
                 Ok(())
             }
@@ -953,7 +1075,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
         match atom {
             Atom::Str(ref name) | Atom::Lexical(ref name) => {
                 if &**name != "Unbounded" {
-                    return Err(unknown_variant(Some(name), BOUND_VARIANTS));
+                    return Err(unknown_variant(Some(name), "Bound", BOUND_VARIANTS));
                 }
                 *self.slot = Some(Bound::Unbounded);
                 Ok(())
@@ -981,7 +1103,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
         self.included = Some(match &*key {
             "Included" => true,
             "Excluded" => false,
-            other => return Err(unknown_variant(Some(other), BOUND_VARIANTS)),
+            other => return Err(unknown_variant(Some(other), "Bound", BOUND_VARIANTS)),
         });
         Ok(T::deserialize_into(&mut self.value))
     }

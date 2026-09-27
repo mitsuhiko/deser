@@ -877,6 +877,9 @@ pub struct FieldAttrs<'a> {
     default: Option<TypeDefault>,
     flatten: bool,
     skip_serializing_if: Option<syn::ExprPath>,
+    skip_serializing: bool,
+    skip_deserializing: bool,
+    required: bool,
     validate: Option<syn::ExprPath>,
     adapters: Adapters,
     tag: bool,
@@ -892,10 +895,14 @@ impl<'a> FieldAttrs<'a> {
             default: None,
             flatten: false,
             skip_serializing_if: None,
+            skip_serializing: false,
+            skip_deserializing: false,
+            required: false,
             validate: None,
             adapters: Adapters::default(),
             tag: false,
         };
+        let mut skip = false;
         let mut adapters = AdapterAttrs::default();
 
         let seen = parse_deser_attrs(&field.attrs, |name, meta| match name {
@@ -924,11 +931,73 @@ impl<'a> FieldAttrs<'a> {
                 let value = parse_path(meta)?;
                 set_once(meta, name, &mut rv.validate, value)
             }
+            "skip" => set_flag(meta, name, &mut skip),
+            "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
+            "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
+            "required" => set_flag(meta, name, &mut rv.required),
             "tag" => set_flag(meta, name, &mut rv.tag),
             _ => Err(meta.error("unsupported attribute")),
         })?;
         rv.seen = seen;
         rv.adapters = adapters.finish(&rv.seen)?;
+
+        // attributes that have no effect with the skips are rejected
+        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
+            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
+                Some(other) => Err(syn::Error::new(
+                    other.span,
+                    format!("`{}` has no effect together with `{}`", other.name, name),
+                )),
+                None => Ok(()),
+            }
+        };
+        if skip {
+            if rv.skip_serializing || rv.skip_deserializing {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "skip already skips serialization and deserialization",
+                ));
+            }
+            conflict(
+                "skip",
+                &[
+                    "rename",
+                    "alias",
+                    "flatten",
+                    "skip_serializing_if",
+                    "validate",
+                    "required",
+                    "as",
+                    "serialize_as",
+                    "deserialize_as",
+                    "tag",
+                ],
+            )?;
+            rv.skip_serializing = true;
+            rv.skip_deserializing = true;
+        }
+        if rv.skip_serializing && !skip {
+            conflict(
+                "skip_serializing",
+                &["skip_serializing_if", "serialize_as", "flatten", "tag"],
+            )?;
+        }
+        if rv.skip_deserializing && !skip {
+            conflict(
+                "skip_deserializing",
+                &[
+                    "alias",
+                    "validate",
+                    "required",
+                    "deserialize_as",
+                    "flatten",
+                    "tag",
+                ],
+            )?;
+        }
+        if rv.required {
+            conflict("required", &["default", "flatten", "tag"])?;
+        }
 
         if rv.flatten && rv.default.is_some() {
             return Err(syn::Error::new_spanned(
@@ -1014,6 +1083,22 @@ impl<'a> FieldAttrs<'a> {
     /// Returns the function that validates deserialized values.
     pub fn validate(&self) -> Option<&syn::ExprPath> {
         self.validate.as_ref()
+    }
+
+    /// Returns `true` if the field is not serialized.
+    pub fn skip_serializing(&self) -> bool {
+        self.skip_serializing
+    }
+
+    /// Returns `true` if the field is not deserialized.
+    pub fn skip_deserializing(&self) -> bool {
+        self.skip_deserializing
+    }
+
+    /// Returns `true` if the field has to be given, even if its type has a
+    /// value for missing fields (like `Option`).
+    pub fn required(&self) -> bool {
+        self.required
     }
 
     /// Returns the adapters of the field.

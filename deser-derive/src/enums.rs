@@ -52,6 +52,8 @@ struct FieldInfo<'a> {
     field: &'a syn::Field,
     adapters: Adapters,
     tag: bool,
+    skip_serializing: bool,
+    skip_deserializing: bool,
     binding: syn::Ident,
 }
 
@@ -271,6 +273,8 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     field,
                     adapters: attrs.adapters().clone(),
                     tag: attrs.tag(),
+                    skip_serializing: false,
+                    skip_deserializing: false,
                     binding: syn::Ident::new(&format!("__f{}", idx), Span::call_site()),
                 });
             }
@@ -283,6 +287,8 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     field,
                     adapters: attrs.adapters().clone(),
                     tag: attrs.tag(),
+                    skip_serializing: attrs.skip_serializing(),
+                    skip_deserializing: attrs.skip_deserializing(),
                     binding: syn::Ident::new(
                         &format!("__field_{}", field.ident.as_ref().unwrap()),
                         Span::call_site(),
@@ -445,6 +451,10 @@ fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<Bo
         .map(|field| BoundField {
             ty: field.ty(),
             adapter: field.adapters.get(direction),
+            skipped: match direction {
+                Direction::Serialize => field.skip_serializing,
+                Direction::Deserialize => field.skip_deserializing,
+            },
         })
         .collect()
 }
@@ -863,6 +873,9 @@ fn fields_ser(
                 field.field,
                 "flatten is not supported in enum variants",
             ));
+        }
+        if attrs.skip_serializing() {
+            continue;
         }
         let name = attrs.plain_name();
         let binding = &field.binding;

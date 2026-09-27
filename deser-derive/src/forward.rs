@@ -44,8 +44,11 @@ fn affected_directions(level: Level, name: &str) -> Option<(bool, bool)> {
         (Level::Container, _) => BOTH,
         (Level::Variant, "alias" | "default") => DE,
         (Level::Variant, _) => BOTH,
-        (Level::Field, "alias" | "default" | "deserialize_as" | "validate") => DE,
-        (Level::Field, "skip_serializing_if" | "serialize_as") => SER,
+        (
+            Level::Field,
+            "alias" | "default" | "deserialize_as" | "validate" | "skip_deserializing" | "required",
+        ) => DE,
+        (Level::Field, "skip_serializing_if" | "serialize_as" | "skip_serializing") => SER,
         (Level::Field, _) => BOTH,
     })
 }

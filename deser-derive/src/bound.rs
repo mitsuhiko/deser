@@ -111,13 +111,16 @@ pub fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
 pub struct BoundField<'a> {
     pub ty: &'a syn::Type,
     pub adapter: Option<&'a syn::Type>,
+    /// The field is skipped (not serialized or deserialized).
+    pub skipped: bool,
 }
 
 /// Returns the where clause of the generics with bounds inferred from fields.
 ///
 /// If `custom` is `Some` the custom predicates are used instead, otherwise
 /// every type parameter gets `bound` unless it only appears in fields with
-/// adapters.  Such parameters get `adapter_only_bound` if provided.  For
+/// adapters or skipped fields.  Such parameters get `adapter_only_bound` if
+/// provided.  For
 /// fields with adapters that refer to type parameters a predicate that
 /// requires the adapter to implement `adapter_trait` for the field type is
 /// added.
@@ -130,7 +133,7 @@ pub fn where_clause_for_fields(
     custom: Option<&[syn::WherePredicate]>,
     fields: &[BoundField<'_>],
 ) -> syn::WhereClause {
-    if custom.is_some() || fields.iter().all(|x| x.adapter.is_none()) {
+    if custom.is_some() || fields.iter().all(|x| x.adapter.is_none() && !x.skipped) {
         return where_clause_with_bound(generics, bound, custom);
     }
 
@@ -139,6 +142,7 @@ pub fn where_clause_for_fields(
     for field in fields {
         let ty = field.ty;
         match field.adapter {
+            _ if field.skipped => collect_idents(quote::quote! { #ty }, &mut adapted),
             Some(adapter) => {
                 collect_idents(quote::quote! { #ty #adapter }, &mut adapted);
             }
@@ -164,8 +168,8 @@ pub fn where_clause_for_fields(
     }
     for field in fields {
         let adapter = match field.adapter {
-            Some(adapter) => adapter,
-            None => continue,
+            Some(adapter) if !field.skipped => adapter,
+            _ => continue,
         };
         let ty = field.ty;
         let mut idents = HashSet::new();

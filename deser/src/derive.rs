@@ -222,6 +222,15 @@
 //!   path with a reference to the value to check if it should be skipped
 //!   during serialization, for instance
 //!   `#[deser(skip_serializing_if = Option::is_none)]`.
+//! * `#[deser(skip)]`: the field is neither serialized nor deserialized.
+//!   When deserializing, its value is the `default` of the field, or the
+//!   one of the container default, or [`Default`].  The key of the field is
+//!   an unknown key.  The type of the field does not need to be
+//!   serializable.
+//! * `#[deser(skip_serializing)]` and `#[deser(skip_deserializing)]`: skip
+//!   the field in one direction only.
+//! * `#[deser(required)]`: the field has to be given even if its type has a
+//!   value for missing fields, for instance `None` for `Option`.
 //! * `#[deser(alias = "...")]`: provides an alias for the field name for deserialization.  This is ignored
 //!   for serialization.
 //! * `#[deser(flatten)]`: when added to a nested struct field causes that field to be flattened into the

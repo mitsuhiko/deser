@@ -153,7 +153,7 @@ fn test_errors() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `triangle`, expected one of `circle`, `rect`, `empty`, `polygon`"
+        "Unexpected: unknown variant `triangle` of Shape, expected one of `circle`, `rect`, `empty`, `polygon`"
     );
 
     let err = deserialize::<Shape>(vec![

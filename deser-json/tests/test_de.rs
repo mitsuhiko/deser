@@ -839,11 +839,11 @@ fn test_error_messages() {
     );
     assert_eq!(
         msg(from_str::<Unit>(r#""D""#).unwrap_err()),
-        "unknown variant `D`, expected `A` or `B`"
+        "unknown variant `D` of Unit, expected `A` or `B`"
     );
     assert_eq!(
         msg(from_str::<Data>(r#""D""#).unwrap_err()),
-        "unknown variant `D`, expected one of `A`, `B`, `C`"
+        "unknown variant `D` of Data, expected one of `A`, `B`, `C`"
     );
     assert_eq!(
         msg(from_str::<f64>("1e400").unwrap_err()),

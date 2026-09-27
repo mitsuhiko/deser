@@ -53,6 +53,8 @@ pub fn is_optional(ty: &syn::Type, adapter: Option<&syn::Type>, value: TokenStre
 }
 
 /// Returns the where clause for the fields of a struct.
+///
+/// The fields are all fields, including the skipped ones.
 fn struct_where_clause(
     input: &syn::DeriveInput,
     container_attrs: &ContainerAttrs,
@@ -70,6 +72,7 @@ fn struct_where_clause(
             .map(|x| BoundField {
                 ty: &x.field().ty,
                 adapter: x.adapters().ser(),
+                skipped: x.skip_serializing(),
             })
             .collect::<Vec<_>>(),
     )
@@ -110,15 +113,21 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input)?;
     let type_name = container_attrs.container_name();
-    let attrs = fields
+    let all_attrs = fields
         .named
         .iter()
         .map(FieldAttrs::of)
         .collect::<syn::Result<Vec<_>>>()?;
-    reject_tag_fields(&attrs)?;
+    reject_tag_fields(&all_attrs)?;
+    let bounded_where_clause = struct_where_clause(input, &container_attrs, &all_attrs);
+    // skipped fields are not serialized at all
+    let attrs = all_attrs
+        .iter()
+        .filter(|x| !x.skip_serializing())
+        .collect::<Vec<_>>();
 
     if !attrs.iter().any(|x| x.flatten()) {
-        return derive_indexed_struct(input, &container_attrs, &attrs);
+        return derive_indexed_struct(input, &container_attrs, &attrs, bounded_where_clause);
     }
 
     let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
@@ -234,7 +243,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let bounded_where_clause = struct_where_clause(input, &container_attrs, &attrs);
     let begin_without_finish = begin_without_finish();
 
     Ok(quote! {
@@ -291,7 +299,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 fn derive_indexed_struct(
     input: &syn::DeriveInput,
     container_attrs: &ContainerAttrs,
-    attrs: &[FieldAttrs],
+    attrs: &[&FieldAttrs],
+    bounded_where_clause: syn::WhereClause,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
@@ -379,8 +388,6 @@ fn derive_indexed_struct(
             }
         })
         .collect::<Vec<_>>();
-
-    let bounded_where_clause = struct_where_clause(input, container_attrs, attrs);
 
     // the number of fields is only known if none can be skipped
     let shape = if container_attrs.skip_serializing_optionals()
@@ -554,6 +561,7 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
         &[BoundField {
             ty: field_type,
             adapter,
+            skipped: false,
         }],
     );
 
