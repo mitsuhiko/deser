@@ -91,6 +91,13 @@ pub mod __derive {
     pub use crate::ser::enums::{EntrySer, FieldsSer, SeqSer, TaggedNewtype};
     pub use crate::ser::flatten::FlattenedStruct;
 
+    /// Creates the error for the first missing field.
+    #[cold]
+    pub fn missing_field(missing: &[bool], names: &[&str]) -> super::Error {
+        let index = missing.iter().position(|x| *x).unwrap_or_default();
+        new_missing_field_error(names[index])
+    }
+
     #[cold]
     pub fn new_missing_field_error(name: &str) -> super::Error {
         super::Error::new(

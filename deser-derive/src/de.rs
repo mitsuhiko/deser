@@ -317,11 +317,42 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             None => quote!(take()),
         })
         .collect::<Vec<_>>();
+    // Required fields (without defaults) of structs without flattened
+    // fields and container defaults are checked together, which avoids an
+    // early return (that drops all fields taken so far) per field.
+    let has_flatten_fields = attrs.iter().any(|x| x.flatten());
+    let is_checked = |attrs: &FieldAttrs| {
+        !has_flatten_fields && container_attrs.default().is_none() && attrs.default().is_none()
+    };
+    let checked_fields = sink_fieldname
+        .iter()
+        .zip(attrs.iter())
+        .filter(|(_, attrs)| is_checked(attrs))
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    let checked_names = attrs
+        .iter()
+        .filter(|attrs| is_checked(attrs))
+        .map(|attrs| attrs.name(&container_attrs))
+        .collect::<Vec<_>>();
+    let check_fields = if checked_fields.is_empty() {
+        None
+    } else {
+        Some(quote! {
+            let (#(#checked_fields,)*) = match (#(#checked_fields,)*) {
+                (#(__deser::__derive::Some(#checked_fields),)*) => (#(#checked_fields,)*),
+                (#(#checked_fields,)*) => return __deser::__derive::Err(__deser::__derive::missing_field(
+                    &[#(#checked_fields.is_none()),*],
+                    &[#(#checked_names),*],
+                )),
+            };
+        })
+    };
     let field_take = sink_fieldname
         .iter()
         .zip(attrs.iter())
         .map(|(name, attrs)| {
-            if attrs.default().is_some() {
+            if attrs.default().is_some() || is_checked(attrs) {
                 quote! { #name }
             } else if attrs.flatten() {
                 // this should never happen unless the inner deserializer fucked up
@@ -864,6 +895,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         }
                     )*
                     #stage2_default
+                    #check_fields
                     let __value = #ident {
                         #(
                             #fieldname: #field_take,
