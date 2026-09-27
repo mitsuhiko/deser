@@ -29,6 +29,14 @@ jobs:
         env:
           RUSTDOCFLAGS: --cfg docsrs
         run: cargo doc --no-deps --all-features -p 'deser*'
+      - name: Point docs.rs links of deser crates to the dev docs
+        run: |
+          find target/doc -name '*.html' -print0 | xargs -0 perl -pi -e '
+            s{href="https://docs\.rs/(deser(?:-[a-z]+)?)(?:/latest/\w+)?(/[^"]*)?"}{
+              my ($crate, $path) = ($1, $2);
+              (my $module = $crate) =~ tr/-/_/;
+              "href=\"/deser/$module" . ($path && $path ne "/" ? $path : "/index.html") . "\""
+            }ge'
       - name: Add index redirect
         run: echo '<meta http-equiv="refresh" content="0; url=deser/index.html">' > target/doc/index.html
       - uses: actions/upload-pages-artifact@v3
