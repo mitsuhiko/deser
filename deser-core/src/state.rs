@@ -199,6 +199,17 @@ impl State {
         }
     }
 
+    /// Returns `true` while errors are thrown away.
+    ///
+    /// While an untagged enum tries its variants only whether a variant
+    /// accepts the value matters.  The errors are created without a message
+    /// then, and the driver does not attach context to them.  Sinks that
+    /// keep the errors of their values (instead of returning them) should
+    /// return them while this is set.
+    pub fn discards_errors(&self) -> bool {
+        self.discards_errors
+    }
+
     /// Runs a function during which errors are thrown away.
     ///
     /// This is used while an untagged enum tries its variants: only whether
@@ -472,9 +483,18 @@ impl State {
     }
 
     /// Attaches the context of the current event to an error.
+    ///
+    /// The drivers do this for the errors of the events that fail (see
+    /// [`add_error_context`](Self::add_error_context)): the start of the
+    /// input range of the event is attached as offset (unless the error
+    /// has one) and the registered types add their context.  Errors that
+    /// already have the context of an event attached are returned
+    /// unchanged.  This is for sinks that handle the errors of their values
+    /// themselves instead of returning them, so that they have the same
+    /// context as the errors the driver sees.
     #[cold]
     #[inline(never)]
-    pub(crate) fn attach_error_context(&self, mut err: Error) -> Error {
+    pub fn attach_error_context(&self, mut err: Error) -> Error {
         if err.has_context() {
             return err;
         }
