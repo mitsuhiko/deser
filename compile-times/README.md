@@ -12,9 +12,9 @@ Clean builds of a small program with one struct and one enum
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.70s | 2.75s | 3.09s           |
-| miniserde | 1.93s | 2.04s | 2.21s           |
-| deser     | 2.26s | 2.34s | 2.33s           |
+| serde     | 2.74s | 2.98s | 2.91s           |
+| miniserde | 2.01s | 2.10s | 2.28s           |
+| deser     | 2.37s | 2.77s | 2.75s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -23,27 +23,32 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.34s | 0.42s | 7.96s           |
-| miniserde | 0.15s | 0.20s | 1.55s           |
-| deser     | 0.34s | 0.43s | 4.50s           |
+| serde     | 0.38s | 0.46s | 8.55s           |
+| miniserde | 0.16s | 0.21s | 1.67s           |
+| deser     | 0.38s | 0.46s | 5.28s           |
 
-* Clean builds are about as fast as with miniserde.  The crates of the
-  data formats only depend on `deser-core` (everything but the derive
+* Clean builds are 0.4s-0.7s slower than with miniserde.  The crates of
+  the data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
-  `deser-derive` are, which leaves `syn` and `deser-derive` as the
-  critical path.
-* Release builds of derived code are 1.8 times as fast as with serde but
+  `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.8s
+  to 0.9s, miniserde's derive takes 0.15s), `deser` (which re-exports the
+  derive macros) and the program.
+* Release builds of derived code are 1.6 times as fast as with serde but
   still three times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 287k lines of LLVM IR
+  3.1s, with far fewer features).  deser generates 296k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types, most of it is deserialization.
   Everything that does not depend on the types of the fields is in
   `deser-core`: the key handling and updates of structs, the sinks of
-  unit enums and the default methods of `Sink`.
+  unit enums and the default methods of `Sink`.  Where this costs
+  runtime performance it's not done (for instance the sinks of fields
+  are created inline).
 
 ## Areas of Interest
 
-* **`deser-derive` itself** takes 0.64s to compile (miniserde's derive
-  0.15s) and is on the critical path of clean builds.
+* **`deser-derive` itself** is on the critical path of clean builds.  A
+  third of its code is iterator adapters (`map`, `filter`, `collect`)
+  which are instantiated for every closure, a third the `quote!`
+  templates.
 * **Fast paths** are the largest parts of the derived code that remain.
   Removing the atom shortcuts of structs (`__private_value_atom`) builds
   0.26s faster but deserializes structs 5%-11% slower, emitting plain
