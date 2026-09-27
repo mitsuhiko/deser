@@ -59,6 +59,23 @@ pub struct Account {
 //! hexadecimal and base32) are provided by
 //! [`deser-encoding`](https://docs.rs/deser-encoding).
 //!
+//! Further functionality is provided by these crates:
+//!
+//! * [`deser-value`](https://docs.rs/deser-value): a dynamic value type which can
+//!   hold any value of the data model, to inspect or transform data or to
+//!   convert between formats.
+//! * [`deser-path`](https://docs.rs/deser-path): a layer that tracks the path of
+//!   the current value (like `servers[1].timeout`) and attaches it to errors.
+//! * [`deser-location`](https://docs.rs/deser-location): resolves the source
+//!   locations (line and column) of values while they are deserialized.
+//! * [`deser-debug`](https://docs.rs/deser-debug): formats serializable values
+//!   like their [`Debug`](std::fmt::Debug) implementation would.
+//! * [`deser-tokio`](https://docs.rs/deser-tokio): reads and writes values with
+//!   tokio's asynchronous streams.
+//! * [`deser-serde`](https://docs.rs/deser-serde): adapters to use serde types.
+//! * [`deser-encoding`](https://docs.rs/deser-encoding): hexadecimal and base32
+//!   encodings of bytes.
+//!
 //! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
