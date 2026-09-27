@@ -2,12 +2,13 @@
 //!
 //! Every format is implemented by a deser crate and by a serde library:
 //!
-//! | format | deser        | serde          |
-//! |--------|--------------|----------------|
-//! | JSON   | `deser-json` | `serde_json`   |
-//! | CBOR   | `deser-cbor` | `ciborium`     |
-//! | YAML   | `deser-yaml` | `serde-saphyr` |
-//! | TOML   | `deser-toml` | `toml`         |
+//! | format      | deser           | serde          |
+//! |-------------|-----------------|----------------|
+//! | JSON        | `deser-json`    | `serde_json`   |
+//! | CBOR        | `deser-cbor`    | `ciborium`     |
+//! | MessagePack | `deser-msgpack` | `rmp-serde`    |
+//! | YAML        | `deser-yaml`    | `serde-saphyr` |
+//! | TOML        | `deser-toml`    | `toml`         |
 use deser::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 
@@ -15,17 +16,25 @@ use serde::de::DeserializeOwned;
 pub enum Format {
     Json,
     Cbor,
+    Msgpack,
     Yaml,
     Toml,
 }
 
 impl Format {
-    pub const ALL: [Format; 4] = [Format::Json, Format::Cbor, Format::Yaml, Format::Toml];
+    pub const ALL: [Format; 5] = [
+        Format::Json,
+        Format::Cbor,
+        Format::Msgpack,
+        Format::Yaml,
+        Format::Toml,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Format::Json => "json",
             Format::Cbor => "cbor",
+            Format::Msgpack => "msgpack",
             Format::Yaml => "yaml",
             Format::Toml => "toml",
         }
@@ -43,7 +52,7 @@ pub enum Input<'a> {
 impl<'a> Input<'a> {
     pub fn new(format: Format, bytes: &'a [u8]) -> Input<'a> {
         match format {
-            Format::Cbor => Input::Binary(bytes),
+            Format::Cbor | Format::Msgpack => Input::Binary(bytes),
             _ => Input::Text(std::str::from_utf8(bytes).expect("text format is not UTF-8")),
         }
     }
@@ -70,6 +79,7 @@ pub fn deser_ser<T: Serialize>(format: Format, value: &T) -> Result<Vec<u8>, Err
     Ok(match format {
         Format::Json => deser_json::to_string(value)?.into_bytes(),
         Format::Cbor => deser_cbor::to_vec(value)?,
+        Format::Msgpack => deser_msgpack::to_vec(value)?,
         Format::Yaml => deser_yaml::to_string(value)?.into_bytes(),
         Format::Toml => deser_toml::to_string(value)?.into_bytes(),
     })
@@ -80,6 +90,7 @@ pub fn deser_de<T: for<'de> Deserialize<'de>>(format: Format, input: Input) -> R
     Ok(match format {
         Format::Json => deser_json::from_str(input.text())?,
         Format::Cbor => deser_cbor::from_slice(input.bytes())?,
+        Format::Msgpack => deser_msgpack::from_slice(input.bytes())?,
         Format::Yaml => deser_yaml::from_str(input.text())?,
         Format::Toml => deser_toml::from_str(input.text())?,
     })
@@ -94,6 +105,8 @@ pub fn serde_ser<T: serde::Serialize>(format: Format, value: &T) -> Result<Vec<u
             ciborium::into_writer(value, &mut out)?;
             out
         }
+        // structs are maps (like in deser), not arrays
+        Format::Msgpack => rmp_serde::to_vec_named(value)?,
         Format::Yaml => serde_saphyr::to_string(value)?.into_bytes(),
         Format::Toml => toml::to_string(value)?.into_bytes(),
     })
@@ -104,6 +117,7 @@ pub fn serde_de<T: DeserializeOwned>(format: Format, input: Input) -> Result<T, 
     Ok(match format {
         Format::Json => serde_json::from_str(input.text())?,
         Format::Cbor => ciborium::from_reader(input.bytes())?,
+        Format::Msgpack => rmp_serde::from_slice(input.bytes())?,
         // The default budget of serde-saphyr rejects the larger documents
         // (such as canada with more than 250,000 nodes).  deser-yaml does
         // not limit the input by default, so neither does serde-saphyr.

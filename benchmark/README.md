@@ -2,9 +2,10 @@
 
 This folder compares every format of deser with a serde based library on
 the same data and types: `deser-json` with `serde_json`, `deser-cbor` with
-`ciborium`, `deser-yaml` with `serde-saphyr` and `deser-toml` with `toml`.
-The results below are from `make bench-versus` on an Apple M5 Max with
-Rust 1.98.  Ratios are deser/serde, below 1 deser is faster.
+`ciborium`, `deser-msgpack` with `rmp-serde`, `deser-yaml` with
+`serde-saphyr` and `deser-toml` with `toml`.  The results below are from
+`make bench-versus` on an Apple M5 Max with Rust 1.98 (they do not include
+MessagePack yet).  Ratios are deser/serde, below 1 deser is faster.
 
 ## Where deser Stands
 
@@ -148,7 +149,8 @@ A document is the input of its own format, the inputs of the other formats
 are serialized from it with deser.  Both libraries read the same input and
 the results are checked to be equal when the data is loaded.
 serde-saphyr runs without its budget (`budget: None`) as the default
-rejects the larger documents.  deser-json and serde_json (without
+rejects the larger documents.  rmp-serde writes structs as maps
+(`to_vec_named`) like deser does, its default is arrays.  deser-json and serde_json (without
 `float_roundtrip`) do not round all floats with 17 digits correctly, the
 check accepts differences in the last bits.
 
