@@ -10,35 +10,14 @@ use crate::de::{Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
-/// Creates the sink for a field of a derived struct.
-///
-/// This is not inlined so that the code to create the sink exists once per
-/// type instead of once per field.  It's only used for values that are not
-/// atoms.
-#[cfg(feature = "derive")]
-#[inline(never)]
-pub fn field_sink<'a, 'de, T: Deserialize<'de>>(slot: &'a mut Option<T>) -> SinkHandle<'a, 'de> {
-    T::deserialize_into(slot)
-}
-
 /// Creates the sink that updates a field of a derived struct.
 ///
-/// Like [`field_sink`] this is not inlined so that it exists once per type.
+/// This is not inlined so that it exists once per type (updates are not
+/// performance critical).
 #[cfg(feature = "derive")]
 #[inline(never)]
 pub fn field_update<'a, 'de, T: Deserialize<'de>>(value: &'a mut T) -> SinkHandle<'a, 'de> {
     T::deserialize_update(value)
-}
-
-/// Creates the sink for a field of a derived struct with an adapter.
-#[cfg(feature = "derive")]
-#[inline(never)]
-pub fn field_sink_as<'a, 'de, A, T>(slot: &'a mut Option<T>) -> SinkHandle<'a, 'de>
-where
-    A: crate::adapters::DeserializeAs<'de, T>,
-    T: 'a,
-{
-    A::deserialize_into_as(slot)
 }
 
 /// Deserializes an atom into a slot.

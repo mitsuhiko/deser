@@ -11,14 +11,14 @@ use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_l
 
 /// Returns an expression that creates a sink handle for the slot of a field.
 ///
-/// This calls a function that is not inlined so that the code to create the
-/// sink exists once per type.
+/// The sink is created inline, which is faster for nested values than a
+/// function which exists once per type.
 fn field_sink(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            __deser::__derive::field_sink_as::<#adapter, #ty>(#slot)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot)
         },
-        None => quote! { __deser::__derive::field_sink(#slot) },
+        None => quote! { __deser::Deserialize::deserialize_into(#slot) },
     }
 }
 

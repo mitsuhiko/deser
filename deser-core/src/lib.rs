@@ -70,8 +70,7 @@ pub mod __derive {
 
     pub use crate::adapters::ser_impls::SerializeAsRef;
     pub use crate::de::atoms::{
-        atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle, field_sink,
-        field_sink_as, field_update,
+        atom_into, atom_into_handle, borrowed_atom_into, borrowed_atom_into_handle, field_update,
     };
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
