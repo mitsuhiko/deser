@@ -266,7 +266,7 @@ impl Recording {
         SinkHandle::boxed(CaptureSink {
             recording: Recording::new(),
             end: None,
-            then: Some(Box::new(then)),
+            then: Some(Box::new(FnCapture(Some(then)))),
         })
     }
 
@@ -323,10 +323,23 @@ impl<'de> RecordBuf<'de> {
         F: FnOnce(RecordBuf<'de>, &mut State) -> Result<(), Error> + Send + 'a,
         'de: 'a,
     {
+        RecordBuf::capture_with(Box::new(FnCapture(Some(then))))
+    }
+
+    /// Returns a sink that captures a value and passes it on.
+    ///
+    /// Unlike [`capture`](Self::capture) values which are a single atom are
+    /// passed on without recording them.
+    pub(crate) fn capture_with<'a>(
+        then: Box<dyn Capture<'de, RecordBuf<'de>> + 'a>,
+    ) -> SinkHandle<'a, 'de>
+    where
+        'de: 'a,
+    {
         SinkHandle::boxed(CaptureSink {
             recording: RecordBuf::new(),
             end: None,
-            then: Some(Box::new(then)),
+            then: Some(then),
         })
     }
 
@@ -448,17 +461,60 @@ fn record<'de>(
     });
 }
 
-type CaptureCallback<'a, T> = Box<dyn FnOnce(T, &mut State) -> Result<(), Error> + Send + 'a>;
+/// Receives a value that was captured (see [`RecordBuf::capture_with`]).
+pub(crate) trait Capture<'de, T>: Send {
+    /// Receives a value that is a single atom.
+    ///
+    /// The atom is passed on as it is, without recording it.
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error>;
 
-/// Records a value into an owned recording and invokes a callback with it.
-struct CaptureSink<'a, T> {
-    recording: T,
-    end: Option<Event<'static>>,
-    then: Option<CaptureCallback<'a, T>>,
+    /// Receives a value that is a single atom which borrows from the data.
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        self.atom(atom, state)
+    }
+
+    /// Receives the recording of any other value.
+    fn recorded(&mut self, recording: T, state: &mut State) -> Result<(), Error>;
 }
 
-impl<'a, T> CaptureSink<'a, T> {
-    fn child<'de>(&mut self) -> SinkHandle<'_, 'de>
+/// Passes every captured value to a callback as recording.
+struct FnCapture<F>(Option<F>);
+
+impl<'de, T, F> Capture<'de, T> for FnCapture<F>
+where
+    T: Target<'de> + Default,
+    F: FnOnce(T, &mut State) -> Result<(), Error> + Send,
+{
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        let mut recording = T::default();
+        recording.push(true, Event::Atom(atom.to_static()), state);
+        self.recorded(recording, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        let mut recording = T::default();
+        recording.push_borrowed(true, atom, state);
+        self.recorded(recording, state)
+    }
+
+    fn recorded(&mut self, recording: T, state: &mut State) -> Result<(), Error> {
+        match self.0.take() {
+            Some(then) => then(recording, state),
+            None => Ok(()),
+        }
+    }
+}
+
+/// Records a value and passes it on.
+struct CaptureSink<'a, 'de, T> {
+    recording: T,
+    end: Option<Event<'static>>,
+    // `None` once the value was passed on
+    then: Option<Box<dyn Capture<'de, T> + 'a>>,
+}
+
+impl<'a, 'de, T> CaptureSink<'a, 'de, T> {
+    fn child(&mut self) -> SinkHandle<'_, 'de>
     where
         T: Target<'de>,
     {
@@ -470,16 +526,19 @@ impl<'a, T> CaptureSink<'a, T> {
     }
 }
 
-impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
+impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, 'de, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.recording
-            .push(true, Event::Atom(atom.to_static()), state);
-        Ok(())
+        match self.then.take() {
+            Some(mut then) => then.atom(atom, state),
+            None => Ok(()),
+        }
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.recording.push_borrowed(true, atom, state);
-        Ok(())
+        match self.then.take() {
+            Some(mut then) => then.borrowed_atom(atom, state),
+            None => Ok(()),
+        }
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
@@ -562,6 +621,10 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        // an atom was already passed on
+        let Some(mut then) = self.then.take() else {
+            return Ok(());
+        };
         if self.recording.is_empty() && self.end.is_none() {
             // flattened into a struct but no key was given
             self.recording
@@ -571,10 +634,7 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, T> {
         if let Some(end) = self.end.take() {
             self.recording.push(true, end, state);
         }
-        match self.then.take() {
-            Some(then) => then(std::mem::take(&mut self.recording), state),
-            None => Ok(()),
-        }
+        then.recorded(std::mem::take(&mut self.recording), state)
     }
 }
 

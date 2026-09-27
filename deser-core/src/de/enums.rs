@@ -14,11 +14,12 @@ use std::mem::take;
 use std::ptr::NonNull;
 
 use crate::State;
-use crate::de::recording::RecordBuf;
+use crate::de::recording::{Capture, RecordBuf};
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::Atom;
+use crate::extensions::EventData;
 
 /// Builds the value of an enum variant.
 pub trait VariantBuilder<'de, E>: Send {
@@ -361,9 +362,6 @@ pub type VariantMaker<'a, 'de, E> = fn() -> BoxedVariant<'a, 'de, E>;
 
 /// Looks up a unit variant by tag.
 pub type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
-
-/// Creates the builder for the n-th variant of an untagged enum.
-pub type CandidateLookup<'a, 'de, E> = fn(usize) -> Option<BoxedVariant<'a, 'de, E>>;
 
 /// The variants of a tagged enum.
 pub struct Variants<'a, 'de, E> {
@@ -741,82 +739,270 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
     }
 }
 
+/// Tries the variants of an untagged enum.
+///
+/// The derive generates this function: it passes the variant with the
+/// given index to [`UntaggedTry::variant`] and returns `false` if there is
+/// no such variant.
+pub type UntaggedVariants<'de, E> = for<'t> fn(usize, &mut UntaggedTry<'t, 'de, E>) -> bool;
+
 /// Creates a sink handle for an untagged enum.
 ///
-/// The value is recorded and replayed into the variants in order until one
-/// of them accepts it.
+/// The value is delivered to the variants in order until one of them
+/// accepts it.  Values other than atoms are recorded and replayed for every
+/// variant, the recording borrows from the data.
 pub fn untagged_handle<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
     name: &'static str,
-    candidates: CandidateLookup<'a, 'de, E>,
+    variants: UntaggedVariants<'de, E>,
 ) -> SinkHandle<'a, 'de> {
-    RecordBuf::capture(move |recording, state| {
-        // only whether a variant accepts the value matters
-        let value = state.discard_errors(|state| {
-            for index in 0.. {
-                let mut variant = candidates(index)?;
-                if recording
-                    .replay(SinkHandle::to(variant.sink()), state)
-                    .is_ok()
-                    && let Some(value) = variant.build()
-                {
-                    return Some(value);
-                }
-            }
-            None
-        });
-        if let Some(value) = value {
-            *out = Some(value);
-            return Ok(());
+    RecordBuf::capture_with(Box::new(UntaggedCapture {
+        out,
+        name,
+        variants,
+    }))
+}
+
+/// Deserializes an atom into an untagged enum.
+///
+/// This is what the sink of [`untagged_handle`] does with an atom, without
+/// creating the sink.
+pub fn untagged_atom<'de, E>(
+    out: &mut Option<E>,
+    name: &'static str,
+    variants: UntaggedVariants<'de, E>,
+    atom: Atom,
+    state: &mut State,
+) -> Result<(), Error> {
+    *out = Some(
+        try_untagged_atom(variants, UntaggedInput::Atom(atom), state)
+            .ok_or_else(|| no_matching_variant(name))?,
+    );
+    Ok(())
+}
+
+/// Deserializes a borrowed atom into an untagged enum.
+///
+/// See [`untagged_atom`].
+pub fn untagged_borrowed_atom<'de, E>(
+    out: &mut Option<E>,
+    name: &'static str,
+    variants: UntaggedVariants<'de, E>,
+    atom: Atom<'de>,
+    state: &mut State,
+) -> Result<(), Error> {
+    *out = Some(
+        try_untagged_atom(variants, UntaggedInput::Borrowed(atom), state)
+            .ok_or_else(|| no_matching_variant(name))?,
+    );
+    Ok(())
+}
+
+/// The value the variants of an untagged enum are tried with.
+enum UntaggedInput<'t, 'de> {
+    Atom(Atom<'t>),
+    Borrowed(Atom<'de>),
+    Recorded(&'t RecordBuf<'de>),
+}
+
+/// Tries a variant of an untagged enum (see [`UntaggedVariants`]).
+pub struct UntaggedTry<'t, 'de, E> {
+    input: UntaggedInput<'t, 'de>,
+    // the data of the event of an atom
+    data: EventData,
+    state: &'t mut State,
+    value: Option<E>,
+}
+
+impl<'t, 'de, E> UntaggedTry<'t, 'de, E> {
+    /// Tries a variant whose content is deserialized as `V`.
+    ///
+    /// If the variant accepts the value, it's converted with `convert`.
+    pub fn variant<V: Deserialize<'de>>(&mut self, convert: fn(V) -> E) {
+        let mut slot = None;
+        let state = &mut *self.state;
+        // sinks can take event data (like CBOR tags), every variant gets
+        // the data of the event
+        if !self.data.is_empty() {
+            state.extensions_mut().restore_event_data(&self.data);
         }
-        Err(Error::new(
-            ErrorKind::Unexpected,
-            format!("data did not match any variant of {}", name),
-        ))
+        let rv = match self.input {
+            UntaggedInput::Atom(ref atom) => {
+                V::__private_atom_into(&mut slot, atom.as_borrowed(), state)
+            }
+            UntaggedInput::Borrowed(ref atom) => {
+                V::__private_borrowed_atom_into(&mut slot, atom.clone(), state)
+            }
+            UntaggedInput::Recorded(buffer) => buffer.replay(V::deserialize_into(&mut slot), state),
+        };
+        if rv.is_ok() {
+            self.value = slot.map(convert);
+        }
+    }
+}
+
+/// Tries the variants of an untagged enum until one accepts the value.
+///
+/// Returns `None` if no variant does.
+fn try_untagged<'de, E>(
+    variants: UntaggedVariants<'de, E>,
+    input: UntaggedInput<'_, 'de>,
+    data: EventData,
+    state: &mut State,
+) -> Option<E> {
+    // only whether a variant accepts the value matters
+    state.discard_errors(|state| {
+        let mut attempt = UntaggedTry {
+            input,
+            data,
+            state,
+            value: None,
+        };
+        let mut index = 0;
+        while attempt.value.is_none() && variants(index, &mut attempt) {
+            index += 1;
+        }
+        attempt.value
     })
+}
+
+/// Tries the variants of an untagged enum with an atom.
+///
+/// Atoms are delivered to the variants directly, like the driver delivers
+/// a single atom.
+fn try_untagged_atom<'de, E>(
+    variants: UntaggedVariants<'de, E>,
+    input: UntaggedInput<'_, 'de>,
+    state: &mut State,
+) -> Option<E> {
+    // sinks can take event data (like CBOR tags), every variant gets the
+    // data of the event
+    let data = state.extensions().capture_event_data();
+    try_untagged(variants, input, data, state)
+}
+
+/// Creates the error for a value that no variant of an untagged enum
+/// accepted.
+#[cold]
+fn no_matching_variant(name: &str) -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        format!("data did not match any variant of {}", name),
+    )
+}
+
+/// The sink of an untagged enum passes the value on to this.
+struct UntaggedCapture<'a, 'de, E> {
+    out: &'a mut Option<E>,
+    name: &'static str,
+    variants: UntaggedVariants<'de, E>,
+}
+
+impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de, E> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        untagged_atom(self.out, self.name, self.variants, atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        untagged_borrowed_atom(self.out, self.name, self.variants, atom, state)
+    }
+
+    fn recorded(&mut self, buffer: RecordBuf<'de>, state: &mut State) -> Result<(), Error> {
+        // replaying restores the event data of the recorded events
+        let input = UntaggedInput::Recorded(&buffer);
+        *self.out = Some(
+            try_untagged(self.variants, input, EventData::new(), state)
+                .ok_or_else(|| no_matching_variant(self.name))?,
+        );
+        Ok(())
+    }
 }
 
 /// Creates a sink handle for a tagged enum with untagged variants.
 ///
-/// The value is recorded and replayed into the sink of the tagged
-/// representation which `tagged` creates.  If that fails, it's replayed
-/// into the untagged variants in order until one of them accepts it.  If
-/// none does, the error of the tagged representation is returned.
+/// The value is delivered to the sink of the tagged representation which
+/// `tagged` creates.  If that fails, it's delivered to the untagged
+/// variants in order until one of them accepts it.  If none does, the
+/// error of the tagged representation is returned.  Values other than
+/// atoms are recorded and replayed, the recording borrows from the data.
 pub fn untagged_fallback<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
     tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
-    candidates: CandidateLookup<'a, 'de, E>,
+    variants: UntaggedVariants<'de, E>,
 ) -> SinkHandle<'a, 'de> {
-    RecordBuf::capture(move |recording, state| {
-        let err = match recording.replay(tagged(out), state) {
-            Ok(()) if out.is_some() => return Ok(()),
+    RecordBuf::capture_with(Box::new(FallbackCapture {
+        out,
+        tagged,
+        variants,
+    }))
+}
+
+/// The sink of a tagged enum with untagged variants passes the value on to
+/// this.
+struct FallbackCapture<'a, 'de, E> {
+    out: &'a mut Option<E>,
+    tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
+    variants: UntaggedVariants<'de, E>,
+}
+
+impl<'a, 'de, E: Send> FallbackCapture<'a, 'de, E> {
+    /// Tries the tagged representation and then the untagged variants.
+    fn deliver(
+        &mut self,
+        state: &mut State,
+        tagged: impl FnOnce(SinkHandle<'_, 'de>, &mut State) -> Result<(), Error>,
+        input: UntaggedInput<'_, 'de>,
+    ) -> Result<(), Error> {
+        // the tagged representation can take event data (like CBOR tags),
+        // the untagged variants get the data of the event again
+        let data = match input {
+            UntaggedInput::Recorded(_) => EventData::new(),
+            _ => state.extensions().capture_event_data(),
+        };
+        let err = match tagged((self.tagged)(self.out), state) {
+            Ok(()) if self.out.is_some() => return Ok(()),
             Ok(()) => Error::new(ErrorKind::Unexpected, "enum was not deserialized"),
             Err(err) => err,
         };
-        *out = None;
-        // the error of the tagged representation is returned, only whether
-        // an untagged variant accepts the value matters
-        let value = state.discard_errors(|state| {
-            for index in 0.. {
-                let mut variant = candidates(index)?;
-                if recording
-                    .replay(SinkHandle::to(variant.sink()), state)
-                    .is_ok()
-                    && let Some(value) = variant.build()
-                {
-                    return Some(value);
-                }
-            }
-            None
-        });
-        match value {
-            Some(value) => {
-                *out = Some(value);
-                Ok(())
-            }
-            None => Err(err),
-        }
-    })
+        *self.out = None;
+        // the error of the tagged representation is returned
+        *self.out = Some(try_untagged(self.variants, input, data, state).ok_or(err)?);
+        Ok(())
+    }
+}
+
+impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for FallbackCapture<'a, 'de, E> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        let input = UntaggedInput::Atom(atom.as_borrowed());
+        self.deliver(
+            state,
+            |mut sink, state| {
+                sink.atom(atom.as_borrowed(), state)?;
+                sink.finish(state)
+            },
+            input,
+        )
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        let tagged_atom = atom.clone();
+        self.deliver(
+            state,
+            |mut sink, state| {
+                sink.borrowed_atom(tagged_atom, state)?;
+                sink.finish(state)
+            },
+            UntaggedInput::Borrowed(atom),
+        )
+    }
+
+    fn recorded(&mut self, buffer: RecordBuf<'de>, state: &mut State) -> Result<(), Error> {
+        self.deliver(
+            state,
+            |sink, state| buffer.replay(sink, state),
+            UntaggedInput::Recorded(&buffer),
+        )
+    }
 }
 
 /// A sink for internally tagged enums.

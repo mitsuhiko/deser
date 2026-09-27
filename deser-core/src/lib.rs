@@ -77,9 +77,9 @@ pub mod __derive {
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
-        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, Variant, VariantMaker, Variants,
-        atom_sink, lookup_atom, unit_variant, unknown_variant_atom, untagged_fallback,
-        untagged_handle,
+        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UntaggedTry, Variant,
+        VariantMaker, Variants, atom_sink, lookup_atom, unit_variant, unknown_variant_atom,
+        untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
     pub use crate::de::mapped::mapped;

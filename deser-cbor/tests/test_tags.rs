@@ -50,6 +50,22 @@ fn tagged_roundtrip() {
 }
 
 #[test]
+fn tags_in_untagged_enums() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[deser(untagged)]
+    enum Either {
+        Flag(Tagged<bool>),
+        Number(Tagged<u64>),
+    }
+
+    // every variant sees the tag, also after a variant took it and failed
+    let back: Either = de("c11a514b67b0").unwrap();
+    assert_eq!(back, Either::Number(Tagged::new(1, 1363896240)));
+    let back: Vec<Either> = de("81c11a514b67b0").unwrap();
+    assert_eq!(back, [Either::Number(Tagged::new(1, 1363896240))]);
+}
+
+#[test]
 fn untagged_values() {
     // An untagged value has no tag...
     let back: Tagged<u64> = de("1a514b67b0").unwrap();

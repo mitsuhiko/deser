@@ -678,6 +678,9 @@ pub fn derive_deserialize(
 
     let mut helpers = Vec::new();
     let mut builders = Vec::new();
+    // how untagged variants are tried (`None` for other variants, which
+    // cannot be untagged)
+    let mut untagged_tries = Vec::new();
     for info in &variants {
         let var_ident = info.ident;
         let helper = info.helper();
@@ -830,6 +833,7 @@ pub fn derive_deserialize(
                 let tag_ty = tag_field.de_ty();
                 values[info.tag_field.unwrap()] = tag_field.unwrap(quote! { __tag });
                 let construct = info.construct(ident, &values);
+                untagged_tries.push(None);
                 quote! {
                     __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::boxed(
                         |__tag: #tag_ty, #content_pattern: #content_ty| #construct
@@ -838,10 +842,14 @@ pub fn derive_deserialize(
             }
             None if info.other && matches!(info.content, Content::Unit) => {
                 let construct = info.construct(ident, &values);
+                untagged_tries.push(None);
                 quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct) }
             }
             None => {
                 let construct = info.construct(ident, &values);
+                untagged_tries.push(Some(quote! {
+                    __try.variant::<#content_ty>(|#content_pattern: #content_ty| #construct)
+                }));
                 quote! {
                     __deser::__derive::Variant::<#content_ty, #enum_ty>::boxed(
                         |#content_pattern: #content_ty| #construct
@@ -1015,9 +1023,13 @@ pub fn derive_deserialize(
     // enums)
     let candidates = variants
         .iter()
-        .zip(builders.iter())
+        .zip(untagged_tries.iter())
         .filter(|(info, _)| info.untagged)
-        .map(|(_, builder)| builder)
+        .map(|(_, try_variant)| {
+            try_variant
+                .as_ref()
+                .expect("untagged variants cannot be other")
+        })
         .collect::<Vec<_>>();
     let candidate_support = if candidates.is_empty() {
         None
@@ -1025,13 +1037,15 @@ pub fn derive_deserialize(
         let indexes = 0..candidates.len();
         Some(quote! {
             #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-            fn __candidate #builder_impl_generics (
+            fn __candidate #impl_generics (
                 __index: usize,
-            ) -> __deser::__derive::Option<#builder_ty> #where_clause {
+                __try: &mut __deser::__derive::UntaggedTry<'_, 'de, #enum_ty>,
+            ) -> bool #where_clause {
                 match __index {
-                    #(#indexes => __deser::__derive::Some(#candidates),)*
-                    _ => __deser::__derive::None,
+                    #(#indexes => #candidates,)*
+                    _ => return false,
                 }
+                true
             }
         })
     };
@@ -1062,6 +1076,31 @@ pub fn derive_deserialize(
         )
     } else {
         (support, handle)
+    };
+
+    // atoms go to the variants of untagged enums without creating the sink
+    // (validated enums need the sink)
+    let atom_into = match repr {
+        Repr::Untagged if container_attrs.validate().is_none() => quote! {
+            #[inline]
+            fn __private_atom_into(
+                __slot: &mut __deser::__derive::Option<Self>,
+                __atom: __deser::Atom,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                __deser::__derive::untagged_atom(__slot, __TYPE_NAME, __candidate #turbofish, __atom, __state)
+            }
+
+            #[inline]
+            fn __private_borrowed_atom_into(
+                __slot: &mut __deser::__derive::Option<Self>,
+                __atom: __deser::Atom<'de>,
+                __state: &mut __deser::State,
+            ) -> __deser::__derive::Result<()> {
+                __deser::__derive::untagged_borrowed_atom(__slot, __TYPE_NAME, __candidate #turbofish, __atom, __state)
+            }
+        },
+        _ => quote! {},
     };
 
     // validated enums deserialize into an owned sink which is validated
@@ -1107,6 +1146,8 @@ pub fn derive_deserialize(
                 ) -> __deser::de::SinkHandle<'_, 'de> {
                     #handle
                 }
+
+                #atom_into
             }
         };
     })
