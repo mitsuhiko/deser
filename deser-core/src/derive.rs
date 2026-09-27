@@ -588,9 +588,9 @@
 //! the fields that are given are updated, all others keep their values.
 //! Fields are updated the same way which means that nested structs are
 //! merged, `Option`s which are set and `Box`es update their value (null
-//! clears options) and maps (`HashMap` and `BTreeMap`) are merged: the
-//! entries that are given are inserted, replacing the values of keys that
-//! exist (the values are not merged).  All other values (sequences, enums)
+//! clears options) and maps (`HashMap`, `BTreeMap` and the maps of
+//! `deser-value`) are merged: the entries that are given are inserted,
+//! replacing the values of keys that exist (the values are not merged).  All other values (sequences, enums)
 //! are replaced.  This is useful to layer configuration files:
 //!
 //! ```

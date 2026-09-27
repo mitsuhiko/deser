@@ -16,6 +16,11 @@ enum Out<'a> {
     Value(&'a mut Option<Value>),
     Seq(&'a mut Option<Seq>),
     Map(&'a mut Option<Map>),
+    /// Updates a value: maps are merged into maps, everything else replaces
+    /// the value.
+    UpdateValue(&'a mut Value),
+    /// Merges a map into a map.
+    UpdateMap(&'a mut Map),
 }
 
 /// The container a [`ValueSink`] is building.
@@ -81,6 +86,23 @@ impl<'a> ValueSink<'a> {
     }
 }
 
+/// Merges the entries of a map into another map.
+///
+/// The values of keys that exist are replaced (not merged), the entries keep
+/// their position.  New entries are added at the end.  Keys in `map` are
+/// unique, so the entries it adds cannot collide with each other.
+fn merge_map(target: &mut Map, mut map: Map) {
+    if target.is_empty() {
+        *target = map;
+        return;
+    }
+    let entries = &mut target.inner.entries;
+    entries.reserve(map.len());
+    for (key, value) in std::mem::take(&mut map.inner.entries) {
+        entries.insert(key, value);
+    }
+}
+
 #[cold]
 fn duplicate_key(key: &Value) -> Error {
     let err = Error::new(
@@ -99,6 +121,10 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         match self.out {
             Out::Value(ref mut out) => {
                 **out = Some(atom_value(atom, state)?);
+                Ok(())
+            }
+            Out::UpdateValue(ref mut out) => {
+                **out = atom_value(atom, state)?;
                 Ok(())
             }
             _ => self.unexpected_atom(atom, state),
@@ -122,7 +148,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        if let Out::Map(_) = self.out {
+        if let Out::Map(_) | Out::UpdateMap(_) = self.out {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "unexpected sequence, expected map",
@@ -208,6 +234,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
                     **out = Some(Map::new());
                     return Ok(());
                 }
+                // updates keep the value
                 _ => return Ok(()),
             },
             Building::Seq(seq) => Kind::Seq(seq),
@@ -228,6 +255,18 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             }
             (Out::Seq(out), Kind::Seq(seq)) => **out = Some(seq),
             (Out::Map(out), Kind::Map(map)) => **out = Some(map),
+            // maps are merged into maps (the value keeps its meta data),
+            // everything else is replaced
+            (Out::UpdateValue(out), kind) => match (&mut out.kind, kind) {
+                (Kind::Map(target), Kind::Map(map)) => merge_map(target, map),
+                (_, kind) => {
+                    **out = Value {
+                        kind,
+                        meta: self.meta.take(),
+                    }
+                }
+            },
+            (Out::UpdateMap(out), Kind::Map(map)) => merge_map(out, map),
             _ => unreachable!(),
         }
         Ok(())
@@ -235,9 +274,9 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed(match self.out {
-            Out::Value(_) => "any value",
+            Out::Value(_) | Out::UpdateValue(_) => "any value",
             Out::Seq(_) => "sequence",
-            Out::Map(_) => "map",
+            Out::Map(_) | Out::UpdateMap(_) => "map",
         })
     }
 }
@@ -301,6 +340,13 @@ impl<'de> Deserialize<'de> for Value {
         *out = Some(atom_value(atom, state)?);
         Ok(())
     }
+
+    /// Updates the value: a map merges the data into it if it's a map (the
+    /// values of keys that exist are replaced), all other values are
+    /// replaced.
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        SinkHandle::boxed(ValueSink::new(Out::UpdateValue(value)))
+    }
 }
 
 impl<'de> Deserialize<'de> for Seq {
@@ -312,5 +358,11 @@ impl<'de> Deserialize<'de> for Seq {
 impl<'de> Deserialize<'de> for Map {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(ValueSink::new(Out::Map(out)))
+    }
+
+    /// Merges the data into the map, the values of keys that exist are
+    /// replaced.
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        SinkHandle::boxed(ValueSink::new(Out::UpdateMap(value)))
     }
 }

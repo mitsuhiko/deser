@@ -531,3 +531,84 @@ fn test_flatten() {
     let rv = from_value::<WithMap>(&input).unwrap();
     assert!(rv.extra.is_empty());
 }
+
+fn update<T: for<'de> Deserialize<'de>>(value: &mut T, json: &str) -> Result<(), deser::Error> {
+    use deser::de::Deserializer;
+    deser_json::Deserializer::from_str(json).update(value)
+}
+
+#[test]
+fn test_update() {
+    // maps are merged, the values of keys that exist are replaced (not
+    // merged), new keys are added at the end
+    let mut map = value!({"a": 1, "b": {"c": 1, "d": 2}})
+        .as_map()
+        .unwrap()
+        .clone();
+    update(&mut map, r#"{"b": {"c": 2}, "e": 3}"#).unwrap();
+    assert_eq!(
+        map,
+        value!({"a": 1, "b": {"c": 2}, "e": 3})
+            .as_map()
+            .unwrap()
+            .clone()
+    );
+    assert_eq!(
+        map.keys().collect::<Vec<_>>(),
+        [&value!("a"), &value!("b"), &value!("e")]
+    );
+    // duplicates in the data are still rejected
+    let err = update(&mut map, r#"{"a": 2, "a": 3}"#).unwrap_err();
+    assert_eq!(err.message(), r#"duplicate map key "a""#);
+    let err = update(&mut map, "[1]").unwrap_err();
+    assert_eq!(err.message(), "unexpected sequence, expected map");
+
+    // values merge maps into maps and are replaced otherwise
+    let mut value = value!({"a": 1, "b": [1, 2]});
+    update(&mut value, r#"{"b": [3]}"#).unwrap();
+    assert_eq!(value, value!({"a": 1, "b": [3]}));
+    update(&mut value, "[1]").unwrap();
+    assert_eq!(value, value!([1]));
+    update(&mut value, r#"{"a": 1}"#).unwrap();
+    assert_eq!(value, value!({"a": 1}));
+    update(&mut value, "true").unwrap();
+    assert_eq!(value, value!(true));
+}
+
+#[test]
+fn test_update_flatten() {
+    #[derive(Debug, deser::Deserialize)]
+    struct WithValue {
+        id: u32,
+        #[deser(flatten)]
+        extra: Value,
+    }
+
+    #[derive(Debug, deser::Deserialize)]
+    struct WithMap {
+        id: u32,
+        #[deser(flatten)]
+        extra: Map,
+    }
+
+    let mut with_value = WithValue {
+        id: 1,
+        extra: value!({"a": 1}),
+    };
+    update(&mut with_value, r#"{"id": 2}"#).unwrap();
+    assert_eq!(with_value.id, 2);
+    assert_eq!(with_value.extra, value!({"a": 1}));
+    update(&mut with_value, r#"{"b": 2}"#).unwrap();
+    assert_eq!(with_value.extra, value!({"a": 1, "b": 2}));
+
+    let mut with_map = WithMap {
+        id: 1,
+        extra: value!({"a": 1}).as_map().unwrap().clone(),
+    };
+    update(&mut with_map, r#"{"a": 3, "b": 2}"#).unwrap();
+    assert_eq!(with_map.id, 1);
+    assert_eq!(
+        with_map.extra,
+        value!({"a": 3, "b": 2}).as_map().unwrap().clone()
+    );
+}

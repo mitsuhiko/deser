@@ -1,8 +1,6 @@
 //! Support for updating existing values (see
 //! [`Deserialize::deserialize_update`]).
 use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::ptr::NonNull;
 
 use crate::State;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
@@ -309,22 +307,25 @@ impl<'a, 'de, T> Drop for OptionUpdateSink<'a, 'de, T> {
 /// for this, so the fields are borrowed through a pointer.  The derive
 /// borrows every field at most once at a time and only borrows the struct
 /// as a whole once the borrows of all fields ended.
+#[cfg(feature = "derive")]
 #[doc(hidden)]
 pub struct UpdateTarget<'a, T> {
-    ptr: NonNull<T>,
-    _marker: PhantomData<&'a mut T>,
+    ptr: std::ptr::NonNull<T>,
+    _marker: std::marker::PhantomData<&'a mut T>,
 }
 
 // SAFETY: this is a mutable reference to `T`.
+#[cfg(feature = "derive")]
 unsafe impl<T: Send> Send for UpdateTarget<'_, T> {}
 
+#[cfg(feature = "derive")]
 impl<'a, T> UpdateTarget<'a, T> {
     /// Creates the target for a value.
     #[inline]
     pub fn new(value: &'a mut T) -> UpdateTarget<'a, T> {
         UpdateTarget {
-            ptr: NonNull::from(value),
-            _marker: PhantomData,
+            ptr: std::ptr::NonNull::from(value),
+            _marker: std::marker::PhantomData,
         }
     }
 

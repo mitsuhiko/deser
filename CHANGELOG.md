@@ -18,7 +18,9 @@ All notable changes to deser are documented here.
   updated).  `Box` updates its value.  Structs with flattened fields are
   updated like other structs: flattened fields are updated with the keys
   they take and keep their values if they take none (they were replaced
-  before).
+  before).  `deser_value::Map` merges like the other maps and
+  `deser_value::Value` merges a map into a map (and is replaced by
+  everything else).
 - `#[deser(skip)]`, `#[deser(skip_serializing)]` and
   `#[deser(skip_deserializing)]` can be used on enum variants.  Serializing
   a skipped variant is an error (``the variant `A` of Kind cannot be
