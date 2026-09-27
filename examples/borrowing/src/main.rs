@@ -8,6 +8,10 @@
 //!   escape sequences) deserializing fails.
 //! * `Cow<str>` and `Cow<[u8]>` with the `Borrowed` adapter borrow when
 //!   possible and own the data otherwise.
+//!
+//! Structs and enums can borrow.  Values that have to be recorded and
+//! replayed are not borrowed: the content of untagged enums and the fields
+//! of internally tagged enums that come before the tag.
 use std::borrow::Cow;
 
 use deser::adapters::Borrowed;
@@ -26,6 +30,19 @@ pub struct LogLine<'a> {
 pub struct Packet<'a> {
     kind: &'a str,
     payload: &'a [u8],
+}
+
+#[derive(Debug, Deserialize)]
+#[deser(tag = "type", rename_all = "lowercase")]
+pub enum Token<'a> {
+    Word { text: &'a str },
+    Number { text: &'a str, value: f64 },
+    Punct(Punct<'a>),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Punct<'a> {
+    char: &'a str,
 }
 
 /// Returns `true` if `part` points into `whole`.
@@ -61,6 +78,27 @@ fn main() {
         deser_json::from_str::<LogLine>(r#"{"level": "\u0069nfo", "message": "", "tags": []}"#)
             .unwrap_err();
     println!("\nerror: {}", err);
+
+    // enums borrow like structs
+    let input = r#"[
+        {"type": "word", "text": "pi"},
+        {"type": "number", "text": "3.14", "value": 3.14},
+        {"type": "punct", "char": "!"}
+    ]"#;
+    let tokens: Vec<Token> = deser_json::from_str(input).unwrap();
+    println!("\n{:?}", tokens);
+    for token in &tokens {
+        let text = match token {
+            Token::Word { text } | Token::Number { text, .. } => text,
+            Token::Punct(punct) => punct.char,
+        };
+        assert!(is_within(text.as_bytes(), input.as_bytes()));
+    }
+
+    // values before the tag are recorded until the variant is known, they
+    // cannot be borrowed (a `Cow` with `Borrowed` would hold a copy)
+    let err = deser_json::from_str::<Token>(r#"{"text": "pi", "type": "word"}"#).unwrap_err();
+    println!("error: {}", err);
 
     // CBOR has byte strings which are borrowed as well
     let cbor = deser_cbor::to_vec(&Packet {

@@ -8,7 +8,8 @@ Getting started:
 * [`json`](json): deriving `Serialize` and `Deserialize`, renaming,
   flattening, optional fields and debug formatting with `deser-debug`.
 * [`enums`](enums): the enum representations (externally, internally and
-  adjacently tagged, untagged) and catch-all variants.
+  adjacently tagged, untagged), catch-all variants, untagged fallback
+  variants and flattened fields in variants.
 * [`formats`](formats): one type written as JSON, YAML, TOML and CBOR,
   with UUIDs, timestamps and dates handled natively where a format
   supports them, and layout hints.
@@ -18,12 +19,13 @@ Getting started:
 * [`optionals`](optionals): skipping optional fields and telling missing
   values apart from null for partial updates.
 * [`debug`](debug): formatting values like `#[derive(Debug)]` with
-  `deser-debug`, keeping the Rust shape of options, newtypes and enums.
+  `deser-debug`, keeping the Rust shape of options, tuple structs, unit
+  structs, newtypes and enums.
 
 What sets deser apart:
 
 * [`borrowing`](borrowing): borrowing strings and bytes from the input
-  with `&str`, `&[u8]` and `Cow`.
+  with `&str`, `&[u8]` and `Cow`, in structs and enums.
 * [`bytes`](bytes): bytes in JSON and TOML (base64, hex, arrays of
   integers) configured per format and per field, and native bytes in CBOR.
 * [`deep-nesting`](deep-nesting): a million levels of nesting without

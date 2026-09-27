@@ -7,6 +7,8 @@
 //! `deser::ser::Describe`).  This shows:
 //!
 //! * `{:?}` and `{:#?}` for types that only derive `Serialize`,
+//! * the shapes of structs (tuple structs are sequences and unit structs
+//!   null, but they are formatted like Rust does),
 //! * enums show their variants no matter how they are serialized (the JSON
 //!   of internally, adjacently tagged and untagged enums looks different),
 //! * implementing `Debug` for a type with `ToDebug`,
@@ -15,6 +17,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::marker::PhantomData;
 
 use deser::ser::{Chunk, SerializeHandle, StructEmitter};
 use deser::{Deserialize, Error, Serialize, State};
@@ -22,6 +25,36 @@ use deser_debug::ToDebug;
 
 #[derive(Serialize, Deserialize)]
 pub struct Meters(f64);
+
+/// A tuple struct, serialized as a sequence.
+#[derive(Serialize, Deserialize)]
+pub struct Rgb(u8, u8, u8);
+
+/// A unit struct, serialized as null.
+#[derive(Serialize, Deserialize)]
+pub struct Unset;
+
+/// A length in some unit.  The marker is skipped, so this is serialized as
+/// the number (like a newtype struct).
+#[derive(Serialize, Deserialize)]
+pub struct Length<Unit>(f64, #[deser(skip)] PhantomData<Unit>);
+
+pub struct Inches;
+
+/// A struct with named fields that is serialized as its only field.
+#[derive(Serialize, Deserialize)]
+#[deser(transparent)]
+pub struct UserId {
+    id: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Theme {
+    background: Rgb,
+    border: Option<Length<Inches>>,
+    owner: UserId,
+    accent: Unset,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Point {
@@ -110,6 +143,28 @@ fn main() {
     let formatted = format!("{:?}", ToDebug::new(&radius));
     println!("{}", formatted);
     assert_eq!(formatted, "Some(Meters(2.5))");
+
+    // the shapes of structs are kept too
+    let theme = Theme {
+        background: Rgb(255, 128, 0),
+        border: Some(Length(0.5, PhantomData)),
+        owner: UserId { id: 42 },
+        accent: Unset,
+    };
+    let json = deser_json::to_string(&theme).unwrap();
+    println!("{}", json);
+    assert_eq!(
+        json,
+        r#"{"background":[255,128,0],"border":0.5,"owner":42,"accent":null}"#
+    );
+    // (the transparent struct is formatted like a newtype struct)
+    let formatted = format!("{:?}", ToDebug::new(&theme));
+    println!("{}", formatted);
+    assert_eq!(
+        formatted,
+        "Theme { background: Rgb(255, 128, 0), border: Some(Length(0.5)), \
+         owner: UserId(42), accent: Unset }"
+    );
 
     // enums show their variants, whatever their representation
     let drawing: Drawing = deser_json::from_str(

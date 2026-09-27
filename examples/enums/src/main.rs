@@ -1,6 +1,10 @@
 //! This example shows the different enum representations that deser
 //! supports.  They follow the ones known from serde.
 //!
+//! Beyond the representations this shows untagged variants in tagged enums
+//! as fallbacks, renaming the fields of struct variants and flattening
+//! shared fields into variants.
+//!
 //! Every input is parsed from JSON, dumped with `Debug` and serialized back
 //! to JSON.  Note that the inputs do not need to be in the canonical form:
 //! tags can come after the content, deser buffers the content until it
@@ -21,16 +25,21 @@ enum Command {
 }
 
 /// Internally tagged: the variant name is stored in a field next to the
-/// fields of the variant.
+/// fields of the variant.  The fields of the struct variants are renamed
+/// with `rename_all_fields`.
 #[derive(Debug, Serialize, Deserialize)]
-#[deser(tag = "type", rename_all = "snake_case")]
+#[deser(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 enum Event {
     Login {
-        user: String,
+        user_name: String,
     },
     Logout {
-        user: String,
-        reason: Option<String>,
+        user_name: String,
+        logout_reason: Option<String>,
     },
     // the inner struct's fields are merged with the tag
     Purchase(Purchase),
@@ -54,6 +63,34 @@ enum Message {
     Text(String),
     Point(i32, i32),
     Ping,
+}
+
+/// Struct variants can flatten shared fields.  Variants marked `untagged`
+/// are not tagged: they are tried in order if the tagged representation
+/// fails, here for values in an older format.
+#[derive(Debug, Serialize, Deserialize)]
+#[deser(tag = "shape", rename_all = "snake_case")]
+enum Shape {
+    Circle {
+        #[deser(flatten)]
+        style: Style,
+        radius: f64,
+    },
+    Square {
+        #[deser(flatten)]
+        style: Style,
+        side: f64,
+    },
+    /// the old format was just the radius of a circle
+    #[deser(untagged)]
+    LegacyCircle(f64),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Style {
+    color: String,
+    #[deser(default)]
+    filled: bool,
 }
 
 /// Untagged: there is no tag at all.  The variants are tried in order and
@@ -86,8 +123,8 @@ fn main() {
     show::<Vec<Event>>(
         "internally tagged",
         r#"[
-            {"type": "login", "user": "jane"},
-            {"user": "jane", "reason": "timeout", "type": "logout"},
+            {"type": "login", "userName": "jane"},
+            {"userName": "jane", "logoutReason": "timeout", "type": "logout"},
             {"item": "book", "type": "purchase", "price": 9.5},
             {"type": "heartbeat"},
             {"type": "something_new", "whatever": [1, 2, 3]}
@@ -100,6 +137,15 @@ fn main() {
             {"kind": "text", "data": "hi"},
             {"data": [1, 2], "kind": "point"},
             {"kind": "ping"}
+        ]"#,
+    );
+
+    show::<Vec<Shape>>(
+        "flattened fields and untagged variants",
+        r#"[
+            {"shape": "circle", "radius": 1.5, "color": "red"},
+            {"color": "blue", "filled": true, "side": 2.0, "shape": "square"},
+            4.0
         ]"#,
     );
 
