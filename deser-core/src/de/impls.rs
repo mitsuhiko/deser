@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::adapters::{DeserializeAs, Same};
-use crate::de::DuplicateKeys;
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
+use crate::de::{CollectedErrors, DuplicateKeys};
 use crate::de::{
     Deserialize, OwnedSink, Sink, SinkHandle, empty_as_none, is_empty_lexical, is_null_atom,
 };
@@ -408,6 +408,7 @@ where
         vec: Vec<T>,
         element: Option<T>,
         is_seq: bool,
+        errors: CollectedErrors,
         _marker: PhantomData<fn() -> A>,
     }
 
@@ -497,7 +498,13 @@ where
             A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
         }
 
+        fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+            self.element = None;
+            self.errors.collect(err, state)
+        }
+
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            self.errors.finish()?;
             if self.is_seq {
                 self.flush();
                 *self.slot = Some(C::from_vec(take(&mut self.vec))?);
@@ -511,6 +518,7 @@ where
         vec: Vec::new(),
         element: None,
         is_seq: false,
+        errors: CollectedErrors::new(),
         _marker: PhantomData,
     })
 }
@@ -674,6 +682,7 @@ where
         key: Option<K>,
         value: Option<V>,
         duplicate_keys: DuplicateKeys,
+        errors: CollectedErrors,
         _marker: PhantomData<fn() -> (KA, VA)>,
     }
 
@@ -688,6 +697,18 @@ where
                 }
             }
             Ok(())
+        }
+
+        /// Adds the previous entry before the next one starts.
+        ///
+        /// If it's a duplicate that is rejected, the error is collected
+        /// here as it's not the error of the next entry.
+        #[inline]
+        fn flush_before(&mut self, state: &mut State) -> Result<(), Error> {
+            match self.flush() {
+                Ok(()) => Ok(()),
+                Err(err) => self.errors.collect(err, state),
+            }
         }
     }
 
@@ -709,8 +730,8 @@ where
             Ok(())
         }
 
-        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.flush()?;
+        fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            self.flush_before(state)?;
             Ok(KA::deserialize_into_as(&mut self.key))
         }
 
@@ -719,7 +740,7 @@ where
         }
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.flush()?;
+            self.flush_before(state)?;
             KA::__private_atom_into_as(&mut self.key, atom, state)
         }
 
@@ -732,7 +753,7 @@ where
             atom: Atom<'de>,
             state: &mut State,
         ) -> Result<(), Error> {
-            self.flush()?;
+            self.flush_before(state)?;
             KA::__private_borrowed_atom_into_as(&mut self.key, atom, state)
         }
 
@@ -755,13 +776,20 @@ where
         ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
             // `map` is not invoked for flattened maps
             self.duplicate_keys = state.duplicate_keys();
-            self.flush()?;
+            self.flush_before(state)?;
             KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Cow::Borrowed(key)), state)?;
             Ok(Some(VA::deserialize_into_as(&mut self.value)))
         }
 
-        fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
-            self.flush()?;
+        fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+            self.key = None;
+            self.value = None;
+            self.errors.collect(err, state)
+        }
+
+        fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+            self.flush_before(state)?;
+            self.errors.finish()?;
             let map = take(&mut self.map);
             match self.out {
                 MapOut::Slot(ref mut slot) => **slot = Some(map),
@@ -777,6 +805,7 @@ where
         key: None,
         value: None,
         duplicate_keys: DuplicateKeys::Error,
+        errors: CollectedErrors::new(),
         _marker: PhantomData,
     })
 }
@@ -885,6 +914,7 @@ where
         slot: &'a mut Option<S>,
         set: S,
         element: Option<T>,
+        errors: CollectedErrors,
         _marker: PhantomData<fn() -> A>,
     }
 
@@ -944,7 +974,13 @@ where
             A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
         }
 
+        fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+            self.element = None;
+            self.errors.collect(err, state)
+        }
+
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            self.errors.finish()?;
             self.flush();
             *self.slot = Some(take(&mut self.set));
             Ok(())
@@ -955,6 +991,7 @@ where
         slot: out,
         set: S::default(),
         element: None,
+        errors: CollectedErrors::new(),
         _marker: PhantomData,
     })
 }

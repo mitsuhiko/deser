@@ -91,14 +91,55 @@ pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
 /// and the context of the types registered with
 /// [`State::add_error_context`](crate::State::add_error_context).  Formats
 /// resolve the offsets into lines and columns.
+///
+/// # Multiple Errors
+///
+/// An error can hold multiple errors, for instance if deserialization
+/// continued after an error to report all problems of the input at once
+/// (see [`State::set_collect_errors`](crate::State::set_collect_errors)).
+/// The accessors ([`kind`](Self::kind), [`message`](Self::message), the
+/// location and the attachments) refer to the first of them, all of them
+/// are iterated with [`errors`](Self::errors).  The
+/// [`Display`](fmt::Display) output mentions how many more errors there
+/// are, with the alternate flag (`{:#}`) it lists all of them, one per
+/// line:
+///
+/// ```
+/// use deser::{Error, ErrorKind};
+///
+/// let err = Error::from_errors([
+///     Error::new(ErrorKind::MissingField, "missing field `a`").with_offset(0),
+///     Error::new(ErrorKind::Unexpected, "unexpected string").with_offset(9),
+/// ])
+/// .unwrap()
+/// .resolve_position(b"{\n  \"b\": \"x\"}");
+/// assert_eq!(err.error_count(), 2);
+/// assert_eq!(err.kind(), ErrorKind::MissingField);
+/// assert_eq!(
+///     err.to_string(),
+///     "MissingField: missing field `a` at line 1 column 1 (and 1 more error)"
+/// );
+/// assert_eq!(
+///     format!("{:#}", err),
+///     "MissingField: missing field `a` at line 1 column 1\n\
+///      Unexpected: unexpected string at line 2 column 8"
+/// );
+/// ```
 pub struct Error {
     // boxed so that results stay small.  Errors are rare but results are
     // passed around for every single value.
     inner: Box<ErrorInner>,
 }
 
+enum ErrorInner {
+    Single(ErrorData),
+    // at least two errors, all of them are single errors.  The first one
+    // is the error the accessors refer to.
+    Multiple(Vec<Error>),
+}
+
 #[derive(Debug)]
-struct ErrorInner {
+struct ErrorData {
     kind: ErrorKind,
     msg: Cow<'static, str>,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
@@ -109,6 +150,8 @@ struct ErrorInner {
     attachments: Vec<Attachment>,
     // `true` once the driver attached the context of the current event.
     has_context: bool,
+    // `true` once the error was collected (see `CollectedErrors`)
+    collected: bool,
 }
 
 #[derive(Debug)]
@@ -123,7 +166,7 @@ impl Error {
     #[cold]
     pub fn new<M: Into<Cow<'static, str>>>(kind: ErrorKind, msg: M) -> Error {
         Error {
-            inner: Box::new(ErrorInner {
+            inner: Box::new(ErrorInner::Single(ErrorData {
                 kind,
                 msg: msg.into(),
                 source: None,
@@ -131,39 +174,149 @@ impl Error {
                 line_column: None,
                 attachments: Vec::new(),
                 has_context: false,
-            }),
+                collected: false,
+            })),
         }
+    }
+
+    /// Combines errors into one.
+    ///
+    /// Errors that hold multiple errors are flattened (see
+    /// [`push_error`](Self::push_error)).  Returns `None` if there are no
+    /// errors.
+    pub fn from_errors<I: IntoIterator<Item = Error>>(errors: I) -> Option<Error> {
+        let mut errors = errors.into_iter();
+        let mut rv = errors.next()?;
+        for err in errors {
+            rv.push_error(err);
+        }
+        Some(rv)
+    }
+
+    /// Adds an error to this error.
+    ///
+    /// If the error that is added holds multiple errors, they are added
+    /// individually: errors do not nest (see [`errors`](Self::errors)).
+    pub fn push_error(&mut self, err: Error) {
+        let errors = self.make_multiple();
+        match *err.inner {
+            ErrorInner::Single(data) => errors.push(Error {
+                inner: Box::new(ErrorInner::Single(data)),
+            }),
+            ErrorInner::Multiple(others) => errors.extend(others),
+        }
+    }
+
+    /// Turns the error into one that holds multiple errors.
+    fn make_multiple(&mut self) -> &mut Vec<Error> {
+        if let ErrorInner::Single(_) = *self.inner {
+            let first = std::mem::replace(&mut *self.inner, ErrorInner::Multiple(Vec::new()));
+            if let ErrorInner::Multiple(ref mut errors) = *self.inner {
+                errors.push(Error {
+                    inner: Box::new(first),
+                });
+            }
+        }
+        match *self.inner {
+            ErrorInner::Multiple(ref mut errors) => errors,
+            ErrorInner::Single(_) => unreachable!(),
+        }
+    }
+
+    /// Iterates over the errors this error holds.
+    ///
+    /// For an error that holds a single error, this is the error itself.
+    /// The errors that are returned hold a single error each.
+    pub fn errors(&self) -> impl Iterator<Item = &Error> {
+        match *self.inner {
+            ErrorInner::Single(_) => std::slice::from_ref(self).iter(),
+            ErrorInner::Multiple(ref errors) => errors.iter(),
+        }
+    }
+
+    /// Returns the number of errors this error holds.
+    pub fn error_count(&self) -> usize {
+        match *self.inner {
+            ErrorInner::Single(_) => 1,
+            ErrorInner::Multiple(ref errors) => errors.len(),
+        }
+    }
+
+    /// Returns the data of the (first) error.
+    fn data(&self) -> &ErrorData {
+        match *self.inner {
+            ErrorInner::Single(ref data) => data,
+            ErrorInner::Multiple(ref errors) => errors[0].data(),
+        }
+    }
+
+    /// Returns the data of the (first) error mutably.
+    fn data_mut(&mut self) -> &mut ErrorData {
+        match *self.inner {
+            ErrorInner::Single(ref mut data) => data,
+            ErrorInner::Multiple(ref mut errors) => errors[0].data_mut(),
+        }
+    }
+
+    /// Applies a function to every error this error holds.
+    pub(crate) fn map_each(mut self, mut f: impl FnMut(Error) -> Error) -> Error {
+        if let ErrorInner::Multiple(ref mut errors) = *self.inner {
+            for err in errors.iter_mut() {
+                let taken = std::mem::replace(err, Error::new(ErrorKind::Unexpected, ""));
+                *err = f(taken);
+            }
+            self
+        } else {
+            f(self)
+        }
+    }
+
+    /// Returns the number of errors this error holds that were not
+    /// collected yet.
+    pub(crate) fn uncollected_count(&self) -> usize {
+        self.errors().filter(|err| !err.data().collected).count()
+    }
+
+    /// Marks all errors this error holds as collected.
+    pub(crate) fn mark_collected(mut self) -> Error {
+        self = self.map_each(|mut err| {
+            err.data_mut().collected = true;
+            err
+        });
+        self
     }
 
     /// Attaches another error as source to this error.
     pub fn with_source<E: std::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
-        self.inner.source = Some(Box::new(source));
+        self.data_mut().source = Some(Box::new(source));
         self
     }
 
     /// Returns the kind of the error.
     pub fn kind(&self) -> ErrorKind {
-        self.inner.kind
+        self.data().kind
     }
 
     /// Returns the message of the error (without context).
     pub fn message(&self) -> &str {
-        &self.inner.msg
+        &self.data().msg
     }
 
     /// Sets the byte offset in the input the error refers to.
     ///
     /// A previously set line and column are discarded.
     pub fn with_offset(mut self, offset: usize) -> Self {
-        self.inner.offset = Some(offset);
-        self.inner.line_column = None;
+        let data = self.data_mut();
+        data.offset = Some(offset);
+        data.line_column = None;
         self
     }
 
     /// Sets the byte offset together with its line and column (1-based).
     pub fn with_position(mut self, offset: usize, line: usize, column: usize) -> Self {
-        self.inner.offset = Some(offset);
-        self.inner.line_column = Some((line, column));
+        let data = self.data_mut();
+        data.offset = Some(offset);
+        data.line_column = Some((line, column));
         self
     }
 
@@ -182,12 +335,18 @@ impl Error {
     ///     .resolve_position(b"[1,\n  x]");
     /// assert_eq!((err.line(), err.column()), (Some(2), Some(4)));
     /// ```
-    pub fn resolve_position(mut self, source: &[u8]) -> Self {
-        if let (Some(offset), None) = (self.inner.offset, self.inner.line_column) {
-            let pos = Position::of(source, offset);
-            self.inner.line_column = Some((pos.line, pos.column));
-        }
-        self
+    ///
+    /// The positions of further errors (see [`errors`](Self::errors)) are
+    /// resolved as well.
+    pub fn resolve_position(self, source: &[u8]) -> Self {
+        self.map_each(|mut err| {
+            let data = err.data_mut();
+            if let (Some(offset), None) = (data.offset, data.line_column) {
+                let pos = Position::of(source, offset);
+                data.line_column = Some((pos.line, pos.column));
+            }
+            err
+        })
     }
 
     /// Moves the position of the error by the position of the input it
@@ -196,32 +355,35 @@ impl Error {
     /// This is used for errors of inputs which are part of a larger input,
     /// the base is the position of the start of the part.
     #[cfg(feature = "io")]
-    pub(crate) fn shift_position(mut self, base: Position) -> Self {
-        if let Some(ref mut error_offset) = self.inner.offset {
-            *error_offset += base.offset;
-        }
-        if let Some((ref mut error_line, ref mut error_column)) = self.inner.line_column {
-            if *error_line == 1 {
-                *error_column += base.column - 1;
+    pub(crate) fn shift_position(self, base: Position) -> Self {
+        self.map_each(|mut err| {
+            let data = err.data_mut();
+            if let Some(ref mut error_offset) = data.offset {
+                *error_offset += base.offset;
             }
-            *error_line += base.line - 1;
-        }
-        self
+            if let Some((ref mut error_line, ref mut error_column)) = data.line_column {
+                if *error_line == 1 {
+                    *error_column += base.column - 1;
+                }
+                *error_line += base.line - 1;
+            }
+            err
+        })
     }
 
     /// Returns the byte offset in the input the error refers to.
     pub fn offset(&self) -> Option<usize> {
-        self.inner.offset
+        self.data().offset
     }
 
     /// Returns the line (1-based) the error refers to.
     pub fn line(&self) -> Option<usize> {
-        self.inner.line_column.map(|x| x.0)
+        self.data().line_column.map(|x| x.0)
     }
 
     /// Returns the column (1-based, in characters) the error refers to.
     pub fn column(&self) -> Option<usize> {
-        self.inner.line_column.map(|x| x.1)
+        self.data().line_column.map(|x| x.1)
     }
 
     /// Attaches a value to the error.
@@ -231,14 +393,10 @@ impl Error {
     pub fn with_attachment<T: ErrorAttachment>(mut self, value: T) -> Self {
         let type_id = TypeId::of::<T>();
         let value = Box::new(value);
-        match self
-            .inner
-            .attachments
-            .iter_mut()
-            .find(|x| x.type_id == type_id)
-        {
+        let attachments = &mut self.data_mut().attachments;
+        match attachments.iter_mut().find(|x| x.type_id == type_id) {
             Some(attachment) => attachment.value = value,
-            None => self.inner.attachments.push(Attachment { type_id, value }),
+            None => attachments.push(Attachment { type_id, value }),
         }
         self
     }
@@ -247,7 +405,7 @@ impl Error {
     pub fn attachment<T: ErrorAttachment>(&self) -> Option<&T> {
         let type_id = TypeId::of::<T>();
         let attachment = self
-            .inner
+            .data()
             .attachments
             .iter()
             .find(|x| x.type_id == type_id)?;
@@ -258,7 +416,7 @@ impl Error {
     pub fn attachment_mut<T: ErrorAttachment>(&mut self) -> Option<&mut T> {
         let type_id = TypeId::of::<T>();
         let attachment = self
-            .inner
+            .data_mut()
             .attachments
             .iter_mut()
             .find(|x| x.type_id == type_id)?;
@@ -267,48 +425,74 @@ impl Error {
 
     /// Iterates over the attachments in the order they were attached.
     pub fn attachments(&self) -> impl Iterator<Item = &dyn ErrorAttachment> {
-        self.inner.attachments.iter().map(|x| &*x.value)
+        self.data().attachments.iter().map(|x| &*x.value)
     }
 
     /// Returns `true` if the context of an event was attached.
     pub(crate) fn has_context(&self) -> bool {
-        self.inner.has_context
+        self.data().has_context
     }
 
     /// Marks the context of an event as attached.
     pub(crate) fn set_has_context(&mut self) {
-        self.inner.has_context = true;
+        self.data_mut().has_context = true;
     }
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let data = match *self.inner {
+            ErrorInner::Single(ref data) => data,
+            ErrorInner::Multiple(ref errors) => {
+                return f.debug_tuple("Errors").field(errors).finish();
+            }
+        };
         let mut s = f.debug_struct("Error");
-        s.field("kind", &self.inner.kind)
-            .field("msg", &self.inner.msg);
-        if let Some(offset) = self.inner.offset {
+        s.field("kind", &data.kind).field("msg", &data.msg);
+        if let Some(offset) = data.offset {
             s.field("offset", &offset);
         }
-        if let Some((line, column)) = self.inner.line_column {
+        if let Some((line, column)) = data.line_column {
             s.field("line", &line).field("column", &column);
         }
-        if !self.inner.attachments.is_empty() {
-            s.field("attachments", &DebugAttachments(&self.inner.attachments));
+        if !data.attachments.is_empty() {
+            s.field("attachments", &DebugAttachments(&data.attachments));
         }
-        s.field("source", &self.inner.source).finish()
+        s.field("source", &data.source).finish()
+    }
+}
+
+impl ErrorData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}: {}", self.kind, self.msg)?;
+        match (self.line_column, self.offset) {
+            (Some((line, column)), _) => write!(f, " at line {} column {}", line, column)?,
+            (None, Some(offset)) => write!(f, " at offset {}", offset)?,
+            (None, None) => {}
+        }
+        for attachment in self.attachments.iter() {
+            attachment.value.fmt_context(f)?;
+        }
+        Ok(())
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {}", self.inner.kind, self.inner.msg)?;
-        match (self.inner.line_column, self.inner.offset) {
-            (Some((line, column)), _) => write!(f, " at line {} column {}", line, column)?,
-            (None, Some(offset)) => write!(f, " at offset {}", offset)?,
-            (None, None) => {}
-        }
-        for attachment in self.inner.attachments.iter() {
-            attachment.value.fmt_context(f)?;
+        let errors = match *self.inner {
+            ErrorInner::Single(ref data) => return data.fmt(f),
+            ErrorInner::Multiple(ref errors) => errors,
+        };
+        errors[0].data().fmt(f)?;
+        if f.alternate() {
+            for err in &errors[1..] {
+                writeln!(f)?;
+                err.data().fmt(f)?;
+            }
+        } else if errors.len() == 2 {
+            write!(f, " (and 1 more error)")?;
+        } else {
+            write!(f, " (and {} more errors)", errors.len() - 1)?;
         }
         Ok(())
     }
@@ -332,7 +516,7 @@ impl From<std::io::Error> for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.inner.source.as_ref().map(|err| err.as_ref() as _)
+        self.data().source.as_ref().map(|err| err.as_ref() as _)
     }
 }
 

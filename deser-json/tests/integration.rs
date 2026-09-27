@@ -2,6 +2,7 @@
 //! binary has to be linked and on macOS the first launch of a new binary
 //! is slow, so separate binaries make the tests slower.
 mod test_bytes;
+mod test_collect;
 mod test_de;
 #[cfg(feature = "io")]
 mod test_io;

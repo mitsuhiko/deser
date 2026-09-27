@@ -60,6 +60,11 @@ pub struct State {
     error_context: Vec<(TypeId, AddContextFn)>,
     // `true` while errors are thrown away, see `discard_errors`.
     pub(crate) discards_errors: bool,
+    // `true` if containers collect the errors of their items, see
+    // `set_collect_errors`.
+    collect_errors: bool,
+    // the number of errors that can still be collected
+    remaining_errors: usize,
 }
 
 /// The function of an [`ErrorContext`].
@@ -93,6 +98,104 @@ impl State {
             input_range: NO_RANGE,
             error_context: Vec::new(),
             discards_errors: false,
+            collect_errors: false,
+            remaining_errors: usize::MAX,
+        }
+    }
+
+    /// Sets if maps and sequences collect the errors of their items.
+    ///
+    /// By default the first error ends the deserialization.  If errors are
+    /// collected, the sinks of the containers that support it (derived
+    /// structs and the standard collections) recover from the errors of
+    /// their items (see [`Sink::recover`](crate::de::Sink::recover)) and
+    /// deserialization continues to find the other errors.  The container
+    /// fails once it's complete with all errors it collected (see
+    /// [`Error::errors`]), including the fields that are missing.  This
+    /// makes it possible to report all problems of the input at once:
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{Deserialize, Event};
+    ///
+    /// #[derive(Deserialize, Debug)]
+    /// struct Server {
+    ///     host: String,
+    ///     port: u16,
+    /// }
+    ///
+    /// let mut out = None::<Vec<Server>>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.state_mut().set_collect_errors(true);
+    /// let mut rv = Ok(());
+    /// for event in [
+    ///     Event::seq_start(),
+    ///     Event::map_start(),
+    ///     "host".into(),
+    ///     42u64.into(),
+    ///     "port".into(),
+    ///     80u64.into(),
+    ///     Event::MapEnd,
+    ///     Event::map_start(),
+    ///     "host".into(),
+    ///     "b".into(),
+    ///     "port".into(),
+    ///     "http".into(),
+    ///     Event::MapEnd,
+    ///     Event::map_start(),
+    ///     Event::MapEnd,
+    ///     Event::SeqEnd,
+    /// ] {
+    ///     rv = rv.and_then(|()| driver.emit(event));
+    /// }
+    /// let err = rv.unwrap_err();
+    /// let errors: Vec<_> = err.errors().map(|err| err.message()).collect();
+    /// assert_eq!(
+    ///     errors,
+    ///     [
+    ///         "unexpected unsigned integer, expected string",
+    ///         "unexpected string, expected u16",
+    ///         "missing field `host`",
+    ///         "missing field `port`",
+    ///     ]
+    /// );
+    /// ```
+    ///
+    /// Types can change this for the values in them, for instance to
+    /// collect the errors of a part of the input.  The previous setting is
+    /// returned.  While errors are thrown away (for instance while an
+    /// untagged enum tries its variants) they are never collected.  See
+    /// [`set_max_errors`](Self::set_max_errors) to limit the number of
+    /// errors that are collected.
+    pub fn set_collect_errors(&mut self, yes: bool) -> bool {
+        std::mem::replace(&mut self.collect_errors, yes)
+    }
+
+    /// Returns `true` if the errors of items are collected.
+    ///
+    /// See [`set_collect_errors`](Self::set_collect_errors).
+    pub fn collects_errors(&self) -> bool {
+        self.collect_errors && !self.discards_errors
+    }
+
+    /// Limits the number of errors that are collected.
+    ///
+    /// Once the limit is reached, the next error ends the deserialization
+    /// (together with the errors collected so far).  By default there is no
+    /// limit.  This counts from the current number of collected errors.
+    pub fn set_max_errors(&mut self, max: usize) {
+        self.remaining_errors = max;
+    }
+
+    /// Takes a number of the errors that can still be collected.
+    ///
+    /// Returns `false` if errors are not collected or the limit is reached.
+    pub(crate) fn take_error_slots(&mut self, count: usize) -> bool {
+        if self.collects_errors() && self.remaining_errors >= count {
+            self.remaining_errors -= count;
+            true
+        } else {
+            false
         }
     }
 

@@ -4,6 +4,17 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Errors can hold multiple errors (`Error::errors`, `Error::from_errors`
+  and `Error::push_error`).  The accessors refer to the first one, the
+  display output mentions how many more there are and `{:#}` lists all
+  of them.  Formats resolve the positions of all of them.
+- Added `State::set_collect_errors`: derived structs and the standard
+  collections recover from the errors of their values and fail once they
+  are complete with all errors they collected, including all missing
+  fields.  This reports all problems of the input at once.  The number of
+  errors can be limited with `State::set_max_errors`.  Untagged enums try
+  their variants without collecting errors.  `CollectedErrors` helps
+  implementing this for custom sinks.
 - Added `Sink::recover`: maps and sequences can recover from the error
   of an item, also if it happened deep inside of it.  The driver skips
   the rest of the failed item (and the value of a failed key) and

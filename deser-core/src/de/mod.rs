@@ -217,6 +217,7 @@ use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
 pub(crate) mod atoms;
+mod collect;
 mod deserializer;
 mod driver;
 pub(crate) mod duplicates;
@@ -243,6 +244,7 @@ use self::atoms::{
     default_borrowed_key_atom, default_borrowed_value_atom, default_container, default_key_atom,
     default_unexpected_atom, default_value_atom,
 };
+pub use self::collect::CollectedErrors;
 pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;

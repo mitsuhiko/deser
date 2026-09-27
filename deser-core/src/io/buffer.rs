@@ -342,7 +342,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     ///
     /// This is only possible for offsets in the buffered data.
     fn locate(&self, err: Error) -> Error {
-        match err.offset() {
+        err.map_each(|err| match err.offset() {
             Some(offset)
                 if self.decoder.is_text()
                     && err.line().is_none()
@@ -355,7 +355,7 @@ impl<D: Decoder> DecodeBuffer<D> {
                 err.with_position(offset, position.line, position.column)
             }
             _ => err,
-        }
+        })
     }
 
     /// Returns the buffer to read the next input into.

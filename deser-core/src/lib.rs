@@ -99,9 +99,48 @@ pub mod __derive {
     };
     pub use crate::ser::flatten::FlattenedStruct;
 
+    /// Returns the errors a struct collected together with the fields that
+    /// are missing.
+    ///
+    /// `missing` tells for the required fields (with the indexes and names
+    /// given) if they have no value.  Fields that were seen but have no
+    /// value failed, they are not missing.
+    #[cold]
+    #[inline(never)]
+    pub fn collected_errors(
+        errors: &mut crate::de::CollectedErrors,
+        seen: &[u64],
+        missing: &[bool],
+        indexes: &[usize],
+        names: &[&str],
+        state: &super::State,
+    ) -> super::Error {
+        for ((missing, index), name) in missing.iter().zip(indexes).zip(names) {
+            if *missing && !crate::de::duplicates::is_seen(seen, *index) {
+                errors.push(new_missing_field_error(name, state), state);
+            }
+        }
+        match errors.take() {
+            Some(err) => err,
+            None => unreachable!(),
+        }
+    }
+
     /// Creates the error for the first missing field.
+    ///
+    /// If errors are collected, the error holds all missing fields.
     #[cold]
     pub fn missing_field(missing: &[bool], names: &[&str], state: &super::State) -> super::Error {
+        if state.collects_errors() {
+            let errors = missing
+                .iter()
+                .zip(names)
+                .filter(|(missing, _)| **missing)
+                .map(|(_, name)| state.attach_error_context(new_missing_field_error(name, state)));
+            if let Some(err) = super::Error::from_errors(errors) {
+                return err;
+            }
+        }
         let index = missing.iter().position(|x| *x).unwrap_or_default();
         new_missing_field_error(names[index], state)
     }

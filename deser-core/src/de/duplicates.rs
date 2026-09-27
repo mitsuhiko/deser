@@ -66,6 +66,11 @@ pub fn mark_seen(seen: &mut [u64], index: usize) -> bool {
     seen_before
 }
 
+/// Returns `true` if the field with the index was seen.
+pub(crate) fn is_seen(seen: &[u64], index: usize) -> bool {
+    seen[index / 64] & (1u64 << (index % 64)) != 0
+}
+
 /// Decides if the value of a field given more than once is used.
 ///
 /// Returns `Ok(true)` if the value replaces the previous one.

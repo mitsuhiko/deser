@@ -388,3 +388,44 @@ fn test_error_paths_after_recovery() {
     let paths = from_json::<Paths>(r#"[{}, 1, {"a": [1]}, {"b": {"c": 1}}, {}, [{}]]"#).unwrap();
     assert_eq!(paths.0, ["[1]", "[2].a", "[3].b", "[5]"]);
 }
+
+#[test]
+fn test_paths_of_collected_errors() {
+    #[derive(deser::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Server {
+        host: String,
+        port: u16,
+    }
+
+    #[derive(deser::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Config {
+        servers: Vec<Server>,
+        names: BTreeMap<String, u32>,
+    }
+
+    let err = deser_json::Deserializer::from_str(
+        r#"{
+            "servers": [{"host": 1, "port": 1}, {"host": "b"}],
+            "names": {"a": 1, "b": "x"}
+        }"#,
+    )
+    .deserialize_with::<Config, _>(|driver| {
+        driver.push_layer(PathLayer::new());
+        driver.state_mut().set_collect_errors(true);
+    })
+    .unwrap_err();
+    let errors = err
+        .errors()
+        .map(|err| format!("{}: {}", err.attachment::<Path>().unwrap(), err.message()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        errors,
+        [
+            "servers[0].host: unexpected unsigned integer, expected string",
+            "servers[1]: missing field `port`",
+            "names.b: unexpected string, expected u32",
+        ]
+    );
+}

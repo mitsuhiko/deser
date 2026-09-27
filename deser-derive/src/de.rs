@@ -1056,6 +1056,39 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         )
     };
 
+    // Collecting errors (see `State::set_collect_errors`): the errors of
+    // the values are collected and reported once the struct is complete,
+    // together with the required fields that are missing.  Fields that
+    // were seen but have no value failed, they are not missing.  The
+    // errors of values that flattened fields took are collected by them.
+    let (required_field, required_index, required_name): (Vec<_>, Vec<_>, Vec<_>) = sink_fieldname
+        .iter()
+        .zip(attrs.iter())
+        .enumerate()
+        .filter(|(_, (_, attrs))| {
+            !attrs.flatten() && attrs.default().is_none() && container_attrs.default().is_none()
+        })
+        .map(|(index, (name, attrs))| (name, index, attrs.name(&container_attrs)))
+        .fold(
+            (Vec::new(), Vec::new(), Vec::new()),
+            |mut acc, (a, b, c)| {
+                acc.0.push(a);
+                acc.1.push(b);
+                acc.2.push(c);
+                acc
+            },
+        );
+    let flatten_index = (0..flatten_fields.len()).collect::<Vec<_>>();
+    let (current_field, current_init, current_reset) = if has_flatten {
+        (
+            Some(quote! { flatten_current: usize, }),
+            Some(quote! { flatten_current: usize::MAX, }),
+            Some(quote! { self.flatten_current = usize::MAX; }),
+        )
+    } else {
+        (None, None, None)
+    };
+
     Ok(quote! {
         const _: () = {
             fn __field_index(__key: &__deser::__derive::str) -> __deser::__derive::Option<usize> {
@@ -1081,6 +1114,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 #(
                     #flatten_used: bool,
                 )*
+                errors: __deser::de::CollectedErrors,
+                #current_field
                 _marker: __deser::__derive::PhantomData<&'de ()>,
             }
 
@@ -1101,6 +1136,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         #(
                             #flatten_used: false,
                         )*
+                        errors: __deser::de::CollectedErrors::new(),
+                        #current_init
                         _marker: __deser::__derive::PhantomData,
                     })
                 }
@@ -1132,6 +1169,28 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 #field_borrowed_atom_fn
+
+                /// Returns the errors that were collected, together with the
+                /// errors of the flattened fields and the missing fields.
+                #[cold]
+                #[inline(never)]
+                fn __collected_errors(&mut self, __state: &mut __deser::State) -> __deser::Error {
+                    #(
+                        if self.#flatten_used || <#flatten_ty as __deser::Deserialize<'de>>::initial_value().is_none() {
+                            if let __deser::__derive::Err(__err) = self.#flatten_fields.borrow_mut().finish(__state) {
+                                self.errors.push(__err, __state);
+                            }
+                        }
+                    )*
+                    __deser::__derive::collected_errors(
+                        &mut self.errors,
+                        &self.seen,
+                        &[#(self.#required_field.is_none()),*],
+                        &[#(#required_index),*],
+                        &[#(#required_name),*],
+                        __state,
+                    )
+                }
             }
 
             #[automatically_derived]
@@ -1151,6 +1210,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn next_key(&mut self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
+                    #current_reset
                     self.key.reset();
                     __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
                 }
@@ -1164,6 +1224,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn __private_key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
+                    #current_reset
                     self.key.key_atom(__atom, __field_index, __state)
                 }
 
@@ -1177,6 +1238,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> __deser::__derive::Result<()>
                 {
                     // keys are only matched, they do not need to be borrowed
+                    #current_reset
                     self.key.key_atom(__atom, __field_index, __state)
                 }
 
@@ -1189,6 +1251,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn value_for_key(&mut self, __key: &str, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>>
                 {
+                    #current_reset
                     if let __deser::__derive::Some(__index) = __field_index(__key) {
                         // the value is deserialized like the value of a key
                         self.key.set_index(__index);
@@ -1197,14 +1260,30 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #(
                         if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__key, __state)? {
                             self.#flatten_used = true;
+                            self.flatten_current = #flatten_index;
                             return __deser::__derive::Ok(__deser::__derive::Some(__sink));
                         }
                     )*
                     __deser::__derive::Ok(__deser::__derive::None)
                 }
 
+                fn recover(&mut self, __err: __deser::Error, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    // the values that flattened fields took are theirs
+                    #(
+                        if self.flatten_current == #flatten_index {
+                            return self.#flatten_fields.borrow_mut().recover(__err, __state);
+                        }
+                    )*
+                    self.errors.collect(__err, __state)
+                }
+
                 fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
                     #![allow(unused_mut)]
+                    if !self.errors.is_empty() {
+                        return __deser::__derive::Err(self.__collected_errors(__state));
+                    }
                     // a flattened value that took no key is missing, the
                     // value for missing values of its type is used (`None`
                     // for options).  Types without one are finished (maps
