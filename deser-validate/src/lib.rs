@@ -3,10 +3,13 @@
 //! Values are validated while they are deserialized, so errors point at the
 //! value in the input (with its line, column and path) like the errors of
 //! the format.  Validators are types (see [`Validator`]), so they are
-//! named in the types of fields:
+//! named in adapters and in the types of fields:
 //!
-//! * [`Checked<T, V>`](Checked) fails the deserialization if the value is
-//!   invalid.  A `Checked` value is always valid.
+//! * The [`Check<V>`](Check) adapter (`#[deser(as = Check<V>)]`) fails the
+//!   deserialization if the value is invalid.  The type of the field does
+//!   not change.
+//! * [`Checked<T, V>`](Checked) does the same, a `Checked` value is always
+//!   valid.
 //! * [`Validated<T, V>`](Validated) keeps the errors of the value in it
 //!   instead of failing, so the value around it can still be
 //!   deserialized.  This also covers errors like a string that is given
@@ -52,21 +55,41 @@
 //! The validators of this crate are [`NonEmpty`], [`Len`] (and [`MinLen`]
 //! and [`MaxLen`]), [`Range`] (and [`Min`] and [`Max`]), [`Email`] and
 //! [`Each`], which validates the items of collections.  Tuples of
-//! validators require all of them.  Custom validators implement
-//! [`Validator`].  To use a validator with `#[deser(validate = ...)]` see
-//! [`check`].
+//! validators require all of them.  The [`validator!`] macro creates
+//! validators from conditions and functions:
+//!
+//! ```
+//! use deser::Deserialize;
+//! use deser_validate::{Check, validator};
+//!
+//! validator!(NonZero(port: &u16) => *port != 0, "must not be zero");
+//!
+//! #[derive(Deserialize)]
+//! struct Server {
+//!     #[deser(as = Check<NonZero>)]
+//!     port: u16,
+//! }
+//! ```
+//!
+//! Custom validators can also implement [`Validator`] themselves.
 //!
 //! Validators report a [`Violation`] with a code and parameters for
 //! programs and a message for humans.  Errors have the violation attached.
+mod check;
 mod checked;
 mod collect;
+mod macros;
 mod report;
 mod validated;
 mod validator;
 mod validators;
 
+pub use self::check::Check;
 pub use self::checked::Checked;
 pub use self::collect::Collect;
+#[doc(hidden)]
+pub use self::macros::__private;
+pub use self::macros::{IntoViolation, ValidationResult};
 pub use self::report::{Issue, Outcome, Report, Validation};
 pub use self::validated::Validated;
 pub use self::validator::{Param, Validator, Violation, check};

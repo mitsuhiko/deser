@@ -270,3 +270,60 @@ fn test_serialize() {
         r#"{"port":null,"name":"x"}"#
     );
 }
+
+deser_validate::validator!(NonZero(port: &u16) => *port != 0, "must not be zero");
+
+#[derive(Debug, Deserialize)]
+struct Listener {
+    #[deser(as = deser_validate::Check<NonZero>)]
+    port: u16,
+    #[deser(as = deser::adapters::VecSkipError<deser_validate::Check<Email>>)]
+    admins: Vec<String>,
+    #[deser(as = Option<deser_validate::Check<Email>>)]
+    contact: Option<String>,
+}
+
+#[test]
+fn test_check_adapter() {
+    let listener: Listener = deser_json::from_str(
+        r#"{"port": 80, "admins": ["a@example.com", "nope", "b@example.com"]}"#,
+    )
+    .unwrap();
+    // invalid elements are skipped
+    assert_eq!(listener.admins, ["a@example.com", "b@example.com"]);
+    assert_eq!(listener.contact, None);
+
+    // all errors are reported
+    let validation = Validation::new();
+    let rv = deser_json::Deserializer::from_str(r#"{"port": 0, "admins": [], "contact": "x"}"#)
+        .deserialize_with::<Listener, _>(|driver| validation.setup(driver));
+    let report = validation.finish(rv).into_result().unwrap_err();
+    let codes: Vec<_> = report
+        .iter()
+        .map(|issue| {
+            format!(
+                "{} {}",
+                issue.path().unwrap(),
+                issue.violation().unwrap().code()
+            )
+        })
+        .collect();
+    assert_eq!(codes, ["port non_zero", "contact email"]);
+}
+
+#[test]
+fn test_check_adapter_update() {
+    use deser::de::Deserializer;
+
+    let mut listener: Listener = deser_json::from_str(r#"{"port": 80, "admins": []}"#).unwrap();
+    // fields with adapters are replaced in updates, the new value is checked
+    let err = deser_json::Deserializer::from_str(r#"{"port": 0}"#)
+        .update(&mut listener)
+        .unwrap_err();
+    assert_eq!(err.message(), "invalid value: must not be zero");
+    assert_eq!(listener.port, 80);
+    deser_json::Deserializer::from_str(r#"{"port": 8080}"#)
+        .update(&mut listener)
+        .unwrap();
+    assert_eq!(listener.port, 8080);
+}
