@@ -345,12 +345,17 @@ pub fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
         let formatted = buffer.format_finite(value);
         #[cfg(not(feature = "speedups"))]
         let formatted = &deser_core::__format::format_finite(value);
-        // the exponent always has a sign, the mantissa needs a `.`
-        match formatted.split_once('e') {
-            Some((mantissa, exponent)) if !mantissa.contains('.') => {
-                out.write_str(mantissa).unwrap();
+        // the exponent always has a sign, the mantissa needs a `.`.  The
+        // exponent is at most `e-324`, so only the last five bytes can be
+        // the `e`.
+        let bytes = formatted.as_bytes();
+        let tail = bytes.len().saturating_sub(5);
+        match bytes[tail..].iter().rposition(|&b| b == b'e') {
+            Some(e) if !bytes[..tail + e].contains(&b'.') => {
+                let e = tail + e;
+                out.write_str(&formatted[..e]).unwrap();
                 out.write_str(".0e").unwrap();
-                out.write_str(exponent).unwrap();
+                out.write_str(&formatted[e + 1..]).unwrap();
             }
             _ => out.write_str(formatted).unwrap(),
         }
@@ -470,6 +475,10 @@ mod tests {
         assert_eq!(f(1.0), "1.0");
         assert_eq!(f(1e20), "1.0e+20");
         assert_eq!(f(1.5e-7), "1.5e-7");
+        // the longest exponents
+        assert_eq!(f(5e-324), "5.0e-324");
+        assert_eq!(f(-1e300), "-1.0e+300");
+        assert_eq!(f(1.7976931348623157e308), "1.7976931348623157e+308");
         assert_eq!(f(-0.0), "-0.0");
         assert_eq!(f(f64::NAN), ".nan");
         assert_eq!(f(f64::NEG_INFINITY), "-.inf");

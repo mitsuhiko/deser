@@ -145,18 +145,19 @@ impl ShortText {
     }
 
     fn as_str(&self) -> &str {
-        // only complete strings are written into the buffer
-        std::str::from_utf8(&self.buf[..self.len]).unwrap()
+        // SAFETY: only complete strings are written into the buffer (see
+        // `write_str`), so it holds valid UTF-8 up to `len`.
+        unsafe { std::str::from_utf8_unchecked(&self.buf[..self.len]) }
     }
 }
 
 impl fmt::Write for ShortText {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let end = self.len + s.len();
-        self.buf
-            .get_mut(self.len..end)
-            .ok_or(fmt::Error)?
-            .copy_from_slice(s.as_bytes());
+        let dst = self.buf.get_mut(self.len..end).ok_or(fmt::Error)?;
+        // SAFETY: the destination has the length of the string.  Most texts
+        // are short (like numbers), these are copied inline.
+        unsafe { deser_core::__format::copy_small(s.as_ptr(), dst.as_mut_ptr(), s.len()) };
         self.len = end;
         Ok(())
     }
