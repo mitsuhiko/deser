@@ -65,6 +65,8 @@ pub struct State {
     collect_errors: bool,
     // the number of errors that can still be collected
     remaining_errors: usize,
+    // `true` once an error was not collected because of the limit
+    error_limit_reached: bool,
 }
 
 /// The function of an [`ErrorContext`].
@@ -100,6 +102,7 @@ impl State {
             discards_errors: false,
             collect_errors: false,
             remaining_errors: usize::MAX,
+            error_limit_reached: false,
         }
     }
 
@@ -185,16 +188,30 @@ impl State {
     /// limit.  This counts from the current number of collected errors.
     pub fn set_max_errors(&mut self, max: usize) {
         self.remaining_errors = max;
+        self.error_limit_reached = false;
+    }
+
+    /// Returns `true` once the limit of errors was reached.
+    ///
+    /// The error that exceeded the limit (see
+    /// [`set_max_errors`](Self::set_max_errors)) ends the deserialization.
+    /// Sinks that keep the errors of their values instead of returning
+    /// them should return errors once this is set.
+    pub fn error_limit_reached(&self) -> bool {
+        self.error_limit_reached
     }
 
     /// Takes a number of the errors that can still be collected.
     ///
     /// Returns `false` if errors are not collected or the limit is reached.
     pub(crate) fn take_error_slots(&mut self, count: usize) -> bool {
-        if self.collects_errors() && self.remaining_errors >= count {
+        if !self.collects_errors() {
+            false
+        } else if self.remaining_errors >= count {
             self.remaining_errors -= count;
             true
         } else {
+            self.error_limit_reached = true;
             false
         }
     }

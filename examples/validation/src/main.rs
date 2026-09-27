@@ -15,8 +15,7 @@
 //! into one.
 use deser::Deserialize;
 use deser_validate::{
-    Check, Checked, Collect, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation,
-    validator,
+    Check, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, validator,
 };
 
 /// Checks a lowercase identifier like `jane-doe`.
@@ -90,9 +89,11 @@ fn form() {
 
 #[derive(Debug, Deserialize)]
 pub struct Address {
-    street: Checked<String, NonEmpty>,
+    #[deser(as = Check<NonEmpty>)]
+    street: String,
     city: String,
-    zip: Checked<String, Len<4, 10>>,
+    #[deser(as = Check<Len<4, 10>>)]
+    zip: String,
 }
 
 /// Validators work as adapters (`Check`), the fields keep their types.
@@ -109,9 +110,11 @@ pub struct OrderLine {
 pub struct Order {
     #[deser(as = Check<Email>)]
     customer: String,
-    lines: Checked<Vec<OrderLine>, (NonEmpty, MaxLen<50>)>,
+    #[deser(as = Check<(NonEmpty, MaxLen<50>)>)]
+    lines: Vec<OrderLine>,
     shipping: Address,
-    notes: Checked<Vec<String>, Each<MaxLen<200>>>,
+    #[deser(as = Check<Each<MaxLen<200>>>)]
+    notes: Vec<String>,
     // the gift message is optional, if it's invalid it's dropped (with a
     // warning) rather than rejecting the order.  Like options it can be
     // missing.
@@ -166,17 +169,17 @@ fn api() {
             "lines[1].quantity [quantity]: invalid value: must be between 1 and 100 (line 5)",
             "lines[2].quantity [invalid_type]: unexpected string, expected u32 (line 6)",
             "shipping.street [non_empty]: invalid value: must not be empty (line 8)",
-            "shipping.zip [length]: invalid value: length must be between 4 and 10 (line 8)",
+            "shipping.zip [len]: invalid value: length must be between 4 and 10 (line 8)",
             "shipping [invalid_type]: missing field `city` (line 8)",
-            "gift_message [length]: invalid value: item 0: length must be at most 20 (line 10)",
+            "gift_message [max_len]: invalid value: item 0: length must be at most 20 (line 10)",
         ]
     );
 
-    // parts of an input can collect all of their errors on their own, for
-    // instance to accept an order but report a broken address
+    // `Validated` keeps all errors of its value, for instance to accept an
+    // order but report a broken address
     #[derive(Debug, Deserialize)]
     struct Lenient {
-        shipping: Validated<Collect<Address>>,
+        shipping: Validated<Address>,
     }
     let lenient: Lenient = deser_json::from_str(request).unwrap();
     let err = lenient.shipping.error().unwrap();

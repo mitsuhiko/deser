@@ -31,7 +31,7 @@ use deser_urlencoded::Nesting;
 use deser_validate::{Check, validator};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[deser(deserialize_as = Check<ConfigRules, _>)]
+#[deser(deserialize_as = Check<ConsistentTimeouts, _>)]
 pub struct Config {
     name: String,
     server: Server,
@@ -94,9 +94,9 @@ impl Default for Config {
 
 validator!(NonZero(port: &u16) => *port != 0, "the port must not be 0");
 
-validator!(ConfigRules(config: &Config) = check_config);
+validator!(ConsistentTimeouts(config: &Config) = check_timeouts);
 
-fn check_config(config: &Config) -> Result<(), String> {
+fn check_timeouts(config: &Config) -> Result<(), String> {
     let timeouts = &config.server.timeouts;
     if timeouts.read_secs < timeouts.connect_secs {
         return Err(format!(

@@ -77,6 +77,9 @@ Things to know about the validators the macro creates:
   become violations with the name of the validator in snake case as code
   (`Slug` has the code `slug`, `NonZero` the code `non_zero`).  A `bool`
   function that returns `false` fails with the message `is not valid`.
+* Codes are what clients see, renaming a validator changes its code.  A
+  code can be given as last argument instead:
+  `validator!(Port(port: &u16) => *port != 0, "must not be zero", code = "port")`.
 * The macro does not support types with generics or lifetimes.  For those
   implement `Validator` yourself, which is all the macro does too:
 
@@ -88,9 +91,9 @@ enum Either<T> {
     Right(String),
 }
 
-struct NotEmptyRight;
+struct NonEmptyRight;
 
-impl<T> Validator<Either<T>> for NotEmptyRight {
+impl<T> Validator<Either<T>> for NonEmptyRight {
     fn validate(value: &Either<T>) -> Result<(), Violation> {
         match value {
             Either::Right(s) if s.is_empty() => {
@@ -117,7 +120,7 @@ use deser::Deserialize;
 use deser_validate::{Check, validator};
 
 #[derive(Deserialize, Debug)]
-#[deser(deserialize_as = Check<PortRangeRules, _>)]
+#[deser(deserialize_as = Check<OrderedPorts, _>)]
 struct PortRange {
     min: u16,
     max: u16,
@@ -130,7 +133,7 @@ fn check_port_range(range: &PortRange) -> Result<(), String> {
     Ok(())
 }
 
-validator!(PortRangeRules(range: &PortRange) = check_port_range);
+validator!(OrderedPorts(range: &PortRange) = check_port_range);
 
 let err = deser_json::from_str::<PortRange>(r#"{"min": 90, "max": 80}"#).unwrap_err();
 assert_eq!(err.message(), "invalid value: min 90 is larger than max 80");
@@ -139,16 +142,38 @@ assert_eq!(err.message(), "invalid value: min 90 is larger than max 80");
 This also works for values that are updated in place (layered
 configuration): the value is checked once the update is complete.
 
+## Naming Validators
+
+Validators are named for the property that valid values have, as a noun or
+an adjective: `Email`, `Slug`, `NonEmpty`, `NonZero`, `MaxLen<64>`.  They
+read as `Check<NonZero>` and do not need affixes like `Valid`, `Is` or
+`Rules`.  Negations start with `Non` (like `std::num::NonZero`).  Validators
+of a whole type name the rule they check (`OrderedPorts`, not
+`PortRangeRules`), combinators name their structure (`Each`).  The code of a
+violation is the name of the validator in snake case (`max_len`,
+`non_zero`), for the validators of this crate too.
+
 ## Invalid Values
 
 What happens with an invalid value depends on how the validator is used:
 
-| | the value | invalid values |
-|---|---|---|
-| `#[deser(as = Check<V>)]` | keeps its type | fail the deserialization |
-| `Checked<T, V>` | is always valid | fail the deserialization |
-| `Validated<T, V>` | holds the value or the error | are kept, deserialization continues |
-| `Collect<T>` | | all errors in it are collected |
+| | invalid values |
+|---|---|
+| `#[deser(as = Check<V>)]` (fields) | fail the deserialization, the field keeps its type |
+| `#[deser(deserialize_as = Check<V, _>)]` (types) | fail the deserialization |
+| `Validated<T, V>` (the type of the field) | are kept with all their errors, deserialization continues |
+
+Types that are always valid are newtypes that check themselves.  They are
+often named like the validator, the validator is named by its path then:
+
+```rust
+use deser::Deserialize;
+use deser_validate::Check;
+
+#[derive(Deserialize)]
+#[deser(transparent)]
+pub struct Email(#[deser(as = Check<deser_validate::Email>)] String);
+```
 
 `Validated` keeps all errors of its value, also errors like a string where
 a number is expected and errors deep inside the value.  This is what a form

@@ -8,13 +8,13 @@ All notable changes to deser are documented here.
   into `deser-validate`.  Use `#[deser(as = Check<V>)]` on fields and
   `#[deser(deserialize_as = Check<V, _>)]` on types, with validators made by
   `validator!(NonZero(port: &u16) => *port != 0, "must not be zero")` or
-  `validator!(Rules(config: &Config) = check_config)`.  The derive points
+  `validator!(ConsistentTimeouts(config: &Config) = check_timeouts)`.  The derive points
   at the replacement when the attribute is used.  Updated values are now
   checked once they were updated (the value keeps the update if it's
   invalid) instead of before they replace the value.
 - Adapters on types can wrap the derived implementation: `_` (the
   `Derived` adapter) stands for it, as in `#[deser(as = DefaultOnError<_>)]`
-  or `#[deser(deserialize_as = Check<Rules, _>)]`.
+  or `#[deser(deserialize_as = Check<OrderedBounds, _>)]`.
 - Added `DeserializeAs::deserialize_update_as`.  Derived structs update
   fields with adapters with it and types with adapters forward updates to
   it.  It replaces the value by default, `Same` and `Derived` update in
@@ -22,14 +22,15 @@ All notable changes to deser are documented here.
   is complete.
 - Added `deser-validate` for validation.  Validators are types
   (`Email`, `Len<1, 32>`, `Range<1, 65535>`, `Each<V>`, tuples for all
-  of them) with violations that have a code, parameters and a message.
-  `Checked<T, V>` fails the deserialization if the value is invalid,
-  `Validated<T, V>` keeps the errors of the value in it (also type errors
-  and errors deep inside the value) and `Collect<T>` collects all errors
-  of a value.  `Validation` reports all problems of an input with their
-  paths and locations.
-- `State::attach_error_context` and `State::discards_errors` are public
-  for sinks that handle the errors of their values themselves.
+  of them, and `validator!` for custom ones) with violations that have a
+  code (the name of the validator), parameters and a message.  The `Check`
+  adapter fails the deserialization if the value is invalid,
+  `Validated<T, V>` keeps all errors of the value in it (also type errors
+  and errors deep inside the value) and `Validation` reports all problems
+  of an input with their paths and locations.
+- `State::attach_error_context`, `State::discards_errors` and
+  `State::error_limit_reached` are public for sinks that handle the errors
+  of their values themselves.
 - Errors can hold multiple errors (`Error::errors`, `Error::from_errors`
   and `Error::push_error`).  The accessors refer to the first one, the
   display output mentions how many more there are and `{:#}` lists all

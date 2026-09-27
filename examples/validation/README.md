@@ -29,11 +29,10 @@ request with all of its problems at once, not just the first one.
   ones (`Email`, `Len`, `Range`, `NonEmpty`, `MaxLen`, `Each`) and in
   tuples that combine them.
 - The `Check` adapter (`#[deser(as = Check<Slug>)]`) which rejects invalid
-  values while the field keeps its type, `Checked<T, V>` fields which are
-  always valid, and a `Validation` that reports all problems of a JSON
-  request with paths, violation codes and lines, including type errors
-  and missing fields.
-- `Validated<Collect<T>>` to collect all errors of one part of the input.
+  values while the field keeps its type, and a `Validation` that reports
+  all problems of a JSON request with paths, violation codes (the names of
+  the validators) and lines, including type errors and missing fields.
+- `Validated<Address>` which keeps all errors of one part of the input.
 - `track_locations` on the JSON deserializer, so that the errors values
   keep have lines and columns too (without it they only have offsets,
   `Report::resolve_positions` resolves them).
@@ -51,9 +50,9 @@ lines[1].sku [slug]: invalid value: may only contain lowercase letters, digits a
 lines[1].quantity [quantity]: invalid value: must be between 1 and 100 (line 5)
 lines[2].quantity [invalid_type]: unexpected string, expected u32 (line 6)
 shipping.street [non_empty]: invalid value: must not be empty (line 8)
-shipping.zip [length]: invalid value: length must be between 4 and 10 (line 8)
+shipping.zip [len]: invalid value: length must be between 4 and 10 (line 8)
 shipping [invalid_type]: missing field `city` (line 8)
-gift_message [length]: invalid value: item 0: length must be at most 20 (line 10)
+gift_message [max_len]: invalid value: item 0: length must be at most 20 (line 10)
 shipping has 3 problems
 ```
 

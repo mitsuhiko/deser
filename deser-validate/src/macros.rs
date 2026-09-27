@@ -51,36 +51,25 @@ use crate::Violation;
 /// the validator in snake case as code (`NonZero` has the code `non_zero`).
 /// Functions that return `false` fail with the message `is not valid`.
 ///
+/// The code is part of what clients see, renaming the validator changes it.
+/// All forms accept a code that is used instead of the name as last
+/// argument, violations that functions return keep their code:
+///
+/// ```
+/// use deser_validate::{Validator, validator};
+///
+/// validator!(pub Port(port: &u16) => *port != 0, "must not be zero", code = "port");
+/// assert_eq!(Port::validate(&0u16).unwrap_err().code(), "port");
+/// ```
+///
 /// The macro does not support types with generics or lifetimes (like
 /// `Either<T>` or `Name<'a>`).  For those, implement
 /// [`Validator`](crate::Validator) yourself (see there).
 #[macro_export]
 macro_rules! validator {
     (
-        $(#[$meta:meta])*
-        $vis:vis $name:ident($arg:ident: &$ty:ty) => $cond:expr, $message:expr $(,)?
-    ) => {
-        $crate::validator!(
-            $(#[$meta])*
-            $vis $name($arg: &$ty) {
-                if $cond { Ok(()) } else { Err($message) }
-            }
-        );
-    };
-    (
-        $(#[$meta:meta])*
-        $vis:vis $name:ident($arg:ident: &$ty:ty) = $func:path $(,)?
-    ) => {
-        $crate::validator!(
-            $(#[$meta])*
-            $vis $name($arg: &$ty) {
-                $func($arg)
-            }
-        );
-    };
-    (
-        $(#[$meta:meta])*
-        $vis:vis $name:ident($arg:ident: &$ty:ty) $body:block
+        @impl [$(#[$meta:meta])*]
+        $vis:vis $name:ident($arg:ident: &$ty:ty) $body:block ($code:expr)
     ) => {
         $(#[$meta])*
         $vis struct $name;
@@ -94,67 +83,139 @@ macro_rules! validator {
                 $crate::__private::into_result(
                     check(::std::borrow::Borrow::borrow(value)),
                     ::std::stringify!($name),
+                    $code,
                 )
             }
         }
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) => $cond:expr, $message:expr,
+        code = $code:literal $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) {
+                if $cond { Ok(()) } else { Err($message) }
+            } (::std::option::Option::Some($code))
+        );
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) => $cond:expr, $message:expr $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) {
+                if $cond { Ok(()) } else { Err($message) }
+            } (::std::option::Option::None)
+        );
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) = $func:path, code = $code:literal $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) {
+                $func($arg)
+            } (::std::option::Option::Some($code))
+        );
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) = $func:path $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) {
+                $func($arg)
+            } (::std::option::Option::None)
+        );
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) $body:block, code = $code:literal $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) $body (::std::option::Option::Some($code))
+        );
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident($arg:ident: &$ty:ty) $body:block $(,)?
+    ) => {
+        $crate::validator!(
+            @impl [$(#[$meta])*] $vis $name($arg: &$ty) $body (::std::option::Option::None)
+        );
     };
 }
 
 /// What the functions of validators return.
 pub trait ValidationResult {
-    /// Converts the result, `name` is the name of the validator.
-    fn into_result(self, name: &'static str) -> Result<(), Violation>;
+    /// Converts the result.
+    ///
+    /// `name` is the name of the validator, `code` the code it was given.
+    fn into_result(self, name: &'static str, code: Option<&'static str>) -> Result<(), Violation>;
 }
 
 impl ValidationResult for bool {
-    fn into_result(self, name: &'static str) -> Result<(), Violation> {
+    fn into_result(self, name: &'static str, code: Option<&'static str>) -> Result<(), Violation> {
         match self {
             true => Ok(()),
-            false => Err(Violation::new(code(name), "is not valid")),
+            false => Err("is not valid".into_violation(name, code)),
         }
     }
 }
 
 impl<E: IntoViolation> ValidationResult for Result<(), E> {
-    fn into_result(self, name: &'static str) -> Result<(), Violation> {
-        self.map_err(|err| err.into_violation(name))
+    fn into_result(self, name: &'static str, code: Option<&'static str>) -> Result<(), Violation> {
+        self.map_err(|err| err.into_violation(name, code))
     }
 }
 
 /// What the functions of validators fail with.
 pub trait IntoViolation {
-    /// Converts the error, `name` is the name of the validator.
-    fn into_violation(self, name: &'static str) -> Violation;
+    /// Converts the error.
+    ///
+    /// `name` is the name of the validator, `code` the code it was given.
+    /// Messages become violations with the code, or the name in snake case
+    /// if it has none.
+    fn into_violation(self, name: &'static str, code: Option<&'static str>) -> Violation;
 }
 
 impl IntoViolation for Violation {
-    fn into_violation(self, _name: &'static str) -> Violation {
+    fn into_violation(self, _name: &'static str, _code: Option<&'static str>) -> Violation {
         self
     }
 }
 
+/// Returns the code of a validator.
+fn code_of(name: &'static str, code: Option<&'static str>) -> Cow<'static, str> {
+    match code {
+        Some(code) => Cow::Borrowed(code),
+        None => Cow::Owned(snake_case(name)),
+    }
+}
+
 impl IntoViolation for &'static str {
-    fn into_violation(self, name: &'static str) -> Violation {
-        Violation::new(code(name), self)
+    fn into_violation(self, name: &'static str, code: Option<&'static str>) -> Violation {
+        Violation::new(code_of(name, code), self)
     }
 }
 
 impl IntoViolation for String {
-    fn into_violation(self, name: &'static str) -> Violation {
-        Violation::new(code(name), self)
+    fn into_violation(self, name: &'static str, code: Option<&'static str>) -> Violation {
+        Violation::new(code_of(name, code), self)
     }
 }
 
 impl IntoViolation for Cow<'static, str> {
-    fn into_violation(self, name: &'static str) -> Violation {
-        Violation::new(code(name), self)
+    fn into_violation(self, name: &'static str, code: Option<&'static str>) -> Violation {
+        Violation::new(code_of(name, code), self)
     }
 }
 
 /// Returns the code of a validator: its name in snake case.
 ///
 /// Acronyms are kept together (`URLCheck` is `url_check`).
-fn code(name: &str) -> String {
+fn snake_case(name: &str) -> String {
     let chars: Vec<char> = name.chars().collect();
     let mut rv = String::with_capacity(name.len() + 4);
     for (idx, &c) in chars.iter().enumerate() {
@@ -180,16 +241,20 @@ pub mod __private {
     use crate::Violation;
 
     #[inline]
-    pub fn into_result<R: ValidationResult>(rv: R, name: &'static str) -> Result<(), Violation> {
-        rv.into_result(name)
+    pub fn into_result<R: ValidationResult>(
+        rv: R,
+        name: &'static str,
+        code: Option<&'static str>,
+    ) -> Result<(), Violation> {
+        rv.into_result(name, code)
     }
 }
 
 #[test]
-fn test_code() {
-    assert_eq!(code("NonZero"), "non_zero");
-    assert_eq!(code("Slug"), "slug");
-    assert_eq!(code("URL"), "url");
-    assert_eq!(code("URLCheck"), "url_check");
-    assert_eq!(code("MaxLen2"), "max_len2");
+fn test_snake_case() {
+    assert_eq!(snake_case("NonZero"), "non_zero");
+    assert_eq!(snake_case("Slug"), "slug");
+    assert_eq!(snake_case("URL"), "url");
+    assert_eq!(snake_case("URLCheck"), "url_check");
+    assert_eq!(snake_case("MaxLen2"), "max_len2");
 }

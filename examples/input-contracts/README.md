@@ -16,9 +16,9 @@ terms instead of Rust type names.
 - `#[deser(transparent)]` on a struct with named fields (`Email`). On the
   wire it is just a string. The other field (`verified`) is
   `#[deser(skip)]`, so clients can't set it.
-- `#[deser(deserialize_as = Check<ValidEmail, _>)]` with `deser-validate`:
-  the derived implementation parses the value, then the validator checks
-  it and its error points at the value.
+- `#[deser(as = Check<EmailAddress>)]` with `deser-validate` on the field
+  of the transparent struct: the validator checks the address once it's
+  read and its error points at the value.
 - `#[deser(expecting = "a label")]` / `"a request"`: errors say "expected
   a label" instead of naming the Rust type.
 - `#[deser(required)]` on an `Option` field (`parent`): the key must be

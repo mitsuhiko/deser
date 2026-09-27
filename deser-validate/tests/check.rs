@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::{Deserialize, Error, Event, Serialize};
-use deser_validate::{Check, Validator, Violation, validator};
+use deser_validate::{Check, NonEmpty, Validator, Violation, validator};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
@@ -31,8 +31,7 @@ fn message<T: std::fmt::Debug>(rv: Result<T, Error>) -> String {
 }
 
 validator!(NonZero(value: &u16) => *value != 0, "must not be zero");
-validator!(NotEmpty(value: &[String]) => !value.is_empty(), "must not be empty");
-validator!(Ordered(range: &Range) = ordered);
+validator!(OrderedRange(range: &Range) = ordered);
 
 fn ordered(value: &Range) -> Result<(), String> {
     if value.min > value.max {
@@ -46,7 +45,7 @@ fn ordered(value: &Range) -> Result<(), String> {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(deserialize_as = Check<Ordered, _>)]
+#[deser(deserialize_as = Check<OrderedRange, _>)]
 struct Range {
     min: u32,
     max: u32,
@@ -56,7 +55,7 @@ struct Range {
 struct Server {
     #[deser(as = Check<NonZero>)]
     port: u16,
-    #[deser(as = Check<NotEmpty>, default)]
+    #[deser(as = Check<NonEmpty>, default)]
     hosts: Vec<String>,
     range: Option<Range>,
 }
@@ -120,11 +119,11 @@ fn test_containers() {
     assert_eq!(message(rv), "invalid value: min 3 is larger than max 2");
 }
 
-validator!(EvenRule(value: &Even) => value.0.is_multiple_of(2), "odd");
+validator!(EvenNumber(value: &Even) => value.0.is_multiple_of(2), "odd");
 validator!(EvenLength(value: &EvenList) => value.0.len().is_multiple_of(2), "odd length");
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(deserialize_as = Check<EvenRule, _>)]
+#[deser(deserialize_as = Check<EvenNumber, _>)]
 struct Even(u32);
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -161,19 +160,19 @@ fn test_newtypes() {
     assert_eq!(message(rv), "invalid value: odd length");
 }
 
-validator!(NotLegacy(value: &Mode) => *value != Mode::Legacy, "legacy is no longer supported");
+validator!(Supported(value: &Mode) => *value != Mode::Legacy, "legacy is no longer supported");
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[deser(deserialize_as = Check<NotLegacy, _>, rename_all = "lowercase")]
+#[deser(deserialize_as = Check<Supported, _>, rename_all = "lowercase")]
 enum Mode {
     Fast,
     Legacy,
 }
 
-validator!(Positive(value: &Shape) => !matches!(value, Shape::Circle { radius: 0 }), "radius must be positive");
+validator!(PositiveRadius(value: &Shape) => !matches!(value, Shape::Circle { radius: 0 }), "radius must be positive");
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(tag = "type", deserialize_as = Check<Positive, _>)]
+#[deser(tag = "type", deserialize_as = Check<PositiveRadius, _>)]
 enum Shape {
     Circle {
         radius: u32,
@@ -185,16 +184,16 @@ enum Shape {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(untagged, deserialize_as = Check<NotEmptyRight, _>)]
+#[deser(untagged, deserialize_as = Check<NonEmptyRight, _>)]
 enum Either<T> {
     Left(T),
     Right(String),
 }
 
 /// Validators of generic types implement the trait themselves.
-struct NotEmptyRight;
+struct NonEmptyRight;
 
-impl<T> Validator<Either<T>> for NotEmptyRight {
+impl<T> Validator<Either<T>> for NonEmptyRight {
     fn validate(value: &Either<T>) -> Result<(), Violation> {
         match value {
             Either::Right(s) if s.is_empty() => Err(Violation::new("empty", "empty")),
@@ -248,9 +247,9 @@ fn update<T: for<'de> Deserialize<'de>>(
 #[test]
 fn test_borrowed() {
     // validators of types with lifetimes implement the trait themselves
-    struct NotEmptyName;
+    struct NonEmptyName;
 
-    impl<'a> Validator<Name<'a>> for NotEmptyName {
+    impl<'a> Validator<Name<'a>> for NonEmptyName {
         fn validate(value: &Name<'a>) -> Result<(), Violation> {
             match value {
                 Name::Plain("") => Err(Violation::new("empty", "empty name")),
@@ -260,7 +259,7 @@ fn test_borrowed() {
     }
 
     #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(deserialize_as = Check<NotEmptyName, _>, tag = "kind", content = "value")]
+    #[deser(deserialize_as = Check<NonEmptyName, _>, tag = "kind", content = "value")]
     enum Name<'a> {
         Plain(&'a str),
         #[deser(default)]
@@ -287,9 +286,9 @@ fn test_borrowed() {
     assert_eq!(out, Some(Name::Missing));
 
     // tuple structs that borrow
-    struct NotEmpty;
+    struct NonEmptyNamed;
 
-    impl<'a> Validator<Named<'a>> for NotEmpty {
+    impl<'a> Validator<Named<'a>> for NonEmptyNamed {
         fn validate(value: &Named<'a>) -> Result<(), Violation> {
             match value.0 {
                 "" => Err(Violation::new("empty", "empty name")),
@@ -299,7 +298,7 @@ fn test_borrowed() {
     }
 
     #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(deserialize_as = Check<NotEmpty, _>)]
+    #[deser(deserialize_as = Check<NonEmptyNamed, _>)]
     struct Named<'a>(&'a str, u32);
 
     let mut out = None::<Named<'_>>;
@@ -313,10 +312,10 @@ fn test_borrowed() {
 
 #[test]
 fn test_shapes() {
-    validator!(StartBeforeEnd(value: &Span) => value.0 <= value.1, "start is after end");
+    validator!(OrderedSpan(value: &Span) => value.0 <= value.1, "start is after end");
 
     #[derive(Debug, PartialEq, Deserialize)]
-    #[deser(deserialize_as = Check<StartBeforeEnd, _>)]
+    #[deser(deserialize_as = Check<OrderedSpan, _>)]
     struct Span(u32, u32);
 
     let seq = |a: u64, b: u64| vec![Event::seq_start(), a.into(), b.into(), Event::SeqEnd];
@@ -326,29 +325,29 @@ fn test_shapes() {
         "invalid value: start is after end"
     );
 
-    validator!(PositiveValue(value: &Positive) => value.0 > 0, "not positive");
+    validator!(PositiveAmount(value: &Amount) => value.0 > 0, "not positive");
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    #[deser(transparent, deserialize_as = Check<PositiveValue, _>)]
-    struct Positive(i32, #[deser(skip)] ());
+    #[deser(transparent, deserialize_as = Check<PositiveAmount, _>)]
+    struct Amount(i32, #[deser(skip)] ());
 
     assert_eq!(
-        deserialize::<Positive>(vec![1i64.into()]).unwrap(),
-        Positive(1, ())
+        deserialize::<Amount>(vec![1i64.into()]).unwrap(),
+        Amount(1, ())
     );
     assert_eq!(
-        message(deserialize::<Positive>(vec![0i64.into()])),
+        message(deserialize::<Amount>(vec![0i64.into()])),
         "invalid value: not positive"
     );
 }
 
-validator!(PositiveNumber(value: &u32) => *value > 0, "must be positive");
-validator!(MinBeforeMax(value: &Bounds) => value.min <= value.max, "min is larger than max");
+validator!(Positive(value: &u32) => *value > 0, "must be positive");
+validator!(OrderedBounds(value: &Bounds) => value.min <= value.max, "min is larger than max");
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(deserialize_as = Check<MinBeforeMax, _>, deny_unknown_fields)]
+#[deser(deserialize_as = Check<OrderedBounds, _>, deny_unknown_fields)]
 struct Bounds {
-    #[deser(as = Check<PositiveNumber>)]
+    #[deser(as = Check<Positive>)]
     min: u32,
     max: u32,
 }
@@ -373,7 +372,7 @@ fn test_updates() {
     assert_eq!(message(rv), "unknown field `x`, expected `min` or `max`");
 }
 
-validator!(NoConflicts(value: &Settings) => !value.extra.contains_key(&value.name), "extra conflicts with name");
+validator!(UniqueName(value: &Settings) => !value.extra.contains_key(&value.name), "extra conflicts with name");
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Limits {
@@ -381,7 +380,7 @@ struct Limits {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[deser(deserialize_as = Check<NoConflicts, _>)]
+#[deser(deserialize_as = Check<UniqueName, _>)]
 struct Settings {
     name: String,
     #[deser(flatten)]
@@ -427,4 +426,32 @@ fn test_locations() {
         err.to_string(),
         "Unexpected: invalid value: min 3 is larger than max 2 at line 1 column 22 (path: range)"
     );
+}
+
+#[test]
+fn test_codes() {
+    use deser_validate::{Email, Len, Max, MaxLen, Min, MinLen, Range};
+
+    // the code of a violation is the name of the validator
+    let code = |rv: Result<(), Violation>| rv.unwrap_err().code().to_string();
+    assert_eq!(code(Len::<2, 3>::validate("a")), "len");
+    assert_eq!(code(MinLen::<2>::validate("a")), "min_len");
+    assert_eq!(code(MaxLen::<2>::validate("abc")), "max_len");
+    assert_eq!(code(Range::<2, 3>::validate(&1u32)), "range");
+    assert_eq!(code(Min::<2>::validate(&1u32)), "min");
+    assert_eq!(code(Max::<2>::validate(&3u32)), "max");
+    assert_eq!(code(NonEmpty::validate("")), "non_empty");
+    assert_eq!(code(Email::validate("x")), "email");
+    assert_eq!(code(NonZero::validate(&0u16)), "non_zero");
+
+    // or the code it was given
+    validator!(Port(port: &u16) => *port != 0, "must not be zero", code = "port");
+    assert_eq!(code(Port::validate(&0u16)), "port");
+    fn check_name(_value: &str) -> Result<(), &'static str> {
+        Err("invalid")
+    }
+    validator!(Name(value: &str) = check_name, code = "name");
+    assert_eq!(code(Name::validate("x")), "name");
+    validator!(Block(value: &str) { Err(value.to_string()) }, code = "block");
+    assert_eq!(code(Block::validate("x")), "block");
 }

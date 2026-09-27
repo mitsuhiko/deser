@@ -4,18 +4,20 @@ use deser::de::Limits;
 use deser::{Deserialize, Serialize};
 use deser_path::{Path, PathLayer};
 use deser_validate::{
-    Checked, Collect, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, Violation,
+    Check, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, Violation,
 };
 
 #[derive(Debug, Deserialize)]
 struct Address {
     street: String,
-    zip: Checked<u32, Range<1000, 99999>>,
+    #[deser(as = Check<Range<1000, 99999>>)]
+    zip: u32,
 }
 
 #[derive(Debug, Deserialize)]
 struct Signup {
-    name: Checked<String, (NonEmpty, MaxLen<16>)>,
+    #[deser(as = Check<(NonEmpty, MaxLen<16>)>)]
+    name: String,
     email: Validated<String, Email>,
     age: Validated<u8, Range<13, 130>>,
     address: Validated<Address>,
@@ -49,10 +51,10 @@ fn with_paths<'de, T: Deserialize<'de>>(input: &'de str) -> Result<T, deser::Err
 #[test]
 fn test_valid() {
     let signup: Signup = deser_json::from_str(VALID).unwrap();
-    assert_eq!(*signup.name, "jane");
+    assert_eq!(signup.name, "jane");
     assert_eq!(signup.email.value().unwrap(), "jane@example.com");
     assert_eq!(*signup.age.value().unwrap(), 30);
-    assert_eq!(*signup.address.value().unwrap().zip, 12345);
+    assert_eq!(signup.address.value().unwrap().zip, 12345);
     assert!(signup.tags.is_valid());
     // missing options are valid
     assert_eq!(signup.nickname.value(), Some(&None));
@@ -158,12 +160,13 @@ fn test_root() {
 #[derive(Debug, Deserialize)]
 struct Order {
     id: u64,
-    shipping: Validated<Collect<Address>>,
-    lines: Collect<Vec<u32>>,
+    shipping: Validated<Address>,
+    lines: Vec<u32>,
 }
 
 #[test]
-fn test_collect() {
+fn test_validated_collects_errors() {
+    // all errors of the value are kept
     let order: Order =
         deser_json::from_str(r#"{"id": 1, "shipping": {"zip": 1, "extra": [1]}, "lines": [1, 2]}"#)
             .unwrap();
@@ -176,16 +179,38 @@ fn test_collect() {
             "missing field `street`"
         ]
     );
-    assert_eq!(*order.lines, [1, 2]);
+    assert_eq!(order.lines, [1, 2]);
 
-    // collecting ends with the value
-    let err =
-        deser_json::from_str::<Order>(r#"{"id": "x", "shipping": {}, "lines": [1, "a", "b"]}"#)
-            .unwrap_err();
-    assert_eq!(err.error_count(), 1);
+    // errors are collected in the value only, outside of it the first error
+    // ends the deserialization
     let err = deser_json::from_str::<Order>(r#"{"id": 1, "shipping": {}, "lines": [1, "a", "b"]}"#)
         .unwrap_err();
-    assert_eq!(err.error_count(), 2);
+    assert_eq!(err.error_count(), 1);
+}
+
+#[test]
+fn test_validated_error_limit() {
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct Lists {
+        a: Validated<Vec<u32>>,
+        b: Validated<Vec<u32>>,
+    }
+
+    // below the limit the values keep their errors
+    let validation = Validation::new().max_errors(3);
+    let rv = deser_json::Deserializer::from_str(r#"{"a": ["x", "y"], "b": ["z"]}"#)
+        .deserialize_with::<Lists, _>(|driver| validation.setup(driver));
+    let outcome = validation.finish(rv);
+    assert!(outcome.value.is_some());
+    assert_eq!(outcome.report.len(), 3);
+
+    // the error that exceeds the limit ends the deserialization
+    let validation = Validation::new().max_errors(2);
+    let rv = deser_json::Deserializer::from_str(r#"{"a": ["x", "y"], "b": ["z"]}"#)
+        .deserialize_with::<Lists, _>(|driver| validation.setup(driver));
+    let outcome = validation.finish(rv);
+    assert!(outcome.value.is_none());
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,7 +279,8 @@ fn test_max_errors() {
 #[derive(Debug, Serialize, Deserialize)]
 struct Settings {
     port: Validated<u16, Range<1, 65535>>,
-    name: Checked<String, NonEmpty>,
+    #[deser(as = Check<NonEmpty>)]
+    name: String,
 }
 
 #[test]
@@ -331,13 +357,13 @@ fn test_check_adapter_update() {
 }
 
 #[derive(Debug, Deserialize)]
-#[deser(deserialize_as = deser_validate::Check<BoundsRules, _>)]
+#[deser(deserialize_as = deser_validate::Check<OrderedBounds, _>)]
 struct Bounds {
     min: u32,
     max: u32,
 }
 
-deser_validate::validator!(BoundsRules(bounds: &Bounds) => bounds.min <= bounds.max, "min is larger than max");
+deser_validate::validator!(OrderedBounds(bounds: &Bounds) => bounds.min <= bounds.max, "min is larger than max");
 
 #[derive(Debug, Deserialize)]
 struct ServerLimits {
@@ -361,7 +387,7 @@ fn test_check_container() {
     );
     assert_eq!(
         err.attachment::<Violation>().unwrap().code(),
-        "bounds_rules"
+        "ordered_bounds"
     );
 
     // values that keep their errors

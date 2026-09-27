@@ -9,24 +9,21 @@
 //!   deserialization if the value is invalid.  The type of the field does
 //!   not change.  On a type (`#[deser(deserialize_as = Check<V, _>)]`) it
 //!   checks the whole value, for rules that span fields.
-//! * [`Checked<T, V>`](Checked) does the same, a `Checked` value is always
-//!   valid.
-//! * [`Validated<T, V>`](Validated) keeps the errors of the value in it
+//! * [`Validated<T, V>`](Validated) keeps all errors of the value in it
 //!   instead of failing, so the value around it can still be
 //!   deserialized.  This also covers errors like a string that is given
 //!   where a number is expected.
-//! * [`Collect<T>`](Collect) collects all errors of a value instead of
-//!   failing on the first.
 //! * A [`Validation`] reports all problems of an input.
 //!
 //! ```
 //! use deser::Deserialize;
-//! use deser_validate::{Checked, Email, Len, NonEmpty, Validated, Validation};
+//! use deser_validate::{Check, Email, MaxLen, NonEmpty, Validated, Validation};
 //!
 //! #[derive(Deserialize)]
 //! struct Signup {
 //!     // must be valid, or the signup is invalid
-//!     name: Checked<String, (NonEmpty, Len<1, 32>)>,
+//!     #[deser(as = Check<(NonEmpty, MaxLen<32>)>)]
+//!     name: String,
 //!     // kept even if it is invalid
 //!     email: Validated<String, Email>,
 //!     newsletter: bool,
@@ -49,6 +46,17 @@
 //!         "newsletter: unexpected string, expected bool",
 //!     ]
 //! );
+//! ```
+//!
+//! Types that are always valid are newtypes which check themselves:
+//!
+//! ```
+//! use deser::Deserialize;
+//! use deser_validate::Check;
+//!
+//! #[derive(Deserialize)]
+//! #[deser(transparent)]
+//! pub struct Email(#[deser(as = Check<deser_validate::Email>)] String);
 //! ```
 //!
 //! # Validators
@@ -89,9 +97,19 @@
 //!
 //! Validators report a [`Violation`] with a code and parameters for
 //! programs and a message for humans.  Errors have the violation attached.
+//!
+//! # Naming Validators
+//!
+//! Validators are named for the property that valid values have, as a
+//! noun or an adjective: `Email`, `Slug`, `NonEmpty`, `NonZero`,
+//! `MaxLen<64>`.  They read as `Check<NonZero>` and do not need affixes like
+//! `Valid`, `Is` or `Rules`.  Negations start with `Non` (like
+//! [`NonZero`](std::num::NonZero)).  Validators of a whole type name the
+//! rule they check (`OrderedBounds`, not `BoundsRules`), combinators name
+//! their structure ([`Each`]).  The code of a violation is the name of the
+//! validator in snake case (`max_len`, `non_zero`), for the validators of
+//! this crate and the ones [`validator!`] creates.
 mod check;
-mod checked;
-mod collect;
 mod macros;
 mod report;
 mod validated;
@@ -99,8 +117,6 @@ mod validator;
 mod validators;
 
 pub use self::check::Check;
-pub use self::checked::Checked;
-pub use self::collect::Collect;
 #[doc(hidden)]
 pub use self::macros::__private;
 pub use self::macros::{IntoViolation, ValidationResult};

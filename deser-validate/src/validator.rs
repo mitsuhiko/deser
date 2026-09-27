@@ -47,9 +47,9 @@ use deser_core::{Error, ErrorAttachment, ErrorKind};
 ///
 /// pub struct Name<'a>(&'a str);
 ///
-/// pub struct NotEmptyName;
+/// pub struct NonEmptyName;
 ///
-/// impl<'a> Validator<Name<'a>> for NotEmptyName {
+/// impl<'a> Validator<Name<'a>> for NonEmptyName {
 ///     fn validate(value: &Name<'a>) -> Result<(), Violation> {
 ///         if value.0.is_empty() {
 ///             return Err(Violation::new("not_empty", "must not be empty"));
@@ -143,10 +143,20 @@ impl From<String> for Param {
 /// [`Error::attachment`]):
 ///
 /// ```
-/// use deser_validate::{Checked, Email, Violation};
+/// use deser::Deserialize;
+/// use deser_validate::{Check, Email, Violation};
 ///
-/// let err = deser_json::from_str::<Checked<String, Email>>(r#""nope""#).unwrap_err();
-/// assert_eq!(err.to_string(), "Unexpected: invalid value: must be an email address at line 1 column 1");
+/// #[derive(Deserialize, Debug)]
+/// struct User {
+///     #[deser(as = Check<Email>)]
+///     email: String,
+/// }
+///
+/// let err = deser_json::from_str::<User>(r#"{"email": "nope"}"#).unwrap_err();
+/// assert_eq!(
+///     err.to_string(),
+///     "Unexpected: invalid value: must be an email address at line 1 column 11"
+/// );
 /// assert_eq!(err.attachment::<Violation>().unwrap().code(), "email");
 /// ```
 #[derive(Debug, Clone, PartialEq)]

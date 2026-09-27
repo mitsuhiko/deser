@@ -17,10 +17,13 @@ use crate::report::ReportHandle;
 /// kept in it instead of failing the deserialization of the value it's in.
 /// That covers the errors of the value itself (for instance a string where
 /// a number is expected), of the values nested in it and the violation of
-/// the validator `V` (none by default).  The rest of an invalid value is
-/// skipped (see [`Sink::recover`]).  Only the errors of the data format and
-/// of layers (for instance [`Limits`](deser_core::de::Limits)) still fail
-/// the deserialization.
+/// the validator `V` (none by default).  Within the value, all errors are
+/// collected (see [`State::set_collect_errors`]): the error holds all
+/// problems of the value, not just the first one.  Only the errors of the
+/// data format and of layers (for instance
+/// [`Limits`](deser_core::de::Limits)) still fail the deserialization, and
+/// the error that exceeds the limit of errors (see
+/// [`State::set_max_errors`]).
 ///
 /// ```
 /// use deser::Deserialize;
@@ -51,6 +54,27 @@ use crate::report::ReportHandle;
 ///
 /// While an untagged enum tries its variants, errors are not kept: a
 /// variant with an invalid `Validated` value does not match.
+///
+/// ```
+/// use deser::Deserialize;
+/// use deser_validate::Validated;
+///
+/// #[derive(Deserialize)]
+/// struct Address {
+///     street: String,
+///     zip: u32,
+/// }
+///
+/// #[derive(Deserialize)]
+/// struct Order {
+///     shipping: Validated<Address>,
+/// }
+///
+/// let order: Order = deser_json::from_str(r#"{"shipping": {"zip": "x"}}"#).unwrap();
+/// let err = order.shipping.error().unwrap();
+/// let errors: Vec<_> = err.errors().map(|err| err.message()).collect();
+/// assert_eq!(errors, ["unexpected string, expected u32", "missing field `street`"]);
+/// ```
 ///
 /// When serialized, the value is serialized (also if it's invalid), a
 /// value that could not be deserialized is serialized as null.
@@ -104,9 +128,7 @@ impl<T, V> Validated<T, V> {
 
     /// Returns the error if the value is invalid.
     ///
-    /// The error can hold multiple errors (see [`Error::errors`]), for
-    /// instance if errors are collected in the value (see
-    /// [`Collect`](crate::Collect)).
+    /// The error holds all errors of the value (see [`Error::errors`]).
     pub fn error(&self) -> Option<&Error> {
         self.error.as_ref()
     }
@@ -141,6 +163,7 @@ impl<'de, T: Deserialize<'de>, V: Validator<T>> Deserialize<'de> for Validated<T
             sink: Some(OwnedSink::deserialize()),
             error: None,
             start: None,
+            outer: None,
         })
     }
 
@@ -157,6 +180,8 @@ struct ValidatedSink<'a, 'de, T, V> {
     error: Option<Error>,
     // the start of the value in the input
     start: Option<usize>,
+    // if errors are collected outside of the value while it's deserialized
+    outer: Option<bool>,
 }
 
 impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
@@ -166,19 +191,33 @@ impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
     }
 
     /// Returns the sink of the value at its start.
-    fn begin(&mut self, state: &State) -> Option<&mut (dyn Sink<'de> + '_)> {
+    ///
+    /// The errors in the value are collected.
+    fn begin(&mut self, state: &mut State) -> Option<&mut (dyn Sink<'de> + '_)> {
         if self.start.is_none() {
             self.start = state.input_range().map(|range| range.start);
+        }
+        if self.outer.is_none() {
+            self.outer = Some(state.set_collect_errors(true));
         }
         self.sink()
     }
 
+    /// Restores whether errors are collected once the value is complete or
+    /// failed.
+    fn end(&mut self, state: &mut State) {
+        if let Some(outer) = self.outer.take() {
+            state.set_collect_errors(outer);
+        }
+    }
+
     /// Keeps the error of the value.
     ///
-    /// The rest of the value is ignored.  While errors are discarded, the
-    /// error is returned instead.
-    fn fail(&mut self, err: Error, state: &State) -> Result<(), Error> {
-        if state.discards_errors() {
+    /// The rest of the value is ignored.  While errors are discarded and
+    /// once the limit of errors is reached, the error is returned instead.
+    fn fail(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        if state.discards_errors() || state.error_limit_reached() {
+            self.end(state);
             return Err(err);
         }
         self.sink = None;
@@ -187,7 +226,7 @@ impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
     }
 
     /// Keeps the error of an operation on the value if it failed.
-    fn check(&mut self, rv: Result<(), Error>, state: &State) -> Result<(), Error> {
+    fn check(&mut self, rv: Result<(), Error>, state: &mut State) -> Result<(), Error> {
         match rv {
             Ok(()) => Ok(()),
             Err(err) => self.fail(err, state),
@@ -317,6 +356,7 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for ValidatedSink<'a, 'de, T, 
             None => Ok(()),
         };
         self.check(rv, state)?;
+        self.end(state);
         let value = self.sink.as_mut().and_then(|sink| sink.take());
         if let Some(ref value) = value
             && let Err(violation) = V::validate(value)

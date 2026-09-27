@@ -78,6 +78,8 @@ impl<T: Length + ToOwned + ?Sized> Length for Cow<'_, T> {
 }
 
 /// Requires a string or collection that is not empty.
+///
+/// The code of the violation is `non_empty`.
 pub struct NonEmpty;
 
 impl<T: Length + ?Sized> Validator<T> for NonEmpty {
@@ -93,8 +95,9 @@ impl<T: Length + ?Sized> Validator<T> for NonEmpty {
 /// Requires the length of a string or collection to be in a range.
 ///
 /// Both ends are inclusive.  Strings count characters, collections items
-/// (see [`Length`]).  The violation has the code `length` and the
-/// parameters `min` and `max` (if they are set).
+/// (see [`Length`]).  The code of the violation is the name of the
+/// validator: `len`, `min_len` ([`MinLen`]) or `max_len` ([`MaxLen`]).  It
+/// has the parameters `min` and `max` (if they are set).
 ///
 /// ```
 /// use deser_validate::{Len, MaxLen, Validator};
@@ -122,17 +125,16 @@ impl<T: Length + ?Sized, const MIN: usize, const MAX: usize> Validator<T> for Le
         }
         let violation = match (MIN, MAX) {
             (min, usize::MAX) => {
-                Violation::new("length", format!("length must be at least {}", min))
+                Violation::new("min_len", format!("length must be at least {}", min))
                     .with_param("min", min)
             }
-            (0, max) => Violation::new("length", format!("length must be at most {}", max))
+            (0, max) => Violation::new("max_len", format!("length must be at most {}", max))
                 .with_param("max", max),
-            (min, max) => Violation::new(
-                "length",
-                format!("length must be between {} and {}", min, max),
-            )
-            .with_param("min", min)
-            .with_param("max", max),
+            (min, max) => {
+                Violation::new("len", format!("length must be between {} and {}", min, max))
+                    .with_param("min", min)
+                    .with_param("max", max)
+            }
         };
         Err(violation)
     }
@@ -162,7 +164,8 @@ impl_integer!(
 
 /// Requires an integer to be in a range.
 ///
-/// Both ends are inclusive.  The violation has the code `range` and the
+/// Both ends are inclusive.  The code of the violation is the name of the
+/// validator: `range`, `min` ([`Min`]) or `max` ([`Max`]).  It has the
 /// parameters `min` and `max` (if they are set).
 ///
 /// ```
@@ -195,10 +198,10 @@ impl<T: Integer + ?Sized, const MIN: i128, const MAX: i128> Validator<T> for Ran
         }
         let violation = match (MIN, MAX) {
             (min, i128::MAX) => {
-                Violation::new("range", format!("must be at least {}", min)).with_param("min", min)
+                Violation::new("min", format!("must be at least {}", min)).with_param("min", min)
             }
             (i128::MIN, max) => {
-                Violation::new("range", format!("must be at most {}", max)).with_param("max", max)
+                Violation::new("max", format!("must be at most {}", max)).with_param("max", max)
             }
             (min, max) => Violation::new("range", format!("must be between {} and {}", min, max))
                 .with_param("min", min)
@@ -213,7 +216,7 @@ impl<T: Integer + ?Sized, const MIN: i128, const MAX: i128> Validator<T> for Ran
 /// This checks the structure only: a local part and a domain separated by
 /// a single `@`, the domain has at least two labels and there is no
 /// whitespace.  Whether the address exists can only be found out by
-/// sending an email.  The violation has the code `email`.
+/// sending an email.  The code of the violation is `email`.
 ///
 /// ```
 /// use deser_validate::{Email, Validator};
@@ -248,8 +251,8 @@ impl<T: AsRef<str> + ?Sized> Validator<T> for Email {
 /// Validates every item of a collection with `V`.
 ///
 /// The violation of the first invalid item is reported with its index as
-/// parameter `index`.  For an `Option` the value is validated if there is
-/// one.
+/// parameter `index`, its code is the code of the violation of the item.
+/// For an `Option` the value is validated if there is one.
 ///
 /// ```
 /// use deser_validate::{Each, Email, Validator};

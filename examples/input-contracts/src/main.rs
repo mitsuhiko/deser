@@ -23,19 +23,20 @@ use deser_validate::{Check, validator};
 /// An email address, written as a string.  Whether it's verified is known
 /// by the server, a client cannot claim it.
 #[derive(Debug, Serialize, Deserialize)]
-#[deser(transparent, deserialize_as = Check<ValidEmail, _>)]
+#[deser(transparent)]
 pub struct Email {
+    #[deser(as = Check<EmailAddress>)]
     address: String,
     #[deser(skip)]
     verified: bool,
 }
 
-validator!(ValidEmail(email: &Email) = check_email);
+validator!(EmailAddress(address: &str) = check_email_address);
 
-fn check_email(email: &Email) -> Result<(), String> {
-    match email.address.split_once('@') {
+fn check_email_address(address: &str) -> Result<(), String> {
+    match address.split_once('@') {
         Some((user, domain)) if !user.is_empty() && domain.contains('.') => Ok(()),
-        _ => Err(format!("`{}` is not an email address", email.address)),
+        _ => Err(format!("`{}` is not an email address", address)),
     }
 }
 
