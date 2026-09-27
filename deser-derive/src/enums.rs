@@ -59,6 +59,9 @@ struct FieldInfo<'a> {
     skip_deserializing: bool,
     // skipped when deserializing and filled in with `Default`
     needs_default: bool,
+    // the value of unnamed fields that are skipped when deserializing (the
+    // helper structs of struct variants fill in named fields)
+    default: Option<TypeDefault>,
     binding: syn::Ident,
 }
 
@@ -362,9 +365,11 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     field,
                     adapters: attrs.adapters().clone(),
                     tag: attrs.tag(),
-                    skip_serializing: false,
-                    skip_deserializing: false,
-                    needs_default: false,
+                    skip_serializing: attrs.skip_serializing(),
+                    skip_deserializing: attrs.skip_deserializing(),
+                    needs_default: attrs.skip_deserializing()
+                        && matches!(attrs.default(), None | Some(TypeDefault::Implicit)),
+                    default: attrs.default().cloned(),
                     binding: syn::Ident::new(&format!("__f{}", idx), Span::call_site()),
                 });
             }
@@ -381,6 +386,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     skip_deserializing: attrs.skip_deserializing(),
                     needs_default: attrs.skip_deserializing()
                         && matches!(attrs.default(), None | Some(TypeDefault::Implicit)),
+                    default: None,
                     binding: syn::Ident::new(
                         &format!("__field_{}", field.ident.as_ref().unwrap()),
                         Span::call_site(),
@@ -393,9 +399,14 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
     Ok((shape, fields))
 }
 
+/// Collects the variants of an enum.
+///
+/// The content of tuple variants is made up of the fields that are not
+/// skipped in the direction.
 fn collect_variants<'a>(
     enumeration: &'a syn::DataEnum,
     container_attrs: &ContainerAttrs,
+    direction: Direction,
 ) -> syn::Result<Vec<VariantInfo<'a>>> {
     let mut rv = Vec::new();
     let mut seen_names = HashSet::new();
@@ -474,21 +485,39 @@ fn collect_variants<'a>(
         let content_idxs = (0..fields.len())
             .filter(|&idx| Some(idx) != tag_field)
             .collect::<Vec<_>>();
+        // skipped unnamed fields are not part of the content
+        let unnamed_idxs = content_idxs
+            .iter()
+            .copied()
+            .filter(|&idx| match direction {
+                Direction::Serialize => !fields[idx].skip_serializing,
+                Direction::Deserialize => !fields[idx].skip_deserializing,
+            })
+            .collect::<Vec<_>>();
         let content = match shape {
             Shape::Unit => Content::Unit,
-            Shape::Tuple => match content_idxs.len() {
+            Shape::Tuple => match unnamed_idxs.len() {
                 0 => Content::Unit,
                 // `()` has nothing to merge with the tag of internally
                 // tagged enums, the variant is a unit variant.
                 1 if matches!(repr, Repr::Internal { .. })
                     && !attrs.other()
-                    && is_unit_type(fields[0].ty())
-                    && !fields[0].adapters.any() =>
+                    && is_unit_type(fields[unnamed_idxs[0]].ty())
+                    && !fields[unnamed_idxs[0]].adapters.any() =>
                 {
                     Content::Unit
                 }
-                1 => Content::Newtype(content_idxs[0]),
-                _ => Content::Tuple(content_idxs),
+                1 => Content::Newtype(unnamed_idxs[0]),
+                len if len > crate::de::MAX_TUPLE_LEN => {
+                    return Err(syn::Error::new_spanned(
+                        variant,
+                        format!(
+                            "tuple variants with more than {} fields are not supported",
+                            crate::de::MAX_TUPLE_LEN
+                        ),
+                    ));
+                }
+                _ => Content::Tuple(unnamed_idxs),
             },
             Shape::Named if tag_field.is_some() && content_idxs.is_empty() => Content::Unit,
             Shape::Named => Content::Struct(content_idxs),
@@ -562,7 +591,7 @@ pub fn derive_deserialize(
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let repr = repr(container_attrs);
-    let all_variants = collect_variants(enumeration, container_attrs)?;
+    let all_variants = collect_variants(enumeration, container_attrs, Direction::Deserialize)?;
     let (_, ty_generics, _) = input.generics.split_for_impl();
     let de_generics = crate::bound::with_de_lifetime(&input.generics)?;
     let (impl_generics, _, _) = de_generics.split_for_impl();
@@ -594,7 +623,7 @@ pub fn derive_deserialize(
             .type_params()
             .map(|x| x.ident.to_string())
             .collect::<HashSet<_>>();
-        for field in variants.iter().flat_map(|x| x.content_fields()) {
+        for field in variants.iter().flat_map(|x| x.fields.iter()) {
             if !field.needs_default {
                 continue;
             }
@@ -701,8 +730,10 @@ pub fn derive_deserialize(
         let (content_ty, content_pattern) = match info.content {
             Content::Unit if needs_helper => {
                 // fields of unit variants are `()` (see `collect_variants`)
-                for value in &mut values {
-                    *value = quote! { () };
+                for (value, field) in values.iter_mut().zip(&info.fields) {
+                    if !field.skip_deserializing {
+                        *value = quote! { () };
+                    }
                 }
                 (helper_ty.clone(), quote! { _ })
             }
@@ -735,6 +766,15 @@ pub fn derive_deserialize(
                 (helper_ty.clone(), quote! { __content })
             }
         };
+
+        // skipped unnamed fields are filled in with their default
+        if matches!(info.shape, Shape::Tuple) {
+            for (value, field) in values.iter_mut().zip(&info.fields) {
+                if field.skip_deserializing {
+                    *value = crate::unnamed::skipped_value(field.ty(), field.default.as_ref());
+                }
+            }
+        }
 
         let builder = match info.tag_field() {
             Some(tag_field) => {
@@ -839,7 +879,15 @@ pub fn derive_deserialize(
                 .iter()
                 .filter(|info| matches!(info.content, Content::Unit) && !info.other)
                 .map(|info| {
-                    let construct = info.construct(ident, &[]);
+                    // the fields of unit variants are skipped
+                    let values = info
+                        .fields
+                        .iter()
+                        .map(|field| {
+                            crate::unnamed::skipped_value(field.ty(), field.default.as_ref())
+                        })
+                        .collect::<Vec<_>>();
+                    let construct = info.construct(ident, &values);
                     VariantName::tag_arms(
                         &info.names,
                         quote! { __deser::__derive::Some(#construct) },
@@ -1096,7 +1144,7 @@ pub fn derive_serialize(
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let repr = repr(container_attrs);
-    let variants = collect_variants(enumeration, container_attrs)?;
+    let variants = collect_variants(enumeration, container_attrs, Direction::Serialize)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let where_clause = where_clause_for_fields(
         &input.generics,

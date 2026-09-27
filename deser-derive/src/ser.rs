@@ -2,8 +2,9 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, UnnamedFieldAttrs};
+use crate::attr::{ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs};
 use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
+use crate::unnamed::{UnnamedField, UnnamedStruct};
 
 /// Returns an expression that creates a serialize handle for a value.
 /// Implements `__private_begin` for types which do not implement `finish`.
@@ -93,25 +94,16 @@ pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream
     if let Some(rv) = crate::forward::derive_serialize(input)? {
         return Ok(rv);
     }
+    if let Some(st) = UnnamedStruct::of(input)? {
+        return derive_unnamed_struct(input, &st);
+    }
     match &input.data {
         syn::Data::Struct(syn::DataStruct {
             fields: syn::Fields::Named(fields),
             ..
         }) => derive_struct(input, fields),
-        syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Unnamed(fields),
-            ..
-        }) if fields.unnamed.len() == 1 => derive_newtype_struct(input, &fields.unnamed[0]),
-        syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Unnamed(fields),
-            ..
-        }) => derive_tuple_struct(input, fields),
-        syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Unit,
-            ..
-        }) => derive_unit_struct(input),
         syn::Data::Enum(enumeration) => derive_enum(input, enumeration),
-        syn::Data::Union(_) => Err(crate::unsupported_union(input)),
+        _ => Err(crate::unsupported_union(input)),
     }
 }
 
@@ -564,63 +556,58 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     })
 }
 
-/// Derives a tuple struct (a struct with zero or more than one unnamed
-/// field) which is serialized as sequence.
-fn derive_tuple_struct(
-    input: &syn::DeriveInput,
-    fields: &syn::FieldsUnnamed,
-) -> syn::Result<TokenStream> {
-    let ident = &input.ident;
-    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-
+/// Derives a struct with unnamed fields or a unit struct.
+///
+/// The representation depends on the fields that are serialized: without
+/// fields the struct is null, with one field the value of the field and
+/// with more fields a sequence.
+fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::Result<TokenStream> {
     let container_attrs = ContainerAttrs::of(input)?;
-    container_attrs.reject_named_only("tuple structs", Direction::Serialize)?;
-    let type_name = container_attrs.container_name();
-    let all_attrs = fields
-        .unnamed
-        .iter()
-        .map(|field| {
-            let attrs = UnnamedFieldAttrs::of(field)?;
-            if attrs.tag() {
-                return Err(syn::Error::new_spanned(
-                    field,
-                    "tag fields are only supported in other variants of enums",
-                ));
-            }
-            Ok((field, attrs))
-        })
-        .collect::<syn::Result<Vec<_>>>()?;
-
-    let bounded_where_clause = where_clause_for_fields(
+    container_attrs.reject_named_only(st.kind(), Direction::Serialize)?;
+    let where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
         Some(quote!(__deser::__derive::Sync)),
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),
-        &all_attrs
-            .iter()
-            .map(|(field, attrs)| BoundField {
-                ty: &field.ty,
-                adapter: attrs.adapters().ser(),
-                skipped: false,
-            })
-            .collect::<Vec<_>>(),
+        &st.bound_fields(Direction::Serialize),
     );
+    let remaining = st.remaining(Direction::Serialize);
+    match remaining[..] {
+        [] => derive_unit_struct(input, &container_attrs, where_clause),
+        [field] => derive_newtype_struct(input, &container_attrs, field, where_clause),
+        _ => derive_tuple_struct(input, &container_attrs, &remaining, where_clause),
+    }
+}
 
-    let element_arms = all_attrs
+/// Derives a tuple struct which is serialized as sequence.
+fn derive_tuple_struct(
+    input: &syn::DeriveInput,
+    container_attrs: &ContainerAttrs,
+    fields: &[&UnnamedField],
+    bounded_where_clause: syn::WhereClause,
+) -> syn::Result<TokenStream> {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+    let type_name = container_attrs.container_name();
+
+    let element_arms = fields
         .iter()
         .enumerate()
-        .map(|(index, (field, attrs))| {
-            let member = syn::Index::from(index);
-            let handle =
-                serialize_handle(&field.ty, attrs.adapters().ser(), quote! { &self.#member });
+        .map(|(index, field)| {
+            let member = &field.member;
+            let handle = serialize_handle(
+                field.ty(),
+                field.attrs.adapters().ser(),
+                quote! { &self.#member },
+            );
             quote! {
                 #index => #handle,
             }
         })
         .collect::<Vec<_>>();
-    let len = all_attrs.len();
+    let len = fields.len();
 
     Ok(quote! {
         const _: () = {
@@ -666,13 +653,15 @@ fn derive_tuple_struct(
     })
 }
 
-/// Derives a unit struct which is serialized as null.
-fn derive_unit_struct(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+/// Derives a unit struct (or a struct without fields that are serialized)
+/// which is serialized as null.
+fn derive_unit_struct(
+    input: &syn::DeriveInput,
+    container_attrs: &ContainerAttrs,
+    where_clause: syn::WhereClause,
+) -> syn::Result<TokenStream> {
     let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let container_attrs = ContainerAttrs::of(input)?;
-    container_attrs.reject_named_only("unit structs", Direction::Serialize)?;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
     let begin_without_finish = begin_without_finish();
 
@@ -692,44 +681,28 @@ fn derive_unit_struct(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
-fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::Result<TokenStream> {
+/// Derives a newtype struct (or a struct with one field that is serialized)
+/// which is serialized as the value of the field.
+fn derive_newtype_struct(
+    input: &syn::DeriveInput,
+    container_attrs: &ContainerAttrs,
+    field: &UnnamedField,
+    bounded_where_clause: syn::WhereClause,
+) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-
-    let container_attrs = ContainerAttrs::of(input)?;
-    container_attrs.reject_named_only("newtype structs", Direction::Serialize)?;
     let type_name = container_attrs.container_name();
 
-    let field_attrs = UnnamedFieldAttrs::of(field)?;
-    if field_attrs.tag() {
-        return Err(syn::Error::new_spanned(
-            field,
-            "tag fields are only supported in other variants of enums",
-        ));
-    }
-    let adapter = field_attrs.adapters().ser();
-    let field_type = &field.ty;
+    let adapter = field.attrs.adapters().ser();
+    let field_type = field.ty();
+    let member = &field.member;
     // the value serializes through the adapter or the regular implementation
     let value = match adapter {
         Some(adapter) => quote! {
-            __deser::__derive::SerializeAsRef::<#adapter, #field_type>::new(&self.0)
+            __deser::__derive::SerializeAsRef::<#adapter, #field_type>::new(&self.#member)
         },
-        None => quote! { &self.0 },
+        None => quote! { &self.#member },
     };
-
-    let bounded_where_clause = where_clause_for_fields(
-        &input.generics,
-        quote!(__deser::Serialize),
-        Some(quote!(__deser::__derive::Sync)),
-        quote!(__deser::adapters::SerializeAs),
-        None,
-        container_attrs.serialize_bound(),
-        &[BoundField {
-            ty: field_type,
-            adapter,
-            skipped: false,
-        }],
-    );
 
     Ok(quote! {
         const _: () = {

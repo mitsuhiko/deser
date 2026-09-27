@@ -4,13 +4,20 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The fields of tuple structs and tuple variants support `skip`,
+  `skip_serializing`, `skip_deserializing` and `default = expr` (the value
+  of skipped fields).  Skipped fields are not part of the value: with one
+  remaining field the value is the value of that field (so that
+  `struct Length<U>(f64, #[deser(skip)] PhantomData<U>)` is a float), without
+  remaining fields tuple structs are null and tuple variants unit variants.
 - `#[deser(flatten)]` is supported on the fields of struct variants.
 - Enums can have lifetime and const parameters, which means that enums can
   borrow from the data like structs (`enum Token<'a> { Word(&'a str) }`).
   Type parameters of enums no longer need to be `'static` to deserialize
   them.
 - The derive supports tuple structs (`struct Pair(u32, String)`, which
-  are sequences) and unit structs (`struct Marker;`, which are null).  The
+  are sequences) and unit structs (`struct Marker;` and `struct Marker()`,
+  which are null).  The
   derive panicked for them before and rejects unions without a container
   adapter with an error.  `Describe` has the new methods `tuple_struct`
   and `unit_struct` which `deser-debug` uses to format them like `Debug`.

@@ -35,7 +35,7 @@
 //!   with the names of the fields as keys.
 //! * Newtype structs (`struct Meters(f64)`) are the value of their field.
 //! * Tuple structs (`struct Pair(u32, String)`) are sequences of their
-//!   fields.  Up to 12 fields are supported.
+//!   fields.  Up to 12 fields are supported (not counting skipped ones).
 //! * Unit structs (`struct Marker;`) are null.
 //! * Enums, see [enums](#enums).
 //!
@@ -52,10 +52,10 @@
 //! pub struct Marker;
 //! ```
 //!
-//! The fields of newtype and tuple structs support the `as`,
-//! `serialize_as` and `deserialize_as` attributes (see
-//! [adapters](#adapters)).  Of the container attributes they support
-//! `rename`, `validate`, the adapters, the bounds and the crate path.
+//! The fields of newtype and tuple structs support the attributes of
+//! [unnamed fields](#unnamed-field-attributes).  Of the container attributes
+//! newtype, tuple and unit structs support `rename`, `validate`, the
+//! adapters, the bounds and the crate path.
 //!
 //! # Borrowing
 //!
@@ -305,8 +305,34 @@
 //!   direction uses the field type's own implementation.  Both can be used
 //!   together to use different adapters, but not together with `as`.
 //!
+//! ## Unnamed Field Attributes
+//!
 //! The fields of newtype and tuple structs and of newtype and tuple
-//! variants support `as`, `serialize_as` and `deserialize_as` as well.
+//! variants support these attributes:
+//!
+//! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
+//!   `#[deser(deserialize_as = Adapter)]`: see [adapters](#adapters).
+//! * `#[deser(skip)]`, `#[deser(skip_serializing)]` and
+//!   `#[deser(skip_deserializing)]`: the field is not serialized or
+//!   deserialized (or both).  When deserializing, its value is
+//!   [`Default`] or the one given with `default`.
+//! * `#[deser(default = expr)]`: the value of a field that is skipped when
+//!   deserializing.  See [default expressions](#default-expressions).
+//! * `#[deser(tag)]`: receives the tag of [other variants](#other-variants).
+//!
+//! Skipped fields are not part of the value: if one field remains, the
+//! value is the value of that field (like for newtype structs and newtype
+//! variants), if no field remains the struct is null and the variant a unit
+//! variant.  This is useful for markers:
+//!
+//! ```
+//! use std::marker::PhantomData;
+//! use deser::{Deserialize, Serialize};
+//!
+//! // serialized as the float
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Length<Unit>(f64, #[deser(skip)] PhantomData<Unit>);
+//! ```
 //!
 //! ## Enum Variant Attributes
 //!

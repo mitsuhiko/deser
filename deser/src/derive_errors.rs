@@ -462,6 +462,27 @@
 /// struct Test;
 /// ```
 ///
+/// `default` on unnamed fields requires `skip` or `skip_deserializing`.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// struct Test(u32, #[deser(default)] u32);
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     A(u32, #[deser(default = 1)] u32),
+/// }
+/// ```
+///
+/// Skipped unnamed fields cannot have adapters.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Test(u32, #[deser(skip, as = deser::adapters::DisplayFromStr)] u32);
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail

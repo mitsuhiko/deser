@@ -983,3 +983,73 @@ fn test_flatten_in_variants() {
         ],
     );
 }
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum SkipTuple<T> {
+    // the skipped field is not part of the content, which is a newtype
+    Newtype(u32, #[deser(skip)] Option<T>),
+    Tuple(u32, #[deser(skip, default = 7)] u32, String),
+    // all fields skipped, the variant is a unit variant
+    Unit(#[deser(skip)] u32),
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type")]
+enum SkipInternal {
+    Unit(#[deser(skip, default = 1)] u32),
+    Unitish((), #[deser(skip)] u32),
+}
+
+#[test]
+fn test_skipped_tuple_fields() {
+    check(
+        SkipTuple::<String>::Newtype(1, None),
+        vec![
+            Event::map_start(),
+            "Newtype".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ],
+    );
+    check(
+        SkipTuple::<String>::Tuple(1, 7, "x".into()),
+        vec![
+            Event::map_start(),
+            "Tuple".into(),
+            Event::seq_start(),
+            1u64.into(),
+            "x".into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ],
+    );
+    check(SkipTuple::<String>::Unit(0), vec!["Unit".into()]);
+    assert_eq!(
+        serialize(&SkipTuple::<String>::Newtype(1, Some("x".into()))),
+        [
+            Event::map_start(),
+            "Newtype".into(),
+            1u64.into(),
+            Event::MapEnd
+        ]
+    );
+
+    check(
+        SkipInternal::Unit(1),
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Unit".into(),
+            Event::MapEnd,
+        ],
+    );
+    check(
+        SkipInternal::Unitish((), 0),
+        vec![
+            Event::map_start(),
+            "type".into(),
+            "Unitish".into(),
+            Event::MapEnd,
+        ],
+    );
+}

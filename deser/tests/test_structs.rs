@@ -199,11 +199,12 @@ fn test_tuple_struct_validate() {
 
 #[test]
 fn test_empty_tuple_struct() {
+    // without fields tuple structs are like unit structs
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Empty();
 
-    check(Empty(), vec![Event::seq_start(), Event::SeqEnd]);
-    assert!(deserialize::<Empty>(vec![Atom::Null.into()]).is_err());
+    check(Empty(), vec![Atom::Null.into()]);
+    assert_eq!(describe(&Empty()), ["unit struct Empty"]);
 }
 
 #[test]
@@ -307,4 +308,72 @@ fn test_tuple_struct_borrowed_validate() {
     driver.emit(1u64).unwrap();
     let err = driver.emit(Event::SeqEnd).unwrap_err();
     assert_eq!(err.message(), "invalid value: empty name");
+}
+
+#[test]
+fn test_skipped_fields() {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Pair(u32, #[deser(skip)] String, u32);
+
+    check(
+        Pair(1, String::new(), 2),
+        vec![Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd],
+    );
+    assert_eq!(
+        serialize(&Pair(1, "x".into(), 2)),
+        [Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd]
+    );
+
+    // with one field that is not skipped, the struct is the value of that
+    // field (like a newtype struct)
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Meters<U>(f64, #[deser(skip)] PhantomData<U>);
+
+    check(Meters::<()>(1.5, PhantomData), vec![1.5f64.into()]);
+    assert!(describe(&Meters::<()>(1.5, PhantomData)).is_empty());
+
+    // explicit defaults
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Defaults(
+        u32,
+        #[deser(skip_deserializing, default = 42)] u32,
+        #[deser(skip, default = "x")] String,
+    );
+
+    assert_eq!(
+        deserialize::<Defaults>(vec![7u64.into()]).unwrap(),
+        Defaults(7, 42, "x".into())
+    );
+
+    // skipped in one direction
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct OneWay(u32, #[deser(skip_serializing)] u32);
+
+    assert_eq!(serialize(&OneWay(1, 2)), [1u64.into()]);
+    assert_eq!(
+        deserialize::<OneWay>(vec![
+            Event::seq_start(),
+            1u64.into(),
+            2u64.into(),
+            Event::SeqEnd
+        ])
+        .unwrap(),
+        OneWay(1, 2)
+    );
+
+    // skipped fields of generic types need a default, not `Deserialize`
+    struct NotDeserializable;
+
+    #[derive(Deserialize)]
+    struct Generic<T>(u32, #[deser(skip, default = None)] Option<T>);
+
+    let value = deserialize::<Generic<NotDeserializable>>(vec![1u64.into()]).unwrap();
+    assert_eq!(value.0, 1);
+    assert!(value.1.is_none());
+
+    // all fields skipped
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Nothing(#[deser(skip)] u32);
+
+    check(Nothing(0), vec![Atom::Null.into()]);
 }

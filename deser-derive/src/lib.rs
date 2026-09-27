@@ -11,6 +11,7 @@ mod de;
 mod enums;
 mod forward;
 mod ser;
+mod unnamed;
 
 use proc_macro::TokenStream;
 use quote::{quote, quote_spanned};

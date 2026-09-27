@@ -959,26 +959,83 @@ pub struct UnnamedFieldAttrs {
     seen: Vec<SeenAttr>,
     adapters: Adapters,
     tag: bool,
+    default: Option<TypeDefault>,
+    skip_serializing: bool,
+    skip_deserializing: bool,
 }
 
 impl UnnamedFieldAttrs {
     pub fn of(field: &syn::Field) -> syn::Result<UnnamedFieldAttrs> {
-        let mut tag = false;
+        let mut rv = UnnamedFieldAttrs {
+            seen: Vec::new(),
+            adapters: Adapters::default(),
+            tag: false,
+            default: None,
+            skip_serializing: false,
+            skip_deserializing: false,
+        };
+        let mut skip = false;
         let mut adapters = AdapterAttrs::default();
         let seen = parse_deser_attrs(&field.attrs, |name, meta| {
             if adapters.parse(name, meta, parse_adapter)? {
                 return Ok(());
             }
             match name {
-                "tag" => set_flag(meta, name, &mut tag),
+                "tag" => set_flag(meta, name, &mut rv.tag),
+                "default" => {
+                    let value = parse_default(meta)?;
+                    set_once(meta, name, &mut rv.default, value)
+                }
+                "skip" => set_flag(meta, name, &mut skip),
+                "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
+                "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
                 _ => Err(meta.error("unsupported attribute")),
             }
         })?;
-        Ok(UnnamedFieldAttrs {
-            adapters: adapters.finish(&seen)?,
-            seen,
-            tag,
-        })
+        rv.seen = seen;
+        rv.adapters = adapters.finish(&rv.seen)?;
+
+        // attributes that have no effect with the skips are rejected
+        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
+            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
+                Some(other) => Err(syn::Error::new(
+                    other.span,
+                    format!("`{}` has no effect together with `{}`", other.name, name),
+                )),
+                None => Ok(()),
+            }
+        };
+        if skip {
+            if rv.skip_serializing || rv.skip_deserializing {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "skip already skips serialization and deserialization",
+                ));
+            }
+            conflict("skip", &["as", "serialize_as", "deserialize_as", "tag"])?;
+            rv.skip_serializing = true;
+            rv.skip_deserializing = true;
+        }
+        if rv.skip_serializing && !skip {
+            conflict("skip_serializing", &["serialize_as", "tag"])?;
+        }
+        if rv.skip_deserializing && !skip {
+            conflict("skip_deserializing", &["deserialize_as", "tag"])?;
+        }
+        // unnamed fields are identified by their position, they cannot be
+        // missing (only skipped)
+        if rv.default.is_some() && !rv.skip_deserializing {
+            return Err(syn::Error::new(
+                rv.seen
+                    .iter()
+                    .find(|x| x.name == "default")
+                    .map_or_else(Span::call_site, |x| x.span),
+                "`default` on unnamed fields is the value of skipped fields, it requires \
+                 `skip` or `skip_deserializing`",
+            ));
+        }
+
+        Ok(rv)
     }
 
     /// Returns the attributes that were used on the field.
@@ -994,6 +1051,29 @@ impl UnnamedFieldAttrs {
     /// Returns `true` if the field receives the tag of the variant.
     pub fn tag(&self) -> bool {
         self.tag
+    }
+
+    /// Returns the value of the field if it's skipped when deserializing.
+    pub fn default(&self) -> Option<&TypeDefault> {
+        self.default.as_ref()
+    }
+
+    /// Returns `true` if the field is not serialized.
+    pub fn skip_serializing(&self) -> bool {
+        self.skip_serializing
+    }
+
+    /// Returns `true` if the field is not deserialized.
+    pub fn skip_deserializing(&self) -> bool {
+        self.skip_deserializing
+    }
+
+    /// Returns `true` if the field is skipped in the direction.
+    pub fn skipped(&self, direction: Direction) -> bool {
+        match direction {
+            Direction::Serialize => self.skip_serializing,
+            Direction::Deserialize => self.skip_deserializing,
+        }
     }
 }
 
