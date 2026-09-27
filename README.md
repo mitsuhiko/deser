@@ -346,9 +346,10 @@ recursion.  Deser works around most of this overhead (for instance derived
 structs and vectors serialize without allocations, and sinks are allocated
 from a per thread cache).  Compared to serde based libraries in the
 [included benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)
-YAML and TOML are two to four times as fast, CBOR is on par and JSON
-serializes faster but deserializes slower on float heavy and deeply nested
-data.
+YAML and TOML are two to four times as fast and CBOR deserializes faster
+but serializes slower.  JSON serializes faster but deserializes slower on
+float heavy and deeply nested data, MessagePack is on par on string heavy
+data and slower on float heavy and deeply nested data.
 
 Serializables are `Sync`, deserializable types and sinks are `Send` so that
 an ongoing serialization or deserialization can move between threads (for
