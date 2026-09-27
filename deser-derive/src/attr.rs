@@ -151,6 +151,7 @@ pub struct ContainerAttrs<'a> {
     rename_all: Option<RenameAll>,
     default: Option<TypeDefault>,
     skip_serializing_optionals: bool,
+    deny_unknown_fields: bool,
     tag: Option<String>,
     content: Option<String>,
     untagged: bool,
@@ -400,6 +401,7 @@ impl<'a> ContainerAttrs<'a> {
             rename_all: None,
             default: None,
             skip_serializing_optionals: false,
+            deny_unknown_fields: false,
             tag: None,
             content: None,
             untagged: false,
@@ -452,6 +454,7 @@ impl<'a> ContainerAttrs<'a> {
             "skip_serializing_optionals" => {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)
             }
+            "deny_unknown_fields" => set_flag(meta, name, &mut rv.deny_unknown_fields),
             "crate" => {
                 let value = meta
                     .value()?
@@ -560,6 +563,19 @@ impl<'a> ContainerAttrs<'a> {
 
     pub fn skip_serializing_optionals(&self) -> bool {
         self.skip_serializing_optionals
+    }
+
+    /// Returns the span of an attribute that was used on the container.
+    pub fn span_of(&self, name: &str) -> Span {
+        self.seen
+            .iter()
+            .find(|x| x.name == name)
+            .map_or_else(Span::call_site, |x| x.span)
+    }
+
+    /// Returns `true` if keys that no field takes are rejected.
+    pub fn deny_unknown_fields(&self) -> bool {
+        self.deny_unknown_fields
     }
 
     pub fn tag(&self) -> Option<&str> {

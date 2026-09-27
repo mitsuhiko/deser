@@ -4,6 +4,21 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `#[deser(deny_unknown_fields)]` for structs and enums and the
+  `deser::de::UnknownFields` policy which rejects or collects (with
+  `deser::de::IgnoredFields`) keys that no field takes for all structs of
+  a deserialization.  Unlike serde this works with flattened structs and
+  internally tagged enums: a key is only unknown if neither the struct nor
+  its flattened fields take it, and the tag of internally tagged enums is
+  never unknown.  Errors point at the key.
+- Keys of flattened internally tagged enums which came before the tag are
+  offered to the variant like the keys after it.  They were replayed as a
+  map before, which made keys that a flattened variant does not take
+  invisible to the struct it's flattened into.
+- A flattened `Recording` takes all keys that no field before it takes and
+  records them as a map.  This also means that the recording of an other
+  variant of a flattened internally tagged enum receives all keys, it only
+  received the keys before the tag before.
 - The adapters and encodings for bytes moved from `deser::adapters::bytes`
   into `deser::adapters` (for instance `deser::adapters::BytesFallback` and
   `deser::adapters::BytesFormat`), the `bytes` module is gone.

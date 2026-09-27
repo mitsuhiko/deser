@@ -171,3 +171,26 @@ the tag is missing.
 **Related issues:**
 
 * [serde: Tagged enums should support #[serde(other)] #912](https://github.com/serde-rs/serde/issues/912)
+
+## Unknown Fields
+
+Serde's `#[serde(deny_unknown_fields)]` is decided by every struct on its
+own.  A flattened struct does not know which keys the struct it's flattened
+into takes, which is why `deny_unknown_fields` does not work together with
+`flatten` and why the tag of internally tagged enums shows up as an unknown
+field.
+
+In deser only the struct a key is given to decides if it's unknown, after
+asking its flattened fields if they take it.  Internally tagged enums
+report the keys they buffered until the tag was known but which the
+variant does not use back to that struct.  In addition to the attribute
+there is a policy (`UnknownFields`) that applies to all structs of a
+deserialization and can collect unknown keys with their location and path
+instead of rejecting them.
+
+**Related issues:**
+
+* [serde: Combination of flattened internally-tagged enum and deny_unknown_fields results in unsatisfiable requirements #1358](https://github.com/serde-rs/serde/issues/1358)
+* [serde: Structs with nested flattens cannot be deserialized if deny_unknown_fields is set #1547](https://github.com/serde-rs/serde/issues/1547)
+* [serde: Struct with `tag` and `deny_unknown_fields` cannot deserialize #2666](https://github.com/serde-rs/serde/issues/2666)
+* [serde: `#![serde(deny_unknown_fields)]` does not work as expected on unit variants of tagged enum #2294](https://github.com/serde-rs/serde/issues/2294)

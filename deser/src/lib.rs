@@ -161,6 +161,7 @@ pub mod __derive {
         AdjacentlyTaggedSink, BoxedVariant, ExternallyTaggedSink, IgnoredContent, IgnoredVariant,
         InternallyTaggedSink, OtherVariant, Variant, VariantMaker, Variants, untagged_handle,
     };
+    pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedStruct, IndexedStructEmitter, PlainSink, StructField,

@@ -24,4 +24,5 @@ mod test_ser_derive;
 mod test_soundness;
 mod test_std;
 mod test_tagged;
+mod test_unknown;
 mod test_well_known;

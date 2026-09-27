@@ -173,3 +173,68 @@ fn test_error_paths_through_buffering() {
     // the location is the one of the replayed value
     assert_eq!((err.line(), err.column()), (Some(1), Some(22)));
 }
+
+#[test]
+fn test_unknown_field_paths() {
+    use deser::de::{IgnoredFields, UnknownFields};
+    use deser_json::DeserializerConfig;
+
+    #[derive(deser::Deserialize, Debug)]
+    #[deser(deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct Strict {
+        host: String,
+    }
+
+    // the error points at the key
+    let err = from_json::<BTreeMap<String, Vec<Strict>>>(
+        r#"{"servers": [{"host": "a"}, {"host": "b", "prot": 1}]}"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unknown field `prot`, expected `host` at line 1 column 43 (path: servers[1].prot)"
+    );
+
+    // collected keys carry the same information
+    let ignored = IgnoredFields::new();
+    let json = "{\"servers\": [\n  {\"host\": \"a\", \"port\": 1, \"tiemout\": 2}\n]}";
+    deser_json::Deserializer::from_str_with_config(
+        json,
+        &DeserializerConfig::new().track_locations(true),
+    )
+    .deserialize_with::<BTreeMap<String, Vec<Server>>, _>(|driver| {
+        *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Collect(ignored.clone());
+        driver.push_layer(PathLayer::new())
+    })
+    .unwrap();
+    let ignored = ignored.take();
+    assert_eq!(ignored.len(), 1);
+    assert_eq!(
+        ignored[0].to_string(),
+        "Unexpected: unknown field `tiemout`, expected `host` or `port` at line 2 column 28 (path: servers[0].tiemout)"
+    );
+
+    // keys of flattened internally tagged enums before the tag are located
+    // at their value
+    #[derive(deser::Deserialize, Debug)]
+    #[deser(tag = "type")]
+    #[allow(dead_code)]
+    enum Kind {
+        A { a: u32 },
+    }
+
+    #[derive(deser::Deserialize, Debug)]
+    #[deser(deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct Holder {
+        #[deser(flatten)]
+        kind: Kind,
+    }
+
+    let err = from_json::<Vec<Holder>>(r#"[{"x": 1, "a": 2, "type": "A"}]"#).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unknown field `x` at line 1 column 8 (path: [0].x)"
+    );
+}

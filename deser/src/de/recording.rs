@@ -175,6 +175,34 @@ impl Recording {
         record(self, true, Event::Atom(atom.to_static()), state);
     }
 
+    /// Returns the start of the input range of the first event.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
+    pub(crate) fn offset(&self) -> Option<usize> {
+        self.events
+            .first()
+            .map(|x| x.input_range.0)
+            .filter(|&x| x != crate::state::NO_RANGE.0)
+    }
+
+    /// Attaches the context of the first event to an error.
+    ///
+    /// This is for errors about the recorded value that are not returned
+    /// while it's replayed.
+    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
+    pub(crate) fn attach_context(&self, err: Error, state: &mut State) -> Error {
+        let Some(first) = self.events.first() else {
+            return state.attach_error_context(err);
+        };
+        let live = state.extensions().snapshot();
+        let live_range = state.input_range;
+        state.input_range = first.input_range;
+        state.extensions_mut().restore(&first.snapshot);
+        let err = state.attach_error_context(err);
+        state.extensions_mut().restore(&live);
+        state.input_range = live_range;
+        err
+    }
+
     /// Returns `true` if nothing was recorded.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
@@ -293,7 +321,47 @@ impl<'a, 'de> Sink<'de> for CaptureSink<'a> {
         Ok(self.child())
     }
 
+    /// Takes all keys if the recording is flattened into a struct.
+    ///
+    /// The keys are recorded as a map.
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        match self.end {
+            Some(Event::MapEnd) => {}
+            None if self.recording.is_empty() => {
+                record(
+                    &mut self.recording,
+                    true,
+                    Event::MapStart(ContainerShape::new()),
+                    state,
+                );
+                self.end = Some(Event::MapEnd);
+            }
+            _ => return Ok(None),
+        }
+        record(
+            &mut self.recording,
+            false,
+            Event::Atom(Atom::Str(key.to_owned().into())),
+            state,
+        );
+        Ok(Some(self.child()))
+    }
+
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        if self.recording.is_empty() && self.end.is_none() {
+            // flattened into a struct but no key was given
+            record(
+                &mut self.recording,
+                true,
+                Event::MapStart(ContainerShape::new()),
+                state,
+            );
+            self.end = Some(Event::MapEnd);
+        }
         if let Some(end) = self.end.take() {
             record(&mut self.recording, true, end, state);
         }

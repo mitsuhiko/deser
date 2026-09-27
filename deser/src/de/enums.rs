@@ -12,6 +12,7 @@ use std::borrow::Cow;
 use std::mem::take;
 
 use crate::State;
+use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
 use crate::de::{Deserialize, OwnedSink, Recording, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Event};
@@ -454,17 +455,22 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     tag_value: Option<Recording>,
     recorded_content: Option<Recording>,
     has_content: bool,
+    deny_unknown_fields: bool,
     variant: Option<BoxedVariant<'de, E>>,
 }
 
 impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
     /// Creates a sink handle for an adjacently tagged enum.
+    ///
+    /// Keys other than the tag and the content are unknown fields, they are
+    /// rejected if `deny_unknown_fields` is set.
     pub fn handle(
         out: &'a mut Option<E>,
         tag: &'static str,
         content: &'static str,
         name: &'static str,
         variants: Variants<'de, E>,
+        deny_unknown_fields: bool,
     ) -> SinkHandle<'a, 'de> {
         SinkHandle::boxed(AdjacentlyTaggedSink {
             out,
@@ -476,6 +482,7 @@ impl<'a, 'de, E: Send + 'de> AdjacentlyTaggedSink<'a, 'de, E> {
             tag_value: None,
             recorded_content: None,
             has_content: false,
+            deny_unknown_fields,
             variant: None,
         })
     }
@@ -518,7 +525,7 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
         Ok(self.key.recorder())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let key = take(&mut self.key);
         if key.as_str() == Some(self.tag) {
             if self.tag_value.is_some() {
@@ -535,6 +542,13 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
                 None => self.recorded_content.insert(Recording::new()).recorder(),
             })
         } else {
+            unknown_field(
+                key.as_str().unwrap_or("?"),
+                key.offset(),
+                &[self.tag, self.content],
+                self.deny_unknown_fields,
+                state,
+            )?;
             Ok(SinkHandle::null())
         }
     }
@@ -604,6 +618,10 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     pending: Vec<(Recording, Recording)>,
     tag_value: Option<Recording>,
     variant: Option<BoxedVariant<'de, E>>,
+    // if the enum is flattened into a struct
+    flattened: bool,
+    // the errors for keys that were taken but the variant did not use
+    unclaimed: Vec<Error>,
 }
 
 impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
@@ -623,6 +641,8 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
             pending: Vec::new(),
             tag_value: None,
             variant: None,
+            flattened: false,
+            unclaimed: Vec::new(),
         })
     }
 
@@ -634,8 +654,22 @@ impl<'a, 'de, E: Send + 'de> InternallyTaggedSink<'a, 'de, E> {
     ) -> Result<(), Error> {
         variant.sink().map(state)?;
         for (key, value) in take(&mut self.pending) {
-            key.replay(variant.sink().next_key(state)?, state)?;
-            value.replay(variant.sink().next_value(state)?, state)?;
+            if !self.flattened {
+                key.replay(variant.sink().next_key(state)?, state)?;
+                value.replay(variant.sink().next_value(state)?, state)?;
+                continue;
+            }
+            // the keys of flattened enums are offered to the variant like
+            // the keys after the tag.  Those it does not take are unknown
+            // keys of the struct the enum is flattened into.
+            let name = key.as_str().unwrap_or_default();
+            match variant.sink().value_for_key(name, state)? {
+                Some(sink) => value.replay(sink, state)?,
+                None => {
+                    let err = value.attach_context(unknown_field_error(name, None), state);
+                    self.unclaimed.push(err);
+                }
+            }
         }
         self.variant = Some(variant);
         Ok(())
@@ -689,13 +723,16 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     ///
     /// Once the tag is known, keys are offered to the variant.  Until then
     /// all keys offered are recorded (they are the keys that no field of the
-    /// struct took) and replayed into the variant, which ignores those it
-    /// does not know.
+    /// struct took) and offered to the variant once it's known.  The keys
+    /// it does not take are reported to the struct when the enum finishes
+    /// as they are unknown keys of the struct (see
+    /// [`UnknownFields`](crate::de::UnknownFields)).
     fn value_for_key(
         &mut self,
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        self.flattened = true;
         if key == self.tag {
             if self.tag_value.is_some() {
                 return Err(Error::new(
@@ -724,6 +761,9 @@ impl<'a, 'de, E: Send + 'de> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         let variant = self.variant.as_mut().unwrap();
         variant.sink().finish(state)?;
         *self.out = variant.build();
+        for err in take(&mut self.unclaimed) {
+            report_unclaimed_key(err, state);
+        }
         Ok(())
     }
 

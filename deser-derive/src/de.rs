@@ -333,42 +333,97 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     // if flattened fields exist are unknown keys retained so that they can be
     // looked up on the flattened sinks.
     let has_flatten = !flatten_fields.is_empty();
-    let other_key_variant = if has_flatten {
-        Some(quote! { Other(__deser::__derive::String), })
+    let deny = container_attrs.deny_unknown_fields();
+    // the names of unknown keys are only retained if they are needed
+    let other_key_match = if has_flatten || deny {
+        quote! {
+            {
+                self.offset = __state.input_range().map(|__range| __range.start);
+                __Key::Other(__other.into_owned())
+            }
+        }
     } else {
-        None
+        quote! {
+            if __deser::__derive::wants_unknown_fields(__state) {
+                self.offset = __state.input_range().map(|__range| __range.start);
+                __Key::Other(__other.into_owned())
+            } else {
+                __Key::Unknown
+            }
+        }
     };
-    let other_key_match = if has_flatten {
-        quote! { __Key::Other(__other.into_owned()) }
-    } else {
-        quote! { { let _ = __other; __Key::Unknown } }
+    let unknown_field = quote! {
+        __deser::__derive::unknown_field(&__key, __offset, __FIELDS, #deny, __state)?
     };
     let other_key_dispatch = if has_flatten {
-        Some(quote! {
+        quote! {
             __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
                 __deser::__derive::Some(__sink) => __sink,
-                __deser::__derive::None => __deser::de::SinkHandle::null(),
+                __deser::__derive::None => {
+                    #unknown_field;
+                    __deser::de::SinkHandle::null()
+                }
             },
-        })
+        }
     } else {
-        None
+        quote! {
+            __Key::Other(__key) => {
+                #unknown_field;
+                __deser::de::SinkHandle::null()
+            }
+        }
     };
     let other_key_atom_dispatch = if has_flatten {
-        Some(quote! {
+        quote! {
             __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
                 __deser::__derive::Some(__sink) => __deser::__derive::atom_into_handle(__sink, __atom, __state),
-                __deser::__derive::None => __deser::__derive::Ok(()),
+                __deser::__derive::None => {
+                    #unknown_field;
+                    __deser::__derive::Ok(())
+                }
             },
-        })
+        }
     } else {
-        None
+        quote! {
+            __Key::Other(__key) => {
+                #unknown_field;
+                __deser::__derive::Ok(())
+            }
+        }
     };
     let other_key_borrowed_atom_dispatch = if has_flatten {
-        Some(quote! {
+        quote! {
             __Key::Other(__key) => match self.value_for_key(&__key, __state)? {
                 __deser::__derive::Some(__sink) => __deser::__derive::borrowed_atom_into_handle(__sink, __atom, __state),
-                __deser::__derive::None => __deser::__derive::Ok(()),
+                __deser::__derive::None => {
+                    #unknown_field;
+                    __deser::__derive::Ok(())
+                }
             },
+        }
+    } else {
+        quote! {
+            __Key::Other(__key) => {
+                #unknown_field;
+                __deser::__derive::Ok(())
+            }
+        }
+    };
+    // structs with flattened fields need to know if they are flattened
+    // themselves (see `unclaimed_keys`), they are not started with `map`
+    let (standalone_field, standalone_init, standalone_set) = if has_flatten {
+        (
+            Some(quote! { standalone: bool, }),
+            Some(quote! { standalone: false, }),
+            Some(quote! { self.standalone = true; }),
+        )
+    } else {
+        (None, None, None)
+    };
+    // keys that flattened values took but did not use are unknown keys too
+    let unclaimed_keys = if has_flatten {
+        Some(quote! {
+            __deser::__derive::unclaimed_keys(self.standalone, #deny, __state)?;
         })
     } else {
         None
@@ -379,11 +434,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             enum __Key {
                 Unknown,
                 Field(usize),
-                #other_key_variant
+                Other(__deser::__derive::String),
             }
 
             struct __KeySink {
                 key: __Key,
+                // the position of the key in the input if it's `Other`
+                offset: __deser::__derive::Option<usize>,
             }
 
             impl<'de> __deser::de::Sink<'de> for __KeySink {
@@ -417,6 +474,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
                 key: __KeySink,
                 seen: [u64; #seen_words],
+                #standalone_field
                 #(
                     #sink_fieldname: #sink_fieldty,
                 )*
@@ -433,8 +491,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 ) -> __deser::de::SinkHandle<'_, 'de> {
                     __deser::de::SinkHandle::boxed(__Sink {
                         slot: __slot,
-                        key: __KeySink { key: __Key::Unknown },
+                        key: __KeySink { key: __Key::Unknown, offset: __deser::__derive::None },
                         seen: [0; #seen_words],
+                        #standalone_init
                         #(
                             #sink_fieldname: #sink_defaults,
                         )*
@@ -455,6 +514,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn map(&mut self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
+                    #standalone_set
                     __deser::__derive::Ok(())
                 }
 
@@ -469,6 +529,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
                     let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    let __offset = self.key.offset;
                     if let __Key::Field(__index) = __key
                         && __deser::__derive::mark_seen(&mut self.seen, __index)
                         && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
@@ -480,7 +541,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             #key_dispatch
                         )*
                         #other_key_dispatch
-                        #[allow(unreachable_patterns)]
                         __Key::Unknown | __Key::Field(_) => __deser::de::SinkHandle::null(),
                     })
                 }
@@ -496,6 +556,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> __deser::__derive::Result<()>
                 {
                     let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    let __offset = self.key.offset;
                     if let __Key::Field(__index) = __key
                         && __deser::__derive::mark_seen(&mut self.seen, __index)
                         && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
@@ -507,7 +568,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             #key_atom_dispatch
                         )*
                         #other_key_atom_dispatch
-                        #[allow(unreachable_patterns)]
                         __Key::Unknown | __Key::Field(_) => __deser::__derive::Ok(()),
                     }
                 }
@@ -524,6 +584,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     -> __deser::__derive::Result<()>
                 {
                     let __key = __deser::__derive::replace(&mut self.key.key, __Key::Unknown);
+                    let __offset = self.key.offset;
                     if let __Key::Field(__index) = __key
                         && __deser::__derive::mark_seen(&mut self.seen, __index)
                         && !__deser::__derive::duplicate_field(__FIELDS[__index], __state)?
@@ -535,7 +596,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             #key_borrowed_atom_dispatch
                         )*
                         #other_key_borrowed_atom_dispatch
-                        #[allow(unreachable_patterns)]
                         __Key::Unknown | __Key::Field(_) => __deser::__derive::Ok(()),
                     }
                 }
@@ -588,6 +648,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             self.#flatten_fields.borrow_mut().finish(__state)?;
                         }
                     )*
+                    #unclaimed_keys
                     #(
                         let mut #sink_fieldname = self.#sink_fieldname.#field_stage1_default;
                     )*
@@ -617,6 +678,12 @@ pub fn derive_enum(
     let container_attrs = ContainerAttrs::of(input)?;
     if crate::enums::is_data_enum(input, &container_attrs, enumeration) {
         return crate::enums::derive_deserialize(input, enumeration, &container_attrs);
+    }
+    if container_attrs.deny_unknown_fields() {
+        return Err(syn::Error::new(
+            container_attrs.span_of("deny_unknown_fields"),
+            "deny_unknown_fields has no effect on enums with only unit variants",
+        ));
     }
     let ident = &input.ident;
     let var_idents = enumeration
@@ -794,6 +861,13 @@ fn derive_newtype_struct(input: &syn::DeriveInput, field: &syn::Field) -> syn::R
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
     let container_attrs = ContainerAttrs::of(input)?;
+    if container_attrs.deny_unknown_fields() {
+        return Err(syn::Error::new(
+            container_attrs.span_of("deny_unknown_fields"),
+            "deny_unknown_fields is not supported on newtype structs, they are \
+             deserialized like their field",
+        ));
+    }
 
     let field_attrs = UnnamedFieldAttrs::of(field)?;
     if field_attrs.tag() {

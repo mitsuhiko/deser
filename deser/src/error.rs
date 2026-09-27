@@ -348,8 +348,19 @@ pub fn unknown_variant(tag: Option<&str>, names: &[&str]) -> Error {
         msg.push_str(tag);
         msg.push('`');
     }
+    push_expected(&mut msg, names, "variants");
+    Error::new(ErrorKind::Unexpected, msg)
+}
+
+/// Appends the expected names to an error message.
+///
+/// `what` is what the names are, for the message if there are none.
+pub(crate) fn push_expected(msg: &mut String, names: &[&str], what: &str) {
     match names {
-        [] => msg.push_str(", there are no variants"),
+        [] => {
+            msg.push_str(", there are no ");
+            msg.push_str(what);
+        }
         [name] => {
             msg.push_str(", expected `");
             msg.push_str(name);
@@ -374,5 +385,4 @@ pub fn unknown_variant(tag: Option<&str>, names: &[&str]) -> Error {
             }
         }
     }
-    Error::new(ErrorKind::Unexpected, msg)
 }

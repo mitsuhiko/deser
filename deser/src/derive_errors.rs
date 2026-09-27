@@ -432,4 +432,50 @@
 /// fn owned<T: deser::de::DeserializeOwned>() {}
 /// owned::<Test<'static>>();
 /// ```
+///
+/// `deny_unknown_fields` has no effect on newtype structs.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deny_unknown_fields)]
+/// struct Test(u32);
+/// ```
+///
+/// `deny_unknown_fields` has no effect on enums with only unit variants.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deny_unknown_fields)]
+/// enum Test {
+///     A,
+///     B,
+/// }
+/// ```
+///
+/// `deny_unknown_fields` does not take a value.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deny_unknown_fields = true)]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
+/// `deny_unknown_fields` has no effect if the type is deserialized with an
+/// adapter.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(deserialize_as = deser::adapters::FromInto<u32>, deny_unknown_fields)]
+/// struct Test {
+///     field: u32,
+/// }
+///
+/// impl From<u32> for Test {
+///     fn from(field: u32) -> Test {
+///         Test { field }
+///     }
+/// }
+/// ```
 pub struct DeriveErrors;

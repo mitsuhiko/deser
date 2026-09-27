@@ -32,8 +32,9 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///   value, such as a tag.
 ///
 /// Some extension values are well-known: the policy for keys that are
-/// given more than once ([`DuplicateKeys`]) and the source the input ranges
-/// refer to ([`Source`](crate::de::Source)).
+/// given more than once ([`DuplicateKeys`]), the policy for keys that no
+/// field of a struct takes ([`UnknownFields`](crate::de::UnknownFields))
+/// and the source the input ranges refer to ([`Source`](crate::de::Source)).
 ///
 /// Additionally formats can publish the byte range in the input of every
 /// event (see [`input_range`](Self::input_range)) and extensions can

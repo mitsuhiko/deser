@@ -555,11 +555,17 @@ pub fn derive_deserialize(
                 let predicates = filter_predicates(&input.generics, bound, &helper_params);
                 quote! { #[deser(deserialize_bound(#(#predicates),*))] }
             });
+            let helper_deny = if container_attrs.deny_unknown_fields() {
+                Some(quote! { #[deser(deny_unknown_fields)] })
+            } else {
+                None
+            };
             helpers.push(quote! {
                 #[derive(__deser::Deserialize)]
                 #[deser(rename = #helper_name)]
                 #helper_crate
                 #helper_bound
+                #helper_deny
                 struct #helper_decl #helper_where {
                     #(#fields)*
                 }
@@ -756,6 +762,7 @@ pub fn derive_deserialize(
         }
         Repr::Adjacent { tag, content } => {
             let (table_support, table) = variants_table;
+            let deny = container_attrs.deny_unknown_fields();
             (
                 table_support,
                 quote! {
@@ -765,6 +772,7 @@ pub fn derive_deserialize(
                         #content,
                         __TYPE_NAME,
                         #table,
+                        #deny,
                     )
                 },
             )

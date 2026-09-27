@@ -231,6 +231,7 @@ mod owned;
 mod recording;
 mod sinkbox;
 mod source;
+pub(crate) mod unknown;
 
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 pub use self::deserializer::Deserializer;
@@ -241,6 +242,7 @@ pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
 pub use self::source::Source;
+pub use self::unknown::{IgnoredFields, UnknownFields};
 use crate::State;
 
 __make_slot_wrapper!((pub), SlotWrapper);

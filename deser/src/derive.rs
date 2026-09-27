@@ -80,6 +80,10 @@
 //! * `#[deser(default = expr)]`: like `default` but fills in from the given
 //!   expression instead, for instance `#[deser(default = Config::new())]`.
 //!   See [default expressions](#default-expressions).
+//! * `#[deser(deny_unknown_fields)]`: rejects keys that neither a field nor
+//!   a flattened field takes.  By default they are ignored, unless the
+//!   [`UnknownFields`](crate::de::UnknownFields) policy of the
+//!   deserialization says otherwise.  See [unknown fields](#unknown-fields).
 //! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
 //!   skip over all optional values that are currently not set.  This uses the
 //!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
@@ -147,6 +151,10 @@
 //! * `#[deser(tag = "...", content = "...")]`: makes the enum adjacently
 //!   tagged with the given tag and content fields.
 //! * `#[deser(untagged)]`: makes the enum untagged.
+//! * `#[deser(deny_unknown_fields)]`: rejects unknown keys in struct variants
+//!   (and the unit variants of internally tagged enums) and keys other than
+//!   the tag and the content of adjacently tagged enums.  See [unknown
+//!   fields](#unknown-fields).
 //! * `#[deser(skip_serializing_optionals)]`: skips optional values that are not
 //!   set in struct variants when serializing.
 //! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
@@ -180,7 +188,8 @@
 //!   do not take, so they should come after other flattened fields.
 //!   Maps (and `deser_value::Value`) take all keys that the struct and the
 //!   flattened fields before them do not take, the keys are parsed into the
-//!   key type like the keys of JSON objects.  When serializing, the keys of
+//!   key type like the keys of JSON objects.  A flattened
+//!   [`Recording`](crate::de::Recording) records them as a map.  When serializing, the keys of
 //!   the map become fields.  A flattened `Option` is `None` if the value did
 //!   not take any key (unlike serde, errors in the value are not turned into
 //!   `None`), when serializing `None` has no fields.
@@ -405,6 +414,56 @@
 //! tags with invalid content are errors.  Variants with content that are
 //! represented by their tag alone (for instance a string for an externally
 //! tagged enum) receive null as content.
+//!
+//! ## Unknown Fields
+//!
+//! Keys of a struct that no field takes are ignored by default.  They can be
+//! rejected for a type with `#[deser(deny_unknown_fields)]` or for all types
+//! of a deserialization with the [`UnknownFields`](crate::de::UnknownFields)
+//! policy in the state, which can also collect them (for instance to warn
+//! about typos in config files).  Errors point to the key and carry the path
+//! if [`deser-path`](https://docs.rs/deser-path) is used.
+//!
+//! Keys are only unknown if no flattened field takes them either: only the
+//! struct the key is given to decides, the attribute on flattened types has
+//! no effect.  This means that `deny_unknown_fields` works with flattened
+//! structs and internally tagged enums, a flattened map takes all keys.
+//! The tag of internally tagged enums is never an unknown key, untagged
+//! enums with `deny_unknown_fields` do not match maps with keys that a
+//! variant does not know.
+//!
+//! ```
+//! use deser::Deserialize;
+//!
+//! #[derive(Debug, Deserialize)]
+//! #[deser(deny_unknown_fields)]
+//! pub struct Server {
+//!     host: String,
+//!     #[deser(flatten)]
+//!     kind: Kind,
+//! }
+//!
+//! #[derive(Debug, Deserialize)]
+//! #[deser(tag = "type", rename_all = "lowercase")]
+//! pub enum Kind {
+//!     Http { port: u16 },
+//!     Unix { path: String },
+//! }
+//!
+//! // {"host": "a", "type": "http", "port": 80, "path": "/"}
+//! let mut out = None::<Server>;
+//! let mut driver = deser::de::DeserializeDriver::new(&mut out);
+//! driver.emit(deser::Event::map_start()).unwrap();
+//! for (key, value) in [("host", "a"), ("type", "http")] {
+//!     driver.emit(key).unwrap();
+//!     driver.emit(value).unwrap();
+//! }
+//! driver.emit("port").unwrap();
+//! driver.emit(80u64).unwrap();
+//! driver.emit("path").unwrap();
+//! let err = driver.emit("/").unwrap_err();
+//! assert_eq!(err.message(), "unknown field `path`");
+//! ```
 //!
 //! ## Bounds
 //!
