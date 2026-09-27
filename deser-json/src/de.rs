@@ -3,7 +3,7 @@ use std::str;
 use std::sync::Arc;
 
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver, SinkHandle, Source};
 use deser_core::{Error, ErrorKind};
 
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -207,7 +207,15 @@ impl DeserializerConfig {
     /// What may follow the value depends on [`trailing`](Self::trailing).
     /// With [`Trailing::Newline`] this reads the first line.
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
-        Deserializer::from_str_with_config(s, self).deserialize()
+        // only the sink depends on the type, the deserializer and the driver
+        // are created by a function that exists once
+        let mut out = None;
+        self.drive_into(
+            Deserializer::from_str_with_config,
+            s,
+            T::deserialize_into(&mut out),
+        )?;
+        out.ok_or_else(empty_input)
     }
 
     /// Deserializes JSON from the given bytes.
@@ -216,8 +224,31 @@ impl DeserializerConfig {
     /// the strings are validated while parsing (see
     /// [`Deserializer::from_slice`]).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
-        Deserializer::from_slice_with_config(bytes, self).deserialize()
+        let mut out = None;
+        self.drive_into(
+            Deserializer::from_slice_with_config,
+            bytes,
+            T::deserialize_into(&mut out),
+        )?;
+        out.ok_or_else(empty_input)
     }
+
+    /// Deserializes the input into a sink (like [`Deserializer::deserialize`]).
+    #[inline(never)]
+    fn drive_into<'de, I: ?Sized>(
+        &self,
+        make: fn(&'de I, &DeserializerConfig) -> Deserializer<'de>,
+        input: &'de I,
+        sink: SinkHandle<'_, 'de>,
+    ) -> Result<(), Error> {
+        let mut de = make(input, self);
+        de.drive(&mut DeserializeDriver::from_sink(sink))
+    }
+}
+
+#[cold]
+fn empty_input() -> Error {
+    Error::new(ErrorKind::EndOfFile, "empty input")
 }
 
 /// Deserializes a serializable from JSON.
