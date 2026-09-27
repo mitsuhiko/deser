@@ -101,6 +101,7 @@ mod document;
 #[cfg(feature = "io")]
 mod io;
 mod parser;
+mod scan;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};

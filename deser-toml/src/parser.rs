@@ -35,6 +35,7 @@ use deser::{Error, ErrorKind};
 
 use crate::datetime::{is_datetime_start, parse_datetime};
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
+use crate::scan::skip_plain;
 
 /// The index of the root table.
 pub(crate) const ROOT: usize = 0;
@@ -752,7 +753,9 @@ impl<'a> Parser<'a> {
                     self.pos += 2;
                     chunk_start = self.pos;
                 }
-                b'\t' | 0x20..=0x7e | 0x80.. => self.pos += 1,
+                b'\t' | 0x20..=0x7e | 0x80.. => {
+                    self.pos = skip_plain(self.bytes, self.pos + 1, b'"');
+                }
                 b'\n' | b'\r' if !multiline => {
                     return Err(self.error(self.pos, "newline in single-line string"));
                 }
@@ -873,7 +876,9 @@ impl<'a> Parser<'a> {
                     self.pos += 2;
                     chunk_start = self.pos;
                 }
-                b'\t' | 0x20..=0x7e | 0x80.. => self.pos += 1,
+                b'\t' | 0x20..=0x7e | 0x80.. => {
+                    self.pos = skip_plain(self.bytes, self.pos + 1, b'\'');
+                }
                 b'\n' | b'\r' if !multiline => {
                     return Err(self.error(self.pos, "newline in single-line string"));
                 }
