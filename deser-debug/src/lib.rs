@@ -4,7 +4,7 @@
 //! The Rust shape of the values (struct and variant names, `Option`,
 //! tuples, ...) is taken from their description (see
 //! [`Describe`]).  For types which describe
-//! themselves the output matches `#[derive(Debug)]`:
+//! themselves the output looks like the one of `#[derive(Debug)]`:
 //!
 //! ```
 //! use deser::Serialize;
@@ -20,6 +20,12 @@
 //! assert_eq!(ToDebug::new(&point).to_string(), format!("{:?}", point));
 //! assert_eq!(ToDebug::new(&point).to_string(), "Point { x: 1, y: Some(2) }");
 //! ```
+//!
+//! The names are the ones used when serializing: renamed types, variants
+//! and fields are shown with their new names, variants named by integers
+//! are shown as numbers and the fields of flattened structs are shown in
+//! the struct they are flattened into.  For types without such attributes
+//! the output is the same as the one of `#[derive(Debug)]`.
 //!
 //! As all floats are `f64` in the data model, `f32` values are formatted
 //! as the `f64` they widen to.

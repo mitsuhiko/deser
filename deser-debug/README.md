@@ -38,3 +38,10 @@ assert_eq!(
 Note that the output shows the Rust value, not the serialized form: the
 internally tagged enum above is still shown as a `Circle` variant rather
 than a map with a `type` key.
+
+Names are the ones used when serializing: renamed types, variants and
+fields (for instance with `rename_all = "camelCase"`) are shown with their
+new names, variants named by integers are shown as numbers and the fields
+of flattened structs are shown in the struct they are flattened into.  Only
+the shape is taken from the description, which keeps it cheap: types do
+not carry any extra information for formatting.

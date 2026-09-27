@@ -41,6 +41,10 @@
 /// assert_eq!(names.0, ["some", "some"]);
 /// ```
 ///
+/// The names passed to the describer are the names used when serializing
+/// (after renames), variants that are named by integers or booleans are
+/// described with their name as text.
+///
 /// All methods ignore the call by default so that describers only need to
 /// implement what they care about.  New methods can be added in the future.
 pub trait Describe {
