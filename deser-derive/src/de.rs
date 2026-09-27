@@ -9,14 +9,16 @@ use crate::attr::{
 };
 use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
 
-/// Returns an expression that creates a sink handle for a slot.
-fn deserialize_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
+/// Returns an expression that creates a sink handle for the slot of a field.
+///
+/// This calls a function that is not inlined so that the code to create the
+/// sink exists once per type.
+fn field_sink(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
-        // spanned so that errors about unsupported types point to the adapter
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot)
+            __deser::__derive::field_sink_as::<#adapter, #ty>(#slot)
         },
-        None => quote! { __deser::Deserialize::deserialize_into(#slot) },
+        None => quote! { __deser::__derive::field_sink(#slot) },
     }
 }
 
@@ -203,7 +205,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
         }
         let ty = &x.field().ty;
-        let mut sink = deserialize_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
+        let mut sink = field_sink(ty, x.adapters().de(), quote! { &mut self.#fieldname });
         let mut atom = atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
         let mut borrowed_atom =
             borrowed_atom_into(ty, x.adapters().de(), quote! { &mut self.#fieldname });
