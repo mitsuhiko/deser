@@ -2150,6 +2150,11 @@ mod tests {
         ]);
     }
 
+    /// Returns `2^exp` exactly (`powi` may be imprecise, and is in miri).
+    fn pow2(exp: u64) -> f64 {
+        f64::from_bits((1023 + exp) << 52)
+    }
+
     #[test]
     fn test_json5_hex_floats_are_rounded_correctly() {
         let value = |text: &str| match parse_complete(text).unwrap()[..] {
@@ -2161,8 +2166,8 @@ mod tests {
         // dropped, if one of them is not zero the value is above half way.
         let half = format!("0x20000000000001{}", "0".repeat(20));
         let above = format!("0x20000000000001{}1", "0".repeat(19));
-        let next = 2f64.powi(133) + 2f64.powi(81);
-        assert_eq!(value(&half), 2f64.powi(133));
+        let next = pow2(133) + pow2(81);
+        assert_eq!(value(&half), pow2(133));
         assert_eq!(value(&above), next);
         assert_eq!(value(&format!("-{above}")), -next);
     }
@@ -2173,7 +2178,7 @@ mod tests {
         let events = parse_complete(&format!("[0x1{}, -0x1{0}]", "0".repeat(32))).unwrap();
         assert_eq!(
             events[1..3],
-            [Event::from(2f64.powi(128)), Event::from(-(2f64.powi(128)))]
+            [Event::from(pow2(128)), Event::from(-pow2(128))]
         );
         assert_errors(&[(&format!("0x1{}", "0".repeat(256)), "number out of range")]);
     }
