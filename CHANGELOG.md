@@ -4,6 +4,13 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-env` for environment variables.  The variables with a
+  prefix are a map, `__` separates nested keys (`APP_SERVER__PORT` is
+  `server.port`) and names are lowercased.  Like query strings, values are
+  lexical atoms which the types parse, also in flattened structs and
+  tagged enums.  Errors (also of unknown fields collected as warnings)
+  carry the name of the variable as `EnvVar` attachment.  Values can be
+  serialized into variables too.
 - Added the `Separated` adapter for sequences that are written as text
   with a separator (`#[deser(as = Separated)]` reads `a,b,c` and
   `Separated<':'>` reads `/usr/bin:/bin`).  Strings are split and the

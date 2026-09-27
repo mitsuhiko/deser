@@ -1,0 +1,24 @@
+[package]
+name = "deser-env"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Environment variables for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "environment", "env", "config"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-env"
+autotests = false
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-path = { version = "0.8.0", path = "../deser-path" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
