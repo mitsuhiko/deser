@@ -44,10 +44,9 @@ The same type works unchanged with
 [`deser-urlencoded`](https://docs.rs/deser-urlencoded).  Deriving requires the `derive`
 feature, which is not enabled by default:
 
-```toml
-[dependencies]
-deser = { version = "0.8", features = ["derive"] }
-deser-json = "0.8"
+```sh
+cargo add deser --features derive
+cargo add deser-json
 ```
 
 ## Why Deser?

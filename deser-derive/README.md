@@ -4,9 +4,8 @@ The `#[derive(Serialize, Deserialize)]` macros for
 [deser](https://github.com/mitsuhiko/deser).  You do not depend on this
 crate directly, enable the `derive` feature of `deser` instead:
 
-```toml
-[dependencies]
-deser = { version = "0.8", features = ["derive"] }
+```sh
+cargo add deser --features derive
 ```
 
 The attributes follow serde, so if you are coming from there most of what
