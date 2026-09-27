@@ -156,7 +156,7 @@ impl State {
     ///
     /// Event data is captured by a [`Recording`](crate::de::Recording) and
     /// restored when the events are replayed.
-    #[inline]
+    #[inline(always)]
     pub fn event<T: fmt::Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         self.extensions.event()
     }

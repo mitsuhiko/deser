@@ -186,11 +186,19 @@ impl Extensions {
     }
 
     /// Returns the data of a type attached to the current event.
-    #[inline]
+    ///
+    /// Most events have no data.  The check for that is always inlined, so
+    /// that looking up event data is cheap for them.
+    #[inline(always)]
     pub fn event<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         if !self.has_event_data {
             return None;
         }
+        self.find_event()
+    }
+
+    #[inline]
+    fn find_event<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         let entry = &self.events[self.event_position(TypeId::of::<T>())?];
         if !entry.active {
             return None;

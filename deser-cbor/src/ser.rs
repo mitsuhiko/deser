@@ -142,16 +142,16 @@ impl Writer {
         if self.canonical && self.frame.is_map() {
             self.offsets.push(self.out.len());
         }
-        self.write_tags(state);
+        if let Some(tags) = state.event::<Tags>() {
+            self.write_tags(tags);
+        }
     }
 
     /// Writes the tags attached to the current event.
     #[cold]
-    fn write_tags(&mut self, state: &State) {
-        if let Some(tags) = state.event::<Tags>() {
-            for &tag in tags.0.iter() {
-                self.write_head(MAJOR_TAG, tag);
-            }
+    fn write_tags(&mut self, tags: &Tags) {
+        for &tag in tags.0.iter() {
+            self.write_head(MAJOR_TAG, tag);
         }
     }
 
