@@ -4,7 +4,7 @@ use deser_core::__format::IntBuffer;
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
 use deser_core::ser::{self, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
 use crate::buf::Buffer;
 use crate::de::Trailing;
@@ -612,7 +612,10 @@ impl Output {
             Atom::Bool(val) => self.write_str(if val { "\"true\"" } else { "\"false\"" }),
             Atom::Ext(ref ext) => self.write_ext_key(ext)?,
             Atom::Bytes(ref val) => self.write_bytes_str(val, val.fallback),
-            Atom::Implicit(ref val) => return self.write_key_text(val.value().to_atom()),
+            Atom::Implicit(ref val) => match json_literal(val) {
+                Some(text) if val.value() != ImplicitValue::Null => self.write_escaped_str(text),
+                _ => return self.write_key_text(val.value().to_atom()),
+            },
             _ => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -652,8 +655,13 @@ impl Output {
             Atom::Bytes(ref val) => {
                 self.write_bytes(val, val.fallback.copied().unwrap_or(self.bytes))
             }
-            // values whose type was inferred from text are written as value
-            Atom::Implicit(ref val) => return self.write_atom(val.value().to_atom()),
+            // values whose type was inferred from text keep their text if
+            // it's the same value in JSON, otherwise they are written as
+            // their value
+            Atom::Implicit(ref val) => match json_literal(val) {
+                Some(text) => self.write_str(text),
+                None => return self.write_atom(val.value().to_atom()),
+            },
             _ => return Err(Error::new(ErrorKind::UnsupportedType, "unknown atom")),
         }
         Ok(())
@@ -951,4 +959,37 @@ impl<F: deser_core::__format::Float> Float for F {}
 /// This uses the default [`SerializerConfig`].
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
+}
+
+/// Returns the text of an implicit value if it's a JSON literal for the
+/// same value.
+///
+/// This keeps the text of numbers like `1.10` which would otherwise be
+/// written as `1.1`.  Text that is not JSON (like `0x1F` or `~`) is not.
+fn json_literal<'a>(value: &'a Implicit) -> Option<&'a str> {
+    let text = value.text().as_str();
+    let same = match value.value() {
+        ImplicitValue::Null => text == "null",
+        ImplicitValue::Bool(value) => text == if value { "true" } else { "false" },
+        ImplicitValue::U64(value) => is_json_int(text) && text.parse::<u64>() == Ok(value),
+        ImplicitValue::I64(value) => is_json_int(text) && text.parse::<i64>() == Ok(value),
+        ImplicitValue::F64(value) => {
+            value.is_finite()
+                && Number::parse(text)
+                    .is_ok_and(|x| !x.is_integer() && x.value().to_bits() == value.to_bits())
+        }
+        _ => false,
+    };
+    same.then_some(text)
+}
+
+/// Checks the syntax of JSON integers (an optional minus and digits
+/// without leading zeros).
+fn is_json_int(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text).as_bytes();
+    match digits {
+        [b'0'] => true,
+        [b'1'..=b'9', rest @ ..] => rest.iter().all(u8::is_ascii_digit),
+        _ => false,
+    }
 }

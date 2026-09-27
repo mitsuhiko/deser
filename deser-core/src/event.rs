@@ -219,7 +219,9 @@ impl<'a> Atom<'a> {
 /// `Option<String>` is `None` for `~` while a `String` is `"~"`.  If both are
 /// rejected, the error is the one of the value.  Enums look up their
 /// variants by the value and then by the text.  Types that take any value
-/// (like dynamic values) keep both, serializers write the value.
+/// (like dynamic values) keep both.  Serializers write the text if it's
+/// the same value in their format (`1.10` stays `1.10` in JSON and YAML,
+/// `0x1F` stays `0x1F` in YAML), otherwise they write the value.
 ///
 /// ```
 /// use deser::{Atom, Implicit, ImplicitValue};
@@ -321,6 +323,26 @@ impl ImplicitValue {
             ImplicitValue::U64(value) => Atom::U64(value),
             ImplicitValue::I64(value) => Atom::I64(value),
             ImplicitValue::F64(value) => Atom::F64(value),
+        }
+    }
+
+    /// Returns `true` if both are the same value.
+    ///
+    /// Unlike `==`, floats are compared by their bits: `NaN` is the same
+    /// as `NaN` and `0.0` is not the same as `-0.0`.  This is useful to
+    /// check if text reads back as the same value.
+    ///
+    /// ```
+    /// use deser::ImplicitValue;
+    ///
+    /// assert!(ImplicitValue::F64(f64::NAN).is_same(ImplicitValue::F64(f64::NAN)));
+    /// assert!(!ImplicitValue::F64(0.0).is_same(ImplicitValue::F64(-0.0)));
+    /// assert!(!ImplicitValue::U64(1).is_same(ImplicitValue::F64(1.0)));
+    /// ```
+    pub fn is_same(self, other: ImplicitValue) -> bool {
+        match (self, other) {
+            (ImplicitValue::F64(a), ImplicitValue::F64(b)) => a.to_bits() == b.to_bits(),
+            (a, b) => a == b,
         }
     }
 

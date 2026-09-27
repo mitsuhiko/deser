@@ -9,7 +9,10 @@ All notable changes to deser are documented here.
   integers or float) and the text: types that accept the value receive
   it, types that reject it receive the text as string.  Enums look up
   their variants by the value and then by the text, `deser-value` keeps
-  both and serializers write the value.  `Atom` remains 32 bytes.
+  both.  `Atom` remains 32 bytes.  JSON and YAML write the text if it's
+  the same value for them (`1.10` stays `1.10`, in YAML `0x1F` and `~`
+  are kept too), otherwise the value, so values read from YAML keep how
+  they were written when they are written again.
 - `deser-yaml` emits plain scalars that are not strings as implicit
   atoms.  This fixes plain scalars like `1.10`, `0x1F`, `true` or `~` for
   strings (`version: 1.10` is `"1.10"` for a `String`, `~` is `None` for

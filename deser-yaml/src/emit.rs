@@ -21,7 +21,7 @@ use crate::quote::{
     BlockScalar, MAX_SIMPLE_KEY_LEN, PushSmall, is_plain_safe, is_single_quote_safe, push_indent,
     write_double_quoted, write_float, write_single_quoted, write_tag,
 };
-use crate::resolve::{Version, is_plain_str};
+use crate::resolve::{Version, is_plain_str, writes_as_plain};
 use crate::ser::{FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, SerializerConfig};
 use crate::style::{ScalarStyle, StyleHint};
 use crate::tag::NodeTag;
@@ -753,7 +753,12 @@ impl<'c> Emitter<'c> {
                 }
             }
             Atom::Ext(ref ext) => return self.render_ext(ext, context, style),
-            // values whose type was inferred from text are written as value
+            // values whose type was inferred from text keep their text if
+            // it's read as the same value, otherwise they are written as
+            // their value
+            Atom::Implicit(ref value) if writes_as_plain(value, self.config.compat) => {
+                (Scalar::Text(Cow::Borrowed(value.text().as_str())), None)
+            }
             Atom::Implicit(ref value) => {
                 let value = value.value().to_atom();
                 let (scalar, tag) = self.render(&value, context, style)?;

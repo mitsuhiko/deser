@@ -104,10 +104,15 @@ fn test_yaml_plain_scalars() {
     assert!(value["owner"].is_null());
     assert_eq!(value["version"].as_str(), None);
     assert_eq!(value["version"].name(), "float");
-    // formats write the value
+    // formats keep the text if it's the same value for them, otherwise they
+    // write the value
     assert_eq!(
         deser_json::to_string(&value).unwrap(),
-        r#"{"version":1.1,"port":31,"owner":null}"#
+        r#"{"version":1.10,"port":31,"owner":null}"#
+    );
+    assert_eq!(
+        deser_yaml::to_string(&value).unwrap(),
+        "version: 1.10\nport: 0x1F\nowner: ~\n"
     );
     // but strings still get the text
     #[derive(deser::Deserialize, Debug, PartialEq)]

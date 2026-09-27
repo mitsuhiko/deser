@@ -87,6 +87,7 @@
 //! | `Bool`, integers                        | `true`, `false`, `42`                         |
 //! | `F32`, `F64`                            | `1.5`, `1.0e+20`, `.inf`, `.nan` (the shortest text for the precision) |
 //! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
+//! | [`Implicit`](deser_core::Atom::Implicit) | its text if readers read it as the same value (`1.10`, `0x1F`, `~`), otherwise the value |
 //! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
 //! | [`Datetime`](deser_core::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
 //! | maps and sequences                      | block mappings and sequences, flow style (`[a, b]`, `{a: 1}`) if compact (see [`FlowPolicy`]), keys that are collections or long use `? key` |
@@ -98,7 +99,9 @@
 //! instance by path.  Hints are preferences: a value is written in another
 //! style if the requested one cannot represent it.  When reading, flow
 //! collections are reported as compact so that they stay flow collections
-//! through a [`Recording`](deser_core::de::Recording).
+//! through a [`Recording`](deser_core::de::Recording).  Plain scalars keep
+//! their text the same way, `version: 1.10` read into a `deser_value::Value` or a
+//! recording is written as `version: 1.10` again.
 //!
 //! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
 //! multiple documents are written with [`Serializer`].

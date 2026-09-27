@@ -202,6 +202,24 @@ fn test_yaml11_timestamp_syntax() {
     }
 }
 
+/// Returns `true` if the text of an implicit value can be written as plain
+/// scalar.
+///
+/// This is the case if readers of all versions from `compat` on read the
+/// text as the same value.  Empty text is not written as it's only null
+/// in some places.
+pub fn writes_as_plain(value: &Implicit, compat: Version) -> bool {
+    let text = value.text().as_str();
+    let reads_as = |version| {
+        resolve_plain_str(text, version)
+            .and_then(|atom| ImplicitValue::from_atom(&atom))
+            .is_some_and(|resolved| resolved.is_same(value.value()))
+    };
+    !text.is_empty()
+        && reads_as(Version::V1_2)
+        && (compat == Version::V1_2 || reads_as(Version::V1_1))
+}
+
 fn resolve_plain_str(s: &str, version: Version) -> Option<Atom<'static>> {
     let first = match s.as_bytes().first() {
         Some(&first) => first,

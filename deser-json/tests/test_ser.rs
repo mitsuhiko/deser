@@ -369,3 +369,39 @@ fn test_serializer() {
     // the default configuration is the same as `new`
     assert_eq!(SerializerConfig::default(), SerializerConfig::new());
 }
+
+#[test]
+fn test_implicit_text() {
+    use deser::{Atom, Implicit, ImplicitValue};
+
+    let write = |text: &'static str, value| {
+        let recording: deser::de::Recording = record(Atom::Implicit(Implicit::new(text, value)));
+        deser_json::to_string(&recording).unwrap()
+    };
+    // text that is the JSON literal of the value is kept
+    assert_eq!(write("1.10", ImplicitValue::F64(1.1)), "1.10");
+    assert_eq!(write("1e3", ImplicitValue::F64(1000.0)), "1e3");
+    assert_eq!(write("-12", ImplicitValue::I64(-12)), "-12");
+    assert_eq!(write("null", ImplicitValue::Null), "null");
+    // other text is written as value
+    assert_eq!(write("0x1F", ImplicitValue::U64(31)), "31");
+    assert_eq!(write("+12", ImplicitValue::U64(12)), "12");
+    assert_eq!(write("012", ImplicitValue::U64(12)), "12");
+    assert_eq!(write("~", ImplicitValue::Null), "null");
+    assert_eq!(write("True", ImplicitValue::Bool(true)), "true");
+    assert_eq!(write(".inf", ImplicitValue::F64(f64::INFINITY)), "null");
+    assert_eq!(write("1.0", ImplicitValue::U64(1)), "1");
+    assert_eq!(write("1", ImplicitValue::F64(1.0)), "1.0");
+    // text that is a different value is written as value
+    assert_eq!(write("1.10", ImplicitValue::F64(2.0)), "2.0");
+}
+
+/// Records a single atom.
+fn record(atom: deser::Atom<'static>) -> deser::de::Recording {
+    let mut out = None;
+    {
+        let mut driver = deser::de::DeserializeDriver::new(&mut out);
+        driver.emit(atom).unwrap();
+    }
+    out.unwrap()
+}

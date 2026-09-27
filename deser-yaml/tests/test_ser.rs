@@ -901,3 +901,42 @@ fn test_folding() {
         assert_eq!(from_str::<String>(&yaml).unwrap(), value, "{}", yaml);
     }
 }
+
+#[test]
+fn test_plain_scalars_round_trip() {
+    use deser::de::Recording;
+    use deser_yaml::{DeserializerConfig, SerializerConfig, Version};
+
+    let round_trip = |input: &str, config: SerializerConfig| {
+        let recording: Recording = deser_yaml::from_str(input).unwrap();
+        config.to_string(&recording).unwrap()
+    };
+
+    // plain scalars keep their text if all readers read the same value
+    let input = "a: 1.10\nb: 0x1F\nc: ~\nd: Null\ne: TRUE\nf: -.INF\ng: .nan\nh: +12\n0x10: key\n";
+    assert_eq!(round_trip(input, SerializerConfig::new()), input);
+
+    // text that older readers read differently is written as value
+    assert_eq!(
+        round_trip("a: 0o17\nb: 1e3\n", SerializerConfig::new()),
+        "a: 15\nb: 1000.0\n"
+    );
+    let v1_2 = SerializerConfig::new().compat(Version::V1_2);
+    assert_eq!(round_trip("a: 0o17\nb: 1e3\n", v1_2), "a: 0o17\nb: 1e3\n");
+
+    // YAML 1.1 values that are strings in YAML 1.2 are written as value
+    let recording: Recording = DeserializerConfig::new()
+        .version(Version::V1_1)
+        .from_str("a: yes\nb: 0777\nc: 1:30\nd: 1_000\ne: 0x1F\n")
+        .unwrap();
+    assert_eq!(
+        deser_yaml::to_string(&recording).unwrap(),
+        "a: true\nb: 511\nc: 90\nd: 1000\ne: 0x1F\n"
+    );
+
+    // empty values are null
+    assert_eq!(
+        round_trip("a:\nb: [1, ]\n", SerializerConfig::new()),
+        "a: null\nb: [1]\n"
+    );
+}

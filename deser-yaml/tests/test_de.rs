@@ -302,10 +302,11 @@ fn test_plain_scalars_recorded() {
     }
     assert_eq!(out.unwrap(), ("1.10".into(), "0x1F".into(), "~".into()));
 
-    // and serializers write the value (the sequence stays a flow sequence)
+    // and they are written as they were (the sequence stays a flow
+    // sequence too)
     assert_eq!(
         deser_yaml::to_string(&recording).unwrap(),
-        "[1.1, 31, null]\n"
+        "[1.10, 0x1F, ~]\n"
     );
 }
 
