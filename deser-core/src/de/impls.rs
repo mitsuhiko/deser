@@ -283,62 +283,38 @@ macro_rules! float_sink {
             }
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                match atom {
-                    Atom::U64(value) => {
-                        **self = Some(value as $ty);
-                        Ok(())
-                    }
-                    Atom::I64(value) => {
-                        **self = Some(value as $ty);
-                        Ok(())
-                    }
-                    Atom::F64(value) => {
-                        **self = Some(value as $ty);
-                        Ok(())
-                    }
-                    Atom::F32(value) => {
-                        **self = Some(value as $ty);
-                        Ok(())
-                    }
-                    Atom::Ext(ref ext) if ext.is::<u128>() => {
-                        **self = Some(*ext.downcast_ref::<u128>().unwrap() as $ty);
-                        Ok(())
-                    }
-                    Atom::Ext(ref ext) if ext.is::<i128>() => {
-                        **self = Some(*ext.downcast_ref::<i128>().unwrap() as $ty);
-                        Ok(())
-                    }
-                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
-                        Ok(value) => {
-                            **self = Some(value);
-                            Ok(())
-                        }
-                        Err(_) => Err(lexical::invalid(value, stringify!($ty), state)),
+                let value = match atom {
+                    Atom::U64(value) => value as $ty,
+                    Atom::I64(value) => value as $ty,
+                    Atom::F64(value) => value as $ty,
+                    Atom::F32(value) => value as $ty,
+                    // text formats emit floats that need more than 15
+                    // digits as numbers.  The extension value is matched by
+                    // value so that dropping the atom does not need the
+                    // drop glue of atoms.
+                    Atom::Ext(ext) => match number_value(&ext) {
+                        Some(value) => value as $ty,
+                        None if ext.is::<u128>() => *ext.downcast_ref::<u128>().unwrap() as $ty,
+                        None if ext.is::<i128>() => *ext.downcast_ref::<i128>().unwrap() as $ty,
+                        None => return self.unexpected_atom(Atom::Ext(ext), state),
                     },
-                    other => {
-                        // text formats emit floats as numbers, these are
-                        // handled out of line to keep the common case small.
-                        match number_value(&other) {
-                            Some(value) => {
-                                **self = Some(value as $ty);
-                                Ok(())
-                            }
-                            None => self.unexpected_atom(other, state),
-                        }
-                    }
-                }
+                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
+                        Ok(value) => value,
+                        Err(_) => return Err(lexical::invalid(value, stringify!($ty), state)),
+                    },
+                    other => return self.unexpected_atom(other, state),
+                };
+                **self = Some(value);
+                Ok(())
             }
         }
     };
 }
 
 /// Returns the value of a number extension value.
-#[inline(never)]
-fn number_value(atom: &Atom) -> Option<f64> {
-    match *atom {
-        Atom::Ext(ref ext) => ext.downcast_value_ref::<Number>().map(|x| x.value()),
-        _ => None,
-    }
+#[inline]
+fn number_value(ext: &crate::ext::ExtValue) -> Option<f64> {
+    ext.downcast_value_ref::<Number>().map(|x| x.value())
 }
 
 float_sink!(f32);
