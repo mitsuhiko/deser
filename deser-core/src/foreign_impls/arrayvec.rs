@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use ::arrayvec::{ArrayString, ArrayVec};
 
 use crate::State;
+use crate::Text;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::adapters::ser_impls::serialize_as_slice;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
@@ -95,10 +96,10 @@ encoding_adapter!(
 
 impl<const CAP: usize> Serialize for ArrayString<CAP> {
     begin_without_finish!();
-    plain_atom!(|v| Atom::Str(Cow::Borrowed(v.as_str())));
+    plain_atom!(|v| Atom::Str(Text::borrowed(v.as_str())));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self.as_str()))))
+        Ok(Chunk::Atom(Atom::Str(Text::borrowed(self.as_str()))))
     }
 }
 

@@ -9,6 +9,7 @@ use std::mem::{MaybeUninit, take};
 use std::sync::Arc;
 
 use crate::State;
+use crate::Text;
 use crate::adapters::{DeserializeAs, Same};
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
@@ -17,7 +18,7 @@ use crate::de::{
     Deserialize, OwnedSink, Sink, SinkHandle, empty_lexical_or_none, is_empty_lexical, is_null_atom,
 };
 use crate::error::{Error, ErrorKind};
-use crate::event::{Atom, Bytes};
+use crate::event::Atom;
 use crate::ext::Number;
 
 make_slot_wrapper!(SlotWrapper);
@@ -110,7 +111,7 @@ impl<'de> Sink<'de> for SlotWrapper<String> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(value) | Atom::Lexical(value) => {
-                **self = Some(match value {
+                **self = Some(match value.into_cow() {
                     Cow::Borrowed(value) => copy_str(value),
                     Cow::Owned(value) => value,
                 });
@@ -792,7 +793,7 @@ where
             // `map` is not invoked for flattened maps
             self.duplicate_keys = state.duplicate_keys();
             self.flush_before(state)?;
-            KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Cow::Borrowed(key)), state)?;
+            KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Text::borrowed(key)), state)?;
             Ok(Some(VA::deserialize_into_as(&mut self.value)))
         }
 
@@ -1699,8 +1700,8 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(Cow::Borrowed(value)) | Atom::Lexical(Cow::Borrowed(value)) => {
-                **self = Some(value);
+            Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_borrowed() => {
+                **self = text.borrowed_str();
                 Ok(())
             }
             other => self.atom(other, state),
@@ -1733,11 +1734,8 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Bytes(Bytes {
-                data: Cow::Borrowed(value),
-                ..
-            }) => {
-                **self = Some(value);
+            Atom::Bytes(ref value) if value.is_borrowed() => {
+                **self = value.borrowed_data();
                 Ok(())
             }
             other => self.atom(other, state),

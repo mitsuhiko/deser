@@ -5,6 +5,7 @@ use std::ops::Deref;
 use crate::adapters::BytesFormat;
 use crate::error::{Error, ErrorKind};
 use crate::ext::ExtValue;
+use crate::text::{Slice, Text};
 
 /// An atom is a primitive value for serialization and deserialization.
 ///
@@ -37,7 +38,7 @@ use crate::ext::ExtValue;
 pub enum Atom<'a> {
     Null,
     Bool(bool),
-    Str(Cow<'a, str>),
+    Str(Text<'a>),
     /// The lexical form of a value whose type the format cannot express.
     ///
     /// Some formats cannot say what type a piece of text is: everything in
@@ -62,7 +63,7 @@ pub enum Atom<'a> {
     /// * `()` from the empty string
     ///
     /// All other types that accept strings accept lexical atoms as string.
-    Lexical(Cow<'a, str>),
+    Lexical(Text<'a>),
     Bytes(Bytes<'a>),
     Char(char),
     U64(u64),
@@ -90,8 +91,8 @@ impl<'a> Atom<'a> {
         match *self {
             Atom::Null => Atom::Null,
             Atom::Bool(v) => Atom::Bool(v),
-            Atom::Str(ref v) => Atom::Str(Cow::Owned(v.to_string())),
-            Atom::Lexical(ref v) => Atom::Lexical(Cow::Owned(v.to_string())),
+            Atom::Str(ref v) => Atom::Str(v.to_static()),
+            Atom::Lexical(ref v) => Atom::Lexical(v.to_static()),
             Atom::Bytes(ref v) => Atom::Bytes(v.to_static()),
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
@@ -109,8 +110,8 @@ impl<'a> Atom<'a> {
         match *self {
             Atom::Null => Atom::Null,
             Atom::Bool(v) => Atom::Bool(v),
-            Atom::Str(ref v) => Atom::Str(Cow::Borrowed(v)),
-            Atom::Lexical(ref v) => Atom::Lexical(Cow::Borrowed(v)),
+            Atom::Str(ref v) => Atom::Str(v.as_borrowed()),
+            Atom::Lexical(ref v) => Atom::Lexical(v.as_borrowed()),
             Atom::Bytes(ref v) => Atom::Bytes(v.as_borrowed()),
             Atom::Char(v) => Atom::Char(v),
             Atom::U64(v) => Atom::U64(v),
@@ -245,12 +246,18 @@ impl From<()> for Event<'static> {
 
 impl<'a> From<&'a str> for Event<'a> {
     fn from(value: &'a str) -> Event<'a> {
-        Event::Atom(Atom::Str(Cow::Borrowed(value)))
+        Event::Atom(Atom::Str(Text::borrowed(value)))
     }
 }
 
 impl<'a> From<Cow<'a, str>> for Event<'a> {
     fn from(value: Cow<'a, str>) -> Event<'a> {
+        Event::Atom(Atom::Str(value.into()))
+    }
+}
+
+impl<'a> From<Text<'a>> for Event<'a> {
+    fn from(value: Text<'a>) -> Event<'a> {
         Event::Atom(Atom::Str(value))
     }
 }
@@ -263,7 +270,7 @@ impl<'a> From<&'a [u8]> for Event<'a> {
 
 impl From<String> for Event<'static> {
     fn from(value: String) -> Event<'static> {
-        Event::Atom(Atom::Str(Cow::Owned(value)))
+        Event::Atom(Atom::Str(value.into()))
     }
 }
 
@@ -352,15 +359,17 @@ impl fmt::Debug for Event<'_> {
 
 /// Bytes in the data model.
 ///
+/// The data is borrowed or owned, like a `Cow<'a, [u8]>` but with a more
+/// compact representation (see [`Text`]).
+///
 /// Bytes can carry a [`BytesFormat`] as fallback which formats without
 /// native bytes (such as JSON) use instead of their configured format.
 /// Formats with native bytes ignore it.  This is set by
 /// [`BytesFallback`](crate::adapters::BytesFallback).
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct Bytes<'a> {
-    /// The data.
-    pub data: Cow<'a, [u8]>,
+    data: Slice<'a>,
     /// The format used by formats without native bytes, if any.
     pub fallback: Option<&'static BytesFormat>,
 }
@@ -370,7 +379,7 @@ impl<'a> Bytes<'a> {
     #[inline]
     pub fn new<D: Into<Cow<'a, [u8]>>>(data: D) -> Bytes<'a> {
         Bytes {
-            data: data.into(),
+            data: Slice::from_cow(data.into()),
             fallback: None,
         }
     }
@@ -379,7 +388,7 @@ impl<'a> Bytes<'a> {
     #[inline]
     pub const fn borrowed(data: &'a [u8]) -> Bytes<'a> {
         Bytes {
-            data: Cow::Borrowed(data),
+            data: Slice::borrowed(data),
             fallback: None,
         }
     }
@@ -394,25 +403,40 @@ impl<'a> Bytes<'a> {
     /// Returns the data.
     #[inline]
     pub fn data(&self) -> &[u8] {
-        &self.data
+        self.data.as_slice()
+    }
+
+    /// Returns `true` if the data borrows for `'a`.
+    #[inline]
+    pub fn is_borrowed(&self) -> bool {
+        !self.data.is_owned()
+    }
+
+    /// Returns the data if it borrows for `'a`.
+    ///
+    /// This is used by types which borrow from the data that is
+    /// deserialized (like `&'de [u8]`).
+    #[inline]
+    pub fn borrowed_data(&self) -> Option<&'a [u8]> {
+        self.data.borrowed_slice()
     }
 
     /// Returns the data, borrowed or owned.
     #[inline]
     pub fn into_data(self) -> Cow<'a, [u8]> {
-        self.data
+        self.data.into_cow()
     }
 
     /// Returns the data as owned vector.
     #[inline]
     pub fn into_owned(self) -> Vec<u8> {
-        self.data.into_owned()
+        self.data.into_box().into_vec()
     }
 
     /// Returns bytes borrowing from these.
     pub fn as_borrowed(&self) -> Bytes<'_> {
         Bytes {
-            data: Cow::Borrowed(&self.data),
+            data: self.data.reborrow(),
             fallback: self.fallback,
         }
     }
@@ -420,9 +444,15 @@ impl<'a> Bytes<'a> {
     /// Makes a static clone decoupling the lifetimes.
     pub fn to_static(&self) -> Bytes<'static> {
         Bytes {
-            data: Cow::Owned(self.data.to_vec()),
+            data: self.data.to_static(),
             fallback: self.fallback,
         }
+    }
+}
+
+impl PartialEq for Bytes<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data() == other.data() && self.fallback == other.fallback
     }
 }
 
@@ -431,14 +461,14 @@ impl Deref for Bytes<'_> {
 
     #[inline]
     fn deref(&self) -> &[u8] {
-        &self.data
+        self.data()
     }
 }
 
 impl AsRef<[u8]> for Bytes<'_> {
     #[inline]
     fn as_ref(&self) -> &[u8] {
-        &self.data
+        self.data()
     }
 }
 
@@ -462,7 +492,7 @@ impl<'a> From<Cow<'a, [u8]>> for Bytes<'a> {
 
 impl fmt::Debug for Bytes<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.data[..], f)?;
+        fmt::Debug::fmt(self.data(), f)?;
         if let Some(format) = self.fallback {
             write!(f, " as {}", format.name())?;
         }

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use deser_core::Text;
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, Source};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
@@ -589,8 +590,8 @@ fn emit_lexical<'a>(
     text: &Cow<'a, str>,
 ) -> Result<(), Error> {
     match *text {
-        Cow::Borrowed(text) => driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(text))),
-        Cow::Owned(ref text) => driver.emit(Atom::Lexical(Cow::Borrowed(text.as_str()))),
+        Cow::Borrowed(text) => driver.emit_borrowed(Atom::Lexical(Text::borrowed(text))),
+        Cow::Owned(ref text) => driver.emit(Atom::Lexical(Text::borrowed(text.as_str()))),
     }
 }
 

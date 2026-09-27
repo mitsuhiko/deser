@@ -6,6 +6,7 @@ use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 
 use crate::State;
+use crate::Text;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::{Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
@@ -115,7 +116,7 @@ fn trimmed_range(text: &str) -> (usize, usize) {
 }
 
 /// Replaces the text of a string or lexical atom.
-fn with_text<'x>(atom: &Atom<'_>, text: Cow<'x, str>) -> Atom<'x> {
+fn with_text<'x>(atom: &Atom<'_>, text: Text<'x>) -> Atom<'x> {
     match atom {
         Atom::Str(_) => Atom::Str(text),
         _ => Atom::Lexical(text),
@@ -130,9 +131,9 @@ fn trim_atom(atom: Atom<'_>) -> Atom<'_> {
             if start == 0 && end == text.len() {
                 return atom;
             }
-            let trimmed = match *text {
-                Cow::Borrowed(text) => Cow::Borrowed(&text[start..end]),
-                Cow::Owned(ref text) => Cow::Owned(text[start..end].to_string()),
+            let trimmed = match text.borrowed_str() {
+                Some(text) => Text::borrowed(&text[start..end]),
+                None => Text::owned(&text[start..end]),
             };
             with_text(&atom, trimmed)
         }
@@ -155,7 +156,7 @@ fn split_into<'de>(
     sink.seq(state)?;
     if !text.is_empty() {
         for piece in text.split(sep) {
-            let rv = sink.__private_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state);
+            let rv = sink.__private_value_atom(Atom::Lexical(Text::borrowed(piece)), state);
             recover_element(sink, rv, state)?;
         }
     }
@@ -188,7 +189,8 @@ fn split_borrowed_into<'de>(
     sink.seq(state)?;
     if !text.is_empty() {
         for piece in text.split(sep) {
-            let rv = sink.__private_borrowed_value_atom(Atom::Lexical(Cow::Borrowed(piece)), state);
+            let rv =
+                sink.__private_borrowed_value_atom(Atom::Lexical(Text::borrowed(piece)), state);
             recover_element(sink, rv, state)?;
         }
     }
@@ -208,10 +210,12 @@ impl<'a, 'de> Sink<'de> for TextSink<'a, 'de> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match (self.op, atom) {
-            (
-                TextOp::Split(sep),
-                Atom::Str(Cow::Borrowed(text)) | Atom::Lexical(Cow::Borrowed(text)),
-            ) => split_borrowed_into(&mut self.inner, text, sep, state),
+            (TextOp::Split(sep), Atom::Str(ref text) | Atom::Lexical(ref text))
+                if text.is_borrowed() =>
+            {
+                let text = text.borrowed_str().unwrap_or_default();
+                split_borrowed_into(&mut self.inner, text, sep, state)
+            }
             (TextOp::Split(sep), Atom::Str(text) | Atom::Lexical(text)) => {
                 split_into(&mut self.inner, &text, sep, state)
             }
@@ -468,7 +472,7 @@ macro_rules! separated_impls {
                     state: &mut State,
                 ) -> Result<Chunk<'a>, Error> {
                     let text = join::<T, A>(value.iter(), SEP, state)?;
-                    Ok(Chunk::Atom(Atom::Str(Cow::Owned(text))))
+                    Ok(Chunk::Atom(Atom::Str(Text::owned(text))))
                 }
 
                 #[inline]

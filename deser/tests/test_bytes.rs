@@ -51,7 +51,7 @@ fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)
                 Event::Atom(Atom::Bytes(bytes)) => {
                     let format = bytes.fallback.copied();
                     (
-                        Event::Atom(Atom::Bytes(deser::Bytes::new(bytes.data))),
+                        Event::Atom(Atom::Bytes(deser::Bytes::new(bytes.into_data()))),
                         format,
                     )
                 }

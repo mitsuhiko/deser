@@ -73,7 +73,7 @@ pub fn is_collection_tag(tag: &str, is_map: bool) -> Result<bool, &'static str> 
 pub fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
     match resolve_plain_str(&value, version) {
         Some(atom) => atom,
-        None => Atom::Str(value),
+        None => Atom::Str(value.into()),
     }
 }
 
@@ -210,7 +210,7 @@ pub fn resolve_standard<'x>(
 ) -> Result<Atom<'x>, &'static str> {
     let s = &*value;
     match name {
-        "str" => Ok(Atom::Str(value)),
+        "str" => Ok(Atom::Str(value.into())),
         "null" => parse_null(s).ok_or("invalid !!null value"),
         "bool" => parse_bool(s, version).ok_or("invalid !!bool value"),
         "int" => match version {

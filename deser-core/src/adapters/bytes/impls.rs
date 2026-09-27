@@ -178,7 +178,7 @@ macro_rules! encoding_adapter {
                         $crate::adapters::bytes::BytesBufImpl::bytes(value),
                         &mut rv,
                     );
-                    Ok($crate::ser::Chunk::Atom($crate::Atom::Str(std::borrow::Cow::Owned(rv))))
+                    Ok($crate::ser::Chunk::Atom($crate::Atom::Str($crate::Text::owned(rv))))
                 }
 
                 #[inline]

@@ -532,7 +532,7 @@ impl Kind {
         match self {
             Kind::Str(value) | Kind::Lexical(value) => Some(value),
             Kind::Ext(ext) => match ext.fallback() {
-                Atom::Str(Cow::Borrowed(value)) => Some(value),
+                Atom::Str(value) => value.borrowed_str(),
                 _ => None,
             },
             _ => None,

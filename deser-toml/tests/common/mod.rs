@@ -1,13 +1,11 @@
 //! Test helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use std::borrow::Cow;
-
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
-use deser::{Atom, Error};
+use deser::{Atom, Error, Text};
 use deser_toml::{Datetime, Offset};
 
 /// A dynamic TOML value.
@@ -292,7 +290,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 impl Serialize for Value {
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(match *self {
-            Value::Str(ref value) => Chunk::Atom(Atom::Str(Cow::Borrowed(value))),
+            Value::Str(ref value) => Chunk::Atom(Atom::Str(Text::borrowed(value))),
             Value::Int(value) => match i64::try_from(value) {
                 Ok(value) => Chunk::Atom(Atom::I64(value)),
                 Err(_) => Chunk::Atom(Atom::U64(value as u64)),

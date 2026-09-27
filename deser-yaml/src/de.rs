@@ -470,7 +470,7 @@ impl<'a> KeyId<'a> {
             Atom::U64(value) => KeyId::Int(false, value.into()),
             Atom::I64(value) => KeyId::Int(value < 0, value.unsigned_abs().into()),
             Atom::F64(value) => KeyId::Float(value.to_bits()),
-            Atom::Str(value) => KeyId::Str(value),
+            Atom::Str(value) => KeyId::Str(value.into_cow()),
             Atom::Bytes(value) => KeyId::Bytes(value.into_owned()),
             Atom::Ext(ref ext) => {
                 if let Some(&value) = ext.downcast_ref::<u128>() {
@@ -1039,16 +1039,16 @@ fn emit_scalar<'a>(
         None if style == ScalarStyle::Plain => {
             return driver.emit_borrowed(resolve_plain(value, version));
         }
-        None => return driver.emit_borrowed(Atom::Str(value)),
+        None => return driver.emit_borrowed(Atom::Str(value.into())),
         Some(tag) => tag,
     };
     match classify_tag(&tag) {
-        ScalarTag::Str => driver.emit_borrowed(Atom::Str(value)),
+        ScalarTag::Str => driver.emit_borrowed(Atom::Str(value.into())),
         ScalarTag::Standard(name) => match resolve_standard(name, value, version) {
             Ok(atom) => driver.emit_borrowed(atom),
             Err(msg) => Err(error_at(start, msg)),
         },
-        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value)),
+        ScalarTag::Custom => emit_tagged(driver, &tag, Atom::Str(value.into())),
     }
 }
 

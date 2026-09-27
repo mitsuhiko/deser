@@ -14,8 +14,8 @@ fn hash(value: &Value) -> u64 {
 
 #[test]
 fn test_size() {
-    assert_eq!(std::mem::size_of::<Kind>(), 40);
-    assert_eq!(std::mem::size_of::<Value>(), 48);
+    assert_eq!(std::mem::size_of::<Kind>(), 32);
+    assert_eq!(std::mem::size_of::<Value>(), 40);
 }
 
 #[test]

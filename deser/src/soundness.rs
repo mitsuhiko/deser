@@ -71,7 +71,7 @@
 /// # impl BorrowedExtension for Literal<'static> {
 /// #     type Value<'a> = Literal<'a>;
 /// #     fn name<'v>(_value: &'v Literal<'_>) -> &'v str { "literal" }
-/// #     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> { Atom::Str(Cow::Borrowed(&value.0)) }
+/// #     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> { Atom::Str(Text::borrowed(&value.0)) }
 /// #     fn to_static(value: &Literal<'_>) -> Literal<'static> { Literal(Cow::Owned(value.0.to_string())) }
 /// #     fn shorten<'s, 'l: 's>(value: &'s Literal<'l>) -> &'s Literal<'s> { value }
 /// # }
@@ -93,7 +93,7 @@
 /// # impl BorrowedExtension for Literal<'static> {
 /// #     type Value<'a> = Literal<'a>;
 /// #     fn name<'v>(_value: &'v Literal<'_>) -> &'v str { "literal" }
-/// #     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> { Atom::Str(Cow::Borrowed(&value.0)) }
+/// #     fn fallback<'v>(value: &'v Literal<'_>) -> Atom<'v> { Atom::Str(Text::borrowed(&value.0)) }
 /// #     fn to_static(value: &Literal<'_>) -> Literal<'static> { Literal(Cow::Owned(value.0.to_string())) }
 /// #     fn shorten<'s, 'l: 's>(value: &'s Literal<'l>) -> &'s Literal<'s> { value }
 /// # }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::sync::Arc;
 
+use deser_core::Text;
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, DeserializeOwned, DuplicateKeys};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
@@ -578,7 +579,7 @@ impl Tree {
                 };
                 emit_as(
                     driver,
-                    Atom::Lexical(Cow::Borrowed(key.as_str())),
+                    Atom::Lexical(Text::borrowed(key.as_str())),
                     node.name.as_ref(),
                 )?;
             }
@@ -645,10 +646,10 @@ fn emit_value<'a>(driver: &mut DeserializeDriver<'_, 'a>, var: &Var<'a>) -> Resu
     driver.state_mut().event_mut::<CurrentVar>().0 = Some(var.name.clone());
     match var.value {
         Value::Text(Cow::Borrowed(text)) => {
-            driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(text)))
+            driver.emit_borrowed(Atom::Lexical(Text::borrowed(text)))
         }
         Value::Text(Cow::Owned(ref text)) => {
-            driver.emit(Atom::Lexical(Cow::Borrowed(text.as_str())))
+            driver.emit(Atom::Lexical(Text::borrowed(text.as_str())))
         }
         Value::Bytes(ref bytes) => driver.emit(Atom::Bytes(Bytes::borrowed(bytes))),
     }

@@ -1,5 +1,4 @@
-use std::borrow::Cow;
-
+use deser_core::Text;
 use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, State};
 
@@ -36,8 +35,8 @@ impl Serialize for Kind {
             Kind::F32(value) => Chunk::Atom(Atom::F32(*value)),
             Kind::F64(value) => Chunk::Atom(Atom::F64(*value)),
             Kind::Char(value) => Chunk::Atom(Atom::Char(*value)),
-            Kind::Str(value) => Chunk::Atom(Atom::Str(Cow::Borrowed(value))),
-            Kind::Lexical(value) => Chunk::Atom(Atom::Lexical(Cow::Borrowed(value))),
+            Kind::Str(value) => Chunk::Atom(Atom::Str(Text::borrowed(value))),
+            Kind::Lexical(value) => Chunk::Atom(Atom::Lexical(Text::borrowed(value))),
             Kind::Bytes(value) => Chunk::Atom(Atom::Bytes(value.as_borrowed())),
             Kind::Ext(value) => Chunk::Atom(Atom::Ext(value.as_borrowed())),
             Kind::Seq(seq) => return seq.serialize(state),

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+use crate::Text;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
@@ -310,7 +311,7 @@ impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
     #[inline]
     fn field(&mut self, name: &str) -> Result<(), Error> {
         self.driver.state.is_map_key = true;
-        self.begin(Event::Atom(Atom::Str(Cow::Borrowed(name))))
+        self.begin(Event::Atom(Atom::Str(Text::borrowed(name))))
     }
 }
 
@@ -543,7 +544,7 @@ impl<'a> SerializeDriver<'a> {
                             self.state.is_map_key = true;
                             self.deliver(
                                 &mut f,
-                                Event::Atom(Atom::Str(Cow::Borrowed(key))),
+                                Event::Atom(Atom::Str(Text::borrowed(key))),
                                 &FIELD_KEY,
                             )?;
                             (value, false)
@@ -569,7 +570,7 @@ impl<'a> SerializeDriver<'a> {
                 Emitter::Struct(emitter) => match emitter.next(&mut self.state)? {
                     Some((key, value)) => {
                         self.state.is_map_key = true;
-                        self.deliver(&mut f, Event::Atom(Atom::Str(key)), &FIELD_KEY)?;
+                        self.deliver(&mut f, Event::Atom(Atom::Str(key.into())), &FIELD_KEY)?;
                         (value, false)
                     }
                     None => {
@@ -887,7 +888,7 @@ impl<'a> SerializeDriver<'a> {
                                 std::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
                             };
                             self.state.is_map_key = true;
-                            return Ok(Some((Event::Atom(Atom::Str(key)), &FIELD_KEY)));
+                            return Ok(Some((Event::Atom(Atom::Str(key.into())), &FIELD_KEY)));
                         }
                         None => None,
                     },
@@ -904,9 +905,11 @@ impl<'a> SerializeDriver<'a> {
                                 // SAFETY: the value and key borrow from the
                                 // serializable of the frame.
                                 self.next_value = Some(unsafe { Held::new(value) });
-                                let key = Cow::Borrowed(key);
                                 self.state.is_map_key = true;
-                                return Ok(Some((Event::Atom(Atom::Str(key)), &FIELD_KEY)));
+                                return Ok(Some((
+                                    Event::Atom(Atom::Str(Text::borrowed(key))),
+                                    &FIELD_KEY,
+                                )));
                             }
                             StructField::Skip => continue,
                             StructField::End => break None,

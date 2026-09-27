@@ -132,7 +132,7 @@ pub use deser_core::derive;
 #[doc(inline)]
 pub use deser_core::{
     Atom, Bytes, ContainerShape, Error, ErrorAttachment, ErrorContext, ErrorKind, Event, EventData,
-    Order, Position, State, Streamed,
+    Order, Position, State, Streamed, Text,
 };
 
 #[doc(inline)]

@@ -196,6 +196,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
+use deser_core::Text;
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser_core::{Atom, Error, ErrorAttachment, ErrorKind};
 
@@ -363,7 +364,7 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         match value.into_string() {
-            Ok(text) => driver.emit(Atom::Lexical(Cow::Borrowed(&text))),
+            Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),
             Err(value) => match de::os_bytes(value) {
                 Some(bytes) => driver.emit(Atom::Bytes(deser_core::Bytes::borrowed(&bytes))),
                 None => Err(Error::new(

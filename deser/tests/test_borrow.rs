@@ -59,7 +59,7 @@ fn test_transient_data_cannot_be_borrowed() {
     assert_eq!(err.kind(), ErrorKind::Unexpected);
     assert!(err.to_string().contains("expected a borrowed string"));
     // owned data in a borrowed atom cannot be borrowed either
-    let err = borrowed::<&str>(vec![Event::Atom(Atom::Str(Cow::Owned("x".into())))]).unwrap_err();
+    let err = borrowed::<&str>(vec![Event::Atom(Atom::Str(deser::Text::owned("x")))]).unwrap_err();
     assert!(err.to_string().contains("expected a borrowed string"));
 
     // but it can go into a `Cow`, even with the adapter

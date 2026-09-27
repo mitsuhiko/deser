@@ -1871,7 +1871,7 @@ impl VariantName {
     pub fn atom(&self) -> TokenStream {
         match self {
             VariantName::Str(name) => quote! {
-                __deser::Atom::Str(__deser::__derive::Cow::Borrowed(#name))
+                __deser::Atom::Str(__deser::Text::borrowed(#name))
             },
             VariantName::U64(value) => quote! { __deser::Atom::U64(#value) },
             VariantName::I64(value) => quote! { __deser::Atom::I64(#value) },

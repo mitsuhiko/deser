@@ -436,8 +436,6 @@ fn test_from_slice() {
 
 #[test]
 fn test_borrowed_strings() {
-    use std::borrow::Cow;
-
     use deser::State;
     use deser::de::{DeserializeDriver, Sink, SinkHandle};
     use deser::{Atom, Error};
@@ -448,7 +446,7 @@ fn test_borrowed_strings() {
     impl<'de> Sink<'de> for Borrowed {
         fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
             if let Atom::Str(s) = atom {
-                self.0.push(matches!(s, Cow::Borrowed(_)));
+                self.0.push(s.is_borrowed());
             }
             Ok(())
         }

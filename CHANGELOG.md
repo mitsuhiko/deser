@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The text of `Atom::Str` and `Atom::Lexical` is a `Text` and the data
+  of `Bytes` is private (`Bytes::data`, `Bytes::into_data` and
+  `Bytes::borrowed_data`).  Both are borrowed or owned like a `Cow` but
+  two words large (owned data is a boxed slice without spare capacity).
+  `Text` dereferences to `str` and converts from and into `&str`,
+  `String` and `Cow<str>`, `Text::borrowed_str` returns text that borrows
+  from the input.  This makes `Bytes` and the values of `deser-value`
+  8 bytes smaller and leaves room in `Atom` for more information.
 - **Breaking:** `#[deser(validate = ...)]` was removed, validation moved
   into `deser-validate`.  Use `#[deser(as = Check<V>)]` on fields and
   `#[deser(deserialize_as = Check<V, _>)]` on types, with validators made by

@@ -1,6 +1,6 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
+use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::ser::{self, Serialize, SerializeDriver};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event};
@@ -168,8 +168,8 @@ fn leaf_atom(kind: &Kind) -> Atom<'_> {
         Kind::F32(value) => Atom::F32(*value),
         Kind::F64(value) => Atom::F64(*value),
         Kind::Char(value) => Atom::Char(*value),
-        Kind::Str(value) => Atom::Str(Cow::Borrowed(value)),
-        Kind::Lexical(value) => Atom::Lexical(Cow::Borrowed(value)),
+        Kind::Str(value) => Atom::Str(Text::borrowed(value)),
+        Kind::Lexical(value) => Atom::Lexical(Text::borrowed(value)),
         Kind::Bytes(value) => Atom::Bytes(value.as_borrowed()),
         Kind::Ext(value) => Atom::Ext(value.as_borrowed()),
         Kind::Seq(_) | Kind::Map(_) => unreachable!("containers are not atoms"),

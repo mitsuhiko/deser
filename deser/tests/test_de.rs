@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
 use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
-use deser::{Atom, Deserialize, Event, make_slot_wrapper};
+use deser::{Atom, Deserialize, Event, Text, make_slot_wrapper};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
@@ -45,8 +45,8 @@ fn test_float_atom_paths() {
         (Atom::F32(0.25), 0.25),
         (Atom::F64(0.5), 0.5),
         (Atom::F64(f64::INFINITY), f64::INFINITY),
-        (Atom::Lexical(Cow::Borrowed("1.5")), 1.5),
-        (Atom::Lexical(Cow::Owned("-1.5".into())), -1.5),
+        (Atom::Lexical(Text::borrowed("1.5")), 1.5),
+        (Atom::Lexical(Text::owned("-1.5")), -1.5),
         (Atom::Ext(ExtValue::owned(42u128)), 42.0),
         (Atom::Ext(ExtValue::owned(-42i128)), -42.0),
         (Atom::Ext(ExtValue::borrowed_value::<Number>(&number)), 1.25),
@@ -75,8 +75,8 @@ fn test_float_atom_paths() {
     }
 
     for atom in [
-        Atom::Lexical(Cow::Owned("not a float".into())),
-        Atom::Str(Cow::Owned("1.5".into())),
+        Atom::Lexical(Text::owned("not a float")),
+        Atom::Str(Text::owned("1.5")),
         Atom::Bool(true),
         Atom::Null,
     ] {

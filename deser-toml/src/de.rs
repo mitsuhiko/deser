@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use deser_core::Text;
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::ext::ExtValue;
@@ -266,8 +267,8 @@ fn emit_key<'a>(
 ) -> Result<(), Error> {
     driver.state_mut().set_input_range(span.start, span.end);
     match *key {
-        Cow::Borrowed(key) => driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(key))),
-        Cow::Owned(ref key) => driver.emit(Atom::Lexical(Cow::Borrowed(key.as_str()))),
+        Cow::Borrowed(key) => driver.emit_borrowed(Atom::Lexical(Text::borrowed(key))),
+        Cow::Owned(ref key) => driver.emit(Atom::Lexical(Text::borrowed(key.as_str()))),
     }
 }
 

@@ -1,7 +1,7 @@
-use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deser_core::Text;
 use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
@@ -588,8 +588,8 @@ impl StreamState {
                     match names.get(index) {
                         // the names are only valid for this call, sinks
                         // that keep them copy them
-                        Some(name) => driver.emit(Atom::Lexical(Cow::Borrowed(name.as_str())))?,
-                        None => driver.emit(Atom::Lexical(Cow::Owned(index.to_string())))?,
+                        Some(name) => driver.emit(Atom::Lexical(Text::borrowed(name.as_str())))?,
+                        None => driver.emit(Atom::Lexical(Text::owned(index.to_string())))?,
                     }
                     emitter.emit(driver, field, scratch)?;
                 }
@@ -661,17 +661,17 @@ impl<'de> FieldEmitter<'_, 'de> {
             unescape(self.dialect, text, field.flags & QUOTED != 0, scratch);
             // the decoded text is only valid for the call
             match std::str::from_utf8(scratch) {
-                Ok(text) => driver.emit(Atom::Lexical(Cow::Borrowed(text))),
+                Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(text))),
                 Err(_) => driver.emit(Atom::Bytes(Bytes::borrowed(scratch))),
             }
         } else if self.record_is_utf8 {
             // SAFETY: the record is UTF-8 and fields start and end at ASCII
             // characters (or the start and end of the record)
             let text = unsafe { std::str::from_utf8_unchecked(text) };
-            driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(text)))
+            driver.emit_borrowed(Atom::Lexical(Text::borrowed(text)))
         } else {
             match std::str::from_utf8(text) {
-                Ok(text) => driver.emit_borrowed(Atom::Lexical(Cow::Borrowed(text))),
+                Ok(text) => driver.emit_borrowed(Atom::Lexical(Text::borrowed(text))),
                 Err(_) => driver.emit_borrowed(Atom::Bytes(Bytes::borrowed(text))),
             }
         }

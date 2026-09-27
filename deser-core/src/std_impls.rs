@@ -17,6 +17,7 @@ use std::str::FromStr;
 use std::sync::{Mutex, OnceLock, RwLock};
 
 use crate::State;
+use crate::Text;
 use crate::adapters::{DeserializeAs, Same, SerializeAs, SerializeAsRef};
 use crate::de::duplicates::duplicate_field;
 use crate::de::impls::{Via, deserialize_via, via_handle};
@@ -620,7 +621,7 @@ macro_rules! parse_from_str {
                 begin_without_finish!();
 
                 fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-                    Ok(Chunk::Atom(Atom::Str(Cow::Owned(self.to_string()))))
+                    Ok(Chunk::Atom(Atom::Str(Text::owned(self.to_string()))))
                 }
             }
 
@@ -671,7 +672,7 @@ impl Serialize for Path {
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         match self.to_str() {
-            Some(value) => Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(value)))),
+            Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
                 "path contains invalid UTF-8 characters",
@@ -788,7 +789,7 @@ impl Serialize for OsStr {
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         match self.to_str() {
-            Some(value) => Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(value)))),
+            Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
                 "OS string contains invalid UTF-8 characters",
@@ -1052,7 +1053,7 @@ impl<T: Serialize> Serialize for Bound<T> {
         Ok(match self {
             Bound::Included(value) => FieldsEmitter::chunk([("Included", value)]),
             Bound::Excluded(value) => FieldsEmitter::chunk([("Excluded", value)]),
-            Bound::Unbounded => Chunk::Atom(Atom::Str(Cow::Borrowed("Unbounded"))),
+            Bound::Unbounded => Chunk::Atom(Atom::Str(Text::borrowed("Unbounded"))),
         })
     }
 }

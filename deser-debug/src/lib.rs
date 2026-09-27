@@ -317,7 +317,7 @@ fn render_atom(atom: &Atom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Atom::Null => f.write_str("()"),
         Atom::Bool(v) => fmt::Debug::fmt(&v, f),
         Atom::Str(ref v) | Atom::Lexical(ref v) => fmt::Debug::fmt(v, f),
-        Atom::Bytes(ref v) => fmt::Debug::fmt(&v.data[..], f),
+        Atom::Bytes(ref v) => fmt::Debug::fmt(v.data(), f),
         Atom::Char(v) => fmt::Debug::fmt(&v, f),
         Atom::U64(v) => fmt::Debug::fmt(&v, f),
         Atom::I64(v) => fmt::Debug::fmt(&v, f),

@@ -1,6 +1,6 @@
 //! A serde serializer that emits deser events.
-use std::borrow::Cow;
 
+use deser_core::Text;
 use deser_core::ext::ExtValue;
 use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser_core::{Atom, Bytes, ContainerShape, ErrorKind, Event, State};
@@ -40,7 +40,7 @@ impl<'e, E: Emit + ?Sized> EventSerializer<'e, E> {
         self.out
             .emit(Event::MapStart(ContainerShape::new().with_len(1)))?;
         self.out
-            .emit(Event::Atom(Atom::Str(Cow::Borrowed(variant))))
+            .emit(Event::Atom(Atom::Str(Text::borrowed(variant))))
     }
 }
 
@@ -113,7 +113,7 @@ impl<'e, E: Emit + ?Sized> ser::Serializer for EventSerializer<'e, E> {
     }
 
     fn serialize_str(self, v: &str) -> Result<(), Error> {
-        self.atom(Atom::Str(Cow::Borrowed(v)))
+        self.atom(Atom::Str(Text::borrowed(v)))
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<(), Error> {
@@ -142,7 +142,7 @@ impl<'e, E: Emit + ?Sized> ser::Serializer for EventSerializer<'e, E> {
         _index: u32,
         variant: &'static str,
     ) -> Result<(), Error> {
-        self.atom(Atom::Str(Cow::Borrowed(variant)))
+        self.atom(Atom::Str(Text::borrowed(variant)))
     }
 
     fn serialize_newtype_struct<T: ser::Serialize + ?Sized>(
@@ -323,7 +323,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeStruct for Compound<'e, E> {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        self.out.emit(Event::Atom(Atom::Str(Cow::Borrowed(key))))?;
+        self.out.emit(Event::Atom(Atom::Str(Text::borrowed(key))))?;
         self.value(value)
     }
 
@@ -341,7 +341,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeStructVariant for Compound<'e, E> {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        self.out.emit(Event::Atom(Atom::Str(Cow::Borrowed(key))))?;
+        self.out.emit(Event::Atom(Atom::Str(Text::borrowed(key))))?;
         self.value(value)
     }
 

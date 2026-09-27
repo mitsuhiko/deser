@@ -14,6 +14,7 @@ use std::mem::take;
 use std::ptr::NonNull;
 
 use crate::State;
+use crate::Text;
 use crate::de::recording::{Capture, RecordBuf};
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
@@ -1193,7 +1194,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             return variant.sink().value_for_key(key, state);
         }
         let mut recorded_key = RecordBuf::new();
-        recorded_key.set_atom(&Atom::Str(Cow::Borrowed(key)), state);
+        recorded_key.set_atom(&Atom::Str(Text::borrowed(key)), state);
         self.pending.push((recorded_key, RecordBuf::new()));
         Ok(Some(self.pending.last_mut().unwrap().1.recorder()))
     }

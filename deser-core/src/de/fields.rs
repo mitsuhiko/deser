@@ -6,6 +6,7 @@
 use std::borrow::Cow;
 
 use crate::State;
+use crate::Text;
 use crate::de::duplicates::{duplicate_field, mark_seen};
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
 use crate::de::{Sink, SinkHandle};
@@ -110,7 +111,7 @@ impl FieldKeySink {
 
     /// Records a key that is not a field.
     #[inline(never)]
-    fn other_key(&mut self, key: Cow<'_, str>, state: &State) {
+    fn other_key(&mut self, key: Text<'_>, state: &State) {
         self.index = UNKNOWN;
         self.other = if self.retain || wants_unknown_fields(state) {
             self.offset = state.input_range().map(|range| range.start);

@@ -15,6 +15,7 @@ use std::mem::take;
 use ::bstr::{BStr, BString};
 
 use crate::State;
+use crate::Text;
 use crate::adapters::BytesFormat;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::de::impls::{Via, deserialize_via};
@@ -29,7 +30,7 @@ make_slot_wrapper!(SlotWrapper);
 #[inline]
 fn bstr_atom(bytes: &[u8]) -> Atom<'_> {
     match std::str::from_utf8(bytes) {
-        Ok(value) => Atom::Str(Cow::Borrowed(value)),
+        Ok(value) => Atom::Str(Text::borrowed(value)),
         Err(_) => Atom::Bytes(Bytes::borrowed(bytes).with_fallback(const { &BytesFormat::SEQ })),
     }
 }
@@ -213,15 +214,12 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a BStr> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(Cow::Borrowed(value)) | Atom::Lexical(Cow::Borrowed(value)) => {
-                **self = Some(BStr::new(value));
+            Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_borrowed() => {
+                **self = text.borrowed_str().map(BStr::new);
                 Ok(())
             }
-            Atom::Bytes(Bytes {
-                data: Cow::Borrowed(value),
-                ..
-            }) => {
-                **self = Some(BStr::new(value));
+            Atom::Bytes(ref value) if value.is_borrowed() => {
+                **self = value.borrowed_data().map(BStr::new);
                 Ok(())
             }
             other => self.atom(other, state),

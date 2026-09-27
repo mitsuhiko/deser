@@ -26,6 +26,7 @@ mod position;
 mod state;
 mod std_impls;
 mod streamed;
+mod text;
 
 pub use self::error::{Error, ErrorAttachment, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Order};
@@ -33,6 +34,7 @@ pub use self::extensions::EventData;
 pub use self::position::Position;
 pub use self::state::{ErrorContext, State};
 pub use self::streamed::Streamed;
+pub use self::text::Text;
 
 // common re-exports
 

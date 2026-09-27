@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
 use deser_core::__format::IntBuffer;
@@ -577,7 +576,7 @@ impl Output {
         let atom = ManuallyDrop::new(atom);
         match *atom {
             // fast path for the common case of string keys
-            Atom::Str(Cow::Borrowed(val)) | Atom::Lexical(Cow::Borrowed(val)) => {
+            Atom::Str(ref val) | Atom::Lexical(ref val) if val.is_borrowed() => {
                 self.write_key(val, first);
                 Ok(())
             }
@@ -633,7 +632,7 @@ impl Output {
             Atom::Null => self.write_str("null"),
             Atom::Bool(true) => self.write_str("true"),
             Atom::Bool(false) => self.write_str("false"),
-            Atom::Str(Cow::Borrowed(val)) => self.write_escaped_str(val),
+            Atom::Str(ref val) if val.is_borrowed() => self.write_escaped_str(val),
             Atom::Char(c) => self.write_escaped_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_u64(val),
             Atom::I64(val) => self.write_i64(val),

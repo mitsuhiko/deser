@@ -8,6 +8,7 @@ use std::mem::take;
 use std::str::FromStr;
 
 use crate::State;
+use crate::Text;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::lexical::parse_bool;
@@ -64,7 +65,7 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(value) | Atom::Lexical(value) => {
-                **self = Some(value);
+                **self = Some(value.into_cow());
                 Ok(())
             }
             other => self.atom(other, state),
@@ -97,7 +98,7 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bytes(value) => {
-                **self = Some(value.data);
+                **self = Some(value.into_data());
                 Ok(())
             }
             other => self.atom(other, state),
@@ -119,7 +120,7 @@ impl<'de: 'a, 'a> DeserializeAs<'de, Cow<'a, [u8]>> for Borrowed {
 
 impl<'a> SerializeAs<Cow<'a, str>> for Borrowed {
     fn serialize_as<'b>(value: &'b Cow<'a, str>, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(value))))
+        Ok(Chunk::Atom(Atom::Str(Text::borrowed(value))))
     }
 }
 
@@ -208,7 +209,7 @@ where
 
 impl<T: Display + ?Sized> SerializeAs<T> for DisplayFromStr {
     fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Cow::Owned(value.to_string()))))
+        Ok(Chunk::Atom(Atom::Str(Text::owned(value.to_string()))))
     }
 
     #[inline]

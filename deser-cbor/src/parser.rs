@@ -5,9 +5,9 @@
 //! follow, the parser returns how much of the input it consumed (up to the
 //! start of the item) and continues with more input.  With the complete
 //! input (`eof`) it parses a data item in one go.
-use std::borrow::Cow;
 use std::str;
 
+use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Uuid};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
@@ -419,7 +419,7 @@ impl<'a> Cursor<'a> {
                 let bytes = self.read_body(head)?;
                 // SAFETY: text is validated as UTF-8 when read
                 let text = unsafe { str::from_utf8_unchecked(bytes) };
-                self.emit_borrowed(out, start, Event::Atom(Atom::Str(Cow::Borrowed(text))))?
+                self.emit_borrowed(out, start, Event::Atom(Atom::Str(Text::borrowed(text))))?
             }
             MAJOR_BYTES => {
                 let bytes = self.read_string(head, buffer)?;
@@ -429,7 +429,7 @@ impl<'a> Cursor<'a> {
                 let bytes = self.read_string(head, buffer)?;
                 // SAFETY: text chunks are validated as UTF-8 when read
                 let text = unsafe { str::from_utf8_unchecked(bytes) };
-                self.emit(out, start, Atom::Str(Cow::Borrowed(text)))?
+                self.emit(out, start, Atom::Str(Text::borrowed(text)))?
             }
             MAJOR_ARRAY | MAJOR_MAP => {
                 let is_map = head.major == MAJOR_MAP;

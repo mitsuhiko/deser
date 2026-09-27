@@ -1,11 +1,10 @@
-use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 
 use deser_core::__format::extend;
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
 use deser_core::ser::{self, SerializeDriver};
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::float::f32_to_f16;
 use crate::simple::Simple;
@@ -341,11 +340,8 @@ impl Writer {
             Atom::Null => self.out.push(0xf6),
             Atom::Bool(false) => self.out.push(0xf4),
             Atom::Bool(true) => self.out.push(0xf5),
-            Atom::Str(Cow::Borrowed(val)) => self.write_str(val),
-            Atom::Bytes(Bytes {
-                data: Cow::Borrowed(val),
-                ..
-            }) => self.write_bytes(val),
+            Atom::Str(ref val) if val.is_borrowed() => self.write_str(val),
+            Atom::Bytes(ref val) if val.is_borrowed() => self.write_bytes(val),
             Atom::Char(c) => self.write_str(c.encode_utf8(&mut [0u8; 4])),
             Atom::U64(val) => self.write_head(MAJOR_UNSIGNED, val),
             Atom::I64(val) => self.write_i64(val),

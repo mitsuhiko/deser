@@ -1,5 +1,4 @@
-use std::borrow::Cow;
-
+use crate::Text;
 use crate::event::{Atom, Bytes};
 use crate::ser::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -89,7 +88,7 @@ impl From<()> for Chunk<'static> {
 
 impl<'a> From<&'a str> for Chunk<'a> {
     fn from(value: &'a str) -> Chunk<'a> {
-        Chunk::Atom(Atom::Str(Cow::Borrowed(value)))
+        Chunk::Atom(Atom::Str(Text::borrowed(value)))
     }
 }
 
@@ -101,6 +100,6 @@ impl<'a> From<&'a [u8]> for Chunk<'a> {
 
 impl From<String> for Chunk<'static> {
     fn from(value: String) -> Chunk<'static> {
-        Chunk::Atom(Atom::Str(Cow::Owned(value)))
+        Chunk::Atom(Atom::Str(Text::owned(value)))
     }
 }

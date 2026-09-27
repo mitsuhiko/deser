@@ -1,6 +1,7 @@
 //! A serde deserializer that pulls deser events from a source.
 use std::borrow::Cow;
 
+use deser_core::Text;
 use deser_core::{Atom, ErrorKind, Event};
 use serde::de::{self, DeserializeSeed, Visitor};
 
@@ -66,10 +67,10 @@ fn visit_atom<'de, V: Visitor<'de>>(atom: Atom<'de>, visitor: V) -> Result<V::Va
     match atom {
         Atom::Null => visitor.visit_unit(),
         Atom::Bool(v) => visitor.visit_bool(v),
-        Atom::Str(Cow::Borrowed(v)) | Atom::Lexical(Cow::Borrowed(v)) => {
-            visitor.visit_borrowed_str(v)
-        }
-        Atom::Str(Cow::Owned(v)) | Atom::Lexical(Cow::Owned(v)) => visitor.visit_string(v),
+        Atom::Str(v) | Atom::Lexical(v) => match v.into_cow() {
+            Cow::Borrowed(v) => visitor.visit_borrowed_str(v),
+            Cow::Owned(v) => visitor.visit_string(v),
+        },
         Atom::Bytes(v) => match v.into_data() {
             Cow::Borrowed(v) => visitor.visit_borrowed_bytes(v),
             Cow::Owned(v) => visitor.visit_byte_buf(v),
@@ -117,7 +118,7 @@ fn parse_lexical<T: deser_core::de::DeserializeOwned>(value: &str) -> Result<T, 
     let mut state = deser_core::State::new();
     {
         let mut sink = T::deserialize_into(&mut out);
-        sink.atom(Atom::Lexical(Cow::Borrowed(value)), &mut state)?;
+        sink.atom(Atom::Lexical(Text::borrowed(value)), &mut state)?;
         sink.finish(&mut state)?;
     }
     out.ok_or_else(|| Error::new(ErrorKind::Unexpected, "lexical value was not parsed"))

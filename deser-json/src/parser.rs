@@ -7,9 +7,9 @@
 //! parses a value in one go.  The state of the current container is held
 //! in locals while parsing and only stored in the parser when it's
 //! suspended.
-use std::borrow::Cow;
 use std::str;
 
+use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
@@ -71,7 +71,7 @@ pub(crate) trait Out<'i> {
 /// values of other types (like integers).
 #[inline(always)]
 fn key_atom(key: &str) -> Atom<'_> {
-    Atom::Lexical(Cow::Borrowed(key))
+    Atom::Lexical(Text::borrowed(key))
 }
 
 /// Passes strings of the input on borrowed.
@@ -475,7 +475,7 @@ impl Parser {
                             out.state_mut()
                                 .set_input_range(base + start, base + cur.pos);
                             sink!(
-                                out.emit_input(Atom::Str(Cow::Borrowed(val))),
+                                out.emit_input(Atom::Str(Text::borrowed(val))),
                                 Expect::AfterValue
                             )
                         }

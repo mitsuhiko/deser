@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
-use deser::{Atom, Deserialize, Error, ErrorKind, Event};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Text};
 
 fn lexical(value: &str) -> Event<'_> {
-    Event::Atom(Atom::Lexical(Cow::Borrowed(value)))
+    Event::Atom(Atom::Lexical(Text::borrowed(value)))
 }
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
@@ -127,10 +127,10 @@ fn test_borrowed() {
         driver.emit(Event::map_start()).unwrap();
         for (key, value) in [(&input[..4], &input[5..9]), (&input[10..13], &input[14..])] {
             driver
-                .emit_borrowed(Atom::Lexical(Cow::Borrowed(key)))
+                .emit_borrowed(Atom::Lexical(Text::borrowed(key)))
                 .unwrap();
             driver
-                .emit_borrowed(Atom::Lexical(Cow::Borrowed(value)))
+                .emit_borrowed(Atom::Lexical(Text::borrowed(value)))
                 .unwrap();
         }
         driver.emit(Event::MapEnd).unwrap();
@@ -327,7 +327,7 @@ fn test_single_value_sequences() {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         driver
-            .emit_borrowed(Atom::Lexical(Cow::Borrowed(&input)))
+            .emit_borrowed(Atom::Lexical(Text::borrowed(&input)))
             .unwrap();
     }
     assert_eq!(out.unwrap(), ["hello"]);

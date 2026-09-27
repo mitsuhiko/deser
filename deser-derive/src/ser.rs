@@ -528,7 +528,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     {
         quote! {
             __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Str(
-                __deser::__derive::Cow::Borrowed(match *self {
+                __deser::Text::borrowed(match *self {
                     #(
                         #ident::#var_idents => #names,
                     )*

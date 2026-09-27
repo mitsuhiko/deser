@@ -5,9 +5,9 @@
 //! returns how much of the input it consumed (up to the start of the item)
 //! and continues with more input.  With the complete input (`eof`) it parses
 //! an item in one go.
-use std::borrow::Cow;
 use std::str;
 
+use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::ExtValue;
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
@@ -346,7 +346,7 @@ impl<'a> Cursor<'a> {
                 }
                 // SAFETY: the string was validated as UTF-8
                 let text = unsafe { str::from_utf8_unchecked(bytes) };
-                self.emit_borrowed(out, start, Event::Atom(Atom::Str(Cow::Borrowed(text))))?
+                self.emit_borrowed(out, start, Event::Atom(Atom::Str(Text::borrowed(text))))?
             }
             Head::Bin(len) => {
                 let bytes = self.read_body(len)?;

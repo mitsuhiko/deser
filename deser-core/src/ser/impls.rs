@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::State;
+use crate::Text;
 use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ext::ExtValue;
@@ -116,7 +117,7 @@ serialize_ext_int!(i128);
 
 impl Serialize for String {
     begin_without_finish!();
-    plain_atom!(|v| Atom::Str(Cow::Borrowed(v.as_str())));
+    plain_atom!(|v| Atom::Str(Text::borrowed(v.as_str())));
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(Atom::Str(self.as_str().into())))
@@ -127,7 +128,7 @@ impl Serialize for str {
     begin_without_finish!();
 
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Cow::Borrowed(self))))
+        Ok(Chunk::Atom(Atom::Str(Text::borrowed(self))))
     }
 }
 
