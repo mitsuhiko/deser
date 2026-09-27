@@ -32,6 +32,10 @@ mod citm;
 mod compare;
 mod datasets;
 mod formats;
+mod github;
+mod kubernetes;
+mod logs;
+mod manifests;
 mod saphyr;
 mod twitter;
 
@@ -114,6 +118,44 @@ impl<'a> Benches<'a> {
         }
     }
 
+    /// Adds the benchmarks of many small documents for deser and serde.
+    fn add_documents<T>(&mut self, documents: &'a Documents<T>)
+    where
+        T: Serialize + for<'de> Deserialize<'de>,
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        for (format, inputs) in &documents.inputs {
+            let format = *format;
+            let name = format!("{}/{}", documents.name, format.name());
+            let inputs = inputs
+                .iter()
+                .map(|input| Input::new(format, input))
+                .collect::<Vec<_>>();
+            let values = &documents.values;
+            let deser_inputs = inputs.clone();
+            self.add(format!("{}/de", name), move || {
+                for &input in &deser_inputs {
+                    black_box(formats::deser_de::<T>(format, input).unwrap());
+                }
+            });
+            self.add(format!("{}/ser", name), move || {
+                for value in values {
+                    black_box(formats::deser_ser(format, value).unwrap());
+                }
+            });
+            self.add(format!("{}/de-serde", name), move || {
+                for &input in &inputs {
+                    black_box(formats::serde_de::<T>(format, input).unwrap());
+                }
+            });
+            self.add(format!("{}/ser-serde", name), move || {
+                for value in values {
+                    black_box(formats::serde_ser(format, value).unwrap());
+                }
+            });
+        }
+    }
+
     fn add_deser_format<T>(&mut self, dataset: &'a Dataset<T>, format: Format, input: Input<'a>)
     where
         T: Serialize + for<'de> Deserialize<'de>,
@@ -126,6 +168,64 @@ impl<'a> Benches<'a> {
         self.add(format!("{}/ser", name), move || {
             black_box(formats::deser_ser(format, value).unwrap());
         });
+    }
+}
+
+/// A dataset of many small documents with their serialized forms.
+///
+/// The benchmarks deserialize (and serialize) the documents one by one, which
+/// measures what it costs to deserialize a document.
+struct Documents<T> {
+    name: &'static str,
+    values: Vec<T>,
+    inputs: Vec<(Format, Vec<Vec<u8>>)>,
+}
+
+impl<T> Documents<T>
+where
+    T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    /// Creates the documents from generated values and checks that both
+    /// libraries read them.
+    fn new(name: &'static str, values: Vec<T>) -> Documents<T> {
+        let inputs = Format::ALL
+            .iter()
+            .map(|&format| {
+                let documents = values
+                    .iter()
+                    .map(|value| formats::deser_ser(format, value).unwrap())
+                    .collect();
+                (format, documents)
+            })
+            .collect();
+        let documents = Documents {
+            name,
+            values,
+            inputs,
+        };
+        documents.check("deser", formats::deser_de);
+        documents.check("serde", formats::serde_de);
+        documents
+    }
+
+    fn check(&self, library: &str, de: impl Fn(Format, Input) -> Result<T, formats::Error>) {
+        for (format, documents) in &self.inputs {
+            for (document, expected) in documents.iter().zip(&self.values) {
+                let name = format!("{}/{}", self.name, format.name());
+                let value = de(*format, Input::new(*format, document))
+                    .unwrap_or_else(|err| panic!("{}: {} cannot read: {}", name, library, err));
+                if compare::compare(&value, expected) == Equality::Different {
+                    panic!("{}: {} reads another value", name, library);
+                }
+            }
+        }
+    }
+
+    /// Returns the total size of the documents of a format.
+    fn size(&self, format: Format) -> usize {
+        let (_, documents) = self.inputs.iter().find(|(f, _)| *f == format).unwrap();
+        documents.iter().map(Vec::len).sum()
     }
 }
 
@@ -277,7 +377,11 @@ struct Data {
     web_sys: Dataset<cargo::Manifest>,
     cargo_lock: Dataset<cargo::Lockfile>,
     saphyr: Dataset<saphyr::Document>,
+    github: Dataset<github::Responses>,
+    kubernetes: Dataset<kubernetes::Swagger>,
     // synthetic data
+    manifests: Dataset<manifests::ManifestList>,
+    logs: Documents<logs::LogEvent>,
     features: Dataset<datasets::FeatureCollection>,
     point_cloud: Dataset<datasets::PointCloud>,
     blobs: Dataset<datasets::Blobs>,
@@ -306,6 +410,15 @@ impl Data {
                 .with_serde(),
             saphyr: Dataset::from_document("saphyr", Format::Yaml, saphyr::yaml().into_bytes())
                 .with_serde(),
+            github: Dataset::new(
+                "github",
+                github::responses(&read_data("github/examples.json")),
+            )
+            .with_serde(),
+            kubernetes: Dataset::load("kubernetes", Format::Json, "kubernetes/swagger.json")
+                .with_serde(),
+            manifests: Dataset::new("manifests", manifests::manifests()).with_serde(),
+            logs: Documents::new("logs", logs::events()),
             features: Dataset::new("features", datasets::features()).with_serde(),
             point_cloud: Dataset::new("point-cloud", datasets::point_cloud()).with_serde(),
             blobs: Dataset::new("blobs", datasets::blobs()),
@@ -335,6 +448,10 @@ impl Data {
         benches.add_deser_and_serde(&self.web_sys);
         benches.add_deser_and_serde(&self.cargo_lock);
         benches.add_deser_and_serde(&self.saphyr);
+        benches.add_deser_and_serde(&self.github);
+        benches.add_deser_and_serde(&self.kubernetes);
+        benches.add_deser_and_serde(&self.manifests);
+        benches.add_documents(&self.logs);
         benches.add_deser_and_serde(&self.features);
         benches.add_deser_and_serde(&self.point_cloud);
         benches.add_deser(&self.blobs);
@@ -362,12 +479,24 @@ impl Data {
             self.web_sys,
             self.cargo_lock,
             self.saphyr,
+            self.github,
+            self.kubernetes,
+            self.manifests,
             self.features,
             self.point_cloud,
             self.blobs,
             self.registry,
             self.tree
         );
+        for format in Format::ALL {
+            let name = format!("{}/{}", self.logs.name, format.name());
+            println!(
+                "{:<NAME_WIDTH$} {:>10} in {} documents",
+                name,
+                format_size(self.logs.size(format)),
+                self.logs.values.len()
+            );
+        }
     }
 
     /// Prints how the output of deser and serde differs and whether they
@@ -384,11 +513,43 @@ impl Data {
         self.web_sys.interop();
         self.cargo_lock.interop();
         self.saphyr.interop();
+        self.github.interop();
+        self.kubernetes.interop();
+        self.manifests.interop();
         self.features.interop();
         self.point_cloud.interop();
         self.registry.interop();
         self.tree.interop();
     }
+}
+
+/// Reads a file in `benchmark/data`.
+fn read_data(path: &str) -> String {
+    let path = format!("{}/data/{}", env!("CARGO_MANIFEST_DIR"), path);
+    std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("cannot read {}: {}", path, err))
+}
+
+/// Extracts the examples of the GitHub benchmark from the OpenAPI
+/// description of the GitHub API (used by `scripts/update-benchmark-data.sh`).
+fn extract_github(description: &str, output: &str) {
+    const EXAMPLES: [&str; 6] = [
+        "issue-items",
+        "pull-request-simple-items",
+        "minimal-repository-items",
+        "workflow-run-paginated",
+        "commit-items",
+        "release-items",
+    ];
+    let description: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(description).unwrap()).unwrap();
+    let mut examples = serde_json::Map::new();
+    for name in EXAMPLES {
+        let value = description["components"]["examples"][name]["value"].clone();
+        assert!(!value.is_null(), "missing example {}", name);
+        examples.insert(name.to_string(), value);
+    }
+    let json = serde_json::to_string_pretty(&serde_json::Value::Object(examples)).unwrap();
+    std::fs::write(output, json + "\n").unwrap();
 }
 
 fn format_size(size: usize) -> String {
@@ -569,6 +730,10 @@ fn main() {
             let iterations = arg(2).and_then(|x| x.parse().ok()).unwrap_or(100);
             run_loop(&Data::load(), name, iterations);
         }
+        Some("extract-github") => extract_github(
+            arg(1).expect("missing description"),
+            arg(2).expect("missing output"),
+        ),
         Some("compare") => compare(
             arg(1).expect("missing base results"),
             arg(2).expect("missing new results"),

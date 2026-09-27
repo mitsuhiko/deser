@@ -129,10 +129,20 @@ The real world data comes from the benchmarks of the serde libraries
 * `cargo-lock`: the `Cargo.lock` of serde-saphyr, an array of tables.
 * `saphyr`: the YAML document of the serde-saphyr benchmark with anchors
   and aliases (generated, see `src/saphyr.rs`).
+* `github`: responses of the GitHub REST API (pages of issues, pull
+  requests, repositories, workflow runs, commits and releases) built from
+  the examples of its OpenAPI description.  Many optional fields and nulls,
+  nested users, enums and timestamps.
+* `kubernetes`: the OpenAPI description of the Kubernetes API.  Large maps,
+  recursive schemas, references as untagged enum, optional fields.
 
 Synthetic data (see `src/datasets.rs`): `features` (f64 heavy), `point-cloud`
 (f32 heavy), `blobs` (small byte buffers), `registry` (small `HashMap`s)
-and `tree` (deeply nested small containers).
+and `tree` (deeply nested small containers).  `manifests` are Kubernetes
+manifests (internally tagged by `kind`, flattened fields, see
+`src/manifests.rs`) and `logs` are 5,000 structured log events of a few
+hundred bytes which are read and written one by one, which measures what
+a document costs (see `src/logs.rs`).
 
 A document is the input of its own format, the inputs of the other formats
 are serialized from it with deser.  Both libraries read the same input and
