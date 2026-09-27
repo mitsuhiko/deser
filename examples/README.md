@@ -24,6 +24,12 @@ Getting started:
 * [`query-strings`](query-strings): query strings and HTML forms with
   `deser-urlencoded`, with numbers that parse in flattened structs and
   tagged enums.
+* [`renames`](renames): renaming keys of a TOML file without breaking old
+  files or other programs, with aliases, different names for reading and
+  writing and keys that are only written.
+* [`input-contracts`](input-contracts): what input is accepted and how
+  errors read, with transparent structs, `expecting`, required options
+  and unknown fields denied for a single variant.
 
 What sets deser apart:
 
@@ -67,3 +73,6 @@ Advanced:
   `Deserialize` by hand.
 * [`crate-path`](crate-path): using the derive when deser is renamed or
   re-exported.
+* [`generic-types`](generic-types): custom bounds for type parameters
+  that are not serialized themselves (on types and fields), and enums with
+  lifetime and const parameters.

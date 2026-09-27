@@ -1,0 +1,17 @@
+[package]
+name = "generic-types"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-debug = { path = "../../deser-debug" }
+deser-json = { path = "../../deser-json" }
+
+[[bin]]
+name = "generic-types"
+path = "src/main.rs"
+test = false
+doc = false
