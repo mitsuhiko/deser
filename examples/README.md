@@ -24,6 +24,9 @@ Getting started:
 * [`query-strings`](query-strings): query strings and HTML forms with
   `deser-urlencoded`, with numbers that parse in flattened structs and
   tagged enums.
+* [`env`](env): configuration from environment variables with
+  `deser-env`: nested keys, lists, flags, tagged enums and errors that name
+  the variable.
 * [`renames`](renames): renaming keys of a TOML file without breaking old
   files or other programs, with aliases, different names for reading and
   writing and keys that are only written.
@@ -35,8 +38,9 @@ What sets deser apart:
 
 * [`borrowing`](borrowing): borrowing strings and bytes from the input
   with `&str`, `&[u8]` and `Cow`, in structs and enums.
-* [`config`](config): layered configuration (defaults, files and command
-  line overrides) with updates, validation and warnings for unknown keys.
+* [`config`](config): layered configuration (defaults, files,
+  environment variables and command line overrides) with updates,
+  validation and warnings for unknown keys.
 * [`bytes`](bytes): bytes in JSON and TOML (base64, hex, arrays of
   integers) configured per format and per field, and native bytes in CBOR
   and MessagePack.

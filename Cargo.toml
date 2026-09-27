@@ -27,6 +27,7 @@ members = [
   "examples/deep-nesting",
   "examples/dynamic-values",
   "examples/enums",
+  "examples/env",
   "examples/formats",
   "examples/generic-types",
   "examples/input-contracts",

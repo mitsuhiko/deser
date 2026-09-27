@@ -42,6 +42,9 @@ pub struct Account {
 //! * [`deser-urlencoded`](https://docs.rs/deser-urlencoded): implements query string
 //!   and form data (`application/x-www-form-urlencoded`) serialization and
 //!   deserialization.
+//! * [`deser-env`](https://docs.rs/deser-env): implements reading
+//!   configuration from environment variables (and writing values into
+//!   them).
 //!
 //! The data formats have a deserializer (which deserializes values from a
 //! slice) and a serializer (which serializes values into a buffer).  Values

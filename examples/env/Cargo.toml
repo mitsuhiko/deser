@@ -1,5 +1,5 @@
 [package]
-name = "config"
+name = "env"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -9,11 +9,9 @@ publish = false
 deser = { path = "../../deser", features = ["derive"] }
 deser-env = { path = "../../deser-env" }
 deser-path = { path = "../../deser-path" }
-deser-toml = { path = "../../deser-toml" }
-deser-urlencoded = { path = "../../deser-urlencoded" }
 
 [[bin]]
-name = "config"
+name = "env"
 path = "src/main.rs"
 test = false
 doc = false

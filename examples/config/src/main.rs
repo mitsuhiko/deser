@@ -1,4 +1,5 @@
-//! Layered configuration: defaults, configuration files and overrides.
+//! Layered configuration: defaults, configuration files, environment
+//! variables and overrides.
 //!
 //! Instead of deserializing a new value, every layer updates the existing
 //! configuration (`update` instead of `deserialize`): the keys that are
@@ -13,14 +14,17 @@
 //! * unknown keys (like typos) are collected as warnings with their location
 //!   (the `UnknownFields` policy), while `deny_unknown_fields` makes them
 //!   errors for a single type,
+//! * environment variables (`SHOP_SERVER__PORT=9090`) are read with
+//!   `deser-env`, their warnings and errors name the variable,
 //! * overrides from the command line (`--set server.workers=16`) are read
-//!   as a query string with dotted keys.  Everything in it is text, the
+//!   as a query string with dotted keys.  Everything in both is text, the
 //!   types parse it.
 use std::collections::BTreeMap;
 use std::fmt;
 
 use deser::de::{DeserializeDriver, Deserializer, IgnoredFields, UnknownFields};
 use deser::{Deserialize, Error, Serialize};
+use deser_env::EnvVar;
 use deser_path::{Path, PathLayer};
 use deser_urlencoded::Nesting;
 
@@ -119,6 +123,21 @@ fn apply_file(config: &mut Config, source: &str, warnings: &IgnoredFields) -> Re
         .update_with(config, |driver| setup(driver, warnings))
 }
 
+/// Applies environment variables (`SHOP_SERVER__PORT`) to the
+/// configuration.
+///
+/// A real program reads the environment of the process with
+/// `deser_env::Deserializer::from_env("SHOP_")`, the example passes the
+/// variables in.
+fn apply_env(
+    config: &mut Config,
+    vars: &[(&str, &str)],
+    warnings: &IgnoredFields,
+) -> Result<(), Error> {
+    deser_env::Deserializer::from_vars("SHOP_", vars.iter().copied())
+        .update_with(config, |driver| setup(driver, warnings))
+}
+
 /// Applies `--set` overrides to the configuration.
 fn apply_overrides(config: &mut Config, overrides: &[&str]) -> Result<(), Error> {
     let query = overrides.join("&");
@@ -144,6 +163,9 @@ impl fmt::Display for Report<'_> {
         write!(f, "{}", self.0.message())?;
         if let (Some(line), Some(column)) = (self.0.line(), self.0.column()) {
             write!(f, " (line {}, column {})", line, column)?;
+        }
+        if let Some(var) = self.0.attachment::<EnvVar>() {
+            write!(f, " (environment variable {})", var.name())?;
         }
         Ok(())
     }
@@ -176,12 +198,23 @@ fn main() {
 
     apply_file(&mut config, SYSTEM, &warnings).unwrap();
     apply_file(&mut config, USER, &warnings).unwrap();
+    apply_env(
+        &mut config,
+        &[
+            ("SHOP_SERVER__PORT", "9090"),
+            ("SHOP_FEATURES__BETA", "yes"),
+            ("SHOP_SERVER__TIMEUOTS__READ_SECS", "60"),
+            ("PATH", "/usr/bin"),
+        ],
+        &warnings,
+    )
+    .unwrap();
     apply_overrides(&mut config, &["server.workers=16", "features.metrics=off"]).unwrap();
 
-    // the files only changed what they mention
+    // the files and variables only changed what they mention
     assert_eq!(config.name, "shop");
     assert_eq!(config.server.host, "0.0.0.0");
-    assert_eq!(config.server.port, 9000);
+    assert_eq!(config.server.port, 9090);
     assert_eq!(config.server.workers, 16);
     assert_eq!(config.server.timeouts.connect_secs, 2);
     assert_eq!(config.server.timeouts.read_secs, 30);
@@ -189,21 +222,30 @@ fn main() {
     // maps are merged as well
     assert_eq!(
         config.features,
-        BTreeMap::from([("metrics".into(), false), ("search".into(), true)])
+        BTreeMap::from([
+            ("beta".into(), true),
+            ("metrics".into(), false),
+            ("search".into(), true)
+        ])
     );
     println!("{}\n", deser_toml::to_string(&config).unwrap());
 
-    // the typo in the user file is a warning which points at it
+    // the typos in the user file and the environment are warnings which
+    // point at them
     let warnings = warnings.take();
     for warning in &warnings {
         println!("warning: {}", Report(warning));
     }
-    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings.len(), 2);
     assert_eq!(
         warnings[0].attachment::<Path>().unwrap().to_string(),
         "server.workres"
     );
     assert_eq!(warnings[0].line(), Some(4));
+    assert_eq!(
+        warnings[1].attachment::<EnvVar>().unwrap().name(),
+        "SHOP_SERVER__TIMEUOTS"
+    );
 
     // validation errors point at the value
     let err = apply_file(
@@ -233,6 +275,19 @@ fn main() {
     assert_eq!(
         err.message(),
         "unknown field `read_sec`, expected `connect_secs` or `read_secs`"
+    );
+
+    // variables are parsed by the type of the value they end up in
+    let err = apply_env(
+        &mut Config::default(),
+        &[("SHOP_SERVER__WORKERS", "many")],
+        &IgnoredFields::new(),
+    )
+    .unwrap_err();
+    println!("error: {}", Report(&err));
+    assert_eq!(
+        err.attachment::<EnvVar>().unwrap().name(),
+        "SHOP_SERVER__WORKERS"
     );
 
     // overrides are parsed by the type of the value they end up in

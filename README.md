@@ -376,6 +376,8 @@ threads.
   implementation for deser
 * [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded):
   query strings and form data (`application/x-www-form-urlencoded`) for deser
+* [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env):
+  environment variables for deser (`APP_SERVER__PORT=80`)
 * [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path): a layer
   that tracks the path during serialization and deserialization and adds it
   to errors
