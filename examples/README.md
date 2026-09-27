@@ -21,6 +21,9 @@ Getting started:
 * [`debug`](debug): formatting values like `#[derive(Debug)]` with
   `deser-debug`, keeping the Rust shape of options, tuple structs, unit
   structs, newtypes and enums.
+* [`query-strings`](query-strings): query strings and HTML forms with
+  `deser-urlencoded`, with numbers that parse in flattened structs and
+  tagged enums.
 
 What sets deser apart:
 

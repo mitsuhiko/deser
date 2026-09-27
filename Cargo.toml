@@ -33,6 +33,7 @@ members = [
   "examples/manual-struct",
   "examples/optionals",
   "examples/protocol",
+  "examples/query-strings",
   "examples/streams",
   "examples/tokio-server",
 ]
