@@ -1,0 +1,33 @@
+[package]
+name = "deser-msgpack"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "MessagePack support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "msgpack", "messagepack"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-msgpack"
+autotests = false
+
+[features]
+default = ["io"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["deser-core/io"]
+# faster UTF-8 validation (simdutf8)
+speedups = ["dep:simdutf8"]
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+simdutf8 = { version = "0.1.5", optional = true }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-encoding = { path = "../deser-encoding" }
+deser-json = { path = "../deser-json" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
