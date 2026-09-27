@@ -20,8 +20,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
 use crate::attr::{
-    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, RenameAll,
-    TypeDefault, UnnamedFieldAttrs, VariantName,
+    Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, FieldBounds, Name,
+    RenameAll, TypeDefault, UnnamedFieldAttrs, VariantName,
 };
 use crate::bound::{
     BoundField, collect_idents, collect_lifetimes, turbofish_without_lifetimes,
@@ -54,6 +54,7 @@ enum Content {
 struct FieldInfo<'a> {
     field: &'a syn::Field,
     adapters: Adapters,
+    bounds: FieldBounds,
     tag: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
@@ -366,6 +367,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                 fields.push(FieldInfo {
                     field,
                     adapters: attrs.adapters().clone(),
+                    bounds: attrs.bounds().clone(),
                     tag: attrs.tag(),
                     skip_serializing: attrs.skip_serializing(),
                     skip_deserializing: attrs.skip_deserializing(),
@@ -383,6 +385,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                 fields.push(FieldInfo {
                     field,
                     adapters: attrs.adapters().clone(),
+                    bounds: attrs.bounds().clone(),
                     tag: attrs.tag(),
                     skip_serializing: attrs.skip_serializing(),
                     skip_deserializing: attrs.skip_deserializing(),
@@ -583,6 +586,7 @@ fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<Bo
                 Direction::Serialize => info.skip_serializing || field.skip_serializing,
                 Direction::Deserialize => info.skip_deserializing || field.skip_deserializing,
             },
+            bound: field.bounds.get(direction),
         })
         .collect()
 }

@@ -113,6 +113,7 @@ impl<'a> UnnamedStruct<'a> {
                 ty: x.ty(),
                 adapter: x.attrs.adapters().get(direction),
                 skipped: x.attrs.skipped(direction),
+                bound: x.attrs.bounds().get(direction),
             })
             .collect()
     }

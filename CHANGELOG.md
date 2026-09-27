@@ -4,6 +4,8 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- `bound`, `serialize_bound` and `deserialize_bound` can be placed on
+  fields where they replace the bounds inferred from the field.
 - Added `#[deser(transparent)]` for structs which serializes and
   deserializes a struct like its only field that is not skipped.
 - Added `#[deser(rename_all_fields = "...")]` for enums which renames the

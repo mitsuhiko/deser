@@ -112,6 +112,47 @@ impl<T: Clone> Directional<T> {
     }
 }
 
+/// The custom bounds of a field.
+///
+/// `bound` sets them for both directions, `serialize_bound` and
+/// `deserialize_bound` for one (and take precedence).
+#[derive(Default, Clone)]
+pub struct FieldBounds {
+    both: Option<Vec<syn::WherePredicate>>,
+    ser: Option<Vec<syn::WherePredicate>>,
+    de: Option<Vec<syn::WherePredicate>>,
+}
+
+impl FieldBounds {
+    /// Parses the attribute if it's one of the bound attributes.
+    ///
+    /// Returns `false` if the attribute is not a bound attribute.
+    fn parse(&mut self, name: &str, meta: &ParseNestedMeta) -> syn::Result<bool> {
+        let slot = match name {
+            "bound" => &mut self.both,
+            "serialize_bound" => &mut self.ser,
+            "deserialize_bound" => &mut self.de,
+            _ => return Ok(false),
+        };
+        let value = parse_bound(meta)?;
+        set_once(meta, name, slot, value)?;
+        Ok(true)
+    }
+
+    /// Returns the bounds for a direction.
+    ///
+    /// If this returns `Some` the predicates replace the bounds inferred
+    /// from the field.
+    pub fn get(&self, direction: Direction) -> Option<&[syn::WherePredicate]> {
+        match direction {
+            Direction::Serialize => self.ser.as_ref(),
+            Direction::Deserialize => self.de.as_ref(),
+        }
+        .or(self.both.as_ref())
+        .map(|x| &x[..])
+    }
+}
+
 /// Collects the `as`, `serialize_as` and `deserialize_as` attributes.
 #[derive(Default)]
 struct AdapterAttrs {
@@ -1084,6 +1125,7 @@ fn unique_aliases(aliases: impl Iterator<Item = String>, name: &Name) -> Vec<Nam
 pub struct UnnamedFieldAttrs {
     seen: Vec<SeenAttr>,
     adapters: Adapters,
+    bounds: FieldBounds,
     tag: bool,
     default: Option<TypeDefault>,
     skip_serializing: bool,
@@ -1095,6 +1137,7 @@ impl UnnamedFieldAttrs {
         let mut rv = UnnamedFieldAttrs {
             seen: Vec::new(),
             adapters: Adapters::default(),
+            bounds: FieldBounds::default(),
             tag: false,
             default: None,
             skip_serializing: false,
@@ -1103,7 +1146,7 @@ impl UnnamedFieldAttrs {
         let mut skip = false;
         let mut adapters = AdapterAttrs::default();
         let seen = parse_deser_attrs(&field.attrs, |name, meta| {
-            if adapters.parse(name, meta, parse_adapter)? {
+            if adapters.parse(name, meta, parse_adapter)? || rv.bounds.parse(name, meta)? {
                 return Ok(());
             }
             match name {
@@ -1179,6 +1222,11 @@ impl UnnamedFieldAttrs {
         self.tag
     }
 
+    /// Returns the custom bounds of the field.
+    pub fn bounds(&self) -> &FieldBounds {
+        &self.bounds
+    }
+
     /// Returns the value of the field if it's skipped when deserializing.
     pub fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
@@ -1216,6 +1264,7 @@ pub struct FieldAttrs<'a> {
     required: bool,
     validate: Option<syn::ExprPath>,
     adapters: Adapters,
+    bounds: FieldBounds,
     tag: bool,
 }
 
@@ -1234,6 +1283,7 @@ impl<'a> FieldAttrs<'a> {
             required: false,
             validate: None,
             adapters: Adapters::default(),
+            bounds: FieldBounds::default(),
             tag: false,
         };
         let mut skip = false;
@@ -1242,6 +1292,10 @@ impl<'a> FieldAttrs<'a> {
         let seen = parse_deser_attrs(&field.attrs, |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
                 adapters.parse(name, meta, parse_adapter)?;
+                Ok(())
+            }
+            "bound" | "serialize_bound" | "deserialize_bound" => {
+                rv.bounds.parse(name, meta)?;
                 Ok(())
             }
             "rename" => rv.rename.parse(meta, name, Name::parse),
@@ -1442,6 +1496,11 @@ impl<'a> FieldAttrs<'a> {
     /// Returns the adapters of the field.
     pub fn adapters(&self) -> &Adapters {
         &self.adapters
+    }
+
+    /// Returns the custom bounds of the field.
+    pub fn bounds(&self) -> &FieldBounds {
+        &self.bounds
     }
 
     /// Returns `true` if the field receives the tag of the variant.

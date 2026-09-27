@@ -512,6 +512,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 ty: &x.field().ty,
                 adapter: x.adapters().de(),
                 skipped: x.skip_deserializing(),
+                bound: x.bounds().get(Direction::Deserialize),
             })
             .collect::<Vec<_>>(),
     );

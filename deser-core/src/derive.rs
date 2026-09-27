@@ -801,7 +801,12 @@
 //!   replace them for one derive and take precedence over `bound`.
 //!
 //! The predicates are added to the where clause of the type.  `bound()`
-//! removes the inferred bounds entirely.  As with other attributes, `Self`
+//! removes the inferred bounds entirely.
+//!
+//! The same attributes can be placed on fields, in which case they only
+//! replace the bounds inferred from the field (a type parameter which also
+//! appears in other fields is still bounded because of them).  The bounds
+//! of fields are added to the bounds of the container.  As with other attributes, `Self`
 //! is not supported.  In deserialize bounds the lifetime of the data is
 //! available as `'de`.  As `bound` also applies to `Serialize` where there
 //! is no such lifetime, use

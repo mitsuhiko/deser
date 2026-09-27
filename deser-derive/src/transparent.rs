@@ -97,6 +97,7 @@ pub fn derive(input: &syn::DeriveInput, direction: Direction) -> syn::Result<Opt
             ty: &x.field().ty,
             adapter: x.adapters().get(direction),
             skipped: skipped(x),
+            bound: x.bounds().get(direction),
         })
         .collect::<Vec<_>>();
     let member = syn::Member::Named(field.field().ident.clone().unwrap());

@@ -74,6 +74,7 @@ fn struct_where_clause(
                 ty: &x.field().ty,
                 adapter: x.adapters().ser(),
                 skipped: x.skip_serializing(),
+                bound: x.bounds().get(Direction::Serialize),
             })
             .collect::<Vec<_>>(),
     )

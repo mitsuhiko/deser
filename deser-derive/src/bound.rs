@@ -171,17 +171,19 @@ pub struct BoundField<'a> {
     pub adapter: Option<&'a syn::Type>,
     /// The field is skipped (not serialized or deserialized).
     pub skipped: bool,
+    /// The custom bounds of the field which replace the inferred ones.
+    pub bound: Option<&'a [syn::WherePredicate]>,
 }
 
 /// Returns the where clause of the generics with bounds inferred from fields.
 ///
 /// If `custom` is `Some` the custom predicates are used instead, otherwise
 /// every type parameter gets `bound` unless it only appears in fields with
-/// adapters or skipped fields.  Such parameters get `adapter_only_bound` if
-/// provided.  For
-/// fields with adapters that refer to type parameters a predicate that
-/// requires the adapter to implement `adapter_trait` for the field type is
-/// added.
+/// adapters, skipped fields or fields with custom bounds.  Such parameters
+/// get `adapter_only_bound` if provided.  For fields with adapters that
+/// refer to type parameters a predicate that requires the adapter to
+/// implement `adapter_trait` for the field type is added.  The custom bounds
+/// of fields are always added.
 pub fn where_clause_for_fields(
     generics: &syn::Generics,
     bound: TokenStream,
@@ -191,8 +193,20 @@ pub fn where_clause_for_fields(
     custom: Option<&[syn::WherePredicate]>,
     fields: &[BoundField<'_>],
 ) -> syn::WhereClause {
-    if custom.is_some() || fields.iter().all(|x| x.adapter.is_none() && !x.skipped) {
-        return where_clause_with_bound(generics, bound, custom);
+    let field_bounds = fields
+        .iter()
+        .filter_map(|x| x.bound)
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
+    if custom.is_some()
+        || fields
+            .iter()
+            .all(|x| x.adapter.is_none() && !x.skipped && x.bound.is_none())
+    {
+        let mut rv = where_clause_with_bound(generics, bound, custom);
+        rv.predicates.extend(field_bounds);
+        return rv;
     }
 
     let mut plain = HashSet::new();
@@ -200,7 +214,9 @@ pub fn where_clause_for_fields(
     for field in fields {
         let ty = field.ty;
         match field.adapter {
-            _ if field.skipped => collect_idents(quote::quote! { #ty }, &mut adapted),
+            _ if field.skipped || field.bound.is_some() => {
+                collect_idents(quote::quote! { #ty }, &mut adapted)
+            }
             Some(adapter) => {
                 collect_idents(quote::quote! { #ty #adapter }, &mut adapted);
             }
@@ -226,7 +242,7 @@ pub fn where_clause_for_fields(
     }
     for field in fields {
         let adapter = match field.adapter {
-            Some(adapter) if !field.skipped => adapter,
+            Some(adapter) if !field.skipped && field.bound.is_none() => adapter,
             _ => continue,
         };
         let ty = field.ty;
@@ -239,6 +255,7 @@ pub fn where_clause_for_fields(
             });
         }
     }
+    new_predicates.extend(field_bounds);
 
     let mut generics = generics.clone();
     generics

@@ -157,3 +157,52 @@ fn test_enum_bound() {
         assert_eq!(deserialize::<External<Text, u32>>(events), message);
     }
 }
+
+#[test]
+fn test_field_bound() {
+    // the bound of the field replaces the bounds inferred from it, `K` is
+    // still bounded because of `other`
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Holder<K: Kind, V> {
+        #[deser(
+            serialize_bound(K::Value: Serialize),
+            deserialize_bound(K::Value: Deserialize<'de>)
+        )]
+        value: K::Value,
+        other: V,
+    }
+
+    let value = Holder::<Text, u32> {
+        value: "x".into(),
+        other: 1,
+    };
+    let events = serialize(&value);
+    assert_eq!(deserialize::<Holder<Text, u32>>(events), value);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Tuple<K: Kind>(
+        #[deser(bound(K::Value: Serialize + DeserializeOwned))] K::Value,
+        u32,
+    );
+
+    let value = Tuple::<Text>("x".into(), 1);
+    let events = serialize(&value);
+    assert_eq!(deserialize::<Tuple<Text>>(events), value);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(tag = "type")]
+    enum Message<K: Kind> {
+        Text {
+            #[deser(bound(K::Value: Serialize + DeserializeOwned))]
+            value: K::Value,
+        },
+        Pair(
+            #[deser(bound(K::Value: Serialize + DeserializeOwned))] K::Value,
+            #[deser(skip)] u32,
+        ),
+    }
+
+    let message = Message::<Text>::Text { value: "x".into() };
+    let events = serialize(&message);
+    assert_eq!(deserialize::<Message<Text>>(events), message);
+}
