@@ -496,8 +496,8 @@ where
 ///
 /// The value is deserialized with the adapter `A` (by default [`Same`]).  If
 /// that fails, the default value is used instead.  Compound values are
-/// buffered in a [`Recording`] as the error can only be detected once they
-/// were seen fully.  Missing values are handled by the inner adapter.
+/// recorded (see [`Recording`](crate::de::Recording)) as the error can
+/// only be detected once they were seen fully.  Missing values are handled by the inner adapter.
 /// Serialization uses the inner adapter.
 ///
 /// ```
@@ -643,8 +643,9 @@ fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
 /// Skips elements of a vector which cannot be deserialized.
 ///
 /// The elements are deserialized with the adapter `A` (by default
-/// [`Same`]).  Compound elements are buffered in a [`Recording`] as the
-/// error can only be detected once they were seen fully.  Serialization
+/// [`Same`]).  Compound elements are recorded (see
+/// [`Recording`](crate::de::Recording)) as the error can only be detected
+/// once they were seen fully.  Serialization
 /// uses the inner adapter for the elements.
 ///
 /// ```
@@ -743,8 +744,9 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 ///
 /// Keys are deserialized with the adapter `KA` and values with `VA` (both
 /// [`Same`] by default).  If either of them fails, the entry is skipped.
-/// Compound keys and values are buffered in a [`Recording`] as the error
-/// can only be detected once they were seen fully.  Supported are
+/// Compound keys and values are recorded (see
+/// [`Recording`](crate::de::Recording)) as the error can only be detected
+/// once they were seen fully.  Supported are
 /// [`BTreeMap`] and [`HashMap`].  Serialization uses the inner adapters.
 ///
 /// ```
