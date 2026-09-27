@@ -51,6 +51,9 @@ What sets deser apart:
   overflowing the stack, and limits for untrusted input.
 * [`config-errors`](config-errors): errors with line, column and path,
   also for buffered values, in TOML and YAML.
+* [`validation`](validation): validating while deserializing with
+  `deser-validate`, forms that keep invalid values with their errors and
+  API requests rejected with a report of all problems.
 * [`protocol`](protocol): a wire protocol with integer tags, enums named
   by their discriminants, tag aliases and forwarding of unknown messages
   without losing data.

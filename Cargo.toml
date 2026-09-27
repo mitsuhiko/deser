@@ -45,6 +45,7 @@ members = [
   "examples/serde-types",
   "examples/streams",
   "examples/tokio-server",
+  "examples/validation",
 ]
 resolver = "3"
 

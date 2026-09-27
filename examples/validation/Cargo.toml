@@ -1,0 +1,18 @@
+[package]
+name = "validation"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-json = { path = "../../deser-json" }
+deser-urlencoded = { path = "../../deser-urlencoded" }
+deser-validate = { path = "../../deser-validate" }
+
+[[bin]]
+name = "validation"
+path = "src/main.rs"
+test = false
+doc = false
