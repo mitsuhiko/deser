@@ -237,6 +237,10 @@ pub(crate) mod update;
 pub(crate) mod validate;
 
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
+use self::atoms::{
+    default_borrowed_key_atom, default_borrowed_value_atom, default_container, default_key_atom,
+    default_unexpected_atom, default_value_atom,
+};
 pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
@@ -752,12 +756,20 @@ pub trait DeserializeOwned: for<'de> Deserialize<'de> {}
 
 impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
 
-/// Generates the default error for unexpected maps and sequences.
-fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {
-    Err(Error::new(
-        ErrorKind::Unexpected,
-        format!("unexpected {}, expected {}", got, expecting),
-    ))
+/// Converts a sink into a trait object.
+///
+/// This is implemented for all sinks.  The default methods of [`Sink`] exist
+/// for every sink type, they use this to forward to code that exists once.
+#[doc(hidden)]
+pub trait AsDynSink<'de> {
+    fn __private_as_dyn(&mut self) -> &mut dyn Sink<'de>;
+}
+
+impl<'de, T: Sink<'de>> AsDynSink<'de> for T {
+    #[inline(always)]
+    fn __private_as_dyn(&mut self) -> &mut dyn Sink<'de> {
+        self
+    }
 }
 
 /// Trait to place values in a slot.
@@ -775,7 +787,7 @@ fn fail_unexpected(got: &str, expecting: &str) -> Result<(), Error> {
 /// deserialized (which lives for `'de`) to [`borrowed_atom`](Self::borrowed_atom)
 /// instead.  By default this forwards to [`atom`](Self::atom), only sinks of
 /// types which want to borrow (like `&'de str`) need to implement it.
-pub trait Sink<'de>: Send {
+pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// Receives an [`Atom`].
     ///
     /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).
@@ -803,22 +815,7 @@ pub trait Sink<'de>: Send {
     /// [`Atom::Str`], so sinks that accept strings accept lexical atoms
     /// too.  For all other atoms an error is returned.
     fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        let atom = match atom {
-            Atom::F32(value) => return self.atom(Atom::F64(f64::from(value)), state),
-            Atom::Lexical(value) => return self.atom(Atom::Str(value), state),
-            atom => atom,
-        };
-        if let Atom::Ext(ref ext) = atom {
-            let fallback = ext.fallback();
-            debug_assert!(
-                !matches!(fallback, Atom::Ext(_)),
-                "the fallback of an extension value must not be an extension value"
-            );
-            if !matches!(fallback, Atom::Ext(_)) {
-                return self.atom(fallback, state);
-            }
-        }
-        Err(atom.unexpected_error(&self.expecting()))
+        default_unexpected_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Begins the deserialization of a map.
@@ -830,7 +827,7 @@ pub trait Sink<'de>: Send {
     /// The default implementation returns an error.
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         let _ = state;
-        fail_unexpected("map", &self.expecting())
+        default_container(self.__private_as_dyn(), "map")
     }
 
     /// Begins the receiving process for sequences.
@@ -842,7 +839,7 @@ pub trait Sink<'de>: Send {
     /// The default implementation returns an error.
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         let _ = state;
-        fail_unexpected("sequence", &self.expecting())
+        default_container(self.__private_as_dyn(), "sequence")
     }
 
     /// Returns a sink for the next key in a map.
@@ -869,7 +866,7 @@ pub trait Sink<'de>: Send {
     /// either not override this method or apply the same logic.
     #[doc(hidden)]
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        atom_into_handle(self.next_key(state)?, atom, state)
+        default_key_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Receives an atom as the next value in a map or sequence.
@@ -880,7 +877,7 @@ pub trait Sink<'de>: Send {
     /// [`__private_key_atom`](Self::__private_key_atom) for more information.
     #[doc(hidden)]
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        atom_into_handle(self.next_value(state)?, atom, state)
+        default_value_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Receives a borrowed atom as the next key in a map.
@@ -893,7 +890,7 @@ pub trait Sink<'de>: Send {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        borrowed_atom_into_handle(self.next_key(state)?, atom, state)
+        default_borrowed_key_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Receives a borrowed atom as the next value in a map or sequence.
@@ -906,7 +903,7 @@ pub trait Sink<'de>: Send {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        borrowed_atom_into_handle(self.next_value(state)?, atom, state)
+        default_borrowed_value_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Returns a value sink for a specific struct field.
