@@ -87,6 +87,22 @@ enum Container {
     /// sink that does not accept sequences, with the number of values so
     /// far.  See [`ContainerShape::with_repeated`].
     Collapse(DuplicateKeys, usize),
+    /// Takes the next value (an atom or a container) and ignores it.  This
+    /// is placed above a map that recovered from the error of a key (see
+    /// [`Sink::recover`]), the value of the key is skipped.  It holds a null
+    /// sink.
+    SkipValue,
+}
+
+impl Container {
+    /// Returns the state of a container that was just opened.
+    fn new(is_map: bool) -> Container {
+        if is_map {
+            Container::Map(true)
+        } else {
+            Container::Seq
+        }
+    }
 }
 
 /// Erases the lifetime of a sink handle.
@@ -290,7 +306,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         if !self.layers.is_empty() {
             return self.emit_layered(LayerEvent::new(Event::Atom(atom)));
         }
-        let rv = self.core.emit_atom(atom);
+        let rv = self.core.deliver_atom(atom);
         self.core.finish_event(rv)
     }
 
@@ -299,7 +315,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         if !self.layers.is_empty() {
             return self.emit_layered(LayerEvent::borrowed(Event::Atom(atom)));
         }
-        let rv = self.core.emit_borrowed_atom(atom);
+        let rv = self.core.deliver_borrowed_atom(atom);
         self.core.finish_event(rv)
     }
 
@@ -313,7 +329,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             };
             return self.emit_layered(LayerEvent::new(event));
         }
-        let rv = self.core.emit_start(is_map, shape);
+        let rv = self.core.deliver_start(is_map, shape);
         self.core.finish_event(rv)
     }
 
@@ -323,7 +339,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             let event = if is_map { Event::MapEnd } else { Event::SeqEnd };
             return self.emit_layered(LayerEvent::new(event));
         }
-        let rv = self.core.emit_end(is_map);
+        let rv = self.core.deliver_end(is_map);
         self.core.finish_event(rv)
     }
 
@@ -368,11 +384,11 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     pub(crate) fn dispatch(&mut self, event: Event<'_>) -> Result<(), Error> {
         match event {
-            Event::Atom(atom) => self.emit_atom(atom),
-            Event::MapStart(shape) => self.emit_start(true, shape),
-            Event::SeqStart(shape) => self.emit_start(false, shape),
-            Event::MapEnd => self.emit_end(true),
-            Event::SeqEnd => self.emit_end(false),
+            Event::Atom(atom) => self.deliver_atom(atom),
+            Event::MapStart(shape) => self.deliver_start(true, shape),
+            Event::SeqStart(shape) => self.deliver_start(false, shape),
+            Event::MapEnd => self.deliver_end(true),
+            Event::SeqEnd => self.deliver_end(false),
         }
     }
 
@@ -380,12 +396,103 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     pub(crate) fn dispatch_borrowed(&mut self, event: Event<'de>) -> Result<(), Error> {
         match event {
-            Event::Atom(atom) => self.emit_borrowed_atom(atom),
-            Event::MapStart(shape) => self.emit_start(true, shape),
-            Event::SeqStart(shape) => self.emit_start(false, shape),
-            Event::MapEnd => self.emit_end(true),
-            Event::SeqEnd => self.emit_end(false),
+            Event::Atom(atom) => self.deliver_borrowed_atom(atom),
+            Event::MapStart(shape) => self.deliver_start(true, shape),
+            Event::SeqStart(shape) => self.deliver_start(false, shape),
+            Event::MapEnd => self.deliver_end(true),
+            Event::SeqEnd => self.deliver_end(false),
         }
+    }
+
+    // The `deliver_*` functions deliver an event to the sinks.  If the event
+    // fails, the sinks get a chance to recover from the error (see
+    // `recover`).
+
+    #[inline(always)]
+    fn deliver_atom(&mut self, atom: Atom) -> Result<(), Error> {
+        match self.emit_atom(atom) {
+            Ok(()) => Ok(()),
+            Err(err) => self.recover(err, None),
+        }
+    }
+
+    #[inline(always)]
+    fn deliver_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
+        match self.emit_borrowed_atom(atom) {
+            Ok(()) => Ok(()),
+            Err(err) => self.recover(err, None),
+        }
+    }
+
+    #[inline(always)]
+    fn deliver_start(&mut self, is_map: bool, shape: ContainerShape) -> Result<(), Error> {
+        match self.emit_start(is_map, shape) {
+            Ok(()) => Ok(()),
+            Err(err) => self.recover(err, Some(is_map)),
+        }
+    }
+
+    #[inline(always)]
+    fn deliver_end(&mut self, is_map: bool) -> Result<(), Error> {
+        match self.emit_end(is_map) {
+            Ok(()) => Ok(()),
+            Err(err) => self.recover(err, None),
+        }
+    }
+
+    /// Recovers from the error of an item.
+    ///
+    /// The error belongs to the item that was started last in the container
+    /// on top of the stack.  The containers are asked to recover (see
+    /// [`Sink::recover`]) from the innermost to the outermost.  The sinks of
+    /// the ones that do not recover are replaced with null sinks, as the
+    /// error passes through them.  Once a sink recovers, the null sinks
+    /// above it take the remaining events of the failed item: skipping them
+    /// needs no support from the dispatch of the events.  `opened` is set if
+    /// the event that failed was the start of a map (`true`) or sequence,
+    /// the container is open in the input and gets a null sink too.
+    #[cold]
+    #[inline(never)]
+    fn recover(&mut self, err: Error, opened: Option<bool>) -> Result<(), Error> {
+        let mut err = if self.state.discards_errors {
+            // the error is thrown away (see `State::discard_errors`)
+            err
+        } else {
+            self.state.attach_error_context(err)
+        };
+        for idx in (0..self.sink_stack.len()).rev() {
+            // the sinks above were replaced, nothing borrows from this one
+            let (sink, container) = &mut self.sink_stack[idx];
+            err = match sink.recover(err, &mut self.state) {
+                Ok(()) => {
+                    // after a key failed its value is skipped as well
+                    if let Container::Map(is_key @ false) = container {
+                        *is_key = true;
+                        self.sink_stack
+                            .insert(idx + 1, (SinkHandle::null(), Container::SkipValue));
+                    }
+                    if let Some(is_map) = opened {
+                        self.state.depth += 1;
+                        self.sink_stack
+                            .push((SinkHandle::null(), Container::new(is_map)));
+                    }
+                    return Ok(());
+                }
+                Err(err) => err,
+            };
+            *sink = SinkHandle::null();
+        }
+        // nothing recovered, the deserialization failed
+        self.sink_stack.clear();
+        Err(err)
+    }
+
+    /// Skips an atom which is the value of a key that failed.
+    #[cold]
+    #[inline(never)]
+    fn skip_value(&mut self) {
+        self.state.is_map_key = false;
+        self.sink_stack.pop();
     }
 
     #[inline(always)]
@@ -414,6 +521,10 @@ impl<'de> DriverCore<'de> {
                 } else {
                     collapse_duplicate(*policy)
                 }
+            }
+            Some((_, Container::SkipValue)) => {
+                self.skip_value();
+                Ok(())
             }
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
@@ -449,6 +560,10 @@ impl<'de> DriverCore<'de> {
                 } else {
                     collapse_duplicate(*policy)
                 }
+            }
+            Some((_, Container::SkipValue)) => {
+                self.skip_value();
+                Ok(())
             }
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
@@ -486,6 +601,13 @@ impl<'de> DriverCore<'de> {
                     ErrorKind::Unexpected,
                     "the values of a repeated key must be atoms",
                 ));
+            }
+            // the skipped value is a container, the null sink takes it
+            Some((_, container @ Container::SkipValue)) => {
+                self.state.is_map_key = false;
+                *container = Container::new(is_map);
+                self.state.depth += 1;
+                return Ok(());
             }
             None => self.root.take().expect("no active sink"),
         };

@@ -342,6 +342,10 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for ElementSink<'a, 'de, 
         self.sink.borrow_mut().value_for_key(key, state)
     }
 
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.sink.borrow_mut().recover(err, state)
+    }
+
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.borrow_mut().finish(state)?;
         if let Some(value) = self.sink.take() {

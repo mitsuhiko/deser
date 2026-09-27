@@ -307,3 +307,84 @@ fn test_validation_error_paths() {
         "Unexpected: invalid value: min is larger than max at line 1 column 39 (path: [0].range)"
     );
 }
+
+#[test]
+fn test_error_paths_after_recovery() {
+    use deser::adapters::{DefaultOnError, VecSkipError};
+
+    #[derive(deser::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Item {
+        id: u32,
+        tags: Vec<String>,
+    }
+
+    #[derive(deser::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Doc {
+        #[deser(as = VecSkipError)]
+        items: Vec<Item>,
+        #[deser(as = DefaultOnError)]
+        extra: Option<Item>,
+        rest: Vec<u32>,
+    }
+
+    // the failed values are skipped, the paths of the values after them are
+    // still correct
+    let err = from_json::<Doc>(
+        r#"{
+            "items": [{"id": 1, "tags": [1, [2]]}, {"id": 2, "tags": ["a"]}],
+            "extra": {"id": {"x": [1, 2]}, "tags": []},
+            "rest": [1, 2, "x"]
+        }"#,
+    )
+    .unwrap_err();
+    assert_eq!(err.attachment::<Path>().unwrap().to_string(), "rest[2]");
+
+    // errors the sinks recover from have the path attached
+    struct Paths(Vec<String>);
+
+    struct PathsSink<'a>(&'a mut Option<Paths>, Vec<String>);
+
+    impl<'de> Deserialize<'de> for Paths {
+        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+            SinkHandle::boxed(PathsSink(out, Vec::new()))
+        }
+    }
+
+    impl<'de> Sink<'de> for PathsSink<'_> {
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            Ok(SinkHandle::boxed(Nothing))
+        }
+
+        fn recover(&mut self, err: Error, _state: &mut State) -> Result<(), Error> {
+            self.1.push(err.attachment::<Path>().unwrap().to_string());
+            Ok(())
+        }
+
+        fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            *self.0 = Some(Paths(std::mem::take(&mut self.1)));
+            Ok(())
+        }
+    }
+
+    // accepts empty maps and fails on everything else
+    struct Nothing;
+
+    impl<'de> Sink<'de> for Nothing {
+        fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            Ok(SinkHandle::boxed(Nothing))
+        }
+    }
+
+    let paths = from_json::<Paths>(r#"[{}, 1, {"a": [1]}, {"b": {"c": 1}}, {}, [{}]]"#).unwrap();
+    assert_eq!(paths.0, ["[1]", "[2].a", "[3].b", "[5]"]);
+}

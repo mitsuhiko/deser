@@ -8,6 +8,7 @@ mod test_io;
 mod test_locations;
 mod test_nesting;
 mod test_pretty;
+mod test_recover;
 mod test_ser;
 mod test_stream;
 mod test_tags;

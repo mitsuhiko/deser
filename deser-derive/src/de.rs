@@ -1579,6 +1579,12 @@ pub(crate) fn derive_newtype_struct(
                     self.sink.borrow_mut().value_for_key(__key, __state)
                 }
 
+                fn recover(&mut self, __err: __deser::Error, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<()>
+                {
+                    self.sink.borrow_mut().recover(__err, __state)
+                }
+
                 fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
                     self.sink.borrow_mut().finish(__state)?;
                     *self.slot = self.sink.take().map(#convert);

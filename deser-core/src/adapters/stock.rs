@@ -12,7 +12,6 @@ use crate::adapters::{DeserializeAs, Same, SerializeAs};
 use crate::de::impls::MapTarget;
 use crate::de::lexical::parse_bool;
 use crate::de::mapped::MappedSink;
-use crate::de::recording::RecordBuf;
 use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
@@ -495,10 +494,12 @@ where
 /// Uses the [`Default`] if a value cannot be deserialized.
 ///
 /// The value is deserialized with the adapter `A` (by default [`Same`]).  If
-/// that fails, the default value is used instead.  Compound values are
-/// recorded (see [`Recording`](crate::de::Recording)) as the error can
-/// only be detected once they were seen fully.  Missing values are handled by the inner adapter.
-/// Serialization uses the inner adapter.
+/// that fails, the default value is used instead and the rest of the value
+/// is skipped (see [`Sink::recover`]).  Only errors of the value are
+/// handled, errors of the data format and of layers (such as
+/// [`Limits`](crate::de::Limits)) still fail the deserialization.  Missing
+/// values are handled by the inner adapter.  Serialization uses the inner
+/// adapter.
 ///
 /// ```
 /// use deser::Deserialize;
@@ -521,17 +522,9 @@ pub struct DefaultOnError<A = Same>(PhantomData<fn() -> A>);
 
 impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        RecordBuf::capture(move |recording, state| {
-            let mut value = None;
-            // the error is thrown away
-            let rv = state.discard_errors(|state| {
-                recording.replay(A::deserialize_into_as(&mut value), state)
-            });
-            *out = Some(match (rv, value) {
-                (Ok(()), Some(value)) => value,
-                _ => T::default(),
-            });
-            Ok(())
+        SinkHandle::boxed(DefaultOnErrorSink {
+            out,
+            sink: Some(OwnedSink::deserialize_as::<A>()),
         })
     }
 
@@ -571,6 +564,164 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
     }
 }
 
+/// The sink of [`DefaultOnError`].
+struct DefaultOnErrorSink<'a, 'de, T> {
+    out: &'a mut Option<T>,
+    // `None` once the value failed, the rest of it is ignored then
+    sink: Option<OwnedSink<'de, T>>,
+}
+
+impl<'a, 'de, T> DefaultOnErrorSink<'a, 'de, T> {
+    /// Returns the sink of the value unless it failed.
+    fn sink(&mut self) -> Option<&mut (dyn Sink<'de> + '_)> {
+        self.sink.as_mut().map(|sink| sink.borrow_mut())
+    }
+
+    /// Discards the value if the result is an error.
+    fn check(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
+        if rv.is_err() {
+            self.sink = None;
+        }
+        Ok(())
+    }
+}
+
+impl<'a, 'de, T: Default + Send> Sink<'de> for DefaultOnErrorSink<'a, 'de, T> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        let rv = match self.sink() {
+            Some(sink) => sink.atom(atom, state),
+            None => Ok(()),
+        };
+        self.check(rv)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        let rv = match self.sink() {
+            Some(sink) => sink.borrowed_atom(atom, state),
+            None => Ok(()),
+        };
+        self.check(rv)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        let rv = match self.sink() {
+            Some(sink) => sink.map(state),
+            None => Ok(()),
+        };
+        self.check(rv)
+    }
+
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        let rv = match self.sink() {
+            Some(sink) => sink.seq(state),
+            None => Ok(()),
+        };
+        match rv {
+            // the values of a repeated key are delivered as a single value
+            // to sinks that reject sequences, the driver needs the error to
+            // do that (see `ContainerShape::with_repeated`)
+            Err(err)
+                if err.kind() == ErrorKind::Unexpected && state.container_shape().is_repeated() =>
+            {
+                Err(err)
+            }
+            rv => self.check(rv),
+        }
+    }
+
+    // Errors of the items are handled in `recover`.
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        match self.sink() {
+            Some(sink) => sink.next_key(state),
+            None => Ok(SinkHandle::null()),
+        }
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        match self.sink() {
+            Some(sink) => sink.next_value(state),
+            None => Ok(SinkHandle::null()),
+        }
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match self.sink() {
+            Some(sink) => sink.__private_key_atom(atom, state),
+            None => Ok(()),
+        }
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match self.sink() {
+            Some(sink) => sink.__private_value_atom(atom, state),
+            None => Ok(()),
+        }
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        match self.sink() {
+            Some(sink) => sink.__private_borrowed_key_atom(atom, state),
+            None => Ok(()),
+        }
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        match self.sink() {
+            Some(sink) => sink.__private_borrowed_value_atom(atom, state),
+            None => Ok(()),
+        }
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        match self.sink() {
+            Some(sink) => sink.value_for_key(key, state),
+            None => Ok(None),
+        }
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        // the value might recover itself, otherwise it failed
+        if let Some(sink) = self.sink()
+            && sink.recover(err, state).is_ok()
+        {
+            return Ok(());
+        }
+        self.sink = None;
+        Ok(())
+    }
+
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        let rv = match self.sink() {
+            Some(sink) => sink.finish(state),
+            None => Ok(()),
+        };
+        self.check(rv)?;
+        let value = self.sink.as_mut().and_then(|sink| sink.take());
+        *self.out = Some(value.unwrap_or_default());
+        Ok(())
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        match self.sink {
+            Some(ref sink) => sink.borrow().expecting(),
+            None => Cow::Borrowed("compatible type"),
+        }
+    }
+}
+
 impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
     fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
         A::serialize_as(value, state)
@@ -598,27 +749,6 @@ impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for DefaultOnError<A> {
     }
 }
 
-/// Deserializes into a slot and invokes a callback with the value.
-///
-/// Atoms are deserialized directly, compound values are recorded first.
-/// Errors are not reported, in that case the callback is not invoked.
-fn try_deserialize<'a, 'de, T: 'a, A: DeserializeAs<'de, T>>(
-    then: impl FnOnce(T) + Send + 'a,
-) -> SinkHandle<'a, 'de> {
-    RecordBuf::capture(move |recording, state| {
-        let mut value = None;
-        // errors are not reported
-        if state
-            .discard_errors(|state| recording.replay(A::deserialize_into_as(&mut value), state))
-            .is_ok()
-            && let Some(value) = value
-        {
-            then(value);
-        }
-        Ok(())
-    })
-}
-
 /// Deserializes an atom and returns the value unless it failed.
 fn try_atom<'de, T, A: DeserializeAs<'de, T>>(atom: Atom, state: &mut State) -> Option<T> {
     let mut value = None;
@@ -644,10 +774,10 @@ fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
 /// Skips elements of a vector which cannot be deserialized.
 ///
 /// The elements are deserialized with the adapter `A` (by default
-/// [`Same`]).  Compound elements are recorded (see
-/// [`Recording`](crate::de::Recording)) as the error can only be detected
-/// once they were seen fully.  Serialization
-/// uses the inner adapter for the elements.
+/// [`Same`]).  If an element fails, the rest of it is skipped (see
+/// [`Sink::recover`]).  Only errors of the elements are handled, errors of
+/// the data format and of layers still fail the deserialization.
+/// Serialization uses the inner adapter for the elements.
 ///
 /// ```
 /// use deser::Deserialize;
@@ -673,7 +803,17 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
         struct SkipSink<'a, T, A> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
+            // the current element, added once the next one starts
+            item: Option<T>,
             _marker: PhantomData<fn() -> A>,
+        }
+
+        impl<'a, T, A> SkipSink<'a, T, A> {
+            fn flush(&mut self) {
+                if let Some(item) = self.item.take() {
+                    self.vec.push(item);
+                }
+            }
         }
 
         impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
@@ -686,11 +826,17 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
             }
 
             fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-                let vec = &mut self.vec;
-                Ok(try_deserialize::<T, A>(move |value| vec.push(value)))
+                self.flush();
+                Ok(A::deserialize_into_as(&mut self.item))
+            }
+
+            fn recover(&mut self, _err: Error, _state: &mut State) -> Result<(), Error> {
+                self.item = None;
+                Ok(())
             }
 
             fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+                self.flush();
                 if let Some(value) = try_atom::<T, A>(atom, state) {
                     self.vec.push(value);
                 }
@@ -702,6 +848,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
                 atom: Atom<'de>,
                 state: &mut State,
             ) -> Result<(), Error> {
+                self.flush();
                 if let Some(value) = try_borrowed_atom::<T, A>(atom, state) {
                     self.vec.push(value);
                 }
@@ -709,6 +856,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
             }
 
             fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+                self.flush();
                 *self.slot = Some(take(&mut self.vec));
                 Ok(())
             }
@@ -717,6 +865,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
         SinkHandle::boxed(SkipSink::<T, A> {
             slot: out,
             vec: Vec::new(),
+            item: None,
             _marker: PhantomData,
         })
     }
@@ -744,11 +893,11 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 /// Skips entries of a map which cannot be deserialized.
 ///
 /// Keys are deserialized with the adapter `KA` and values with `VA` (both
-/// [`Same`] by default).  If either of them fails, the entry is skipped.
-/// Compound keys and values are recorded (see
-/// [`Recording`](crate::de::Recording)) as the error can only be detected
-/// once they were seen fully.  Supported are
-/// [`BTreeMap`] and [`HashMap`].  Serialization uses the inner adapters.
+/// [`Same`] by default).  If either of them fails, the rest of the entry is
+/// skipped (see [`Sink::recover`]).  Only errors of the entries are
+/// handled, errors of the data format and of layers still fail the
+/// deserialization.  Supported are [`BTreeMap`] and [`HashMap`].
+/// Serialization uses the inner adapters.
 ///
 /// ```
 /// use std::collections::BTreeMap;
@@ -774,7 +923,7 @@ pub(crate) fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) ->
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,
-    V: 'a,
+    V: Send + 'a,
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
@@ -784,16 +933,31 @@ where
         map: M,
         // the key of the current entry, `None` if it failed
         key: Option<K>,
+        // the value of the current entry if it's not an atom, the entry is
+        // added once the next one starts
+        value: Option<V>,
         // if the values of duplicate keys replace earlier ones.  With
         // `DuplicateKeys::Error` duplicate entries fail and are skipped.
         replace: bool,
         _marker: PhantomData<fn() -> (V, KA, VA)>,
     }
 
+    impl<'a, M: MapTarget<K, V>, K, V, KA, VA> SkipMapSink<'a, M, K, V, KA, VA> {
+        fn flush(&mut self) {
+            if let Some(value) = self.value.take()
+                && let Some(key) = self.key.take()
+            {
+                self.map.insert_entry(key, value, self.replace);
+            }
+            self.key = None;
+        }
+    }
+
     impl<'a, 'de, M, K, V, KA, VA> Sink<'de> for SkipMapSink<'a, M, K, V, KA, VA>
     where
         M: MapTarget<K, V>,
         K: Send,
+        V: Send,
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
@@ -803,12 +967,12 @@ where
         }
 
         fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.key = None;
-            let key = &mut self.key;
-            Ok(try_deserialize::<K, KA>(move |value| *key = Some(value)))
+            self.flush();
+            Ok(KA::deserialize_into_as(&mut self.key))
         }
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            self.flush();
             self.key = try_atom::<K, KA>(atom, state);
             Ok(())
         }
@@ -818,20 +982,23 @@ where
             atom: Atom<'de>,
             state: &mut State,
         ) -> Result<(), Error> {
+            self.flush();
             self.key = try_borrowed_atom::<K, KA>(atom, state);
             Ok(())
         }
 
         fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            let key = match self.key.take() {
-                Some(key) => key,
-                None => return Ok(SinkHandle::null()),
-            };
-            let map = &mut self.map;
-            let replace = self.replace;
-            Ok(try_deserialize::<V, VA>(move |value| {
-                map.insert_entry(key, value, replace);
-            }))
+            if self.key.is_none() {
+                return Ok(SinkHandle::null());
+            }
+            Ok(VA::deserialize_into_as(&mut self.value))
+        }
+
+        fn recover(&mut self, _err: Error, _state: &mut State) -> Result<(), Error> {
+            // the key or the value of the entry failed
+            self.key = None;
+            self.value = None;
+            Ok(())
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -857,6 +1024,7 @@ where
         }
 
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+            self.flush();
             *self.slot = Some(take(&mut self.map));
             Ok(())
         }
@@ -866,6 +1034,7 @@ where
         slot: out,
         map: M::default(),
         key: None,
+        value: None,
         replace: true,
         _marker: PhantomData,
     })

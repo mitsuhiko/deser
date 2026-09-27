@@ -4,6 +4,12 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `Sink::recover`: maps and sequences can recover from the error
+  of an item, also if it happened deep inside of it.  The driver skips
+  the rest of the failed item (and the value of a failed key) and
+  deserialization continues with the next item.  Errors of the format and
+  of layers are not recoverable.  `DefaultOnError`, `VecSkipError` and
+  `MapSkipError` use this and no longer buffer values.
 - Added `deser-env` for environment variables.  The variables with a
   prefix are a map, `__` separates nested keys (`APP_SERVER__PORT` is
   `server.port`) and names are lowercased.  Like query strings, values are

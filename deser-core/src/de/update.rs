@@ -54,6 +54,10 @@ macro_rules! forward_to_owned {
             self.$field.borrow_mut().value_for_key(key, state)
         }
 
+        fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+            self.$field.borrow_mut().recover(err, state)
+        }
+
         fn expecting(&self) -> Cow<'_, str> {
             self.$field.borrow().expecting()
         }
@@ -211,6 +215,10 @@ impl<'a, 'de> Sink<'de> for ReplaceSink<'a, 'de> {
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
         self.inner.sink().value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.inner.sink().recover(err, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {

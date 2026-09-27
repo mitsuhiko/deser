@@ -1213,6 +1213,15 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         Ok(())
     }
 
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        // once the variant is known the items are the items of the variant,
+        // until then they are recorded (which does not fail)
+        match self.variant {
+            Some(ref mut variant) => variant.sink().recover(err, state),
+            None => Err(err),
+        }
+    }
+
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed(self.name)
     }

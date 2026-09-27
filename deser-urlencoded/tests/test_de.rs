@@ -659,3 +659,46 @@ fn test_integer_tags() {
     assert_eq!(out, "v=2&q=x&limit=10");
     assert_eq!(from_str::<Query>(&out).unwrap(), query);
 }
+
+#[test]
+fn test_default_on_error_with_repeated_keys() {
+    use deser::adapters::DefaultOnError;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Query {
+        #[deser(as = DefaultOnError)]
+        page: u32,
+        #[deser(as = DefaultOnError)]
+        tags: Vec<u32>,
+    }
+
+    // repeated keys of values which are not sequences are still collapsed
+    // into a single value
+    let query = from_str::<Query>("page=1&page=2&tags=1&tags=2").unwrap();
+    assert_eq!(
+        query,
+        Query {
+            page: 2,
+            tags: vec![1, 2]
+        }
+    );
+    let query = from_str::<Query>("page=1&page=x&tags=1&tags=x").unwrap();
+    assert_eq!(
+        query,
+        Query {
+            page: 0,
+            tags: vec![]
+        }
+    );
+
+    const STRICT: DeserializerConfig =
+        DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
+    let query = STRICT.from_str::<Query>("page=1&page=2&tags=1").unwrap();
+    assert_eq!(
+        query,
+        Query {
+            page: 0,
+            tags: vec![1]
+        }
+    );
+}

@@ -532,6 +532,11 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         self.sink_mut().finish(state)
     }
 
+    /// Forwards to [`Sink::recover`].
+    pub fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.sink_mut().recover(err, state)
+    }
+
     /// Forwards to [`Sink::expecting`].
     pub fn expecting(&self) -> Cow<'_, str> {
         self.sink().expecting()
@@ -612,6 +617,10 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     #[inline]
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         SinkHandle::finish(self, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        SinkHandle::recover(self, err, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
@@ -930,6 +939,37 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let _ = state;
         Ok(())
+    }
+
+    /// Called when an item of this map or sequence failed.
+    ///
+    /// This is invoked by the [`DeserializeDriver`] when the key or value
+    /// that was started last in this container failed with an error, either
+    /// because its sink (or a sink nested in it) returned the error or
+    /// because this sink returned it while handling the item (for instance
+    /// from [`next_value`](Self::next_value) or
+    /// [`__private_value_atom`](Self::__private_value_atom)).  Errors of
+    /// this sink's own [`map`](Self::map), [`seq`](Self::seq) and
+    /// [`finish`](Self::finish) are errors of this sink's value and go to
+    /// the container this sink is an item of.
+    ///
+    /// A sink that returns `Ok` recovers from the error: the driver skips
+    /// the remaining events of the failed item (and the value of a failed
+    /// key) and deserialization continues with the next item.  Returning
+    /// the error (which is what the default implementation does) passes it
+    /// on to the enclosing container.  All sinks of the failed item are
+    /// dropped before this is invoked.  The error already has the context of
+    /// the event that failed attached (see [`Error`]).
+    ///
+    /// Only errors of sinks are recoverable: errors of the format and of
+    /// [`Layer`]s end the deserialization.
+    ///
+    /// Sinks that forward [`next_key`](Self::next_key) and
+    /// [`next_value`](Self::next_value) to another sink should forward this
+    /// as well.
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        let _ = state;
+        Err(err)
     }
 
     /// Utility method to return an expectation message that is used in error messages.

@@ -331,6 +331,13 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
         self.compound().value_for_key(key, state)
     }
 
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        match self.compound {
+            Some(ref mut compound) => compound.borrow_mut().recover(err, state),
+            None => Err(err),
+        }
+    }
+
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
