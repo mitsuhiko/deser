@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- The derive explains unsupported attributes: attributes that are placed
+  in the wrong place name where they are supported, attributes of serde
+  point to what to use instead (for instance adapters instead of `with`
+  and `from`) and typos suggest the attribute with the most similar name.
 - Added `#[deser(expecting = "...")]` which replaces the name of the type
   in errors (`unexpected bool, expected a point`).
 - Added `#[deser(untagged)]` for variants of tagged enums which are

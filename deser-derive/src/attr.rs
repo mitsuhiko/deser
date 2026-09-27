@@ -477,6 +477,218 @@ pub struct ContainerAttrs<'a> {
     deserialize_bound: Option<Vec<syn::WherePredicate>>,
 }
 
+/// Where an attribute is placed.
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum AttrLevel {
+    Container,
+    Variant,
+    NamedField,
+    UnnamedField,
+}
+
+impl AttrLevel {
+    const ALL: [AttrLevel; 4] = [
+        AttrLevel::Container,
+        AttrLevel::Variant,
+        AttrLevel::NamedField,
+        AttrLevel::UnnamedField,
+    ];
+
+    /// Returns the attributes supported at the level.
+    fn attrs(self) -> &'static [&'static str] {
+        match self {
+            AttrLevel::Container => &[
+                "rename",
+                "rename_all",
+                "rename_all_fields",
+                "alias_all",
+                "tag",
+                "tag_alias",
+                "content",
+                "content_alias",
+                "untagged",
+                "repr",
+                "default",
+                "deny_unknown_fields",
+                "skip_serializing_optionals",
+                "transparent",
+                "expecting",
+                "validate",
+                "as",
+                "serialize_as",
+                "deserialize_as",
+                "bound",
+                "serialize_bound",
+                "deserialize_bound",
+                "crate",
+            ],
+            AttrLevel::Variant => &[
+                "rename",
+                "rename_all",
+                "alias",
+                "other",
+                "default",
+                "untagged",
+                "deny_unknown_fields",
+                "skip",
+                "skip_serializing",
+                "skip_deserializing",
+            ],
+            AttrLevel::NamedField => &[
+                "rename",
+                "alias",
+                "default",
+                "flatten",
+                "required",
+                "skip",
+                "skip_serializing",
+                "skip_deserializing",
+                "skip_serializing_if",
+                "validate",
+                "as",
+                "serialize_as",
+                "deserialize_as",
+                "bound",
+                "serialize_bound",
+                "deserialize_bound",
+                "tag",
+            ],
+            AttrLevel::UnnamedField => &[
+                "skip",
+                "skip_serializing",
+                "skip_deserializing",
+                "default",
+                "as",
+                "serialize_as",
+                "deserialize_as",
+                "bound",
+                "serialize_bound",
+                "deserialize_bound",
+                "tag",
+            ],
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            AttrLevel::Container => "structs and enums",
+            AttrLevel::Variant => "variants",
+            AttrLevel::NamedField => "named fields",
+            AttrLevel::UnnamedField => "unnamed fields",
+        }
+    }
+}
+
+/// Returns a hint for attributes of serde which deser does not have.
+fn serde_hint(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "with" | "serialize_with" | "deserialize_with" => {
+            "deser uses adapter types instead of functions, use `as`, `serialize_as` or \
+             `deserialize_as` with an adapter (see `deser::adapters`)"
+        }
+        "from" => "use `#[deser(deserialize_as = deser::adapters::FromInto<T>)]` instead",
+        "try_from" => "use `#[deser(deserialize_as = deser::adapters::TryFromInto<T>)]` instead",
+        "into" => "use `#[deser(serialize_as = deser::adapters::FromInto<T>)]` instead",
+        "borrow" => {
+            "references (`&str` and `&[u8]`) always borrow, `Cow` borrows with \
+             `#[deser(as = deser::adapters::Borrowed)]`"
+        }
+        "remote" | "getter" => {
+            "it's not supported, implement `SerializeAs` and `DeserializeAs` (see \
+             `deser::adapters`) for a local type and use it with `as` instead"
+        }
+        "field_identifier" | "variant_identifier" => "it's not supported",
+        _ => return None,
+    })
+}
+
+/// Returns the error for an attribute that is not supported where it's
+/// placed.
+///
+/// The error mentions where the attribute is supported, or what to use
+/// instead for attributes of serde, or which attributes are supported.
+fn unsupported_attr(meta: &ParseNestedMeta, name: &str, level: AttrLevel) -> syn::Error {
+    if let Some(hint) = serde_hint(name) {
+        return meta.error(format!("unsupported attribute `{}`: {}", name, hint));
+    }
+    let levels = AttrLevel::ALL
+        .iter()
+        .filter(|x| x.attrs().contains(&name))
+        .map(|x| match x {
+            AttrLevel::Container => "types",
+            other => other.describe(),
+        })
+        .collect::<Vec<_>>();
+    if !levels.is_empty() {
+        return meta.error(format!(
+            "`{}` is not supported on {}, it's supported on {}",
+            name,
+            level.describe(),
+            join_list(&levels, "and")
+        ));
+    }
+    // typos are likely, suggest an attribute with a similar name
+    if let Some(similar) = level
+        .attrs()
+        .iter()
+        .map(|x| (edit_distance(name, x), x))
+        .filter(|(distance, _)| *distance <= 2)
+        .min_by_key(|(distance, _)| *distance)
+    {
+        return meta.error(format!(
+            "unknown attribute `{}`, did you mean `{}`?",
+            name, similar.1
+        ));
+    }
+    let supported = level
+        .attrs()
+        .iter()
+        .map(|x| format!("`{}`", x))
+        .collect::<Vec<_>>();
+    meta.error(format!(
+        "unknown attribute `{}`, the attributes of {} are {}",
+        name,
+        level.describe(),
+        join_list(&supported, "and")
+    ))
+}
+
+/// Returns the number of edits to turn one string into another.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b = b.chars().collect::<Vec<_>>();
+    let mut row = (0..=b.len()).collect::<Vec<_>>();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cur = row[j + 1];
+            row[j + 1] = if ca == *cb {
+                prev
+            } else {
+                1 + prev.min(row[j]).min(cur)
+            };
+            prev = cur;
+        }
+    }
+    row[b.len()]
+}
+
+/// Joins items into a list for messages (`a, b and c`).
+fn join_list<T: AsRef<str>>(items: &[T], last: &str) -> String {
+    let mut rv = String::new();
+    for (idx, item) in items.iter().enumerate() {
+        if idx > 0 {
+            rv.push_str(if idx + 1 == items.len() { " " } else { ", " });
+            if idx + 1 == items.len() {
+                rv.push_str(last);
+                rv.push(' ');
+            }
+        }
+        rv.push_str(item.as_ref());
+    }
+    rv
+}
+
 /// Invokes `logic` for every item in all `#[deser(...)]` attributes.
 ///
 /// The callback is passed the name of the item.  Items with paths that are
@@ -847,7 +1059,7 @@ impl<'a> ContainerAttrs<'a> {
                 let value = parse_bound(meta)?;
                 set_once(meta, name, &mut rv.deserialize_bound, value)
             }
-            _ => Err(meta.error("unsupported attribute")),
+            _ => Err(unsupported_attr(meta, name, AttrLevel::Container)),
         })?;
         rv.seen = seen;
         rv.rename = rename.get(direction).cloned();
@@ -1188,7 +1400,7 @@ impl UnnamedFieldAttrs {
                 "skip" => set_flag(meta, name, &mut skip),
                 "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
                 "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
-                _ => Err(meta.error("unsupported attribute")),
+                _ => Err(unsupported_attr(meta, name, AttrLevel::UnnamedField)),
             }
         })?;
         rv.seen = seen;
@@ -1351,7 +1563,7 @@ impl<'a> FieldAttrs<'a> {
             "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
             "required" => set_flag(meta, name, &mut rv.required),
             "tag" => set_flag(meta, name, &mut rv.tag),
-            _ => Err(meta.error("unsupported attribute")),
+            _ => Err(unsupported_attr(meta, name, AttrLevel::NamedField)),
         })?;
         rv.seen = seen;
         rv.adapters = adapters.finish(&rv.seen)?;
@@ -1782,7 +1994,7 @@ impl<'a> EnumVariantAttrs<'a> {
             "skip" => set_flag(meta, name, &mut skip),
             "skip_serializing" => set_flag(meta, name, &mut rv.skip_serializing),
             "skip_deserializing" => set_flag(meta, name, &mut rv.skip_deserializing),
-            _ => Err(meta.error("unsupported attribute")),
+            _ => Err(unsupported_attr(meta, name, AttrLevel::Variant)),
         })?;
         rv.seen = seen;
 

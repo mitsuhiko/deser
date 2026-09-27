@@ -587,6 +587,25 @@
 /// struct Test(u32);
 /// ```
 ///
+/// Attributes of serde which deser does not have are rejected with a hint
+/// at what to use instead (adapters in this case).
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// struct Test {
+///     #[deser(with = "module")]
+///     field: u32,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(from = "String")]
+/// struct Test {
+///     field: u32,
+/// }
+/// ```
+///
 /// Tuple structs have at most 12 fields.
 ///
 /// ```compile_fail
