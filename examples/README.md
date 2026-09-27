@@ -1,7 +1,10 @@
 # Examples
 
 Every example is a small binary which can be run with `cargo run -p NAME`
-from the root of the repository.
+from the root of the repository.  Each example directory has a `README.md`
+that explains why the example exists, what it shows, what output to
+expect and where to start reading the code.  Most examples `assert!` what
+they print, so a clean exit means they behaved as documented.
 
 Getting started:
 
