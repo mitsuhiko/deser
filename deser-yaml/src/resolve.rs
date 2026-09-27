@@ -191,7 +191,7 @@ fn resolve_plain_str(s: &str, version: Version) -> Option<Atom<'static>> {
     };
     match first {
         b'0'..=b'9' | b'+' | b'-' | b'.' => match version {
-            Version::V1_2 => parse_core_int(s).or_else(|| parse_core_float(s)),
+            Version::V1_2 => parse_core_number(s),
             Version::V1_1 => parse_yaml11_int(s).or_else(|| parse_yaml11_float(s)),
         },
         b'~' if s.len() == 1 => Some(Atom::Null),
@@ -500,6 +500,36 @@ fn parse_core_int(s: &str) -> Option<Atom<'static>> {
     accumulate(digits, 10, false).map(|m| make_int(negative, m))
 }
 
+/// YAML 1.2 core schema integers and floats.
+///
+/// Decimal integers that fit into 64 bits are parsed in a single pass and
+/// decimal floats skip the attempt to parse them as integer.  All other
+/// numbers go through [`parse_core_int`] and [`parse_core_float`].
+fn parse_core_number(s: &str) -> Option<Atom<'static>> {
+    let bytes = s.as_bytes();
+    let negative = bytes.first() == Some(&b'-');
+    let digits_start = usize::from(matches!(bytes.first(), Some(b'-' | b'+')));
+    let mut pos = digits_start;
+    let mut value = Some(0u64);
+    while let Some(&b @ b'0'..=b'9') = bytes.get(pos) {
+        value = value
+            .and_then(|v| v.checked_mul(10))
+            .and_then(|v| v.checked_add(u64::from(b - b'0')));
+        pos += 1;
+    }
+    match (bytes.get(pos), value) {
+        (None, Some(value)) if pos > digits_start => Some(make_int(
+            negative,
+            Magnitude {
+                value: Some(value.into()),
+                approx: value as f64,
+            },
+        )),
+        (Some(b'.' | b'e' | b'E'), _) => parse_core_float(s),
+        _ => parse_core_int(s).or_else(|| parse_core_float(s)),
+    }
+}
+
 /// YAML 1.1 integers: binary, octal, decimal, hexadecimal and base 60, all
 /// with an optional sign and `_` separators.
 fn parse_yaml11_int(s: &str) -> Option<Atom<'static>> {
@@ -739,4 +769,59 @@ fn test_big_ints() {
         parse_core_int("1000000000000000000000000000000000000000000"),
         Some(Atom::F64(1e42))
     );
+}
+
+#[test]
+fn test_core_number_fast_path() {
+    let tokens = [
+        "0",
+        "1",
+        "+1",
+        "-1",
+        "-0",
+        "007",
+        "123456789",
+        "9223372036854775807",
+        "9223372036854775808",
+        "-9223372036854775808",
+        "-9223372036854775809",
+        "18446744073709551615",
+        "18446744073709551616",
+        "-18446744073709551616",
+        "340282366920938463463374607431768211456",
+        "1.5",
+        "-1.5",
+        "+1.5",
+        "1.",
+        ".5",
+        "-.5",
+        "1e5",
+        "1E+5",
+        "1e-5",
+        "1.5e-5",
+        "1e",
+        "1.e5",
+        "1e400",
+        "0x1f",
+        "0o17",
+        "-0x1f",
+        ".inf",
+        "-.inf",
+        ".nan",
+        "1_000",
+        "1-2",
+        "-",
+        "+",
+        "12a",
+        "1:30",
+    ];
+    for token in tokens {
+        let expected = parse_core_int(token).or_else(|| parse_core_float(token));
+        assert_eq!(
+            format!("{:?}", parse_core_number(token)),
+            format!("{:?}", expected),
+            "{}",
+            token
+        );
+    }
 }
