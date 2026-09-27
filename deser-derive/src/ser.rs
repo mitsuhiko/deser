@@ -489,6 +489,32 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         .iter()
         .map(|x| x.name(&container_attrs).atom())
         .collect::<Vec<_>>();
+    // if all variants are named by strings, the atom is built once and only
+    // the name is matched
+    let serialize_body = if attrs
+        .iter()
+        .all(|x| x.name(&container_attrs).as_str().is_some())
+    {
+        quote! {
+            __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Str(
+                __deser::__derive::Cow::Borrowed(match *self {
+                    #(
+                        #ident::#var_idents => #names,
+                    )*
+                })
+            )))
+        }
+    } else {
+        quote! {
+            __deser::__derive::Ok(match *self {
+                #(
+                    #ident::#var_idents => {
+                        __deser::ser::Chunk::Atom(#atoms)
+                    }
+                )*
+            })
+        }
+    };
     let type_name = container_attrs.container_name();
     let begin_without_finish = begin_without_finish();
 
@@ -514,13 +540,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                 fn serialize(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
                 {
-                    __deser::__derive::Ok(match *self {
-                        #(
-                            #ident::#var_idents => {
-                                __deser::ser::Chunk::Atom(#atoms)
-                            }
-                        )*
-                    })
+                    #serialize_body
                 }
             }
         };
