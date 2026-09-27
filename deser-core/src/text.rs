@@ -6,6 +6,10 @@
 //! pointer and a length whose highest bit marks owned data.  Owned data is a
 //! boxed slice without spare capacity.  This keeps [`Atom`](crate::Atom)
 //! small enough to carry text next to another value.
+//!
+//! The three bits below the owned bit are a small tag that other types can
+//! store in the slice (like the type of the value of an
+//! [`Implicit`](crate::Implicit)).  Slices ignore it.
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::fmt;
@@ -15,10 +19,20 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 
 /// The bit of the length that marks owned data.
-///
-/// Slices never have more than `isize::MAX` bytes, so the highest bit of
-/// their length is always free.
 const OWNED: usize = 1 << (usize::BITS - 1);
+
+/// The shift of the tag stored in the length.
+const TAG_SHIFT: u32 = usize::BITS - 4;
+
+/// The bits of the length that hold the tag.
+const TAG: usize = 0b111 << TAG_SHIFT;
+
+/// The bits of the length that hold the length.
+///
+/// No slice is this large (this is a fraction of the address space of any
+/// 64-bit system), but the constructors check it as the length of owned
+/// data has to be exact to free it.
+const LEN: usize = !(OWNED | TAG);
 
 /// A byte slice that is borrowed for `'a` or owned (a `Box<[u8]>`).
 pub(crate) struct Slice<'a> {
@@ -37,6 +51,7 @@ unsafe impl Sync for Slice<'_> {}
 impl<'a> Slice<'a> {
     #[inline]
     pub(crate) const fn borrowed(data: &'a [u8]) -> Slice<'a> {
+        assert!(data.len() <= LEN, "slice too large");
         Slice {
             // SAFETY: the pointer of a slice is never null.  It's never
             // written through as borrowed data is only read.
@@ -49,6 +64,7 @@ impl<'a> Slice<'a> {
     #[inline]
     pub(crate) fn owned(data: Box<[u8]>) -> Slice<'a> {
         let len = data.len();
+        assert!(len <= LEN, "slice too large");
         let ptr = Box::into_raw(data).cast::<u8>();
         Slice {
             // SAFETY: the pointer of a box is never null
@@ -60,7 +76,21 @@ impl<'a> Slice<'a> {
 
     #[inline]
     pub(crate) fn len(&self) -> usize {
-        self.len & !OWNED
+        self.len & LEN
+    }
+
+    /// Returns the tag stored in the slice (`0` to `7`).
+    #[inline]
+    pub(crate) fn tag(&self) -> u8 {
+        ((self.len & TAG) >> TAG_SHIFT) as u8
+    }
+
+    /// Returns the slice with a tag (`0` to `7`).
+    #[inline]
+    pub(crate) fn with_tag(mut self, tag: u8) -> Slice<'a> {
+        debug_assert!(tag <= 7);
+        self.len = (self.len & !TAG) | ((tag as usize) << TAG_SHIFT) & TAG;
+        self
     }
 
     #[inline]
@@ -150,7 +180,7 @@ impl Clone for Slice<'_> {
     #[inline]
     fn clone(&self) -> Self {
         if self.is_owned() {
-            Slice::owned(Box::from(self.as_slice()))
+            Slice::owned(Box::from(self.as_slice())).with_tag(self.tag())
         } else {
             Slice {
                 ptr: self.ptr,
@@ -197,6 +227,18 @@ impl<'a> Text<'a> {
     #[inline]
     pub fn owned<S: Into<Box<str>>>(text: S) -> Text<'a> {
         Text(Slice::owned(text.into().into_boxed_bytes()))
+    }
+
+    /// Returns the tag stored in the text (see [`Slice::tag`]).
+    #[inline]
+    pub(crate) fn tag(&self) -> u8 {
+        self.0.tag()
+    }
+
+    /// Returns the text with a tag (see [`Slice::with_tag`]).
+    #[inline]
+    pub(crate) fn with_tag(self, tag: u8) -> Text<'a> {
+        Text(self.0.with_tag(tag))
     }
 
     /// Returns the text.
@@ -442,4 +484,25 @@ fn test_text() {
     assert_eq!(empty, "");
     assert_eq!(empty.into_owned(), "");
     assert_eq!(Text::default(), "");
+}
+
+#[test]
+fn test_text_tag() {
+    // the tag is not part of the text
+    for text in [Text::from("tagged"), Text::from(String::from("tagged"))] {
+        let owned = !text.is_borrowed();
+        let tagged = text.with_tag(5);
+        assert_eq!(tagged.tag(), 5);
+        assert_eq!(tagged, "tagged");
+        assert_eq!(tagged.len(), 6);
+        assert_eq!(tagged.is_borrowed(), !owned);
+        // clones keep it, conversions do not
+        assert_eq!(tagged.clone().tag(), 5);
+        assert_eq!(tagged.as_borrowed().tag(), 0);
+        assert_eq!(tagged.to_static().tag(), 0);
+        let retagged = tagged.with_tag(2);
+        assert_eq!(retagged.tag(), 2);
+        assert_eq!(retagged.clone().into_owned(), "tagged");
+        assert_eq!(retagged.with_tag(0).tag(), 0);
+    }
 }

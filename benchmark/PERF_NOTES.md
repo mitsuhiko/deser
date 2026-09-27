@@ -164,6 +164,46 @@ only improvements that survive repeated comparisons.
   regression tests via
   `cargo test -p deser --test integration --release test_de::test_float`.
 
+## Layout of Atoms and Events
+
+Every value goes through an `Atom` (and usually an `Event`), so how they
+are laid out matters as much as their size.  Both are 32 bytes, checked
+at compile time together with `Chunk`.
+
+When `Str` and `Lexical` changed from `Cow<str>` to `Text` (a pointer and
+a length, two words), numbers in the binary formats became 5-15% slower
+although the size stayed the same:
+
+* With `Cow`, the tag of `Atom` was stored in the unused values of the
+  capacity of the `Cow`, a full word, and all values started at offset 8.
+  `Text` has no such unused values, so the tag became a byte and small
+  values (`F32`, `Char`, `Bool`) were placed next to it at offsets 1-4.
+* Formats then write an atom with a byte store and a 4 or 8 byte store,
+  while `DeserializeDriver::atom_event` copies it with 16 byte loads
+  (`ldp q0, q1`).  A load that spans several smaller stores cannot be
+  forwarded from them and waits until they reach the cache.  With the
+  word sized tag the atom is written with a single `stp`.
+* Serializers moved atoms in pieces of different sizes at odd offsets for
+  the same reason.
+
+`#[repr(C, u64)]` on `Atom` restores the word sized tag in front of the
+values.  This only fits in 32 bytes because no value is larger than 24
+bytes: `Implicit` stores the kind of its value in spare bits of the
+length of its text (`Slice` reserves bits 60-62 for a tag next to the
+owned bit) and the value in one word.  Measured on Apple M5 Max, the
+byte sized tag cost up to 15% on `point-cloud/msgpack/ser`, 13% on
+`point-cloud/cbor/ser` and 10% on `features/msgpack/de`; with the word
+sized tag and packed `Implicit` all groups are within 2% of the `Cow`
+based atoms.  The word sized tag alone (with a 32 byte `Implicit` it
+would not fit) fixed serialization but left `msgpack/de` 6-10% slower in
+an intermediate build; it's not understood why packing `Implicit` also
+fixed that.
+
+When changing `Atom`, `Event`, `Text`, `Bytes` or `ExtValue`, check the
+layout with `RUSTC_BOOTSTRAP=1 cargo rustc -p deser-core --lib --release
+-- -Zprint-type-sizes` and compare `point-cloud`, `canada` and `features`
+in MessagePack and CBOR against a baseline binary.
+
 ## Other Profiling Findings and Experiments
 
 These observations were previously in the benchmark README.  Timings refer

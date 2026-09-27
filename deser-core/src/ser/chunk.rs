@@ -103,3 +103,5 @@ impl From<String> for Chunk<'static> {
         Chunk::Atom(Atom::Str(Text::owned(value)))
     }
 }
+
+const _: () = assert!(std::mem::size_of::<Chunk<'static>>() == 32);

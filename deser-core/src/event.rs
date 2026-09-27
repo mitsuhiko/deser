@@ -37,6 +37,12 @@ use crate::text::{Slice, Text};
 /// accept the value.
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
+// The tag is a full word in front of the values: moving atoms (which
+// happens for every value) then copies whole words.  With a byte sized tag
+// small values are stored next to the tag and atoms are written and read
+// in pieces of different sizes, which stalls loads (and was 5-15% slower
+// for numbers in binary formats).
+#[repr(C, u64)]
 pub enum Atom<'a> {
     Null,
     Bool(bool),
@@ -235,19 +241,22 @@ impl<'a> Atom<'a> {
 /// deser::de::DeserializeDriver::new(&mut out).emit(atom).unwrap();
 /// assert_eq!(out.as_deref(), Some("0x1F"));
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Implicit<'a> {
+    // the kind of the value is the tag of the text (see `ImplicitValue::kind`)
     text: Text<'a>,
-    value: ImplicitValue,
+    // the value (see `ImplicitValue::bits`)
+    bits: u64,
 }
 
 impl<'a> Implicit<'a> {
     /// Creates a value from its text and the value inferred from it.
     #[inline]
     pub fn new<T: Into<Text<'a>>>(text: T, value: ImplicitValue) -> Implicit<'a> {
+        let (kind, bits) = value.pack();
         Implicit {
-            text: text.into(),
-            value,
+            text: text.into().with_tag(kind),
+            bits,
         }
     }
 
@@ -260,21 +269,22 @@ impl<'a> Implicit<'a> {
     /// Returns the inferred value.
     #[inline]
     pub fn value(&self) -> ImplicitValue {
-        self.value
+        ImplicitValue::unpack(self.text.tag(), self.bits)
     }
 
     /// Splits the value into its text and the inferred value.
     #[inline]
     pub fn into_parts(self) -> (Text<'a>, ImplicitValue) {
-        (self.text, self.value)
+        let value = self.value();
+        (self.text.with_tag(0), value)
     }
 
     /// Returns a value borrowing from this one.
     #[inline]
     pub fn as_borrowed(&self) -> Implicit<'_> {
         Implicit {
-            text: self.text.as_borrowed(),
-            value: self.value,
+            text: self.text.as_borrowed().with_tag(self.text.tag()),
+            bits: self.bits,
         }
     }
 
@@ -282,9 +292,24 @@ impl<'a> Implicit<'a> {
     #[inline]
     pub fn to_static(&self) -> Implicit<'static> {
         Implicit {
-            text: self.text.to_static(),
-            value: self.value,
+            text: self.text.to_static().with_tag(self.text.tag()),
+            bits: self.bits,
         }
+    }
+}
+
+impl fmt::Debug for Implicit<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Implicit")
+            .field("text", &self.text)
+            .field("value", &self.value())
+            .finish()
+    }
+}
+
+impl PartialEq for Implicit<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text && self.value() == other.value()
     }
 }
 
@@ -302,6 +327,31 @@ pub enum ImplicitValue {
 }
 
 impl ImplicitValue {
+    /// Splits the value into a kind (`0` to `7`, stored in the tag of the
+    /// text of an [`Implicit`]) and the bits of the value.
+    #[inline]
+    fn pack(self) -> (u8, u64) {
+        match self {
+            ImplicitValue::Null => (0, 0),
+            ImplicitValue::Bool(value) => (1, value as u64),
+            ImplicitValue::U64(value) => (2, value),
+            ImplicitValue::I64(value) => (3, value as u64),
+            ImplicitValue::F64(value) => (4, value.to_bits()),
+        }
+    }
+
+    /// Joins a value split with [`pack`](Self::pack).
+    #[inline]
+    fn unpack(kind: u8, bits: u64) -> ImplicitValue {
+        match kind {
+            1 => ImplicitValue::Bool(bits != 0),
+            2 => ImplicitValue::U64(bits),
+            3 => ImplicitValue::I64(bits as i64),
+            4 => ImplicitValue::F64(f64::from_bits(bits)),
+            _ => ImplicitValue::Null,
+        }
+    }
+
     /// Returns the value for an atom if it's one of the inferred types.
     pub fn from_atom(atom: &Atom<'_>) -> Option<ImplicitValue> {
         match *atom {
@@ -848,8 +898,40 @@ pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
     }
 }
 
+// Every value goes through atoms and events, they have to stay small.
+const _: () = assert!(std::mem::size_of::<Atom<'static>>() == 32);
+const _: () = assert!(std::mem::size_of::<Event<'static>>() == 32);
+const _: () = assert!(std::mem::size_of::<Implicit<'static>>() == 24);
+
 #[test]
-fn test_sizes() {
-    assert_eq!(std::mem::size_of::<Atom>(), 32);
-    assert_eq!(std::mem::size_of::<Event>(), 32);
+fn test_implicit_packing() {
+    for value in [
+        ImplicitValue::Null,
+        ImplicitValue::Bool(false),
+        ImplicitValue::Bool(true),
+        ImplicitValue::U64(u64::MAX),
+        ImplicitValue::I64(i64::MIN),
+        ImplicitValue::I64(-1),
+        ImplicitValue::F64(-0.0),
+        ImplicitValue::F64(f64::NAN),
+        ImplicitValue::F64(1.1),
+    ] {
+        for implicit in [
+            Implicit::new("text", value),
+            Implicit::new(String::from("text"), value),
+        ] {
+            let borrowed = implicit.text().is_borrowed();
+            assert!(implicit.value().is_same(value));
+            assert_eq!(implicit.text(), "text");
+            assert_eq!(implicit.text().len(), 4);
+            assert!(implicit.clone().value().is_same(value));
+            assert!(implicit.as_borrowed().value().is_same(value));
+            assert!(implicit.to_static().value().is_same(value));
+            assert_eq!(implicit.clone().text().is_borrowed(), borrowed);
+            let (text, inner) = implicit.into_parts();
+            assert_eq!(text, "text");
+            assert_eq!(text.tag(), 0);
+            assert!(inner.is_same(value));
+        }
+    }
 }
