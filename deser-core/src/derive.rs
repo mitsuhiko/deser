@@ -565,9 +565,11 @@
 //! [`Deserialize::deserialize_update`](crate::Deserialize::deserialize_update)):
 //! the fields that are given are updated, all others keep their values.
 //! Fields are updated the same way which means that nested structs are
-//! merged and `Option`s which are set update their value (null clears
-//! them).  All other values (sequences, maps, enums) are replaced.  This is
-//! useful to layer configuration files:
+//! merged, `Option`s which are set and `Box`es update their value (null
+//! clears options) and maps (`HashMap` and `BTreeMap`) are merged: the
+//! entries that are given are inserted, replacing the values of keys that
+//! exist (the values are not merged).  All other values (sequences, enums)
+//! are replaced.  This is useful to layer configuration files:
 //!
 //! ```
 //! use deser::Deserialize;
@@ -609,7 +611,8 @@
 //!
 //! * Fields with adapters or validators are replaced (after validating the
 //!   new value).  Validators of the struct run after the update.
-//! * Structs with flattened fields are replaced.
+//! * Flattened fields are updated with the keys they take, flattened fields
+//!   that take no key keep their values.
 //! * If the update fails, the value might be partially updated.
 //!
 //! ## Unknown Fields

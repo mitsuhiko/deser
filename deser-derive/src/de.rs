@@ -191,6 +191,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut field_atoms = Vec::new();
     let mut field_borrowed_atoms = Vec::new();
     let mut update_dispatch = Vec::new();
+    // the update sinks of structs with flattened fields borrow the fields
+    // through a pointer (see `UpdateTarget`)
+    let update_through_ptr = attrs.iter().any(|x| x.flatten());
     for (index, (x, fieldname)) in attrs.iter().zip(sink_fieldname.iter()).enumerate() {
         if x.flatten() {
             continue;
@@ -229,7 +232,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // (after validating the new value), all others are updated
         let field_ident = &x.field().ident;
         let update = if x.adapters().de().is_none() && x.validate().is_none() {
-            quote! { __deser::__derive::field_update(&mut self.#field_ident) }
+            quote! { __deser::__derive::field_update(__field) }
         } else {
             let owned = match x.adapters().de() {
                 Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
@@ -242,10 +245,21 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
                 None => quote! { __deser::__derive::None },
             };
-            quote! { __deser::__derive::replace_with(&mut self.#field_ident, #owned, #validator) }
+            quote! { __deser::__derive::replace_with(__field, #owned, #validator) }
+        };
+        let field_ref = if update_through_ptr {
+            // SAFETY: the field is only borrowed once at a time, the
+            // flattened fields are borrowed separately
+            quote! { unsafe { &mut (*self.value.as_ptr()).#field_ident } }
+        } else {
+            // structs without flattened fields implement `UpdateFields`
+            quote! { &mut self.#field_ident }
         };
         update_dispatch.push(quote! {
-            #index => #update,
+            #index => {
+                let __field = #field_ref;
+                #update
+            }
         });
         key_matcher.push(Name::str_arms(
             &names,
@@ -563,11 +577,155 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     } else {
         (None, None, None)
     };
-    // Structs without flattened fields are updated in place: the fields
-    // that are given are updated, the others are kept.  Structs with
-    // flattened fields are replaced (the default).
-    let update = if has_flatten {
+    // keys that flattened values took but did not use are unknown keys too
+    let unclaimed_keys = if has_flatten {
+        Some(quote! {
+            __deser::__derive::unclaimed_keys(self.standalone, #deny, __state)?;
+        })
+    } else {
         None
+    };
+
+    // Structs are updated in place: the fields that are given are updated,
+    // the others are kept.
+    let update = if has_flatten {
+        // Flattened fields are updated with the keys they take, those that
+        // take no key are kept.  Structs with flattened fields keep the
+        // sinks of the flattened fields while they update the other fields,
+        // so they borrow the fields through a pointer.
+        let container_validate = container_attrs.validate().map(|path| {
+            let validator = validator(path);
+            quote! {
+                // SAFETY: the sinks of the flattened fields were dropped
+                if let __deser::__derive::Err(__err) = (#validator)(unsafe { &*self.value.as_ptr() }) {
+                    return __deser::__derive::Err(match self.start {
+                        __deser::__derive::Some(__start) if __err.offset().is_none() => __err.with_offset(__start),
+                        _ => __err,
+                    });
+                }
+            }
+        });
+        let flatten_ident = attrs
+            .iter()
+            .filter(|x| x.flatten())
+            .map(|x| &x.field().ident)
+            .collect::<Vec<_>>();
+        UpdateSink {
+            method: quote! {
+                fn deserialize_update(
+                    __value: &mut Self,
+                ) -> __deser::de::SinkHandle<'_, 'de> {
+                    __deser::de::SinkHandle::boxed(__UpdateSink {
+                        value: __deser::__derive::UpdateTarget::new(__value),
+                        key: __deser::__derive::FieldKeySink::new(__field_index, #retain_unknown),
+                        seen: [0; #seen_words],
+                        #standalone_init
+                        #start_init
+                        #(
+                            #flatten_fields: __deser::__derive::None,
+                            #flatten_used: false,
+                        )*
+                        _marker: __deser::__derive::PhantomData,
+                    })
+                }
+            },
+            items: quote! {
+                struct __UpdateSink #wrapper_impl_generics #where_clause {
+                    value: __deser::__derive::UpdateTarget<'__a, #ident #ty_generics>,
+                    key: __deser::__derive::FieldKeySink,
+                    seen: [u64; #seen_words],
+                    #standalone_field
+                    #start_field
+                    #(
+                        #flatten_fields: __deser::__derive::Option<__deser::de::SinkHandle<'__a, 'de>>,
+                        #flatten_used: bool,
+                    )*
+                    _marker: __deser::__derive::PhantomData<&'de ()>,
+                }
+
+                #[automatically_derived]
+                impl #wrapper_impl_generics __deser::de::Sink<'de> for __UpdateSink #wrapper_ty_generics #bounded_where_clause {
+                    fn expecting(&self) -> __deser::__derive::StrCow<'_> {
+                        __deser::__derive::StrCow::Borrowed(#type_name)
+                    }
+
+                    fn map(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<()>
+                    {
+                        #standalone_set
+                        #start_set
+                        __deser::__derive::Ok(())
+                    }
+
+                    fn next_key(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
+                    {
+                        self.key.reset();
+                        __deser::__derive::Ok(__deser::de::SinkHandle::to(&mut self.key))
+                    }
+
+                    fn next_value(&mut self, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
+                    {
+                        __deser::__derive::Ok(match self.key.next_field(&mut self.seen, __FIELDS, __state)? {
+                            __deser::__derive::NextField::Field(__index) => match __index {
+                                #(
+                                    #update_dispatch
+                                )*
+                                _ => __deser::de::SinkHandle::null(),
+                            },
+                            #other_key_dispatch
+                            __deser::__derive::NextField::Ignore => __deser::de::SinkHandle::null(),
+                        })
+                    }
+
+                    fn value_for_key(&mut self, __key: &str, __state: &mut __deser::State)
+                        -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>>
+                    {
+                        if let __deser::__derive::Some(__index) = __field_index(__key) {
+                            // the value is deserialized like the value of a key
+                            self.key.set_index(__index);
+                            return __deser::de::Sink::next_value(self, __state).map(__deser::__derive::Some);
+                        }
+                        #(
+                            if self.#flatten_fields.is_none() {
+                                // SAFETY: the field is only borrowed by this
+                                // sink, the other fields are borrowed
+                                // separately
+                                let __field: &'__a mut #flatten_ty = unsafe {
+                                    &mut (*self.value.as_ptr()).#flatten_ident
+                                };
+                                self.#flatten_fields = __deser::__derive::Some(
+                                    <#flatten_ty as __deser::Deserialize<'de>>::deserialize_update(__field)
+                                );
+                            }
+                            if let __deser::__derive::Some(ref mut __flattened) = self.#flatten_fields {
+                                if let __deser::__derive::Some(__sink) = __flattened.value_for_key(__key, __state)? {
+                                    self.#flatten_used = true;
+                                    return __deser::__derive::Ok(__deser::__derive::Some(__sink));
+                                }
+                            }
+                        )*
+                        __deser::__derive::Ok(__deser::__derive::None)
+                    }
+
+                    fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
+                        // flattened values that took no key are kept
+                        #(
+                            if self.#flatten_used {
+                                if let __deser::__derive::Some(ref mut __flattened) = self.#flatten_fields {
+                                    __deser::de::Sink::finish(__flattened, __state)?;
+                                }
+                            }
+                            self.#flatten_fields = __deser::__derive::None;
+                        )*
+                        #unclaimed_keys
+                        #container_validate
+                        __deser::__derive::Ok(())
+                    }
+                }
+            },
+        }
     } else {
         // everything but the dispatch to the fields and the validation is
         // done by `StructUpdateSink` which exists once for all structs
@@ -580,7 +738,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
             }
         });
-        Some(UpdateSink {
+        UpdateSink {
             method: quote! {
                 fn deserialize_update(
                     __value: &mut Self,
@@ -611,21 +769,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     #container_validate
                 }
             },
-        })
+        }
     };
-    let (update_method, update_items) = match update {
-        Some(update) => (Some(update.method), Some(update.items)),
-        None => (None, None),
-    };
-    // keys that flattened values took but did not use are unknown keys too
-    let unclaimed_keys = if has_flatten {
-        Some(quote! {
-            __deser::__derive::unclaimed_keys(self.standalone, #deny, __state)?;
-        })
-    } else {
-        None
-    };
-
+    let UpdateSink {
+        method: update_method,
+        items: update_items,
+    } = update;
     // Takes the next field and dispatches to `$field` for fields and `$other`
     // for other keys (which are only passed on with flattened fields, without
     // them the key sink handles them).

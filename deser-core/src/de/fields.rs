@@ -294,6 +294,22 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
         )
     }
 
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        // the value is deserialized like the value of a key (so that the
+        // struct can be flattened)
+        match (self.key.lookup)(key) {
+            Some(index) => {
+                self.key.set_index(index);
+                self.next_value(state).map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
         match self.value.validate() {
             Err(err) if err.offset().is_none() => Err(match self.start {

@@ -681,7 +681,9 @@ pub trait Deserialize<'de>: Sized + Send {
     /// default implementation replaces the value with the deserialized one.
     /// Derived structs update the fields that are given and keep the others
     /// (fields are updated the same way, so nested structs are merged).
-    /// `Option` updates the value in it if it's set, null clears it.
+    /// `Option` updates the value in it if it's set, null clears it.  `Box`
+    /// updates the value in it.  `HashMap` and `BTreeMap` insert the given
+    /// entries, the values of keys that exist are replaced.
     ///
     /// If the update fails, the value might be partially updated.
     fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {

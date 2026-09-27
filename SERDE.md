@@ -246,8 +246,9 @@ different convention.  The tag and content keys can have aliases too
 Serde has a hidden `deserialize_in_place` which reuses allocations but
 replaces the whole value.  Deser has `Deserialize::deserialize_update`
 which applies data on top of an existing value: derived structs update the
-fields that are given and keep the others, nested structs and options are
-merged.  This is useful to layer configuration files over defaults.
+fields that are given and keep the others, nested structs (also flattened
+ones), options, boxes and maps are merged.  This is useful to layer
+configuration files over defaults.
 
 **Related issues:**
 

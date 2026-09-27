@@ -128,10 +128,17 @@ fn test_options() {
 
 #[test]
 fn test_top_level_values() {
-    // values other than structs are replaced
-    let mut map_value = BTreeMap::from([("a".to_string(), 1u32)]);
-    update(&mut map_value, map(vec![("b", v(2u64))])).unwrap();
-    assert_eq!(map_value, BTreeMap::from([("b".to_string(), 2)]));
+    // maps are merged
+    let mut map_value = BTreeMap::from([("a".to_string(), 1u32), ("b".to_string(), 1)]);
+    update(&mut map_value, map(vec![("b", v(2u64)), ("c", v(3u64))])).unwrap();
+    assert_eq!(
+        map_value,
+        BTreeMap::from([
+            ("a".to_string(), 1),
+            ("b".to_string(), 2),
+            ("c".to_string(), 3)
+        ])
+    );
 
     let mut number = 1u32;
     update(&mut number, v(2u64)).unwrap();
@@ -228,11 +235,231 @@ fn test_newtypes_and_flatten() {
         }
     );
 
-    // structs with flattened fields are replaced
+    // boxes update their value
+    let mut value = Box::new(defaults().limits);
+    update(&mut value, map(vec![("timeout", v(1u64))])).unwrap();
+    assert_eq!(value.connections, 10);
+    assert_eq!(value.timeout, 1);
+
+    // flattened fields are updated with the keys they take, and kept if
+    // they take none
     let mut value = WithFlatten {
         a: 1,
         limits: defaults().limits,
     };
-    let rv = update(&mut value, map(vec![("a", v(2u64))]));
+    update(&mut value, map(vec![("a", v(2u64))])).unwrap();
+    assert_eq!(
+        value,
+        WithFlatten {
+            a: 2,
+            limits: defaults().limits
+        }
+    );
+    update(&mut value, map(vec![("timeout", v(1u64))])).unwrap();
+    assert_eq!(
+        value,
+        WithFlatten {
+            a: 2,
+            limits: Limits {
+                connections: 10,
+                timeout: 1
+            }
+        }
+    );
+}
+
+#[test]
+fn test_maps() {
+    use std::collections::HashMap;
+
+    // the values of maps are replaced, not updated
+    let mut limits = BTreeMap::from([("a".to_string(), defaults().limits)]);
+    let rv = update(
+        &mut limits,
+        map(vec![("a", map(vec![("timeout", v(1u64))]))]),
+    );
     assert_eq!(rv.unwrap_err().message(), "missing field `connections`");
+    assert_eq!(limits["a"], defaults().limits);
+
+    // keys of the map are not duplicates, keys in the data are
+    let mut hash_map = HashMap::from([("a".to_string(), 1u32), ("b".to_string(), 1)]);
+    update(&mut hash_map, map(vec![("a", v(2u64))])).unwrap();
+    assert_eq!(
+        hash_map,
+        HashMap::from([("a".to_string(), 2), ("b".to_string(), 1)])
+    );
+    let rv = update(&mut hash_map, map(vec![("a", v(3u64)), ("a", v(4u64))]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate key in map");
+    assert_eq!(hash_map["a"], 2);
+
+    // larger updates of hash maps are merged the other way around
+    let mut hash_map = HashMap::from([("a".to_string(), 1u32), ("z".to_string(), 1)]);
+    update(
+        &mut hash_map,
+        map(vec![("a", v(2u64)), ("b", v(2u64)), ("c", v(2u64))]),
+    )
+    .unwrap();
+    assert_eq!(
+        hash_map,
+        HashMap::from([
+            ("a".to_string(), 2),
+            ("b".to_string(), 2),
+            ("c".to_string(), 2),
+            ("z".to_string(), 1),
+        ])
+    );
+}
+
+fn no_conflicts(value: &Settings) -> Result<(), &'static str> {
+    if value.extra.contains_key(&value.name) {
+        Err("extra conflicts with name")
+    } else {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[deser(validate = no_conflicts)]
+struct Settings {
+    name: String,
+    #[deser(flatten)]
+    server: Flattened,
+    #[deser(flatten)]
+    tls: Option<Tls>,
+    #[deser(flatten)]
+    extra: BTreeMap<String, u32>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+struct Flattened {
+    port: u16,
+    #[deser(flatten)]
+    limits: Limits,
+}
+
+fn settings() -> Settings {
+    Settings {
+        name: "a".into(),
+        server: Flattened {
+            port: 80,
+            limits: defaults().limits,
+        },
+        tls: None,
+        extra: BTreeMap::from([("x".to_string(), 1)]),
+    }
+}
+
+#[test]
+fn test_flatten() {
+    let mut value = settings();
+    update(
+        &mut value,
+        map(vec![
+            ("timeout", v(1u64)),
+            ("y", v(2u64)),
+            ("port", v(81u64)),
+            ("key", v("k")),
+            ("cert", v("c")),
+        ]),
+    )
+    .unwrap();
+    let mut expected = settings();
+    expected.server.port = 81;
+    expected.server.limits.timeout = 1;
+    expected.tls = Some(Tls {
+        cert: "c".into(),
+        key: "k".into(),
+    });
+    expected.extra.insert("y".into(), 2);
+    assert_eq!(value, expected);
+
+    // the options are updated too
+    update(&mut value, map(vec![("key", v("k2"))])).unwrap();
+    expected.tls.as_mut().unwrap().key = "k2".into();
+    assert_eq!(value, expected);
+
+    // the struct is validated once the flattened fields are updated
+    let rv = update(&mut value, map(vec![("a", v(1u64))]));
+    assert_eq!(
+        rv.unwrap_err().message(),
+        "invalid value: extra conflicts with name"
+    );
+
+    // duplicate keys are detected in the flattened fields
+    let mut value = settings();
+    let rv = update(&mut value, map(vec![("port", v(1u64)), ("port", v(2u64))]));
+    assert_eq!(rv.unwrap_err().message(), "duplicate field `port`");
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[deser(deny_unknown_fields)]
+struct Strict {
+    a: u32,
+    #[deser(flatten)]
+    limits: Limits,
+}
+
+#[test]
+fn test_flatten_unknown_fields() {
+    let mut value = Strict {
+        a: 1,
+        limits: defaults().limits,
+    };
+    let rv = update(&mut value, map(vec![("timeout", v(1u64)), ("b", v(1u64))]));
+    assert_eq!(rv.unwrap_err().message(), "unknown field `b`");
+    update(&mut value, map(vec![("timeout", v(1u64))])).unwrap();
+    assert_eq!(value.limits.timeout, 1);
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[deser(tag = "type")]
+enum Backend {
+    File { path: String },
+    Memory { size: u32 },
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[deser(deny_unknown_fields)]
+struct Storage {
+    name: String,
+    #[deser(flatten)]
+    backend: Backend,
+}
+
+#[test]
+fn test_flatten_internally_tagged() {
+    let mut value = Storage {
+        name: "a".into(),
+        backend: Backend::Memory { size: 1 },
+    };
+    // enums are replaced
+    update(
+        &mut value,
+        map(vec![("path", v("/tmp")), ("type", v("File"))]),
+    )
+    .unwrap();
+    assert_eq!(
+        value.backend,
+        Backend::File {
+            path: "/tmp".into()
+        }
+    );
+    update(&mut value, map(vec![("name", v("b"))])).unwrap();
+    assert_eq!(value.name, "b");
+    assert_eq!(
+        value.backend,
+        Backend::File {
+            path: "/tmp".into()
+        }
+    );
+    // keys the variant does not take are unknown keys of the struct
+    let rv = update(
+        &mut value,
+        map(vec![
+            ("type", v("Memory")),
+            ("size", v(1u64)),
+            ("path", v("x")),
+        ]),
+    );
+    assert_eq!(rv.unwrap_err().message(), "unknown field `path`");
 }

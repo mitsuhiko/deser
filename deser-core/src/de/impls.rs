@@ -592,6 +592,9 @@ pub(crate) trait MapTarget<K, V>: Default + Send {
     fn reserve_entries(&mut self, additional: usize) {
         let _ = additional;
     }
+    /// Moves the entries of another map into this one, the values of
+    /// `other` replace existing values.
+    fn merge(&mut self, other: Self);
 }
 
 impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
@@ -610,6 +613,15 @@ impl<K: Ord + Send, V: Send> MapTarget<K, V> for BTreeMap<K, V> {
                 }
                 true
             }
+        }
+    }
+
+    fn merge(&mut self, mut other: Self) {
+        if self.is_empty() {
+            *self = other;
+        } else {
+            // this merges the sorted entries in a single pass
+            self.append(&mut other);
         }
     }
 }
@@ -639,10 +651,30 @@ impl<K: Hash + Eq + Send, V: Send, H: BuildHasher + Default + Send> MapTarget<K,
     fn reserve_entries(&mut self, additional: usize) {
         self.reserve(additional);
     }
+
+    fn merge(&mut self, mut other: Self) {
+        // the smaller map is moved into the larger one
+        if other.len() > self.len() {
+            std::mem::swap(self, &mut other);
+            for (key, value) in other {
+                self.entry(key).or_insert(value);
+            }
+        } else {
+            self.extend(other);
+        }
+    }
+}
+
+/// Where a map sink puts the map.
+enum MapOut<'a, M> {
+    /// The map is stored in the slot.
+    Slot(&'a mut Option<M>),
+    /// The entries are merged into an existing map.
+    Update(&'a mut M),
 }
 
 /// Creates the sink for a map with key and value adapters.
-fn map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
+fn map_sink<'a, 'de, M, K, V, KA, VA>(out: MapOut<'a, M>) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,
@@ -650,8 +682,12 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
+    // Updates deserialize a new map which is merged into the existing one
+    // when it's complete.  This keeps the detection of duplicate keys (which
+    // are duplicates in the data, not keys of the existing map) and moves
+    // the smaller map into the larger one.
     struct MapSink<'a, M, K, V, KA, VA> {
-        slot: &'a mut Option<M>,
+        out: MapOut<'a, M>,
         map: M,
         key: Option<K>,
         value: Option<V>,
@@ -744,13 +780,17 @@ where
 
         fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
             self.flush()?;
-            *self.slot = Some(take(&mut self.map));
+            let map = take(&mut self.map);
+            match self.out {
+                MapOut::Slot(ref mut slot) => **slot = Some(map),
+                MapOut::Update(ref mut target) => target.merge(map),
+            }
             Ok(())
         }
     }
 
     SinkHandle::boxed(MapSink::<M, K, V, KA, VA> {
-        slot: out,
+        out,
         map: M::default(),
         key: None,
         value: None,
@@ -766,7 +806,13 @@ where
 {
     #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(out)
+        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out))
+    }
+
+    /// Merges the entries into the map, the values of keys that exist are
+    /// replaced (not updated).
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Update(value))
     }
 }
 
@@ -778,7 +824,7 @@ where
     VA: DeserializeAs<'de, V>,
 {
     fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, KA, VA>(out)
+        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
     }
 }
 
@@ -790,7 +836,13 @@ where
 {
     #[inline]
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(out)
+        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out))
+    }
+
+    /// Merges the entries into the map, the values of keys that exist are
+    /// replaced (not updated).
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Update(value))
     }
 }
 
@@ -803,7 +855,7 @@ where
     VA: DeserializeAs<'de, V>,
 {
     fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, KA, VA>(out)
+        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
     }
 }
 
@@ -1498,8 +1550,38 @@ impl Via<String> for Arc<str> {
     }
 }
 
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
+    #[inline]
+    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        via_handle::<T, Self, Same>(out)
+    }
+
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        via_atom_into::<T, Self, Same>(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        via_borrowed_atom_into::<T, Self, Same>(out, atom, state)
+    }
+
+    /// Updates the value in the box.
+    #[inline]
+    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
+        T::deserialize_update(value)
+    }
+}
+
 deserialize_via! {
-    [T: Deserialize<'de>] Box<T> => T;
     [T: Deserialize<'de> + Sync] Arc<T> => T;
     [] Box<str> => String;
     [] Arc<str> => String;

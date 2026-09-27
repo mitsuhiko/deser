@@ -9,6 +9,12 @@ All notable changes to deser are documented here.
   The crates of the data formats depend on `deser-core`, so they are
   compiled in parallel with the derive macros (which speeds up clean
   builds, a small program with JSON builds in 2.4s instead of 3.4s).
+- Updates (`deserialize_update`) merge `HashMap` and `BTreeMap`: the given
+  entries are inserted, the values of keys that exist are replaced (not
+  updated).  `Box` updates its value.  Structs with flattened fields are
+  updated like other structs: flattened fields are updated with the keys
+  they take and keep their values if they take none (they were replaced
+  before).
 - `#[deser(skip)]`, `#[deser(skip_serializing)]` and
   `#[deser(skip_deserializing)]` can be used on enum variants.  Serializing
   a skipped variant is an error (``the variant `A` of Kind cannot be
