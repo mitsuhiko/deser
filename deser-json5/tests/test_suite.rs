@@ -57,11 +57,8 @@ fn check(actual: &Value, expected: &Value) -> Result<(), String> {
             let value: f64 = data().as_str().unwrap().parse().unwrap();
             match actual.as_f64() {
                 Some(actual) if value.is_nan() => actual.is_nan(),
-                // integers do not keep the sign of -0.  Floats are not
-                // rounded correctly (the text of exact numbers is kept
-                // for types that need the exact value), they can be off by
-                // a unit in the last place.
-                Some(actual) => actual == value || actual.to_bits().abs_diff(value.to_bits()) <= 1,
+                // integers do not keep the sign of -0
+                Some(actual) => actual == value,
                 None => false,
             }
         }

@@ -295,6 +295,8 @@ impl Parser {
             validate_utf8: options.validate_utf8,
             hit_end: false,
             partial: (0, 0),
+            number_start: 0,
+            truncated: false,
             eof,
         };
         match self.run(&mut cur, eof, base, options.exact_numbers, out) {
@@ -487,6 +489,8 @@ impl Parser {
         // emits a number, the cursor is after its first byte
         macro_rules! number {
             ($byte:expr, $start:expr) => {{
+                cur.number_start = $start;
+                cur.truncated = false;
                 let rv = match $byte {
                     b'-' => {
                         let first_digit = cur.next_or_nul();
@@ -663,6 +667,10 @@ pub(crate) struct Cursor<'a> {
     hit_end: bool,
     // where an incomplete string continues (scan position and copy position)
     partial: (usize, usize),
+    // where the number being parsed starts
+    number_start: usize,
+    // digits of the number were dropped from its significand
+    truncated: bool,
     // `true` if no input follows, a comment at the end is complete
     eof: bool,
 }
@@ -687,6 +695,8 @@ impl<'a> Cursor<'a> {
             validate_utf8: true,
             hit_end: false,
             partial: (0, 0),
+            number_start: 0,
+            truncated: false,
             eof: true,
         }
     }
@@ -1216,6 +1226,8 @@ impl<'a> Cursor<'a> {
         significand: u64,
     ) -> Result<Number<'a>, Error> {
         let digits_start = self.pos - 1;
+        // the digits after the first 19 are dropped from the significand
+        self.truncated = true;
         let float = self.parse_long_integer(
             nonnegative,
             significand,
@@ -1261,7 +1273,7 @@ impl<'a> Cursor<'a> {
                     return self.parse_exponent(nonnegative, significand, exponent);
                 }
                 _ => {
-                    return f64_from_parts(nonnegative, significand, exponent);
+                    return self.float(nonnegative, significand, exponent);
                 }
             }
         }
@@ -1315,6 +1327,7 @@ impl<'a> Cursor<'a> {
                     self.bump();
                 }
                 overflowed = true;
+                self.truncated = true;
                 break;
             }
 
@@ -1327,7 +1340,7 @@ impl<'a> Cursor<'a> {
                 .parse_exponent(nonnegative, significand, exponent)
                 .map(Number::Literal),
             _ => {
-                let value = f64_from_parts(nonnegative, significand, exponent)?;
+                let value = self.float(nonnegative, significand, exponent)?;
                 Ok(
                     if !overflowed
                         && starting_exp == 0
@@ -1345,32 +1358,48 @@ impl<'a> Cursor<'a> {
     /// Parses a hexadecimal integer, the cursor is at the `x`.
     ///
     /// Integers that do not fit into 128 bits are approximated as floats
-    /// (like JavaScript does for all integers beyond 53 bits).
+    /// (like ECMAScript does for all integers beyond 53 bits).
     fn parse_hex(&mut self, nonnegative: bool) -> Result<Number<'a>, Error> {
         self.bump();
-        let mut value = Some(0u128);
-        let mut float = 0f64;
+        let mut value = 0u128;
+        // the digits that do not fit into 128 bits, and if one is not zero
+        let mut dropped = 0u64;
+        let mut sticky = false;
         let mut digits = 0;
         while let Some(digit) = char::from(self.peek_or_nul()).to_digit(16) {
             self.bump();
             digits += 1;
-            float = float * 16.0 + f64::from(digit);
-            value = value
-                .and_then(|value| value.checked_mul(16))
-                .and_then(|value| value.checked_add(u128::from(digit)));
+            match value.checked_mul(16) {
+                Some(shifted) if dropped == 0 => value = shifted | u128::from(digit),
+                _ => {
+                    dropped += 1;
+                    sticky |= digit != 0;
+                }
+            }
         }
         if digits == 0 {
             return Err(Error::new(ErrorKind::Unexpected, "expected a hex digit"));
         }
+        if dropped > 0 {
+            // the value has more than 64 significant bits, the lowest bit
+            // stands for the dropped digits so that the value is rounded
+            // correctly.  The scaling by a power of two is exact.
+            // 2^(4 * dropped), infinite beyond the range of floats
+            let scale = f64::from_bits((1023 + 4 * dropped.min(256)) << 52);
+            let float = (value | u128::from(sticky)) as f64 * scale;
+            if float.is_infinite() {
+                return Err(number_out_of_range());
+            }
+            return Ok(Number::F64(if nonnegative { float } else { -float }));
+        }
         Ok(match value {
-            Some(value) if nonnegative => match u64::try_from(value) {
+            value if nonnegative => match u64::try_from(value) {
                 Ok(value) => Number::U64(value),
                 Err(_) => Number::U128(value),
             },
-            Some(value) if value <= 1 << 63 => Number::I64((value as i64).wrapping_neg()),
-            Some(value) if value <= 1 << 127 => Number::I128((value as i128).wrapping_neg()),
-            _ if float.is_infinite() => return Err(number_out_of_range()),
-            _ => Number::F64(if nonnegative { float } else { -float }),
+            value if value <= 1 << 63 => Number::I64((value as i64).wrapping_neg()),
+            value if value <= 1 << 127 => Number::I128((value as i128).wrapping_neg()),
+            value => Number::F64(-(value as f64)),
         })
     }
 
@@ -1421,7 +1450,51 @@ impl<'a> Cursor<'a> {
             starting_exp.saturating_sub(exp)
         };
 
-        f64_from_parts(nonnegative, significand, final_exp)
+        self.float(nonnegative, significand, final_exp)
+    }
+
+    /// Returns the value of the float that was just parsed.
+    ///
+    /// The number is given as its significand (the digits) and decimal
+    /// exponent.  For exponents up to 22 (which covers numbers with up to
+    /// 22 fraction digits) the value is computed from them: if the
+    /// significand has at most 53 bits, both it and the power of ten are
+    /// exact as `f64` and their product (or quotient) is rounded correctly
+    /// as only the result is rounded.  Otherwise the algorithm of Eisel and
+    /// Lemire is used (see [`eisel_lemire`]).  For other exponents (and if
+    /// digits were dropped from the significand) the text of the number is
+    /// parsed, which rounds correctly too.
+    #[inline]
+    fn float(&self, nonnegative: bool, significand: u64, exponent: i32) -> Result<f64, Error> {
+        if !self.truncated {
+            let value = match POW10.get(exponent.unsigned_abs() as usize) {
+                Some(&pow) if significand <= 1 << 53 => Some(if exponent >= 0 {
+                    significand as f64 * pow
+                } else {
+                    significand as f64 / pow
+                }),
+                Some(_) => eisel_lemire(significand, exponent),
+                None if significand == 0 => Some(0.0),
+                None => None,
+            };
+            if let Some(value) = value {
+                return Ok(if nonnegative { value } else { -value });
+            }
+        }
+        self.parse_float_text()
+    }
+
+    /// Parses the text of the number that was just parsed as float.
+    #[cold]
+    #[inline(never)]
+    fn parse_float_text(&self) -> Result<f64, Error> {
+        // SAFETY: the number was validated and only consists of ASCII
+        // characters
+        let text = unsafe { str::from_utf8_unchecked(&self.input[self.number_start..self.pos]) };
+        match text.parse::<f64>() {
+            Ok(value) if value.is_finite() => Ok(value),
+            _ => Err(number_out_of_range()),
+        }
     }
 
     // This cold code should not be inlined into the middle of the hot
@@ -1446,71 +1519,108 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn f64_from_parts(nonnegative: bool, significand: u64, mut exponent: i32) -> Result<f64, Error> {
-    let mut f = significand as f64;
-    loop {
-        match POW10.get(exponent.unsigned_abs() as usize) {
-            Some(&pow) => {
-                if exponent >= 0 {
-                    f *= pow;
-                    if f.is_infinite() {
-                        return Err(number_out_of_range());
-                    }
-                } else {
-                    f /= pow;
+/// Powers of ten which are exact as `f64`.
+static POW10: [f64; 23] = [
+    1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
+    1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+];
+
+/// The powers of five from 5^-22 to 5^22 with 128 bits (as low and high
+/// half) for [`eisel_lemire`].
+///
+/// The positive powers are exact (they have at most 52 bits) and shifted
+/// so that the highest bit is set.  The negative ones are `2^(z + 127) /
+/// 5^-q + 1` (rounded down) where `2^z` is the smallest power of two above
+/// `5^-q`, which also has the highest bit set.
+static POW5: [(u64, u64); 45] = {
+    let mut table = [(0, 0); 45];
+    let mut q = -22i32;
+    while q <= 22 {
+        let pow = 5u128.pow(q.unsigned_abs());
+        let value = if q >= 0 {
+            pow << pow.leading_zeros()
+        } else {
+            // 2^(z + 127) / pow by long division, the quotient has 128 bits
+            let z = 128 - pow.leading_zeros();
+            let mut quotient = 0u128;
+            let mut rem = 1u128;
+            let mut bit = 0;
+            while bit < z + 127 {
+                rem <<= 1;
+                quotient <<= 1;
+                if rem >= pow {
+                    rem -= pow;
+                    quotient |= 1;
                 }
-                break;
+                bit += 1;
             }
-            None => {
-                if f == 0.0 {
-                    break;
-                }
-                if exponent >= 0 {
-                    return Err(number_out_of_range());
-                }
-                f /= 1e308;
-                exponent += 308;
-            }
+            quotient + 1
+        };
+        table[(q + 22) as usize] = (value as u64, (value >> 64) as u64);
+        q += 1;
+    }
+    table
+};
+
+/// Returns the correctly rounded value of `significand * 10^exponent`.
+///
+/// This is the algorithm of Eisel and Lemire ("Number Parsing at a
+/// Gigabyte per Second", <https://arxiv.org/abs/2101.11408>) as used by the
+/// standard library, for exponents from -22 to 22: the significand is
+/// multiplied with a 128 bit approximation of the power of five, the
+/// power of two is added to the exponent.  In this range the product is
+/// precise enough to round correctly (ties to even only happen for
+/// exponents from -4 to 23 where the powers of five are exact).  Returns
+/// `None` for values out of the range of normal floats (which do not occur
+/// in this range).
+fn eisel_lemire(significand: u64, exponent: i32) -> Option<f64> {
+    // the bits of the mantissa (without the implicit one) and the extra
+    // bits of the product needed to round
+    const MANTISSA_BITS: i32 = 52;
+    const PRECISION_MASK: u64 = u64::MAX >> (MANTISSA_BITS + 3);
+
+    let leading_zeros = significand.leading_zeros();
+    let significand = significand << leading_zeros;
+    let (pow_lo, pow_hi) = POW5[(exponent + 22) as usize];
+    let product = u128::from(significand) * u128::from(pow_hi);
+    let (mut lo, mut hi) = (product as u64, (product >> 64) as u64);
+    if hi & PRECISION_MASK == PRECISION_MASK {
+        // the bits below the mantissa might carry, the lower half of the
+        // power is needed
+        let carry = ((u128::from(significand) * u128::from(pow_lo)) >> 64) as u64;
+        lo = lo.wrapping_add(carry);
+        if carry > lo {
+            hi += 1;
         }
     }
-    Ok(if nonnegative { f } else { -f })
-}
 
-// Clippy bug: https://github.com/rust-lang/rust-clippy/issues/5201
-#[allow(clippy::excessive_precision)]
-static POW10: [f64; 309] = [
-    1e000, 1e001, 1e002, 1e003, 1e004, 1e005, 1e006, 1e007, 1e008, 1e009, //
-    1e010, 1e011, 1e012, 1e013, 1e014, 1e015, 1e016, 1e017, 1e018, 1e019, //
-    1e020, 1e021, 1e022, 1e023, 1e024, 1e025, 1e026, 1e027, 1e028, 1e029, //
-    1e030, 1e031, 1e032, 1e033, 1e034, 1e035, 1e036, 1e037, 1e038, 1e039, //
-    1e040, 1e041, 1e042, 1e043, 1e044, 1e045, 1e046, 1e047, 1e048, 1e049, //
-    1e050, 1e051, 1e052, 1e053, 1e054, 1e055, 1e056, 1e057, 1e058, 1e059, //
-    1e060, 1e061, 1e062, 1e063, 1e064, 1e065, 1e066, 1e067, 1e068, 1e069, //
-    1e070, 1e071, 1e072, 1e073, 1e074, 1e075, 1e076, 1e077, 1e078, 1e079, //
-    1e080, 1e081, 1e082, 1e083, 1e084, 1e085, 1e086, 1e087, 1e088, 1e089, //
-    1e090, 1e091, 1e092, 1e093, 1e094, 1e095, 1e096, 1e097, 1e098, 1e099, //
-    1e100, 1e101, 1e102, 1e103, 1e104, 1e105, 1e106, 1e107, 1e108, 1e109, //
-    1e110, 1e111, 1e112, 1e113, 1e114, 1e115, 1e116, 1e117, 1e118, 1e119, //
-    1e120, 1e121, 1e122, 1e123, 1e124, 1e125, 1e126, 1e127, 1e128, 1e129, //
-    1e130, 1e131, 1e132, 1e133, 1e134, 1e135, 1e136, 1e137, 1e138, 1e139, //
-    1e140, 1e141, 1e142, 1e143, 1e144, 1e145, 1e146, 1e147, 1e148, 1e149, //
-    1e150, 1e151, 1e152, 1e153, 1e154, 1e155, 1e156, 1e157, 1e158, 1e159, //
-    1e160, 1e161, 1e162, 1e163, 1e164, 1e165, 1e166, 1e167, 1e168, 1e169, //
-    1e170, 1e171, 1e172, 1e173, 1e174, 1e175, 1e176, 1e177, 1e178, 1e179, //
-    1e180, 1e181, 1e182, 1e183, 1e184, 1e185, 1e186, 1e187, 1e188, 1e189, //
-    1e190, 1e191, 1e192, 1e193, 1e194, 1e195, 1e196, 1e197, 1e198, 1e199, //
-    1e200, 1e201, 1e202, 1e203, 1e204, 1e205, 1e206, 1e207, 1e208, 1e209, //
-    1e210, 1e211, 1e212, 1e213, 1e214, 1e215, 1e216, 1e217, 1e218, 1e219, //
-    1e220, 1e221, 1e222, 1e223, 1e224, 1e225, 1e226, 1e227, 1e228, 1e229, //
-    1e230, 1e231, 1e232, 1e233, 1e234, 1e235, 1e236, 1e237, 1e238, 1e239, //
-    1e240, 1e241, 1e242, 1e243, 1e244, 1e245, 1e246, 1e247, 1e248, 1e249, //
-    1e250, 1e251, 1e252, 1e253, 1e254, 1e255, 1e256, 1e257, 1e258, 1e259, //
-    1e260, 1e261, 1e262, 1e263, 1e264, 1e265, 1e266, 1e267, 1e268, 1e269, //
-    1e270, 1e271, 1e272, 1e273, 1e274, 1e275, 1e276, 1e277, 1e278, 1e279, //
-    1e280, 1e281, 1e282, 1e283, 1e284, 1e285, 1e286, 1e287, 1e288, 1e289, //
-    1e290, 1e291, 1e292, 1e293, 1e294, 1e295, 1e296, 1e297, 1e298, 1e299, //
-    1e300, 1e301, 1e302, 1e303, 1e304, 1e305, 1e306, 1e307, 1e308,
-];
+    let upper_bit = (hi >> 63) as i32;
+    let shift = upper_bit + 64 - MANTISSA_BITS - 3;
+    let mut mantissa = hi >> shift;
+    // the biased exponent: floor(log2(10^exponent)) + 63 for the product,
+    // the normalization and the bias of 1023
+    let mut power2 = ((exponent.wrapping_mul(152_170 + 65536) >> 16) + 63) + upper_bit
+        - leading_zeros as i32
+        + 1023;
+    if power2 <= 0 {
+        return None;
+    }
+    // exactly half way between two floats rounds to the even one
+    if lo <= 1 && (-4..=23).contains(&exponent) && mantissa & 3 == 1 && mantissa << shift == hi {
+        mantissa &= !1;
+    }
+    mantissa += mantissa & 1;
+    mantissa >>= 1;
+    if mantissa >= 2 << MANTISSA_BITS {
+        mantissa = 1 << MANTISSA_BITS;
+        power2 += 1;
+    }
+    mantissa &= !(1 << MANTISSA_BITS);
+    if power2 >= 0x7ff {
+        return None;
+    }
+    Some(f64::from_bits(mantissa | (power2 as u64) << MANTISSA_BITS))
+}
 
 /// Creates an error for the token at the offset.
 #[cold]
@@ -1527,7 +1637,7 @@ fn token_error(offset: usize, msg: &'static str) -> Error {
 /// no trailing zeros (other than `.0`), there are at most 15 significant
 /// digits and the value is zero or at least 1e-4 (below that the shortest
 /// representation uses an exponent).  15 digits are guaranteed to roundtrip
-/// through `f64` and in that range `f64_from_parts` rounds correctly.
+/// through `f64`.
 #[inline]
 fn is_shortest_repr(digits: u64, frac_len: u32) -> bool {
     const MAX: u64 = 1_000_000_000_000_000;
@@ -1789,6 +1899,116 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_floats_are_rounded_correctly() {
+        /// Parses a number as `f64`.
+        fn parse(text: &str) -> Result<f64, String> {
+            let mut out = None::<f64>;
+            let mut driver = DeserializeDriver::new(&mut out);
+            let options = Options {
+                validate_utf8: false,
+                exact_numbers: false,
+            };
+            Parser::default()
+                .parse(
+                    text.as_bytes(),
+                    0,
+                    true,
+                    0,
+                    options,
+                    &mut Borrowing(&mut driver),
+                )
+                .map_err(|err| err.message().to_string())?;
+            drop(driver);
+            Ok(out.unwrap())
+        }
+
+        let check = |text: &str| match text.parse::<f64>() {
+            Ok(value) if value.is_finite() => {
+                assert_eq!(parse(text).map(f64::to_bits), Ok(value.to_bits()), "{text}");
+            }
+            _ => assert_eq!(parse(text), Err("number out of range".into()), "{text}"),
+        };
+        for text in [
+            "2e-23",
+            "0.1",
+            "9007199254740993",
+            "9007199254740993.0",
+            "1e23",
+            "8.98846567431158e307",
+            "1.7976931348623157e308",
+            "1.7976931348623159e308",
+            "2.2250738585072011e-308",
+            "4.9e-324",
+            "2.4703282292062328e-324",
+            "1e-400",
+            "0e999",
+            "-0.0e-999",
+            "123456789012345678901234567890e-10",
+            "0.000000000000000000000000000001234567890123456789",
+        ] {
+            check(text);
+        }
+
+        let mut rng: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = |n: u64| {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng % n
+        };
+        // miri is too slow for many iterations
+        for _ in 0..if cfg!(miri) { 200 } else { 100_000 } {
+            let mut text = String::new();
+            if next(2) == 0 {
+                text.push('-');
+            }
+            text.push(char::from(b'1' + next(9) as u8));
+            for _ in 0..next(25) {
+                text.push(char::from(b'0' + next(10) as u8));
+            }
+            if next(2) == 0 {
+                text.push('.');
+                for _ in 0..1 + next(25) {
+                    text.push(char::from(b'0' + next(10) as u8));
+                }
+            }
+            if next(2) == 0 {
+                text.push_str(&format!("e{}", next(700) as i32 - 350));
+            }
+            check(&text);
+        }
+        // significands beyond 53 bits with exponents up to 22 (like
+        // coordinates) are corrected with integer arithmetic
+        for _ in 0..if cfg!(miri) { 200 } else { 100_000 } {
+            let digits = 16 + next(4) as usize;
+            let mut text = String::new();
+            text.push(char::from(b'1' + next(9) as u8));
+            for _ in 1..digits {
+                text.push(char::from(b'0' + next(10) as u8));
+            }
+            if next(2) == 0 {
+                text.insert(1 + next(digits as u64 - 1) as usize, '.');
+            }
+            if next(2) == 0 {
+                text.push_str(&format!("e{}", next(30) as i32 - 15));
+            }
+            check(&text);
+        }
+        // the halfway points between floats above 2^53 (which are rounded
+        // to the even float) and the numbers next to them
+        for _ in 0..if cfg!(miri) { 20 } else { 10_000 } {
+            let m = (1u64 << 52) + next(1 << 52);
+            check(&format!("{}.5", m));
+            check(&format!("{}.4999999999", m));
+            let half = (2 * m + 1) << 10;
+            for value in [half - 1, half, half + 1] {
+                check(&format!("{value}e0"));
+                check(&format!("{}e-1", u128::from(value) * 10));
+            }
+        }
+    }
+
     /// Checks that the inputs parse like the equivalent JSON, in one go
     /// and in chunks.
     fn assert_like_json(inputs: &[(&str, &str)]) {
@@ -1928,6 +2148,23 @@ mod tests {
             ("[Inf]", "unexpected character"),
             ("\u{2029}x", "unexpected character"),
         ]);
+    }
+
+    #[test]
+    fn test_json5_hex_floats_are_rounded_correctly() {
+        let value = |text: &str| match parse_complete(text).unwrap()[..] {
+            [Event::Atom(Atom::F64(value))] => value,
+            ref events => panic!("{events:?}"),
+        };
+        // (2^53 + 1) * 2^80 is half way between 2^133 and the next float
+        // (rounded to the even one).  The digits beyond 128 bits are
+        // dropped, if one of them is not zero the value is above half way.
+        let half = format!("0x20000000000001{}", "0".repeat(20));
+        let above = format!("0x20000000000001{}1", "0".repeat(19));
+        let next = 2f64.powi(133) + 2f64.powi(81);
+        assert_eq!(value(&half), 2f64.powi(133));
+        assert_eq!(value(&above), next);
+        assert_eq!(value(&format!("-{above}")), -next);
     }
 
     #[test]

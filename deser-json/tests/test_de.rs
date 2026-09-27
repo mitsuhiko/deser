@@ -565,7 +565,7 @@ fn test_exact_numbers() {
     let value: BigInt = deser_json::from_str(big).unwrap();
     assert_eq!(value.to_string(), big);
     let value: f64 = deser_json::from_str(big).unwrap();
-    assert_eq!(value, 1.2345678901234568e44);
+    assert_eq!(value, 1.2345678901234567e44);
 
     // numbers roundtrip exactly through the serializer
     #[derive(deser::Deserialize, deser::Serialize)]

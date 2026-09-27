@@ -233,6 +233,22 @@ numeric value with a single dynamic call; earlier Canada measurements made
 this as fast as plain floats.  Recheck this path when changing primitive
 sinks rather than assuming extensions are rare or cold.
 
+### JSON Float Rounding
+
+Floats are rounded correctly.  Before, the value was the significand
+divided (or multiplied) by a power of ten, which is exact for significands
+up to 2^53 and exponents up to 22 but otherwise off by up to a unit in the
+last place (`2e-23`, 16-17 digit coordinates).  Significands up to 2^53
+still take that path, larger ones (with exponents up to 22) use the
+algorithm of Eisel and Lemire with a 45 entry table of powers of five,
+everything else parses the text with the standard library.  Canada (all
+17 digit coordinates) got about 10% slower, features and point-cloud about
+5%.  Tried and slower: checking the division's result with exact 128 bit
+or 64 bit integer arithmetic (about 3.5 ns per number even without
+branches) and always parsing the text with the standard library (38% on
+Canada).  The standard library's parser is not usable directly because it
+scans the digits again.
+
 ### YAML
 
 YAML was still about six times slower than JSON on the same data.  The
