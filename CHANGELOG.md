@@ -4,1107 +4,225 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
-- Without the `speedups` feature some powers of two were written with
-  digits that do not read back as the same float (`-5.960464477539062e-8`
-  for `-2^-24`), floats now always have the same text as with the
-  feature.  Formatting them without it is also faster.
-- Added `deser-transcode`, which converts a value from any deserializer
-  into any serializer (JSON to YAML, CBOR to JSON, ...) without types in
-  between.  Values are passed on as the deserializer emitted them and
-  every serializer applies its usual rules to them.  One value is buffered
-  at a time and strings that the deserializer borrows from the input are
-  not copied.
-- `RecordBuf`, the recording that keeps borrowed data borrowed, is now
-  public and implements `Serialize` and `Deserialize`.
-- Recordings now know the lengths of the maps and sequences in them, also
-  when the format did not say (the length is in the `ContainerShape` of
-  the start event).  Binary formats write the length upfront when a
-  recording is serialized.
-- Serializing a recording no longer takes quadratic time for deeply
-  nested values.
-- `bound`, `serialize_bound` and `deserialize_bound` can be placed on enum
-  variants.  They replace the bounds inferred from the fields of the
-  variant and are added to the bounds of the enum, like serde's `bound`
-  on variants.
-- Added `#[deser(as = ...)]`, `#[deser(serialize_as = ...)]` and
-  `#[deser(deserialize_as = ...)]` for enum variants (serde's `with`,
-  `serialize_with` and `deserialize_with` on variants).  The adapter
-  serializes and deserializes the content of the variant: `()` for
-  variants without fields, the field for variants with one field and a
-  tuple of the fields otherwise (of references to them when serializing).
-  Attributes of the variant and its fields that have no effect with the
-  adapter are rejected.
-- `#[deser(default)]` on enums is an error.  It was accepted and had no
-  effect, defaults go on variants (the variant for missing tags) and on
-  the fields of struct variants.
-- `rename_all` and `alias_all` convert the case of letters that are not
-  ASCII: `rename_all = "camelCase"` no longer panics for variants that
-  start with such a letter (like `Ärger`) and `rename_all = "snake_case"`
-  names `GroßÄrger` `groß_ärger` instead of `groß_Ärger`.
-- The derive names fields, variants and types with raw identifiers
-  (`r#type`) without the `r#` prefix, like serde.  Previously the prefix
-  was part of the name and deriving `Deserialize` for such structs (and
-  `Serialize` for struct variants with such fields) panicked.
-- Added `deser-hjson` for [Hjson](https://hjson.github.io/): comments
-  with `#`, optional commas, keys and strings without quotes (which end
-  at the end of the line), multiline strings and maps without braces at
-  the root.  Numbers, `true`, `false` and `null` without quotes are
-  implicit values, a `String` receives their text.  Like the JSONC and
-  JSON5 parsers it is generated from the parser of `deser-json`, which is
-  unchanged, and it passes the Hjson test suite.
-- Added `deser-xml` for XML, built on quick-xml.  An element is its text
-  or, if it has attributes or child elements, a multimap with attributes
-  as `@name` entries, child elements under their names and text as
-  `$text` entries.  `Vec<T>` fields collect repeated elements, namespaces
-  can be given fixed prefixes or be resolved into `{uri}local` names
-  (written with `qname!` or macros defined by `namespace!`, `prefixes!`
-  names the prefixes after them), the serializer writes the same shape
-  and declares the namespaces of `{uri}local` names on the root element.
-  `deser_xml::Mixed<T>` keeps the order of mixed content (text and child
-  elements as values of `T`, typically an enum), also when flattened into
-  a struct whose fields take the attributes and the other elements.  It
-  keeps whitespace between elements, `Mixed<T, SkipWhitespace>` does not.
-  Attributes can come after other keys of a map, they are still written
-  into the start tag.  `SerializerConfig::indent` (or `pretty`, like in
-  `deser-json`) writes child elements on lines of their own where the
-  whitespace is not text: elements with text and `Mixed` content stay on
-  a single line, which structs predict from their fields, and
-  `Layout::Compact` keeps elements and sequences on a single line.
-- Added `Describe::fields`, which derived structs without flattened fields
-  call with the names of their fields.  Formats can use it to know which
-  keys of a struct can still come.
-- Added the `SkipBlank` adapter which leaves no value for strings that are
-  empty or only whitespace, so sequences and collections leave them out
-  (`Vec<SkipBlank>`, `Separated<',', SkipBlank<TrimWhitespace>>`).
-- Added `ContentKey`, the key under which maps hold their own content
-  (set by formats in the state).  With it, a map is passed on as the value
-  of that key to types that reject maps (`<count unit="m">3</count>` for a
-  `u32`) and text is passed on as a map with the text under that key to
-  types that reject text (`<price>3</price>` for a struct with a `$text`
-  field).
-- **Breaking:** maps whose keys can repeat are multimaps
-  (`ContainerShape::with_multimap`, `State::is_multimap`), which replace
-  the sequences of repeated keys (`ContainerShape::with_repeated` was
-  removed) and the rule that a single lexical atom is a sequence of one
-  element (`LexicalRules::with_single_is_seq` was removed).  Formats emit
-  every occurrence of a key as an entry of its own.  Fields of derived
-  structs and values of maps that are collections (`Vec<T>`, `VecDeque`,
-  `LinkedList`, `BinaryHeap`, `Box<[T]>`, the sets, `SmallVec`,
-  `ArrayVec` and `Option`s of them) collect the values of all occurrences
-  of their key, also if other keys are between them.  A key given once is
-  a collection of one value (also if the value is a map, like `a[b]=1`
-  for a `Vec<T>`), a value that is a sequence the element does not accept
-  is the values of the key, and a missing key is an empty collection
-  (unless the field has a default or is `required`).  Other fields follow
-  the `DuplicateKeys` policy, errors say ``duplicate field `name` ``.
-  Updates replace a collection with the first value of its key and add
-  the others.  `deser-urlencoded`, `deser-env` and `deser-csv` (records
-  with headers, where names can repeat) emit multimaps.  In `deser-value`
-  maps know if they are multimaps (`Map::is_multimap`), the values of a
-  repeated key are a `Seq` marked as repeated and are passed on as
-  repeated keys again when the value is deserialized into another type.
-  `deser_env::var` returns a collection of the value for collections and
-  an empty one if the variable is missing.
-- **Breaking:** sinks are allocated in an arena of the deserialization
-  instead of a cache per thread (which also works without `std`).  The
-  arena belongs to the `State`, the sinks of the open containers are on
-  top of each other in it: allocating a sink bumps a pointer and the space
-  is reused once the sink is dropped.  The arena of a finished
-  deserialization is kept for the next one.  A sink that outlives its
-  state does not leak the arena: the rest of the arena is freed with the
-  state, the chunk the sink is in when the sink is dropped.
-  - `Deserialize::deserialize_into`, `Deserialize::deserialize_update`,
-    `DeserializeAs::deserialize_into_as` and
-    `DeserializeAs::deserialize_update_as` take the `State`.
-  - `SinkHandle::boxed` was replaced by `SinkHandle::arena`, which
-    allocates the sink in the arena of the state, and `SinkHandle::heap`,
-    which allocates it from the global allocator (for sinks that outlive
-    the deserialization).
-  - `OwnedSink::deserialize`, `OwnedSink::deserialize_as`,
-    `Recording::recorder` and `Recording::capture` take the `State`,
-    `DeserializeDriver::wrap_sink` passes it to the callback.
-  - Added `DeserializeDriver::from_fn` and `DeserializeDriver::from_state`
-    to create drivers whose sink is allocated in the arena of the driver.
-  - The variant builders of enums, the value slots of owned sinks and
-    the captures of untagged enums are in the arena as well.
-- **Breaking:** the emitters and owned values of serializations are
-  allocated in the arena of the state as well.  `Chunk::Struct`,
-  `Chunk::Map` and `Chunk::Seq` hold a `ser::Boxed` (which is in the arena
-  or on the heap) instead of a `Box`, `Chunk::structure`, `Chunk::map` and
-  `Chunk::seq` create them in the arena (`Box::new(emitter).into()` on the
-  heap).  `SerializeHandle::boxed` was replaced by `SerializeHandle::arena`
-  and `SerializeHandle::heap`.
-- The stacks of the deserialize and serialize drivers are kept with the
-  arena for the next driver, and recordings of a single event (like the
-  keys that tagged enums record until the variant is known) are stored
-  without an allocation.  Together with the arena this removes up to 24%
-  of the allocations of deserializations and up to 76% of the allocations
-  of serializations.
-- **Breaking:** the standard library is optional (the new `std` feature,
-  enabled by default).  Without it `deser`, `deser-json`, `deser-jsonc`,
-  `deser-json5`, `deser-cbor`, `deser-msgpack`, `deser-csv`, `deser-path`
-  and `deser-debug` only need `alloc` and build for targets without an
-  operating system.  `io` requires `std`.  Without `std` the
-  implementations for `HashMap`, `HashSet`, `Path`, `OsStr`,
-  `SystemTime`, `Mutex`, `RwLock` and `OnceLock` and the adapters of
-  `IndexMap` and `IndexSet` are not available.  Crates that depend on
-  deser with `default-features = false` and need these have to enable
-  `std`.
-- Added `Atom::Implicit` for values whose type the format inferred from
-  their text.  It carries the value (`ImplicitValue`: null, bool,
-  integers or float) and the text: types that accept the value receive
-  it, types that reject it receive the text as string.  Enums look up
-  their variants by the value and then by the text, `deser-value` keeps
-  both.  `Atom` remains 32 bytes.  JSON and YAML write the text if it's
-  the same value for them (`1.10` stays `1.10`, in YAML `0x1F` and `~`
-  are kept too), otherwise the value, so values read from YAML keep how
-  they were written when they are written again.
-- `deser-yaml` emits plain scalars that are not strings as implicit
-  atoms.  This fixes plain scalars like `1.10`, `0x1F`, `true` or `~` for
-  strings (`version: 1.10` is `"1.10"` for a `String`, `~` is `None` for
-  an `Option<String>` and `"~"` for a `String`) and keys like `200` for
-  maps with string keys and struct fields.  An empty document is `""`
-  for a `String`.
-- How lexical atoms are interpreted is decided by the `LexicalRules` of
-  the deserialization (an extension value in the state) instead of being
-  the same for all formats.  The default are the strict rules for text
-  that happens to be text, like the keys of JSON and TOML: booleans are
-  `true` and `false` and empty text is not a missing value.  Query
-  strings, environment variables and CSV use the lenient rules (`yes`,
-  `on` and `1` are booleans, empty values are `None` for optionals of
-  types that do not accept them).  This fixes JSON keys like `"on"` being
-  accepted as booleans.  `deser-serde` parses lexical atoms with the rules
-  of the deserialization.
-- The text of `Atom::Str` and `Atom::Lexical` is a `Text` and the data
-  of `Bytes` is private (`Bytes::data`, `Bytes::into_data` and
-  `Bytes::borrowed_data`).  Both are borrowed or owned like a `Cow` but
-  two words large (owned data is a boxed slice without spare capacity).
-  `Text` dereferences to `str` and converts from and into `&str`,
-  `String` and `Cow<str>`, `Text::borrowed_str` returns text that borrows
-  from the input.  This makes `Bytes` and the values of `deser-value`
-  8 bytes smaller and leaves room in `Atom` for more information.
-- **Breaking:** `#[deser(validate = ...)]` was removed, validation moved
-  into `deser-validate`.  Use `#[deser(as = Check<V>)]` on fields and
-  `#[deser(deserialize_as = Check<V, _>)]` on types, with validators made by
-  `validator!(NonZero(port: &u16) => *port != 0, "must not be zero")` or
-  `validator!(ConsistentTimeouts(config: &Config) = check_timeouts)`.  The derive points
-  at the replacement when the attribute is used.  Updated values are now
-  checked once they were updated (the value keeps the update if it's
-  invalid) instead of before they replace the value.
-- Adapters on types can wrap the derived implementation: `_` (the
-  `Derived` adapter) stands for it, as in `#[deser(as = DefaultOnError<_>)]`
-  or `#[deser(deserialize_as = Check<OrderedBounds, _>)]`.
-- Added `DeserializeAs::deserialize_update_as`.  Derived structs update
-  fields with adapters with it and types with adapters forward updates to
-  it.  It replaces the value by default, `Same` and `Derived` update in
-  place.  `checked_update` updates a value and checks it once the update
-  is complete.
-- Added `deser-validate` for validation.  Validators are types
-  (`Email`, `Len<1, 32>`, `Range<1, 65535>`, `Each<V>`, tuples for all
-  of them, and `validator!` for custom ones) with violations that have a
-  code (the name of the validator), parameters and a message.  The `Check`
-  adapter fails the deserialization if the value is invalid,
-  `Validated<T, V>` keeps all errors of the value in it (also type errors
-  and errors deep inside the value) and `Validation` reports all problems
-  of an input with their paths and locations.
-- `State::attach_error_context`, `State::discards_errors` and
-  `State::error_limit_reached` are public for sinks that handle the errors
-  of their values themselves.
-- Errors can hold multiple errors (`Error::errors`, `Error::from_errors`
-  and `Error::push_error`).  The accessors refer to the first one, the
-  display output mentions how many more there are and `{:#}` lists all
-  of them.  Formats resolve the positions of all of them.
-- Added `State::set_collect_errors`: derived structs and the standard
-  collections recover from the errors of their values and fail once they
-  are complete with all errors they collected, including all missing
-  fields.  This reports all problems of the input at once.  The number of
-  errors can be limited with `State::set_max_errors`.  Untagged enums try
-  their variants without collecting errors.  `CollectedErrors` helps
-  implementing this for custom sinks.
-- Added `Sink::recover`: maps and sequences can recover from the error
-  of an item, also if it happened deep inside of it.  The driver skips
-  the rest of the failed item (and the value of a failed key) and
-  deserialization continues with the next item.  Errors of the format and
-  of layers are not recoverable.  `DefaultOnError`, `VecSkipError` and
-  `MapSkipError` use this and no longer buffer values.
-- Added `deser-csv` for CSV, TSV and other delimited text.  A document is
-  a sequence of records which are maps of the names of the columns (from
-  the first record, given or none) to the fields.  Like query strings,
-  fields are lexical atoms which the types parse, also in flattened
-  structs and tagged enums.  The dialect is configurable (delimiter,
-  quotes, escapes, line endings, comments, blank lines, trimming, nulls, the
-  `sep=` line of Excel) and presets exist for TSV as databases write it.
-  Quotes that do not follow the rules and records with the wrong number of
-  fields are errors by default.  Streams are read and written one record
-  at a time, errors only discard their record.  Serializing writes the
-  columns of the first record (or given columns), quotes where necessary
-  and can escape formulas for spreadsheets.  The parser is tested with the
-  test cases of PapaParse and rust-csv.
-- Empty values that the value of an optional rejects (like an empty field
-  for an `Option<u32>` in a query string) no longer build an error message
-  that is thrown away.
-- Added `deser-env` for environment variables.  The variables with a
-  prefix are a map, `__` separates nested keys (`APP_SERVER__PORT` is
-  `server.port`) and names are lowercased.  Like query strings, values are
-  lexical atoms which the types parse, also in flattened structs and
-  tagged enums.  Errors (also of unknown fields collected as warnings)
-  carry the name of the variable as `EnvVar` attachment.  Values can be
-  serialized into variables too.
-- Added the `Separated` adapter for sequences that are written as text
-  with a separator (`#[deser(as = Separated)]` reads `a,b,c` and
-  `Separated<':'>` reads `/usr/bin:/bin`).  Strings are split and the
-  pieces parse like lexical atoms, sequences are accepted as they are.
-  Serializing joins the elements and fails for values that would not read
-  back.
-- Added the `TrimWhitespace` adapter which trims strings before they are
-  deserialized, also to trim the pieces of `Separated`
-  (`Separated<',', TrimWhitespace>`).
-- Values that are buffered by the derive keep borrowed data borrowed: the
-  fields of internally tagged enums that come before the tag, the content
-  of adjacently tagged enums that comes before the tag, the tags of other
-  variants, untagged enums, untagged variants and adapters like
-  `DefaultOnError` can be deserialized into types that borrow (like
-  `&str`).  They failed with `expected a borrowed string` before.  This
-  also makes buffering cheaper as borrowed strings are not copied.
-  `Recording` itself still holds owned data.
-- The derive explains unsupported attributes: attributes that are placed
-  in the wrong place name where they are supported, attributes of serde
-  point to what to use instead (for instance adapters instead of `with`
-  and `from`) and typos suggest the attribute with the most similar name.
-- Added `#[deser(expecting = "...")]` which replaces the name of the type
-  in errors (`unexpected bool, expected a point`).
-- Added `#[deser(untagged)]` for variants of tagged enums which are
-  represented by their content alone.  They are tried in order if the
-  tagged representation fails to deserialize, for instance to fall back to
-  a raw value for unknown tags.
-- `#[deser(deny_unknown_fields)]` can be placed on struct variants.
-- `bound`, `serialize_bound` and `deserialize_bound` can be placed on
-  fields where they replace the bounds inferred from the field.
-- Added `#[deser(transparent)]` for structs which serializes and
-  deserializes a struct like its only field that is not skipped.
-- Added `#[deser(rename_all_fields = "...")]` for enums which renames the
-  fields of all struct variants, and `#[deser(rename_all = "...")]` for
-  struct variants which renames the fields of the variant.
-- `rename` and `rename_all` can differ between serialization and
-  deserialization: `#[deser(rename(serialize = "a", deserialize = "b"))]`.
-- The fields of tuple structs and tuple variants support `skip`,
-  `skip_serializing`, `skip_deserializing` and `default = expr` (the value
-  of skipped fields).  Skipped fields are not part of the value: with one
-  remaining field the value is the value of that field (so that
-  `struct Length<U>(f64, #[deser(skip)] PhantomData<U>)` is a float), without
-  remaining fields tuple structs are null and tuple variants unit variants.
-- `#[deser(flatten)]` is supported on the fields of struct variants.
-- Enums can have lifetime and const parameters, which means that enums can
-  borrow from the data like structs (`enum Token<'a> { Word(&'a str) }`).
-  Type parameters of enums no longer need to be `'static` to deserialize
-  them.
-- The derive supports tuple structs (`struct Pair(u32, String)`, which
-  are sequences) and unit structs (`struct Marker;` and `struct Marker()`,
-  which are null).  The
-  derive panicked for them before and rejects unions without a container
-  adapter with an error.  `Describe` has the new methods `tuple_struct`
-  and `unit_struct` which `deser-debug` uses to format them like `Debug`.
-  `rename_all`, `alias_all`, `default`, `deny_unknown_fields` and
-  `skip_serializing_optionals` are rejected on newtype, tuple and unit
-  structs as they had no effect.
-- Everything but the derive macros moved into the new `deser-core` crate
-  which `deser` re-exports, nothing changes for code that uses `deser`.
-  The crates of the data formats depend on `deser-core`, so they are
-  compiled in parallel with the derive macros (which speeds up clean
-  builds, a small program with JSON builds in 2.4s instead of 3.4s).
-- Added `#[deser(repr)]` for enums which names the variants by their
-  discriminants (``#[deser(repr)] enum Priority { Low = 1, Normal, High =
-  10 }`` is written as `1`, `2` and `10`).  The discriminants have to be
-  integer literals.
-- Updates (`deserialize_update`) merge `HashMap` and `BTreeMap`: the given
-  entries are inserted, the values of keys that exist are replaced (not
-  updated).  `Box` updates its value.  Structs with flattened fields are
-  updated like other structs: flattened fields are updated with the keys
-  they take and keep their values if they take none (they were replaced
-  before).  `deser_value::Map` merges like the other maps and
-  `deser_value::Value` merges a map into a map (and is replaced by
-  everything else).
-- `#[deser(skip)]`, `#[deser(skip_serializing)]` and
-  `#[deser(skip_deserializing)]` can be used on enum variants.  Serializing
-  a skipped variant is an error (``the variant `A` of Kind cannot be
-  serialized``), when deserializing its name is an unknown variant.  The
-  types of the fields of skipped variants do not need to be serializable
-  or deserializable.
-- Fixed deriving `Deserialize` for generic enums with skipped fields of
-  generic types in struct variants, the enum did not require the default
-  the variant needs.
-- Added `#[deser(tag_alias = "...")]` and `#[deser(content_alias =
-  "...")]` for internally and adjacently tagged enums which accept other
-  keys for the tag and the content.  `tag` and `content` (and their
-  aliases) take paths to constants and macro invocations besides string
-  literals, like `rename`.
-- Internally tagged enums reject a tag that is given again after the
-  variant is known (``duplicate tag `type` ``).  It was passed to the
-  variant before which ignored it unless it denied unknown fields, only
-  flattened enums rejected it.
-- Added `Deserialize::deserialize_update`, `DeserializeDriver::update` and
-  `Deserializer::update` which update an existing value.  Derived structs
-  update the fields that are given and keep the others (nested structs are
-  merged), `Option` updates the value in it and all other types are
-  replaced.  This is useful to layer configuration files over defaults.
-- Added `#[deser(skip)]`, `#[deser(skip_serializing)]` and
-  `#[deser(skip_deserializing)]` for fields.  Skipped fields are filled in
-  with their default when deserializing and their types do not need to be
-  serializable.
-- Added `#[deser(required)]` for fields which makes fields of types with a
-  value for missing fields (like `Option`) required.
-- Added `Serialize` and `Deserialize` for `ManuallyDrop` (like the inner
-  value), `OnceLock` (like an `Option`) and `Infallible` (which fails to
-  deserialize).
-- Added `#[deser(alias_all = "...")]` for structs and enums which adds an
-  alias in a name style (like `rename_all`) to all fields or variants.  It
-  can be given more than once.
-- `rename` and `alias` take paths to constants and macro invocations (such
-  as `concat!(...)`) besides string literals, for fields, variants and
-  types.
-- Variants can be named by integers and booleans (`#[deser(rename = 1)]`,
-  `#[deser(rename = true)]`, also for `alias`).  They are written as such
-  in all enum representations.  Tags of unknown type (the keys of JSON
-  objects, query strings) are parsed into the type of the names.
-- Unknown variants given as integers or booleans report the value
-  (``unknown variant `2` of Kind, expected `A` or `B` ``) and enums with only unit
-  variants report their name when they receive a value that cannot be a
-  tag (`unexpected float, expected Level`, it was `expected compatible
-  type` before).
-- Added `#[deser(validate = path)]` for fields, structs, newtype structs
-  and enums.  The function receives a reference to the value once it was
-  deserialized and can reject it.  Errors point at the start of the value
-  and carry its path, also for compound values.
-- Added `#[deser(deny_unknown_fields)]` for structs and enums and the
-  `deser::de::UnknownFields` policy which rejects or collects (with
-  `deser::de::IgnoredFields`) keys that no field takes for all structs of
-  a deserialization.  Unlike serde this works with flattened structs and
-  internally tagged enums: a key is only unknown if neither the struct nor
-  its flattened fields take it, and the tag of internally tagged enums is
-  never unknown.  Errors point at the key.
-- Keys of flattened internally tagged enums which came before the tag are
-  offered to the variant like the keys after it.  They were replayed as a
-  map before, which made keys that a flattened variant does not take
-  invisible to the struct it's flattened into.
-- A flattened `Recording` takes all keys that no field before it takes and
-  records them as a map.  This also means that the recording of an other
-  variant of a flattened internally tagged enum receives all keys, it only
-  received the keys before the tag before.
-- The adapters and encodings for bytes moved from `deser::adapters::bytes`
-  into `deser::adapters` (for instance `deser::adapters::BytesFallback` and
-  `deser::adapters::BytesFormat`), the `bytes` module is gone.
-- `Hex`, `HexUpper` and the base32 encodings moved into the new
-  `deser-encoding` crate and the `bytes-encoding` feature is gone.  deser
-  keeps the base64 encodings, which bytes use by default.  `deser-encoding`
-  uses `data-encoding`, which is faster for hex, up to twice for large
-  buffers.  The base32 encodings decode lowercase letters too, and the
-  new `Base32Dnssec` is the lowercase, unpadded base32 of DNSSEC (RFC 5155).
-- Encoding and decoding base64 is faster, up to 1.6 times for large
-  buffers.
-- `deser-yaml` decodes `!!binary` like other bytes: the padding is
-  optional and the URL-safe alphabet is accepted, unused bits have to be
-  zero.
-- Added `deser::ser::EventSink` and `SerializeDriver::drive_sink`.  Like
-  `drive` with a callback, but formats can mark `EventSink::event` as
-  `#[inline(always)]` so that it's specialized for every kind of event the
-  driver delivers.  `deser-json` and `deser-cbor` use it.
-- Serialization drives values that are atoms or sequences and maps of such
-  values (plain values) in one go instead of one by one, and derived
-  structs emit their fields with plain values directly.  This makes the
-  serialize driver two to three times faster for float and container heavy
-  data.
-- Maps can be flattened into structs (`#[deser(flatten)] extra:
-  BTreeMap<String, Value>`).  They take all keys that no field took (the
-  keys are parsed into the key type) and their entries become fields when
-  serializing.  Flattened maps silently stayed empty and failed to
-  serialize before.  `deser_value::Value` and `deser_value::Map` can be
-  flattened the same way.
-- Added `Serialize` and `Deserialize` for `Range`, `RangeInclusive`,
-  `RangeFrom`, `RangeTo` (structs with `start` and `end` like serde),
-  `Bound` (externally tagged like serde), `OsString` and `Box<OsStr>`
-  (strings like paths, serde uses a platform specific representation).
-  `Mutex` and `RwLock` can be deserialized, they cannot be serialized as the
-  lock guard would have to be held while the serialization moves between
-  threads.
-- Improved error messages.  Unknown variants name the enum and list the
-  expected variants (``unknown variant `D` of Kind, expected `A` or `B` ``,
-  enums with only unit variants reported `unexpected value for enum`
-  before), integers that do not fit into their type report the value and
-  the type (`invalid value 300, expected u8` instead of `value out of
-  range for type`).  Names are quoted with backticks (``missing field `x`
-  `` instead of `Missing field 'x'`) and messages are lowercase.  JSON reports numbers out of range and
-  invalid escapes in strings more precisely.
-- JSON and TOML serialize `bool` map keys as strings (`{"true": 1}`) like
-  `serde_json`, which they can also be deserialized from.
-- Flattened `Option`s are `None` if no key was given for them and `None`
-  serializes no fields.  Both failed before.  Unlike serde, errors in the
-  value are reported and not turned into `None`.
-- Newtype variants of internally tagged enums fail to serialize if their
-  content has a field with the name of the tag (for instance another
-  internally tagged enum with the same tag).  The tag was written twice
-  before, which most parsers read as the inner tag.
-- Newtype variants of `()` (`A(())`) in internally tagged enums are
-  unit variants (`{"type": "A"}`, other keys are ignored).  They failed
-  in both directions before.
-- JSON, YAML and TOML format floats with `zmij` with the `speedups`
-  feature (`deser-json` used `ryu` before, YAML and TOML the standard
-  library).  All three write the same shortest text now, exponents always
-  have a sign (`1e+16`) and values between `1e-5` and `1e16` (`1e-6` and
-  `1e13` for `f32`) are written without exponent.  The output does not
-  depend on the feature.
-- `deser-yaml` no longer allocates for every scalar it writes.
-- Added the `Flag` adapter for `bool` fields which are switched on by
-  giving their key (like `?recursive` in a query string): a missing key is
-  `false`, an empty value or null `true`, other values are booleans.
-- Internally tagged enums can be flattened into structs.  Until the tag
-  was seen, they take the keys that the struct and the flattened fields
-  before them do not take.
-- Added `deser-urlencoded` for query strings and form data
-  (`application/x-www-form-urlencoded`).  Keys and values are lexical atoms,
-  keys can be nested with brackets (`a[b][0]`, `a[]`) or dots, repeated keys
-  are sequences.  Values are serialized with repeated keys (like
-  `serde_url_params`), brackets or indexes.
-- Added `Atom::Lexical` for text whose type the format cannot express
-  (like the values of query strings).  The sink decides what it means:
-  integers and floats parse it, `bool` accepts `true`, `yes`, `on`, `1`,
-  `false`, `no`, `off` and `0` (ignoring ASCII case), `()` the empty
-  string, and all types that accept strings take it as string.  The
-  default `Sink::unexpected_atom` passes it on as `Atom::Str`, so sinks
-  that only handle strings keep working, sinks that borrow strings have
-  to handle it themselves.  Serializers write it as string.  Lexical atoms
-  are retained when values are buffered, so they also parse in flattened
-  structs and internally tagged and untagged enums (which is where serde
-  loses this information).  `Atom::as_str` returns the text of both.
-  `deser-value` has `Kind::Lexical` (which compares and hashes like the
-  same `Str`) and `deser-serde` parses lexical atoms with the type that
-  serde asks for.
-- The keys of JSON objects and TOML tables are lexical atoms.  Keys parse
-  into the type of the key (`{"80": true}` into `HashMap<u16, bool>` like
-  before, now also `bool` and other types that parse lexical atoms).
-  Strings in key position are no longer parsed as integers
-  (`State::is_map_key` is no longer consulted for this), which matters
-  for maps built by hand (for instance `deser_value::value!` with string
-  keys).  `deser-serde` parses lexical atoms instead of strings in key
-  position.
-- Added `deser::de::DuplicateKeys` which decides what happens if a key is
-  given more than once for a single value (a field of a derived struct or
-  an entry of a map): the last value wins, the first one wins or it's an
-  error.  The default is an error (derived structs and maps used the last
-  value before), as different parsers picking different values for the
-  same input is a security problem.  `deser-urlencoded` uses the last
-  value by default as repeated keys are common in query strings.  It's set
-  on the state (`State::set_duplicate_keys`) and also applies to buffered
-  values and to the maps of `deser-value`.
-  `MapSkipError` skips duplicate entries if they are an error.  Values of
-  fields that are containers (like `Vec`) are replaced, not merged.
-- Sequences can be marked as the values of a key that was given more than
-  once (`ContainerShape::with_repeated`), like `a=1&a=2` in a query
-  string.  Types that accept sequences receive the values, for types that
-  do not the driver picks a single value according to `DuplicateKeys`.
-  `deser-value` keeps the flag on `Seq`.
-- Sequences (`Vec`, `VecDeque`, sets, arrays, ...) accept a single lexical
-  atom as a sequence of one element, like a key that is given once in a
-  query string.  Byte buffers decode it as bytes like strings.
-- Optionals are `None` for an empty lexical atom if their value rejects it
-  (`?limit=` is `None` for an `Option<u32>` and `Some("")` for an
-  `Option<String>`).
-- Added `Atom::F32` for single precision floats.  `f32` values are no
-  longer widened to `f64` when serialized, so the text formats write them
-  with the shortest text for their precision (`0.1f32` as `0.1` instead of
-  `0.10000000149011612`) in JSON, YAML and TOML, which also makes the
-  output smaller and faster to write.  The default
-  `Sink::unexpected_atom` widens `F32` into `F64`, so sinks that only
-  handle `F64` keep working (`Atom::widen_float` does the same for other
-  consumers).  Serializers have to handle the new atom.  Parsers keep
-  producing `F64`.  `deser-value` has `Kind::F32` (which compares and
-  hashes like the same `F64`), `deser-serde` maps it to serde's `f32` and
-  `deser-debug` formats it like `Debug`.  `Decimal` and `Number` use the
-  shortest text of `f32` values.
-- Added the `io` feature (enabled by default in `deser` and the formats)
-  for everything related to streams (`deser::io`).  Without it the formats
-  have deserializers and serializers for in-memory data only.
-- Added the `deser::io::Decoder` and `deser::io::Encoder` traits for data
-  formats which deserialize from and serialize into streams of bytes.  The
-  configurations of the formats implement them, which makes them usable in
-  generic code: `Decoder::from_slice` and `Decoder::from_reader`,
-  `Encoder::to_vec` and `Encoder::to_writer`.  Both keep what a stream
-  needs to remember in an associated `State` which is passed to all their
-  methods (to `Decoder::drive` too, so values can depend on earlier parts
-  of the stream).  `Reader`, `Writer` and `DecodeBuffer` expose it with
-  `state` and can continue a stream with `with_state`.
-- Added `deser::Streamed<T>`, a sequence whose elements are handed out
-  while a value is read with `deser::io::Reader::read_next` (as
-  `Next::Element`, followed by the value as `Next::Done`) instead of being
-  collected.  Otherwise it behaves like a `Vec<T>`.  `ElementReader`
-  implements this without IO, `deser-tokio` has `Reader::read_next` and
-  `Reader::into_element_stream`.
-- Added `OwnedDriver`, a `DeserializeDriver` which owns the value it
-  deserializes.  It can be held across calls, for instance to deserialize
-  a value from input which arrives over time.
-- Decoders can deserialize values while their input arrives
-  (`Decoder::feed`), JSON (except for JSON Lines) and CBOR support this.
-  `Reader::read` (also in `deser-tokio`) uses it if possible, which only
-  buffers incomplete tokens instead of the complete value.  The JSON and
-  CBOR parsers were rewritten as state machines which can be suspended
-  between tokens for this.  Values that fail in a sink are skipped so the
-  stream continues.  `Decoder::is_text` controls if the positions of
-  errors are resolved into lines and columns.
-- Added the `deser::ser::Serializer` trait and a `Serializer` for all
-  formats (JSON, CBOR, YAML and TOML) which serializes values into an
-  in-memory output.  More than one value can be written (as JSON Lines
-  with `Trailing::Newline`, a CBOR sequence or YAML documents).
-- `deser_json::SerializerConfig::default()` returns the same configuration
-  as `new()` (it was derived before which disabled compact output).
-- Added `deser::io` to read values from and write values to streams with
-  decoders and encoders: `Reader` and `Writer` (and `from_reader` and
-  `to_writer`) use them with `std::io::Read` and `std::io::Write`,
-  `Writer::write_with` supports layers.  Decoders split streams into the
-  frames of values.  `DecodeBuffer` implements the framing without doing
-  IO itself for other kinds of IO (such as async runtimes).  Errors of
-  values refer to positions in the stream.
-- `deser-json` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the configurations for `deser::io`.
-  Streams are split according to `Trailing`: a single value, JSON Lines or
-  concatenated values.  `SerializerConfig::trailing` is the counterpart
-  for writing (`Trailing::Newline` writes JSON Lines).
-- `deser-cbor` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the configurations for `deser::io`
-  which read and write CBOR sequences.  Items are split by scanning their
-  heads.
-- `deser-toml` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the configurations for `deser::io`.  A
-  stream holds a single document.
-- `deser-yaml` reads and writes streams: `from_reader` and `to_writer`
-  (also on the configurations) and the configurations for `deser::io`
-  which read and write streams of documents.  Documents are split at
-  document markers.  `SerializerConfig::end_documents` ends every document
-  with `...` for streams that stay open.
-- Added `deser-tokio` which reads and writes values with tokio's
-  `AsyncRead` and `AsyncWrite` using the configurations of the formats:
-  `Reader` (also as a `Stream`), `Writer`, `from_reader` and `to_writer`.
-  The futures are `Send` and reads are cancellation safe.  With the
-  `codec` feature `Codec` implements the codec traits of tokio-util.
-- Added `ErrorKind::Io` for failed reads and writes.  `std::io::Error`
-  converts into `Error`.
-- Ongoing serializations and deserializations can move between threads:
-  `SerializeDriver` and `DeserializeDriver` are `Send`.  This allows them
-  to be suspended across an `.await` in multi threaded runtimes.
-  - `Serialize` requires `Sync` and the emitters (`StructEmitter`,
-    `MapEmitter`, `SeqEmitter`) require `Send`.  Owned values in a
-    `SerializeHandle` are `Send`.
-  - `Deserialize`, `Sink` and `VariantBuilder` require `Send`.
-  - Serialization and deserialization layers require `Send`.
-  - Extension values in the `State` must be `Send + Sync`.
-  - Derived implementations require `Sync` (for `Serialize`) and `Send`
-    (for `Deserialize`) of type parameters which only appear in fields
-    with adapters.
-  - Types that are not thread safe (such as `Rc` or `RefCell`) can no
-    longer be serialized or deserialized.
-- Added the `deser-value` crate with a dynamic `Value` type.  Maps can have
-  any value as key and keep the order of their entries, extension values
-  keep their type, and maps and sequences keep their `Order`.  Event data
-  (such as CBOR and YAML tags or formatting hints) and, if the format tracks
-  locations, the span of every value are kept in its `Meta` data, so types
-  deserialized from a value report errors at the original location.  Values
-  are converted with `to_value` and `from_value` (which can borrow strings
-  from the value), the `Serializer` and `Deserializer` configure the
-  conversion (for instance with layers).  Values are built with the
-  `value!` macro.  Values are processed
-  without recursion, including dropping, cloning, comparing and formatting.
-- Added `EventData` which holds event data detached from its event.
-  `State::capture_event_data` captures the data of the current event and
-  `State::attach_event_data` attaches it to another event.  Event data now
-  has to be `Sync` (`State::event_mut` requires it).
-- Removed `Descriptor`.  The information it carried moved to where it
-  belongs:
-  - Bytes carry the format for formats without native bytes as
-    `Bytes::fallback`: `Atom::Bytes` holds a `Bytes` (which dereferences to
-    `[u8]`) instead of a `Cow<[u8]>`.  `BytesFallback` sets it.
-  - The start events of maps and sequences carry a `ContainerShape`:
-    `Event::MapStart(ContainerShape)` and `Event::SeqStart(ContainerShape)`
-    (`Event::map_start()` and `Event::seq_start()` create the default).  It
-    holds the `Order` of the elements (`HashMap` and `HashSet` are
-    `Order::Arbitrary`, `BTreeMap` and `BTreeSet` `Order::Sorted`) and the
-    number of elements if known.  Types report it with
-    `Serialize::container_shape` (`SerializeAs::container_shape_as`), sinks
-    read it with `State::container_shape`.
-  - Names are only used for error messages: sinks provide them with
-    `Sink::expecting`, `Sink::descriptor` is gone.
-  - The precision of numbers is gone.  Floats are `f64`, `f32` values are
-    written as the `f64` they widen to (`0.1f32` is written as
-    `0.10000000149011612` in JSON and TOML).
-  - The serialize driver callback, `Layer::event` and `Next::emit` no
-    longer receive a descriptor, `SerializeDriver::next` returns the event,
-    the value and the state, `State::top_descriptor` is gone.
+This release is close to a rewrite of deser.  Almost every public API
+changed, the list below summarizes the state of the release rather than
+every intermediate step.
 
-  Serialization got 4-12% faster.
-- Replaced the path of errors with typed attachments: `Error::with_path`
-  and `Error::path` are gone, `Error::with_attachment`,
-  `Error::attachment`, `Error::attachment_mut` and `Error::attachments`
-  attach and retrieve values of types implementing the new
-  `ErrorAttachment` trait, which can contribute to the error message.
-  The location of errors stays built in.  `PathLayer` attaches the
-  structured `Path` (`err.attachment::<Path>()`) instead of a string.
+### Core
+
+- **Breaking:** everything but the derive macros moved into the new
+  `deser-core` crate which `deser` re-exports.  Formats depend on
+  `deser-core` and compile in parallel with the derive.  The derive
+  macros are no longer re-exported from `deser::derive`, use
+  `deser::Serialize` and `deser::Deserialize`.
+- **Breaking:** raised the minimum supported Rust version to 1.88 and
+  moved all crates to the 2024 edition.
+- **Breaking:** the standard library is optional (the `std` feature,
+  enabled by default).  Without it `deser` and most formats only need
+  `alloc`.  The `io` feature (also default) gates stream support.
+- **Breaking:** `DeserializerState` and `SerializerState` were merged into
+  a single `deser::State` which is passed as `&mut State` to all methods
+  of sinks, serializers and emitters.  Extension values no longer use a
+  `RefCell`.  The state carries event data (`State::event_mut`, used for
+  CBOR and YAML tags), the input range of the current event, the source
+  and the policies of a deserialization.
+- **Breaking:** `Descriptor` was removed.  Names are only used for error
+  messages (`Sink::expecting`), maps and sequences carry a
+  `ContainerShape` (order, length and whether keys repeat) on their start
+  event and bytes carry their fallback format.
+- **Breaking:** `Deserialize`, `Sink`, `SinkHandle`, `DeserializeDriver`
+  and related types have a lifetime `'de` so that values can borrow from
+  the input (`&str`, `&[u8]`, `Cow` with the `Borrowed` adapter, derived
+  structs and enums with lifetimes).  `DeserializeOwned` is implemented
+  for types that do not borrow.  Formats pass on borrowed data with
+  `DeserializeDriver::emit_borrowed`.
+- **Breaking:** drivers are `Send` so that ongoing (de)serializations can
+  be suspended across `.await`.  `Serialize` requires `Sync`,
+  `Deserialize` and `Sink` require `Send`, types like `Rc` and `RefCell`
+  are no longer supported.
+- **Breaking:** sinks, emitters and owned values are allocated in an arena
+  of the state instead of individual boxes (`SinkHandle::arena` and
+  `SinkHandle::heap`, `SerializeHandle::arena` and
+  `SerializeHandle::heap`).  `Deserialize::deserialize_into` and related
+  methods take the `State`.
+- Extended the data model: `Atom::F32`, `Atom::Lexical` for text whose
+  type the format cannot express (query strings, CSV, environment
+  variables), `Atom::Implicit` for values whose type was inferred from
+  their text (YAML plain scalars, Hjson), `Atom::Ext` for extension
+  values with a fallback (`u128`/`i128` and the well-known types in
+  `deser::ext`: `Datetime`, `Timestamp`, `Duration`, `Uuid`, `Decimal`,
+  `BigInt` and `Number`), and multimaps for maps whose keys repeat.
+  `Text` and `Bytes` are two word large, borrowed or owned data.
+- How lexical atoms are interpreted is configurable with `LexicalRules`
+  (strict for JSON keys, lenient for query strings, CSV and environment
+  variables where `yes`, `on` and `1` are booleans and empty values are
+  `None`).
+- Added layers (`deser::de::Layer` and `deser::ser::Layer`) that sit
+  between a format and the types and can observe, change, drop or insert
+  events.  `deser::de::Limits` limits depth, number of events and the
+  length of containers, strings and bytes.
+- Added `Recording` (owned) and `RecordBuf` (keeps borrowed data
+  borrowed) which record values and replay them later with all event
+  data, input ranges and replayable state.  Buffered values (tagged and
+  untagged enums, `DefaultOnError`, ...) keep borrowed data borrowed and
+  do not lose information.
+- Added updates (`Deserialize::deserialize_update`,
+  `Deserializer::update`) which merge input into an existing value, for
+  instance to layer configuration files over defaults.
+- Added the `deser::de::Deserializer` and `deser::ser::Serializer` traits
+  which all formats implement, with `deserialize_with` and
+  `serialize_with` to configure the drivers.
+- Added `DuplicateKeys` (duplicate keys are an error by default) and
+  `UnknownFields` (reject or collect unknown keys) policies on the state.
+  Both work with flattened fields and internally tagged enums.
 - Added `Serialize::describe` and `deser::ser::Describe` with which values
-  describe their Rust shape: structs, newtypes, enum variants (with their
-  kind and representation), `Option`, tuples and sets.  The derive and the
-  standard types implement it.  Formats that want the description use
-  `SerializeDriver::drive_described` which passes the value of every event.
-  `deser-debug` uses it and formats values like `#[derive(Debug)]` (including
-  struct and newtype names).
-- `deser-yaml` can serialize: `to_string`, `SerializerConfig` (indentation
-  with `Indent`, where `Indent::None` writes documents on a single line in
-  flow style, indented or indentless sequences, quote style, multi-line
-  strings as literal block scalars or quoted, null style, `!!binary` or a
-  bytes format, timestamps, document markers).  Strings are quoted if readers of YAML 1.1 or 1.2 would read
-  them as something else (`SerializerConfig::compat`).  `Tagged` writes its
-  tag, `set_tag` sets the tag of a value and tags survive a `Recording`.
-  `DeserializerConfig::bytes` configures how strings are decoded into
-  bytes.
-- `deser-yaml` writes collections in flow style if they have the
-  `Layout::Compact` hint or, with `FlowPolicy::LeafIfFits`, if they only
-  contain scalars and fit into the width.  The style of strings can be
-  requested with the `ScalarStyle` hint of the new `deser_yaml::style`
-  module (and its adapters `Plain`, `SingleQuoted`, `DoubleQuoted`,
-  `Literal` and `Folded`), long strings can be folded
-  (`SerializerConfig::fold_width`).  Flow collections are reported as
-  compact when reading.
-- `deser-json` can pretty print: `SerializerConfig::indent` sets the
-  indentation (`Indent::Spaces(n)` or `Indent::Tab`),
-  `SerializerConfig::compact(false)` writes spaces after separators and
-  `SerializerConfig::pretty` does both.  In indented output maps and
-  sequences with the `Layout::Compact` hint are written on a single line,
-  with `SerializerConfig::inline(InlinePolicy::LeafIfFits(width))` also
-  the ones that only contain scalars and fit into the width.
-- `deser-json` writes floats the same way with and without the `speedups`
-  feature.  Without it floats were written like `Display` does, without
-  exponent and without fraction (`1.0` as `1`, `1e300` with 301 digits).
-- Added `deser::hints` with well-known formatting hints.  `Layout` asks
-  formats to lay out a map or sequence compact (inline) or expanded, the
-  `Compact` and `Expanded` adapters set it (`#[deser(as = Compact)]`) and
-  layers can set it by path.  `Hint` and `Hinted` allow formats to define
-  adapters for their own hints.  `deser-toml` writes compact tables and arrays
-  of tables inline and reports inline tables as compact when reading, so
-  they stay inline through a `Recording`.  It also reports the lengths of
-  tables and arrays.
-- `deser-cbor` uses the same event data for tags when reading and writing,
-  values that capture event data (such as `Recording`) keep the tags when
-  they are serialized again.
-- `deser-cbor` writes definite lengths directly if the length of a
-  container is known and fails if the number of items does not match.  It
-  passes the declared lengths of its input on, which `Vec`, `HashMap` and
-  `HashSet` use to preallocate (at most 1 MiB).
-- Raised the minimum supported Rust version to 1.88 and moved all crates to
-  the 2024 edition.  The minimum version is now declared as `rust-version`
-  and tested on CI.
-- Added layers: `deser::de::Layer` and `deser::ser::Layer` sit between a
-  format and the types and see every event.  They are added to the drivers
-  with `push_layer` and can observe, reject, change, drop and insert events.
-  Deserialization layers know the position of an event (`State::is_map_key`
-  and `State::depth`) and replayed values do not pass through them again.
-  Serialization layers are only applied by `SerializeDriver::drive`,
-  `SerializeDriver::next` panics if layers were added.
-- Added `deser::de::Limits`, a layer which limits the depth, the number of
-  events, the number of items of maps and sequences and the length of strings
-  and bytes.  The formats have no options for limits, the layer is added
-  with `deserialize_with` (or `Reader::read_with` for streams).
-- Added the `deser::de::Deserializer` trait which is implemented by the
-  deserializers of all formats.  `Deserializer::deserialize_with` (also an
-  inherent method of the deserializers) allows configuring the driver, for
-  instance to add layers or to wrap the sink with the new
-  `DeserializeDriver::wrap_sink`.  The formats' `Deserializer::deserialize`
-  forwards to it.  The serializer configurations have new `to_string_with`
-  (`to_vec_with` for CBOR) methods to configure the serialize driver.
-- Errors carry context: the offset, line and column in the input
-  (`Error::offset`, `Error::line`, `Error::column`) and the path of the value
-  (`Error::path`), which are part of the `Display` output.  The deserialize
-  driver attaches the start of the input range of an event to the errors of
-  that event, also for replayed values, and types implementing the new
-  `ErrorContext` trait registered with `State::add_error_context` add further
-  context (the serialize driver runs them as well).  The formats resolve offsets into lines and columns (except
-  CBOR which reports offsets), so errors of values (for instance type errors)
-  now report their location in all formats.  Syntax errors of `deser-json`
-  now have locations too.  The syntax errors of `deser-yaml` and
-  `deser-cbor` read `syntax error: ... at line L column C` and
-  `syntax error: ... at offset N`.
-- `deser-json` can read streams of values like the CBOR and YAML
-  deserializers: `Deserializer::deserialize` reads the next value and
-  `is_end`, `end`, `iter` and `offset` were added.  What may follow a value
-  is controlled by `DeserializerConfig::trailing`: `Trailing::Strict` (the
-  default) only allows whitespace, `Trailing::Newline` reads JSON Lines
-  (NDJSON) where errors only skip their line and `Trailing::Stop` stops
-  after the value regardless of what follows.
-- `deser-cbor` publishes the byte ranges of data items as input ranges.
-- `deser-path` was rewritten as a layer: `PathLayer` replaces `PathSink` and
-  `PathSerializable` and works in both directions.  It adds the path to
-  errors, `Path` formats as `servers[1].port` and during serialization the
-  format sees keys with the path of their map.
-- Added the `layers` example with serialization layers that rename keys,
-  skip null values and redact values.  The `located` example uses layers.
-- Added the `adapters`, `borrowing`, `bytes`, `config-errors`,
-  `deep-nesting`, `formats`, `json-lines` and `optionals` examples.  The
-  `derive` example was merged into the `json` example.  The examples are
-  listed in `examples/README.md`.
-- Format options moved from the deserializers and serializers into new
-  `DeserializerConfig` and `SerializerConfig` types in all formats.  They
-  do not borrow the input, can be created in constants (the constructors
-  and setters are `const fn`) and reused.  Their `from_str` / `from_slice` and `to_string` /
-  `to_vec` methods work like the functions of the same name, which use the
-  default configuration.
-  - `Deserializer::new` was replaced by `Deserializer::from_str` and
-    `Deserializer::from_slice` (only `from_slice` for CBOR), and
-    `from_str_with_config` / `from_slice_with_config` create a deserializer
-    with a configuration which is available as `Deserializer::config`.  The
-    deserializer only holds the parsing state and has no setters anymore.
-  - The `Serializer` types were removed: `Serializer::new().serialize(&v)`
-    becomes `SerializerConfig::new().to_string(&v)` (`to_vec` for CBOR).
-    `deser_cbor::to_canonical_vec` was removed in favor of
-    `SerializerConfig::new().canonical(true).to_vec(&v)`.
-- `Deserialize`, `Sink`, `SinkHandle`, `DeserializeDriver`, `OwnedSink` and
-  `DeserializeAs` have a lifetime `'de` for the data that is deserialized.
-  Types can borrow from it: `&str` and `&[u8]` borrow, `Cow<str>` and
-  `Cow<[u8]>` borrow with the new `Borrowed` adapter and the derive supports
-  structs with lifetimes.  `DeserializeOwned` is implemented for types which
-  do not borrow.
-  - Formats emit borrowed data with `DeserializeDriver::emit_borrowed`,
-    sinks receive it in
-    `Sink::borrowed_atom` (and `borrowed_key_atom` / `borrowed_value_atom`)
-    which default to the regular methods.  Data emitted with `emit` is only
-    valid for the call and cannot be borrowed.
-  - `deser-json`, `deser-cbor`, `deser-yaml` and `deser-toml` pass on strings
-    (and CBOR byte strings) that are slices of the input borrowed.  Their
-    `from_str` / `from_slice` functions and `Deserializer::deserialize` tie
-    `'de` to the input.
-  - To migrate, `impl Deserialize for T` becomes
-    `impl<'de> Deserialize<'de> for T` and `impl Sink for S` becomes
-    `impl<'de> Sink<'de> for S`, `SinkHandle<'_>` becomes
-    `SinkHandle<'_, 'de>`.  Bounds of `#[deser(bound(...))]` which also apply
-    to `Serialize` use `DeserializeOwned`, `deserialize_bound` can use
-    `Deserialize<'de>`.
-  - Recordings are detached from the data, so buffered values (for instance
-    in internally tagged or untagged enums) cannot be borrowed.
-- Added the well-known `deser::ext::Number` extension: a number literal
-  of a text format (in the syntax of JSON numbers) together with its value
-  as `f64` which is the fallback.  `Decimal`, `BigInt` and the bridged
-  `rust_decimal`, `bigdecimal` and `num-bigint` types use the text, floats
-  use the value.  `deser-json` emits floats whose text cannot be recovered
-  from their value as `f64` (and integers that do not fit into 128 bits) as
-  numbers borrowing the text, so decimals are deserialized exactly.  This
-  can be disabled with `DeserializerConfig::exact_numbers`.  `deser-json` writes
-  numbers verbatim, `deser-toml` writes the text of non-integer numbers.
-- Extension values can borrow data: extensions implement the new
-  `BorrowedExtension` trait on a `'static` key type which defines the type
-  of the values for a lifetime.  They are created with
-  `ExtValue::borrowed_value` and `ExtValue::owned_value` and looked up with
-  `ExtValue::downcast_value_ref`.  Owned extension values are now reference
-  counted which makes cloning them cheap.  `ExtValue::owned` no longer
-  returns an `ExtValue<'static>`.
-- Added well-known extension types to `deser::ext`: `Datetime` (with
-  `Date`, `Time` and `Offset`), `Timestamp`, `Duration`, `Uuid`, `Decimal`
-  and `BigInt`.  They are dependency free representations of common types
-  that data formats can support natively, with string fallbacks for formats
-  that do not.  `std::time::SystemTime` and `std::time::Duration` now
-  implement `Serialize` and `Deserialize` through them, as do the types of
-  `jiff`, `chrono`, `time`, `uuid`, `rust_decimal`, `bigdecimal` and
-  `num-bigint` with the new features of the same names.
-- `deser-cbor` supports the well-known types: date/time strings (tag 0),
-  epoch based date/times (tag 1, read as tagged numbers), decimal fractions
-  (tag 4), UUIDs (tag 37) and full-date strings (tag 1004).  Valid date/time
-  strings, decimal fractions, UUIDs and full-dates are no longer passed on
-  as tagged values but as well-known types, and bignums that do not fit into
-  128 bits are passed on as `BigInt` instead of tagged byte strings.
-- `deser-json` writes `BigInt` and `Decimal` as numbers.
-- `deser-yaml` supports the `!!timestamp` tag (as `Datetime`).
-- Added `deser-serde` with the `Serde` adapter which serializes and
-  deserializes values with their serde implementations
-  (`#[deser(as = Serde)]`).  Compound values are buffered.
-- Added `deser-toml` which implements TOML 1.1 from scratch.  It passes the
-  toml-test suite, supports date-times through the well-known `Datetime`
-  type, writes maps as tables and sequences of maps as arrays of tables and
-  supports source locations.
-- Merged `DeserializerState` and `SerializerState` into a single
-  `deser::State` without a lifetime parameter.  `is_map_key` and
-  `set_replayable` are available in both directions and the serialize driver
-  now sets `is_map_key` while map and struct keys are serialized.
-- `SerializeDriver::drive` and `SerializeDriver::next` now hand out
-  `&mut State` so that formats can consume information from the state.
-  `deser_cbor::push_tag` now takes `&mut State`.
-- Extension values in the state now need to be `Send` and `Descriptor`
-  requires `Sync`.  This makes `State` `Send`.
-- Replayed recordings now continue on the state of the ongoing
-  deserialization.  `State::depth` and `State::top_descriptor` report the
-  same values for buffered values (for instance in internally tagged enums)
-  as for values that are not buffered, and maps and sequences remain the
-  current container while their sink is finished.
-- Improved the performance of serializing CBOR tags.
-- Added event data to the `State`: values attached to a single event with
-  `State::event_mut` and read with `State::event`.  Formats attach data
-  before they emit an event and the deserialize driver detaches it after
-  every event, during serialization `Serialize` implementations attach data
-  to their first event and the serialize driver detaches it after the event
-  was delivered.  Recordings capture event data
-  automatically.  The CBOR and YAML tags are now event data, `Locations` is
-  no longer replayable.
-- Added input ranges to the `State`: formats set the byte range in the input
-  of the next event with `State::set_input_range` (the driver detaches it
-  after the event) and sinks read it with `State::input_range`.  Recordings capture the range of every event.
-  The source the ranges refer to is available as `State::source` if the
-  format provides it.  `deser-json`, `deser-toml` and `deser-yaml` always
-  publish input ranges, which has no measurable overhead, and
-  `track_locations` sets the source.  The formats no longer depend on
-  `deser-location` and their `locations` features were removed.
-- `deser-location` resolves spans from the input range and builds its
-  source map from `State::source` on first use.  `Locations::set_current`
-  and `Locations::set_source_map` were removed and
-  `Locations::current_span` and `Locations::source_map` now take
-  `&mut State`.
-- Added adapters in `deser::adapters` which serialize and deserialize values
-  on behalf of other types through the `SerializeAs` and `DeserializeAs`
-  traits.  The derive selects them with `#[deser(as = Adapter)]` on fields
-  (including newtype structs and enum variant fields) where `_` stands for
-  the type's own implementation.  Adapters compose with the standard
-  containers (`#[deser(as = Option<BTreeMap<_, Vec<DisplayFromStr>>>)]`),
-  handle missing fields themselves so optional adapters keep fields optional,
-  and type parameters only used in fields with adapters no longer need to
-  implement `Serialize` or `Deserialize`.  Provided are `Same`,
-  `DisplayFromStr`, `FromInto`, `TryFromInto`, `DefaultOnError`,
-  `VecSkipError` and `MapSkipError`, as well as the `As` wrapper to use
-  adapters outside of the derive.
-- Added `Chunk::Forward` to serialize another (possibly owned) value in
-  place of a value.
-- `Deserialize::initial_value` (previously the hidden
-  `__private_initial_value`) and `SinkHandle::ignore_null` are now public.
-  Added `OwnedSink::deserialize_as`.
-- `Recording` now implements `Deserialize`, `Serialize` and `PartialEq` so
-  that it can be used as a raw value.  Serializing a recording emits the
-  recorded events together with their event data.
-- `#[deser(other)]` is now supported on all variants.  A field marked with
-  `#[deser(tag)]` receives the unknown tag, which can be any value (not only
-  strings), and is used as tag when serializing.  The remaining fields are
-  the content of the variant.
-- Added `#[deser(default)]` for variants of internally and adjacently tagged
-  enums which is used if the tag is missing.
-- Variants with content of externally tagged enums that are represented by
-  their name alone now receive null as content instead of failing, and plain
-  enums with an `other` variant use it for values which are not strings.
-- Newtype variants of internally tagged enums can now serialize maps with
-  string keys and values that forward to maps or structs.
+  describe their Rust shape.  `deser-debug` uses it to format values like
+  `#[derive(Debug)]`.
+- Added `deser::hints` with formatting hints: `Layout` (and the `Compact`
+  and `Expanded` adapters) asks formats to lay out containers inline or
+  expanded.
+- Added `OwnedDriver`, `Streamed<T>` (sequences whose elements are handed
+  out while they are read), `Chunk::Forward` and `Position`.
 
-- Changed `#[deser(default = ...)]` to take an expression instead of a
-  function name in a string, and `#[deser(skip_serializing_if = ...)]` to
-  take a path instead of a string.  String literals given as defaults are
-  converted with `Into`, and `Self` is not supported in either attribute:
+### Errors
 
-  ```rust
-  // before
-  #[deser(default = "default_port")]
-  #[deser(skip_serializing_if = "Option::is_none")]
-  // after
-  #[deser(default = default_port())]
-  #[deser(skip_serializing_if = Option::is_none)]
-  #[deser(default = 8080)]
-  #[deser(default = "localhost")]
-  ```
-- Added `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
-  `#[deser(deserialize_bound(...))]` to replace the bounds the derive
-  infers for type parameters.
-- Added `#[deser(crate = path)]` to use the derive when deser is renamed or
-  re-exported.
-- Moved `deser-derive` to `syn` 3.  This requires Rust 1.71 or later.
-- Added `deser_json::from_slice` and `Deserializer::from_slice` which parse
-  JSON from bytes and validate the strings as UTF-8 while parsing.
-- The `speedups` feature of `deser-json` and `deser-cbor` validates UTF-8
-  with `simdutf8`.
-- Added `deser-cbor` which implements CBOR (RFC 8949).  It reads all
-  well-formed CBOR (including indefinite length items), writes the preferred
-  serialization, optionally with deterministic map ordering, maps bignums
-  onto `u128` / `i128` and exposes tags through the state and the `Tagged`
-  wrapper.
-- Improved performance substantially.  Deserializing and serializing JSON is
-  now on par with `serde_json` in the included benchmark (previously about
-  1.5 and 1.9 times slower):
-  - Added `Sink::key_atom` and `Sink::value_atom` which receive atoms in
-    containers without creating intermediate sinks.  The default
-    implementations use `next_key` and `next_value`.
-  - Added `SerializeDriver::drive` which invokes a callback for every event
-    and is faster than calling `next` repeatedly.
-  - Derived structs, vectors, slices, arrays and tuples serialize without
-    allocating emitters and most values need a single dynamic call.
-  - Boxed sinks reuse memory through a per thread cache.
-  - State extensions are looked up without hashing.
-  - `deser-json` parses with a direct state machine and writes output
-    through a buffer optimized for small writes.
-- The deserializer and serializer states are now passed as
-  `&mut DeserializerState` and `&mut SerializerState` to all methods of
-  `Sink`, `Serialize` and the emitters.  Added
-  `DeserializeDriver::state_mut` for formats.
-- State extensions no longer use a `RefCell`.  `get_mut` now takes the state
-  mutably and returns a `&mut T`, `get` returns an `Option<&T>` which is
-  `None` if the value was never set.  `set_replayable` takes the state
-  mutably.  Conflicting borrows of extension values are now compile time
-  instead of runtime errors.
-- `Serialize::descriptor` now returns a `&'static dyn Descriptor` like
-  `Sink::descriptor`.  `SerializerState` no longer has a lifetime parameter,
-  `SerializeDriver::next` and `top_descriptor` on both states return
-  `'static` descriptors.  Added `SerializeDriver::state_mut` to place
-  extension values into the state before or during serialization.
-- Fixed multiple soundness issues:
-  - `DeserializeDriver::from_sink` now ties the sink to the driver's lifetime.
-  - The deserialize driver now drops child sinks before it uses or drops
-    their parent sinks.
-  - `Sink::descriptor` now returns a `&'static dyn Descriptor` as the
-    deserializer state holds on to descriptors while sinks are in use.
-  - `OwnedSink::borrow` and `OwnedSink::borrow_mut` now return `&dyn Sink` and
-    `&mut dyn Sink`.  `OwnedSink::take` drops the sink, after which it ignores
-    all values.
-  - The byte specialization for `Vec<u8>` and `[u8; N]` no longer relies on
-    an unsafe hook on `Deserialize`.
-- Extension types now need to be `Send` and `Sync`.
-- `Option<T>` now also treats extension values that fall back to null as
-  null.
-- Added `deser_json::Deserializer::drive` to deserialize into custom sinks.
-- Added `deser-location` which provides source locations.  Formats install a
-  `SourceMap` and publish the byte offsets of every event into the
-  deserializer state, `Spanned<T>` picks them up.  `deser-json` supports this
-  with the `locations` feature and `DeserializerConfig::track_locations`.
-- Improved the performance of `deser_path::PathSink`.
-- Improved the performance of deserializer state extensions.
-- Added `deser::de::Recording` to record values and replay them into sinks
-  later.  Extensions in the deserializer state can be marked as replayable
-  with `DeserializerState::set_replayable`, recordings capture and restore
-  them per event.  `deser-location` and `deser-path` register their state.
-- Added support for enums with data to the derive: newtype, tuple and struct
-  variants in all representations known from serde (externally tagged,
-  internally tagged with `#[deser(tag = "...")]`, adjacently tagged with
-  `#[deser(tag = "...", content = "...")]` and `#[deser(untagged)]`), catch-all
-  variants with `#[deser(other)]` and generic enums.
-- Added `SinkHandle::shorten` and `Atom::as_borrowed` / `Event::as_borrowed`.
-- Fixed `deser_path::PathSink` not removing path segments when leaving
-  containers.
-- Added an extensible data model.  `Atom::Ext` carries values implementing
-  the new `deser::ext::Extension` trait which provide a fallback into the
-  core data model for consumers that do not understand them.
-- Added support for `u128` and `i128` via extension atoms.  `deser-json`
-  serializes and parses them natively.
-- Descriptors, `finish` and `is_optional` are now forwarded through `Option`,
-  references and boxes.  `Box<dyn Serialize>` is now serializable.
-- `deser-json` now serializes `f32` values with `f32` precision.
+- Errors carry the offset, line and column in the input and typed
+  attachments (`Error::with_attachment`, `Error::attachment`), for
+  instance the `Path` of `deser-path` or the `EnvVar` of `deser-env`.
+  Errors of values report their location in all formats, also for
+  buffered values.
+- Errors can hold multiple errors.  With `State::set_collect_errors`
+  derived structs and the standard collections recover from errors of
+  their values (`Sink::recover`) and report all problems of the input at
+  once, limited by `State::set_max_errors`.
+- Improved error messages: unknown variants name the enum and list the
+  expected variants, out of range integers report the value and type,
+  names are quoted with backticks and messages are lowercase.
+
+### Derive
+
+- Added support for enums with data in all representations known from
+  serde (externally, internally, adjacently tagged and untagged),
+  `#[deser(untagged)]` on variants, `#[deser(other)]` on any variant (with
+  a `#[deser(tag)]` field receiving the unknown tag), `#[deser(default)]`
+  for variants used when the tag is missing, `#[deser(repr)]` to name
+  variants by their discriminants, integer and boolean variant names,
+  `tag_alias` and `content_alias`.  Enums can have lifetime, const and
+  non-`'static` type parameters.
+- Added support for tuple and unit structs, `#[deser(transparent)]` and
+  skipped fields in tuple structs and variants.
+- `#[deser(flatten)]` works for structs, maps, `Option`s, `Recording`s,
+  internally tagged enums and the fields of struct variants without
+  buffering.
+- Added `skip`, `skip_serializing`, `skip_deserializing` (on fields and
+  variants), `required`, `deny_unknown_fields`, `expecting`, `alias_all`,
+  `rename_all_fields`, `crate`, `bound`, `serialize_bound` and
+  `deserialize_bound` (on containers, fields and variants), and separate
+  `rename(serialize = ..., deserialize = ...)`.  `rename`, `alias`, `tag`
+  and `content` accept constants and macro invocations.
+- **Breaking:** `#[deser(default = ...)]` takes an expression and
+  `#[deser(skip_serializing_if = ...)]` a path instead of strings.
+- Added adapters (`SerializeAs` and `DeserializeAs`) selected with
+  `#[deser(as = ...)]`, `serialize_as` and `deserialize_as` on fields,
+  variants and containers.  `_` stands for the derived implementation, so
+  adapters can wrap it.  This covers serde's `with`, `from`, `try_from`
+  and `into`.
+- The derive explains unsupported and misplaced attributes, points serde
+  attributes to their replacements and suggests fixes for typos.
+- Derived structs and unit enums generate much less code and the derive
+  itself compiles faster.
+
+### Adapters and types
+
+- Added the adapters `Same`, `As`, `DisplayFromStr`, `FromInto`,
+  `TryFromInto`, `DefaultOnError`, `VecSkipError`, `MapSkipError`,
+  `Borrowed`, `Flag`, `Separated`, `TrimWhitespace`, `SkipBlank` and the
+  bytes adapters (`BytesFallback`, `IntSeq` and the base64 encodings).
+  Hex and base32 encodings are in the new `deser-encoding` crate.
+- Bytes are supported in all formats.  Formats without native bytes write
+  base64 strings, types that expect bytes also accept strings and
+  sequences of integers.
+- Added support for most of the standard library: `Arc`, `Cow`,
+  `Box<str>` and other unsized boxes, `VecDeque`, `LinkedList`,
+  `BinaryHeap`, `PhantomData`, `NonZero`, `Wrapping`, `Saturating`,
+  `Reverse`, `Result`, IP and socket addresses, paths, `OsString`,
+  `CString`, atomics, ranges, `Bound`, `SystemTime`, `Duration`,
+  `ManuallyDrop`, `OnceLock`, `Mutex`, `RwLock` and `Infallible`.
+- Added features for the types of other crates: `jiff`, `chrono`, `time`,
+  `uuid`, `rust_decimal`, `bigdecimal`, `num-bigint`, `indexmap`,
+  `hashbrown`, `smallvec`, `arrayvec`, `bytes` and `bstr`.
+- Collections collect all values of a repeated key and accept a single
+  value as a collection of one.
+
+### New crates
+
+- `deser-value`: a dynamic `Value` that keeps all information of the data
+  model including event data and source locations, with `to_value`,
+  `from_value` and the `value!` macro.
+- `deser-toml`: TOML 1.1, passes the toml-test suite.
+- `deser-yaml`: YAML with serialization, flow style, scalar styles,
+  `!!binary`, `!!timestamp` and implicit typing of plain scalars.
+- `deser-cbor`: CBOR (RFC 8949) with tags, deterministic encoding and the
+  well-known types.
+- `deser-msgpack`: MessagePack with timestamps and extensions, passes the
+  msgpack-test-suite.
+- `deser-xml`: XML with attributes, repeated elements, namespaces,
+  mixed content (`Mixed<T>`) and pretty printing.
+- `deser-jsonc`, `deser-json5` and `deser-hjson`: the JSON dialects, with
+  parsers generated from the one of `deser-json`.
+- `deser-csv`: CSV, TSV and other delimited text with configurable
+  dialects.
+- `deser-urlencoded`: query strings and form data with nested keys.
+- `deser-env`: environment variables with a prefix and nested keys.
+- `deser-serde`: the `Serde` adapter to use serde implementations.
+- `deser-validate`: validators (`Len`, `Range`, `Email`, `Each`,
+  `validator!`), the `Check` adapter, `Validated<T, V>` and `Validation`
+  which reports all problems of an input.
+- `deser-transcode`: converts between formats without types in between.
+- `deser-tokio`: reads and writes values with tokio's `AsyncRead` and
+  `AsyncWrite`, with an optional tokio-util codec.
+- `deser-location`: source locations for values with `Spanned<T>`.
+- `deser-encoding`: hex and base32 encodings.
+
+### Formats and IO
+
+- **Breaking:** format options moved into `DeserializerConfig` and
+  `SerializerConfig` types which are `const` constructible and reusable.
+  The `Serializer` types of the formats were replaced by
+  `SerializerConfig::to_string` / `to_vec`, `Deserializer::new` by
+  `from_str` / `from_slice`.
+- **Breaking:** `deser-path` was rewritten as `PathLayer` which works in
+  both directions and attaches a structured `Path` to errors.
+- Added `deser::io` with the `Decoder` and `Encoder` traits, `Reader` and
+  `Writer` for `std::io`, and `DecodeBuffer` for other kinds of IO.
+  JSON (and its dialects), CBOR and MessagePack parse incrementally
+  while input arrives.
+- `deser-json` reads from bytes, reads streams of values and JSON Lines
+  (`Trailing`), can pretty print, keeps exact numbers
+  (`deser::ext::Number`) and has source locations.
+- JSON, YAML and TOML write floats with the shortest text for their
+  precision, with the same output with and without the `speedups` feature
+  (which uses `zmij` and `simdutf8`).
+
+### Fixes
+
+- Fixed multiple soundness issues in the deserialize driver and
+  `OwnedSink`.
 - Fixed integer range checks which accepted `u64::MAX` as `-1` for `i64`
-  and `-1` as `u64::MAX` for `u64`.
-- Removed number serialization support in JSON serializer.
+  and `-1` as `u64::MAX`.
 - Fixed `Option<T>` silently dropping structs, vectors, maps and boxes.
-- Fixed `HashMap` deserialization.
-- Fixed deriving `Deserialize` for generic structs and newtypes.
-- Fixed JSON serialization of `char` which emitted the code point.
-- Fixed a panic in the JSON parser on trailing commas in arrays.
-- `SinkHandle` is now an opaque type which implements `Sink`.  It is created
-  with `SinkHandle::to`, `SinkHandle::boxed` and `SinkHandle::null`.
-- Reduced the time spent on deserialization and serialization by about 40%.  Derived struct keys no longer allocate, `Option<T>` no longer
-  allocates a wrapper sink, errors are boxed and the JSON parser and serializer
-  scan strings and whitespace a word at a time.
-- Added `DeserializerState::is_map_key`.  Integer sinks now accept
-  stringified integers in map key position which enables integer keyed
-  maps in JSON in both directions.
-- Bytes are supported in JSON and TOML.  Formats without native bytes write
-  them as base64 strings and types that expect bytes (`Vec<u8>`, `[u8; N]`
-  and `Cow<[u8]>`) accept strings which are decoded as lenient base64 (both
-  alphabets, optional padding) in addition to sequences of integers.  The
-  new `deser::adapters::bytes` module has the encodings (`Base64`,
-  `Base64Url`, `Hex` and more, base32 with the new `bytes-encoding` feature)
-  and `BytesFormat`, which the serializer and deserializer configurations of
-  `deser-json` and `deser-toml` accept with `bytes`.  Values can request a
-  format with the new `Descriptor::bytes_format` which formats with native
-  bytes (like CBOR) ignore.  The encodings are adapters which write strings
-  in all formats (for instance `#[deser(as = Hex)]`) and the new
-  `BytesFallback<F>` adapter keeps bytes in formats with native bytes and
-  requests `F` otherwise (for instance `BytesFallback<Hex>` or
-  `BytesFallback<IntSeq>` for sequences of integers).  Custom encodings
-  implement `BytesEncoding`.
-- Added support for more standard library types:
-  - `str`, `CStr` and `Path` implement `Serialize` which makes `Box<str>`,
-    `Arc<str>`, `Box<CStr>` and `Box<Path>` serializable.  `Box<str>`,
-    `Arc<str>`, `Box<[T]>` and `Arc<[T]>` serialize and deserialize.
-  - `Arc<T>` serializes and deserializes like `Box<T>`.  Shared values are
-    serialized once per reference and deserialized into separate
-    allocations.
-  - `Cow<'a, T>` is supported for all `T: ToOwned` (for instance
-    `Cow<Path>` and `Cow<[T]>`), deserialization goes through `T::Owned`.
-    `String` and `Cow<str>` accept `Atom::Char`, `Cow<[u8]>` also accepts
-    sequences of integers.
-  - `VecDeque`, `LinkedList` and `BinaryHeap` serialize as sequences.
-    `VecDeque<u8>` and `BinaryHeap<u8>` are bytes like `Vec<u8>`.
-  - `PhantomData<T>` serializes as null and is optional.
-  - `NonZero<T>` of all integer types (zero is rejected with
-    `ErrorKind::OutOfRange`), `Wrapping<T>`, `Saturating<T>` and
-    `Reverse<T>` serialize as the value they wrap.
-  - `Result<T, E>` is externally tagged: `{"Ok": value}` or
-    `{"Err": error}`.
-  - `IpAddr`, `Ipv4Addr`, `Ipv6Addr`, `SocketAddr`, `SocketAddrV4` and
-    `SocketAddrV6` are strings.
-  - `PathBuf` and `Box<Path>` are strings.  Paths that are not valid UTF-8
-    fail to serialize.
-  - The atomic integers and `AtomicBool` serialize their value (loaded with
-    relaxed ordering).
-  - `CString` and `Box<CStr>` are bytes (without the nul terminator).
-    Interior nul bytes fail to deserialize.
-  - `HashSet<T, H>` serializes with custom hashers.
-  - The new containers are adapters as well: `Arc<U>`, `Box<[U]>`,
-    `Arc<[U]>`, `VecDeque<U>`, `LinkedList<U>`, `BinaryHeap<U>` and
-    `Result<U, V>`.
-- The `speedups` feature of the formats no longer exposes the optional
-  dependencies as features: `simdutf8`, `itoa` and `ryu` cannot be enabled
-  on their own anymore, enable `speedups` instead.
-- Added `deser::Position` (offset, line and column) with `Position::of` and
-  `Position::advance`, which counts positions the same way as errors do.
-  `deser_location::Position` is a re-export of it and the spans of
-  `deser-value` return it from `Span::start` and `Span::end`.
-- The derive macros are no longer re-exported from `deser::derive` (which
-  only holds their documentation), use `deser::Serialize` and
-  `deser::Deserialize`.
-- Added adapters on containers: `#[deser(as = Adapter)]` on structs, enums
-  and unions forwards the derived implementations to the adapter instead of
-  using the fields and variants, which also works for tuple structs, unit
-  structs and unions.  This covers serde's `from`, `try_from` and `into`,
-  for instance `#[deser(as = TryFromInto<String>)]`.  Attributes which have
-  no effect because of the adapter are rejected, as are adapters that would
-  use the type's own implementation (`_`, `Same` or the type itself).
-- Added `serialize_as` and `deserialize_as` to use an adapter for one
-  direction only, on containers (the other direction is derived as usual,
-  for instance to validate values with `deserialize_as = TryFromInto<Raw>`
-  while serializing the fields) and on fields.
-- Flattened fields can hold values that forward to other values
-  (`Chunk::Forward`) when serializing, for instance types with container
-  adapters that serialize as a struct.
-- `As` forwards the specialization for bytes to its adapter, so for
-  instance a `Vec<As<u8, Same>>` serializes as bytes.
-- Added support for the collections and byte buffers of other crates with
-  the new features of the same names: `indexmap` (`IndexMap` and
-  `IndexSet`, which keep their order), `hashbrown` (`HashMap` and
-  `HashSet`), `smallvec` (`SmallVec<[T; N]>`), `arrayvec` (`ArrayVec`,
-  which rejects more elements than its capacity, and `ArrayString`),
-  `bytes` (`Bytes` and `BytesMut`) and `bstr` (`BString`, `Box<BStr>` and
-  `&BStr`).  They behave like their counterparts in the standard library:
-  the collections are adapters for their elements (`IndexMap<_,
-  DisplayFromStr>`), the maps support updates and `MapSkipError`, and the
-  byte buffers (and `SmallVec` and `ArrayVec` of `u8`) are bytes which
-  support the bytes adapters.  Byte strings of `bstr` are strings if they
-  are valid UTF-8 and bytes otherwise (written as sequences of integers in
-  JSON), strings are deserialized as their UTF-8 bytes like serde does.
-- Derived structs generate a quarter less code.  All structs without
-  flattened fields share one sink which holds their fields in the same
-  heap block, the derive only implements the parts that depend on the
-  types of the fields.  Plain fields are serialized by a helper that
-  exists once per type of field.  100 derived structs and enums build 1.4
-  times as fast in release mode and type check 17% faster.
-  Deserializing structs is 2%-3% slower.
-- Derived unit enums generate less than half the code.  They only
-  generate the lookup of their names and functions that convert between
-  variants and their index, the sinks and the serialization exist once
-  in `deser-core`.
-- `deser-derive` compiles faster.  It uses loops instead of iterator
-  adapters which were instantiated for every closure, which leaves a
-  third less code for the compiler (101k instead of 153k lines of LLVM
-  IR).  The generated code is unchanged.
+- Fixed `HashMap` deserialization and deriving `Deserialize` for generic
+  structs.
+- Fixed JSON serialization of `char` and a panic on trailing commas in
+  arrays.
+
+### Performance
+
+- Deserializing and serializing is substantially faster, JSON is on par
+  with `serde_json` in the included benchmark (it was 1.5 and 1.9 times
+  slower).  The arena removes up to a quarter of the allocations of
+  deserializations and up to three quarters of the allocations of
+  serializations.
 
 ## 0.8.0
 
