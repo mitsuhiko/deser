@@ -48,10 +48,14 @@ pub(crate) fn hand_out<T: Send + 'static>(value: T, state: &State) -> Result<(),
     }
 }
 
-/// The result of [`ElementReader::poll`] (and of `Reader::read_next` of
-/// `deser::io`).
+/// A part of a value that is read with the elements of its
+/// [`Streamed`](crate::Streamed) sequence handed out.
+///
+/// Such a value is read in parts: first the elements, then the rest of the
+/// value.  This is the result of [`ElementReader::poll`] (and of
+/// `Reader::read_next` of `deser::io`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Next<E, T> {
+pub enum Part<E, T> {
     /// An element of the [`Streamed`](crate::Streamed) sequence of the value.
     Element(E),
     /// The value is complete (without the elements that were handed out).
@@ -62,7 +66,7 @@ pub enum Next<E, T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ElementStatus<E, T> {
     /// An element or the value is ready.
-    Ready(Next<E, T>),
+    Ready(Part<E, T>),
     /// More input is needed.
     NeedInput,
     /// There are no more values.
@@ -121,7 +125,7 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
 
     /// Returns the next element or the value.
     ///
-    /// Once the value is ready ([`Next::Done`]) the reader is done, the next
+    /// Once the value is ready ([`Part::Done`]) the reader is done, the next
     /// call starts with the next value.
     pub fn poll<D: StreamDeserializer>(
         &mut self,
@@ -130,10 +134,10 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
         loop {
             if let Some(element) = self.queue.pop() {
                 let element = *element.downcast::<E>().expect("elements are of type E");
-                return Ok(ElementStatus::Ready(Next::Element(element)));
+                return Ok(ElementStatus::Ready(Part::Element(element)));
             }
             if let Some(value) = self.value.take() {
-                return Ok(ElementStatus::Ready(Next::Done(value)));
+                return Ok(ElementStatus::Ready(Part::Done(value)));
             }
 
             let register = ElementQueue(Some(self.queue.clone()));

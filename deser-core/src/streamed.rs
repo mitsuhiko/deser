@@ -24,7 +24,7 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// use deser::Deserialize;
 /// use deser::Streamed;
 /// use deser::io::Reader;
-/// use deser::stream::Next;
+/// use deser::stream::Part;
 /// # use deser::de::{DeserializeDriver, Frame, StreamDeserializer};
 /// # use deser::{Error, Event};
 /// # /// Numbers on a line of their own form a page (with a sequence of the numbers).
@@ -60,9 +60,9 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// let mut items = Vec::new();
 /// while let Some(next) = reader.read_next::<Page, u32>()? {
 ///     match next {
-///         Next::Element(item) => items.push(item),
+///         Part::Element(item) => items.push(item),
 ///         // the elements were handed out, they are not in the page
-///         Next::Done(page) => assert!(page.items.is_empty()),
+///         Part::Done(page) => assert!(page.items.is_empty()),
 ///     }
 /// }
 /// assert_eq!(items, [1, 2, 3]);

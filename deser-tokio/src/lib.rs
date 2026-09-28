@@ -90,7 +90,7 @@ use deser_core::de::{
 };
 use deser_core::ser::{Serialize, SerializeDriver, StreamSerializer, Written};
 use deser_core::stream::{
-    DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Next, Status,
+    DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Part, Status,
 };
 use deser_core::{Error, ErrorKind};
 use futures_core::Stream;
@@ -264,7 +264,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
     pub fn poll_read_next<T, E>(
         &mut self,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<Next<E, T>>, Error>>
+    ) -> Poll<Result<Option<Part<E, T>>, Error>>
     where
         T: DeserializeOwned + 'static,
         E: Send + 'static,
@@ -308,12 +308,12 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
     /// [`Streamed<E>`](deser_core::Streamed) sequence within it.  The elements are
-    /// handed out as they are read ([`Next::Element`]), the value once it's
-    /// complete ([`Next::Done`]).  The next call continues with the next
+    /// handed out as they are read ([`Part::Element`]), the value once it's
+    /// complete ([`Part::Done`]).  The next call continues with the next
     /// value.  Resolves to `None` if there are no more values.  This is
     /// cancellation safe, until the value is complete the reader can only
     /// be used to read the value with the same types.
-    pub async fn read_next<T, E>(&mut self) -> Result<Option<Next<E, T>>, Error>
+    pub async fn read_next<T, E>(&mut self) -> Result<Option<Part<E, T>>, Error>
     where
         T: DeserializeOwned + 'static,
         E: Send + 'static,
@@ -480,7 +480,7 @@ where
     T: DeserializeOwned + 'static,
     E: Send + 'static,
 {
-    type Item = Result<Next<E, T>, Error>;
+    type Item = Result<Part<E, T>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.failed {

@@ -236,7 +236,7 @@ async fn test_feeding_across_tasks() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_streamed_elements() {
     use deser::Streamed;
-    use deser::stream::Next;
+    use deser::stream::Part;
 
     #[derive(Debug, PartialEq, Deserialize)]
     struct Feed {
@@ -268,13 +268,13 @@ async fn test_streamed_elements() {
     for id in 0..5 {
         assert_eq!(
             stream.next().await.unwrap().unwrap(),
-            Next::Element(message(id))
+            Part::Element(message(id))
         );
         sent.send(id).await.unwrap();
     }
     assert_eq!(
         stream.next().await.unwrap().unwrap(),
-        Next::Done(Feed {
+        Part::Done(Feed {
             name: "feed".into(),
             messages: Streamed::new()
         })

@@ -64,4 +64,4 @@ pub use self::buffer::{InputBuffer, Status};
 /// Writers pass this as the limit to
 /// [`StreamSerializer::drive_partial`](crate::ser::StreamSerializer::drive_partial).
 pub const DEFAULT_BUFFER_LIMIT: usize = 8 * 1024;
-pub use self::elements::{ElementReader, ElementStatus, Next};
+pub use self::elements::{ElementReader, ElementStatus, Part};

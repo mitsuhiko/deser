@@ -296,7 +296,7 @@ fn test_feeding_with_layers() {
 mod streamed {
     use deser::Streamed;
     use deser::io::Reader;
-    use deser::stream::Next;
+    use deser::stream::Part;
     use deser::{Deserialize, Serialize};
 
     use super::dialect::{self, DeserializerConfig, Trailing};
@@ -324,7 +324,7 @@ mod streamed {
 
     fn read_all(
         reader: &mut Reader<impl std::io::Read, dialect::StreamDeserializer>,
-    ) -> Vec<Next<Item, Page>> {
+    ) -> Vec<Part<Item, Page>> {
         let mut rv = Vec::new();
         while let Some(next) = reader.read_next::<Page, Item>().unwrap() {
             rv.push(next);
@@ -341,10 +341,10 @@ mod streamed {
         };
         let json = dialect::to_string(&page).unwrap();
         let expected = vec![
-            Next::Element(item(0)),
-            Next::Element(item(1)),
-            Next::Element(item(2)),
-            Next::Done(Page {
+            Part::Element(item(0)),
+            Part::Element(item(1)),
+            Part::Element(item(2)),
+            Part::Done(Page {
                 total: 3,
                 items: Streamed::new(),
                 next: Some("cursor".into()),
@@ -366,11 +366,11 @@ mod streamed {
         let mut reader = STRICT.reader(Blocking(input));
         assert_eq!(
             reader.read_next::<Page, Item>().unwrap(),
-            Some(Next::Element(item(0)))
+            Some(Part::Element(item(0)))
         );
         assert_eq!(
             reader.read_next::<Page, Item>().unwrap(),
-            Some(Next::Element(item(1)))
+            Some(Part::Element(item(1)))
         );
     }
 
@@ -402,13 +402,13 @@ mod streamed {
         assert_eq!(
             read_all(&mut reader),
             [
-                Next::Element(item(0)),
-                Next::Done(Page {
+                Part::Element(item(0)),
+                Part::Done(Page {
                     total: 1,
                     items: Streamed::new(),
                     next: None
                 }),
-                Next::Done(Page {
+                Part::Done(Page {
                     total: 0,
                     items: Streamed::new(),
                     next: Some("x".into())
@@ -435,8 +435,8 @@ mod streamed {
         let mut rv = Vec::new();
         while let Some(next) = reader.read_next::<Outer, u32>().unwrap() {
             rv.push(match next {
-                Next::Element(value) => Some(value),
-                Next::Done(_) => None,
+                Part::Element(value) => Some(value),
+                Part::Done(_) => None,
             });
         }
         assert_eq!(rv, [Some(1), Some(2), Some(3), None, None]);
@@ -448,13 +448,13 @@ mod streamed {
         let mut reader = STRICT.reader(&input[..]);
         assert!(matches!(
             reader.read_next::<Page, Item>().unwrap(),
-            Some(Next::Element(_))
+            Some(Part::Element(_))
         ));
         assert!(reader.read::<Page>().is_err());
         assert!(reader.read_next::<Page, u32>().is_err());
         assert!(matches!(
             reader.read_next::<Page, Item>().unwrap(),
-            Some(Next::Done(_))
+            Some(Part::Done(_))
         ));
         assert!(reader.read_next::<Page, Item>().unwrap().is_none());
     }
@@ -478,11 +478,11 @@ mod streamed {
         let mut max_buffered = 0;
         loop {
             match reader.poll(&mut buffer).unwrap() {
-                ElementStatus::Ready(Next::Element(element)) => {
+                ElementStatus::Ready(Part::Element(element)) => {
                     assert_eq!(element, item(count));
                     count += 1;
                 }
-                ElementStatus::Ready(Next::Done(page)) => {
+                ElementStatus::Ready(Part::Done(page)) => {
                     assert_eq!(page.total, total);
                     assert!(page.items.is_empty());
                     break;

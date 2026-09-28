@@ -111,7 +111,7 @@ use crate::de::{
 };
 use crate::error::{Error, ErrorKind};
 use crate::ser::{Serialize, SerializeDriver, Serializer, StreamSerializer, Written};
-use crate::stream::{ElementReader, ElementStatus, InputBuffer, Next, Status};
+use crate::stream::{ElementReader, ElementStatus, InputBuffer, Part, Status};
 
 pub use crate::stream::DEFAULT_BUFFER_LIMIT;
 
@@ -289,14 +289,14 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
     /// [`Streamed<E>`](crate::Streamed) sequence within it.  The elements are
-    /// handed out as they are read ([`Next::Element`]), the value once it's
-    /// complete ([`Next::Done`]).  The next call continues with the next
+    /// handed out as they are read ([`Part::Element`]), the value once it's
+    /// complete ([`Part::Done`]).  The next call continues with the next
     /// value.  Returns `None` if there are no more values.  See [`Streamed`](crate::Streamed)
     /// for an example.
     ///
     /// Until the value is complete, the reader can only be used to read the
     /// value with the same types.
-    pub fn read_next<T, E>(&mut self) -> Result<Option<Next<E, T>>, Error>
+    pub fn read_next<T, E>(&mut self) -> Result<Option<Part<E, T>>, Error>
     where
         T: DeserializeOwned + 'static,
         E: Send + 'static,
