@@ -263,11 +263,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 }
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(__StructEmitter {
+                    __deser::__derive::Ok(__deser::ser::Chunk::structure(__StructEmitter {
                         data: self,
                         index: 0,
                         #temp_emitter_init
-                    })))
+                    }, __state))
                 }
             }
 
@@ -441,9 +441,7 @@ fn derive_indexed_struct(
                 }
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::Struct(__deser::__derive::Box::new(
-                        __deser::__derive::IndexedStructEmitter::new(self)
-                    )))
+                    __deser::__derive::Ok(__deser::ser::Chunk::structure(__deser::__derive::IndexedStructEmitter::new(self), __state))
                 }
 
                 #[inline]
@@ -615,9 +613,7 @@ fn derive_tuple_struct(
                 }
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::Seq(__deser::__derive::Box::new(
-                        __deser::__derive::IndexedSeqEmitter::new(self)
-                    )))
+                    __deser::__derive::Ok(__deser::ser::Chunk::seq(__deser::__derive::IndexedSeqEmitter::new(self), __state))
                 }
 
                 #[inline]

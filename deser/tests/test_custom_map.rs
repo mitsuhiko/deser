@@ -6,11 +6,14 @@ use std::collections::{BTreeMap, btree_map};
 struct Flags(BTreeMap<u64, bool>);
 
 impl Serialize for Flags {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Map(Box::new(FlagsMapEmitter {
-            iter: self.0.iter(),
-            value: None,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::map(
+            FlagsMapEmitter {
+                iter: self.0.iter(),
+                value: None,
+            },
+            state,
+        ))
     }
 }
 
@@ -20,10 +23,10 @@ pub struct FlagsMapEmitter<'a> {
 }
 
 impl<'a> MapEmitter for FlagsMapEmitter<'a> {
-    fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
-            Some(SerializeHandle::boxed(key.to_string()))
+            Some(SerializeHandle::arena(key.to_string(), state))
         } else {
             None
         })

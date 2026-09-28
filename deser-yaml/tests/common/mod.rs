@@ -231,8 +231,8 @@ impl Serialize for Value {
             Value::Float(value) => Chunk::Atom(Atom::F64(value)),
             Value::Str(ref value) => Chunk::Atom(Atom::Str(value.as_str().into())),
             Value::Bytes(ref value) => Chunk::Atom(Atom::Bytes(Bytes::borrowed(value))),
-            Value::Seq(ref items) => Chunk::Seq(Box::new(ValueSeqEmitter(items.iter()))),
-            Value::Map(ref items) => Chunk::Map(Box::new(ValueMapEmitter(items.iter(), None))),
+            Value::Seq(ref items) => Chunk::seq(ValueSeqEmitter(items.iter()), state),
+            Value::Map(ref items) => Chunk::map(ValueMapEmitter(items.iter(), None), state),
             Value::Tagged(ref tag, ref value) => {
                 deser_yaml::set_tag(state, tag.as_str());
                 return value.serialize(state);

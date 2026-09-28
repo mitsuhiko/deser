@@ -72,8 +72,20 @@ All notable changes to deser are documented here.
   - Added `DeserializeDriver::from_fn` and `DeserializeDriver::from_state`
     to create drivers whose sink is allocated in the arena of the driver.
   - The variant builders of enums, the value slots of owned sinks and
-    the captures of untagged enums are in the arena as well, which removes
-    up to 12% of the allocations of a deserialization.
+    the captures of untagged enums are in the arena as well.
+- **Breaking:** the emitters and owned values of serializations are
+  allocated in the arena of the state as well.  `Chunk::Struct`,
+  `Chunk::Map` and `Chunk::Seq` hold a `ser::Boxed` (which is in the arena
+  or on the heap) instead of a `Box`, `Chunk::structure`, `Chunk::map` and
+  `Chunk::seq` create them in the arena (`Box::new(emitter).into()` on the
+  heap).  `SerializeHandle::boxed` was replaced by `SerializeHandle::arena`
+  and `SerializeHandle::heap`.
+- The stacks of the deserialize and serialize drivers are kept with the
+  arena for the next driver, and recordings of a single event (like the
+  keys that tagged enums record until the variant is known) are stored
+  without an allocation.  Together with the arena this removes up to 24%
+  of the allocations of deserializations and up to 76% of the allocations
+  of serializations.
 - **Breaking:** the standard library is optional (the new `std` feature,
   enabled by default).  Without it `deser`, `deser-json`, `deser-jsonc`,
   `deser-json5`, `deser-cbor`, `deser-msgpack`, `deser-csv`, `deser-path`

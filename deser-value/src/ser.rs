@@ -59,8 +59,8 @@ impl Serialize for Kind {
 }
 
 impl Serialize for Seq {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Seq(Box::new(SeqIter(self.items.iter()))))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::seq(SeqIter(self.items.iter()), state))
     }
 
     fn container_shape(&self) -> ContainerShape {
@@ -79,11 +79,14 @@ impl SeqEmitter for SeqIter<'_> {
 }
 
 impl Serialize for Map {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Map(Box::new(MapIter {
-            iter: self.inner.entries.iter(),
-            value: None,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::map(
+            MapIter {
+                iter: self.inner.entries.iter(),
+                value: None,
+            },
+            state,
+        ))
     }
 
     fn container_shape(&self) -> ContainerShape {

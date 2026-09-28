@@ -117,6 +117,7 @@ impl Emit for SerBuffer {
 /// Serializes a serde value by buffering its events.
 pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
     value: &T,
+    state: &mut State,
 ) -> Result<Chunk<'static>, deser_core::Error> {
     let mut buffer = SerBuffer::Empty;
     value
@@ -128,8 +129,9 @@ pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
             "serde serializer produced no value",
         )),
         SerBuffer::Atom(atom) => Ok(Chunk::Atom(atom)),
-        SerBuffer::Events(events) => {
-            Ok(Chunk::Forward(SerializeHandle::boxed(Events::new(events)?)))
-        }
+        SerBuffer::Events(events) => Ok(Chunk::Forward(SerializeHandle::arena(
+            Events::new(events)?,
+            state,
+        ))),
     }
 }

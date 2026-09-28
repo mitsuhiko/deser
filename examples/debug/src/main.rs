@@ -108,8 +108,8 @@ impl fmt::Debug for Drawing {
 pub struct Anonymous;
 
 impl Serialize for Anonymous {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(AnonymousEmitter(0))))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(AnonymousEmitter(0), state))
     }
 }
 
@@ -118,12 +118,18 @@ struct AnonymousEmitter(usize);
 impl StructEmitter for AnonymousEmitter {
     fn next(
         &mut self,
-        _state: &mut State,
+        state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         self.0 += 1;
         Ok(match self.0 {
-            1 => Some((Cow::Borrowed("answer"), SerializeHandle::boxed(42u32))),
-            2 => Some((Cow::Borrowed("maybe"), SerializeHandle::boxed(Some(true)))),
+            1 => Some((
+                Cow::Borrowed("answer"),
+                SerializeHandle::arena(42u32, state),
+            )),
+            2 => Some((
+                Cow::Borrowed("maybe"),
+                SerializeHandle::arena(Some(true), state),
+            )),
             _ => None,
         })
     }

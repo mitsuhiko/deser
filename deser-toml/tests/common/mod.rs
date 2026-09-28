@@ -294,7 +294,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 }
 
 impl Serialize for Value {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(match *self {
             Value::Str(ref value) => Chunk::Atom(Atom::Str(Text::borrowed(value))),
             Value::Int(value) => match i64::try_from(value) {
@@ -304,11 +304,14 @@ impl Serialize for Value {
             Value::Float(value) => Chunk::Atom(Atom::F64(value)),
             Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
             Value::Datetime(ref value) => Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))),
-            Value::Array(ref items) => Chunk::Seq(Box::new(ArrayEmitter(items.iter()))),
-            Value::Table(ref items) => Chunk::Map(Box::new(TableEmitter {
-                iter: items.iter(),
-                value: None,
-            })),
+            Value::Array(ref items) => Chunk::seq(ArrayEmitter(items.iter()), state),
+            Value::Table(ref items) => Chunk::map(
+                TableEmitter {
+                    iter: items.iter(),
+                    value: None,
+                },
+                state,
+            ),
         })
     }
 }

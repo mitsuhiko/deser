@@ -3,7 +3,6 @@
 //! This is used by the derive for flattened fields and by internally tagged
 //! enums for the content of newtype variants.
 use alloc::borrow::Cow;
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -12,7 +11,7 @@ use crate::State;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::driver::Held;
-use crate::ser::{Chunk, MapEmitter, Serialize, SerializeHandle, StructEmitter};
+use crate::ser::{Boxed, Chunk, MapEmitter, Serialize, SerializeHandle, StructEmitter};
 
 /// Holds the values a value forwarded to (see [`Chunk::Forward`]).
 ///
@@ -70,8 +69,8 @@ impl Forwarded {
 
 /// The emitter of a value that is flattened.
 enum Content<'a> {
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>),
+    Struct(Boxed<dyn StructEmitter + 'a>),
+    Map(Boxed<dyn MapEmitter + 'a>),
     // null (like `None`) has no fields
     Empty,
 }

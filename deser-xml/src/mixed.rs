@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser_core::ser::{
-    Chunk, Describe, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
+    Boxed, Chunk, Describe, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
 };
 use deser_core::{Atom, Error, ErrorKind, Serialize, State, Text};
 
@@ -455,17 +455,20 @@ fn text_key(state: &State) -> &'static str {
 }
 
 impl<T: Serialize, W: Whitespace> Serialize for Mixed<T, W> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(MixedEmitter {
-            values: self.0.iter(),
-            current: None,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(
+            MixedEmitter {
+                values: self.0.iter(),
+                current: None,
+            },
+            state,
+        ))
     }
 }
 
 /// The entries of the value that is serialized.
 enum Entries<'a> {
-    Struct(Box<dyn StructEmitter + 'a>),
+    Struct(Boxed<dyn StructEmitter + 'a>),
     /// A unit variant, an empty element.
     Unit(Option<Cow<'a, str>>),
 }
@@ -484,9 +487,7 @@ impl<'a, T: Serialize> StructEmitter for MixedEmitter<'a, T> {
             if let Some((_, ref mut entries)) = self.current {
                 let entry = match entries {
                     Entries::Struct(emitter) => emitter.next(state)?,
-                    Entries::Unit(name) => {
-                        name.take().map(|name| (name, SerializeHandle::boxed("")))
-                    }
+                    Entries::Unit(name) => name.take().map(|name| (name, SerializeHandle::to(&""))),
                 };
                 // SAFETY: the entry borrows from `self.current`.  If it's
                 // returned `self.current` is not touched again in this call,

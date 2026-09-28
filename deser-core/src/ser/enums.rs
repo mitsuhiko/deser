@@ -2,7 +2,6 @@
 //!
 //! These are used by the derive.
 use alloc::borrow::Cow;
-use alloc::boxed::Box;
 use alloc::format;
 use alloc::vec::Vec;
 
@@ -32,11 +31,14 @@ impl<'a> EntrySer<'a> {
     }
 
     /// Converts the entry into a chunk.
-    pub fn into_chunk(self) -> Chunk<'a> {
-        Chunk::Map(Box::new(EntryEmitter {
-            entry: self,
-            index: 0,
-        }))
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::map(
+            EntryEmitter {
+                entry: self,
+                index: 0,
+            },
+            state,
+        )
     }
 }
 
@@ -66,24 +68,30 @@ pub struct FieldsSer<'a>(pub Vec<(&'static str, SerializeHandle<'a>)>);
 
 impl<'a> FieldsSer<'a> {
     /// Converts the fields into a chunk.
-    pub fn into_chunk(self) -> Chunk<'a> {
-        Chunk::Struct(Box::new(FieldsEmitter {
-            fields: self.0,
-            index: 0,
-        }))
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::structure(
+            FieldsEmitter {
+                fields: self.0,
+                index: 0,
+            },
+            state,
+        )
     }
 }
 
 impl<'a> Serialize for FieldsSer<'a> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(FieldsEmitter {
-            fields: self
-                .0
-                .iter()
-                .map(|(name, value)| (*name, SerializeHandle::Borrowed(&**value)))
-                .collect(),
-            index: 0,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(
+            FieldsEmitter {
+                fields: self
+                    .0
+                    .iter()
+                    .map(|(name, value)| (*name, SerializeHandle::Borrowed(&**value)))
+                    .collect(),
+                index: 0,
+            },
+            state,
+        ))
     }
 }
 
@@ -126,33 +134,39 @@ pub struct FlatFieldsSer<'a> {
 
 impl<'a> FlatFieldsSer<'a> {
     /// Converts the fields into a chunk.
-    pub fn into_chunk(self) -> Chunk<'a> {
-        Chunk::Struct(Box::new(FlatFieldsEmitter {
-            fields: self.fields,
-            skip_optionals: self.skip_optionals,
-            index: 0,
-            nested: None,
-        }))
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::structure(
+            FlatFieldsEmitter {
+                fields: self.fields,
+                skip_optionals: self.skip_optionals,
+                index: 0,
+                nested: None,
+            },
+            state,
+        )
     }
 }
 
 impl<'a> Serialize for FlatFieldsSer<'a> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(FlatFieldsEmitter {
-            fields: self
-                .fields
-                .iter()
-                .map(|field| match *field {
-                    FieldSer::Field(name, ref value) => {
-                        FieldSer::Field(name, SerializeHandle::Borrowed(&**value))
-                    }
-                    FieldSer::Flatten(value) => FieldSer::Flatten(value),
-                })
-                .collect(),
-            skip_optionals: self.skip_optionals,
-            index: 0,
-            nested: None,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(
+            FlatFieldsEmitter {
+                fields: self
+                    .fields
+                    .iter()
+                    .map(|field| match *field {
+                        FieldSer::Field(name, ref value) => {
+                            FieldSer::Field(name, SerializeHandle::Borrowed(&**value))
+                        }
+                        FieldSer::Flatten(value) => FieldSer::Flatten(value),
+                    })
+                    .collect(),
+                skip_optionals: self.skip_optionals,
+                index: 0,
+                nested: None,
+            },
+            state,
+        ))
     }
 }
 
@@ -223,24 +237,30 @@ pub struct SeqSer<'a>(pub Vec<SerializeHandle<'a>>);
 
 impl<'a> SeqSer<'a> {
     /// Converts the values into a chunk.
-    pub fn into_chunk(self) -> Chunk<'a> {
-        Chunk::Seq(Box::new(SeqValuesEmitter {
-            values: self.0,
-            index: 0,
-        }))
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::seq(
+            SeqValuesEmitter {
+                values: self.0,
+                index: 0,
+            },
+            state,
+        )
     }
 }
 
 impl<'a> Serialize for SeqSer<'a> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Seq(Box::new(SeqValuesEmitter {
-            values: self
-                .0
-                .iter()
-                .map(|value| SerializeHandle::Borrowed(&**value))
-                .collect(),
-            index: 0,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::seq(
+            SeqValuesEmitter {
+                values: self
+                    .0
+                    .iter()
+                    .map(|value| SerializeHandle::Borrowed(&**value))
+                    .collect(),
+                index: 0,
+            },
+            state,
+        ))
     }
 }
 
@@ -279,13 +299,16 @@ impl<'a> TaggedNewtype<'a> {
     }
 
     /// Converts the value into a chunk.
-    pub fn into_chunk(self) -> Chunk<'a> {
-        Chunk::Struct(Box::new(TaggedNewtypeEmitter {
-            value: self,
-            content: None,
-            started: false,
-            done: false,
-        }))
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::structure(
+            TaggedNewtypeEmitter {
+                value: self,
+                content: None,
+                started: false,
+                done: false,
+            },
+            state,
+        )
     }
 }
 

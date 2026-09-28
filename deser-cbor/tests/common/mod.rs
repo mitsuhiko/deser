@@ -138,9 +138,9 @@ impl Serialize for Value {
             Value::Bytes(ref value) => Atom::Bytes(value.as_slice().into()),
             Value::Simple(value) => Atom::Ext(ExtValue::owned(Simple::new(value).unwrap())),
             Value::Ext(ref value) => Atom::Ext(value.as_borrowed()),
-            Value::Array(ref items) => return Ok(Chunk::Seq(Box::new(ArrayEmitter(items.iter())))),
+            Value::Array(ref items) => return Ok(Chunk::seq(ArrayEmitter(items.iter()), state)),
             Value::Map(ref items) => {
-                return Ok(Chunk::Map(Box::new(MapEntryEmitter(items.iter(), None))));
+                return Ok(Chunk::map(MapEntryEmitter(items.iter(), None), state));
             }
             Value::Tag(tag, ref value) => {
                 deser_cbor::tag::push_tag(state, tag);

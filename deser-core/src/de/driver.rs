@@ -4,6 +4,7 @@ use core::marker::PhantomData;
 
 use crate::State;
 use crate::Text;
+use crate::de::arena::Buffer;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::lexical::ContentKey;
 use crate::de::{Deserialize, Sink, SinkHandle};
@@ -224,6 +225,9 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         let mut driver = DeserializeDriver::with_state(state.take(), sink, 0);
         driver.core.state.is_map_key = is_map_key;
         let rv = f(&mut driver);
+        // the sinks and the stack go back to the arena before the state
+        // is returned
+        driver.core.release();
         *state = driver.core.state.take();
         drop(driver);
         // a failed replay can leave containers open
@@ -234,14 +238,19 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     }
 
     fn with_state(
-        state: State,
+        mut state: State,
         sink: SinkHandle<'a, 'de>,
         capacity: usize,
     ) -> DeserializeDriver<'a, 'de> {
+        // the stack of the last driver is reused
+        let sink_stack = state
+            .arena
+            .take_vec(Buffer::SinkStack)
+            .unwrap_or_else(|| Vec::with_capacity(capacity));
         DeserializeDriver {
             core: DriverCore {
                 state,
-                sink_stack: Vec::with_capacity(capacity),
+                sink_stack,
                 // SAFETY: the driver cannot outlive 'a
                 root: Some(unsafe { erase_lifetime(sink) }),
             },
@@ -772,8 +781,9 @@ fn content_container_error(is_key: bool) -> Error {
     )
 }
 
-impl<'de> Drop for DriverCore<'de> {
-    fn drop(&mut self) {
+impl<'de> DriverCore<'de> {
+    /// Drops the sinks and keeps the stack for the next driver.
+    fn release(&mut self) {
         // sinks borrow from the sinks below them, drop them in inverse order
         while let Some((sink, _)) = self.sink_stack.pop() {
             sink.release(&mut self.state);
@@ -783,6 +793,14 @@ impl<'de> Drop for DriverCore<'de> {
         if let Some(root) = self.root.take() {
             root.release(&mut self.state);
         }
+        let stack = core::mem::take(&mut self.sink_stack);
+        self.state.arena.put_vec(Buffer::SinkStack, stack);
+    }
+}
+
+impl<'de> Drop for DriverCore<'de> {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 

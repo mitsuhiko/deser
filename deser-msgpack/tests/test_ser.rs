@@ -409,22 +409,22 @@ fn big_integers_are_out_of_range() {
 struct Liar(usize);
 
 impl Serialize for Liar {
-    fn serialize(&self, _state: &mut deser::State) -> Result<deser::ser::Chunk<'_>, deser::Error> {
+    fn serialize(&self, state: &mut deser::State) -> Result<deser::ser::Chunk<'_>, deser::Error> {
         struct Emitter(usize);
         impl deser::ser::SeqEmitter for Emitter {
             fn next(
                 &mut self,
-                _state: &mut deser::State,
+                state: &mut deser::State,
             ) -> Result<Option<deser::ser::SerializeHandle<'_>>, deser::Error> {
                 Ok(if self.0 > 0 {
                     self.0 -= 1;
-                    Some(deser::ser::SerializeHandle::boxed(1u64))
+                    Some(deser::ser::SerializeHandle::arena(1u64, state))
                 } else {
                     None
                 })
             }
         }
-        Ok(deser::ser::Chunk::Seq(Box::new(Emitter(2))))
+        Ok(deser::ser::Chunk::seq(Emitter(2), state))
     }
 
     fn container_shape(&self) -> deser::ContainerShape {

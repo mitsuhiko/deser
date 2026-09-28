@@ -62,11 +62,9 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-//!         Ok(Chunk::Struct(Box::new(UserEmitter {
-//!             user: self,
-//!             index: 0,
-//!         })))
+//!     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+//!         // the emitter is allocated in the arena of the serialization
+//!         Ok(Chunk::structure(UserEmitter { user: self, index: 0 }, state))
 //!     }
 //! }
 //!
@@ -98,6 +96,7 @@ use crate::error::Error;
 use crate::event::ContainerShape;
 
 pub(crate) mod begin;
+mod boxed;
 mod chunk;
 mod describe;
 mod driver;
@@ -109,6 +108,7 @@ pub(crate) mod impls;
 mod layer;
 mod serializer;
 
+pub use self::boxed::Boxed;
 pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
@@ -133,11 +133,11 @@ pub(crate) use self::begin::{
 pub enum SerializeHandle<'a> {
     /// A borrowed reference to a [`Serialize`].
     Borrowed(&'a dyn Serialize),
-    /// A boxed up [`Serialize`].
+    /// A [`Serialize`] owned by the handle (see [`Boxed`]).
     ///
-    /// Boxed values are owned by the handle, they must be `Send` so that
-    /// the serialization can move between threads.
-    Owned(Box<dyn Serialize + Send + 'a>),
+    /// Owned values must be `Send` so that the serialization can move
+    /// between threads.
+    Owned(Boxed<dyn Serialize + Send + 'a>),
 }
 
 impl<'a> Deref for SerializeHandle<'a> {
@@ -146,7 +146,7 @@ impl<'a> Deref for SerializeHandle<'a> {
     fn deref(&self) -> &Self::Target {
         match self {
             SerializeHandle::Borrowed(val) => *val,
-            SerializeHandle::Owned(val) => val.as_ref(),
+            SerializeHandle::Owned(val) => &**val,
         }
     }
 }
@@ -157,9 +157,23 @@ impl<'a> SerializeHandle<'a> {
         SerializeHandle::Borrowed(val as &dyn Serialize)
     }
 
-    /// Create an owned handle to a heap allocated [`Serialize`].
-    pub fn boxed<S: Serialize + Send + 'a>(val: S) -> SerializeHandle<'a> {
-        SerializeHandle::Owned(Box::new(val))
+    /// Creates an owned handle to a value in the arena of the serialization.
+    ///
+    /// This is how owned values are typically created (for instance for
+    /// [`Chunk::Forward`]), see [`Boxed`].
+    #[inline(always)]
+    pub fn arena<S: Serialize + Send + 'a>(val: S, state: &mut State) -> SerializeHandle<'a> {
+        SerializeHandle::Owned(boxed::unsize(Boxed::arena(val, state), |x| {
+            x as *mut (dyn Serialize + Send + 'a)
+        }))
+    }
+
+    /// Creates an owned handle to a value on the heap.
+    ///
+    /// Unlike [`arena`](Self::arena) the value does not need a state and is
+    /// independent of any serialization.
+    pub fn heap<S: Serialize + Send + 'a>(val: S) -> SerializeHandle<'a> {
+        SerializeHandle::Owned(Boxed::from(Box::new(val) as Box<dyn Serialize + Send + 'a>))
     }
 }
 

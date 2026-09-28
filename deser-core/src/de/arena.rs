@@ -21,6 +21,7 @@
 //! the blocks stay valid and their footers can still be written when they
 //! are dropped, also on other threads (the footers are atomic).
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 use core::ptr::{self, NonNull};
@@ -48,6 +49,72 @@ struct Chunk {
     next: *mut Chunk,
     /// The layout the chunk was allocated with.
     layout: Layout,
+    /// The buffers of the arena while the chunk is parked.
+    bufs: Buffers,
+}
+
+/// The buffers of the vectors that are kept for the next driver (see
+/// [`Arena::take_vec`]), by [`Buffer`].
+type Buffers = [RawBuf; 2];
+
+/// The kinds of vectors whose buffers are kept.
+#[derive(Copy, Clone)]
+pub(crate) enum Buffer {
+    /// The sinks of the containers of a deserialization.
+    SinkStack = 0,
+    /// The frames of a serialization.
+    SerializeStack = 1,
+}
+
+/// Buffers larger than this are not kept.
+const MAX_BUFFER_SIZE: usize = 64 * 1024;
+
+/// The buffer of a vector.
+#[derive(Copy, Clone)]
+struct RawBuf {
+    ptr: *mut u8,
+    cap: usize,
+    // the size and alignment of the elements
+    size: usize,
+    align: usize,
+}
+
+impl RawBuf {
+    const EMPTY: RawBuf = RawBuf {
+        ptr: ptr::null_mut(),
+        cap: 0,
+        size: 0,
+        align: 1,
+    };
+
+    /// Frees the buffer.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be the buffer of a vector (or empty).
+    unsafe fn free(self) {
+        if self.cap != 0 {
+            // SAFETY: see above, a vector allocated it with this layout
+            unsafe {
+                dealloc(
+                    self.ptr,
+                    Layout::from_size_align_unchecked(self.size * self.cap, self.align),
+                )
+            }
+        }
+    }
+}
+
+/// Frees buffers.
+///
+/// # Safety
+///
+/// The buffers must not be used after.
+unsafe fn free_buffers(bufs: &mut Buffers) {
+    for buf in bufs.iter_mut() {
+        // SAFETY: see above
+        unsafe { core::mem::replace(buf, RawBuf::EMPTY).free() };
+    }
 }
 
 const CHUNK_HEADER: usize = size_of::<Chunk>().next_multiple_of(CHUNK_ALIGN);
@@ -70,6 +137,7 @@ impl Chunk {
                 prev: ptr::null_mut(),
                 next: ptr::null_mut(),
                 layout,
+                bufs: [RawBuf::EMPTY; 2],
             })
         };
         chunk
@@ -82,7 +150,10 @@ impl Chunk {
     /// The chunk must not hold live blocks and not be used after.
     unsafe fn free(chunk: *mut Chunk) {
         // SAFETY: see above
-        unsafe { dealloc(chunk.cast(), (*chunk).layout) }
+        unsafe {
+            free_buffers(&mut (*chunk).bufs);
+            dealloc(chunk.cast(), (*chunk).layout)
+        }
     }
 
     #[inline(always)]
@@ -110,6 +181,8 @@ pub(crate) struct Arena {
     base: *mut u8,
     /// The chunk `top` is in.
     chunk: *mut Chunk,
+    /// Buffers of vectors that are kept for the next driver.
+    bufs: Buffers,
 }
 
 // SAFETY: the arena owns its chunks, they can be used and freed on any
@@ -131,6 +204,84 @@ impl Arena {
             end: ptr::null_mut(),
             base: ptr::null_mut(),
             chunk: ptr::null_mut(),
+            bufs: [RawBuf::EMPTY; 2],
+        }
+    }
+
+    /// Takes the buffer of a vector that was kept, the vector is empty.
+    ///
+    /// This also takes a parked chunk if the arena has none yet (the
+    /// buffers are parked with it), so that a driver which is created
+    /// before anything is allocated gets the buffers of the last one.
+    #[inline]
+    pub fn take_vec<T>(&mut self, kind: Buffer) -> Option<Vec<T>> {
+        if self.chunk.is_null() {
+            self.take_parked();
+        }
+        let buf = core::mem::replace(&mut self.bufs[kind as usize], RawBuf::EMPTY);
+        if buf.cap == 0 {
+            return None;
+        }
+        if buf.size == size_of::<T>() && buf.align == align_of::<T>() {
+            // SAFETY: the buffer comes from a vector with elements of this
+            // size and alignment
+            Some(unsafe { Vec::from_raw_parts(buf.ptr.cast::<T>(), 0, buf.cap) })
+        } else {
+            // SAFETY: the buffer is not used after
+            unsafe { buf.free() };
+            None
+        }
+    }
+
+    /// Keeps the buffer of a vector for the next driver.
+    ///
+    /// The elements of the vector are dropped.
+    #[inline]
+    pub fn put_vec<T>(&mut self, kind: Buffer, vec: Vec<T>) {
+        let size = size_of::<T>();
+        if vec.capacity() == 0 || size == 0 || vec.capacity() * size > MAX_BUFFER_SIZE {
+            return;
+        }
+        let mut vec = core::mem::ManuallyDrop::new(vec);
+        vec.clear();
+        let buf = RawBuf {
+            ptr: vec.as_mut_ptr().cast(),
+            cap: vec.capacity(),
+            size,
+            align: align_of::<T>(),
+        };
+        let old = core::mem::replace(&mut self.bufs[kind as usize], buf);
+        // SAFETY: the old buffer is not used after
+        unsafe { old.free() };
+    }
+
+    /// Takes a parked chunk as the first chunk.
+    #[cold]
+    fn take_parked(&mut self) {
+        if let Some(chunk) = parked::take(0) {
+            self.set_first_chunk(chunk);
+        }
+    }
+
+    /// Makes a chunk the first chunk, the arena has none yet.
+    fn set_first_chunk(&mut self, chunk: NonNull<Chunk>) {
+        debug_assert!(self.chunk.is_null());
+        self.chunk = chunk.as_ptr();
+        self.base = Chunk::start(self.chunk);
+        self.top = self.base;
+        self.end = Chunk::end(self.chunk);
+        // SAFETY: the chunk is valid, its buffers move into the arena
+        // (unless the arena has its own already)
+        unsafe {
+            let bufs = &mut (*self.chunk).bufs;
+            for (own, parked) in self.bufs.iter_mut().zip(bufs.iter_mut()) {
+                let parked = core::mem::replace(parked, RawBuf::EMPTY);
+                if own.cap == 0 {
+                    *own = parked;
+                } else {
+                    parked.free();
+                }
+            }
         }
     }
 
@@ -169,10 +320,7 @@ impl Arena {
         if self.chunk.is_null() {
             let chunk =
                 parked::take(needed).unwrap_or_else(|| Chunk::alloc(FIRST_CHUNK_SIZE, needed));
-            self.chunk = chunk.as_ptr();
-            self.base = Chunk::start(self.chunk);
-            self.top = self.base;
-            self.end = Chunk::end(self.chunk);
+            self.set_first_chunk(chunk);
             let top = self.top;
             let (block, footer) = place(top, self.end, layout).expect("chunk too small");
             // the first block of the arena
@@ -271,6 +419,8 @@ impl Arena {
 impl Drop for Arena {
     fn drop(&mut self) {
         if self.chunk.is_null() {
+            // SAFETY: the buffers are not used after
+            unsafe { free_buffers(&mut self.bufs) };
             return;
         }
         self.reclaim();
@@ -286,6 +436,7 @@ impl Drop for Arena {
                 // blocks are still alive, their chunks must stay valid
                 #[cfg(test)]
                 LEAKED.with(|leaked| leaked.set(leaked.get() + 1));
+                free_buffers(&mut self.bufs);
                 return;
             }
             // the arena is empty, the largest chunk (the current one) is
@@ -301,6 +452,8 @@ impl Drop for Arena {
                     chunk = prev;
                 }
             }
+            // the buffers are parked with the chunk
+            (*chunk).bufs = core::mem::replace(&mut self.bufs, [RawBuf::EMPTY; 2]);
             if (*chunk).layout.size() > MAX_PARKED_CHUNK_SIZE {
                 Chunk::free(chunk);
             } else if let Some(chunk) = parked::park(NonNull::new_unchecked(chunk)) {

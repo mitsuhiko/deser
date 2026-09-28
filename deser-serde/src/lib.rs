@@ -107,8 +107,8 @@ fn missing_value<'de, T: serde::Deserialize<'de>>() -> Option<T> {
 pub struct Serde;
 
 impl<T: serde::Serialize + ?Sized> SerializeAs<T> for Serde {
-    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
-        buffered::serialize(value)
+    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+        buffered::serialize(value, state)
     }
 
     fn is_optional_as(value: &T) -> bool {

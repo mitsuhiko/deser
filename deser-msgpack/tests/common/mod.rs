@@ -140,7 +140,7 @@ macro_rules! map {
 }
 
 impl Serialize for Value {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Atom(match *self {
             Value::Null => Atom::Null,
             Value::Bool(value) => Atom::Bool(value),
@@ -153,9 +153,9 @@ impl Serialize for Value {
             Value::Str(ref value) => Atom::Str(value.as_str().into()),
             Value::Bytes(ref value) => Atom::Bytes(value.as_slice().into()),
             Value::Ext(ref value) => Atom::Ext(value.as_borrowed()),
-            Value::Array(ref items) => return Ok(Chunk::Seq(Box::new(ArrayEmitter(items.iter())))),
+            Value::Array(ref items) => return Ok(Chunk::seq(ArrayEmitter(items.iter()), state)),
             Value::Map(ref items) => {
-                return Ok(Chunk::Map(Box::new(MapEntryEmitter(items.iter(), None))));
+                return Ok(Chunk::map(MapEntryEmitter(items.iter(), None), state));
             }
         }))
     }

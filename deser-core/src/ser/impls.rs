@@ -202,14 +202,12 @@ macro_rules! serialize_slice {
 
                 fn serialize(
                     &self,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
                     if let Some(bytes) = T::__private_slice_as_bytes(&self[..]) {
                         Ok($crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))))
                     } else {
-                        Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
-                            $crate::ser::impls::SliceEmitter(self[..].iter()),
-                        )))
+                        Ok($crate::ser::Chunk::seq($crate::ser::impls::SliceEmitter(self[..].iter()), state))
                     }
                 }
 
@@ -352,10 +350,10 @@ impl<T: Serialize> Serialize for VecDeque<T> {
         ContainerShape::new().with_len(self.len())
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(match self.as_bytes() {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IterEmitter(self.iter(), PhantomData))),
+            None => Chunk::seq(IterEmitter(self.iter(), PhantomData), state),
         })
     }
 
@@ -422,8 +420,8 @@ impl<T: Serialize> Serialize for LinkedList<T> {
         ContainerShape::new().with_len(self.len())
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Seq(Box::new(IterEmitter(self.iter(), PhantomData))))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::seq(IterEmitter(self.iter(), PhantomData), state))
     }
 }
 
@@ -445,10 +443,10 @@ impl<T: Serialize> Serialize for BinaryHeap<T> {
         ContainerShape::new().with_len(self.len())
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(match T::__private_slice_as_bytes(self.as_slice()) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(SliceEmitter(self.as_slice().iter()))),
+            None => Chunk::seq(SliceEmitter(self.as_slice().iter()), state),
         })
     }
 }
@@ -520,14 +518,12 @@ macro_rules! serialize_map {
 
                 fn serialize(
                     &self,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Map(alloc::boxed::Box::new(
-                        $crate::ser::impls::MapIterEmitter {
+                    Ok($crate::ser::Chunk::map($crate::ser::impls::MapIterEmitter {
                             iter: self.iter(),
                             value: None,
-                        },
-                    )))
+                        }, state))
                 }
 
                 #[inline]
@@ -605,11 +601,9 @@ macro_rules! serialize_set {
 
                 fn serialize(
                     &self,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
-                        $crate::ser::impls::IterEmitter(self.iter(), core::marker::PhantomData),
-                    )))
+                    Ok($crate::ser::Chunk::seq($crate::ser::impls::IterEmitter(self.iter(), core::marker::PhantomData), state))
                 }
 
                 #[inline]
@@ -761,7 +755,7 @@ macro_rules! serialize_for_tuple {
             }
 
             #[allow(non_snake_case)]
-            fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+            fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
                 struct TupleSeqEmitter<'a, $($name,)*> {
                     tuple: &'a ($($name,)*),
                     index: usize,
@@ -771,7 +765,7 @@ macro_rules! serialize_for_tuple {
                 where
                     $($name: Serialize,)*
                 {
-                    fn next(&mut self,_state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+                    fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
                         let ($($name,)*) = self.tuple;
                         let __index = self.index;
                         self.index += 1;
@@ -786,10 +780,10 @@ macro_rules! serialize_for_tuple {
                     }
                 }
 
-                Ok(Chunk::Seq(Box::new(TupleSeqEmitter {
+                Ok(Chunk::seq(TupleSeqEmitter {
                     tuple: self,
                     index: 0,
-                })))
+                }, state))
             }
         }
         impl<$($name: Serialize),*> IndexedSeq for ($($name,)*) {
@@ -845,11 +839,11 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
         ContainerShape::new().with_len(self.len())
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         if let Some(bytes) = T::__private_slice_as_bytes(self) {
             Ok(Chunk::Atom(Atom::Bytes(Bytes::new(bytes))))
         } else {
-            Ok(Chunk::Seq(Box::new(SliceEmitter(self.iter()))))
+            Ok(Chunk::seq(SliceEmitter(self.iter()), state))
         }
     }
 

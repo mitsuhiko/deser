@@ -91,8 +91,87 @@ pub struct Recording(RecordBuf<'static>);
 /// tag).  Not public API.
 #[derive(Clone, Default)]
 pub struct RecordBuf<'de> {
-    events: Vec<RecordedEvent<'de>>,
+    events: Events<'de>,
     is_map_key: bool,
+}
+
+/// The recorded events.
+///
+/// Most recordings are a single atom (like the keys that tagged enums
+/// record until the variant is known), which is stored without an
+/// allocation.
+#[derive(Clone)]
+enum Events<'de> {
+    Inline(Option<RecordedEvent<'de>>),
+    Heap(Vec<RecordedEvent<'de>>),
+}
+
+impl Default for Events<'_> {
+    fn default() -> Self {
+        Events::Inline(None)
+    }
+}
+
+impl<'de> Events<'de> {
+    #[inline]
+    fn as_slice(&self) -> &[RecordedEvent<'de>] {
+        match self {
+            Events::Inline(None) => &[],
+            Events::Inline(Some(event)) => core::slice::from_ref(event),
+            Events::Heap(events) => events,
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, event: RecordedEvent<'de>) {
+        match self {
+            Events::Inline(slot @ None) => *slot = Some(event),
+            Events::Heap(events) => events.push(event),
+            Events::Inline(Some(_)) => {
+                self.reserve(CONTAINER_CAPACITY);
+                if let Events::Heap(events) = self {
+                    events.push(event);
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        match self {
+            Events::Inline(slot) => *slot = None,
+            // the capacity is kept for the next recording
+            Events::Heap(events) => events.clear(),
+        }
+    }
+
+    /// Reserves space for more events, the events are stored on the heap
+    /// from then on.
+    fn reserve(&mut self, additional: usize) {
+        match self {
+            Events::Inline(slot) => {
+                let mut events = Vec::with_capacity(additional + 1);
+                events.extend(slot.take());
+                *self = Events::Heap(events);
+            }
+            Events::Heap(events) => events.reserve(additional),
+        }
+    }
+}
+
+impl<'de> core::ops::Deref for Events<'de> {
+    type Target = [RecordedEvent<'de>];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl core::fmt::Debug for Events<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_slice(), f)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -835,14 +914,20 @@ impl<'a> RecordedValue<'a> {
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {
             Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
-            Event::MapStart(_) => Chunk::Map(Box::new(RecordedEmitter {
-                rest: inner,
-                current: RecordedValue(&[]),
-            })),
-            Event::SeqStart(_) => Chunk::Seq(Box::new(RecordedEmitter {
-                rest: inner,
-                current: RecordedValue(&[]),
-            })),
+            Event::MapStart(_) => Chunk::map(
+                RecordedEmitter {
+                    rest: inner,
+                    current: RecordedValue(&[]),
+                },
+                state,
+            ),
+            Event::SeqStart(_) => Chunk::seq(
+                RecordedEmitter {
+                    rest: inner,
+                    current: RecordedValue(&[]),
+                },
+                state,
+            ),
             Event::MapEnd | Event::SeqEnd => {
                 return Err(Error::new(ErrorKind::Unexpected, "malformed recording"));
             }
@@ -907,11 +992,11 @@ impl<'a> MapEmitter for RecordedEmitter<'a> {
 
 impl Serialize for Recording {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        RecordedValue(&self.0.events).chunk(state)
+        RecordedValue(self.0.events.as_slice()).chunk(state)
     }
 
     fn container_shape(&self) -> ContainerShape {
-        RecordedValue(&self.0.events).container_shape()
+        RecordedValue(self.0.events.as_slice()).container_shape()
     }
 
     fn is_optional(&self) -> bool {

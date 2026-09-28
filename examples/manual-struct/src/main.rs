@@ -24,11 +24,14 @@ impl Serialize for User {
         d.structure("User");
     }
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(UserEmitter {
-            user: self,
-            index: 0,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(
+            UserEmitter {
+                user: self,
+                index: 0,
+            },
+            state,
+        ))
     }
 }
 

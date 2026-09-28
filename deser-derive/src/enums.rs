@@ -1330,14 +1330,14 @@ fn content_handle(
         Content::Tuple(_) => {
             let handles = info.content_handles();
             quote! {
-                __deser::ser::SerializeHandle::boxed(__deser::__derive::SeqSer(
+                __deser::ser::SerializeHandle::arena(__deser::__derive::SeqSer(
                     __deser::__derive::Vec::from([#(#handles),*])
-                ))
+                ), __state)
             }
         }
         Content::Struct(_) => {
             let fields = fields_ser(info, container_attrs, None)?;
-            quote! { __deser::ser::SerializeHandle::boxed(#fields) }
+            quote! { __deser::ser::SerializeHandle::arena(#fields, __state) }
         }
     })
 }
@@ -1479,33 +1479,33 @@ pub fn derive_serialize(
                 match (info.tag_field(), info.name.as_str()) {
                     (None, Some(name)) => quote! {
                         __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
-                            .into_chunk()
+                            .into_chunk(__state)
                     },
                     _ => quote! {
-                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk()
+                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk(__state)
                     },
                 }
             }
             Repr::Internal { tag } => match info.content {
                 Content::Unit => quote! {
                     __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
-                        .into_chunk()
+                        .into_chunk(__state)
                 },
                 Content::Struct(_) => {
                     let fields = fields_ser(info, container_attrs, Some((tag, tag_handle)))?;
-                    quote! { #fields.into_chunk() }
+                    quote! { #fields.into_chunk(__state) }
                 }
                 Content::Newtype(idx) => {
                     let inner = info.fields[idx].ser_value();
                     quote! {
-                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_chunk()
+                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_chunk(__state)
                     }
                 }
                 Content::Tuple(_) => unreachable!(),
             },
             Repr::Adjacent { tag, .. } if is_unit => quote! {
                 __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
-                    .into_chunk()
+                    .into_chunk(__state)
             },
             Repr::Adjacent { tag, content } => {
                 let content_handle = content_handle(info, container_attrs)?;
@@ -1514,7 +1514,7 @@ pub fn derive_serialize(
                         (#tag, #tag_handle),
                         (#content, #content_handle),
                     ]))
-                    .into_chunk()
+                    .into_chunk(__state)
                 }
             }
             Repr::Untagged => match info.content {
@@ -1527,12 +1527,12 @@ pub fn derive_serialize(
                     let handles = info.content_handles();
                     quote! {
                         __deser::__derive::SeqSer(__deser::__derive::Vec::from([#(#handles),*]))
-                            .into_chunk()
+                            .into_chunk(__state)
                     }
                 }
                 Content::Struct(_) => {
                     let fields = fields_ser(info, container_attrs, None)?;
-                    quote! { #fields.into_chunk() }
+                    quote! { #fields.into_chunk(__state) }
                 }
             },
         };

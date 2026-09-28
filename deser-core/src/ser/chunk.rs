@@ -1,7 +1,7 @@
-use crate::Text;
 use crate::event::{Atom, Bytes};
-use crate::ser::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
-use alloc::boxed::Box;
+use crate::ser::boxed::unsize;
+use crate::ser::{Boxed, MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
+use crate::{State, Text};
 use alloc::string::String;
 
 /// A chunk represents the minimum state necessary to serialize a value.
@@ -11,11 +11,15 @@ use alloc::string::String;
 /// to a serializer directly.  On the other hand a `Chunk::Map` contains a
 /// stateful emitter that keeps yielding values until it's done walking over
 /// the map.
+///
+/// The emitters are typically allocated in the arena of the serialization
+/// with [`Chunk::seq`], [`Chunk::map`] and [`Chunk::structure`] (see
+/// [`Boxed`]).
 pub enum Chunk<'a> {
     Atom(Atom<'a>),
-    Struct(Box<dyn StructEmitter + 'a>),
-    Map(Box<dyn MapEmitter + 'a>),
-    Seq(Box<dyn SeqEmitter + 'a>),
+    Struct(Boxed<dyn StructEmitter + 'a>),
+    Map(Boxed<dyn MapEmitter + 'a>),
+    Seq(Boxed<dyn SeqEmitter + 'a>),
     /// Serializes another value in place of this one.
     ///
     /// The driver serializes the value in the handle as if it was produced
@@ -30,9 +34,9 @@ pub enum Chunk<'a> {
     /// struct Point(u32, u32);
     ///
     /// impl Serialize for Point {
-    ///     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    ///     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
     ///         // serialize as a vector
-    ///         Ok(Chunk::Forward(SerializeHandle::boxed(vec![self.0, self.1])))
+    ///         Ok(Chunk::Forward(SerializeHandle::arena(vec![self.0, self.1], state)))
     ///     }
     /// }
     /// ```
@@ -45,6 +49,34 @@ pub enum Chunk<'a> {
     ///
     /// Forwarding chunks cannot be flattened into structs.
     Forward(SerializeHandle<'a>),
+}
+
+impl<'a> Chunk<'a> {
+    /// Creates a chunk of a sequence emitter in the arena of the
+    /// serialization.
+    #[inline(always)]
+    pub fn seq<E: SeqEmitter + 'a>(emitter: E, state: &mut State) -> Chunk<'a> {
+        Chunk::Seq(unsize(Boxed::arena(emitter, state), |x| {
+            x as *mut (dyn SeqEmitter + 'a)
+        }))
+    }
+
+    /// Creates a chunk of a map emitter in the arena of the serialization.
+    #[inline(always)]
+    pub fn map<E: MapEmitter + 'a>(emitter: E, state: &mut State) -> Chunk<'a> {
+        Chunk::Map(unsize(Boxed::arena(emitter, state), |x| {
+            x as *mut (dyn MapEmitter + 'a)
+        }))
+    }
+
+    /// Creates a chunk of a struct emitter in the arena of the
+    /// serialization.
+    #[inline(always)]
+    pub fn structure<E: StructEmitter + 'a>(emitter: E, state: &mut State) -> Chunk<'a> {
+        Chunk::Struct(unsize(Boxed::arena(emitter, state), |x| {
+            x as *mut (dyn StructEmitter + 'a)
+        }))
+    }
 }
 
 impl<'a> From<Atom<'a>> for Chunk<'a> {

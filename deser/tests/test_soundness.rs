@@ -383,20 +383,23 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Struct(Box::new(BufferEmitter {
-            depth: self.0,
-            index: 0,
-            buffer: String::new(),
-            child: self,
-        })))
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(Chunk::structure(
+            BufferEmitter {
+                depth: self.0,
+                index: 0,
+                buffer: String::new(),
+                child: self,
+            },
+            state,
+        ))
     }
 }
 
 impl<'a> StructEmitter for BufferEmitter<'a> {
     fn next(
         &mut self,
-        _state: &mut State,
+        state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         let index = self.index;
         self.index += 1;
@@ -404,11 +407,11 @@ impl<'a> StructEmitter for BufferEmitter<'a> {
         Ok(match index {
             0 => Some((
                 Cow::Borrowed(self.buffer.as_str()),
-                SerializeHandle::boxed(self.buffer.clone()),
+                SerializeHandle::arena(self.buffer.clone(), state),
             )),
             1 if self.depth > 0 => Some((
                 Cow::Borrowed(self.buffer.as_str()),
-                SerializeHandle::boxed(Nested(self.child.0 - 1)),
+                SerializeHandle::arena(Nested(self.child.0 - 1), state),
             )),
             _ => None,
         })

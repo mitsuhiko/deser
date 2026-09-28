@@ -224,11 +224,11 @@ macro_rules! serialize_as_iter_seq {
     ($($ty:ident),*) => {
         $(
             impl<T: Sync, A: SerializeAs<T>> SerializeAs<$ty<T>> for $ty<A> {
-                fn serialize_as<'a>(value: &'a $ty<T>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                    Ok(Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
+                fn serialize_as<'a>(value: &'a $ty<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
+                    Ok(Chunk::seq(IterEmitter::<'_, _, A>(
                         value.iter(),
                         core::marker::PhantomData,
-                    ))))
+                    ), state))
                 }
 
                 fn container_shape_as(value: &$ty<T>) -> ContainerShape {
@@ -272,19 +272,17 @@ macro_rules! serialize_as_slice {
             impl<$($gen)*> $crate::adapters::SerializeAs<$ty> for $adapter {
                 fn serialize_as<'a>(
                     value: &'a $ty,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
                     Ok(match A::__private_slice_as_bytes_as(&value[..]) {
                         Some(bytes) => {
                             $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
                         }
-                        None => $crate::ser::Chunk::Seq(alloc::boxed::Box::new(
-                            $crate::ser::IndexedSeqEmitter::new(
+                        None => $crate::ser::Chunk::seq($crate::ser::IndexedSeqEmitter::new(
                                 $crate::adapters::ser_impls::SerializeAsRef::<$adapter, $ty>::new(
                                     value,
                                 ),
-                            ),
-                        )),
+                            ), state),
                     })
                 }
 
@@ -335,13 +333,13 @@ impl<T: Sync, A: SerializeAs<T>, const N: usize> IndexedSeq for SerializeAsRef<[
 }
 
 impl<T: Sync, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] {
-    fn serialize_as<'a>(value: &'a [T; N], _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize_as<'a>(value: &'a [T; N], state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<
-                [A; N],
-                [T; N],
-            >::new(value)))),
+            None => Chunk::seq(
+                IndexedSeqEmitter::new(SerializeAsRef::<[A; N], [T; N]>::new(value)),
+                state,
+            ),
         })
     }
 
@@ -360,13 +358,13 @@ impl<T: Sync, A: SerializeAs<T>, const N: usize> SerializeAs<[T; N]> for [A; N] 
 }
 
 impl<T: Sync, A: SerializeAs<T>> SerializeAs<[T]> for [A] {
-    fn serialize_as<'a>(value: &'a [T], _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize_as<'a>(value: &'a [T], state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(match A::__private_slice_as_bytes_as(value) {
             Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => Chunk::Seq(Box::new(IterEmitter::<'_, _, A>(
-                value.iter(),
-                core::marker::PhantomData,
-            ))),
+            None => Chunk::seq(
+                IterEmitter::<'_, _, A>(value.iter(), core::marker::PhantomData),
+                state,
+            ),
         })
     }
 
@@ -400,15 +398,13 @@ macro_rules! serialize_as_map {
             {
                 fn serialize_as<'a>(
                     value: &'a $ty,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Map(alloc::boxed::Box::new(
-                        $crate::adapters::ser_impls::MapIterEmitter::<_, V, KA, VA> {
+                    Ok($crate::ser::Chunk::map($crate::adapters::ser_impls::MapIterEmitter::<_, V, KA, VA> {
                             iter: value.iter(),
                             value: None,
                             _marker: core::marker::PhantomData,
-                        },
-                    )))
+                        }, state))
                 }
 
                 fn container_shape_as(value: &$ty) -> $crate::ContainerShape {
@@ -460,14 +456,12 @@ macro_rules! serialize_as_set {
             {
                 fn serialize_as<'a>(
                     value: &'a $ty,
-                    _state: &mut $crate::State,
+                    state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::Chunk::Seq(alloc::boxed::Box::new(
-                        $crate::adapters::ser_impls::IterEmitter::<'_, _, A>(
+                    Ok($crate::ser::Chunk::seq($crate::adapters::ser_impls::IterEmitter::<'_, _, A>(
                             value.iter(),
                             core::marker::PhantomData,
-                        ),
-                    )))
+                        ), state))
                 }
 
                 fn container_shape_as(value: &$ty) -> $crate::ContainerShape {
@@ -539,8 +533,8 @@ macro_rules! serialize_as_for_tuple {
         }
 
         impl<$($name: Sync,)* $($adapter: SerializeAs<$name>),*> SerializeAs<($($name,)*)> for ($($adapter,)*) {
-            fn serialize_as<'a>(value: &'a ($($name,)*), _state: &mut State) -> Result<Chunk<'a>, Error> {
-                Ok(Chunk::Seq(Box::new(IndexedSeqEmitter::new(SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value)))))
+            fn serialize_as<'a>(value: &'a ($($name,)*), state: &mut State) -> Result<Chunk<'a>, Error> {
+                Ok(Chunk::seq(IndexedSeqEmitter::new(SerializeAsRef::<($($adapter,)*), ($($name,)*)>::new(value)), state))
             }
 
             fn describe_as(_value: &($($name,)*), d: &mut dyn Describe) {

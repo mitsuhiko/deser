@@ -478,8 +478,8 @@ impl Events {
 }
 
 impl Serialize for Events {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
-        EventsValue(&self.0).chunk()
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
+        EventsValue(&self.0).chunk(state)
     }
 
     fn container_shape(&self) -> ContainerShape {
@@ -512,14 +512,14 @@ fn value_len(events: &[Event<'static>]) -> usize {
 struct EventsValue<'a>(&'a [Event<'static>]);
 
 impl<'a> EventsValue<'a> {
-    fn chunk(&self) -> Result<Chunk<'a>, deser_core::Error> {
+    fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
         let events = self.0;
         // the content is everything between the start and the end event
         let content = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match events.first() {
             Some(Event::Atom(atom)) => Chunk::Atom(atom.as_borrowed()),
-            Some(Event::MapStart(_)) => Chunk::Map(Box::new(EventsEmitter::new(content))),
-            Some(Event::SeqStart(_)) => Chunk::Seq(Box::new(EventsEmitter::new(content))),
+            Some(Event::MapStart(_)) => Chunk::map(EventsEmitter::new(content), state),
+            Some(Event::SeqStart(_)) => Chunk::seq(EventsEmitter::new(content), state),
             _ => return Err(malformed()),
         })
     }
@@ -533,8 +533,8 @@ impl<'a> EventsValue<'a> {
 }
 
 impl Serialize for EventsValue<'_> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
-        self.chunk()
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
+        self.chunk(state)
     }
 
     fn container_shape(&self) -> ContainerShape {

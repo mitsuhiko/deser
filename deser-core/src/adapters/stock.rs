@@ -411,10 +411,11 @@ where
     T: Clone + Into<U>,
     U: Serialize + Send + 'static,
 {
-    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Forward(SerializeHandle::boxed(Into::<U>::into(
-            value.clone(),
-        ))))
+    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Forward(SerializeHandle::arena(
+            Into::<U>::into(value.clone()),
+            state,
+        )))
     }
 
     // this clones once more, but only `skip_serializing_optionals` asks.
@@ -519,9 +520,9 @@ where
     <T as TryInto<U>>::Error: Display,
     U: Serialize + Send + 'static,
 {
-    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
         let value: U = value.clone().try_into().map_err(conversion_error)?;
-        Ok(Chunk::Forward(SerializeHandle::boxed(value)))
+        Ok(Chunk::Forward(SerializeHandle::arena(value, state)))
     }
 
     fn is_optional_as(value: &T) -> bool {

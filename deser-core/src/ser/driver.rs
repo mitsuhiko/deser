@@ -5,11 +5,12 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::Text;
+use crate::de::arena::Buffer;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
-    Begin, BeginKind, Chunk, ContainerShape, FIELDS_END, IndexedSeq, IndexedStruct, PlainSink,
-    StructField,
+    Begin, BeginKind, Boxed, Chunk, ContainerShape, FIELDS_END, IndexedSeq, IndexedStruct,
+    PlainSink, StructField,
 };
 use crate::{Atom, Event, Serialize, State};
 
@@ -62,10 +63,10 @@ struct Frame {
 }
 
 enum Emitter {
-    Seq(Box<dyn SeqEmitter>),
+    Seq(Boxed<dyn SeqEmitter>),
     /// A map emitter, the flag is `true` if a value is expected next.
-    Map(Box<dyn MapEmitter>, bool),
-    Struct(Box<dyn StructEmitter>),
+    Map(Boxed<dyn MapEmitter>, bool),
+    Struct(Boxed<dyn StructEmitter>),
     /// A sequence with the index of the next element.
     IndexedSeq(&'static dyn IndexedSeq, usize),
     /// A struct with the index of the next field.
@@ -78,6 +79,20 @@ enum Emitter {
     Forward,
 }
 
+impl Emitter {
+    /// Drops the emitter, it's popped from the arena right away if it's on
+    /// the top.
+    #[inline(always)]
+    fn release(self, state: &mut State) {
+        match self {
+            Emitter::Seq(emitter) => Boxed::release(emitter, state),
+            Emitter::Map(emitter, _) => Boxed::release(emitter, state),
+            Emitter::Struct(emitter) => Boxed::release(emitter, state),
+            _ => {}
+        }
+    }
+}
+
 /// A serializable held by the driver.
 ///
 /// This is like a [`SerializeHandle`] with an erased lifetime, but owned
@@ -85,7 +100,14 @@ enum Emitter {
 /// events or emitters borrow from the value.
 pub(crate) struct Held {
     ptr: NonNull<dyn Serialize>,
-    owned: bool,
+    owned: Owned,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+enum Owned {
+    No,
+    Heap,
+    Arena,
 }
 
 // SAFETY: a held value is either a borrowed `&dyn Serialize` (which is
@@ -103,10 +125,11 @@ impl Held {
     pub(crate) unsafe fn new(handle: SerializeHandle<'_>) -> Held {
         unsafe {
             let (ptr, owned) = match handle {
-                SerializeHandle::Borrowed(value) => (NonNull::from(value), false),
+                SerializeHandle::Borrowed(value) => (NonNull::from(value), Owned::No),
                 SerializeHandle::Owned(value) => {
-                    let value: Box<dyn Serialize + '_> = value;
-                    (NonNull::new_unchecked(Box::into_raw(value)), true)
+                    let (ptr, in_arena) = Boxed::into_raw(value);
+                    let ptr: NonNull<dyn Serialize + '_> = ptr;
+                    (ptr, if in_arena { Owned::Arena } else { Owned::Heap })
                 }
             };
             Held {
@@ -135,15 +158,15 @@ impl Drop for Held {
     fn drop(&mut self) {
         #[cold]
         #[inline(never)]
-        unsafe fn drop_owned(ptr: NonNull<dyn Serialize>) {
+        unsafe fn drop_owned(ptr: NonNull<dyn Serialize>, in_arena: bool) {
             unsafe {
-                drop(Box::from_raw(ptr.as_ptr()));
+                drop(Boxed::from_raw(ptr, in_arena));
             }
         }
 
-        if self.owned {
-            // SAFETY: owned values were created from a box
-            unsafe { drop_owned(self.ptr) };
+        if self.owned != Owned::No {
+            // SAFETY: owned values were created from a box of the kind
+            unsafe { drop_owned(self.ptr, self.owned == Owned::Arena) };
         }
     }
 }
@@ -154,7 +177,12 @@ impl<'a> Drop for SerializeDriver<'a> {
         // borrow from outer frames, drop in inverse order.
         self.needs_finish = None;
         self.next_value = None;
-        while let Some(_frame) = self.stack.pop() {}
+        while let Some(frame) = self.stack.pop() {
+            // the emitter borrows from the serializable, drop it first
+            frame.emitter.release(&mut self.state);
+        }
+        let stack = core::mem::take(&mut self.stack);
+        self.state.arena.put_vec(Buffer::SerializeStack, stack);
     }
 }
 
@@ -320,13 +348,19 @@ impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
     pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
+        let mut state = State::new();
+        // the stack of the last driver is reused
+        let stack = state
+            .arena
+            .take_vec(Buffer::SerializeStack)
+            .unwrap_or_else(|| Vec::with_capacity(STACK_CAPACITY));
         SerializeDriver {
-            state: State::new(),
+            state,
             layers: Vec::new(),
             // SAFETY: the driver cannot outlive 'a
             next_value: Some(unsafe { Held::new(SerializeHandle::Borrowed(serializable)) }),
             needs_finish: None,
-            stack: Vec::with_capacity(STACK_CAPACITY),
+            stack,
             delivered: false,
             _marker: PhantomData,
         }
@@ -828,7 +862,7 @@ impl<'a> SerializeDriver<'a> {
             _ => Event::MapEnd,
         };
         // the emitter borrows from the serializable, drop it first.
-        drop(emitter);
+        emitter.release(&mut self.state);
         self.state.depth -= 1;
         // SAFETY: the value is held until the end of this function
         let value = unsafe { serializable.get() };
@@ -946,7 +980,7 @@ impl<'a> SerializeDriver<'a> {
             _ => Event::MapEnd,
         };
         // the emitter borrows from the serializable, drop it first.
-        drop(emitter);
+        emitter.release(&mut self.state);
         self.needs_finish = Some((serializable, needs_finish));
         self.state.depth -= 1;
         event
