@@ -346,10 +346,42 @@ while let Some(event) = events.read::<Event>()? {
   [deser-path](https://docs.rs/deser-path/)), to limit the size of
   untrusted input or to rename keys in the output.
 
-Deser intentionally does not support non self describing formats such as
-bincode.  Supporting both kinds of formats with the same traits is the
-source of a whole class of runtime failures and surprises in serde (see
-[SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md)).
+## Non Self Describing Formats
+
+Deser intentionally only supports self describing formats: formats where the
+data says what it is (a map, a string, a number) and structs carry the names
+of their fields.  Non self describing formats leave this out and rely on
+the reader knowing the type upfront.  Such formats cannot be driven by
+the events of deser: the format has to ask the type what to read next
+(is the next value a `u8` or a `u16`, how many fields follow, which
+variant does a number stand for) while in deser the format tells the type
+what it found.
+
+Supporting both kinds of formats with the same traits is the source of a
+whole class of runtime failures and surprises in serde (see
+[SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md)).  Many
+of the features that deser is built around (flattening, internally tagged
+and untagged enums, catch-all variants, skipping unset fields, lossless
+buffering, layers that rewrite events) do not have a meaning in a format
+where values are identified by their position.
+
+This makes deser the wrong crate ecosystem for these formats and this is
+unlikely to change.  If you need one of them, use serde or the ecosystem
+built around the format instead.  Common non self describing formats are:
+
+* [bincode](https://crates.io/crates/bincode)
+* [postcard](https://crates.io/crates/postcard)
+* [bitcode](https://crates.io/crates/bitcode)
+* [Borsh](https://borsh.io/)
+* [SCALE](https://docs.substrate.io/reference/scale-codec/)
+* [rkyv](https://rkyv.org/)
+* [Protocol Buffers](https://protobuf.dev/)
+* [Cap'n Proto](https://capnproto.org/)
+* [FlatBuffers](https://flatbuffers.dev/)
+* [Apache Avro](https://avro.apache.org/)
+* [Apache Thrift](https://thrift.apache.org/)
+* [XDR](https://www.rfc-editor.org/rfc/rfc4506)
+* ASN.1 with schema driven encodings such as PER
 
 ## Known Limitations
 
