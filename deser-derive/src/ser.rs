@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs};
-use crate::bound::{BoundField, where_clause_for_fields, with_lifetime_bound};
+use crate::attr::{ContainerAttrs, Direction, FieldAttrs};
+use crate::bound::{where_clause_for_fields, with_lifetime_bound};
 use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
 /// Returns an expression that creates a serialize handle for a value.
@@ -61,6 +61,10 @@ fn struct_where_clause(
     container_attrs: &ContainerAttrs,
     attrs: &[FieldAttrs],
 ) -> syn::WhereClause {
+    let mut bound_fields = Vec::with_capacity(attrs.len());
+    for x in attrs {
+        bound_fields.push(x.bound_field(Direction::Serialize));
+    }
     where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
@@ -68,27 +72,21 @@ fn struct_where_clause(
         quote!(__deser::adapters::SerializeAs),
         None,
         container_attrs.serialize_bound(),
-        &attrs
-            .iter()
-            .map(|x| BoundField {
-                ty: &x.field().ty,
-                adapter: x.adapters().ser(),
-                skipped: x.skip_serializing(),
-                bound: x.bounds().get(Direction::Serialize),
-            })
-            .collect::<Vec<_>>(),
+        &bound_fields,
     )
 }
 
 /// Rejects tag fields outside of enums.
 fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
-    match attrs.iter().find(|x| x.tag()) {
-        Some(attrs) => Err(syn::Error::new_spanned(
-            attrs.field(),
-            "tag fields are only supported in other variants of enums",
-        )),
-        None => Ok(()),
+    for x in attrs {
+        if x.tag() {
+            return Err(syn::Error::new_spanned(
+                x.field(),
+                "tag fields are only supported in other variants of enums",
+            ));
+        }
     }
+    Ok(())
 }
 
 pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -130,43 +128,34 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     let type_name = container_attrs.container_name();
-    let all_attrs = fields
-        .named
-        .iter()
-        .map(FieldAttrs::of)
-        .collect::<syn::Result<Vec<_>>>()?;
+    let all_attrs = FieldAttrs::of_all(&fields.named)?;
     reject_tag_fields(&all_attrs)?;
     let bounded_where_clause = struct_where_clause(input, &container_attrs, &all_attrs);
     // skipped fields are not serialized at all
-    let attrs = all_attrs
-        .iter()
-        .filter(|x| !x.skip_serializing())
-        .collect::<Vec<_>>();
+    let mut attrs = Vec::with_capacity(all_attrs.len());
+    let mut has_flatten = false;
+    for x in &all_attrs {
+        if !x.skip_serializing() {
+            attrs.push(x);
+            has_flatten |= x.flatten();
+        }
+    }
 
-    if !attrs.iter().any(|x| x.flatten()) {
+    if !has_flatten {
         return derive_indexed_struct(input, &container_attrs, &attrs, bounded_where_clause);
     }
 
-    let temp_emitter = if attrs.iter().any(|x| x.flatten()) {
-        Some(quote! {
-            nested_emitter: __deser::__derive::Option<__deser::__derive::FlattenedStruct<'__a>>,
-            nested_emitter_exhausted: bool,
-        })
-    } else {
-        None
+    let temp_emitter = quote! {
+        nested_emitter: __deser::__derive::Option<__deser::__derive::FlattenedStruct<'__a>>,
+        nested_emitter_exhausted: bool,
     };
-    let temp_emitter_init = if attrs.iter().any(|x| x.flatten()) {
-        Some(quote! {
-            nested_emitter: __deser::__derive::None,
-            nested_emitter_exhausted: true,
-        })
-    } else {
-        None
+    let temp_emitter_init = quote! {
+        nested_emitter: __deser::__derive::None,
+        nested_emitter_exhausted: true,
     };
-    let state_handler = attrs
-        .iter()
-        .enumerate()
-        .map(|(index, attrs)| {
+    let mut state_handler = Vec::with_capacity(attrs.len());
+    for (index, attrs) in attrs.iter().enumerate() {
+        state_handler.push({
             let name = &attrs.field().ident;
             let optional_skip = if container_attrs.skip_serializing_optionals() {
                 quote! {
@@ -255,8 +244,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                 }
             }
-        })
-        .collect::<Vec<_>>();
+        });
+    }
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
@@ -324,10 +313,13 @@ fn derive_indexed_struct(
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
 
-    let field_arms = attrs
-        .iter()
-        .enumerate()
-        .map(|(index, attrs)| {
+    let mut field_arms = Vec::with_capacity(attrs.len());
+    let mut plain_arms = Vec::with_capacity(attrs.len());
+    let mut has_plain = false;
+    let mut has_skip_if = false;
+    for (index, attrs) in attrs.iter().enumerate() {
+        has_skip_if |= attrs.skip_serializing_if().is_some();
+        field_arms.push({
             let name = &attrs.field().ident;
             let fieldstr = attrs.name(container_attrs);
             let field_skip = attrs.skip_serializing_if().map(|path| {
@@ -359,28 +351,25 @@ fn derive_indexed_struct(
                     )
                 }
             }
-        })
-        .collect::<Vec<_>>();
+        });
 
-    // Fields with plain values (without adapters) are emitted directly by
-    // `emit_plain_field` which exists once per type of field, the skips are
-    // the same as in `field`.
-    let plain_arms = attrs
-        .iter()
-        .enumerate()
-        .map(|(index, attrs)| {
-            if attrs.adapters().ser().is_some() {
-                return quote! {
-                    #index => return __deser::__derive::Ok(__index),
-                };
-            }
+        // Fields with plain values (without adapters) are emitted directly by
+        // `emit_plain_field` which exists once per type of field, the skips are
+        // the same as in `field`.
+        if attrs.adapters().ser().is_some() {
+            plain_arms.push(quote! {
+                #index => return __deser::__derive::Ok(__index),
+            });
+            continue;
+        }
+        has_plain = true;
+        plain_arms.push({
             let name = &attrs.field().ident;
             let fieldstr = attrs.name(container_attrs);
-            let mut skip = attrs
-                .skip_serializing_if()
-                .map(|path| quote! { #path(&self.#name) })
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut skip = Vec::new();
+            if let Some(path) = attrs.skip_serializing_if() {
+                skip.push(quote! { #path(&self.#name) });
+            }
             if container_attrs.skip_serializing_optionals() {
                 skip.push(quote! { __deser::ser::Serialize::is_optional(&self.#name) });
             }
@@ -398,13 +387,15 @@ fn derive_indexed_struct(
                     },
                 }
             }
-        })
-        .collect::<Vec<_>>();
+        });
+    }
 
     // without fields that can be plain the default (which emits nothing) is
     // used
-    let emit_plain_fields = attrs.iter().any(|x| x.adapters().ser().is_none()).then(|| {
-        quote! {
+    let emit_plain_fields = if !has_plain {
+        None
+    } else {
+        Some(quote! {
             fn emit_plain_fields(
                 &self,
                 mut __index: usize,
@@ -422,13 +413,11 @@ fn derive_indexed_struct(
                     }
                 }
             }
-        }
-    });
+        })
+    };
 
     // the number of fields is only known if none can be skipped
-    let shape = if container_attrs.skip_serializing_optionals()
-        || attrs.iter().any(|x| x.skip_serializing_if().is_some())
-    {
+    let shape = if container_attrs.skip_serializing_optionals() || has_skip_if {
         quote! { __deser::ContainerShape::new() }
     } else {
         let len = attrs.len();
@@ -486,48 +475,30 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         return crate::enums::derive_serialize(input, enumeration, &container_attrs);
     }
     let ident = &input.ident;
-    let var_idents = enumeration
-        .variants
-        .iter()
-        .map(|variant| match variant.fields {
-            syn::Fields::Unit => Ok(&variant.ident),
-            _ => Err(syn::Error::new_spanned(
-                variant,
-                "Invalid variant: only simple enum variants without fields are supported",
-            )),
-        })
-        .collect::<syn::Result<Vec<_>>>()?;
-    let attrs = enumeration
-        .variants
-        .iter()
-        .map(EnumVariantAttrs::of)
-        .collect::<syn::Result<Vec<_>>>()?;
-    let names = attrs
-        .iter()
-        .map(|x| x.name(&container_attrs).str_expr())
-        .collect::<Vec<_>>();
+    let (var_idents, attrs) = crate::enums::unit_variants(enumeration)?;
     let type_name = container_attrs.container_name();
-    let chunks = attrs
-        .iter()
-        .map(|x| {
-            if x.skip_serializing() {
-                let variant = x.variant().ident.to_string();
-                return quote! {
-                    return __deser::__derive::Err(
-                        __deser::__derive::skipped_variant(#type_name, #variant)
-                    )
-                };
-            }
-            let atom = x.name(&container_attrs).atom();
-            quote! { __deser::ser::Chunk::Atom(#atom) }
-        })
-        .collect::<Vec<_>>();
+    let mut names = Vec::with_capacity(attrs.len());
+    let mut chunks = Vec::with_capacity(attrs.len());
     // if all variants are named by strings, the atom is built once and only
     // the name is matched
-    let serialize_body = if attrs
-        .iter()
-        .all(|x| x.name(&container_attrs).as_str().is_some() && !x.skip_serializing())
-    {
+    let mut all_str = true;
+    for x in &attrs {
+        let name = x.name(&container_attrs);
+        names.push(name.str_expr());
+        all_str &= name.as_str().is_some() && !x.skip_serializing();
+        chunks.push(if x.skip_serializing() {
+            let variant = x.variant().ident.to_string();
+            quote! {
+                return __deser::__derive::Err(
+                    __deser::__derive::skipped_variant(#type_name, #variant)
+                )
+            }
+        } else {
+            let atom = name.atom();
+            quote! { __deser::ser::Chunk::Atom(#atom) }
+        });
+    }
+    let serialize_body = if all_str {
         quote! {
             __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Str(
                 __deser::Text::borrowed(match *self {
@@ -628,21 +599,18 @@ fn derive_tuple_struct(
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
 
-    let element_arms = fields
-        .iter()
-        .enumerate()
-        .map(|(index, field)| {
-            let member = &field.member;
-            let handle = serialize_handle(
-                field.ty(),
-                field.attrs.adapters().ser(),
-                quote! { &self.#member },
-            );
-            quote! {
-                #index => #handle,
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut element_arms = Vec::with_capacity(fields.len());
+    for (index, field) in fields.iter().enumerate() {
+        let member = &field.member;
+        let handle = serialize_handle(
+            field.ty(),
+            field.attrs.adapters().ser(),
+            quote! { &self.#member },
+        );
+        element_arms.push(quote! {
+            #index => #handle,
+        });
+    }
     let len = fields.len();
 
     let ser_trait = crate::forward::serialize_trait(container_attrs);

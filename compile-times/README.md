@@ -8,7 +8,10 @@ three runs.
 ## Where deser Stands
 
 Clean builds of a small program with one struct and one enum
-(`LIB-version`), including all dependencies:
+(`LIB-version`), including all dependencies.  They are not incremental:
+deser is used through path dependencies which cargo would otherwise
+compile incrementally (unlike crates from crates.io), which made
+`deser-derive` about 0.2s slower.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
@@ -54,11 +57,14 @@ is a library, in a binary only the code that is used would be compiled.
 
 ## Areas of Interest
 
-* **`deser-derive` itself** is on the critical path of clean builds.  A
-  third of its code is iterator adapters (`map`, `filter`, `collect`)
-  which are instantiated for every closure, a third the `quote!`
-  templates.  Structs with flattened fields still use the old template
-  with a sink per struct.
+* **`deser-derive` itself** is on the critical path of clean builds.  It
+  uses loops instead of iterator adapters (`map`, `filter`, `collect`)
+  which are instantiated for every closure: that took it from 153k to
+  101k lines of LLVM IR (serde_derive 122k).  Its templates have more
+  tokens than serde_derive's (8.7k against 6.2k `quote!` pushes).
+  Structs with flattened fields still use the old template with a sink
+  per struct, `derive_struct` builds it before it knows whether it's
+  needed.
 * **`finish`** of derived structs is the largest function of the
   derived code (17% of the IR, about 50 lines per field).  Taking the
   values with helpers, checking the required fields by reference first or

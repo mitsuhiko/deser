@@ -24,8 +24,8 @@ use crate::attr::{
     RenameAll, TypeDefault, UnnamedFieldAttrs, VariantName,
 };
 use crate::bound::{
-    BoundField, collect_idents, collect_lifetimes, turbofish_without_lifetimes,
-    where_clause_for_fields, with_lifetime_bound,
+    BoundField, collect_idents, collect_lifetimes, mentions_any, turbofish_without_lifetimes,
+    type_param_names, where_clause_for_fields, with_lifetime_bound,
 };
 
 #[derive(Copy, Clone)]
@@ -143,14 +143,16 @@ impl<'a> VariantInfo<'a> {
     /// Returns the pattern that binds all fields by reference.
     fn pattern(&self, enum_ident: &syn::Ident) -> TokenStream {
         let var_ident = self.ident;
-        let bindings = self.fields.iter().map(|x| &x.binding);
+        let mut bindings = Vec::with_capacity(self.fields.len());
+        let mut names = Vec::with_capacity(self.fields.len());
+        for field in &self.fields {
+            bindings.push(&field.binding);
+            names.push(&field.field.ident);
+        }
         match self.shape {
             Shape::Unit => quote! { #enum_ident::#var_ident },
             Shape::Tuple => quote! { #enum_ident::#var_ident(#(ref #bindings),*) },
-            Shape::Named => {
-                let names = self.fields.iter().map(|x| &x.field.ident);
-                quote! { #enum_ident::#var_ident { #(#names: ref #bindings),* } }
-            }
+            Shape::Named => quote! { #enum_ident::#var_ident { #(#names: ref #bindings),* } },
         }
     }
 
@@ -161,7 +163,10 @@ impl<'a> VariantInfo<'a> {
             Shape::Unit => quote! { #enum_ident::#var_ident },
             Shape::Tuple => quote! { #enum_ident::#var_ident(#(#values),*) },
             Shape::Named => {
-                let names = self.fields.iter().map(|x| &x.field.ident);
+                let mut names = Vec::with_capacity(self.fields.len());
+                for field in &self.fields {
+                    names.push(&field.field.ident);
+                }
                 quote! { #enum_ident::#var_ident { #(#names: #values),* } }
             }
         }
@@ -173,9 +178,22 @@ impl<'a> VariantInfo<'a> {
             Content::Unit => Vec::new(),
             Content::Newtype(idx) => vec![&self.fields[idx]],
             Content::Tuple(ref idxs) | Content::Struct(ref idxs) => {
-                idxs.iter().map(|&idx| &self.fields[idx]).collect()
+                let mut rv = Vec::with_capacity(idxs.len());
+                for &idx in idxs {
+                    rv.push(&self.fields[idx]);
+                }
+                rv
             }
         }
+    }
+
+    /// Returns serialize handles for the fields of the content.
+    fn content_handles(&self) -> Vec<TokenStream> {
+        let mut rv = Vec::new();
+        for field in self.content_fields() {
+            rv.push(field.ser_handle());
+        }
+        rv
     }
 
     /// Returns the pattern that matches the variant without binding fields.
@@ -227,11 +245,13 @@ fn used_params<'a>(
         collect_idents(ty.clone(), &mut idents);
         collect_lifetimes(ty.clone(), &mut lifetimes);
     }
-    generics
-        .params
-        .iter()
-        .filter(|param| param_used(param, &idents, &lifetimes))
-        .collect()
+    let mut rv = Vec::new();
+    for param in &generics.params {
+        if param_used(param, &idents, &lifetimes) {
+            rv.push(param);
+        }
+    }
+    rv
 }
 
 /// Returns `true` if the tokens only refer to the given parameters (of the
@@ -241,23 +261,53 @@ fn only_uses(generics: &syn::Generics, tokens: TokenStream, params: &[&syn::Gene
     let mut lifetimes = HashSet::new();
     collect_idents(tokens.clone(), &mut idents);
     collect_lifetimes(tokens, &mut lifetimes);
-    generics
-        .params
-        .iter()
-        .filter(|param| param_used(param, &idents, &lifetimes))
-        .all(|param| params.iter().any(|x| param_name(x) == param_name(param)))
+    for param in &generics.params {
+        if !param_used(param, &idents, &lifetimes) {
+            continue;
+        }
+        let name = param_name(param);
+        let mut found = false;
+        for x in params {
+            if param_name(x) == name {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return false;
+        }
+    }
+    true
 }
 
 /// Returns the predicates which only refer to the given parameters.
 fn filter_predicates<'a>(
     generics: &syn::Generics,
-    predicates: impl IntoIterator<Item = &'a syn::WherePredicate>,
+    predicates: &[&'a syn::WherePredicate],
     params: &[&syn::GenericParam],
 ) -> Vec<&'a syn::WherePredicate> {
-    predicates
-        .into_iter()
-        .filter(|predicate| only_uses(generics, quote! { #predicate }, params))
-        .collect()
+    let mut rv = Vec::new();
+    for predicate in predicates {
+        if only_uses(generics, quote! { #predicate }, params) {
+            rv.push(*predicate);
+        }
+    }
+    rv
+}
+
+/// Returns the bounds which only refer to the given parameters.
+fn filter_bounds(
+    generics: &syn::Generics,
+    bounds: Vec<TokenStream>,
+    params: &[&syn::GenericParam],
+) -> Vec<TokenStream> {
+    let mut rv = Vec::new();
+    for bound in bounds {
+        if only_uses(generics, bound.clone(), params) {
+            rv.push(bound);
+        }
+    }
+    rv
 }
 
 /// Returns the declaration of the parameters of a helper struct.
@@ -265,58 +315,61 @@ fn filter_predicates<'a>(
 /// The helper struct takes the parameters of the enum that its fields use,
 /// with the bounds of the enum that only refer to them.
 fn helper_params_decl(generics: &syn::Generics, params: &[&syn::GenericParam]) -> TokenStream {
-    let decls = params.iter().map(|param| match param {
-        syn::GenericParam::Lifetime(param) => {
-            let lifetime = &param.lifetime;
-            let bounds = param
-                .bounds
-                .iter()
-                .filter(|x| only_uses(generics, quote! { #x }, params))
-                .collect::<Vec<_>>();
-            if bounds.is_empty() {
-                quote! { #lifetime }
-            } else {
-                quote! { #lifetime: #(#bounds)+* }
+    let mut decls = Vec::with_capacity(params.len());
+    for param in params {
+        let (name, bounds) = match param {
+            syn::GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                let mut bounds = Vec::new();
+                for bound in &param.bounds {
+                    bounds.push(quote! { #bound });
+                }
+                (quote! { #lifetime }, bounds)
             }
-        }
-        syn::GenericParam::Type(param) => {
-            let ident = &param.ident;
-            let bounds = param
-                .bounds
-                .iter()
-                .filter(|x| only_uses(generics, quote! { #x }, params))
-                .collect::<Vec<_>>();
-            if bounds.is_empty() {
-                quote! { #ident }
-            } else {
-                quote! { #ident: #(#bounds)+* }
+            syn::GenericParam::Type(param) => {
+                let ident = &param.ident;
+                let mut bounds = Vec::new();
+                for bound in &param.bounds {
+                    bounds.push(quote! { #bound });
+                }
+                (quote! { #ident }, bounds)
             }
-        }
-        syn::GenericParam::Const(param) => {
-            let ident = &param.ident;
-            let ty = &param.ty;
-            quote! { const #ident: #ty }
-        }
-    });
+            syn::GenericParam::Const(param) => {
+                let ident = &param.ident;
+                let ty = &param.ty;
+                decls.push(quote! { const #ident: #ty });
+                continue;
+            }
+        };
+        let bounds = filter_bounds(generics, bounds, params);
+        decls.push(if bounds.is_empty() {
+            name
+        } else {
+            quote! { #name: #(#bounds)+* }
+        });
+    }
     quote! { #(#decls),* }
 }
 
 /// Returns the arguments for the parameters of a helper struct.
 fn helper_params_args(params: &[&syn::GenericParam]) -> TokenStream {
-    let args = params.iter().map(|param| match param {
-        syn::GenericParam::Lifetime(param) => {
-            let lifetime = &param.lifetime;
-            quote! { #lifetime }
-        }
-        syn::GenericParam::Type(param) => {
-            let ident = &param.ident;
-            quote! { #ident }
-        }
-        syn::GenericParam::Const(param) => {
-            let ident = &param.ident;
-            quote! { #ident }
-        }
-    });
+    let mut args = Vec::with_capacity(params.len());
+    for param in params {
+        args.push(match param {
+            syn::GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                quote! { #lifetime }
+            }
+            syn::GenericParam::Type(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+            syn::GenericParam::Const(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+        });
+    }
     quote! { #(#args),* }
 }
 
@@ -327,12 +380,38 @@ fn helper_where_clause(generics: &syn::Generics, params: &[&syn::GenericParam]) 
         Some(ref where_clause) => where_clause,
         None => return TokenStream::new(),
     };
-    let predicates = filter_predicates(generics, &where_clause.predicates, params);
+    let mut all = Vec::with_capacity(where_clause.predicates.len());
+    for predicate in &where_clause.predicates {
+        all.push(predicate);
+    }
+    let predicates = filter_predicates(generics, &all, params);
     if predicates.is_empty() {
         TokenStream::new()
     } else {
         quote! { where #(#predicates),* }
     }
+}
+
+/// Returns the identifiers and attributes of the variants of an enum with
+/// only unit variants.
+pub fn unit_variants(
+    enumeration: &syn::DataEnum,
+) -> syn::Result<(Vec<&syn::Ident>, Vec<EnumVariantAttrs<'_>>)> {
+    let mut idents = Vec::with_capacity(enumeration.variants.len());
+    for variant in &enumeration.variants {
+        if !matches!(variant.fields, syn::Fields::Unit) {
+            return Err(syn::Error::new_spanned(
+                variant,
+                "Invalid variant: only simple enum variants without fields are supported",
+            ));
+        }
+        idents.push(&variant.ident);
+    }
+    let mut attrs = Vec::with_capacity(enumeration.variants.len());
+    for variant in &enumeration.variants {
+        attrs.push(EnumVariantAttrs::of(variant)?);
+    }
+    Ok((idents, attrs))
 }
 
 /// Returns `true` if the enum needs the support for enums with data.
@@ -344,13 +423,20 @@ pub fn is_data_enum(
     container_attrs: &ContainerAttrs,
     enumeration: &syn::DataEnum,
 ) -> bool {
-    container_attrs.tag().is_some()
+    if container_attrs.tag().is_some()
         || container_attrs.untagged()
         || !input.generics.params.is_empty()
-        || enumeration.variants.iter().any(|x| {
-            !matches!(x.fields, syn::Fields::Unit)
-                || EnumVariantAttrs::of(x).is_ok_and(|x| x.untagged())
-        })
+    {
+        return true;
+    }
+    for variant in &enumeration.variants {
+        if !matches!(variant.fields, syn::Fields::Unit)
+            || EnumVariantAttrs::of(variant).is_ok_and(|x| x.untagged())
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn repr<'a>(container_attrs: &'a ContainerAttrs) -> Repr<'a> {
@@ -445,9 +531,9 @@ fn collect_variants<'a>(
         let tags = if attrs.untagged() {
             Vec::new()
         } else {
-            std::iter::once(name.clone())
-                .chain(attrs.aliases(container_attrs))
-                .collect()
+            let mut tags = vec![name.clone()];
+            tags.extend(attrs.aliases(container_attrs));
+            tags
         };
         for name in tags {
             if !seen_names.insert(name.clone()) {
@@ -513,18 +599,22 @@ fn collect_variants<'a>(
             tag_field = Some(idx);
         }
 
-        let content_idxs = (0..fields.len())
-            .filter(|&idx| Some(idx) != tag_field)
-            .collect::<Vec<_>>();
+        let mut content_idxs = Vec::with_capacity(fields.len());
         // skipped unnamed fields are not part of the content
-        let unnamed_idxs = content_idxs
-            .iter()
-            .copied()
-            .filter(|&idx| match direction {
-                Direction::Serialize => !fields[idx].skip_serializing,
-                Direction::Deserialize => !fields[idx].skip_deserializing,
-            })
-            .collect::<Vec<_>>();
+        let mut unnamed_idxs = Vec::with_capacity(fields.len());
+        for (idx, field) in fields.iter().enumerate() {
+            if Some(idx) == tag_field {
+                continue;
+            }
+            content_idxs.push(idx);
+            let skipped = match direction {
+                Direction::Serialize => field.skip_serializing,
+                Direction::Deserialize => field.skip_deserializing,
+            };
+            if !skipped {
+                unnamed_idxs.push(idx);
+            }
+        }
         let content = match shape {
             Shape::Unit => Content::Unit,
             Shape::Tuple => match unnamed_idxs.len() {
@@ -606,19 +696,21 @@ fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
 ///
 /// The fields of skipped variants count as skipped.
 fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<BoundField<'b>> {
-    variants
-        .iter()
-        .flat_map(|info| info.fields.iter().map(move |field| (info, field)))
-        .map(|(info, field)| BoundField {
-            ty: field.ty(),
-            adapter: field.adapters.get(direction),
-            skipped: match direction {
-                Direction::Serialize => info.skip_serializing || field.skip_serializing,
-                Direction::Deserialize => info.skip_deserializing || field.skip_deserializing,
-            },
-            bound: field.bounds.get(direction),
-        })
-        .collect()
+    let mut rv = Vec::new();
+    for info in variants {
+        for field in &info.fields {
+            rv.push(BoundField {
+                ty: field.ty(),
+                adapter: field.adapters.get(direction),
+                skipped: match direction {
+                    Direction::Serialize => info.skip_serializing || field.skip_serializing,
+                    Direction::Deserialize => info.skip_deserializing || field.skip_deserializing,
+                },
+                bound: field.bounds.get(direction),
+            });
+        }
+    }
+    rv
 }
 
 pub fn derive_deserialize(
@@ -648,29 +740,24 @@ pub fn derive_deserialize(
         &bound_fields(&all_variants, Direction::Deserialize),
     );
     // skipped variants cannot be deserialized, they are unknown variants
-    let variants = all_variants
-        .into_iter()
-        .filter(|x| !x.skip_deserializing)
-        .collect::<Vec<_>>();
+    let mut variants = Vec::with_capacity(all_variants.len());
+    for info in all_variants {
+        if !info.skip_deserializing {
+            variants.push(info);
+        }
+    }
     if container_attrs.deserialize_bound().is_none() {
         // skipped fields of generic types need a default, the helper
         // structs of the variants require it
-        let params = input
-            .generics
-            .type_params()
-            .map(|x| x.ident.to_string())
-            .collect::<HashSet<_>>();
-        for field in variants.iter().flat_map(|x| x.fields.iter()) {
-            if !field.needs_default {
-                continue;
-            }
-            let ty = field.ty();
-            let mut idents = HashSet::new();
-            collect_idents(quote! { #ty }, &mut idents);
-            if idents.iter().any(|x| params.contains(x)) {
-                where_clause
-                    .predicates
-                    .push(syn::parse_quote!(#ty: __deser::__derive::Default));
+        let params = type_param_names(&input.generics);
+        for info in &variants {
+            for field in &info.fields {
+                let ty = field.ty();
+                if field.needs_default && mentions_any(quote! { #ty }, &params) {
+                    where_clause
+                        .predicates
+                        .push(syn::parse_quote!(#ty: __deser::__derive::Default));
+                }
             }
         }
     }
@@ -703,17 +790,15 @@ pub fn derive_deserialize(
         }
         // helper structs only take the parameters they use
         let helper_params = match info.content {
-            Content::Struct(_) => used_params(
-                &input.generics,
-                &content_fields
-                    .iter()
-                    .map(|x| {
-                        let ty = x.ty();
-                        let adapter = x.adapters.de();
-                        quote! { #ty #adapter }
-                    })
-                    .collect::<Vec<_>>(),
-            ),
+            Content::Struct(_) => {
+                let mut types = Vec::with_capacity(content_fields.len());
+                for x in &content_fields {
+                    let ty = x.ty();
+                    let adapter = x.adapters.de();
+                    types.push(quote! { #ty #adapter });
+                }
+                used_params(&input.generics, &types)
+            }
             _ => Vec::new(),
         };
         let helper_ty = if helper_params.is_empty() {
@@ -724,19 +809,18 @@ pub fn derive_deserialize(
         };
         if needs_helper {
             let helper_name = var_ident.to_string();
-            let fields = content_fields
-                .iter()
-                .map(|field| {
-                    let deser_attrs = field
-                        .field
-                        .attrs
-                        .iter()
-                        .filter(|x| x.path().is_ident("deser"));
-                    let name = &field.field.ident;
-                    let ty = field.ty();
-                    quote! { #(#deser_attrs)* #name: #ty, }
-                })
-                .collect::<Vec<_>>();
+            let mut fields = Vec::with_capacity(content_fields.len());
+            for field in &content_fields {
+                let mut deser_attrs = Vec::new();
+                for attr in &field.field.attrs {
+                    if attr.path().is_ident("deser") {
+                        deser_attrs.push(attr);
+                    }
+                }
+                let name = &field.field.ident;
+                let ty = field.ty();
+                fields.push(quote! { #(#deser_attrs)* #name: #ty, });
+            }
             // the helper needs the same bounds on its parameters as the enum
             let helper_decl = if helper_params.is_empty() {
                 quote! { #helper }
@@ -750,14 +834,24 @@ pub fn derive_deserialize(
             let helper_crate = container_attrs
                 .crate_path()
                 .map(|path| quote! { #[deser(crate = #path)] });
-            let helper_bound = container_attrs.deserialize_bound().map(|bound| {
-                let predicates = filter_predicates(&input.generics, bound, &helper_params);
-                quote! { #[deser(deserialize_bound(#(#predicates),*))] }
-            });
-            let helper_rename_all = info.fields_rename_all.map(|style| {
-                let style = style.as_str();
-                quote! { #[deser(rename_all = #style)] }
-            });
+            let helper_bound = match container_attrs.deserialize_bound() {
+                Some(bound) => {
+                    let mut all = Vec::with_capacity(bound.len());
+                    for predicate in bound {
+                        all.push(predicate);
+                    }
+                    let predicates = filter_predicates(&input.generics, &all, &helper_params);
+                    Some(quote! { #[deser(deserialize_bound(#(#predicates),*))] })
+                }
+                None => None,
+            };
+            let helper_rename_all = match info.fields_rename_all {
+                Some(style) => {
+                    let style = style.as_str();
+                    Some(quote! { #[deser(rename_all = #style)] })
+                }
+                None => None,
+            };
             let helper_deny = if container_attrs.deny_unknown_fields() || info.deny_unknown_fields {
                 Some(quote! { #[deser(deny_unknown_fields)] })
             } else {
@@ -782,9 +876,9 @@ pub fn derive_deserialize(
         let (content_ty, content_pattern) = match info.content {
             Content::Unit if needs_helper => {
                 // fields of unit variants are `()` (see `collect_variants`)
-                for (value, field) in values.iter_mut().zip(&info.fields) {
+                for (idx, field) in info.fields.iter().enumerate() {
                     if !field.skip_deserializing {
-                        *value = quote! { () };
+                        values[idx] = quote! { () };
                     }
                 }
                 (helper_ty.clone(), quote! { _ })
@@ -821,9 +915,9 @@ pub fn derive_deserialize(
 
         // skipped unnamed fields are filled in with their default
         if matches!(info.shape, Shape::Tuple) {
-            for (value, field) in values.iter_mut().zip(&info.fields) {
+            for (idx, field) in info.fields.iter().enumerate() {
                 if field.skip_deserializing {
-                    *value = crate::unnamed::skipped_value(field.ty(), field.default.as_ref());
+                    values[idx] = crate::unnamed::skipped_value(field.ty(), field.default.as_ref());
                 }
             }
         }
@@ -868,12 +962,15 @@ pub fn derive_deserialize(
     // makes a function for a special variant
     let special_variant = |fn_name: &str, predicate: fn(&VariantInfo) -> bool| {
         let fn_ident = syn::Ident::new(fn_name, Span::call_site());
-        match variants
-            .iter()
-            .zip(builders.iter())
-            .find(|(info, _)| predicate(info))
-        {
-            Some((_, builder)) => (
+        let mut found = None;
+        for (idx, info) in variants.iter().enumerate() {
+            if predicate(info) {
+                found = Some(&builders[idx]);
+                break;
+            }
+        }
+        match found {
+            Some(builder) => (
                 quote! {
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                     fn #fn_ident #builder_impl_generics () -> #builder_ty #where_clause {
@@ -891,19 +988,20 @@ pub fn derive_deserialize(
     };
 
     let variants_table = {
-        let arms = variants
-            .iter()
-            .zip(builders.iter())
-            .filter(|(info, _)| !info.other && !info.untagged)
-            .map(|(info, builder)| {
-                VariantName::tag_arms(&info.names, quote! { __deser::__derive::Some(#builder) })
-            });
+        let mut arms = Vec::with_capacity(variants.len());
+        let mut names = Vec::with_capacity(variants.len());
+        for (idx, info) in variants.iter().enumerate() {
+            if !info.other && !info.untagged {
+                let builder = &builders[idx];
+                arms.push(VariantName::tag_arms(
+                    &info.names,
+                    quote! { __deser::__derive::Some(#builder) },
+                ));
+                names.push(info.name.str_expr());
+            }
+        }
         let (other_fn, other) = special_variant("__other", |info| info.other);
         let (default_fn, default) = special_variant("__default", |info| info.default);
-        let names = variants
-            .iter()
-            .filter(|info| !info.other && !info.untagged)
-            .map(|info| info.name.str_expr());
         (
             quote! {
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
@@ -932,26 +1030,25 @@ pub fn derive_deserialize(
 
     let (support, handle) = match repr {
         Repr::External => {
-            let unit_arms = variants
-                .iter()
-                .filter(|info| {
-                    matches!(info.content, Content::Unit) && !info.other && !info.untagged
-                })
-                .map(|info| {
-                    // the fields of unit variants are skipped
-                    let values = info
-                        .fields
-                        .iter()
-                        .map(|field| {
-                            crate::unnamed::skipped_value(field.ty(), field.default.as_ref())
-                        })
-                        .collect::<Vec<_>>();
-                    let construct = info.construct(ident, &values);
-                    VariantName::tag_arms(
-                        &info.names,
-                        quote! { __deser::__derive::Some(#construct) },
-                    )
-                });
+            let mut unit_arms = Vec::new();
+            for info in &variants {
+                if !matches!(info.content, Content::Unit) || info.other || info.untagged {
+                    continue;
+                }
+                // the fields of unit variants are skipped
+                let mut values = Vec::with_capacity(info.fields.len());
+                for field in &info.fields {
+                    values.push(crate::unnamed::skipped_value(
+                        field.ty(),
+                        field.default.as_ref(),
+                    ));
+                }
+                let construct = info.construct(ident, &values);
+                unit_arms.push(VariantName::tag_arms(
+                    &info.names,
+                    quote! { __deser::__derive::Some(#construct) },
+                ));
+            }
             let (table_support, table) = variants_table;
             (
                 quote! {
@@ -1021,20 +1118,21 @@ pub fn derive_deserialize(
 
     // the untagged variants are tried in order (all variants of untagged
     // enums)
-    let candidates = variants
-        .iter()
-        .zip(untagged_tries.iter())
-        .filter(|(info, _)| info.untagged)
-        .map(|(_, try_variant)| {
-            try_variant
-                .as_ref()
-                .expect("untagged variants cannot be other")
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut indexes = Vec::new();
+    for (idx, info) in variants.iter().enumerate() {
+        if info.untagged {
+            indexes.push(candidates.len());
+            candidates.push(
+                untagged_tries[idx]
+                    .as_ref()
+                    .expect("untagged variants cannot be other"),
+            );
+        }
+    }
     let candidate_support = if candidates.is_empty() {
         None
     } else {
-        let indexes = 0..candidates.len();
         Some(quote! {
             #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
             fn __candidate #impl_generics (
@@ -1144,16 +1242,15 @@ fn fields_ser(
     container_attrs: &ContainerAttrs,
     tag: Option<(&Name, TokenStream)>,
 ) -> syn::Result<TokenStream> {
-    let all_attrs = info
-        .content_fields()
-        .into_iter()
-        .map(|field| Ok((field, FieldAttrs::of(field.field)?)))
-        .collect::<syn::Result<Vec<_>>>()?;
     // variants with flattened fields merge the fields of the flattened
     // values when they are serialized
-    let flatten = all_attrs
-        .iter()
-        .any(|(_, attrs)| attrs.flatten() && !attrs.skip_serializing());
+    let mut flatten = false;
+    let mut all_attrs = Vec::new();
+    for field in info.content_fields() {
+        let attrs = FieldAttrs::of(field.field)?;
+        flatten |= attrs.flatten() && !attrs.skip_serializing();
+        all_attrs.push((field, attrs));
+    }
     let field = |name: TokenStream, handle: TokenStream| {
         if flatten {
             quote! { __deser::__derive::FieldSer::Field(#name, #handle) }
@@ -1161,12 +1258,15 @@ fn fields_ser(
             quote! { (#name, #handle) }
         }
     };
-    let tag_push = tag.map(|(tag, handle)| {
-        let field = field(quote! { #tag }, handle);
-        quote! {
-            __fields.push(#field);
+    let tag_push = match tag {
+        Some((tag, handle)) => {
+            let field = field(quote! { #tag }, handle);
+            Some(quote! {
+                __fields.push(#field);
+            })
         }
-    });
+        None => None,
+    };
     let mut pushes = Vec::new();
     for (field_info, attrs) in &all_attrs {
         if attrs.skip_serializing() {
@@ -1232,7 +1332,7 @@ fn content_handle(
         Content::Unit => quote! { __deser::ser::SerializeHandle::to(&()) },
         Content::Newtype(idx) => info.fields[idx].ser_handle(),
         Content::Tuple(_) => {
-            let handles = info.content_fields().into_iter().map(|x| x.ser_handle());
+            let handles = info.content_handles();
             quote! {
                 __deser::ser::SerializeHandle::boxed(__deser::__derive::SeqSer(
                     __deser::__derive::Vec::from([#(#handles),*])
@@ -1325,18 +1425,26 @@ pub fn derive_serialize(
         Repr::Adjacent { .. } => Some(2),
         _ => None,
     };
-    let container_shape = if variants.iter().all(|info| len_of(info) == Some(1)) {
+    let mut all_one = true;
+    let mut all_none = true;
+    for info in &variants {
+        let len = len_of(info);
+        all_one &= len == Some(1);
+        all_none &= len.is_none();
+    }
+    let container_shape = if all_one {
         quote! { __deser::ContainerShape::new().with_len(1) }
-    } else if variants.iter().all(|info| len_of(info).is_none()) {
+    } else if all_none {
         quote! { __deser::ContainerShape::new() }
     } else {
-        let arms = variants.iter().map(|info| {
+        let mut arms = Vec::with_capacity(variants.len());
+        for info in &variants {
             let pattern = info.wildcard_pattern(ident);
-            match len_of(info) {
+            arms.push(match len_of(info) {
                 Some(len) => quote! { #pattern => __deser::ContainerShape::new().with_len(#len), },
                 None => quote! { #pattern => __deser::ContainerShape::new(), },
-            }
-        });
+            });
+        }
         quote! { match *self { #(#arms)* } }
     };
 
@@ -1420,7 +1528,7 @@ pub fn derive_serialize(
                     quote! { __deser::ser::Serialize::serialize(#value, __state)? }
                 }
                 Content::Tuple(_) => {
-                    let handles = info.content_fields().into_iter().map(|x| x.ser_handle());
+                    let handles = info.content_handles();
                     quote! {
                         __deser::__derive::SeqSer(__deser::__derive::Vec::from([#(#handles),*]))
                             .into_chunk()

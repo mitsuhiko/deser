@@ -5,13 +5,11 @@
 //! fields they are null (like unit structs), with one field they are the
 //! value of the field (like newtype structs) and with more fields they are
 //! sequences (tuple structs).
-use std::collections::HashSet;
-
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::attr::{Direction, TypeDefault, UnnamedFieldAttrs};
-use crate::bound::{BoundField, collect_idents};
+use crate::bound::{BoundField, mentions_any, type_param_names};
 
 /// An unnamed field.
 pub struct UnnamedField<'a> {
@@ -62,11 +60,9 @@ impl<'a> UnnamedStruct<'a> {
             }) => (None, true),
             _ => return Ok(None),
         };
-        let fields = fields
-            .into_iter()
-            .flat_map(|x| x.unnamed.iter())
-            .enumerate()
-            .map(|(index, field)| {
+        let mut rv = Vec::new();
+        if let Some(fields) = fields {
+            for (index, field) in fields.unnamed.iter().enumerate() {
                 let attrs = UnnamedFieldAttrs::of(field)?;
                 if attrs.tag() {
                     return Err(syn::Error::new_spanned(
@@ -74,17 +70,17 @@ impl<'a> UnnamedStruct<'a> {
                         "tag fields are only supported in other variants of enums",
                     ));
                 }
-                Ok(UnnamedField {
+                rv.push(UnnamedField {
                     field,
                     attrs,
                     member: syn::Index::from(index),
-                })
-            })
-            .collect::<syn::Result<Vec<_>>>()?;
+                });
+            }
+        }
         Ok(Some(UnnamedStruct {
             ident: &input.ident,
             unit,
-            fields,
+            fields: rv,
         }))
     }
 
@@ -99,23 +95,27 @@ impl<'a> UnnamedStruct<'a> {
 
     /// Returns the fields that are not skipped in the direction.
     pub fn remaining(&self, direction: Direction) -> Vec<&UnnamedField<'a>> {
-        self.fields
-            .iter()
-            .filter(|x| !x.attrs.skipped(direction))
-            .collect()
+        let mut rv = Vec::new();
+        for field in &self.fields {
+            if !field.attrs.skipped(direction) {
+                rv.push(field);
+            }
+        }
+        rv
     }
 
     /// Returns the fields for the purpose of bound inference.
     pub fn bound_fields(&self, direction: Direction) -> Vec<BoundField<'_>> {
-        self.fields
-            .iter()
-            .map(|x| BoundField {
-                ty: x.ty(),
-                adapter: x.attrs.adapters().get(direction),
-                skipped: x.attrs.skipped(direction),
-                bound: x.attrs.bounds().get(direction),
-            })
-            .collect()
+        let mut rv = Vec::with_capacity(self.fields.len());
+        for field in &self.fields {
+            rv.push(BoundField {
+                ty: field.ty(),
+                adapter: field.attrs.adapters().get(direction),
+                skipped: field.attrs.skipped(direction),
+                bound: field.attrs.bounds().get(direction),
+            });
+        }
+        rv
     }
 
     /// Returns an expression that constructs the struct.
@@ -128,25 +128,27 @@ impl<'a> UnnamedStruct<'a> {
             return quote! { #ident };
         }
         let mut values = values.iter();
-        let fields = self.fields.iter().map(|field| {
-            if field.attrs.skip_deserializing() {
+        let mut fields = Vec::with_capacity(self.fields.len());
+        for field in &self.fields {
+            fields.push(if field.attrs.skip_deserializing() {
                 skipped_value(field.ty(), field.attrs.default())
             } else {
                 values.next().unwrap().clone()
-            }
-        });
+            });
+        }
         quote! { #ident(#(#fields),*) }
     }
 
     /// Returns the `Default` bounds the skipped fields of generic types need
     /// when deserializing.
     pub fn default_bounds(&self, generics: &syn::Generics) -> Vec<syn::WherePredicate> {
-        let fields = self
-            .fields
-            .iter()
-            .filter(|x| x.attrs.skip_deserializing())
-            .map(|x| (x.ty(), x.attrs.default()));
-        default_bounds(generics, fields)
+        let mut fields = Vec::new();
+        for field in &self.fields {
+            if field.attrs.skip_deserializing() {
+                fields.push((field.ty(), field.attrs.default()));
+            }
+        }
+        default_bounds(generics, &fields)
     }
 }
 
@@ -162,21 +164,18 @@ pub fn skipped_value(ty: &syn::Type, default: Option<&TypeDefault>) -> TokenStre
 
 /// Returns the `Default` bounds for skipped fields of generic types that
 /// are filled in with `Default`.
-pub fn default_bounds<'a>(
+pub fn default_bounds(
     generics: &syn::Generics,
-    fields: impl Iterator<Item = (&'a syn::Type, Option<&'a TypeDefault>)>,
+    fields: &[(&syn::Type, Option<&TypeDefault>)],
 ) -> Vec<syn::WherePredicate> {
-    let params = generics
-        .type_params()
-        .map(|x| x.ident.to_string())
-        .collect::<HashSet<_>>();
-    fields
-        .filter(|(_, default)| !matches!(default, Some(TypeDefault::Explicit(_))))
-        .filter(|(ty, _)| {
-            let mut idents = HashSet::new();
-            collect_idents(quote! { #ty }, &mut idents);
-            idents.iter().any(|x| params.contains(x))
-        })
-        .map(|(ty, _)| syn::parse_quote!(#ty: __deser::__derive::Default))
-        .collect()
+    let params = type_param_names(generics);
+    let mut rv = Vec::new();
+    for &(ty, default) in fields {
+        if !matches!(default, Some(TypeDefault::Explicit(_)))
+            && mentions_any(quote! { #ty }, &params)
+        {
+            rv.push(syn::parse_quote!(#ty: __deser::__derive::Default));
+        }
+    }
+    rv
 }

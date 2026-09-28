@@ -4,10 +4,10 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{
-    ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, Name, TypeDefault, VariantName,
+use crate::attr::{ContainerAttrs, Direction, FieldAttrs, Name, TypeDefault, VariantName};
+use crate::bound::{
+    mentions_any, type_param_names, where_clause_for_fields, with_de_lifetime, with_lifetime_bound,
 };
-use crate::bound::{BoundField, where_clause_for_fields, with_de_lifetime, with_lifetime_bound};
 use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
 /// Returns an expression that creates a sink handle for the slot of a field.
@@ -171,24 +171,34 @@ fn derive_tuple_struct(
         ));
     }
 
-    let types = fields.iter().map(|x| x.ty()).collect::<Vec<_>>();
-    let bindings = (0..fields.len())
-        .map(|idx| syn::Ident::new(&format!("__f{}", idx), Span::call_site()))
-        .collect::<Vec<_>>();
-    let tuple_ty = quote! { (#(#types,)*) };
-    let pattern = quote! { (#(#bindings,)*) };
-    let owned = if fields.iter().any(|x| x.attrs.adapters().de().is_some()) {
-        let adapters = fields.iter().map(|x| match x.attrs.adapters().de() {
-            Some(adapter) => quote! { #adapter },
+    let mut types = Vec::with_capacity(fields.len());
+    let mut bindings = Vec::with_capacity(fields.len());
+    let mut values = Vec::with_capacity(fields.len());
+    let mut adapters = Vec::with_capacity(fields.len());
+    let mut has_adapters = false;
+    for (idx, x) in fields.iter().enumerate() {
+        let binding = syn::Ident::new(&format!("__f{}", idx), Span::call_site());
+        types.push(x.ty());
+        values.push(quote! { #binding });
+        bindings.push(binding);
+        adapters.push(match x.attrs.adapters().de() {
+            Some(adapter) => {
+                has_adapters = true;
+                quote! { #adapter }
+            }
             None => quote! { __deser::adapters::Same },
         });
+    }
+    let tuple_ty = quote! { (#(#types,)*) };
+    let pattern = quote! { (#(#bindings,)*) };
+    let owned = if has_adapters {
         quote! {
             __deser::de::OwnedSink::<#tuple_ty>::deserialize_as::<(#(#adapters,)*)>()
         }
     } else {
         quote! { __deser::de::OwnedSink::<#tuple_ty>::deserialize() }
     };
-    let construct = st.construct(&bindings.iter().map(|x| quote! { #x }).collect::<Vec<_>>());
+    let construct = st.construct(&values);
     let handle = quote! {
         __deser::__derive::mapped(
             __slot,
@@ -274,94 +284,83 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     let type_name = container_attrs.expecting();
-    let all_attrs = fields
-        .named
-        .iter()
-        .map(FieldAttrs::of)
-        .collect::<syn::Result<Vec<_>>>()?;
-    if let Some(attrs) = all_attrs.iter().find(|x| x.tag()) {
-        return Err(syn::Error::new_spanned(
-            attrs.field(),
-            "tag fields are only supported in other variants of enums",
-        ));
-    }
+    let all_attrs = FieldAttrs::of_all(&fields.named)?;
     // skipped fields are not deserialized, they are filled in when the
     // struct is built
-    let attrs = all_attrs
-        .iter()
-        .filter(|x| !x.skip_deserializing())
-        .collect::<Vec<_>>();
+    let mut attrs = Vec::with_capacity(all_attrs.len());
     let mut default_bounds = Vec::new();
-    let (skipped_name, skipped_value): (Vec<_>, Vec<_>) = all_attrs
-        .iter()
-        .filter(|x| x.skip_deserializing())
-        .map(|x| {
-            let name = &x.field().ident;
-            let ty = &x.field().ty;
-            let value = match (x.default(), container_attrs.default()) {
-                (Some(TypeDefault::Explicit(expr)), _) => expr.clone(),
-                (None, Some(TypeDefault::Explicit(expr))) => quote! { (#expr).#name },
-                (None, Some(TypeDefault::Implicit)) => quote! {
-                    <#ident #ty_generics as __deser::__derive::Default>::default().#name
-                },
-                (Some(TypeDefault::Implicit), _) | (None, None) => {
-                    default_bounds.push(quote! { #ty: __deser::__derive::Default });
-                    quote! { <#ty as __deser::__derive::Default>::default() }
-                }
-            };
-            (name, value)
-        })
-        .unzip();
-    let fieldname = attrs.iter().map(|x| &x.field().ident).collect::<Vec<_>>();
-    let sink_fieldname = attrs
-        .iter()
-        .map(|x| {
-            syn::Ident::new(
-                &format!("field_{}", x.field().ident.as_ref().unwrap()),
-                Span::call_site(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let sink_fieldty = attrs
-        .iter()
-        .map(|f| {
-            let ty = &f.field().ty;
-            if f.flatten() {
-                quote! {
-                    __deser::de::OwnedSink<'de, #ty>
-                }
-            } else {
-                quote! {
-                    __deser::__derive::Option<#ty>
-                }
+    let mut skipped_name = Vec::new();
+    let mut skipped_value = Vec::new();
+    let mut bound_fields = Vec::with_capacity(all_attrs.len());
+    for x in &all_attrs {
+        if x.tag() {
+            return Err(syn::Error::new_spanned(
+                x.field(),
+                "tag fields are only supported in other variants of enums",
+            ));
+        }
+        bound_fields.push(x.bound_field(Direction::Deserialize));
+        if !x.skip_deserializing() {
+            attrs.push(x);
+            continue;
+        }
+        let name = &x.field().ident;
+        let ty = &x.field().ty;
+        skipped_value.push(match (x.default(), container_attrs.default()) {
+            (Some(TypeDefault::Explicit(expr)), _) => expr.clone(),
+            (None, Some(TypeDefault::Explicit(expr))) => quote! { (#expr).#name },
+            (None, Some(TypeDefault::Implicit)) => quote! {
+                <#ident #ty_generics as __deser::__derive::Default>::default().#name
+            },
+            (Some(TypeDefault::Implicit), _) | (None, None) => {
+                default_bounds.push(quote! { #ty: __deser::__derive::Default });
+                quote! { <#ty as __deser::__derive::Default>::default() }
             }
-        })
-        .collect::<Vec<_>>();
-    let sink_defaults = attrs
-        .iter()
-        .map(|f| {
-            if f.flatten() {
-                quote! {
-                    __deser::de::OwnedSink::deserialize()
-                }
-            } else if f.default().is_some() || f.required() {
-                // required fields are missing even if their type has a
-                // value for missing fields
-                quote! {
-                    __deser::__derive::None
-                }
-            } else if let Some(adapter) = f.adapters().de() {
-                let ty = &f.field().ty;
-                quote! {
-                    <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::initial_value_as()
-                }
-            } else {
-                quote! {
-                    __deser::de::Deserialize::initial_value()
-                }
+        });
+        skipped_name.push(name);
+    }
+    let mut fieldname = Vec::with_capacity(attrs.len());
+    let mut sink_fieldname = Vec::with_capacity(attrs.len());
+    let mut sink_fieldty = Vec::with_capacity(attrs.len());
+    let mut sink_defaults = Vec::with_capacity(attrs.len());
+    let mut has_flatten_fields = false;
+    for f in &attrs {
+        let ty = &f.field().ty;
+        fieldname.push(&f.field().ident);
+        sink_fieldname.push(syn::Ident::new(
+            &format!("field_{}", f.field().ident.as_ref().unwrap()),
+            Span::call_site(),
+        ));
+        sink_fieldty.push(if f.flatten() {
+            quote! {
+                __deser::de::OwnedSink<'de, #ty>
             }
-        })
-        .collect::<Vec<_>>();
+        } else {
+            quote! {
+                __deser::__derive::Option<#ty>
+            }
+        });
+        sink_defaults.push(if f.flatten() {
+            quote! {
+                __deser::de::OwnedSink::deserialize()
+            }
+        } else if f.default().is_some() || f.required() {
+            // required fields are missing even if their type has a
+            // value for missing fields
+            quote! {
+                __deser::__derive::None
+            }
+        } else if let Some(adapter) = f.adapters().de() {
+            quote! {
+                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::initial_value_as()
+            }
+        } else {
+            quote! {
+                __deser::de::Deserialize::initial_value()
+            }
+        });
+        has_flatten_fields |= f.flatten();
+    }
 
     let mut seen_names = HashSet::new();
     let mut first_duplicate_name = None;
@@ -372,15 +371,15 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     let mut update_dispatch = Vec::new();
     // the update sinks of structs with flattened fields borrow the fields
     // through a pointer (see `UpdateTarget`)
-    let update_through_ptr = attrs.iter().any(|x| x.flatten());
-    for (index, (x, fieldname)) in attrs.iter().zip(sink_fieldname.iter()).enumerate() {
+    let update_through_ptr = has_flatten_fields;
+    for (index, x) in attrs.iter().enumerate() {
         if x.flatten() {
             continue;
         }
+        let fieldname = &sink_fieldname[index];
 
-        let names = std::iter::once(x.name(&container_attrs))
-            .chain(x.aliases(&container_attrs))
-            .collect::<Vec<_>>();
+        let mut names = vec![x.name(&container_attrs)];
+        names.extend(x.aliases(&container_attrs));
         for name in &names {
             if first_duplicate_name.is_none() && !seen_names.insert(name.clone()) {
                 first_duplicate_name = Some((name.display(), x.field()));
@@ -456,27 +455,13 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         quote!(__deser::adapters::DeserializeAs),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
-        &all_attrs
-            .iter()
-            .map(|x| BoundField {
-                ty: &x.field().ty,
-                adapter: x.adapters().de(),
-                skipped: x.skip_deserializing(),
-                bound: x.bounds().get(Direction::Deserialize),
-            })
-            .collect::<Vec<_>>(),
+        &bound_fields,
     );
     // skipped fields of generic types need a default
     if container_attrs.deserialize_bound().is_none() {
-        let params = input
-            .generics
-            .type_params()
-            .map(|x| x.ident.to_string())
-            .collect::<HashSet<_>>();
+        let params = type_param_names(&input.generics);
         for bound in default_bounds {
-            let mut idents = HashSet::new();
-            crate::bound::collect_idents(bound.clone(), &mut idents);
-            if idents.iter().any(|x| params.contains(x)) {
+            if mentions_any(bound.clone(), &params) {
                 bounded_where_clause
                     .predicates
                     .push(syn::parse_quote!(#bound));
@@ -484,9 +469,35 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         }
     }
 
-    let field_stage1_default = attrs
-        .iter()
-        .map(|attrs| match attrs.default() {
+    // Required fields (without defaults) of structs without flattened
+    // fields and container defaults are checked together, which avoids an
+    // early return (that drops all fields taken so far) per field.
+    let is_checked = |attrs: &FieldAttrs| {
+        !has_flatten_fields && container_attrs.default().is_none() && attrs.default().is_none()
+    };
+    let mut field_stage1_default = Vec::with_capacity(attrs.len());
+    let mut checked_fields = Vec::new();
+    let mut checked_names = Vec::new();
+    let mut field_take = Vec::with_capacity(attrs.len());
+    let mut flatten_fields = Vec::new();
+    // if a flattened field took a key and the value used if it did not
+    let mut flatten_used = Vec::new();
+    let mut flatten_initial = Vec::new();
+    let mut flatten_ty = Vec::new();
+    let mut flatten_ident = Vec::new();
+    // the fields that take their value from the container default
+    let mut default_sink_name = Vec::new();
+    let mut default_original_name = Vec::new();
+    // The names of the fields by index for errors about duplicate fields and
+    // a bit per field to detect them.
+    let mut field_names = Vec::with_capacity(attrs.len());
+    // the fields that are required when errors are collected
+    let mut required_field = Vec::new();
+    let mut required_index = Vec::new();
+    let mut required_name = Vec::new();
+    for (index, attrs) in attrs.iter().enumerate() {
+        let name = &sink_fieldname[index];
+        field_stage1_default.push(match attrs.default() {
             Some(TypeDefault::Implicit) => {
                 quote! { take().unwrap_or_else(__deser::__derive::Default::default) }
             }
@@ -494,26 +505,64 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 quote! { take().unwrap_or_else(|| #expr) }
             }
             None => quote!(take()),
-        })
-        .collect::<Vec<_>>();
-    // Required fields (without defaults) of structs without flattened
-    // fields and container defaults are checked together, which avoids an
-    // early return (that drops all fields taken so far) per field.
-    let has_flatten_fields = attrs.iter().any(|x| x.flatten());
-    let is_checked = |attrs: &FieldAttrs| {
-        !has_flatten_fields && container_attrs.default().is_none() && attrs.default().is_none()
-    };
-    let checked_fields = sink_fieldname
-        .iter()
-        .zip(attrs.iter())
-        .filter(|(_, attrs)| is_checked(attrs))
-        .map(|(name, _)| name)
-        .collect::<Vec<_>>();
-    let checked_names = attrs
-        .iter()
-        .filter(|attrs| is_checked(attrs))
-        .map(|attrs| attrs.name(&container_attrs))
-        .collect::<Vec<_>>();
+        });
+        if is_checked(attrs) {
+            checked_fields.push(name);
+            checked_names.push(attrs.name(&container_attrs));
+        }
+        field_take.push(if attrs.default().is_some() || is_checked(attrs) {
+            quote! { #name }
+        } else if attrs.flatten() {
+            // this should never happen unless the inner deserializer fucked up
+            let error = format!(
+                "failed to deserialize flattened field `{}`",
+                attrs.field().ident.as_ref().unwrap()
+            );
+            quote! {
+                match #name {
+                    __deser::__derive::Some(val) => val,
+                    __deser::__derive::None => return __deser::__derive::Err(__deser::Error::new(__deser::ErrorKind::Unexpected, #error))
+                }
+            }
+        } else if container_attrs.default().is_some() {
+            quote! { #name.unwrap() }
+        } else {
+            let str_name = attrs.name(&container_attrs);
+            quote! {
+                match #name {
+                    __deser::__derive::Some(val) => val,
+                    __deser::__derive::None => return __deser::__derive::Err(__deser::__derive::new_missing_field_error(#str_name, __state))
+                }
+            }
+        });
+        if attrs.flatten() {
+            let ident = attrs.field().ident.as_ref().unwrap();
+            flatten_fields.push(name);
+            flatten_used.push(syn::Ident::new(
+                &format!("used_{}", ident),
+                Span::call_site(),
+            ));
+            flatten_initial.push(syn::Ident::new(
+                &format!("initial_{}", ident),
+                Span::call_site(),
+            ));
+            flatten_ty.push(&attrs.field().ty);
+            flatten_ident.push(&attrs.field().ident);
+            field_names.push(quote! { "" });
+        } else {
+            let name = attrs.name(&container_attrs);
+            field_names.push(quote! { #name });
+        }
+        if attrs.default().is_none() {
+            default_sink_name.push(name);
+            default_original_name.push(fieldname[index]);
+            if !attrs.flatten() && container_attrs.default().is_none() {
+                required_field.push(name);
+                required_index.push(index);
+                required_name.push(attrs.name(&container_attrs));
+            }
+        }
+    }
     let check_fields = if checked_fields.is_empty() {
         None
     } else {
@@ -528,85 +577,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             };
         })
     };
-    let field_take = sink_fieldname
-        .iter()
-        .zip(attrs.iter())
-        .map(|(name, attrs)| {
-            if attrs.default().is_some() || is_checked(attrs) {
-                quote! { #name }
-            } else if attrs.flatten() {
-                // this should never happen unless the inner deserializer fucked up
-                let error = format!(
-                    "failed to deserialize flattened field `{}`",
-                    attrs.field().ident.as_ref().unwrap()
-                );
-                quote! {
-                    match #name {
-                        __deser::__derive::Some(val) => val,
-                        __deser::__derive::None => return __deser::__derive::Err(__deser::Error::new(__deser::ErrorKind::Unexpected, #error))
-                    }
-                }
-            } else if container_attrs.default().is_some() {
-                quote! { #name.unwrap() }
-            } else {
-                let str_name = attrs.name(&container_attrs);
-                quote! {
-                    match #name {
-                        __deser::__derive::Some(val) => val,
-                        __deser::__derive::None => return __deser::__derive::Err(__deser::__derive::new_missing_field_error(#str_name, __state))
-                    }
-                }
-            }
-        })
-        .collect::<Vec<_>>();
-    let flatten_fields = sink_fieldname
-        .iter()
-        .zip(attrs.iter())
-        .filter_map(
-            |(name, attrs)| {
-                if attrs.flatten() { Some(name) } else { None }
-            },
-        )
-        .collect::<Vec<_>>();
-    // if a flattened field took a key and the value used if it did not
-    let flatten_used = attrs
-        .iter()
-        .filter(|x| x.flatten())
-        .map(|x| {
-            let name = x.field().ident.as_ref().unwrap();
-            syn::Ident::new(&format!("used_{}", name), Span::call_site())
-        })
-        .collect::<Vec<_>>();
-    let flatten_initial = attrs
-        .iter()
-        .filter(|x| x.flatten())
-        .map(|x| {
-            let name = x.field().ident.as_ref().unwrap();
-            syn::Ident::new(&format!("initial_{}", name), Span::call_site())
-        })
-        .collect::<Vec<_>>();
-    let flatten_ty = attrs
-        .iter()
-        .filter(|x| x.flatten())
-        .map(|x| &x.field().ty)
-        .collect::<Vec<_>>();
 
     let stage2_default = if container_attrs.default().is_some() {
-        let need_container_default = sink_fieldname
-            .iter()
-            .zip(fieldname.iter())
-            .zip(attrs.iter())
-            .filter_map(|((sink_name, original_name), attrs)| {
-                if attrs.default().is_none() {
-                    Some((sink_name, *original_name))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        if !need_container_default.is_empty() {
-            let (sink_name, original_name): (Vec<_>, Vec<_>) =
-                need_container_default.into_iter().unzip();
+        if !default_sink_name.is_empty() {
+            let sink_name = &default_sink_name;
+            let original_name = &default_original_name;
             let type_default = match container_attrs.default().unwrap() {
                 TypeDefault::Implicit => quote! {
                     <#ident as __deser::__derive::Default>::default()
@@ -632,19 +607,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         None
     };
 
-    // The names of the fields by index for errors about duplicate fields and
-    // a bit per field to detect them.
-    let field_names = attrs
-        .iter()
-        .map(|x| {
-            if x.flatten() {
-                quote! { "" }
-            } else {
-                let name = x.name(&container_attrs);
-                quote! { #name }
-            }
-        })
-        .collect::<Vec<_>>();
     let seen_words = attrs.len().div_ceil(64);
 
     // Keys are resolved to a field index directly in the key sink so that
@@ -737,11 +699,6 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // take no key are kept.  Structs with flattened fields keep the
         // sinks of the flattened fields while they update the other fields,
         // so they borrow the fields through a pointer.
-        let flatten_ident = attrs
-            .iter()
-            .filter(|x| x.flatten())
-            .map(|x| &x.field().ident)
-            .collect::<Vec<_>>();
         UpdateSink {
             method: quote! {
                 fn deserialize_update(
@@ -953,24 +910,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     // together with the required fields that are missing.  Fields that
     // were seen but have no value failed, they are not missing.  The
     // errors of values that flattened fields took are collected by them.
-    let (required_field, required_index, required_name): (Vec<_>, Vec<_>, Vec<_>) = sink_fieldname
-        .iter()
-        .zip(attrs.iter())
-        .enumerate()
-        .filter(|(_, (_, attrs))| {
-            !attrs.flatten() && attrs.default().is_none() && container_attrs.default().is_none()
-        })
-        .map(|(index, (name, attrs))| (name, index, attrs.name(&container_attrs)))
-        .fold(
-            (Vec::new(), Vec::new(), Vec::new()),
-            |mut acc, (a, b, c)| {
-                acc.0.push(a);
-                acc.1.push(b);
-                acc.2.push(c);
-                acc
-            },
-        );
-    let flatten_index = (0..flatten_fields.len()).collect::<Vec<_>>();
+    let mut flatten_index = Vec::with_capacity(flatten_fields.len());
+    for index in 0..flatten_fields.len() {
+        flatten_index.push(index);
+    }
     let (current_field, current_init, current_reset) = if has_flatten {
         (
             Some(quote! { flatten_current: usize, }),
@@ -1271,58 +1214,49 @@ impl CompactStruct<'_> {
         let deny = container_attrs.deny_unknown_fields();
         let de_trait = crate::forward::deserialize_trait(container_attrs);
 
-        let index = (0..self.attrs.len())
-            .map(syn::Index::from)
-            .collect::<Vec<_>>();
-        let types = self.attrs.iter().map(|x| &x.field().ty).collect::<Vec<_>>();
-        let defaults = self.defaults;
-        let slot = |index: &syn::Index| quote! { &mut self.values.#index };
-        let field_sinks = self
-            .attrs
-            .iter()
-            .zip(&index)
-            .map(|(x, index)| field_sink(&x.field().ty, x.adapters().de(), slot(index)));
-        let field_atoms = self
-            .attrs
-            .iter()
-            .zip(&index)
-            .map(|(x, index)| atom_into(&x.field().ty, x.adapters().de(), slot(index)));
         // Without generics no field can borrow from the data, so borrowed
         // atoms are deserialized like other atoms.
         let borrows = !input.generics.params.is_empty();
-        let borrowed_atom_fn = if !borrows {
-            None
-        } else {
-            let atoms = self.attrs.iter().zip(&index).map(|(x, index)| {
-                borrowed_atom_into(&x.field().ty, x.adapters().de(), slot(index))
-            });
-            Some(quote! {
-                fn field_borrowed_atom(
-                    &mut self,
-                    __index: usize,
-                    __atom: __deser::Atom<'de>,
-                    __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<()> {
-                    match __index {
-                        #(#index => #atoms,)*
-                        _ => __deser::__derive::Ok(()),
-                    }
-                }
-            })
-        };
-
         // Required fields (without defaults) are matched as `Some`, the
         // struct is only built if all of them have a value and no errors
         // were collected.  Otherwise `StructFinish::missing` creates the
         // error.
         let has_container_default = container_attrs.default().is_some();
-        let is_checked = |x: &FieldAttrs| !has_container_default && x.default().is_none();
-        let mut patterns = Vec::new();
-        let mut takes = Vec::new();
-        let mut fail_bindings = Vec::new();
-        let mut missing = Vec::new();
-        for (x, binding) in self.attrs.iter().zip(self.bindings) {
-            if is_checked(x) {
+        let len = self.attrs.len();
+        let mut index = Vec::with_capacity(len);
+        let mut types = Vec::with_capacity(len);
+        let mut field_sinks = Vec::with_capacity(len);
+        let mut field_atoms = Vec::with_capacity(len);
+        let mut borrowed_atoms = Vec::new();
+        let mut patterns = Vec::with_capacity(len);
+        let mut takes = Vec::with_capacity(len);
+        let mut fail_bindings = Vec::with_capacity(len);
+        let mut missing = Vec::with_capacity(len);
+        let mut nones = Vec::with_capacity(len);
+        let mut fieldname = Vec::with_capacity(len);
+        // the fields that take the value of the default of the container
+        let mut default_binding = Vec::new();
+        let mut default_name = Vec::new();
+        for (idx, x) in self.attrs.iter().enumerate() {
+            let binding = &self.bindings[idx];
+            let ty = &x.field().ty;
+            let adapter = x.adapters().de();
+            let member = syn::Index::from(idx);
+            let slot = quote! { &mut self.values.#member };
+            field_sinks.push(field_sink(ty, adapter, slot.clone()));
+            field_atoms.push(atom_into(ty, adapter, slot.clone()));
+            if borrows {
+                borrowed_atoms.push(borrowed_atom_into(ty, adapter, slot));
+            }
+            index.push(member);
+            types.push(ty);
+            nones.push(quote! { __deser::__derive::None });
+            fieldname.push(&x.field().ident);
+            if x.default().is_none() {
+                default_binding.push(binding);
+                default_name.push(&x.field().ident);
+            }
+            if !has_container_default && x.default().is_none() {
                 patterns.push(quote! { __deser::__derive::Some(#binding) });
                 takes.push(quote! { #binding });
                 fail_bindings.push(quote! { #binding });
@@ -1346,39 +1280,48 @@ impl CompactStruct<'_> {
             fail_bindings.push(quote! { _ });
             missing.push(quote! { false });
         }
-        // with a container default the fields without a default of their
-        // own take the value of the default of the container
-        let container_default = container_attrs.default().and_then(|default| {
-            let (binding, name): (Vec<_>, Vec<_>) = self
-                .attrs
-                .iter()
-                .zip(self.bindings)
-                .filter(|(x, _)| x.default().is_none())
-                .map(|(x, binding)| (binding, &x.field().ident))
-                .unzip();
-            if binding.is_empty() {
-                return None;
-            }
-            let type_default = match default {
-                TypeDefault::Implicit => quote! {
-                    <#ident #ty_generics as __deser::__derive::Default>::default()
-                },
-                TypeDefault::Explicit(expr) => expr.clone(),
-            };
+        let defaults = self.defaults;
+        let borrowed_atom_fn = if !borrows {
+            None
+        } else {
             Some(quote! {
-                if #(#binding.is_none())||* {
-                    let __default = #type_default;
-                    #(
-                        #binding = #binding.or(__deser::__derive::Some(__default.#name));
-                    )*
+                fn field_borrowed_atom(
+                    &mut self,
+                    __index: usize,
+                    __atom: __deser::Atom<'de>,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    match __index {
+                        #(#index => #borrowed_atoms,)*
+                        _ => __deser::__derive::Ok(()),
+                    }
                 }
             })
-        });
-        let nones = self
-            .attrs
-            .iter()
-            .map(|_| quote! { __deser::__derive::None });
-        let fieldname = self.attrs.iter().map(|x| &x.field().ident);
+        };
+
+        // with a container default the fields without a default of their
+        // own take the value of the default of the container
+        let container_default = match container_attrs.default() {
+            Some(default) if !default_binding.is_empty() => {
+                let type_default = match default {
+                    TypeDefault::Implicit => quote! {
+                        <#ident #ty_generics as __deser::__derive::Default>::default()
+                    },
+                    TypeDefault::Explicit(expr) => expr.clone(),
+                };
+                let binding = &default_binding;
+                let name = &default_name;
+                Some(quote! {
+                    if #(#binding.is_none())||* {
+                        let __default = #type_default;
+                        #(
+                            #binding = #binding.or(__deser::__derive::Some(__default.#name));
+                        )*
+                    }
+                })
+            }
+            _ => None,
+        };
         let skipped_name = self.skipped_name;
         let skipped_value = self.skipped_value;
         let key_matcher = self.key_matcher;
@@ -1494,31 +1437,32 @@ pub fn derive_enum(
         ));
     }
     let ident = &input.ident;
-    let var_idents = enumeration
-        .variants
-        .iter()
-        .map(|variant| match variant.fields {
-            syn::Fields::Unit => Ok(&variant.ident),
-            _ => Err(syn::Error::new_spanned(
-                variant,
-                "Invalid variant: only simple enum variants without fields are supported",
-            )),
-        })
-        .collect::<syn::Result<Vec<_>>>()?;
-    let attrs = enumeration
-        .variants
-        .iter()
-        .map(EnumVariantAttrs::of)
-        .collect::<syn::Result<Vec<_>>>()?;
+    let (var_idents, attrs) = crate::enums::unit_variants(enumeration)?;
 
     let mut seen_names = HashSet::new();
     let mut matcher = Vec::new();
     let mut variant_arms = Vec::new();
-    for (index, (x, var_ident)) in attrs.iter().zip(var_idents.iter()).enumerate() {
-        let names = std::iter::once(x.name(&container_attrs))
-            .chain(x.aliases(&container_attrs))
-            .collect::<Vec<_>>();
-        for name in &names {
+    // the names of the variants that can be deserialized
+    let mut names = Vec::new();
+    let mut deny_unknown_fields = None;
+    let mut default = None;
+    let mut other = None;
+    let mut other_count = 0;
+    for (index, x) in attrs.iter().enumerate() {
+        let var_ident = var_idents[index];
+        if deny_unknown_fields.is_none() && x.deny_unknown_fields() {
+            deny_unknown_fields = Some(x);
+        }
+        if default.is_none() && x.default() {
+            default = Some(x);
+        }
+        if x.other() {
+            other.get_or_insert(index);
+            other_count += 1;
+        }
+        let mut variant_names = vec![x.name(&container_attrs)];
+        variant_names.extend(x.aliases(&container_attrs));
+        for name in &variant_names {
             if !seen_names.insert(name.clone()) {
                 return Err(syn::Error::new_spanned(
                     x.variant(),
@@ -1532,8 +1476,9 @@ pub fn derive_enum(
         if x.skip_deserializing() {
             continue;
         }
+        names.push(variant_names[0].str_expr());
         matcher.push(VariantName::tag_arms(
-            &names,
+            &variant_names,
             quote! { __deser::__derive::Some(#index) },
         ));
         variant_arms.push(quote! {
@@ -1541,14 +1486,14 @@ pub fn derive_enum(
         });
     }
 
-    if let Some(attrs) = attrs.iter().find(|x| x.deny_unknown_fields()) {
+    if let Some(attrs) = deny_unknown_fields {
         return Err(syn::Error::new_spanned(
             attrs.variant(),
             "deny_unknown_fields on variants only has an effect on struct variants \
              (and unit variants of internally tagged enums)",
         ));
     }
-    if let Some(attrs) = attrs.iter().find(|x| x.default()) {
+    if let Some(attrs) = default {
         return Err(syn::Error::new_spanned(
             attrs.variant(),
             "default variants are only supported for internally and adjacently tagged enums",
@@ -1558,15 +1503,11 @@ pub fn derive_enum(
     let type_name = container_attrs.expecting();
     // atoms that are not the name of a variant are the other variant (if
     // there is one), or an error with the names
-    let other = match attrs.iter().position(|x| x.other()) {
+    let other = match other {
         Some(index) => quote! { __deser::__derive::Some(#index) },
         None => quote! { __deser::__derive::None },
     };
-    let names = attrs
-        .iter()
-        .filter(|x| !x.skip_deserializing())
-        .map(|x| x.name(&container_attrs).str_expr());
-    if attrs.iter().filter(|x| x.other()).count() > 1 {
+    if other_count > 1 {
         return Err(syn::Error::new(
             Span::call_site(),
             "only one variant can be marked as other",

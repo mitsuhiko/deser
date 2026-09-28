@@ -11,23 +11,23 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
         bounds: syn::punctuated::Punctuated::new(),
     };
 
-    let params = Some(syn::GenericParam::Lifetime(def))
-        .into_iter()
-        .chain(generics.params.iter().cloned().map(|mut param| {
-            match &mut param {
-                syn::GenericParam::Lifetime(param) => {
-                    param.bounds.push(bound.clone());
-                }
-                syn::GenericParam::Type(param) => {
-                    param
-                        .bounds
-                        .push(syn::TypeParamBound::Lifetime(bound.clone()));
-                }
-                syn::GenericParam::Const(_) => {}
+    let mut params = syn::punctuated::Punctuated::new();
+    params.push(syn::GenericParam::Lifetime(def));
+    for param in &generics.params {
+        let mut param = param.clone();
+        match &mut param {
+            syn::GenericParam::Lifetime(param) => {
+                param.bounds.push(bound.clone());
             }
-            param
-        }))
-        .collect();
+            syn::GenericParam::Type(param) => {
+                param
+                    .bounds
+                    .push(syn::TypeParamBound::Lifetime(bound.clone()));
+            }
+            syn::GenericParam::Const(_) => {}
+        }
+        params.push(param);
+    }
 
     syn::Generics {
         params,
@@ -41,15 +41,14 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
 /// used for functions that have more lifetime parameters than the type
 /// (such as `'de`).
 pub fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
-    let params = generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            syn::GenericParam::Type(param) => Some(&param.ident),
-            syn::GenericParam::Const(param) => Some(&param.ident),
-            syn::GenericParam::Lifetime(_) => None,
-        })
-        .collect::<Vec<_>>();
+    let mut params = Vec::new();
+    for param in &generics.params {
+        match param {
+            syn::GenericParam::Type(param) => params.push(&param.ident),
+            syn::GenericParam::Const(param) => params.push(&param.ident),
+            syn::GenericParam::Lifetime(_) => {}
+        }
+    }
     if params.is_empty() {
         TokenStream::new()
     } else {
@@ -79,17 +78,17 @@ pub fn with_slot_lifetime(generics: &syn::Generics) -> syn::Generics {
 /// All lifetimes of the type are bounded by `'de` so that borrowed data can
 /// be deserialized into them.
 pub fn with_de_lifetime(generics: &syn::Generics) -> syn::Result<syn::Generics> {
-    if let Some(lifetime) = generics.lifetimes().find(|x| x.lifetime.ident == "de") {
-        return Err(syn::Error::new_spanned(
-            lifetime,
-            "cannot derive Deserialize for types with a lifetime named 'de, \
-             it's used by the derive",
-        ));
+    let mut bounds = syn::punctuated::Punctuated::<_, syn::Token![+]>::new();
+    for lifetime in generics.lifetimes() {
+        if lifetime.lifetime.ident == "de" {
+            return Err(syn::Error::new_spanned(
+                lifetime,
+                "cannot derive Deserialize for types with a lifetime named 'de, \
+                 it's used by the derive",
+            ));
+        }
+        bounds.push(lifetime.lifetime.clone());
     }
-    let bounds = generics
-        .lifetimes()
-        .map(|x| x.lifetime.clone())
-        .collect::<syn::punctuated::Punctuated<_, syn::Token![+]>>();
     let def = syn::LifetimeParam {
         attrs: Vec::new(),
         lifetime: syn::Lifetime::new("'de", Span::call_site()),
@@ -114,16 +113,16 @@ pub fn where_clause_with_bound(
     bound: TokenStream,
     custom: Option<&[syn::WherePredicate]>,
 ) -> syn::WhereClause {
-    let new_predicates: Vec<syn::WherePredicate> = match custom {
-        Some(custom) => custom.to_vec(),
-        None => generics
-            .type_params()
-            .map(|param| {
+    let mut new_predicates: Vec<syn::WherePredicate> = Vec::new();
+    match custom {
+        Some(custom) => new_predicates.extend_from_slice(custom),
+        None => {
+            for param in generics.type_params() {
                 let param = &param.ident;
-                syn::parse_quote!(#param : #bound)
-            })
-            .collect(),
-    };
+                new_predicates.push(syn::parse_quote!(#param : #bound));
+            }
+        }
+    }
 
     let mut generics = generics.clone();
     generics
@@ -131,6 +130,27 @@ pub fn where_clause_with_bound(
         .predicates
         .extend(new_predicates);
     generics.where_clause.unwrap()
+}
+
+/// Returns the names of the type parameters.
+pub fn type_param_names(generics: &syn::Generics) -> HashSet<String> {
+    let mut rv = HashSet::new();
+    for param in generics.type_params() {
+        rv.insert(param.ident.to_string());
+    }
+    rv
+}
+
+/// Returns `true` if one of the names is an identifier in the tokens.
+pub fn mentions_any(tokens: TokenStream, names: &HashSet<String>) -> bool {
+    let mut idents = HashSet::new();
+    collect_idents(tokens, &mut idents);
+    for ident in &idents {
+        if names.contains(ident) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Collects all identifiers in a token stream.
@@ -193,17 +213,17 @@ pub fn where_clause_for_fields(
     custom: Option<&[syn::WherePredicate]>,
     fields: &[BoundField<'_>],
 ) -> syn::WhereClause {
-    let field_bounds = fields
-        .iter()
-        .filter_map(|x| x.bound)
-        .flatten()
-        .cloned()
-        .collect::<Vec<_>>();
-    if custom.is_some()
-        || fields
-            .iter()
-            .all(|x| x.adapter.is_none() && !x.skipped && x.bound.is_none())
-    {
+    let mut field_bounds = Vec::new();
+    let mut all_plain = true;
+    for field in fields {
+        if let Some(bound) = field.bound {
+            field_bounds.extend_from_slice(bound);
+        }
+        if field.adapter.is_some() || field.skipped || field.bound.is_some() {
+            all_plain = false;
+        }
+    }
+    if custom.is_some() || all_plain {
         let mut rv = where_clause_with_bound(generics, bound, custom);
         rv.predicates.extend(field_bounds);
         return rv;
@@ -224,10 +244,7 @@ pub fn where_clause_for_fields(
         }
     }
 
-    let params = generics
-        .type_params()
-        .map(|x| x.ident.to_string())
-        .collect::<HashSet<_>>();
+    let params = type_param_names(generics);
     let mut new_predicates: Vec<syn::WherePredicate> = Vec::new();
     for param in generics.type_params() {
         let name = param.ident.to_string();
@@ -246,9 +263,7 @@ pub fn where_clause_for_fields(
             _ => continue,
         };
         let ty = field.ty;
-        let mut idents = HashSet::new();
-        collect_idents(quote::quote! { #ty #adapter }, &mut idents);
-        if idents.iter().any(|x| params.contains(x)) {
+        if mentions_any(quote::quote! { #ty #adapter }, &params) {
             new_predicates.push(match adapter_lifetime {
                 Some(ref lifetime) => syn::parse_quote!(#adapter : #adapter_trait<#lifetime, #ty>),
                 None => syn::parse_quote!(#adapter : #adapter_trait<#ty>),

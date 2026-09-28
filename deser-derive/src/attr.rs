@@ -2,6 +2,8 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use syn::meta::ParseNestedMeta;
 
+use crate::bound::BoundField;
+
 /// The direction of a derive.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Direction {
@@ -57,11 +59,17 @@ impl Adapters {
     /// adapter.
     pub fn uses_derived(&self, direction: Direction) -> bool {
         fn contains_derived(tokens: TokenStream) -> bool {
-            tokens.into_iter().any(|token| match token {
-                TokenTree::Ident(ref ident) => ident == "Derived",
-                TokenTree::Group(group) => contains_derived(group.stream()),
-                _ => false,
-            })
+            for token in tokens {
+                let found = match token {
+                    TokenTree::Ident(ref ident) => ident == "Derived",
+                    TokenTree::Group(group) => contains_derived(group.stream()),
+                    _ => false,
+                };
+                if found {
+                    return true;
+                }
+            }
+            false
         }
         self.get(direction)
             .is_some_and(|ty| contains_derived(ty.to_token_stream()))
@@ -93,7 +101,7 @@ impl<T: Clone> Directional<T> {
         &mut self,
         meta: &ParseNestedMeta,
         name: &str,
-        parse: impl Fn(&ParseNestedMeta) -> syn::Result<T>,
+        parse: fn(&ParseNestedMeta) -> syn::Result<T>,
     ) -> syn::Result<()> {
         if !meta.input.peek(syn::token::Paren) {
             if self.ser.is_some() || self.de.is_some() {
@@ -188,7 +196,7 @@ impl AdapterAttrs {
         &mut self,
         name: &str,
         meta: &ParseNestedMeta,
-        parse: impl FnOnce(&ParseNestedMeta) -> syn::Result<syn::Type>,
+        parse: &dyn Fn(&ParseNestedMeta) -> syn::Result<syn::Type>,
     ) -> syn::Result<bool> {
         let slot = match name {
             "as" => &mut self.both,
@@ -206,10 +214,7 @@ impl AdapterAttrs {
         match self.both {
             Some(both) => {
                 if self.ser.is_some() || self.de.is_some() {
-                    let span = seen
-                        .iter()
-                        .find(|x| x.name == "serialize_as" || x.name == "deserialize_as")
-                        .map_or_else(Span::call_site, |x| x.span);
+                    let span = span_of_any(seen, &["serialize_as", "deserialize_as"]);
                     return Err(syn::Error::new(
                         span,
                         "`as` cannot be combined with `serialize_as` or `deserialize_as`",
@@ -317,6 +322,11 @@ impl RenameAll {
         }
     }
 
+    /// Parses the value of `rename_all = "..."`.
+    fn parse_meta(meta: &ParseNestedMeta) -> syn::Result<RenameAll> {
+        RenameAll::parse(&parse_lit_str(meta)?)
+    }
+
     fn parse(lit: &syn::LitStr) -> syn::Result<RenameAll> {
         match lit.value().as_str() {
             "lowercase" => Ok(RenameAll::LowerCase),
@@ -389,36 +399,33 @@ impl Name {
     ///
     /// Expressions cannot be used as patterns, they are compared in guards.
     pub fn str_arms(names: &[Name], result: TokenStream) -> TokenStream {
-        name_arms(
-            names,
-            result,
-            |name| quote! { #name },
-            |binding| quote! { #binding },
-        )
+        let mut refs = Vec::with_capacity(names.len());
+        for name in names {
+            refs.push(name);
+        }
+        name_arms(&refs, result, None)
     }
 }
 
 /// Returns match arms for names that evaluate to `result`.
 ///
-/// `lit_pattern` makes a pattern for a literal, `binding_pattern` a pattern
-/// that binds the `&str` to compare expressions with.
-fn name_arms(
-    names: &[Name],
-    result: TokenStream,
-    lit_pattern: impl Fn(&str) -> TokenStream,
-    binding_pattern: impl Fn(&syn::Ident) -> TokenStream,
-) -> TokenStream {
-    let lits = names
-        .iter()
-        .filter_map(|x| x.as_lit())
-        .map(&lit_pattern)
-        .collect::<Vec<_>>();
+/// With a `wrapper` the names are matched as `wrapper(name)` instead of the
+/// names themselves.  Expressions are compared by binding the `&str`.
+fn name_arms(names: &[&Name], result: TokenStream, wrapper: Option<TokenStream>) -> TokenStream {
+    let wrap = |tokens: TokenStream| match wrapper {
+        Some(ref wrapper) => quote! { #wrapper(#tokens) },
+        None => tokens,
+    };
+    let mut lits = Vec::new();
+    let mut exprs = Vec::new();
+    for name in names {
+        match name {
+            Name::Lit(lit) => lits.push(wrap(quote! { #lit })),
+            Name::Expr(expr) => exprs.push(expr),
+        }
+    }
     let binding = syn::Ident::new("__name", Span::call_site());
-    let pattern = binding_pattern(&binding);
-    let exprs = names.iter().filter_map(|x| match x {
-        Name::Expr(expr) => Some(expr),
-        Name::Lit(_) => None,
-    });
+    let pattern = wrap(quote! { #binding });
     let mut rv = if lits.is_empty() {
         TokenStream::new()
     } else {
@@ -632,14 +639,15 @@ fn unsupported_attr(meta: &ParseNestedMeta, name: &str, level: AttrLevel) -> syn
     if let Some(hint) = serde_hint(name) {
         return meta.error(format!("unsupported attribute `{}`: {}", name, hint));
     }
-    let levels = AttrLevel::ALL
-        .iter()
-        .filter(|x| x.attrs().contains(&name))
-        .map(|x| match x {
-            AttrLevel::Container => "types",
-            other => other.describe(),
-        })
-        .collect::<Vec<_>>();
+    let mut levels = Vec::new();
+    for other in AttrLevel::ALL {
+        if other.attrs().contains(&name) {
+            levels.push(match other {
+                AttrLevel::Container => "types",
+                other => other.describe(),
+            });
+        }
+    }
     if !levels.is_empty() {
         return meta.error(format!(
             "`{}` is not supported on {}, it's supported on {}",
@@ -649,23 +657,23 @@ fn unsupported_attr(meta: &ParseNestedMeta, name: &str, level: AttrLevel) -> syn
         ));
     }
     // typos are likely, suggest an attribute with a similar name
-    if let Some(similar) = level
-        .attrs()
-        .iter()
-        .map(|x| (edit_distance(name, x), x))
-        .filter(|(distance, _)| *distance <= 2)
-        .min_by_key(|(distance, _)| *distance)
-    {
+    let mut similar: Option<(usize, &str)> = None;
+    for attr in level.attrs() {
+        let distance = edit_distance(name, attr);
+        if distance <= 2 && similar.is_none_or(|(best, _)| distance < best) {
+            similar = Some((distance, attr));
+        }
+    }
+    if let Some((_, similar)) = similar {
         return meta.error(format!(
             "unknown attribute `{}`, did you mean `{}`?",
-            name, similar.1
+            name, similar
         ));
     }
-    let supported = level
-        .attrs()
-        .iter()
-        .map(|x| format!("`{}`", x))
-        .collect::<Vec<_>>();
+    let mut supported = Vec::new();
+    for attr in level.attrs() {
+        supported.push(format!("`{}`", attr));
+    }
     meta.error(format!(
         "unknown attribute `{}`, the attributes of {} are {}",
         name,
@@ -676,8 +684,15 @@ fn unsupported_attr(meta: &ParseNestedMeta, name: &str, level: AttrLevel) -> syn
 
 /// Returns the number of edits to turn one string into another.
 fn edit_distance(a: &str, b: &str) -> usize {
-    let b = b.chars().collect::<Vec<_>>();
-    let mut row = (0..=b.len()).collect::<Vec<_>>();
+    let mut chars = Vec::new();
+    for ch in b.chars() {
+        chars.push(ch);
+    }
+    let b = chars;
+    let mut row = Vec::with_capacity(b.len() + 1);
+    for idx in 0..=b.len() {
+        row.push(idx);
+    }
     for (i, ca) in a.chars().enumerate() {
         let mut prev = row[0];
         row[0] = i + 1;
@@ -716,7 +731,7 @@ fn join_list<T: AsRef<str>>(items: &[T], last: &str) -> String {
 /// not plain identifiers are rejected.  Returns the items that were seen.
 fn parse_deser_attrs(
     attrs: &[syn::Attribute],
-    mut logic: impl FnMut(&str, &ParseNestedMeta) -> syn::Result<()>,
+    logic: &mut dyn FnMut(&str, &ParseNestedMeta) -> syn::Result<()>,
 ) -> syn::Result<Vec<SeenAttr>> {
     let mut seen = Vec::new();
     for attr in attrs {
@@ -736,6 +751,30 @@ fn parse_deser_attrs(
         })?;
     }
     Ok(seen)
+}
+
+/// Returns the first attribute that was used with one of the names.
+fn find_seen<'s>(seen: &'s [SeenAttr], names: &[&str]) -> Option<&'s SeenAttr> {
+    seen.iter().find(|x| names.contains(&x.name.as_str()))
+}
+
+/// Returns the span of the first attribute with one of the names.
+fn span_of_any(seen: &[SeenAttr], names: &[&str]) -> Span {
+    match find_seen(seen, names) {
+        Some(attr) => attr.span,
+        None => Span::call_site(),
+    }
+}
+
+/// Rejects the attributes that have no effect together with another.
+fn check_conflict(seen: &[SeenAttr], name: &str, others: &[&str]) -> syn::Result<()> {
+    match find_seen(seen, others) {
+        Some(other) => Err(syn::Error::new(
+            other.span,
+            format!("`{}` has no effect together with `{}`", other.name, name),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Stores a value in a slot that must not have been filled before.
@@ -807,24 +846,23 @@ fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
 
 /// Replaces `_` in an adapter type with the `Same` adapter.
 fn replace_infer(tokens: TokenStream) -> TokenStream {
-    tokens
-        .into_iter()
-        .flat_map(|token| -> TokenStream {
-            match token {
-                TokenTree::Ident(ref ident) if ident == "_" => {
-                    let span = ident.span();
-                    quote::quote_spanned! { span=> __deser::adapters::Same }
-                }
-                TokenTree::Group(group) => {
-                    let mut new_group =
-                        proc_macro2::Group::new(group.delimiter(), replace_infer(group.stream()));
-                    new_group.set_span(group.span());
-                    TokenTree::Group(new_group).into()
-                }
-                other => other.into(),
+    let mut rv = TokenStream::new();
+    for token in tokens {
+        match token {
+            TokenTree::Ident(ref ident) if ident == "_" => {
+                let span = ident.span();
+                rv.extend(quote::quote_spanned! { span=> __deser::adapters::Same });
             }
-        })
-        .collect()
+            TokenTree::Group(group) => {
+                let mut new_group =
+                    proc_macro2::Group::new(group.delimiter(), replace_infer(group.stream()));
+                new_group.set_span(group.span());
+                rv.extend([TokenTree::Group(new_group)]);
+            }
+            other => rv.extend([other]),
+        }
+    }
+    rv
 }
 
 /// Parses the value of `as = Type`.
@@ -877,12 +915,20 @@ fn parse_container_adapter(meta: &ParseNestedMeta, ident: &syn::Ident) -> syn::R
         && let Some(segment) = path.path.segments.last()
         && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
     {
-        candidates.extend(args.args.iter().filter_map(|arg| match arg {
-            syn::GenericArgument::Type(ty) => Some(ty),
-            _ => None,
-        }));
+        for arg in &args.args {
+            if let syn::GenericArgument::Type(ty) = arg {
+                candidates.push(ty);
+            }
+        }
     }
-    if let Some(bad) = candidates.into_iter().find(|x| is_own_impl(x, ident)) {
+    let mut bad = None;
+    for candidate in candidates {
+        if is_own_impl(candidate, ident) {
+            bad = Some(candidate);
+            break;
+        }
+    }
+    if let Some(bad) = bad {
         let what = match bad {
             syn::Type::Infer(_) => "`_`".to_string(),
             _ => format!("`{}`", bad.to_token_stream()).replace(' ', ""),
@@ -933,7 +979,11 @@ fn parse_bound(meta: &ParseNestedMeta) -> syn::Result<Vec<syn::WherePredicate>> 
             &content,
         )?;
     reject_self(predicates.to_token_stream())?;
-    Ok(predicates.into_iter().collect())
+    let mut rv = Vec::new();
+    for predicate in predicates {
+        rv.push(predicate);
+    }
+    Ok(rv)
 }
 
 /// Parses `default` or `default = expr`.
@@ -996,19 +1046,16 @@ impl<'a> ContainerAttrs<'a> {
         let mut rename_all = Directional::default();
         let mut rename_all_fields = Directional::default();
 
-        let seen = parse_deser_attrs(&input.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&input.attrs, &mut |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
-                adapters.parse(name, meta, |meta| {
+                adapters.parse(name, meta, &|meta| {
                     parse_container_adapter(meta, &input.ident)
                 })?;
                 Ok(())
             }
-            "rename_all" => {
-                rename_all.parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))
-            }
+            "rename_all" => rename_all.parse(meta, name, RenameAll::parse_meta),
             "rename_all_fields" => {
-                rename_all_fields
-                    .parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))?;
+                rename_all_fields.parse(meta, name, RenameAll::parse_meta)?;
                 if !is_enum {
                     return Err(meta.error(
                         "rename_all_fields is only supported on enums, use rename_all on structs",
@@ -1205,8 +1252,14 @@ impl<'a> ContainerAttrs<'a> {
     /// Aliases that are the same as the name of the field are skipped.
     pub fn field_aliases(&self, field: &syn::Field, name: &Name) -> Vec<Name> {
         let ident = field.ident.as_ref().unwrap().to_string();
-        let styles = self.alias_all.iter().map(|x| x.apply_to_field(&ident));
-        unique_aliases(styles, name)
+        let mut rv: Vec<Name> = Vec::new();
+        for style in &self.alias_all {
+            let alias = Name::Lit(style.apply_to_field(&ident));
+            if alias != *name && !rv.contains(&alias) {
+                rv.push(alias);
+            }
+        }
+        rv
     }
 
     /// Returns the aliases of a variant from `alias_all`.
@@ -1215,8 +1268,8 @@ impl<'a> ContainerAttrs<'a> {
     pub fn variant_aliases(&self, variant: &syn::Variant, name: &VariantName) -> Vec<VariantName> {
         let ident = variant.ident.to_string();
         let mut rv: Vec<VariantName> = Vec::new();
-        for alias in self.alias_all.iter().map(|x| x.apply_to_variant(&ident)) {
-            let alias = VariantName::Str(Name::Lit(alias));
+        for style in &self.alias_all {
+            let alias = VariantName::Str(Name::Lit(style.apply_to_variant(&ident)));
             if alias != *name && !rv.contains(&alias) {
                 rv.push(alias);
             }
@@ -1244,7 +1297,7 @@ impl<'a> ContainerAttrs<'a> {
                 &["rename_all", "alias_all", "default", "deny_unknown_fields"]
             }
         };
-        match self.seen.iter().find(|x| names.contains(&x.name.as_str())) {
+        match find_seen(&self.seen, names) {
             Some(seen) => Err(syn::Error::new(
                 seen.span,
                 format!("`{}` has no effect on {}", seen.name, kind),
@@ -1255,10 +1308,7 @@ impl<'a> ContainerAttrs<'a> {
 
     /// Returns the span of an attribute that was used on the container.
     pub fn span_of(&self, name: &str) -> Span {
-        self.seen
-            .iter()
-            .find(|x| x.name == name)
-            .map_or_else(Span::call_site, |x| x.span)
+        span_of_any(&self.seen, &[name])
     }
 
     /// Returns `true` if the struct is serialized and deserialized like its
@@ -1298,18 +1348,28 @@ impl<'a> ContainerAttrs<'a> {
     /// Only string literals can be compared, keys from constants are
     /// compared at runtime (the tag wins).
     fn check_tag_keys(&self) -> syn::Result<()> {
-        let keys = (self.tag.iter().map(|x| (x, "tag")))
-            .chain(self.tag_aliases.iter().map(|x| (x, "tag_alias")))
-            .chain(self.content.iter().map(|x| (x, "content")))
-            .chain(self.content_aliases.iter().map(|x| (x, "content_alias")))
-            .filter_map(|(name, attr)| Some((name.as_lit()?, attr)))
-            .collect::<Vec<_>>();
-        for (idx, (key, attr)) in keys.iter().enumerate() {
-            if keys[..idx].iter().any(|(other, _)| other == key) {
-                return Err(syn::Error::new(
-                    self.span_of(attr),
-                    format!("`{}` is used more than once as tag or content key", key),
-                ));
+        let mut keys: Vec<(&str, &str)> = Vec::new();
+        let groups: [(&[Name], &str); 4] = [
+            (self.tag.as_slice(), "tag"),
+            (&self.tag_aliases, "tag_alias"),
+            (self.content.as_slice(), "content"),
+            (&self.content_aliases, "content_alias"),
+        ];
+        for (names, attr) in groups {
+            for name in names {
+                if let Some(lit) = name.as_lit() {
+                    keys.push((lit, attr));
+                }
+            }
+        }
+        for (idx, &(key, attr)) in keys.iter().enumerate() {
+            for &(other, _) in &keys[..idx] {
+                if other == key {
+                    return Err(syn::Error::new(
+                        self.span_of(attr),
+                        format!("`{}` is used more than once as tag or content key", key),
+                    ));
+                }
             }
         }
         Ok(())
@@ -1318,18 +1378,19 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the name of a variant if variants are named by their
     /// discriminants.
     pub fn discriminant_name(&self, variant: &syn::Variant) -> Option<&VariantName> {
-        self.discriminants
-            .as_ref()?
-            .iter()
-            .find(|(ident, _)| **ident == variant.ident)
-            .map(|(_, name)| name)
+        for (ident, name) in self.discriminants.as_ref()? {
+            if **ident == variant.ident {
+                return Some(name);
+            }
+        }
+        None
     }
 
     /// Rejects the attributes that name variants in other ways than their
     /// discriminants.
     fn check_repr(&self, input: &syn::DeriveInput) -> syn::Result<()> {
         for attr in ["rename_all", "alias_all", "untagged"] {
-            if let Some(seen) = self.seen.iter().find(|x| x.name == attr) {
+            if let Some(seen) = find_seen(&self.seen, &[attr]) {
                 return Err(syn::Error::new(
                     seen.span,
                     format!("`{}` has no effect together with `repr`", attr),
@@ -1339,7 +1400,7 @@ impl<'a> ContainerAttrs<'a> {
         if let syn::Data::Enum(ref data) = input.data {
             for variant in &data.variants {
                 let seen = EnumVariantAttrs::of(variant)?.into_seen();
-                if let Some(seen) = seen.iter().find(|x| x.name == "rename") {
+                if let Some(seen) = find_seen(&seen, &["rename"]) {
                     return Err(syn::Error::new(
                         seen.span,
                         "variants are named by their discriminants with `repr`",
@@ -1388,17 +1449,6 @@ impl<'a> ContainerAttrs<'a> {
     }
 }
 
-/// Returns the aliases that differ from the name, without duplicates.
-fn unique_aliases(aliases: impl Iterator<Item = String>, name: &Name) -> Vec<Name> {
-    let mut rv: Vec<Name> = Vec::new();
-    for alias in aliases {
-        if name.as_lit() != Some(alias.as_str()) && !rv.iter().any(|x| x.as_lit() == Some(&alias)) {
-            rv.push(Name::Lit(alias));
-        }
-    }
-    rv
-}
-
 /// The attributes of unnamed fields (of newtype structs and tuple variants).
 pub struct UnnamedFieldAttrs {
     seen: Vec<SeenAttr>,
@@ -1423,8 +1473,8 @@ impl UnnamedFieldAttrs {
         };
         let mut skip = false;
         let mut adapters = AdapterAttrs::default();
-        let seen = parse_deser_attrs(&field.attrs, |name, meta| {
-            if adapters.parse(name, meta, parse_adapter)? || rv.bounds.parse(name, meta)? {
+        let seen = parse_deser_attrs(&field.attrs, &mut |name, meta| {
+            if adapters.parse(name, meta, &parse_adapter)? || rv.bounds.parse(name, meta)? {
                 return Ok(());
             }
             match name {
@@ -1443,15 +1493,7 @@ impl UnnamedFieldAttrs {
         rv.adapters = adapters.finish(&rv.seen)?;
 
         // attributes that have no effect with the skips are rejected
-        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
-            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
-                Some(other) => Err(syn::Error::new(
-                    other.span,
-                    format!("`{}` has no effect together with `{}`", other.name, name),
-                )),
-                None => Ok(()),
-            }
-        };
+        let conflict = |name: &str, others: &[&str]| check_conflict(&rv.seen, name, others);
         if skip {
             if rv.skip_serializing || rv.skip_deserializing {
                 return Err(syn::Error::new_spanned(
@@ -1473,10 +1515,7 @@ impl UnnamedFieldAttrs {
         // missing (only skipped)
         if rv.default.is_some() && !rv.skip_deserializing {
             return Err(syn::Error::new(
-                rv.seen
-                    .iter()
-                    .find(|x| x.name == "default")
-                    .map_or_else(Span::call_site, |x| x.span),
+                span_of_any(&rv.seen, &["default"]),
                 "`default` on unnamed fields is the value of skipped fields, it requires \
                  `skip` or `skip_deserializing`",
             ));
@@ -1565,9 +1604,9 @@ impl<'a> FieldAttrs<'a> {
         let mut skip = false;
         let mut adapters = AdapterAttrs::default();
 
-        let seen = parse_deser_attrs(&field.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&field.attrs, &mut |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
-                adapters.parse(name, meta, parse_adapter)?;
+                adapters.parse(name, meta, &parse_adapter)?;
                 Ok(())
             }
             "bound" | "serialize_bound" | "deserialize_bound" => {
@@ -1599,15 +1638,7 @@ impl<'a> FieldAttrs<'a> {
         rv.adapters = adapters.finish(&rv.seen)?;
 
         // attributes that have no effect with the skips are rejected
-        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
-            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
-                Some(other) => Err(syn::Error::new(
-                    other.span,
-                    format!("`{}` has no effect together with `{}`", other.name, name),
-                )),
-                None => Ok(()),
-            }
-        };
+        let conflict = |name: &str, others: &[&str]| check_conflict(&rv.seen, name, others);
         if skip {
             if rv.skip_serializing || rv.skip_deserializing {
                 return Err(syn::Error::new_spanned(
@@ -1676,8 +1707,37 @@ impl<'a> FieldAttrs<'a> {
         Ok(rv)
     }
 
-    pub fn field(&self) -> &syn::Field {
+    /// Returns the attributes of all fields.
+    pub fn of_all(
+        fields: &'a syn::punctuated::Punctuated<syn::Field, syn::Token![,]>,
+    ) -> syn::Result<Vec<FieldAttrs<'a>>> {
+        let mut rv = Vec::with_capacity(fields.len());
+        for field in fields {
+            rv.push(FieldAttrs::of(field)?);
+        }
+        Ok(rv)
+    }
+
+    pub fn field(&self) -> &'a syn::Field {
         self.field
+    }
+
+    /// Returns `true` if the field is skipped in the direction.
+    pub fn skipped(&self, direction: Direction) -> bool {
+        match direction {
+            Direction::Serialize => self.skip_serializing,
+            Direction::Deserialize => self.skip_deserializing,
+        }
+    }
+
+    /// Returns the field for the purpose of bound inference.
+    pub fn bound_field(&self, direction: Direction) -> BoundField<'_> {
+        BoundField {
+            ty: &self.field.ty,
+            adapter: self.adapters.get(direction),
+            skipped: self.skipped(direction),
+            bound: self.bounds.get(direction),
+        }
     }
 
     /// Returns the attributes that were used on the field.
@@ -1842,25 +1902,27 @@ impl VariantName {
     /// Returns match arms for names as `__deser::__derive::Tag` that
     /// evaluate to `result`.
     pub fn tag_arms(names: &[VariantName], result: TokenStream) -> TokenStream {
-        let strs = names
-            .iter()
-            .filter_map(|x| x.as_str().cloned())
-            .collect::<Vec<_>>();
+        let mut strs = Vec::new();
+        let mut others = Vec::new();
+        for name in names {
+            match name {
+                VariantName::Str(name) => strs.push(name),
+                VariantName::U64(value) => {
+                    others.push(quote! { __deser::__derive::Tag::U64(#value) })
+                }
+                VariantName::I64(value) => {
+                    others.push(quote! { __deser::__derive::Tag::I64(#value) })
+                }
+                VariantName::Bool(value) => {
+                    others.push(quote! { __deser::__derive::Tag::Bool(#value) })
+                }
+            }
+        }
         let mut rv = name_arms(
             &strs,
             result.clone(),
-            |name| quote! { __deser::__derive::Tag::Str(#name) },
-            |binding| quote! { __deser::__derive::Tag::Str(#binding) },
+            Some(quote! { __deser::__derive::Tag::Str }),
         );
-        let others = names
-            .iter()
-            .filter_map(|x| match x {
-                VariantName::Str(_) => None,
-                VariantName::U64(value) => Some(quote! { __deser::__derive::Tag::U64(#value) }),
-                VariantName::I64(value) => Some(quote! { __deser::__derive::Tag::I64(#value) }),
-                VariantName::Bool(value) => Some(quote! { __deser::__derive::Tag::Bool(#value) }),
-            })
-            .collect::<Vec<_>>();
         if !others.is_empty() {
             rv.extend(quote! { #(#others)|* => #result, });
         }
@@ -1981,11 +2043,10 @@ impl<'a> EnumVariantAttrs<'a> {
         };
 
         let mut skip = false;
-        let seen = parse_deser_attrs(&variant.attrs, |name, meta| match name {
+        let seen = parse_deser_attrs(&variant.attrs, &mut |name, meta| match name {
             "rename" => rv.rename.parse(meta, name, VariantName::parse),
             "rename_all" => {
-                rv.rename_all
-                    .parse(meta, name, |meta| RenameAll::parse(&parse_lit_str(meta)?))?;
+                rv.rename_all.parse(meta, name, RenameAll::parse_meta)?;
                 if !matches!(variant.fields, syn::Fields::Named(_)) {
                     return Err(
                         meta.error("rename_all on variants renames the fields of struct variants")
@@ -2008,15 +2069,7 @@ impl<'a> EnumVariantAttrs<'a> {
         })?;
         rv.seen = seen;
 
-        let conflict = |name: &str, others: &[&str]| -> syn::Result<()> {
-            match rv.seen.iter().find(|x| others.contains(&x.name.as_str())) {
-                Some(other) => Err(syn::Error::new(
-                    other.span,
-                    format!("`{}` has no effect together with `{}`", other.name, name),
-                )),
-                None => Ok(()),
-            }
-        };
+        let conflict = |name: &str, others: &[&str]| check_conflict(&rv.seen, name, others);
         if skip {
             if rv.skip_serializing || rv.skip_deserializing {
                 return Err(syn::Error::new_spanned(

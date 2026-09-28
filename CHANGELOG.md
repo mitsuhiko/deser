@@ -960,6 +960,10 @@ All notable changes to deser are documented here.
   exists once per type of field.  100 derived structs and enums build 1.4
   times as fast in release mode and type check 17% faster.
   Deserializing structs is 2%-3% slower.
+- `deser-derive` compiles faster.  It uses loops instead of iterator
+  adapters which were instantiated for every closure, which leaves a
+  third less code for the compiler (101k instead of 153k lines of LLVM
+  IR).  The generated code is unchanged.
 
 ## 0.8.0
 
