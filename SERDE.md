@@ -13,7 +13,7 @@ formats, a fixed data model that is lossy when values have to be buffered, and
 recursion through the call stack.  Many of the related issues have been open for
 years.
 
-Unless marked otherwise, all issues linked below were open when this document
+Unless marked as closed, all issues linked below were open when this document
 was last updated (September 2026).  They are listed as a record of real problems
 people ran into, not as criticism of serde.  Some are feature requests which
 serde could accept, but most of them are hard to fix without changing the data
@@ -76,9 +76,9 @@ result if a type uses this feature, it will not work with `bincode`.
 
 **Related issues:**
 
-* [bincode: #[serde(flatten)] causes error SequenceMustHaveLength #245](https://github.com/bincode-org/bincode/issues/245)
-* [bincode:  Support serializing to Vec<u8> with unknown seq/map length #167](https://github.com/bincode-org/bincode/issues/167)
-* [postcard: #[serde(flatten)] causes serialization to fail #29](https://github.com/jamesmunns/postcard/issues/29)
+* [bincode: #[serde(flatten)] causes error SequenceMustHaveLength #245](https://github.com/bincode-org/bincode/issues/245) (closed)
+* [bincode:  Support serializing to Vec<u8> with unknown seq/map length #167](https://github.com/bincode-org/bincode/issues/167) (closed)
+* [postcard: #[serde(flatten)] causes serialization to fail #29](https://github.com/jamesmunns/postcard/issues/29) (closed)
 * [serde: Feedback request: How to handle unsupported "self-describing-only" attributes #2674](https://github.com/serde-rs/serde/issues/2674)
 
 ## Buffering Loses Information
@@ -169,6 +169,86 @@ No buffering is required.  This also means:
 * [serde: Feature request: #[flatten] on Option<SomeStruct> should raise error when only some fields are set #2793](https://github.com/serde-rs/serde/issues/2793)
 * [serde_json: A flattened Option masks parse errors inside the Option #644](https://github.com/serde-rs/json/issues/644)
 * [serde: default is ignored with flatten #2707](https://github.com/serde-rs/serde/issues/2707)
+
+## XML
+
+XML is where serde's data model is the biggest mismatch, and serde has
+declined to support XML specific needs ("Supporting XML-like documents is
+not a goal for serde").  The XML crates for serde (quick-xml and
+serde-xml-rs) keep running into the same problems, and their maintainers
+have pointed out that most of them cannot be fixed in the format:
+
+* **Text has no type.**  An XML deserializer only has strings and maps to
+  offer to `deserialize_any`.  Once serde buffers a value (flattening,
+  internally tagged and untagged enums) the type the field wanted is
+  gone and `<root a="-1"/>` no longer deserializes into an `i32`.
+  quick-xml documents internally tagged enums as unsupported and provides
+  a macro to write them by hand.  In deser text is a lexical atom which
+  the type parses, also after buffering, and the tag of an internally
+  tagged enum can be an attribute (`#[deser(tag = "@type")]`) that does
+  not need to come first.
+* **Repeated elements are not next to each other.**  A serde struct
+  sees each key once, so `<a/><b/><a/>` fails with a duplicate field error
+  for an `a: Vec<A>` field unless the format looks ahead and reorders the
+  elements.  quick-xml does this behind the `overlapped-lists` feature,
+  which buffers the skipped elements and, being a feature, is turned on
+  for everybody once a dependency enables it.  In deser elements are
+  multimaps: collection fields collect every occurrence of their key and
+  the format does not need to group them.
+* **Optional elements are decided by the format.**  Serde asks the format
+  if an `Option` is `None` before the type inside is known, so `<n/>`
+  cannot be `None` for an `Option<u32>` and `Some("")` for an
+  `Option<String>`.  In deser the type decides: an empty element is
+  `None` for optionals of types that do not accept the empty text.
+* **Sequences cannot be flattened.**  Mixed content
+  (`<p>x <b>y</b> z</p>`) and lists of `xs:choice` elements need a field
+  with the magic name `$value` whose meaning depends on where it's used,
+  and recursive enums that use it overflow the stack in quick-xml.
+  deser-xml's `Mixed<T>` is a flattened field that receives text and
+  child elements as values in document order.
+* **Namespaces cannot be expressed.**  Serde has no way to pass the
+  namespace of a name, so names are written with the prefix the document
+  happens to use.  deser-xml resolves names into `{uri}local` if asked to,
+  independent of the prefixes.  Since [attributes are Rust](#attributes-are-rust)
+  these names can be written with macros
+  (`#[deser(rename = atom!("title"))]`) instead of repeating the URI.
+* **Positions and nesting.**  Getting the location of a value out of a
+  deserializer requires changes to serde, and deeply nested documents
+  overflow the stack unless the format limits the depth.  deser-xml errors
+  carry the line and column also in buffered values, and the depth limit
+  (128 by default) is a setting, not a protection of the stack.
+
+One problem deser shares: attributes and text are keys with a prefix
+(`@href`) and a special name (`$text`), like in quick-xml.  Both can be
+changed on the format (`attribute_prefix`, `text_key`), but a type that
+uses them has these names in other formats too.
+
+**Related issues:**
+
+* [serde: Advanced #[serde(rename="", target="xml")] impl #1152](https://github.com/serde-rs/serde/issues/1152) (closed)
+* [serde: Add namespace support #2877](https://github.com/serde-rs/serde/issues/2877)
+* [serde: Repeated, Interleaved Tags in XML #1725](https://github.com/serde-rs/serde/issues/1725) (closed)
+* [serde: Deserialization of seperated sequences #1113](https://github.com/serde-rs/serde/issues/1113) (closed)
+* [serde: Allow to flatten sequences/tuples #1905](https://github.com/serde-rs/serde/issues/1905)
+* [serde: Flatten enums with vectors deserialized incorrectly #1894](https://github.com/serde-rs/serde/issues/1894)
+* [quick-xml: `#[serde(flatten)]` does not work for different types #286](https://github.com/tafia/quick-xml/issues/286) (closed)
+* [quick-xml: Attribute doesn't treated as integer. #433](https://github.com/tafia/quick-xml/issues/433) (closed)
+* [quick-xml: Deserializing tagged enum derails the parser #586](https://github.com/tafia/quick-xml/issues/586) (closed)
+* [quick-xml: Deserializing to variant vector fields fails #288](https://github.com/tafia/quick-xml/issues/288)
+* [quick-xml: Field `$value` is consumed too early when deserializing nested externally/internally tagged enums #905](https://github.com/tafia/quick-xml/issues/905) (closed)
+* [quick-xml: Deserialization behavior for Vec #177](https://github.com/tafia/quick-xml/issues/177) (closed)
+* [quick-xml: Problem with `overlapped-lists` that is enabled by the dependency #885](https://github.com/tafia/quick-xml/issues/885)
+* [quick-xml: Option<bool> doesn't (de)serialize properly with serde #497](https://github.com/tafia/quick-xml/issues/497) (closed)
+* [quick-xml: Help deserialize mixed tags and string in body $value (html text formatting) #257](https://github.com/tafia/quick-xml/issues/257)
+* [quick-xml: Deserialization of enum variant which recursively refers to itself failed with stackoverflow #819](https://github.com/tafia/quick-xml/issues/819)
+* [quick-xml: serde Deserializer has no recursion-depth limit #978](https://github.com/tafia/quick-xml/issues/978) (closed)
+* [quick-xml: Struct namespaces with Serde #218](https://github.com/tafia/quick-xml/issues/218)
+* [quick-xml: Add ability to get spans of deserialized values #695](https://github.com/tafia/quick-xml/issues/695)
+* [serde-xml-rs: Members of flattened structs are not converted #137](https://github.com/RReverser/serde-xml-rs/issues/137)
+* [serde-xml-rs: Internally tagged enums are confused #26](https://github.com/RReverser/serde-xml-rs/issues/26)
+* [serde-xml-rs: Deserializing Vec fails if there's something in between #55](https://github.com/RReverser/serde-xml-rs/issues/55) (closed)
+* [serde-xml-rs: Mixed content with text and elements #227](https://github.com/RReverser/serde-xml-rs/issues/227)
+* [serde-xml-rs: Namespaces only work with hardcoded prefixes #248](https://github.com/RReverser/serde-xml-rs/issues/248)
 
 ## Internal Data Format
 

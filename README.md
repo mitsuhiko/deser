@@ -92,6 +92,12 @@ Things it can fix that is tricky for Serde to address:
   in-place updates and unknown field collection are built in, and
   validation ([`deser-validate`](https://docs.rs/deser-validate)) is an
   adapter as well: `#[deser(as = Check<NonZero>)]`.
+* **XML works like the other formats.**  Repeated elements fill `Vec<T>`
+  fields also if other elements are between them, attributes and text
+  are parsed by the type they go into (also when flattened or in tagged
+  enums, whose tag can be an attribute), mixed content keeps its order,
+  namespaces can be matched regardless of their prefixes and errors have
+  a line and column.
 
 [SERDE.md](https://github.com/mitsuhiko/deser/blob/main/SERDE.md) goes
 through these in detail and links the open serde issues they correspond to.
