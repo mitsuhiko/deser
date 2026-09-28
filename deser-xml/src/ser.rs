@@ -3,11 +3,29 @@ use std::fmt::Write as _;
 
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
+use deser_core::hints::Layout;
 use deser_core::ser::{Describe, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
 use crate::de::XML_NAMESPACE;
+use crate::mixed::KeepsWhitespace;
+
+/// How the output is indented.
+///
+/// See [`SerializerConfig::indent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum Indent {
+    /// No indentation, the document is written on a single line.
+    #[default]
+    None,
+    /// Child elements on lines of their own, indented by the given number
+    /// of spaces per level.
+    Spaces(usize),
+    /// Child elements on lines of their own, indented by a tab per level.
+    Tab,
+}
 
 /// Configures how values are serialized to XML.
 ///
@@ -51,12 +69,16 @@ use crate::de::XML_NAMESPACE;
 ///     r#"<feed><link href="/a">A &amp; B</link></feed>"#
 /// );
 /// ```
+///
+/// By default the output is a single line, [`indent`](Self::indent) writes
+/// child elements on lines of their own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
     names: Names,
     root: Option<&'static str>,
     declaration: bool,
     bytes: BytesFormat,
+    indent: Indent,
 }
 
 impl Default for SerializerConfig {
@@ -73,6 +95,7 @@ impl SerializerConfig {
             root: None,
             declaration: false,
             bytes: BytesFormat::BASE64,
+            indent: Indent::None,
         }
     }
 
@@ -156,6 +179,77 @@ impl SerializerConfig {
         self
     }
 
+    /// Sets how the output is indented.
+    ///
+    /// By default ([`Indent::None`]) the document is written on a single
+    /// line.  Otherwise the child elements of an element are written on
+    /// lines of their own, indented by their depth, and the end tag on a
+    /// line of its own:
+    ///
+    /// ```
+    /// use deser_xml::{Indent, SerializerConfig};
+    ///
+    /// #[derive(deser::Serialize)]
+    /// #[deser(rename = "point")]
+    /// struct Point {
+    ///     #[deser(rename = "@id")]
+    ///     id: u32,
+    ///     x: i32,
+    ///     y: i32,
+    /// }
+    ///
+    /// const PRETTY: SerializerConfig =
+    ///     SerializerConfig::new().indent(Indent::Spaces(2));
+    /// assert_eq!(
+    ///     PRETTY.to_string(&Point { id: 1, x: 3, y: 4 }).unwrap(),
+    ///     "<point id=\"1\">\n  <x>3</x>\n  <y>4</y>\n</point>"
+    /// );
+    /// ```
+    ///
+    /// Unlike in JSON whitespace can be text in XML.  It is only added
+    /// between tags where it's not text of the elements (the deserializer
+    /// skips it), elements with text are written on a single line:
+    ///
+    /// * The text of elements is never changed, elements with text and
+    ///   child elements (mixed content like `<p>x <b>y</b></p>`) are
+    ///   written on a single line from the text on.  If the element is a
+    ///   struct whose [text key](Self::text_key) field comes after the
+    ///   child element, the element is written on a single line from the
+    ///   start (unless it has [`Layout::Expanded`]).
+    /// * [`Mixed`](crate::Mixed) keeps whitespace as text by default, its
+    ///   content is written on a single line.
+    /// * Elements and sequences with [`Layout::Compact`] (see
+    ///   [`hints`](deser_core::hints)) are written on a single line, also
+    ///   their content.
+    ///
+    /// With the [declaration](Self::declaration) the root element starts on
+    /// a new line.  The output never ends with a line break.
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+        self.indent = indent;
+        self
+    }
+
+    /// Enables or disables pretty printing.
+    ///
+    /// This is the same as [`indent`](Self::indent), XML has no spaces
+    /// after separators like JSON.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser_xml::{Indent, SerializerConfig};
+    ///
+    /// let value = BTreeMap::from([("a", 1), ("b", 2)]);
+    /// const PRETTY: SerializerConfig =
+    ///     SerializerConfig::new().root("r").pretty(Indent::Tab);
+    /// assert_eq!(
+    ///     PRETTY.to_string(&value).unwrap(),
+    ///     "<r>\n\t<a>1</a>\n\t<b>2</b>\n</r>"
+    /// );
+    /// ```
+    pub const fn pretty(self, indent: Indent) -> SerializerConfig {
+        self.indent(indent)
+    }
+
     /// Sets how bytes are written (default base64).
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
         self.bytes = format;
@@ -178,7 +272,7 @@ impl SerializerConfig {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
         let mut writer = Writer::new(self, None);
-        driver.drive_described(|event, value, _state| writer.event(event, value))?;
+        driver.drive_described(|event, value, state| writer.event(event, value, state))?;
         writer.finish()
     }
 
@@ -196,7 +290,7 @@ impl SerializerConfig {
     ) -> Result<(), Error> {
         let mut driver = SerializeDriver::new(value);
         let mut writer = Writer::new(self, Some(Sink { write, threshold }));
-        driver.drive_described(|event, value, _state| writer.event(event, value))?;
+        driver.drive_described(|event, value, state| writer.event(event, value, state))?;
         let rest = writer.finish()?;
         if !rest.is_empty() {
             write(&rest)?;
@@ -218,7 +312,22 @@ enum Frame {
     /// A sequence whose values are elements with the name.
     Items {
         name: String,
+        /// If the elements are written on a single line.
+        compact: bool,
+        /// If an element was written.
+        started: bool,
     },
+}
+
+/// How the content of an element is laid out.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lines {
+    /// Not decided yet, no child element was written.
+    Pending,
+    /// Child elements are on lines of their own.
+    Indented,
+    /// Everything is on a single line from here on.
+    Inline,
 }
 
 /// An element whose content is a map.
@@ -234,8 +343,15 @@ struct Element {
     late: String,
     /// Which attributes can still come.
     attrs: Attrs,
+    /// The fields of the struct and the index after the last key among
+    /// them, `None` if the keys are not known.
+    fields: Option<(&'static [&'static str], usize)>,
     /// The number of local namespace bindings outside of the element.
     bindings: usize,
+    /// How the content is laid out.
+    lines: Lines,
+    /// If the layout is not predicted from the fields.
+    expanded: bool,
 }
 
 /// Which attributes an element can still get.
@@ -245,13 +361,9 @@ struct Element {
 enum Attrs {
     /// Any, the keys of the map are not known.
     Unknown,
-    /// Those among the fields of a struct: `names[last]` is the last
-    /// attribute and the next key is one of `names[cursor..]`.
-    Until {
-        names: &'static [&'static str],
-        cursor: usize,
-        last: usize,
-    },
+    /// Those among the fields of the struct (see `Element::fields`), the
+    /// field with the index is the last attribute.
+    Until(usize),
     /// None.
     Done,
 }
@@ -293,6 +405,8 @@ struct Writer<'c, 'o> {
     root_declarations: Option<usize>,
     /// The prefixes declared on the elements on the stack.
     local_bindings: Vec<(String, String)>,
+    /// The number of elements on the stack.
+    depth: usize,
 }
 
 /// Finds the name of a type.
@@ -347,6 +461,9 @@ impl<'c, 'o> Writer<'c, 'o> {
         let mut out = String::new();
         if config.declaration {
             out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+            if config.indent != Indent::None {
+                out.push('\n');
+            }
         }
         Writer {
             config,
@@ -362,22 +479,40 @@ impl<'c, 'o> Writer<'c, 'o> {
             root_declared: false,
             root_declarations: None,
             local_bindings: Vec::new(),
+            depth: 0,
         }
     }
 
-    fn event(&mut self, event: Event<'_>, value: &dyn Serialize) -> Result<(), Error> {
-        match self.stack.last() {
-            None => self.root(event, value)?,
-            Some(Frame::Items { .. }) => self.item(event, value)?,
-            Some(Frame::Element(_)) => match self.key.take() {
-                None => self.key(event)?,
-                Some(key) => self.entry(key, event, value)?,
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &State,
+    ) -> Result<(), Error> {
+        match self.stack.last_mut() {
+            None => self.root(event, value, state)?,
+            Some(Frame::Items { .. }) => self.item(event, value, state)?,
+            Some(Frame::Element(element)) => match self.key.take() {
+                None => {
+                    // flattened mixed content marks the key of its first
+                    // entry
+                    if matches!(event, Event::Atom(_)) && keeps_whitespace(state) {
+                        element.lines = Lines::Inline;
+                    }
+                    self.key(event)?
+                }
+                Some(key) => self.entry(key, event, value, state)?,
             },
         }
         self.flush()
     }
 
-    fn root(&mut self, event: Event<'_>, value: &dyn Serialize) -> Result<(), Error> {
+    fn root(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &State,
+    ) -> Result<(), Error> {
         let name = match self.config.root {
             Some(name) => name.to_string(),
             None => {
@@ -393,7 +528,7 @@ impl<'c, 'o> Writer<'c, 'o> {
         };
         check_element_name(&name)?;
         match event {
-            Event::MapStart(_) => self.open_element(&name, value),
+            Event::MapStart(_) => self.open_element(&name, value, state),
             Event::Atom(atom) => self.atom_element(&name, &atom, true),
             _ => Err(Error::new(
                 ErrorKind::UnsupportedType,
@@ -417,22 +552,24 @@ impl<'c, 'o> Writer<'c, 'o> {
             unreachable!()
         };
         let mut is_last = false;
-        if let Attrs::Until {
-            names,
-            cursor,
-            last,
-        } = &mut element.attrs
-        {
+        if let Some((names, cursor)) = &mut element.fields {
             match names[*cursor..].iter().position(|name| *name == key) {
                 Some(offset) => {
                     *cursor += offset + 1;
-                    is_last = *cursor == *last + 1;
-                    if *cursor > *last + 1 {
-                        element.attrs = Attrs::Done;
+                    if let Attrs::Until(last) = element.attrs {
+                        is_last = *cursor == last + 1;
+                        if *cursor > last + 1 {
+                            element.attrs = Attrs::Done;
+                        }
                     }
                 }
                 // not a field, all bets are off
-                None => element.attrs = Attrs::Unknown,
+                None => {
+                    element.fields = None;
+                    if matches!(element.attrs, Attrs::Until(_)) {
+                        element.attrs = Attrs::Unknown;
+                    }
+                }
             }
         }
 
@@ -453,7 +590,13 @@ impl<'c, 'o> Writer<'c, 'o> {
         Ok(())
     }
 
-    fn entry(&mut self, key: Key, event: Event<'_>, value: &dyn Serialize) -> Result<(), Error> {
+    fn entry(
+        &mut self,
+        key: Key,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &State,
+    ) -> Result<(), Error> {
         match (key, event) {
             (Key::Attribute { name, last }, Event::Atom(atom)) => {
                 if let Some(text) = self.text(&atom)? {
@@ -470,17 +613,28 @@ impl<'c, 'o> Writer<'c, 'o> {
                 if let Some(text) = self.text(&atom)? {
                     let text = text.into_owned();
                     self.close_start_tag();
+                    if !text.is_empty() {
+                        // whitespace next to text would be text
+                        let Some(Frame::Element(element)) = self.stack.last_mut() else {
+                            unreachable!()
+                        };
+                        element.lines = Lines::Inline;
+                    }
                     escape(&text, false, &mut self.out)?;
                 }
                 Ok(())
             }
             (Key::Element(name), Event::Atom(atom)) => self.atom_element(&name, &atom, false),
             (Key::Element(name), Event::MapStart(_)) => {
-                self.close_start_tag();
-                self.open_element(&name, value)
+                self.before_child();
+                self.open_element(&name, value, state)
             }
             (Key::Element(name), Event::SeqStart(_)) => {
-                self.stack.push(Frame::Items { name });
+                self.stack.push(Frame::Items {
+                    name,
+                    compact: Layout::of(state) == Layout::Compact,
+                    started: false,
+                });
                 Ok(())
             }
             (Key::Attribute { name, .. }, _) => Err(Error::new(
@@ -495,8 +649,13 @@ impl<'c, 'o> Writer<'c, 'o> {
         }
     }
 
-    fn item(&mut self, event: Event<'_>, value: &dyn Serialize) -> Result<(), Error> {
-        let Some(Frame::Items { name }) = self.stack.last() else {
+    fn item(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &State,
+    ) -> Result<(), Error> {
+        let Some(Frame::Items { name, .. }) = self.stack.last() else {
             unreachable!()
         };
         let name = name.clone();
@@ -507,7 +666,7 @@ impl<'c, 'o> Writer<'c, 'o> {
             }
             // nulls keep their position
             Event::Atom(Atom::Null) => {
-                self.close_start_tag();
+                self.before_child();
                 let bindings = self.local_bindings.len();
                 self.start_tag(&name, false)?;
                 self.out.push_str("/>");
@@ -516,8 +675,8 @@ impl<'c, 'o> Writer<'c, 'o> {
             }
             Event::Atom(atom) => self.atom_element(&name, &atom, false),
             Event::MapStart(_) => {
-                self.close_start_tag();
-                self.open_element(&name, value)
+                self.before_child();
+                self.open_element(&name, value, state)
             }
             _ => Err(Error::new(
                 ErrorKind::UnsupportedType,
@@ -596,7 +755,7 @@ impl<'c, 'o> Writer<'c, 'o> {
             None if is_root => String::new(),
             None => return Ok(()),
         };
-        self.close_start_tag();
+        self.before_child();
         let bindings = self.local_bindings.len();
         let name = self.start_tag(name, is_root)?;
         if text.is_empty() {
@@ -611,40 +770,125 @@ impl<'c, 'o> Writer<'c, 'o> {
     }
 
     /// Writes the start tag of an element whose content is a map.
-    fn open_element(&mut self, name: &str, value: &dyn Serialize) -> Result<(), Error> {
+    fn open_element(
+        &mut self,
+        name: &str,
+        value: &dyn Serialize,
+        state: &State,
+    ) -> Result<(), Error> {
         let bindings = self.local_bindings.len();
         let name = self.start_tag(name, self.stack.is_empty())?;
-        let attrs = self.attrs_of(value);
+        let (fields, attrs) = self.fields_of(value);
+        let layout = Layout::of(state);
+        let lines = if self.config.indent == Indent::None
+            || self.in_line()
+            || layout == Layout::Compact
+            || keeps_whitespace(state)
+        {
+            Lines::Inline
+        } else {
+            Lines::Pending
+        };
         self.stack.push(Frame::Element(Element {
             name,
             attrs_at: self.base + self.out.len(),
             content: false,
             late: String::new(),
             attrs,
+            fields: fields.map(|names| (names, 0)),
             bindings,
+            lines,
+            expanded: layout == Layout::Expanded,
         }));
+        self.depth += 1;
         Ok(())
     }
 
-    /// Returns which attributes the map of a value can have.
-    fn attrs_of(&self, value: &dyn Serialize) -> Attrs {
+    /// Returns the fields of the map of a value and which attributes it
+    /// can have.
+    fn fields_of(&self, value: &dyn Serialize) -> (Option<&'static [&'static str]>, Attrs) {
         let mut fields = Fields::default();
         value.describe(&mut fields);
         let Some(names) = fields.names.filter(|_| !fields.variant) else {
-            return Attrs::Unknown;
+            return (None, Attrs::Unknown);
         };
         let names_config = &self.config.names;
         let last = names.iter().rposition(|name| {
             *name != names_config.text_key && attribute_name(names_config, name).is_some()
         });
-        match last {
-            Some(last) => Attrs::Until {
-                names,
-                cursor: 0,
-                last,
-            },
+        let attrs = match last {
+            Some(last) => Attrs::Until(last),
             None => Attrs::Done,
+        };
+        (Some(names), attrs)
+    }
+
+    /// Returns `true` if the next element is written on a single line with
+    /// its parent.
+    fn in_line(&self) -> bool {
+        match self.stack.last() {
+            None => false,
+            Some(Frame::Items { compact: true, .. }) => true,
+            Some(Frame::Items { .. }) => match self.stack.iter().rev().nth(1) {
+                Some(Frame::Element(element)) => element.lines == Lines::Inline,
+                _ => unreachable!("sequences are in elements"),
+            },
+            Some(Frame::Element(element)) => element.lines == Lines::Inline,
         }
+    }
+
+    /// Ends the start tag of the parent of the next element and starts a
+    /// new line for it if the content of the parent is indented.
+    fn before_child(&mut self) {
+        self.close_start_tag();
+        if self.config.indent == Indent::None {
+            return;
+        }
+        let text_key = self.config.names.text_key;
+        let mut frames = self.stack.iter_mut().rev();
+        let element = match frames.next() {
+            None => return,
+            Some(Frame::Items {
+                compact, started, ..
+            }) => {
+                // compact sequences are on the line of their first element
+                if std::mem::replace(started, true) && *compact {
+                    return;
+                }
+                match frames.next() {
+                    Some(Frame::Element(element)) => element,
+                    _ => unreachable!("sequences are in elements"),
+                }
+            }
+            Some(Frame::Element(element)) => element,
+        };
+        if element.lines == Lines::Pending {
+            // text that can still come is next to the child elements,
+            // structs whose text comes after them are on a single line
+            let text_ahead = !element.expanded
+                && element
+                    .fields
+                    .is_some_and(|(names, cursor)| names[cursor..].contains(&text_key));
+            element.lines = if text_ahead {
+                Lines::Inline
+            } else {
+                Lines::Indented
+            };
+        }
+        if element.lines == Lines::Indented {
+            self.newline(self.depth);
+        }
+    }
+
+    /// Starts a new line indented for the depth.
+    fn newline(&mut self, depth: usize) {
+        self.out.push('\n');
+        let (unit, count) = match self.config.indent {
+            Indent::None => return,
+            Indent::Spaces(width) => (' ', width * depth),
+            Indent::Tab => ('\t', depth),
+        };
+        self.out.extend(std::iter::repeat_n(unit, count));
     }
 
     /// Writes the start of a start tag and returns the name as written.
@@ -794,6 +1038,10 @@ impl<'c, 'o> Writer<'c, 'o> {
         let Some(Frame::Element(element)) = self.stack.pop() else {
             unreachable!()
         };
+        self.depth -= 1;
+        if element.lines == Lines::Indented {
+            self.newline(self.depth);
+        }
         if element.content {
             write!(self.out, "</{}>", element.name).unwrap();
         } else {
@@ -860,6 +1108,13 @@ impl<'c, 'o> Writer<'c, 'o> {
             }
         }))
     }
+}
+
+/// Returns `true` if the event starts content that keeps whitespace.
+fn keeps_whitespace(state: &State) -> bool {
+    state
+        .event::<KeepsWhitespace>()
+        .is_some_and(|keeps| keeps.0)
 }
 
 /// Writes a float like XML Schema (`INF`, `-INF` and `NaN`).
@@ -1079,15 +1334,45 @@ mod tests {
 
     #[test]
     fn test_same_output() {
-        let config = SerializerConfig::new().root("r");
         let map = BTreeMap::from([("$text", "x"), ("@a", "1"), ("b", "2")]);
-        let values: [&dyn Serialize; 3] = [&feed(), &map, &Some(42)];
-        for value in values {
-            assert_eq!(
-                pieces(&config, value).unwrap().concat(),
-                config.to_string(value).unwrap()
-            );
+        let nested = BTreeMap::from([("a", BTreeMap::from([("@x", "1"), ("b", "2")]))]);
+        let values: [&dyn Serialize; 4] = [&feed(), &map, &nested, &Some(42)];
+        for config in [
+            SerializerConfig::new().root("r"),
+            SerializerConfig::new()
+                .root("r")
+                .declaration(true)
+                .indent(Indent::Spaces(2)),
+        ] {
+            for value in values {
+                assert_eq!(
+                    pieces(&config, value).unwrap().concat(),
+                    config.to_string(value).unwrap()
+                );
+            }
         }
+    }
+
+    #[test]
+    fn test_indent_streams() {
+        // indentation does not hold back output
+        let config = SerializerConfig::new().indent(Indent::Spaces(2));
+        assert_eq!(
+            pieces(&config, &feed()).unwrap(),
+            [
+                "<Feed",
+                " id=\"1\"",
+                ">\n  <title>t</title>",
+                "\n  <entry",
+                " n=\"1\">a",
+                "</entry>",
+                "\n  <entry",
+                " n=\"2\">b",
+                "<note>x</note>",
+                "</entry>",
+                "\n</Feed>",
+            ]
+        );
     }
 
     #[test]

@@ -17,7 +17,11 @@ All notable changes to deser are documented here.
   a struct whose fields take the attributes and the other elements.  It
   keeps whitespace between elements, `Mixed<T, SkipWhitespace>` does not.
   Attributes can come after other keys of a map, they are still written
-  into the start tag.
+  into the start tag.  `SerializerConfig::indent` (or `pretty`, like in
+  `deser-json`) writes child elements on lines of their own where the
+  whitespace is not text: elements with text and `Mixed` content stay on
+  a single line, which structs predict from their fields, and
+  `Layout::Compact` keeps elements and sequences on a single line.
 - Added `Describe::fields`, which derived structs without flattened fields
   call with the names of their fields.  Formats can use it to know which
   keys of a struct can still come.

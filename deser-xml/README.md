@@ -37,6 +37,8 @@ let xml = deser_xml::to_string(&feed).unwrap();
 * Names are kept as written, namespaces can be given fixed prefixes or
   be resolved into `{uri}local` names (`qname!`, `namespace!`) which the
   serializer writes with configured (`prefixes!`) or generated prefixes.
+* `SerializerConfig::pretty` indents child elements where the whitespace
+  is not text, mixed content stays on a single line.
 * Parsing is done by [quick-xml](https://crates.io/crates/quick-xml), the
   events are passed on while the document is parsed and text is borrowed
   from the input where possible.

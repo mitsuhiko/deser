@@ -163,6 +163,32 @@
 //!
 //! Serializing works the other way around (see [`SerializerConfig`]).
 //!
+//! # Pretty Printing
+//!
+//! By default the output is a single line.  [`SerializerConfig::pretty`]
+//! (or [`indent`](SerializerConfig::indent)) writes child elements on
+//! lines of their own, but only where the whitespace is not text: the text
+//! of elements is kept as it is and mixed content stays on a single line.
+//!
+//! ```rust
+//! use deser_xml::{Indent, SerializerConfig};
+//!
+//! #[derive(deser::Serialize)]
+//! #[deser(rename = "item")]
+//! struct Item {
+//!     name: &'static str,
+//!     tag: Vec<&'static str>,
+//! }
+//!
+//! const PRETTY: SerializerConfig =
+//!     SerializerConfig::new().pretty(Indent::Spaces(2));
+//! let item = Item { name: "x", tag: vec!["a", "b"] };
+//! assert_eq!(
+//!     PRETTY.to_string(&item).unwrap(),
+//!     "<item>\n  <name>x</name>\n  <tag>a</tag>\n  <tag>b</tag>\n</item>"
+//! );
+//! ```
+//!
 //! # Limitations
 //!
 //! This crate is an early version.  The input has to be UTF-8.
@@ -175,7 +201,7 @@ mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
 pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
-pub use self::ser::{SerializerConfig, to_string};
+pub use self::ser::{Indent, SerializerConfig, to_string};
 
 /// Writes a name in a namespace as `{uri}local`.
 ///

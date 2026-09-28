@@ -11,7 +11,7 @@
 //!
 //! | Hint       | Honored by                                                                                |
 //! |------------|-------------------------------------------------------------------------------------------|
-//! | [`Layout`] | TOML (inline tables and arrays of tables), YAML (flow style), JSON (single line when indented) |
+//! | [`Layout`] | TOML (inline tables and arrays of tables), YAML (flow style), JSON and XML (single line when indented) |
 //!
 //! Formats can define their own hints and adapters for them with [`Hint`]
 //! and [`Hinted`].

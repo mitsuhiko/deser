@@ -119,7 +119,10 @@ use crate::Names;
 /// [`SkipBlank`](deser_core::adapters::SkipBlank) does) are not content.
 ///
 /// When serialized, each value becomes the entries of the element it
-/// serializes as (unit variants are empty elements).
+/// serializes as (unit variants are empty elements).  As whitespace is
+/// text, indented output (see
+/// [`SerializerConfig::indent`](crate::SerializerConfig::indent)) writes
+/// the content on a single line, unless it's [`SkipWhitespace`].
 pub struct Mixed<T, W = KeepWhitespace>(pub Vec<T>, PhantomData<fn() -> W>);
 
 /// What [`Mixed`] does with text that is only whitespace.
@@ -460,8 +463,19 @@ fn text_key(state: &State) -> &'static str {
     names(state).text_key
 }
 
+/// Marks content that keeps whitespace as text, the serializer does not
+/// indent it.
+///
+/// This is event data of the start of the map or, if the content is
+/// flattened, of its first key.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct KeepsWhitespace(pub(crate) bool);
+
 impl<T: Serialize, W: Whitespace> Serialize for Mixed<T, W> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        if W::KEEP {
+            state.event_mut::<KeepsWhitespace>().0 = true;
+        }
         Ok(Chunk::structure(
             MixedEmitter {
                 values: self.0.iter(),
