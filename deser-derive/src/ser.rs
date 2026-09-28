@@ -333,7 +333,7 @@ fn derive_indexed_struct(
             let field_skip = attrs.skip_serializing_if().map(|path| {
                 quote! {
                     if #path(&self.#name) {
-                        return __deser::__derive::Ok(__deser::__derive::StructField::Skip);
+                        return __deser::__derive::StructField::Skip;
                     }
                 }
             });
@@ -342,7 +342,7 @@ fn derive_indexed_struct(
                 let is_optional = is_optional(ty, attrs.adapters().ser(), quote! { &self.#name });
                 Some(quote! {
                     if #is_optional {
-                        return __deser::__derive::Ok(__deser::__derive::StructField::Skip);
+                        return __deser::__derive::StructField::Skip;
                     }
                 })
             } else {
@@ -362,8 +362,9 @@ fn derive_indexed_struct(
         })
         .collect::<Vec<_>>();
 
-    // fields with plain values (without adapters) are emitted directly, the
-    // skips are the same as in `field`.
+    // Fields with plain values (without adapters) are emitted directly by
+    // `emit_plain_field` which exists once per type of field, the skips are
+    // the same as in `field`.
     let plain_arms = attrs
         .iter()
         .enumerate()
@@ -375,37 +376,54 @@ fn derive_indexed_struct(
             }
             let name = &attrs.field().ident;
             let fieldstr = attrs.name(container_attrs);
-            let field_skip = attrs.skip_serializing_if().map(|path| {
-                quote! {
-                    if #path(&self.#name) {
-                        break '__field;
-                    }
-                }
-            });
-            let optional_skip = if container_attrs.skip_serializing_optionals() {
-                Some(quote! {
-                    if __deser::ser::Serialize::is_optional(&self.#name) {
-                        break '__field;
-                    }
-                })
-            } else {
-                None
+            let mut skip = attrs
+                .skip_serializing_if()
+                .map(|path| quote! { #path(&self.#name) })
+                .into_iter()
+                .collect::<Vec<_>>();
+            if container_attrs.skip_serializing_optionals() {
+                skip.push(quote! { __deser::ser::Serialize::is_optional(&self.#name) });
+            }
+            let emit = quote! {
+                __deser::__derive::emit_plain_field(&self.#name, #fieldstr, __sink)
             };
-            quote! {
-                #index => {
-                    if !__deser::Serialize::__private_is_plain_value(&self.#name) {
-                        return __deser::__derive::Ok(__index);
-                    }
-                    '__field: {
-                        #field_skip
-                        #optional_skip
-                        __sink.field(#fieldstr)?;
-                        __deser::Serialize::__private_emit_plain(&self.#name, __sink)?;
-                    }
+            if skip.is_empty() {
+                quote! { #index => #emit, }
+            } else {
+                quote! {
+                    #index => if #(#skip)||* {
+                        __deser::__derive::Ok(true)
+                    } else {
+                        #emit
+                    },
                 }
             }
         })
         .collect::<Vec<_>>();
+
+    // without fields that can be plain the default (which emits nothing) is
+    // used
+    let emit_plain_fields = attrs.iter().any(|x| x.adapters().ser().is_none()).then(|| {
+        quote! {
+            fn emit_plain_fields(
+                &self,
+                mut __index: usize,
+                __sink: &mut dyn __deser::__derive::PlainSink,
+            ) -> __deser::__derive::Result<usize> {
+                loop {
+                    let __emitted = match __index {
+                        #(#plain_arms)*
+                        _ => return __deser::__derive::Ok(__deser::__derive::FIELDS_END),
+                    };
+                    match __emitted {
+                        __deser::__derive::Ok(true) => __index += 1,
+                        __deser::__derive::Ok(false) => return __deser::__derive::Ok(__index),
+                        __deser::__derive::Err(__err) => return __deser::__derive::Err(__err),
+                    }
+                }
+            }
+        }
+    });
 
     // the number of fields is only known if none can be skipped
     let shape = if container_attrs.skip_serializing_optionals()
@@ -446,32 +464,16 @@ fn derive_indexed_struct(
 
             #[automatically_derived]
             impl #impl_generics __deser::__derive::IndexedStruct for #ident #ty_generics #bounded_where_clause {
-                fn field(&self, __index: usize, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::StructField<'_>>
-                {
-                    __deser::__derive::Ok(match __index {
+                fn field(&self, __index: usize) -> __deser::__derive::StructField<'_> {
+                    match __index {
                         #(
                             #field_arms
                         )*
                         _ => __deser::__derive::StructField::End,
-                    })
-                }
-
-                fn emit_plain_fields(
-                    &self,
-                    mut __index: usize,
-                    __sink: &mut dyn __deser::__derive::PlainSink,
-                ) -> __deser::__derive::Result<usize> {
-                    loop {
-                        match __index {
-                            #(
-                                #plain_arms
-                            )*
-                            _ => return __deser::__derive::Ok(__deser::__derive::FIELDS_END),
-                        }
-                        __index += 1;
                     }
                 }
+
+                #emit_plain_fields
             }
 
         };

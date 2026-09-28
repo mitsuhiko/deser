@@ -99,7 +99,7 @@ pub mod __derive {
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,
-        PlainSink, StructField,
+        PlainSink, StructField, emit_plain_field,
     };
     pub use crate::ser::enums::{
         EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedNewtype, skipped_variant,

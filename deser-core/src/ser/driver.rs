@@ -539,7 +539,7 @@ impl<'a> SerializeDriver<'a> {
                             continue;
                         }
                     }
-                    let field = fields.field(*index, &mut self.state)?;
+                    let field = fields.field(*index);
                     *index += 1;
                     match field {
                         StructField::Field(key, value) => {
@@ -900,7 +900,7 @@ impl<'a> SerializeDriver<'a> {
                         rv
                     }
                     Emitter::IndexedStruct(fields, index) => loop {
-                        let field = fields.field(*index, &mut self.state)?;
+                        let field = fields.field(*index);
                         *index += 1;
                         match field {
                             StructField::Field(key, value) => {

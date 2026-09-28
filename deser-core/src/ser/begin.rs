@@ -97,19 +97,39 @@ pub enum StructField<'a> {
 /// The fields are requested with increasing indexes starting at zero until
 /// [`StructField::End`] is returned.
 pub trait IndexedStruct: Sync {
-    fn field(&self, index: usize, state: &mut State) -> Result<StructField<'_>, Error>;
+    fn field(&self, index: usize) -> StructField<'_>;
 
     /// Emits the fields from `index` on as long as their values are plain
     /// (see [`PlainSink`]).
     ///
     /// Returns the index of the first field that was not emitted or
     /// [`FIELDS_END`] if all fields were emitted.  Skipped fields count as
-    /// emitted.
+    /// emitted.  See [`emit_plain_field`].
     #[inline]
     fn emit_plain_fields(&self, index: usize, sink: &mut dyn PlainSink) -> Result<usize, Error> {
         let _ = sink;
         Ok(index)
     }
+}
+
+/// Emits a field of a struct if its value is plain.
+///
+/// Returns `false` without emitting anything if the value is not plain.
+/// Derived structs implement
+/// [`emit_plain_fields`](IndexedStruct::emit_plain_fields) with this, it
+/// exists once per type of field rather than once per field.
+#[inline]
+pub fn emit_plain_field<T: Serialize>(
+    value: &T,
+    name: &str,
+    sink: &mut dyn PlainSink,
+) -> Result<bool, Error> {
+    if !value.__private_is_plain_value() {
+        return Ok(false);
+    }
+    sink.field(name)?;
+    value.__private_emit_plain(sink)?;
+    Ok(true)
 }
 
 /// A struct emitter for an [`IndexedStruct`].
@@ -130,10 +150,10 @@ impl<'a> IndexedStructEmitter<'a> {
 impl<'a> StructEmitter for IndexedStructEmitter<'a> {
     fn next(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error> {
         loop {
-            let field = self.fields.field(self.index, state)?;
+            let field = self.fields.field(self.index);
             self.index += 1;
             match field {
                 StructField::Field(key, value) => return Ok(Some((Cow::Borrowed(key), value))),
