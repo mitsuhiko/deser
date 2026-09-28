@@ -1,5 +1,8 @@
 <div align="center">
- <img src="https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg" width="250" height="233">
+ <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo-dark.svg">
+  <img src="https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg" alt="deser" width="250">
+ </picture>
  <p><strong>deser: an experimental serialization and deserialization library for Rust</strong></p>
 </div>
 
