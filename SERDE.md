@@ -592,9 +592,12 @@ complete value into memory first.
 
 Deser inverts this: the format pushes events into a driver, and the
 driver (and all sinks in it) can be held across calls and moved between
-threads.  JSON and CBOR can be fed while the input arrives, only
-incomplete tokens are buffered.  `deser-tokio` reads and writes streams of
-values (JSON Lines, CBOR sequences, ...) with tokio.
+threads.  JSON (and JSONC, JSON5 and Hjson), CBOR and MessagePack can be
+fed while the input arrives, only incomplete tokens are buffered.  Large
+values are written in pieces while they are serialized.  Streams are
+sans-io (`deser::stream` needs neither IO nor `std`), `deser::io` and
+`deser-tokio` read and write streams of values (JSON Lines, CBOR
+sequences, ...) from `std::io` and tokio.
 
 **Related issues:**
 

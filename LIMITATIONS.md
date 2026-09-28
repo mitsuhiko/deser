@@ -44,14 +44,19 @@ threads.
 
 ## Streaming
 
-XML documents, TOML documents and property lists hold a single value and
-cannot be split, so `from_reader` reads the whole stream before it's parsed.
+Only JSON (and JSONC, JSON5 and Hjson), CBOR and MessagePack can be parsed
+while the input arrives, with only incomplete tokens buffered.  The other
+formats split a stream into values (YAML documents, CSV records) and read
+each value completely before it's parsed.  XML documents, TOML documents,
+property lists and form data hold a single value and cannot be split, so
+the whole stream is read before it's parsed.
+
 When writing, the output of large values is written in pieces while they are
 serialized, except for TOML and binary property lists which need the complete
 value (the values of a table come before its subtables, the object table of a
 binary property list needs all objects).  Containers whose length is not known
-upfront are held back in CBOR and MessagePack until they are complete, as are
-XML elements whose attributes can still come.
+upfront (and maps in canonical mode) are held back in CBOR and MessagePack
+until they are complete, as are XML elements whose attributes can still come.
 
 ## Runtime Performance
 
@@ -64,10 +69,11 @@ in an arena instead of one by one).
 
 Compared to serde based libraries in the
 [included benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)
-YAML and TOML are two to four times as fast and CBOR deserializes faster
-but serializes slower.  JSON serializes faster but deserializes slower on
-float heavy and deeply nested data, MessagePack is on par on string heavy
-data and slower on float heavy and deeply nested data.
+YAML and TOML deserialize two to four times as fast and CBOR deserializes
+faster but serializes slower.  JSON serializes faster but deserializes slower
+on float heavy and deeply nested data, MessagePack is on par on string heavy
+data and slower on float heavy and deeply nested data.  CSV is slower than
+the `csv` crate, in particular when serializing.
 
 ## Compile Times
 
