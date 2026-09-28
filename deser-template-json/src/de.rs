@@ -22,7 +22,7 @@ use crate::scan::LineScan;
 /// [`Deserializer::from_slice_with_config`].
 ///
 /// ```
-/// use deser_private_jsontemplate::DeserializerConfig;
+/// use deser_template_json::DeserializerConfig;
 ///
 /// const CONFIG: DeserializerConfig =
 ///     DeserializerConfig::new().exact_numbers(false);
@@ -64,13 +64,13 @@ impl DeserializerConfig {
     ///
     /// ```
     /// let value: Vec<u8> =
-    ///     deser_private_jsontemplate::from_str(r#""Af8=""#).unwrap();
+    ///     deser_template_json::from_str(r#""Af8=""#).unwrap();
     /// assert_eq!(value, [1, 255]);
     /// let value: Vec<u8> =
-    ///     deser_private_jsontemplate::from_str(r#""Af8""#).unwrap();
+    ///     deser_template_json::from_str(r#""Af8""#).unwrap();
     /// assert_eq!(value, [1, 255]);
     /// let value: Vec<u8> =
-    ///     deser_private_jsontemplate::from_str("[1, 255]").unwrap();
+    ///     deser_template_json::from_str("[1, 255]").unwrap();
     /// assert_eq!(value, [1, 255]);
     /// ```
     ///
@@ -93,10 +93,10 @@ impl DeserializerConfig {
     /// the value without looking at what follows:
     ///
     /// ```
-    /// use deser_private_jsontemplate::{DeserializerConfig, Trailing};
+    /// use deser_template_json::{DeserializerConfig, Trailing};
     ///
     /// assert!(
-    ///     deser_private_jsontemplate::from_str::<Vec<u32>>("[1] trash")
+    ///     deser_template_json::from_str::<Vec<u32>>("[1] trash")
     ///         .is_err()
     /// );
     /// const STOP: DeserializerConfig =
@@ -108,7 +108,7 @@ impl DeserializerConfig {
     /// one.  Errors only discard their line:
     ///
     /// ```
-    /// use deser_private_jsontemplate::{
+    /// use deser_template_json::{
     ///     Deserializer, DeserializerConfig, Trailing,
     /// };
     ///
@@ -176,11 +176,11 @@ impl DeserializerConfig {
     /// use deser::ext::Decimal;
     ///
     /// let value: Decimal =
-    ///     deser_private_jsontemplate::from_str("0.10000000000000000001")
+    ///     deser_template_json::from_str("0.10000000000000000001")
     ///         .unwrap();
     /// assert_eq!(value.as_str(), "0.10000000000000000001");
     /// let value: f64 =
-    ///     deser_private_jsontemplate::from_str("0.10000000000000000001")
+    ///     deser_template_json::from_str("0.10000000000000000001")
     ///         .unwrap();
     /// assert_eq!(value, 0.1);
     /// ```
@@ -250,7 +250,7 @@ fn empty_input() -> Error {
 /// deserializer reads [JSON Lines](https://jsonlines.org/):
 ///
 /// ```
-/// use deser_private_jsontemplate::{
+/// use deser_template_json::{
 ///     Deserializer, DeserializerConfig, Trailing,
 /// };
 ///
@@ -425,7 +425,7 @@ impl<'a> Deserializer<'a> {
     /// iterator stops after the first error.
     ///
     /// ```
-    /// use deser_private_jsontemplate::{
+    /// use deser_template_json::{
     ///     Deserializer, DeserializerConfig, Trailing,
     /// };
     ///

@@ -50,7 +50,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "src"
 TESTS = Path(__file__).resolve().parent / "tests"
-TEMPLATE_CRATE = "deser_private_jsontemplate"
+TEMPLATE_CRATE = "deser_template_json"
 
 # the capabilities that the dialects are made of
 CAPABILITIES = {
@@ -480,8 +480,8 @@ def rustfmt(source):
 
 def header(name):
     return (
-        f"// @generated from deser-private-jsontemplate/src/{name} by\n"
-        f"// deser-private-jsontemplate/generate.py.  Do not edit.\n"
+        f"// @generated from deser-template-json/src/{name} by\n"
+        f"// deser-template-json/generate.py.  Do not edit.\n"
     )
 
 
@@ -530,7 +530,7 @@ def main():
     if args.check and outdated:
         sys.exit(
             "generated files are out of date, run "
-            "`python3 deser-private-jsontemplate/generate.py`"
+            "`python3 deser-template-json/generate.py`"
         )
     for target in outdated:
         print(f"updated {target.relative_to(ROOT)}")

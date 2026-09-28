@@ -448,7 +448,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 ///
 /// ```
 /// use deser::io::Reader;
-/// use deser_private_jsontemplate::{DeserializerConfig, Trailing};
+/// use deser_template_json::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig =
 ///     DeserializerConfig::new().trailing(Trailing::Newline);
@@ -624,7 +624,7 @@ impl DeserializerConfig {
 ///
 /// ```
 /// let value: Vec<u32> =
-///     deser_private_jsontemplate::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+///     deser_template_json::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

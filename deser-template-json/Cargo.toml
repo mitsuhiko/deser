@@ -1,5 +1,5 @@
 [package]
-name = "deser-private-jsontemplate"
+name = "deser-template-json"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true

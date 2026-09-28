@@ -6,7 +6,7 @@ use std::borrow::Cow;
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
-use deser::{Atom, ContainerShape, Deserialize, Error, ErrorKind, Event, Order, Serialize};
+use deser::{Atom, ContainerShape, Deserialize, Error, Event, Order, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: Event<'static>) -> Event<'static> {
@@ -326,6 +326,7 @@ mod with_smallvec {
 #[cfg(feature = "arrayvec")]
 mod with_arrayvec {
     use arrayvec::{ArrayString, ArrayVec};
+    use deser::ErrorKind;
     use deser::adapters::{BytesFallback, DisplayFromStr, IntSeq};
 
     use super::*;
@@ -452,6 +453,7 @@ mod with_bytes {
 #[cfg(feature = "bstr")]
 mod with_bstr {
     use ::bstr::{BStr, BString};
+    use deser::ErrorKind;
     use deser::adapters::{Base64Url, BytesFormat};
 
     use super::*;

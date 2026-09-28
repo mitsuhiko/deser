@@ -1,4 +1,4 @@
-# deser-private-jsontemplate
+# deser-template-json
 
 The source of the parsers of `deser-json`, `deser-jsonc`, `deser-json5` and
 `deser-hjson` and their tests.  This crate is not published and nothing depends on it.
@@ -43,8 +43,8 @@ changes.
 
 * Edit the files in `src/` (never the generated files, they start with an
   `@generated` comment).
-* Run `make codegen` (or `python3 deser-private-jsontemplate/generate.py`).
-* Test the generated crates (`cargo test -p deser-private-jsontemplate`,
+* Run `make codegen` (or `python3 deser-template-json/generate.py`).
+* Test the generated crates (`cargo test -p deser-template-json`,
   see below).  Unit tests of the parser for a capability go into the
   template with the same `#[cfg]`.
 
@@ -105,7 +105,7 @@ The template is regular Rust.  The generator understands:
   `//#(capability)` are only in the dialects with the capability (as
   regular comments), for instance to explain how code that all dialects
   share handles comments.
-* `deser_private_jsontemplate` (in doc tests) becomes the name of the
+* `deser_template_json` (in doc tests) becomes the name of the
   dialect crate.
 
 A node ends at the first `;` or `,` outside of brackets (commas do not end
