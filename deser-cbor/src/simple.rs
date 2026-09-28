@@ -60,8 +60,11 @@ impl Serialize for Simple {
 }
 
 impl<'de> Deserialize<'de> for Simple {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(SimpleSink(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(SimpleSink(out), state)
     }
 }
 

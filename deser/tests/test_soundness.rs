@@ -151,7 +151,7 @@ fn test_array_sink_misuse() {
 
     let mut out = None::<[String; 2]>;
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        let mut sink = <[String; 2]>::deserialize_into(&mut out);
+        let mut sink = <[String; 2]>::deserialize_into(&mut out, state);
         sink.seq(state).unwrap();
         for idx in 0..4 {
             match sink.next_value(state) {
@@ -178,7 +178,10 @@ fn test_array_sink_misuse() {
 struct LyingBytes(#[allow(dead_code)] String);
 
 impl<'de> Deserialize<'de> for LyingBytes {
-    fn deserialize_into(_out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        _out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SinkHandle::null()
     }
 
@@ -224,11 +227,14 @@ impl<'de> Sink<'de> for Parent {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(SinkHandle::boxed(CommitOnDrop {
-            slot: &mut self.slot,
-            value: None,
-        }))
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(SinkHandle::arena(
+            CommitOnDrop {
+                slot: &mut self.slot,
+                value: None,
+            },
+            state,
+        ))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -259,7 +265,7 @@ fn test_owned_sink_after_take() {
     let mut driver = DeserializeDriver::new(&mut driver_out);
     let state = driver.state_mut();
 
-    let mut owned = OwnedSink::<Vec<String>>::deserialize();
+    let mut owned = OwnedSink::<Vec<String>>::deserialize(state);
     owned.borrow_mut().seq(state).unwrap();
     owned
         .borrow_mut()
@@ -284,7 +290,7 @@ fn test_owned_sink_dropped_half_way() {
     let mut driver = DeserializeDriver::new(&mut driver_out);
     let state = driver.state_mut();
 
-    let mut owned = OwnedSink::<BTreeMap<String, Inner>>::deserialize();
+    let mut owned = OwnedSink::<BTreeMap<String, Inner>>::deserialize(state);
     owned.borrow_mut().map(state).unwrap();
     owned
         .borrow_mut()

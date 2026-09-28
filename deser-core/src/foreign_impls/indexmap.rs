@@ -10,6 +10,7 @@ use core::hash::{BuildHasher, Hash};
 
 use ::indexmap::{IndexMap, IndexSet, map};
 
+use crate::State;
 use crate::adapters::{DeserializeAs, MapSkipError, Same, skip_map_sink};
 use crate::de::impls::{
     MapOut, MapTarget, SetTarget, collection_methods, map_sink, set_collection, set_sink,
@@ -72,14 +73,17 @@ where
     S: BuildHasher + Default + Send,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out), state)
     }
 
     /// Merges the entries into the map, the values of keys that exist are
     /// replaced (not updated).  New keys are appended.
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Update(value))
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Update(value), state)
     }
 }
 
@@ -91,8 +95,11 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<IndexMap<K, V, S>>) -> SinkHandle<'_, 'de> {
-        skip_map_sink::<_, K, V, KA, VA>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<IndexMap<K, V, S>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        skip_map_sink::<_, K, V, KA, VA>(out, state)
     }
 }
 
@@ -124,8 +131,11 @@ where
     S: BuildHasher + Default + Send,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        set_sink::<_, T, Same>(out, state)
     }
 
     collection_methods!(set Same);
@@ -163,8 +173,11 @@ mod adapters {
         KA: DeserializeAs<'de, K>,
         VA: DeserializeAs<'de, V>,
     {
-        fn deserialize_into_as(out: &mut Option<IndexMap<K, V, S>>) -> SinkHandle<'_, 'de> {
-            map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
+        fn deserialize_into_as<'out>(
+            out: &'out mut Option<IndexMap<K, V, S>>,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
         }
     }
 
@@ -202,8 +215,11 @@ mod adapters {
         S: BuildHasher + Default + Send,
         A: DeserializeAs<'de, T>,
     {
-        fn deserialize_into_as(out: &mut Option<IndexSet<T, S>>) -> SinkHandle<'_, 'de> {
-            set_sink::<_, T, A>(out)
+        fn deserialize_into_as<'out>(
+            out: &'out mut Option<IndexSet<T, S>>,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            set_sink::<_, T, A>(out, state)
         }
 
         collection_methods_as!(set IndexSet<T, S>);

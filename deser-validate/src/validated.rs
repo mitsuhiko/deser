@@ -157,14 +157,20 @@ impl<T: fmt::Debug, V> fmt::Debug for Validated<T, V> {
 }
 
 impl<'de, T: Deserialize<'de>, V: Validator<T>> Deserialize<'de> for Validated<T, V> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValidatedSink {
-            out,
-            sink: Some(OwnedSink::deserialize()),
-            error: None,
-            start: None,
-            outer: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            ValidatedSink {
+                out,
+                sink: Some(OwnedSink::deserialize(state)),
+                error: None,
+                start: None,
+                outer: None,
+            },
+            state,
+        )
     }
 
     /// Missing values are the missing values of `T` (validated).

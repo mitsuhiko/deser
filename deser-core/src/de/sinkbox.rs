@@ -1,215 +1,66 @@
-//! Heap storage for sinks.
+//! Storage for sinks.
 //!
-//! Deserializing compound values requires a heap allocated sink for most
-//! containers.  These sinks are short lived and are typically created and
-//! destroyed in quick succession with the same sizes, so freed blocks are
-//! cached per thread and size class and reused for the next sinks.  Without
-//! `std` there are no thread locals and blocks are not cached.
+//! Sinks are allocated in the arena of the deserialization (see
+//! [`arena`](crate::de::arena)) unless they are created with
+//! [`SinkHandle::heap`](crate::de::SinkHandle::heap), which allocates them
+//! from the global allocator.
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use alloc::boxed::Box;
-use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
 use crate::de::Sink;
 #[cfg(feature = "derive")]
+use crate::de::arena::Release;
+use crate::de::arena::{Arena, ArenaBox};
+#[cfg(feature = "derive")]
 use crate::de::fields::{StructFields, StructInfo, StructSink};
 
-/// The granularity of the size classes.
-const CLASS_SIZE: usize = 16;
-/// The alignment of all cached blocks.
-const CLASS_ALIGN: usize = 16;
-/// Blocks larger than this are not cached.
-const MAX_CACHED_SIZE: usize = 4096;
-const CLASSES: usize = MAX_CACHED_SIZE / CLASS_SIZE;
-/// The maximum number of cached blocks per size class.
-const MAX_PER_CLASS: u32 = 32;
+/// A sink in an arena.
+pub(crate) type ArenaSink<'a, 'de> = ArenaBox<dyn Sink<'de> + 'a>;
 
-/// A freed block, the link to the next free block is stored in the block.
-struct FreeBlock {
-    next: *mut FreeBlock,
-}
-
-#[derive(Copy, Clone)]
-struct FreeList {
-    head: *mut FreeBlock,
-    len: u32,
-}
-
-struct Cache {
-    lists: UnsafeCell<[FreeList; CLASSES]>,
-}
-
-impl Drop for Cache {
-    fn drop(&mut self) {
-        for (class, list) in self.lists.get_mut().iter_mut().enumerate() {
-            let layout = class_layout(class);
-            let mut block = list.head;
-            while !block.is_null() {
-                // SAFETY: all cached blocks were allocated with the layout
-                // of their class.
-                unsafe {
-                    let next = (*block).next;
-                    dealloc(block.cast(), layout);
-                    block = next;
-                }
-            }
-            list.head = ptr::null_mut();
-            list.len = 0;
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-std::thread_local! {
-    static CACHE: Cache = const {
-        Cache {
-            lists: UnsafeCell::new(
-                [FreeList {
-                    head: ptr::null_mut(),
-                    len: 0,
-                }; CLASSES],
-            ),
-        }
-    };
-}
-
-/// Calls `f` with the block cache of the current thread.
-///
-/// Returns `None` if there is no cache (while the thread is shutting down
-/// or without `std`).
+/// Moves a sink into an arena.
 #[inline(always)]
-fn with_cache<R>(f: impl FnOnce(&Cache) -> R) -> Option<R> {
-    #[cfg(feature = "std")]
-    {
-        CACHE.try_with(f).ok()
-    }
-    #[cfg(not(feature = "std"))]
-    {
-        let _ = f;
-        None
-    }
+pub(crate) fn arena_sink<'a, 'de, S: Sink<'de> + 'a>(
+    sink: S,
+    arena: &mut Arena,
+) -> ArenaSink<'a, 'de> {
+    let sink = ArenaBox::into_raw(ArenaBox::new(sink, arena));
+    // SAFETY: the pointer comes from the box
+    unsafe { ArenaBox::from_raw(sink.as_ptr() as *mut (dyn Sink<'de> + 'a)) }
 }
 
-/// Returns the size class for a layout if it can be cached.
-#[inline(always)]
-fn size_class(layout: Layout) -> Option<usize> {
-    if layout.size() <= MAX_CACHED_SIZE && layout.align() <= CLASS_ALIGN {
-        // zero sized layouts never get here
-        Some((layout.size() - 1) / CLASS_SIZE)
-    } else {
-        None
-    }
-}
-
-#[inline(always)]
-fn class_layout(class: usize) -> Layout {
-    // SAFETY: the size is non zero and the alignment is a power of two
-    unsafe { Layout::from_size_align_unchecked((class + 1) * CLASS_SIZE, CLASS_ALIGN) }
-}
-
-/// Allocates a block for the given (non zero sized) layout.
+/// An owned sink on the heap.
 ///
-/// Only taking a cached block is inlined, this exists for every sink type
-/// that is boxed.
-#[inline]
-fn alloc_block(layout: Layout) -> NonNull<u8> {
-    if let Some(class) = size_class(layout) {
-        // SAFETY: the cache is only accessed from this thread and no
-        // references into it are held across calls.
-        let cached = with_cache(|cache| unsafe {
-            let list = &mut (*cache.lists.get())[class];
-            let block = list.head;
-            if !block.is_null() {
-                list.head = (*block).next;
-                list.len -= 1;
-            }
-            block
-        })
-        .unwrap_or(ptr::null_mut());
-        if let Some(block) = NonNull::new(cached) {
-            return block.cast();
-        }
-        return alloc_uncached(class_layout(class));
-    }
-    alloc_uncached(layout)
-}
-
-/// Allocates a block from the global allocator.
-#[inline(never)]
-fn alloc_uncached(layout: Layout) -> NonNull<u8> {
-    // SAFETY: the layout is non zero sized
-    match NonNull::new(unsafe { alloc(layout) }) {
-        Some(block) => block,
-        None => handle_alloc_error(layout),
-    }
-}
-
-/// Frees a block previously allocated with [`alloc_block`].
-///
-/// # Safety
-///
-/// The block must have been allocated with `alloc_block` with the same
-/// layout.
-#[inline]
-unsafe fn free_block(block: NonNull<u8>, layout: Layout) {
-    unsafe {
-        let layout = match size_class(layout) {
-            Some(class) => {
-                let cached = with_cache(|cache| {
-                    let list = &mut (*cache.lists.get())[class];
-                    if list.len < MAX_PER_CLASS {
-                        let block = block.as_ptr().cast::<FreeBlock>();
-                        (*block).next = list.head;
-                        list.head = block;
-                        list.len += 1;
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-                if cached {
-                    return;
-                }
-                class_layout(class)
-            }
-            None => layout,
-        };
-        dealloc(block.as_ptr(), layout);
-    }
-}
-
-/// An owned, heap allocated sink.
-///
-/// This behaves like a `Box<dyn Sink>` but uses the block cache of the
-/// current thread.  As it's based on a raw pointer, it can be moved while
-/// the sink is borrowed.
-pub(crate) struct SinkBox<'a, 'de> {
+/// This behaves like a `Box<dyn Sink>`.  As it's based on a raw pointer,
+/// it can be moved while the sink is borrowed.
+pub(crate) struct HeapSink<'a, 'de> {
     ptr: NonNull<dyn Sink<'de> + 'a>,
     _marker: PhantomData<Box<dyn Sink<'de> + 'a>>,
 }
 
 // SAFETY: the box owns the sink like a `Box<dyn Sink>` which is `Send` as
-// sinks are `Send`.  The block can be freed on another thread than it was
-// allocated on: all blocks come from the global allocator and the caches of
-// the threads only hold freed blocks.
-unsafe impl Send for SinkBox<'_, '_> {}
+// sinks are `Send`.
+unsafe impl Send for HeapSink<'_, '_> {}
 
-impl<'a, 'de> SinkBox<'a, 'de> {
+impl<'a, 'de> HeapSink<'a, 'de> {
     /// Moves a sink to the heap.
     #[inline]
-    pub fn new<S: Sink<'de> + 'a>(value: S) -> SinkBox<'a, 'de> {
+    pub fn new<S: Sink<'de> + 'a>(value: S) -> HeapSink<'a, 'de> {
         let layout = Layout::new::<S>();
         let raw: *mut S = if layout.size() == 0 {
             NonNull::<S>::dangling().as_ptr()
         } else {
-            alloc_block(layout).as_ptr().cast::<S>()
+            // SAFETY: the layout is non zero sized
+            match NonNull::new(unsafe { alloc(layout) }) {
+                Some(block) => block.as_ptr().cast(),
+                None => handle_alloc_error(layout),
+            }
         };
         // SAFETY: the block is valid for writes of `S`
         unsafe {
             raw.write(value);
-            SinkBox {
+            HeapSink {
                 ptr: NonNull::new_unchecked(raw as *mut (dyn Sink<'de> + 'a)),
                 _marker: PhantomData,
             }
@@ -231,7 +82,7 @@ impl<'a, 'de> SinkBox<'a, 'de> {
     }
 }
 
-impl<'a, 'de> Drop for SinkBox<'a, 'de> {
+impl<'a, 'de> Drop for HeapSink<'a, 'de> {
     fn drop(&mut self) {
         // SAFETY: the sink is valid and was allocated with its own layout.
         unsafe {
@@ -242,7 +93,7 @@ impl<'a, 'de> Drop for SinkBox<'a, 'de> {
                 fn drop(&mut self) {
                     if self.1.size() != 0 {
                         // SAFETY: see above
-                        unsafe { free_block(self.0, self.1) };
+                        unsafe { dealloc(self.0.as_ptr(), self.1) };
                     }
                 }
             }
@@ -252,20 +103,21 @@ impl<'a, 'de> Drop for SinkBox<'a, 'de> {
     }
 }
 
-/// The sink of a derived struct together with its fields in one block.
+/// The sink of a derived struct together with its fields in one block of
+/// an arena.
 ///
 /// The block holds the [`StructSink`] followed by the fields, the sink
-/// points to the fields.  This behaves like a [`SinkBox`] of the struct
+/// points to the fields.  This behaves like an [`ArenaSink`] of the struct
 /// sink which owns the fields.
 #[cfg(feature = "derive")]
 pub(crate) struct StructBox<'a, 'de> {
     // a pointer to the `StructSink` at the start of the block, it's a
-    // `dyn Sink` so that the handle can use it like the one of a `SinkBox`
+    // `dyn Sink` so that the handle can use it like the one of an `ArenaSink`
     ptr: NonNull<dyn Sink<'de> + 'a>,
     _marker: PhantomData<Box<dyn Sink<'de> + 'a>>,
 }
 
-// SAFETY: see `SinkBox`, the sink and the fields are `Send`.
+// SAFETY: see `ArenaBox`, the sink and the fields are `Send`.
 #[cfg(feature = "derive")]
 unsafe impl Send for StructBox<'_, '_> {}
 
@@ -287,9 +139,10 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
     pub fn new<F: StructFields<'de> + 'a>(
         fields: F,
         info: &'static StructInfo,
+        arena: &mut Arena,
     ) -> StructBox<'a, 'de> {
         let (layout, offset) = struct_block_layout(Layout::new::<F>());
-        let block = alloc_block(layout);
+        let block = arena.alloc(layout);
         // SAFETY: the block is valid for writes of the sink and the fields
         // at their offsets.
         unsafe {
@@ -338,37 +191,60 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
 }
 
 #[cfg(feature = "derive")]
-impl<'a, 'de> Drop for StructBox<'a, 'de> {
-    fn drop(&mut self) {
+impl<'a, 'de> StructBox<'a, 'de> {
+    /// Drops the sink and the fields, returns the size of the block.
+    ///
+    /// # Safety
+    ///
+    /// The box must not be used after.
+    #[inline(always)]
+    unsafe fn drop_values(&mut self) -> Release {
         // SAFETY: the sink and the fields are valid, the block was
         // allocated with the layout of both.
         unsafe {
             let sink = self.ptr.cast::<StructSink<'a, 'de>>();
             let (fields, drop_fields) = sink.as_ref().fields_ptr();
             let (layout, _) = struct_block_layout(Layout::for_value(fields.as_ref()));
-            // the block is freed even if a drop panics
-            struct Free(NonNull<u8>, Layout);
-            impl Drop for Free {
-                fn drop(&mut self) {
-                    // SAFETY: see above
-                    unsafe { free_block(self.0, self.1) };
-                }
-            }
-            let _free = Free(sink.cast(), layout);
+            // the block is released even if a drop panics
+            let release = Release(sink.cast(), layout.size());
             ptr::drop_in_place(sink.as_ptr());
             if drop_fields {
                 ptr::drop_in_place(fields.as_ptr());
+            }
+            release
+        }
+    }
+
+    /// Drops the box and returns its block to the arena right away if it's
+    /// the top block (see [`Arena::pop`]).
+    #[inline(always)]
+    pub fn release_in(self, arena: &mut Arena) {
+        let mut this = core::mem::ManuallyDrop::new(self);
+        // SAFETY: the box is not used after
+        unsafe {
+            let release = this.drop_values();
+            if arena.pop(release.0.as_ptr(), release.1) {
+                core::mem::forget(release);
             }
         }
     }
 }
 
+#[cfg(feature = "derive")]
+impl<'a, 'de> Drop for StructBox<'a, 'de> {
+    fn drop(&mut self) {
+        // SAFETY: the box is not used after
+        drop(unsafe { self.drop_values() });
+    }
+}
+
 #[test]
-fn test_sink_box() {
+fn test_sinks() {
     use crate::State;
     use crate::de::SinkHandle;
     use crate::{Atom, Error};
     use alloc::sync::Arc;
+    use alloc::vec::Vec;
 
     struct Tracked<const N: usize>(#[allow(dead_code)] Arc<()>, [u8; N]);
 
@@ -382,32 +258,36 @@ fn test_sink_box() {
     impl Sink<'_> for Zst {}
 
     let rc = Arc::new(());
-    let mut boxes = Vec::new();
+    let mut state = State::new();
+    let mut handles = Vec::new();
     for _ in 0..3 {
         for _ in 0..40 {
-            boxes.push(SinkBox::<'_, '_>::new(Tracked(rc.clone(), [0u8; 1])));
-            boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 100])));
-            boxes.push(SinkBox::new(Tracked(rc.clone(), [0u8; 5000])));
-            boxes.push(SinkBox::new(Zst));
+            handles.push(SinkHandle::<'_, '_>::arena(
+                Tracked(rc.clone(), [0u8; 1]),
+                &mut state,
+            ));
+            handles.push(SinkHandle::heap(Tracked(rc.clone(), [0u8; 100])));
+            handles.push(SinkHandle::arena(
+                Tracked(rc.clone(), [0u8; 5000]),
+                &mut state,
+            ));
+            handles.push(SinkHandle::arena(Zst, &mut state));
+            handles.push(SinkHandle::heap(Zst));
         }
         assert_eq!(Arc::strong_count(&rc), 121);
         // drop in a mixed order
         let mut index = 0;
-        while !boxes.is_empty() {
-            index = (index + 7) % boxes.len();
-            boxes.swap_remove(index);
+        while !handles.is_empty() {
+            index = (index + 7) % handles.len();
+            handles.swap_remove(index);
         }
         assert_eq!(Arc::strong_count(&rc), 1);
     }
+    assert!(state.arena.is_empty());
 
-    // boxes also work through handles and across threads
-    let handle = SinkHandle::<'_, '_>::boxed(Tracked(rc.clone(), [0u8; 10]));
-    drop(handle);
-    std::thread::spawn(|| {
-        let _a = SinkBox::<'_, '_>::new(Zst);
-        let _b = SinkBox::<'_, '_>::new(Tracked(Arc::new(()), [0u8; 10]));
-    })
-    .join()
-    .unwrap();
+    // handles can be dropped on other threads
+    let handle = SinkHandle::<'_, '_>::arena(Tracked(rc.clone(), [0u8; 10]), &mut state);
+    std::thread::spawn(move || drop(handle)).join().unwrap();
     assert_eq!(Arc::strong_count(&rc), 1);
+    assert!(state.arena.is_empty());
 }

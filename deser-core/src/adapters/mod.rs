@@ -186,7 +186,7 @@
 //! }
 //!
 //! impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-//!     fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_, 'de> {
+//!     fn deserialize_into_as<'out>(out: &'out mut Option<Vec<u8>>, state: &mut State) -> SinkHandle<'out, 'de> {
 //!         HexSlot::make_handle(out)
 //!     }
 //! }
@@ -247,7 +247,10 @@ pub trait DeserializeAs<'de, T>: 'static {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// See [`Deserialize::deserialize_into`].
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de>;
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>;
 
     /// Provides the value of a missing struct field.
     ///
@@ -262,12 +265,12 @@ pub trait DeserializeAs<'de, T>: 'static {
     /// [`Deserialize::deserialize_update`], the derive uses it to update
     /// fields with adapters.  The default implementation replaces the value
     /// with the deserialized one.
-    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
         Self: Sized,
     {
-        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>())
+        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>(state), state)
     }
 
     #[doc(hidden)]
@@ -276,7 +279,7 @@ pub trait DeserializeAs<'de, T>: 'static {
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        atom_into_handle(Self::deserialize_into_as(out), atom, state)
+        atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
     }
 
     #[doc(hidden)]
@@ -285,7 +288,7 @@ pub trait DeserializeAs<'de, T>: 'static {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        borrowed_atom_into_handle(Self::deserialize_into_as(out), atom, state)
+        borrowed_atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
     }
 
     #[doc(hidden)]
@@ -313,19 +316,26 @@ pub trait DeserializeAs<'de, T>: 'static {
 
     /// See [`Deserialize::__private_collect_into`].
     #[doc(hidden)]
-    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        Self::deserialize_into_as(out)
+    fn __private_collect_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        Self::deserialize_into_as(out, state)
     }
 
     /// See [`Deserialize::__private_collect_update`].
     #[doc(hidden)]
-    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    fn __private_collect_update_as<'out>(
+        value: &'out mut T,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>
     where
         T: Send,
         Self: Sized,
     {
         let _ = first;
-        Self::deserialize_update_as(value)
+        Self::deserialize_update_as(value, state)
     }
 
     /// See [`Deserialize::__private_collect_empty`].
@@ -416,8 +426,11 @@ pub struct Same;
 
 impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        T::deserialize_into(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        T::deserialize_into(out, state)
     }
 
     #[inline]
@@ -426,11 +439,11 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
-        T::deserialize_update(value)
+        T::deserialize_update(value, state)
     }
 
     #[inline]
@@ -472,16 +485,23 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        T::__private_collect_into(out)
+    fn __private_collect_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        T::__private_collect_into(out, state)
     }
 
     #[inline]
-    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    fn __private_collect_update_as<'out>(
+        value: &'out mut T,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
-        T::__private_collect_update(value, first)
+        T::__private_collect_update(value, first, state)
     }
 
     #[inline]
@@ -631,10 +651,16 @@ impl<T: Hash, A> Hash for As<T, A> {
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        crate::de::mapped::MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), |value| {
-            Ok(As::new(value))
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        crate::de::mapped::MappedSink::handle(
+            out,
+            OwnedSink::deserialize_as::<A>(state),
+            |value| Ok(As::new(value)),
+            state,
+        )
     }
 
     fn initial_value() -> Option<Self> {

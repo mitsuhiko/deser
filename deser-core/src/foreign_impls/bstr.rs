@@ -105,9 +105,9 @@ impl<'de> Sink<'de> for BStringSink<'_> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(u8::deserialize_into(&mut self.element))
+        Ok(u8::deserialize_into(&mut self.element, state))
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -125,13 +125,19 @@ impl<'de> Sink<'de> for BStringSink<'_> {
 }
 
 impl<'de> Deserialize<'de> for BString {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(BStringSink {
-            out,
-            bytes: Vec::new(),
-            element: None,
-            is_seq: false,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            BStringSink {
+                out,
+                bytes: Vec::new(),
+                element: None,
+                is_seq: false,
+            },
+            state,
+        )
     }
 
     #[inline]
@@ -192,8 +198,11 @@ impl BytesBufImpl for BString {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 
@@ -236,7 +245,10 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a BStr> {
 
 /// Borrows strings and bytes from the data.
 impl<'de: 'a, 'a> Deserialize<'de> for &'a BStr {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }

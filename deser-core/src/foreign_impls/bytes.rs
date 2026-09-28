@@ -49,8 +49,8 @@ macro_rules! byte_buffer {
                 }
 
                 #[inline]
-                fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-                    Deserialize::deserialize_into(out)
+                fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>, state: &mut State) -> SinkHandle<'a, 'de> {
+                    Deserialize::deserialize_into(out, state)
                 }
             }
 

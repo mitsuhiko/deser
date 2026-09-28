@@ -127,7 +127,7 @@ unsafe fn erase_lifetime<'de>(handle: SinkHandle<'_, 'de>) -> SinkHandle<'de, 'd
 impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserialize<'de>>(out: &'a mut Option<T>) -> DeserializeDriver<'a, 'de> {
-        DeserializeDriver::from_sink(T::deserialize_into(out))
+        DeserializeDriver::from_fn(|state| T::deserialize_into(out, state))
     }
 
     /// Creates a driver that updates an existing value.
@@ -153,12 +153,52 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// assert_eq!((config.host.as_str(), config.port), ("localhost", 8080));
     /// ```
     pub fn update<T: Deserialize<'de>>(value: &'a mut T) -> DeserializeDriver<'a, 'de> {
-        DeserializeDriver::from_sink(T::deserialize_update(value))
+        DeserializeDriver::from_fn(|state| T::deserialize_update(value, state))
     }
 
     /// Creates a new deserializer driver from a sink.
+    ///
+    /// The sink cannot be allocated in the arena of the driver, see
+    /// [`from_fn`](Self::from_fn) for that.
     pub fn from_sink(sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver::with_state(State::new(), sink, STACK_CAPACITY)
+    }
+
+    /// Creates a new deserializer driver with a sink that is created with
+    /// the state of the driver.
+    ///
+    /// This allows the sink to be allocated in the arena of the driver
+    /// (see [`SinkHandle::arena`]).
+    ///
+    /// ```
+    /// use deser::de::{DeserializeDriver, Recording};
+    /// use deser::Event;
+    ///
+    /// let mut recording = Recording::new();
+    /// let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
+    /// for event in [Event::seq_start(), 42u64.into(), Event::SeqEnd] {
+    ///     driver.emit(event).unwrap();
+    /// }
+    /// drop(driver);
+    /// assert_eq!(recording.events().count(), 3);
+    /// ```
+    pub fn from_fn(
+        make: impl FnOnce(&mut State) -> SinkHandle<'a, 'de>,
+    ) -> DeserializeDriver<'a, 'de> {
+        // the arena moves into the driver with the state, its chunks (and
+        // the sink in them) do not move
+        let mut state = State::new();
+        let sink = make(&mut state);
+        DeserializeDriver::with_state(state, sink, STACK_CAPACITY)
+    }
+
+    /// Creates a driver from a state and a sink that was created with it.
+    ///
+    /// This is like [`from_fn`](Self::from_fn) for code that creates the
+    /// sink where the type is known and runs the driver in a function that
+    /// is not generic.
+    pub fn from_state(state: State, sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
+        DeserializeDriver::with_state(state, sink, STACK_CAPACITY)
     }
 
     /// Runs a nested driver within an ongoing deserialization.
@@ -249,14 +289,14 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Panics if events were already emitted.
     pub fn wrap_sink<F>(&mut self, f: F)
     where
-        F: for<'x> FnOnce(SinkHandle<'x, 'de>) -> SinkHandle<'x, 'de>,
+        F: for<'x> FnOnce(SinkHandle<'x, 'de>, &mut State) -> SinkHandle<'x, 'de>,
     {
         assert!(
             self.core.sink_stack.is_empty(),
             "sinks can only be wrapped before events are emitted"
         );
         let root = self.core.root.take().expect("no active sink");
-        self.core.root = Some(f(root));
+        self.core.root = Some(f(root, &mut self.core.state));
     }
 
     /// Emits an event into the driver.
@@ -679,6 +719,8 @@ impl<'de> DriverCore<'de> {
         if self.sink_stack.is_empty() {
             // the root sink is retained until the driver is dropped
             self.root = Some(sink);
+        } else {
+            sink.release(&mut self.state);
         }
         rv
     }
@@ -733,8 +775,69 @@ fn content_container_error(is_key: bool) -> Error {
 impl<'de> Drop for DriverCore<'de> {
     fn drop(&mut self) {
         // sinks borrow from the sinks below them, drop them in inverse order
-        while let Some(_item) = self.sink_stack.pop() {}
+        while let Some((sink, _)) = self.sink_stack.pop() {
+            sink.release(&mut self.state);
+        }
+        // the sinks are dropped before the state, the arena they are in is
+        // only freed if they were dropped
+        if let Some(root) = self.root.take() {
+            root.release(&mut self.state);
+        }
     }
+}
+
+#[test]
+fn test_arena_is_not_leaked() {
+    use crate::de::Recording;
+    use crate::de::arena::LEAKED;
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    let leaked = LEAKED.with(|x| x.get());
+    // nested containers
+    let mut out = None::<Vec<BTreeMap<String, Vec<u32>>>>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    for event in [
+        Event::seq_start(),
+        Event::map_start(),
+        "a".into(),
+        Event::seq_start(),
+        1u64.into(),
+        Event::SeqEnd,
+        Event::MapEnd,
+        Event::SeqEnd,
+    ] {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(out.unwrap()[0]["a"], [1]);
+
+    // replayed (nested drivers)
+    let mut recording = Recording::new();
+    let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
+    for event in [Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd] {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    let mut driver_out = None::<()>;
+    let mut driver = DeserializeDriver::new(&mut driver_out);
+    let mut out = None::<Vec<u32>>;
+    let state = driver.state_mut();
+    recording
+        .replay(Vec::<u32>::deserialize_into(&mut out, state), state)
+        .unwrap();
+    drop(driver);
+    assert_eq!(out.unwrap(), [1, 2]);
+
+    // an error and an incomplete value
+    let mut out = None::<Vec<Vec<u32>>>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    driver.emit(Event::seq_start()).unwrap();
+    driver.emit(Event::seq_start()).unwrap();
+    assert!(driver.emit("not a number").is_err());
+    drop(driver);
+
+    assert_eq!(LEAKED.with(|x| x.get()), leaked);
 }
 
 #[test]

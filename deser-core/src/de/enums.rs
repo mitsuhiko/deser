@@ -9,7 +9,6 @@
 //! Known variants are looked up by string, other tags go to the variant
 //! marked with `#[deser(other)]` which can capture the tag.
 use alloc::borrow::Cow;
-use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -19,6 +18,7 @@ use core::ptr::NonNull;
 
 use crate::State;
 use crate::Text;
+use crate::de::arena::ArenaBox;
 use crate::de::recording::{Capture, RecordBuf};
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
@@ -45,11 +45,39 @@ pub trait VariantBuilder<'de, E>: Send {
     fn build(&mut self) -> Option<E>;
 }
 
-/// A boxed variant builder.
+/// A variant builder in the arena of the deserialization.
 ///
 /// `'a` is the lifetime of the slot of the enum.  The enum (and with it
 /// the types of its fields) outlives it, which allows enums to borrow.
-pub type BoxedVariant<'a, 'de, E> = Box<dyn VariantBuilder<'de, E> + 'a>;
+pub struct BoxedVariant<'a, 'de, E>(ArenaBox<dyn VariantBuilder<'de, E> + 'a>);
+
+impl<'a, 'de, E> BoxedVariant<'a, 'de, E> {
+    /// Moves a builder into the arena of the state.
+    #[inline(always)]
+    pub fn new<B: VariantBuilder<'de, E> + 'a>(builder: B, state: &mut State) -> Self {
+        let ptr = ArenaBox::into_raw(ArenaBox::new(builder, &mut state.arena));
+        // SAFETY: the pointer comes from the box
+        BoxedVariant(unsafe {
+            ArenaBox::from_raw(ptr.as_ptr() as *mut (dyn VariantBuilder<'de, E> + 'a))
+        })
+    }
+}
+
+impl<'a, 'de, E> core::ops::Deref for BoxedVariant<'a, 'de, E> {
+    type Target = dyn VariantBuilder<'de, E> + 'a;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0.get()
+    }
+}
+
+impl<'a, 'de, E> core::ops::DerefMut for BoxedVariant<'a, 'de, E> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.get_mut()
+    }
+}
 
 /// A variant that is deserialized as `V` and then converted into `E`.
 pub struct Variant<'de, V, E> {
@@ -59,16 +87,19 @@ pub struct Variant<'de, V, E> {
 
 impl<'de, V: Deserialize<'de>, E> Variant<'de, V, E> {
     /// Creates a boxed builder for a variant.
-    pub fn boxed<'a>(convert: fn(V) -> E) -> BoxedVariant<'a, 'de, E>
+    pub fn boxed<'a>(convert: fn(V) -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
     where
         'de: 'a,
         V: 'a,
         E: 'a,
     {
-        Box::new(Variant {
-            sink: OwnedSink::deserialize(),
-            convert,
-        })
+        BoxedVariant::new(
+            Variant {
+                sink: OwnedSink::deserialize(state),
+                convert,
+            },
+            state,
+        )
     }
 }
 
@@ -90,15 +121,18 @@ pub struct IgnoredVariant<'de, E> {
 
 impl<'de, E> IgnoredVariant<'de, E> {
     /// Creates a boxed builder for a variant which ignores its content.
-    pub fn boxed<'a>(make: fn() -> E) -> BoxedVariant<'a, 'de, E>
+    pub fn boxed<'a>(make: fn() -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
     where
         'de: 'a,
         E: 'a,
     {
-        Box::new(IgnoredVariant {
-            sink: SinkHandle::null(),
-            make,
-        })
+        BoxedVariant::new(
+            IgnoredVariant {
+                sink: SinkHandle::null(),
+                make,
+            },
+            state,
+        )
     }
 }
 
@@ -127,18 +161,21 @@ where
     C: Deserialize<'de>,
 {
     /// Creates a boxed builder for a variant which captures its tag.
-    pub fn boxed<'a>(convert: fn(T, C) -> E) -> BoxedVariant<'a, 'de, E>
+    pub fn boxed<'a>(convert: fn(T, C) -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
     where
         'de: 'a,
         T: 'a,
         C: 'a,
         E: 'a,
     {
-        Box::new(OtherVariant {
-            tag: None,
-            content: OwnedSink::deserialize(),
-            convert,
-        })
+        BoxedVariant::new(
+            OtherVariant {
+                tag: None,
+                content: OwnedSink::deserialize(state),
+                convert,
+            },
+            state,
+        )
     }
 }
 
@@ -153,7 +190,7 @@ where
 
     fn set_tag(&mut self, tag: Option<&RecordBuf<'de>>, state: &mut State) -> Result<(), Error> {
         match tag {
-            Some(tag) => tag.replay(T::deserialize_into(&mut self.tag), state),
+            Some(tag) => tag.replay(T::deserialize_into(&mut self.tag, state), state),
             None => {
                 // the tag is missing, the tag field needs to accept this
                 self.tag = T::initial_value();
@@ -179,7 +216,10 @@ where
 pub struct IgnoredContent;
 
 impl<'de> Deserialize<'de> for IgnoredContent {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         struct IgnoredContentSink<'a>(&'a mut Option<IgnoredContent>);
 
         impl<'a, 'de> Sink<'de> for IgnoredContentSink<'a> {
@@ -229,7 +269,7 @@ impl<'de> Deserialize<'de> for IgnoredContent {
             }
         }
 
-        SinkHandle::boxed(IgnoredContentSink(out))
+        SinkHandle::arena(IgnoredContentSink(out), state)
     }
 }
 
@@ -282,12 +322,17 @@ impl<'a> Tag<'a> {
 /// Implicit atoms are looked up as their value and then as their text.
 /// Extension values are lowered to their fallback.
 #[inline]
-pub fn lookup_atom<T>(atom: &Atom, lookup: impl Fn(Tag<'_>) -> Option<T>) -> Option<T> {
+pub fn lookup_atom<T>(atom: &Atom, mut lookup: impl FnMut(Tag<'_>) -> Option<T>) -> Option<T> {
     match atom {
-        Atom::Lexical(text) => lookup(Tag::Str(text)).or_else(|| lookup(Tag::parse_lexical(text)?)),
-        Atom::Implicit(value) => Tag::of_atom(&value.value().to_atom())
-            .and_then(&lookup)
-            .or_else(|| lookup(Tag::Str(value.text()))),
+        Atom::Lexical(text) => match lookup(Tag::Str(text)) {
+            Some(rv) => Some(rv),
+            None => lookup(Tag::parse_lexical(text)?),
+        },
+        Atom::Implicit(value) => match Tag::of_atom(&value.value().to_atom()).and_then(&mut lookup)
+        {
+            Some(rv) => Some(rv),
+            None => lookup(Tag::Str(value.text())),
+        },
         Atom::Ext(ext) => lookup_atom(&ext.fallback(), lookup),
         atom => lookup(Tag::of_atom(atom)?),
     }
@@ -365,10 +410,10 @@ pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Err
 }
 
 /// Looks up a variant by tag.
-pub type VariantLookup<'a, 'de, E> = fn(Tag<'_>) -> Option<BoxedVariant<'a, 'de, E>>;
+pub type VariantLookup<'a, 'de, E> = fn(Tag<'_>, &mut State) -> Option<BoxedVariant<'a, 'de, E>>;
 
 /// Creates the builder of a special variant.
-pub type VariantMaker<'a, 'de, E> = fn() -> BoxedVariant<'a, 'de, E>;
+pub type VariantMaker<'a, 'de, E> = fn(&mut State) -> BoxedVariant<'a, 'de, E>;
 
 /// Looks up a unit variant by tag.
 pub type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
@@ -405,13 +450,13 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
     ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
         let atom = tag.single_atom();
         if let Some(atom) = atom
-            && let Some(variant) = lookup_atom(atom, self.lookup)
+            && let Some(variant) = lookup_atom(atom, |tag| (self.lookup)(tag, state))
         {
             return Ok(variant);
         }
         match self.other {
             Some(other) => {
-                let mut variant = other();
+                let mut variant = other(state);
                 variant.set_tag(Some(tag), state)?;
                 Ok(variant)
             }
@@ -431,7 +476,7 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
     ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
         match self.default {
             Some(default) => {
-                let mut variant = default();
+                let mut variant = default(state);
                 variant.set_tag(None, state)?;
                 Ok(variant)
             }
@@ -477,17 +522,21 @@ impl<'a, 'de, E: Send> ExternallyTaggedSink<'a, 'de, E> {
         name: &'static str,
         variants: Variants<'a, 'de, E>,
         unit: UnitLookup<E>,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(ExternallyTaggedSink {
-            out,
-            name,
-            variants,
-            unit,
-            key: RecordBuf::new(),
-            has_key: false,
-            done: false,
-            variant: None,
-        })
+        SinkHandle::arena(
+            ExternallyTaggedSink {
+                out,
+                name,
+                variants,
+                unit,
+                key: RecordBuf::new(),
+                has_key: false,
+                done: false,
+                variant: None,
+            },
+            state,
+        )
     }
 
     fn begin_key(&mut self) -> Result<(), Error> {
@@ -513,13 +562,14 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             self.done = true;
             return Ok(());
         }
-        let mut variant = lookup_atom(&atom, self.variants.lookup);
+        let lookup = self.variants.lookup;
+        let mut variant = lookup_atom(&atom, |tag| lookup(tag, state));
         if variant.is_none()
             && let Some(other) = self.variants.other
         {
             let mut tag = RecordBuf::new();
             tag.set_atom(&atom, state);
-            let mut other = other();
+            let mut other = other(state);
             other.set_tag(Some(&tag), state)?;
             variant = Some(other);
         }
@@ -543,9 +593,9 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.begin_key()?;
-        Ok(self.key.recorder())
+        Ok(self.key.recorder(state))
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -651,20 +701,24 @@ impl<'a, 'de, E: Send> AdjacentlyTaggedSink<'a, 'de, E> {
         name: &'static str,
         variants: Variants<'a, 'de, E>,
         deny_unknown_fields: bool,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(AdjacentlyTaggedSink {
-            out,
-            tag,
-            content,
-            name,
-            variants,
-            key: RecordBuf::new(),
-            tag_value: None,
-            recorded_content: None,
-            has_content: false,
-            deny_unknown_fields,
-            variant: None,
-        })
+        SinkHandle::arena(
+            AdjacentlyTaggedSink {
+                out,
+                tag,
+                content,
+                name,
+                variants,
+                key: RecordBuf::new(),
+                tag_value: None,
+                recorded_content: None,
+                has_content: false,
+                deny_unknown_fields,
+                variant: None,
+            },
+            state,
+        )
     }
 
     fn start_variant(
@@ -698,7 +752,7 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.ensure_variant(state)?;
-        Ok(self.key.recorder())
+        Ok(self.key.recorder(state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -707,7 +761,7 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("field", self.tag.name));
             }
-            Ok(self.tag_value.insert(RecordBuf::new()).recorder())
+            Ok(self.tag_value.insert(RecordBuf::new()).recorder(state))
         } else if self.content.matches_recorded(&key) {
             if self.has_content {
                 return Err(duplicate_key("field", self.content.name));
@@ -715,7 +769,10 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
             self.has_content = true;
             Ok(match self.variant {
                 Some(ref mut variant) => SinkHandle::to(variant.sink()),
-                None => self.recorded_content.insert(RecordBuf::new()).recorder(),
+                None => self
+                    .recorded_content
+                    .insert(RecordBuf::new())
+                    .recorder(state),
             })
         } else {
             unknown_field(
@@ -765,12 +822,16 @@ pub fn untagged_handle<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
     name: &'static str,
     variants: UntaggedVariants<'de, E>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    RecordBuf::capture_with(Box::new(UntaggedCapture {
-        out,
-        name,
-        variants,
-    }))
+    RecordBuf::capture_with(
+        UntaggedCapture {
+            out,
+            name,
+            variants,
+        },
+        state,
+    )
 }
 
 /// Deserializes an atom into an untagged enum.
@@ -843,7 +904,9 @@ impl<'t, 'de, E> UntaggedTry<'t, 'de, E> {
             UntaggedInput::Borrowed(ref atom) => {
                 V::__private_borrowed_atom_into(&mut slot, atom.clone(), state)
             }
-            UntaggedInput::Recorded(buffer) => buffer.replay(V::deserialize_into(&mut slot), state),
+            UntaggedInput::Recorded(buffer) => {
+                buffer.replay(V::deserialize_into(&mut slot, state), state)
+            }
         };
         if rv.is_ok() {
             self.value = slot.map(convert);
@@ -937,21 +1000,25 @@ impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de,
 /// atoms are recorded and replayed, the recording borrows from the data.
 pub fn untagged_fallback<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
-    tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
+    tagged: for<'x> fn(&'x mut Option<E>, &mut State) -> SinkHandle<'x, 'de>,
     variants: UntaggedVariants<'de, E>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    RecordBuf::capture_with(Box::new(FallbackCapture {
-        out,
-        tagged,
-        variants,
-    }))
+    RecordBuf::capture_with(
+        FallbackCapture {
+            out,
+            tagged,
+            variants,
+        },
+        state,
+    )
 }
 
 /// The sink of a tagged enum with untagged variants passes the value on to
 /// this.
 struct FallbackCapture<'a, 'de, E> {
     out: &'a mut Option<E>,
-    tagged: for<'x> fn(&'x mut Option<E>) -> SinkHandle<'x, 'de>,
+    tagged: for<'x> fn(&'x mut Option<E>, &mut State) -> SinkHandle<'x, 'de>,
     variants: UntaggedVariants<'de, E>,
 }
 
@@ -969,7 +1036,7 @@ impl<'a, 'de, E: Send> FallbackCapture<'a, 'de, E> {
             UntaggedInput::Recorded(_) => EventData::new(),
             _ => state.extensions().capture_event_data(),
         };
-        let err = match tagged((self.tagged)(self.out), state) {
+        let err = match tagged((self.tagged)(self.out, state), state) {
             Ok(()) if self.out.is_some() => return Ok(()),
             Ok(()) => Error::new(ErrorKind::Unexpected, "enum was not deserialized"),
             Err(err) => err,
@@ -1044,20 +1111,24 @@ impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
         tag: EnumKey,
         name: &'static str,
         variants: Variants<'a, 'de, E>,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(InternallyTaggedSink {
-            out,
-            tag,
-            name,
-            variants,
-            key: RecordBuf::new(),
-            pending: Vec::new(),
-            tag_value: None,
-            variant: None,
-            variant_key: false,
-            flattened: false,
-            unclaimed: Vec::new(),
-        })
+        SinkHandle::arena(
+            InternallyTaggedSink {
+                out,
+                tag,
+                name,
+                variants,
+                key: RecordBuf::new(),
+                pending: Vec::new(),
+                tag_value: None,
+                variant: None,
+                variant_key: false,
+                flattened: false,
+                unclaimed: Vec::new(),
+            },
+            state,
+        )
     }
 
     /// Starts a variant and replays the pairs recorded so far into it.
@@ -1117,7 +1188,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.ensure_variant(state)?;
         self.variant_key = self.variant.is_some();
-        Ok(self.key.recorder())
+        Ok(self.key.recorder(state))
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1172,10 +1243,10 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("tag", self.tag.name));
             }
-            return Ok(self.tag_value.insert(RecordBuf::new()).recorder());
+            return Ok(self.tag_value.insert(RecordBuf::new()).recorder(state));
         }
         self.pending.push((key, RecordBuf::new()));
-        Ok(self.pending.last_mut().unwrap().1.recorder())
+        Ok(self.pending.last_mut().unwrap().1.recorder(state))
     }
 
     /// Takes the keys of a struct the enum is flattened into.
@@ -1196,7 +1267,9 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             if self.tag_value.is_some() {
                 return Err(duplicate_key("tag", self.tag.name));
             }
-            return Ok(Some(self.tag_value.insert(RecordBuf::new()).recorder()));
+            return Ok(Some(
+                self.tag_value.insert(RecordBuf::new()).recorder(state),
+            ));
         }
         self.ensure_variant(state)?;
         if let Some(variant) = &mut self.variant {
@@ -1205,7 +1278,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         let mut recorded_key = RecordBuf::new();
         recorded_key.set_atom(&Atom::Str(Text::borrowed(key)), state);
         self.pending.push((recorded_key, RecordBuf::new()));
-        Ok(Some(self.pending.last_mut().unwrap().1.recorder()))
+        Ok(Some(self.pending.last_mut().unwrap().1.recorder(state)))
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
@@ -1326,11 +1399,12 @@ pub fn unit_enum_sink<'a, 'de, T: Send + 'a>(
     target: &'a mut T,
     set: VariantSetter<T>,
     info: &'static UnitEnum,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
     // the setter is only ever called with the target which is a valid
     // `&'a mut T` for the lifetime of the sink
     let (target, set) = erase_setter(target, set);
-    unit_enum_handle(target, set, info)
+    unit_enum_handle(target, set, info, state)
 }
 
 /// Creates the sink of [`unit_enum_sink`], this exists once for all types.
@@ -1338,13 +1412,17 @@ fn unit_enum_handle<'a, 'de>(
     target: NonNull<()>,
     set: ErasedVariantSetter,
     info: &'static UnitEnum,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    SinkHandle::boxed(UnitEnumSink {
-        target,
-        set,
-        info,
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        UnitEnumSink {
+            target,
+            set,
+            info,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de> Sink<'de> for UnitEnumSink<'_> {
@@ -1386,17 +1464,21 @@ pub fn atom_sink<'a, 'de, T: Send + 'a>(
     target: &'a mut T,
     set: AtomSetter<T>,
     name: &'static str,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
     // SAFETY: `&mut T` and `NonNull<()>` are ABI compatible (both are
     // pointers to sized types), and the setter is only ever called with
     // the target which is a valid `&'a mut T` for the lifetime of the sink.
     let set = unsafe { core::mem::transmute::<AtomSetter<T>, ErasedAtomSetter>(set) };
-    SinkHandle::boxed(AtomSink {
-        target: NonNull::from(target).cast(),
-        set,
-        name,
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        AtomSink {
+            target: NonNull::from(target).cast(),
+            set,
+            name,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de> Sink<'de> for AtomSink<'_> {

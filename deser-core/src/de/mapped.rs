@@ -21,8 +21,9 @@ impl<'a, 'de, T: Send + 'a, U: Send + 'a> MappedSink<'a, 'de, T, U> {
         out: &'a mut Option<U>,
         sink: OwnedSink<'de, T>,
         convert: fn(T) -> Result<U, Error>,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(MappedSink { out, sink, convert })
+        SinkHandle::arena(MappedSink { out, sink, convert }, state)
     }
 }
 
@@ -35,8 +36,9 @@ pub fn mapped<'a, 'de, T: Send + 'a, U: Send + 'a>(
     out: &'a mut Option<U>,
     sink: OwnedSink<'de, T>,
     convert: fn(T) -> Result<U, Error>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    MappedSink::handle(out, sink, convert)
+    MappedSink::handle(out, sink, convert, state)
 }
 
 impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {

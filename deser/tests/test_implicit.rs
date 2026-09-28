@@ -157,13 +157,16 @@ fn test_recording() {
     let mut driver = DeserializeDriver::new(&mut driver_out);
     let mut text = None::<String>;
     recording
-        .replay(Deserialize::deserialize_into(&mut text), driver.state_mut())
+        .replay(
+            Deserialize::deserialize_into(&mut text, driver.state_mut()),
+            driver.state_mut(),
+        )
         .unwrap();
     assert_eq!(text.as_deref(), Some("1.10"));
     let mut value = None::<f64>;
     recording
         .replay(
-            Deserialize::deserialize_into(&mut value),
+            Deserialize::deserialize_into(&mut value, driver.state_mut()),
             driver.state_mut(),
         )
         .unwrap();

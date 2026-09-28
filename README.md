@@ -355,7 +355,7 @@ sinks and emitters for many compound values.  This is the consequence of a
 certain level of flexibility and the desire to not use the call stack for
 recursion.  Deser works around most of this overhead (for instance derived
 structs and vectors serialize without allocations, and sinks are allocated
-from a per thread cache).  Compared to serde based libraries in the
+in an arena of the deserialization).  Compared to serde based libraries in the
 [included benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)
 YAML and TOML are two to four times as fast and CBOR deserializes faster
 but serializes slower.  JSON serializes faster but deserializes slower on

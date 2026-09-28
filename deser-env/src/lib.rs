@@ -375,7 +375,7 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
         // the variable stands for a key given once: collections (like
         // `Vec<T>`) are one value
         let mut driver = if T::__private_collects() {
-            DeserializeDriver::from_sink(T::__private_collect_into(&mut out))
+            DeserializeDriver::from_fn(|state| T::__private_collect_into(&mut out, state))
         } else {
             DeserializeDriver::new(&mut out)
         };

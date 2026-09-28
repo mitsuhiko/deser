@@ -65,8 +65,11 @@ impl Serialize for Ext {
 }
 
 impl<'de> Deserialize<'de> for Ext {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ExtSink(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ExtSink(out), state)
     }
 }
 

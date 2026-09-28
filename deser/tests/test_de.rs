@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
 use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
-use deser::{Atom, Deserialize, Event, Text, make_slot_wrapper};
+use deser::{Atom, Deserialize, Event, State, Text, make_slot_wrapper};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
@@ -109,7 +109,10 @@ fn test_f32_fallback() {
     }
 
     impl<'de> Deserialize<'de> for F64Only {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        fn deserialize_into<'out>(
+            out: &'out mut Option<Self>,
+            _state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
             SlotWrapper::make_handle(out)
         }
     }
@@ -230,7 +233,10 @@ fn test_array_dropping_on_error() {
     make_slot_wrapper!(SlotWrapper);
 
     impl<'de> Deserialize<'de> for X {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        fn deserialize_into<'out>(
+            out: &'out mut Option<Self>,
+            _state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
             SlotWrapper::make_handle(out)
         }
     }

@@ -106,13 +106,19 @@ impl<T: fmt::Debug> fmt::Debug for Located<T> {
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Located<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(LocatedSink {
-            out,
-            sink: OwnedSink::deserialize(),
-            path: None,
-            span: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            LocatedSink {
+                out,
+                sink: OwnedSink::deserialize(state),
+                path: None,
+                span: None,
+            },
+            state,
+        )
     }
 }
 

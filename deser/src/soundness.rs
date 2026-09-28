@@ -9,7 +9,7 @@
 ///
 /// let mut driver = {
 ///     let mut out = None::<Vec<u32>>;
-///     DeserializeDriver::from_sink(Deserialize::deserialize_into(&mut out))
+///     DeserializeDriver::from_fn(|state| Deserialize::deserialize_into(&mut out, state))
 /// };
 /// driver.emit(1u64).unwrap();
 /// ```
@@ -18,11 +18,12 @@
 ///
 /// ```compile_fail,E0277
 /// use deser::de::{OwnedSink, SinkHandle};
-/// use deser::Deserialize;
+/// use deser::{Deserialize, State};
 ///
-/// let mut owned = OwnedSink::<u32>::deserialize();
+/// let mut state = State::new();
+/// let mut owned = OwnedSink::<u32>::deserialize(&mut state);
 /// let mut local = None::<u32>;
-/// *owned.borrow_mut() = Deserialize::deserialize_into(&mut local);
+/// *owned.borrow_mut() = Deserialize::deserialize_into(&mut local, &mut state);
 /// ```
 ///
 /// Borrowed extensions have to prove that their values can be shortened.

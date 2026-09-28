@@ -19,7 +19,7 @@ use crate::ser::{Begin, Chunk, Describe, PlainSink};
 /// derived implementation deserialized them:
 ///
 /// ```
-/// use deser::Deserialize;
+/// use deser::{Deserialize, State};
 /// use deser::adapters::{DeserializeAs, Derived};
 /// use deser::de::SinkHandle;
 ///
@@ -27,8 +27,8 @@ use crate::ser::{Begin, Chunk, Describe, PlainSink};
 /// pub struct DefaultIfMissing<A>(std::marker::PhantomData<A>);
 ///
 /// impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultIfMissing<A> {
-///     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-///         A::deserialize_into_as(out)
+///     fn deserialize_into_as<'out>(out: &'out mut Option<T>, state: &mut State) -> SinkHandle<'out, 'de> {
+///         A::deserialize_into_as(out, state)
 ///     }
 ///
 ///     fn initial_value_as() -> Option<T> {
@@ -67,14 +67,21 @@ pub struct Derived;
 /// public API.
 #[doc(hidden)]
 pub trait DerivedDeserialize<'de>: Sized + Send {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de>;
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>;
 
     fn initial_value() -> Option<Self> {
         None
     }
 
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        update::replace_handle_with(value, <Self as DerivedDeserialize<'de>>::deserialize_into)
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        update::replace_handle_with(
+            value,
+            <Self as DerivedDeserialize<'de>>::deserialize_into,
+            state,
+        )
     }
 
     fn __private_atom_into(
@@ -83,7 +90,7 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
         state: &mut State,
     ) -> Result<(), Error> {
         atom_into_handle(
-            <Self as DerivedDeserialize<'de>>::deserialize_into(out),
+            <Self as DerivedDeserialize<'de>>::deserialize_into(out, state),
             atom,
             state,
         )
@@ -95,7 +102,7 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
         state: &mut State,
     ) -> Result<(), Error> {
         borrowed_atom_into_handle(
-            <Self as DerivedDeserialize<'de>>::deserialize_into(out),
+            <Self as DerivedDeserialize<'de>>::deserialize_into(out, state),
             atom,
             state,
         )
@@ -179,8 +186,11 @@ pub trait DerivedSerialize: Sync {
 
 impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        T::deserialize_into(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        T::deserialize_into(out, state)
     }
 
     #[inline]
@@ -189,11 +199,11 @@ impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     }
 
     #[inline]
-    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
-        T::deserialize_update(value)
+        T::deserialize_update(value, state)
     }
 
     #[inline]

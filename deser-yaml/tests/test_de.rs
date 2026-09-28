@@ -297,7 +297,10 @@ fn test_plain_scalars_recorded() {
         let mut driver_out = None::<()>;
         let mut driver = deser::de::DeserializeDriver::new(&mut driver_out);
         recording
-            .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
+            .replay(
+                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                driver.state_mut(),
+            )
             .unwrap();
     }
     assert_eq!(out.unwrap(), ("1.10".into(), "0x1F".into(), "~".into()));

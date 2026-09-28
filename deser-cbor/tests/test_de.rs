@@ -505,7 +505,10 @@ fn value_error_offsets() {
     deser::make_slot_wrapper!(SlotWrapper);
 
     impl<'de> Deserialize<'de> for Range {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+        fn deserialize_into<'out>(
+            out: &'out mut Option<Self>,
+            _state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
             SlotWrapper::make_handle(out)
         }
     }

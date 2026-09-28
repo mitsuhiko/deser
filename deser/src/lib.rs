@@ -126,8 +126,7 @@ pub struct Account {
 //! Everything that is not in `core` and `alloc` is not available: `io`,
 //! the implementations for `HashMap` and `HashSet` (use the `hashbrown`
 //! feature instead), `Path`, `OsStr`, `SystemTime`, `Mutex`, `RwLock` and
-//! `OnceLock`.  Sinks are allocated from the global allocator directly,
-//! with `std` freed sinks are cached per thread.
+//! `OnceLock`.
 //!
 #![cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
 #![cfg_attr(feature = "io", doc = "[io-module]: crate::io")]

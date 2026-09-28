@@ -17,9 +17,9 @@ use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 fn field_sink(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot, __state)
         },
-        None => quote! { __deser::Deserialize::deserialize_into(#slot) },
+        None => quote! { __deser::Deserialize::deserialize_into(#slot, __state) },
     }
 }
 
@@ -67,9 +67,11 @@ fn field_collect_into(
 ) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_into_as(#slot)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_into_as(#slot, __state)
         },
-        None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_into(#slot) },
+        None => {
+            quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_into(#slot, __state) }
+        }
     }
 }
 
@@ -83,10 +85,10 @@ fn field_collect_update(
 ) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_update_as(#field, #first)
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_update_as(#field, #first, __state)
         },
         None => {
-            quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_update(#field, #first) }
+            quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_update(#field, #first, __state) }
         }
     }
 }
@@ -248,27 +250,24 @@ fn derive_tuple_struct(
     let pattern = quote! { (#(#bindings,)*) };
     let owned = if has_adapters {
         quote! {
-            __deser::de::OwnedSink::<#tuple_ty>::deserialize_as::<(#(#adapters,)*)>()
+            __deser::de::OwnedSink::<#tuple_ty>::deserialize_as::<(#(#adapters,)*)>(__state)
         }
     } else {
-        quote! { __deser::de::OwnedSink::<#tuple_ty>::deserialize() }
+        quote! { __deser::de::OwnedSink::<#tuple_ty>::deserialize(__state) }
     };
     let construct = st.construct(&values);
     let handle = quote! {
         __deser::__derive::mapped(
             __slot,
             #owned,
-            |#pattern: #tuple_ty| __deser::__derive::Ok(#construct),
-        )
+            |#pattern: #tuple_ty| __deser::__derive::Ok(#construct), __state)
     };
 
     let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
-            fn deserialize_into(
-                __slot: &mut __deser::__derive::Option<Self>,
-            ) -> __deser::de::SinkHandle<'_, 'de> {
+            fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                 #handle
             }
         }
@@ -294,9 +293,7 @@ fn derive_unit_struct(
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
-            fn deserialize_into(
-                __slot: &mut __deser::__derive::Option<Self>,
-            ) -> __deser::de::SinkHandle<'_, 'de> {
+            fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                 __deser::__derive::atom_sink(
                     __slot,
                     |__slot: &mut __deser::__derive::Option<Self>,
@@ -304,8 +301,7 @@ fn derive_unit_struct(
                      __state: &mut __deser::State| {
                         <Self as #de_trait>::__private_atom_into(__slot, __atom, __state)
                     },
-                    #type_name,
-                )
+                    #type_name, __state)
             }
 
             #[inline]
@@ -397,7 +393,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         });
         sink_defaults.push(if f.flatten() {
             quote! {
-                __deser::de::OwnedSink::deserialize()
+                __deser::de::OwnedSink::deserialize(__state)
             }
         } else if f.default().is_some() || f.required() {
             // required fields are missing even if their type has a
@@ -483,9 +479,9 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // replaced)
         let field_ident = &x.field().ident;
         let update = match x.adapters().de() {
-            None => quote! { __deser::__derive::field_update(__field) },
+            None => quote! { __deser::__derive::field_update(__field, __state) },
             Some(adapter) => quote_spanned! { adapter.span()=>
-                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(__field)
+                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(__field, __state)
             },
         };
         let field_ref = if update_through_ptr {
@@ -796,10 +792,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // so they borrow the fields through a pointer.
         UpdateSink {
             method: quote! {
-                fn deserialize_update(
-                    __value: &mut Self,
-                ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::de::SinkHandle::boxed(__UpdateSink {
+                fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::de::SinkHandle::arena(__UpdateSink {
                         value: __deser::__derive::UpdateTarget::new(__value),
                         key: __deser::__derive::FieldKeySink::new(__field_index, #collects_fn, #retain_unknown),
                         seen: [0; #seen_words],
@@ -809,7 +803,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             #flatten_used: false,
                         )*
                         _marker: __deser::__derive::PhantomData,
-                    })
+                    }, __state)
                 }
             },
             items: quote! {
@@ -880,7 +874,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                                     &mut (*self.value.as_ptr()).#flatten_ident
                                 };
                                 self.#flatten_fields = __deser::__derive::Some(
-                                    <#flatten_ty as __deser::Deserialize<'de>>::deserialize_update(__field)
+                                    <#flatten_ty as __deser::Deserialize<'de>>::deserialize_update(__field, __state)
                                 );
                             }
                             if let __deser::__derive::Some(ref mut __flattened) = self.#flatten_fields {
@@ -914,10 +908,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         // `StructUpdateSink` which exists once for all structs
         UpdateSink {
             method: quote! {
-                fn deserialize_update(
-                    __value: &mut Self,
-                ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::StructUpdateSink::handle(__value, &__INFO)
+                fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::__derive::StructUpdateSink::handle(__value, &__INFO, __state)
                 }
             },
             items: quote! {
@@ -927,7 +919,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         #collects_fn(__index)
                     }
 
-                    fn update_field(&mut self, __index: usize, __collect: __deser::__derive::Collect) -> __deser::de::SinkHandle<'_, 'de> {
+                    fn update_field(
+                        &mut self,
+                        __index: usize,
+                        __collect: __deser::__derive::Collect,
+                        __state: &mut __deser::State,
+                    ) -> __deser::de::SinkHandle<'_, 'de> {
                         match __index {
                             #(
                                 #update_dispatch
@@ -965,7 +962,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         }
     };
     let next_value = dispatch(
-        quote! { self.__field_sink(__index, __state.is_multimap()) },
+        quote! { self.__field_sink(__index, __state.is_multimap(), __state) },
         other_key_dispatch,
         quote! { __deser::de::SinkHandle::null() },
     );
@@ -1104,10 +1101,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
             #[automatically_derived]
             impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
-                fn deserialize_into(
-                    __slot: &mut __deser::__derive::Option<Self>,
-                ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::de::SinkHandle::boxed(__Sink {
+                fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::de::SinkHandle::arena(__Sink {
                         slot: __slot,
                         key: __deser::__derive::FieldKeySink::new(__field_index, #collects_fn, #retain_unknown),
                         seen: [0; #seen_words],
@@ -1121,7 +1116,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         errors: __deser::de::CollectedErrors::new(),
                         #current_init
                         _marker: __deser::__derive::PhantomData,
-                    })
+                    }, __state)
                 }
 
                 #update_method
@@ -1130,7 +1125,12 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             #update_items
 
             impl #wrapper_impl_generics __Sink #wrapper_ty_generics #bounded_where_clause {
-                fn __field_sink(&mut self, __index: usize, __multimap: bool) -> __deser::de::SinkHandle<'_, 'de> {
+                fn __field_sink(
+                    &mut self,
+                    __index: usize,
+                    __multimap: bool,
+                    __state: &mut __deser::State,
+                ) -> __deser::de::SinkHandle<'_, 'de> {
                     match __index {
                         #(
                             #field_sinks
@@ -1519,17 +1519,14 @@ impl CompactStruct<'_> {
 
                 #[automatically_derived]
                 impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
-                    fn deserialize_into(
-                        __slot: &mut __deser::__derive::Option<Self>,
-                    ) -> __deser::de::SinkHandle<'_, 'de> {
+                    fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                         __deser::__derive::StructSink::handle(
                             __Fields {
                                 slot: __slot,
                                 values: (#(#defaults,)*),
                                 _marker: __deser::__derive::PhantomData,
                             },
-                            &__INFO,
-                        )
+                            &__INFO, __state)
                     }
 
                     #update_method
@@ -1546,7 +1543,12 @@ impl CompactStruct<'_> {
                         }
                     }
 
-                    fn field_sink(&mut self, __index: usize, __collect: __deser::__derive::Collect) -> __deser::de::SinkHandle<'_, 'de> {
+                    fn field_sink(
+                        &mut self,
+                        __index: usize,
+                        __collect: __deser::__derive::Collect,
+                        __state: &mut __deser::State,
+                    ) -> __deser::de::SinkHandle<'_, 'de> {
                         match __index {
                             #(#index => #field_sinks,)*
                             _ => __deser::de::SinkHandle::null(),
@@ -1737,14 +1739,18 @@ pub fn derive_enum(
 
             #[automatically_derived]
             impl<'de> #de_trait for #ident {
-                fn deserialize_into(
-                    __slot: &mut __deser::__derive::Option<Self>
-                ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::unit_enum_sink(__slot, __set_slot, &__UNIT)
+                fn deserialize_into<'__out>(
+                    __slot: &'__out mut __deser::__derive::Option<Self>,
+                    __state: &mut __deser::State,
+                ) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::__derive::unit_enum_sink(__slot, __set_slot, &__UNIT, __state)
                 }
 
-                fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::unit_enum_sink(__value, __set_value, &__UNIT)
+                fn deserialize_update<'__out>(
+                    __value: &'__out mut Self,
+                    __state: &mut __deser::State,
+                ) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::__derive::unit_enum_sink(__value, __set_value, &__UNIT, __state)
                 }
 
                 #[inline]
@@ -1788,21 +1794,20 @@ pub(crate) fn derive_newtype_struct(
     let field_type = field.ty;
     let convert = &field.convert;
     let make_sink = match adapter {
-        Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>() },
-        None => quote! { __deser::de::OwnedSink::deserialize() },
+        Some(adapter) => quote! { __deser::de::OwnedSink::deserialize_as::<#adapter>(__state) },
+        None => quote! { __deser::de::OwnedSink::deserialize(__state) },
     };
     // newtype structs update their field (the adapter decides how)
     let newtype_update = match adapter {
         None => quote! {
-            fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
-                __deser::Deserialize::deserialize_update(&mut __value.#member)
+            fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                __deser::Deserialize::deserialize_update(&mut __value.#member, __state)
             }
         },
         Some(adapter) => quote_spanned! { adapter.span()=>
-            fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
+            fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                 <#adapter as __deser::adapters::DeserializeAs<'de, #field_type>>::deserialize_update_as(
-                    &mut __value.#member,
-                )
+                    &mut __value.#member, __state)
             }
         },
     };
@@ -1822,13 +1827,11 @@ pub(crate) fn derive_newtype_struct(
 
             #[automatically_derived]
             impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
-                fn deserialize_into(
-                    __slot: &mut __deser::__derive::Option<Self>
-                ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::de::SinkHandle::boxed(__Sink {
+                fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                    __deser::de::SinkHandle::arena(__Sink {
                         slot: __slot,
                         sink: #make_sink,
-                    })
+                    }, __state)
                 }
 
                 #newtype_update

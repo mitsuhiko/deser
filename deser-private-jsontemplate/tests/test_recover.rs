@@ -30,12 +30,18 @@ impl<T> ItemsSink<'_, T> {
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Items<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ItemsSink {
-            out,
-            items: Vec::new(),
-            current: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            ItemsSink {
+                out,
+                items: Vec::new(),
+                current: None,
+            },
+            state,
+        )
     }
 }
 
@@ -48,9 +54,9 @@ impl<'de, T: Deserialize<'de>> Sink<'de> for ItemsSink<'_, T> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(T::deserialize_into(&mut self.current))
+        Ok(T::deserialize_into(&mut self.current, state))
     }
 
     fn recover(&mut self, err: Error, _state: &mut State) -> Result<(), Error> {
@@ -86,13 +92,19 @@ impl<K, V> EntriesSink<'_, K, V> {
 }
 
 impl<'de, K: Deserialize<'de>, V: Deserialize<'de>> Deserialize<'de> for Entries<K, V> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(EntriesSink {
-            out,
-            entries: Vec::new(),
-            key: None,
-            value: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            EntriesSink {
+                out,
+                entries: Vec::new(),
+                key: None,
+                value: None,
+            },
+            state,
+        )
     }
 }
 
@@ -101,13 +113,13 @@ impl<'de, K: Deserialize<'de>, V: Deserialize<'de>> Sink<'de> for EntriesSink<'_
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(K::deserialize_into(&mut self.key))
+        Ok(K::deserialize_into(&mut self.key, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(V::deserialize_into(&mut self.value))
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(V::deserialize_into(&mut self.value, state))
     }
 
     fn recover(&mut self, err: Error, _state: &mut State) -> Result<(), Error> {

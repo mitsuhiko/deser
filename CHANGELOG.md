@@ -53,6 +53,27 @@ All notable changes to deser are documented here.
   repeated keys again when the value is deserialized into another type.
   `deser_env::var` returns a collection of the value for collections and
   an empty one if the variable is missing.
+- **Breaking:** sinks are allocated in an arena of the deserialization
+  instead of a cache per thread (which also works without `std`).  The
+  arena belongs to the `State`, the sinks of the open containers are on
+  top of each other in it: allocating a sink bumps a pointer and the space
+  is reused once the sink is dropped.  The arena of a finished
+  deserialization is kept for the next one.
+  - `Deserialize::deserialize_into`, `Deserialize::deserialize_update`,
+    `DeserializeAs::deserialize_into_as` and
+    `DeserializeAs::deserialize_update_as` take the `State`.
+  - `SinkHandle::boxed` was replaced by `SinkHandle::arena`, which
+    allocates the sink in the arena of the state, and `SinkHandle::heap`,
+    which allocates it from the global allocator (for sinks that outlive
+    the deserialization).
+  - `OwnedSink::deserialize`, `OwnedSink::deserialize_as`,
+    `Recording::recorder` and `Recording::capture` take the `State`,
+    `DeserializeDriver::wrap_sink` passes it to the callback.
+  - Added `DeserializeDriver::from_fn` and `DeserializeDriver::from_state`
+    to create drivers whose sink is allocated in the arena of the driver.
+  - The variant builders of enums, the value slots of owned sinks and
+    the captures of untagged enums are in the arena as well, which removes
+    up to 12% of the allocations of a deserialization.
 - **Breaking:** the standard library is optional (the new `std` feature,
   enabled by default).  Without it `deser`, `deser-json`, `deser-jsonc`,
   `deser-json5`, `deser-cbor`, `deser-msgpack`, `deser-csv`, `deser-path`
@@ -60,8 +81,9 @@ All notable changes to deser are documented here.
   operating system.  `io` requires `std`.  Without `std` the
   implementations for `HashMap`, `HashSet`, `Path`, `OsStr`,
   `SystemTime`, `Mutex`, `RwLock` and `OnceLock` and the adapters of
-  `IndexMap` and `IndexSet` are not available, and sinks are not cached.  Crates that depend on deser with
-  `default-features = false` and need these have to enable `std`.
+  `IndexMap` and `IndexSet` are not available.  Crates that depend on
+  deser with `default-features = false` and need these have to enable
+  `std`.
 - Added `Atom::Implicit` for values whose type the format inferred from
   their text.  It carries the value (`ImplicitValue`: null, bool,
   integers or float) and the text: types that accept the value receive

@@ -56,13 +56,19 @@ impl<'a> StructEmitter for UserEmitter<'a> {
 }
 
 impl<'de> Deserialize<'de> for User {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(UserSink {
-            out,
-            key: None,
-            id: None,
-            email_address: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            UserSink {
+                out,
+                key: None,
+                id: None,
+                email_address: None,
+            },
+            state,
+        )
     }
 }
 
@@ -82,14 +88,17 @@ impl<'a, 'de> Sink<'de> for UserSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(Deserialize::deserialize_into(&mut self.key))
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(Deserialize::deserialize_into(&mut self.key, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         match self.key.take().as_deref() {
-            Some("id") => Ok(Deserialize::deserialize_into(&mut self.id)),
-            Some("emailAddress") => Ok(Deserialize::deserialize_into(&mut self.email_address)),
+            Some("id") => Ok(Deserialize::deserialize_into(&mut self.id, state)),
+            Some("emailAddress") => Ok(Deserialize::deserialize_into(
+                &mut self.email_address,
+                state,
+            )),
             _ => Ok(SinkHandle::null()),
         }
     }

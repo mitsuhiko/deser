@@ -76,7 +76,10 @@ impl<'de> Sink<'de> for SlotWrapper<Timestamp> {
 }
 
 impl<'de> Deserialize<'de> for Timestamp {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }

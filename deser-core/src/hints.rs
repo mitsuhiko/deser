@@ -165,8 +165,11 @@ impl<T: ?Sized, H: Hint, A: SerializeAs<T>> SerializeAs<T> for Hinted<H, A> {
 
 impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted<H, A> {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        A::deserialize_into_as(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::deserialize_into_as(out, state)
     }
 
     #[inline]
@@ -213,16 +216,23 @@ impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted
     }
 
     #[inline]
-    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        A::__private_collect_into_as(out)
+    fn __private_collect_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::__private_collect_into_as(out, state)
     }
 
     #[inline]
-    fn __private_collect_update_as(value: &mut T, first: bool) -> SinkHandle<'_, 'de>
+    fn __private_collect_update_as<'out>(
+        value: &'out mut T,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
-        A::__private_collect_update_as(value, first)
+        A::__private_collect_update_as(value, first, state)
     }
 
     #[inline]

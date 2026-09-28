@@ -192,14 +192,14 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(Value::deserialize_into(&mut self.slot))
+        Ok(Value::deserialize_into(&mut self.slot, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.begin_value()?;
-        Ok(Value::deserialize_into(&mut self.slot))
+        Ok(Value::deserialize_into(&mut self.slot, state))
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -245,7 +245,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         }
         self.slot = Some(Value::from(key));
         self.begin_value()?;
-        Ok(Some(Value::deserialize_into(&mut self.slot)))
+        Ok(Some(Value::deserialize_into(&mut self.slot, state)))
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
@@ -346,8 +346,11 @@ fn atom_value(atom: Atom, state: &State) -> Result<Value, Error> {
 }
 
 impl<'de> Deserialize<'de> for Value {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink::new(Out::Value(out)))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ValueSink::new(Out::Value(out)), state)
     }
 
     #[doc(hidden)]
@@ -373,25 +376,31 @@ impl<'de> Deserialize<'de> for Value {
     /// Updates the value: a map merges the data into it if it's a map (the
     /// values of keys that exist are replaced), all other values are
     /// replaced.
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink::new(Out::UpdateValue(value)))
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ValueSink::new(Out::UpdateValue(value)), state)
     }
 }
 
 impl<'de> Deserialize<'de> for Seq {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink::new(Out::Seq(out)))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ValueSink::new(Out::Seq(out)), state)
     }
 }
 
 impl<'de> Deserialize<'de> for Map {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink::new(Out::Map(out)))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ValueSink::new(Out::Map(out)), state)
     }
 
     /// Merges the data into the map, the values of keys that exist are
     /// replaced.
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink::new(Out::UpdateMap(value)))
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(ValueSink::new(Out::UpdateMap(value)), state)
     }
 }

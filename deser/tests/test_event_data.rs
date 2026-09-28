@@ -33,7 +33,10 @@ impl<'de> Sink<'de> for ProbeSlot<Probe> {
 }
 
 impl<'de> Deserialize<'de> for Probe {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         ProbeSlot::make_handle(out)
     }
 }

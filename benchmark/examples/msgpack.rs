@@ -4,7 +4,7 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use deser::de::{DeserializeDriver, SinkHandle};
-use deser::{ContainerShape, Deserialize, Event, Serialize};
+use deser::{ContainerShape, Deserialize, Event, Serialize, State};
 
 const SCALARS: usize = 100_000;
 
@@ -33,7 +33,10 @@ fn measure(mut benches: Vec<Bench<'_>>) {
 struct Ignore;
 
 impl<'de> Deserialize<'de> for Ignore {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         *out = Some(Ignore);
         SinkHandle::null()
     }

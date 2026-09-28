@@ -298,7 +298,12 @@ pub trait StructFields<'de>: Send {
     fn collects(&self, index: usize) -> bool;
 
     /// Returns the sink of the field, optionally collecting its value.
-    fn field_sink(&mut self, index: usize, collect: Collect) -> SinkHandle<'_, 'de>;
+    fn field_sink(
+        &mut self,
+        index: usize,
+        collect: Collect,
+        state: &mut State,
+    ) -> SinkHandle<'_, 'de>;
 
     /// Deserializes an atom into the field with the index.
     fn field_atom(
@@ -420,8 +425,9 @@ impl<'a, 'de> StructSink<'a, 'de> {
     pub fn handle<F: StructFields<'de> + 'a>(
         fields: F,
         info: &'static StructInfo,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::from_struct_box(StructBox::new(fields, info))
+        SinkHandle::from_struct_box(StructBox::new(fields, info, &mut state.arena))
     }
 
     /// Creates the sink for fields, see [`StructBox`].
@@ -532,7 +538,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
         Ok(match self.next_index(state)? {
             Some(index) => {
                 let collect = self.collect(index, state);
-                self.fields().field_sink(index, collect)
+                self.fields().field_sink(index, collect, state)
             }
             None => SinkHandle::null(),
         })
@@ -621,7 +627,12 @@ pub trait UpdateFields<'de>: Send {
     /// Returns the sink that updates the field with the index.
     ///
     /// `collect` says if the value is collected (see [`Collect`]).
-    fn update_field(&mut self, index: usize, collect: Collect) -> SinkHandle<'_, 'de>;
+    fn update_field(
+        &mut self,
+        index: usize,
+        collect: Collect,
+        state: &mut State,
+    ) -> SinkHandle<'_, 'de>;
 
     /// Returns whether the field collects repeated values.
     fn collects(&self, index: usize) -> bool;
@@ -642,13 +653,17 @@ impl<'a, 'de> StructUpdateSink<'a, 'de> {
     pub fn handle(
         value: &'a mut (dyn UpdateFields<'de> + 'a),
         info: &'static StructInfo,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(StructUpdateSink {
-            value,
-            key: FieldKeySink::new(info.lookup, |_| false, info.deny),
-            seen: vec![0; info.fields.len().div_ceil(64)],
-            info,
-        })
+        SinkHandle::arena(
+            StructUpdateSink {
+                value,
+                key: FieldKeySink::new(info.lookup, |_| false, info.deny),
+                seen: vec![0; info.fields.len().div_ceil(64)],
+                info,
+            },
+            state,
+        )
     }
 }
 
@@ -687,7 +702,7 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
         } else {
             Collect::First
         };
-        Ok(self.value.update_field(index, collect))
+        Ok(self.value.update_field(index, collect, state))
     }
 
     fn value_for_key(

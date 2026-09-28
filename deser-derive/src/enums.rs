@@ -930,14 +930,13 @@ pub fn derive_deserialize(
                 untagged_tries.push(None);
                 quote! {
                     __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::boxed(
-                        |__tag: #tag_ty, #content_pattern: #content_ty| #construct
-                    )
+                        |__tag: #tag_ty, #content_pattern: #content_ty| #construct, __state)
                 }
             }
             None if info.other && matches!(info.content, Content::Unit) => {
                 let construct = info.construct(ident, &values);
                 untagged_tries.push(None);
-                quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct) }
+                quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct, __state) }
             }
             None => {
                 let construct = info.construct(ident, &values);
@@ -946,8 +945,7 @@ pub fn derive_deserialize(
                 }));
                 quote! {
                     __deser::__derive::Variant::<#content_ty, #enum_ty>::boxed(
-                        |#content_pattern: #content_ty| #construct
-                    )
+                        |#content_pattern: #content_ty| #construct, __state)
                 }
             }
         };
@@ -973,7 +971,9 @@ pub fn derive_deserialize(
             Some(builder) => (
                 quote! {
                     #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
-                    fn #fn_ident #builder_impl_generics () -> #builder_ty #where_clause {
+                    fn #fn_ident #builder_impl_generics (
+                        __state: &mut __deser::State,
+                    ) -> #builder_ty #where_clause {
                         #builder
                     }
                 },
@@ -1007,6 +1007,7 @@ pub fn derive_deserialize(
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                 fn __lookup #builder_impl_generics (
                     __tag: __deser::__derive::Tag<'_>,
+                    __state: &mut __deser::State,
                 ) -> __deser::__derive::Option<#builder_ty> #where_clause {
                     match __tag {
                         #(#arms)*
@@ -1069,8 +1070,7 @@ pub fn derive_deserialize(
                         __slot,
                         __TYPE_NAME,
                         #table,
-                        __unit #turbofish,
-                    )
+                        __unit #turbofish, __state)
                 },
             )
         }
@@ -1084,8 +1084,7 @@ pub fn derive_deserialize(
                         __slot,
                         #tag_key,
                         __TYPE_NAME,
-                        #table,
-                    )
+                        #table, __state)
                 },
             )
         }
@@ -1103,15 +1102,14 @@ pub fn derive_deserialize(
                         #content_key,
                         __TYPE_NAME,
                         #table,
-                        #deny,
-                    )
+                        #deny, __state)
                 },
             )
         }
         Repr::Untagged => (
             quote! {},
             quote! {
-                __deser::__derive::untagged_handle(__slot, __TYPE_NAME, __candidate #turbofish)
+                __deser::__derive::untagged_handle(__slot, __TYPE_NAME, __candidate #turbofish, __state)
             },
         ),
     };
@@ -1160,6 +1158,7 @@ pub fn derive_deserialize(
                 #[allow(clippy::type_complexity, clippy::multiple_bound_locations)]
                 fn __tagged #slot_impl_generics (
                     __slot: &'__s mut __deser::__derive::Option<#enum_ty>,
+                    __state: &mut __deser::State,
                 ) -> __deser::de::SinkHandle<'__s, 'de> #where_clause {
                     #handle
                 }
@@ -1168,8 +1167,7 @@ pub fn derive_deserialize(
                 __deser::__derive::untagged_fallback(
                     __slot,
                     __tagged #turbofish,
-                    __candidate #turbofish,
-                )
+                    __candidate #turbofish, __state)
             },
         )
     } else {
@@ -1214,9 +1212,7 @@ pub fn derive_deserialize(
 
             #[automatically_derived]
             impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
-                fn deserialize_into(
-                    __slot: &mut __deser::__derive::Option<Self>,
-                ) -> __deser::de::SinkHandle<'_, 'de> {
+                fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                     #handle
                 }
 

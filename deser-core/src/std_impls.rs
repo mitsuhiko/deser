@@ -70,7 +70,10 @@ impl<'de, T: ?Sized + Send> Sink<'de> for SlotWrapper<PhantomData<T>> {
 /// Deserializes from null.  Missing values are accepted as the value is
 /// skipped by `#[deser(skip_serializing_optionals)]`.
 impl<'de, T: ?Sized + Send> Deserialize<'de> for PhantomData<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 
@@ -187,7 +190,10 @@ impl<'de> Sink<'de> for SlotWrapper<Infallible> {
 /// Deserializing `Infallible` always fails, for instance to rule out a
 /// variant of a generic enum (`Result<T, Infallible>`).
 impl<'de> Deserialize<'de> for Infallible {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
@@ -406,7 +412,10 @@ impl<'de> Sink<'de> for ResultVariantSlot<ResultVariant> {
 }
 
 /// Creates the sink for a `Result` with adapters.
-fn result_sink<'a, 'de, T, E, TA, EA>(out: &'a mut Option<Result<T, E>>) -> SinkHandle<'a, 'de>
+fn result_sink<'a, 'de, T, E, TA, EA>(
+    out: &'a mut Option<Result<T, E>>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     T: Send + 'a,
     E: Send + 'a,
@@ -446,10 +455,10 @@ where
             Ok(ResultVariantSlot::make_handle(&mut self.variant))
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             Ok(match self.variant {
-                Some(ResultVariant::Ok) => TA::deserialize_into_as(&mut self.ok),
-                Some(ResultVariant::Err) => EA::deserialize_into_as(&mut self.err),
+                Some(ResultVariant::Ok) => TA::deserialize_into_as(&mut self.ok, state),
+                Some(ResultVariant::Err) => EA::deserialize_into_as(&mut self.err, state),
                 None => SinkHandle::null(),
             })
         }
@@ -493,18 +502,24 @@ where
         }
     }
 
-    SinkHandle::boxed(ResultSink::<T, E, TA, EA> {
-        slot: out,
-        variant: None,
-        ok: None,
-        err: None,
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        ResultSink::<T, E, TA, EA> {
+            slot: out,
+            variant: None,
+            ok: None,
+            err: None,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> Deserialize<'de> for Result<T, E> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        result_sink::<T, E, Same, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        result_sink::<T, E, Same, Same>(out, state)
     }
 }
 
@@ -515,8 +530,11 @@ where
     TA: DeserializeAs<'de, T>,
     EA: DeserializeAs<'de, E>,
 {
-    fn deserialize_into_as(out: &mut Option<Result<T, E>>) -> SinkHandle<'_, 'de> {
-        result_sink::<T, E, TA, EA>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<Result<T, E>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        result_sink::<T, E, TA, EA>(out, state)
     }
 }
 
@@ -569,7 +587,7 @@ macro_rules! parse_from_str {
             }
 
             impl<'de> Deserialize<'de> for $ty {
-                fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+                fn deserialize_into<'out>(out: &'out mut Option<Self>, _state: &mut State) -> SinkHandle<'out, 'de> {
                     ParseSlot::make_handle(out)
                 }
 
@@ -730,19 +748,23 @@ impl<'a, T, R> RangeSink<'a, T, R> {
         slot: &'a mut Option<R>,
         fields: &'static [&'static str],
         make: fn(Option<T>, Option<T>) -> R,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de>
     where
         T: Deserialize<'de> + 'a,
         R: Send + 'a,
     {
-        SinkHandle::boxed(RangeSink {
-            slot,
-            key: None,
-            start: None,
-            end: None,
-            fields,
-            make,
-        })
+        SinkHandle::arena(
+            RangeSink {
+                slot,
+                key: None,
+                start: None,
+                end: None,
+                fields,
+                make,
+            },
+            state,
+        )
     }
 }
 
@@ -755,8 +777,8 @@ impl<'a, 'de, T: Deserialize<'de>, R: Send> Sink<'de> for RangeSink<'a, T, R> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(String::deserialize_into(&mut self.key))
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(String::deserialize_into(&mut self.key, state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -779,7 +801,7 @@ impl<'a, 'de, T: Deserialize<'de>, R: Send> Sink<'de> for RangeSink<'a, T, R> {
         if slot.is_some() && !duplicate_field(key, state)? {
             return Ok(Some(SinkHandle::null()));
         }
-        Ok(Some(T::deserialize_into(slot)))
+        Ok(Some(T::deserialize_into(slot, state)))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -797,33 +819,58 @@ impl<'a, 'de, T: Deserialize<'de>, R: Send> Sink<'de> for RangeSink<'a, T, R> {
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Range<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        RangeSink::handle(out, &["start", "end"], |start, end| Range {
-            start: start.unwrap(),
-            end: end.unwrap(),
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        RangeSink::handle(
+            out,
+            &["start", "end"],
+            |start, end| Range {
+                start: start.unwrap(),
+                end: end.unwrap(),
+            },
+            state,
+        )
     }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeInclusive<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        RangeSink::handle(out, &["start", "end"], |start, end| {
-            RangeInclusive::new(start.unwrap(), end.unwrap())
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        RangeSink::handle(
+            out,
+            &["start", "end"],
+            |start, end| RangeInclusive::new(start.unwrap(), end.unwrap()),
+            state,
+        )
     }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeFrom<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        RangeSink::handle(out, &["start"], |start, _| RangeFrom {
-            start: start.unwrap(),
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        RangeSink::handle(
+            out,
+            &["start"],
+            |start, _| RangeFrom {
+                start: start.unwrap(),
+            },
+            state,
+        )
     }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeTo<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        RangeSink::handle(out, &["end"], |_, end| RangeTo { end: end.unwrap() })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        RangeSink::handle(out, &["end"], |_, end| RangeTo { end: end.unwrap() }, state)
     }
 }
 
@@ -883,24 +930,24 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if self.included.is_some() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "expected a map with a single key for Bound",
             ));
         }
-        Ok(String::deserialize_into(&mut self.key))
+        Ok(String::deserialize_into(&mut self.key, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         let key = self.key.take().unwrap_or_default();
         self.included = Some(match &*key {
             "Included" => true,
             "Excluded" => false,
             other => return Err(unknown_variant(Some(other), "Bound", BOUND_VARIANTS)),
         });
-        Ok(T::deserialize_into(&mut self.value))
+        Ok(T::deserialize_into(&mut self.value, state))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -924,12 +971,18 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
 const BOUND_VARIANTS: &[&str] = &["Unbounded", "Included", "Excluded"];
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Bound<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(BoundSink {
-            slot: out,
-            included: None,
-            key: None,
-            value: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            BoundSink {
+                slot: out,
+                included: None,
+                key: None,
+                value: None,
+            },
+            state,
+        )
     }
 }

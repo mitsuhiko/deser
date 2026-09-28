@@ -117,8 +117,11 @@ impl<T: serde::Serialize + ?Sized> SerializeAs<T> for Serde {
 }
 
 impl<'de, T: serde::Deserialize<'de> + Send> DeserializeAs<'de, T> for Serde {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(RootSink::new(out, buffered::Buffer::default()))
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(RootSink::new(out, buffered::Buffer::default()), state)
     }
 
     fn initial_value_as() -> Option<T> {

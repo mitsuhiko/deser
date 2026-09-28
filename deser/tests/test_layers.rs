@@ -438,7 +438,7 @@ impl<'a, 'de> Sink<'de> for UppercaseSink<'a, 'de> {
 fn test_wrap_sink() {
     let value: String = Events(vec!["hello".into()])
         .deserialize_with(|driver| {
-            driver.wrap_sink(|sink| SinkHandle::boxed(UppercaseSink(sink)));
+            driver.wrap_sink(|sink, state| SinkHandle::arena(UppercaseSink(sink), state));
         })
         .unwrap();
     assert_eq!(value, "HELLO");
@@ -450,7 +450,7 @@ fn test_wrap_sink_after_events() {
     let mut out = None::<Vec<u32>>;
     let mut driver = DeserializeDriver::new(&mut out);
     driver.emit(Event::seq_start()).unwrap();
-    driver.wrap_sink(|sink| sink);
+    driver.wrap_sink(|sink, _state| sink);
 }
 
 #[test]

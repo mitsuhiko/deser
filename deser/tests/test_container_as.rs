@@ -861,8 +861,11 @@ impl SerializeAs<Byte> for ViaU8 {
 }
 
 impl<'de> DeserializeAs<'de, Byte> for ViaU8 {
-    fn deserialize_into_as(out: &mut Option<Byte>) -> SinkHandle<'_, 'de> {
-        <FromInto<u8> as DeserializeAs<'de, Byte>>::deserialize_into_as(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<Byte>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <FromInto<u8> as DeserializeAs<'de, Byte>>::deserialize_into_as(out, state)
     }
 
     fn __private_is_bytes_as() -> bool {

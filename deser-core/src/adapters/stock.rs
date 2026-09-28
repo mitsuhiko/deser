@@ -118,13 +118,19 @@ impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
 }
 
 impl<'de: 'a, 'a> DeserializeAs<'de, Cow<'a, str>> for Borrowed {
-    fn deserialize_into_as<'b>(out: &'b mut Option<Cow<'a, str>>) -> SinkHandle<'b, 'de> {
+    fn deserialize_into_as<'b>(
+        out: &'b mut Option<Cow<'a, str>>,
+        _state: &mut State,
+    ) -> SinkHandle<'b, 'de> {
         BorrowedSlot::make_handle(out)
     }
 }
 
 impl<'de: 'a, 'a> DeserializeAs<'de, Cow<'a, [u8]>> for Borrowed {
-    fn deserialize_into_as<'b>(out: &'b mut Option<Cow<'a, [u8]>>) -> SinkHandle<'b, 'de> {
+    fn deserialize_into_as<'b>(
+        out: &'b mut Option<Cow<'a, [u8]>>,
+        _state: &mut State,
+    ) -> SinkHandle<'b, 'de> {
         BorrowedSlot::make_handle(out)
     }
 }
@@ -192,7 +198,10 @@ where
     T: FromStr + Send,
     T::Err: Display,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         FromStrSlot::make_handle(out)
     }
 
@@ -278,7 +287,10 @@ impl<'de> Sink<'de> for FlagSlot<bool> {
 }
 
 impl<'de> DeserializeAs<'de, bool> for Flag {
-    fn deserialize_into_as(out: &mut Option<bool>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<bool>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         FlagSlot::make_handle(out)
     }
 
@@ -353,8 +365,16 @@ where
     T: Send,
     U: Deserialize<'de> + Into<T> + 'static,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        MappedSink::handle(out, OwnedSink::<U>::deserialize(), |value| Ok(value.into()))
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        MappedSink::handle(
+            out,
+            OwnedSink::<U>::deserialize(state),
+            |value| Ok(value.into()),
+            state,
+        )
     }
 
     fn initial_value_as() -> Option<T> {
@@ -446,10 +466,16 @@ where
     T: TryFrom<U> + Send,
     T::Error: Display,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        MappedSink::handle(out, OwnedSink::<U>::deserialize(), |value| {
-            T::try_from(value).map_err(conversion_error)
-        })
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        MappedSink::handle(
+            out,
+            OwnedSink::<U>::deserialize(state),
+            |value| T::try_from(value).map_err(conversion_error),
+            state,
+        )
     }
 
     fn initial_value_as() -> Option<T> {
@@ -533,11 +559,17 @@ where
 pub struct DefaultOnError<A = Same>(PhantomData<fn() -> A>);
 
 impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultOnError<A> {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(DefaultOnErrorSink {
-            out,
-            sink: Some(OwnedSink::deserialize_as::<A>()),
-        })
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            DefaultOnErrorSink {
+                out,
+                sink: Some(OwnedSink::deserialize_as::<A>(state)),
+            },
+            state,
+        )
     }
 
     fn initial_value_as() -> Option<T> {
@@ -551,15 +583,19 @@ impl<'de, T: Default + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for
         A::__private_collects_as()
     }
 
-    fn __private_collect_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+    fn __private_collect_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         let collected = out.take();
-        SinkHandle::boxed(DefaultOnErrorSink {
-            out,
-            sink: Some(OwnedSink::with_slot(
-                collected,
-                A::__private_collect_into_as,
-            )),
-        })
+        let sink = OwnedSink::with_slot(collected, A::__private_collect_into_as, state);
+        SinkHandle::arena(
+            DefaultOnErrorSink {
+                out,
+                sink: Some(sink),
+            },
+            state,
+        )
     }
 
     fn __private_collect_empty_as() -> Option<T> {
@@ -823,7 +859,10 @@ fn try_borrowed_atom<'de, T, A: DeserializeAs<'de, T>>(
 pub struct VecSkipError<A = Same>(PhantomData<fn() -> A>);
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecSkipError<A> {
-    fn deserialize_into_as(out: &mut Option<Vec<T>>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<Vec<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         struct SkipSink<'a, T, A> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
@@ -849,9 +888,9 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
                 self.flush();
-                Ok(A::deserialize_into_as(&mut self.item))
+                Ok(A::deserialize_into_as(&mut self.item, state))
             }
 
             fn recover(&mut self, _err: Error, _state: &mut State) -> Result<(), Error> {
@@ -886,12 +925,15 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, Vec<T>> for VecS
             }
         }
 
-        SinkHandle::boxed(SkipSink::<T, A> {
-            slot: out,
-            vec: Vec::new(),
-            item: None,
-            _marker: PhantomData,
-        })
+        SinkHandle::arena(
+            SkipSink::<T, A> {
+                slot: out,
+                vec: Vec::new(),
+                item: None,
+                _marker: PhantomData,
+            },
+            state,
+        )
     }
 }
 
@@ -943,7 +985,10 @@ impl<T: Sync, A: SerializeAs<T>> SerializeAs<Vec<T>> for VecSkipError<A> {
 /// ```
 pub struct MapSkipError<KA = Same, VA = Same>(PhantomData<fn() -> (KA, VA)>);
 
-pub(crate) fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(out: &'a mut Option<M>) -> SinkHandle<'a, 'de>
+pub(crate) fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(
+    out: &'a mut Option<M>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,
@@ -990,9 +1035,9 @@ where
             Ok(())
         }
 
-        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             self.flush();
-            Ok(KA::deserialize_into_as(&mut self.key))
+            Ok(KA::deserialize_into_as(&mut self.key, state))
         }
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1011,11 +1056,11 @@ where
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             if self.key.is_none() {
                 return Ok(SinkHandle::null());
             }
-            Ok(VA::deserialize_into_as(&mut self.value))
+            Ok(VA::deserialize_into_as(&mut self.value, state))
         }
 
         fn recover(&mut self, _err: Error, _state: &mut State) -> Result<(), Error> {
@@ -1054,14 +1099,17 @@ where
         }
     }
 
-    SinkHandle::boxed(SkipMapSink::<M, K, V, KA, VA> {
-        slot: out,
-        map: M::default(),
-        key: None,
-        value: None,
-        replace: true,
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        SkipMapSink::<M, K, V, KA, VA> {
+            slot: out,
+            map: M::default(),
+            key: None,
+            value: None,
+            replace: true,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de, K, V, KA, VA> DeserializeAs<'de, BTreeMap<K, V>> for MapSkipError<KA, VA>
@@ -1071,8 +1119,11 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_, 'de> {
-        skip_map_sink::<_, K, V, KA, VA>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<BTreeMap<K, V>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        skip_map_sink::<_, K, V, KA, VA>(out, state)
     }
 }
 
@@ -1085,8 +1136,11 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_, 'de> {
-        skip_map_sink::<_, K, V, KA, VA>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<HashMap<K, V, H>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        skip_map_sink::<_, K, V, KA, VA>(out, state)
     }
 }
 

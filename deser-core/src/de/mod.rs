@@ -115,7 +115,7 @@
 //! }
 //!
 //! impl<'de> Deserialize<'de> for MyBool {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+//!     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
 //!         // Since we're using the SlotWrapper abstraction we can directly
 //!         // make a handle here by using the `make_handle` utility.
 //!         SlotWrapper::make_handle(out)
@@ -126,8 +126,9 @@
 //! # Struct Deserialization
 //!
 //! If you want to deserialize a struct you need to implement the map methods.
-//! As you need to keep track of state you will need to return a boxed sink
-//! and you can't use the slot wrapper.
+//! As you need to keep track of state you will need to return a sink that
+//! is owned by the handle (allocated in the arena of the deserialization
+//! with [`SinkHandle::arena`]) and you can't use the slot wrapper.
 //!
 //! ```rust
 //! use deser::de::{Deserialize, Sink, SinkHandle};
@@ -140,13 +141,13 @@
 //! }
 //!
 //! impl<'de> Deserialize<'de> for Flag {
-//!     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-//!         SinkHandle::boxed(FlagSink {
+//!     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+//!         SinkHandle::arena(FlagSink {
 //!             out,
 //!             key: None,
 //!             enabled_field: None,
 //!             name_field: None,
-//!         })
+//!         }, state)
 //!     }
 //! }
 //!
@@ -164,11 +165,11 @@
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+//!     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
-//!         Ok(Deserialize::deserialize_into(&mut self.key))
+//!         Ok(Deserialize::deserialize_into(&mut self.key, state))
 //!     }
 //!     
 //!     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -180,12 +181,12 @@
 //!         Ok(self.value_for_key(&key, state)?.unwrap_or_else(SinkHandle::null))
 //!     }
 //!
-//!     fn value_for_key(&mut self, key: &str, _state: &mut State)
+//!     fn value_for_key(&mut self, key: &str, state: &mut State)
 //!         -> Result<Option<SinkHandle<'_, 'de>>, Error>
 //!     {
 //!         Ok(Some(match key {
-//!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field),
-//!             "name" => Deserialize::deserialize_into(&mut self.name_field),
+//!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field, state),
+//!             "name" => Deserialize::deserialize_into(&mut self.name_field, state),
 //!             _ => return Ok(None)
 //!         }))
 //!     }
@@ -217,6 +218,7 @@ use alloc::vec::Vec;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
+pub(crate) mod arena;
 pub(crate) mod atoms;
 mod collect;
 mod deserializer;
@@ -251,9 +253,9 @@ pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
-use self::sinkbox::SinkBox;
 #[cfg(feature = "derive")]
 use self::sinkbox::StructBox;
+use self::sinkbox::{ArenaSink, HeapSink, arena_sink};
 pub use self::source::Source;
 pub use self::unknown::{IgnoredFields, UnknownFields};
 pub use self::update::checked_update;
@@ -266,8 +268,10 @@ __make_slot_wrapper!((pub), SlotWrapper);
 /// During deserialization the sinks often need to return other sinks
 /// to recurse into structures.  This poses a challenge if the target
 /// sink cannot be directly borrowed.  This is where [`SinkHandle`]
-/// comes in.  In cases where the [`Sink`] cannot be borrowed it can
-/// be boxed up inside the handle.
+/// comes in.  In cases where the [`Sink`] cannot be borrowed it's owned
+/// by the handle, either in the arena of the deserialization
+/// ([`arena`](Self::arena), which is what sinks typically use) or on the
+/// heap ([`heap`](Self::heap)).
 ///
 /// The handle itself implements [`Sink`] and forwards all calls to the
 /// sink it holds.
@@ -278,7 +282,8 @@ pub struct SinkHandle<'a, 'de: 'a>(HandleInner<'a, 'de>);
 
 enum HandleInner<'a, 'de> {
     Borrowed(&'a mut dyn Sink<'de>),
-    Owned(SinkBox<'a, 'de>),
+    Arena(ArenaSink<'a, 'de>),
+    Heap(HeapSink<'a, 'de>),
     #[cfg(feature = "derive")]
     Struct(StructBox<'a, 'de>),
     Null(ignore::Ignore),
@@ -286,7 +291,8 @@ enum HandleInner<'a, 'de> {
     // extra allocation: a null atom is not forwarded but turns the handle
     // into a null handle so that `finish` is not forwarded either.
     OptionalBorrowed(&'a mut dyn Sink<'de>),
-    OptionalOwned(SinkBox<'a, 'de>),
+    OptionalArena(ArenaSink<'a, 'de>),
+    OptionalHeap(HeapSink<'a, 'de>),
     #[cfg(feature = "derive")]
     OptionalStruct(StructBox<'a, 'de>),
 }
@@ -297,9 +303,82 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Borrowed(val))
     }
 
-    /// Create an owned handle to a heap allocated [`Sink`].
-    pub fn boxed<S: Sink<'de> + 'a>(val: S) -> SinkHandle<'a, 'de> {
-        SinkHandle(HandleInner::Owned(SinkBox::new(val)))
+    /// Creates an owned handle to a sink in the arena of the deserialization.
+    ///
+    /// This is how sinks are typically created: the arena belongs to the
+    /// state of the deserialization and the sinks of the containers that
+    /// are open are on top of each other in it, allocating one is little
+    /// more than bumping a pointer.  Its space is reused once the handle is
+    /// dropped (and the sinks allocated after it are dropped too).
+    ///
+    /// A sink should not outlive the deserialization it was created for
+    /// (the state), otherwise the arena cannot free its memory.  A sink
+    /// that is kept for longer should be created with
+    /// [`heap`](Self::heap).
+    ///
+    /// ```
+    /// use deser::de::{Deserialize, Sink, SinkHandle};
+    /// use deser::{Atom, Error, State};
+    ///
+    /// struct Flag(bool);
+    ///
+    /// struct FlagSink<'a> {
+    ///     out: &'a mut Option<Flag>,
+    /// }
+    ///
+    /// impl<'de> Sink<'de> for FlagSink<'_> {
+    ///     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    ///         match atom {
+    ///             Atom::Bool(value) => {
+    ///                 *self.out = Some(Flag(value));
+    ///                 Ok(())
+    ///             }
+    ///             other => self.unexpected_atom(other, state),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl<'de> Deserialize<'de> for Flag {
+    ///     fn deserialize_into<'a>(
+    ///         out: &'a mut Option<Self>,
+    ///         state: &mut State,
+    ///     ) -> SinkHandle<'a, 'de> {
+    ///         SinkHandle::arena(FlagSink { out }, state)
+    ///     }
+    /// }
+    /// ```
+    #[inline(always)]
+    pub fn arena<S: Sink<'de> + 'a>(val: S, state: &mut State) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Arena(arena_sink(val, &mut state.arena)))
+    }
+
+    /// Drops the handle, the block of an owned sink is returned to the arena
+    /// of the state right away if it's the top block.
+    ///
+    /// Dropping the handle has the same effect, but the block is only
+    /// reused when the next sink is allocated.  The driver does this with
+    /// the sinks of the containers it closes.
+    #[inline(always)]
+    pub(crate) fn release(self, state: &mut State) {
+        match self.0 {
+            HandleInner::Arena(sink) | HandleInner::OptionalArena(sink) => {
+                arena::ArenaBox::release_in(sink, &mut state.arena)
+            }
+            #[cfg(feature = "derive")]
+            HandleInner::Struct(sink) | HandleInner::OptionalStruct(sink) => {
+                sink.release_in(&mut state.arena)
+            }
+            _ => {}
+        }
+    }
+
+    /// Creates an owned handle to a sink on the heap.
+    ///
+    /// Unlike [`arena`](Self::arena) the sink does not need a state and is
+    /// independent of any deserialization, but every sink is a separate
+    /// allocation.
+    pub fn heap<S: Sink<'de> + 'a>(val: S) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Heap(HeapSink::new(val)))
     }
 
     /// Creates an owned handle to the sink of a derived struct.
@@ -329,10 +408,12 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     {
         SinkHandle(match self.0 {
             HandleInner::Borrowed(sink) => HandleInner::Borrowed(sink),
-            HandleInner::Owned(sink) => HandleInner::Owned(sink),
+            HandleInner::Arena(sink) => HandleInner::Arena(sink),
+            HandleInner::Heap(sink) => HandleInner::Heap(sink),
             HandleInner::Null(sink) => HandleInner::Null(sink),
             HandleInner::OptionalBorrowed(sink) => HandleInner::OptionalBorrowed(sink),
-            HandleInner::OptionalOwned(sink) => HandleInner::OptionalOwned(sink),
+            HandleInner::OptionalArena(sink) => HandleInner::OptionalArena(sink),
+            HandleInner::OptionalHeap(sink) => HandleInner::OptionalHeap(sink),
             #[cfg(feature = "derive")]
             HandleInner::Struct(sink) => HandleInner::Struct(sink),
             #[cfg(feature = "derive")]
@@ -359,19 +440,22 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// nulls.
     ///
     /// ```
+    /// use deser::State;
     /// use deser::de::{Deserialize, SinkHandle};
     ///
     /// /// Deserializes like an `Option<T>`.
-    /// fn deserialize_optional<'de, T: Deserialize<'de>>(
-    ///     out: &mut Option<Option<T>>,
-    /// ) -> SinkHandle<'_, 'de> {
-    ///     T::deserialize_into(out.insert(None)).ignore_null()
+    /// fn deserialize_optional<'a, 'de, T: Deserialize<'de>>(
+    ///     out: &'a mut Option<Option<T>>,
+    ///     state: &mut State,
+    /// ) -> SinkHandle<'a, 'de> {
+    ///     T::deserialize_into(out.insert(None), state).ignore_null()
     /// }
     /// ```
     pub fn ignore_null(self) -> SinkHandle<'a, 'de> {
         SinkHandle(match self.0 {
             HandleInner::Borrowed(sink) => HandleInner::OptionalBorrowed(sink),
-            HandleInner::Owned(sink) => HandleInner::OptionalOwned(sink),
+            HandleInner::Arena(sink) => HandleInner::OptionalArena(sink),
+            HandleInner::Heap(sink) => HandleInner::OptionalHeap(sink),
             #[cfg(feature = "derive")]
             HandleInner::Struct(sink) => HandleInner::OptionalStruct(sink),
             other => other,
@@ -394,7 +478,8 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     fn sink(&self) -> &(dyn Sink<'de> + 'a) {
         match self.0 {
             HandleInner::Borrowed(ref sink) | HandleInner::OptionalBorrowed(ref sink) => &**sink,
-            HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => sink.get(),
+            HandleInner::Arena(ref sink) | HandleInner::OptionalArena(ref sink) => sink.get(),
+            HandleInner::Heap(ref sink) | HandleInner::OptionalHeap(ref sink) => sink.get(),
             #[cfg(feature = "derive")]
             HandleInner::Struct(ref sink) | HandleInner::OptionalStruct(ref sink) => sink.get(),
             HandleInner::Null(ref sink) => sink,
@@ -407,7 +492,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             HandleInner::Borrowed(ref mut sink) | HandleInner::OptionalBorrowed(ref mut sink) => {
                 &mut **sink
             }
-            HandleInner::Owned(ref mut sink) | HandleInner::OptionalOwned(ref mut sink) => {
+            HandleInner::Arena(ref mut sink) | HandleInner::OptionalArena(ref mut sink) => {
+                sink.get_mut()
+            }
+            HandleInner::Heap(ref mut sink) | HandleInner::OptionalHeap(ref mut sink) => {
                 sink.get_mut()
             }
             #[cfg(feature = "derive")]
@@ -511,7 +599,9 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     #[inline(always)]
     fn is_optional(&self) -> bool {
         match self.0 {
-            HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) => true,
+            HandleInner::OptionalBorrowed(_)
+            | HandleInner::OptionalArena(_)
+            | HandleInner::OptionalHeap(_) => true,
             #[cfg(feature = "derive")]
             HandleInner::OptionalStruct(_) => true,
             _ => false,
@@ -695,7 +785,10 @@ pub trait Deserialize<'de>: Sized + Send {
     /// to return a [`SlotWrapper`].  Custom types will most likely just return
     /// that.  An alternative method is to "wrap" the deserializable in a custom
     /// sink.
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de>;
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>;
 
     /// Provides the value of a missing struct field.
     ///
@@ -725,8 +818,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// entries, the values of keys that exist are replaced.
     ///
     /// If the update fails, the value might be partially updated.
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        update::replace_handle(value)
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        update::replace_handle(value, state)
     }
 
     /// Deserializes an atom into the slot.
@@ -742,7 +835,7 @@ pub trait Deserialize<'de>: Sized + Send {
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        atom_into_handle(Self::deserialize_into(out), atom, state)
+        atom_into_handle(Self::deserialize_into(out, state), atom, state)
     }
 
     /// Deserializes a borrowed atom into the slot.
@@ -755,7 +848,7 @@ pub trait Deserialize<'de>: Sized + Send {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        borrowed_atom_into_handle(Self::deserialize_into(out), atom, state)
+        borrowed_atom_into_handle(Self::deserialize_into(out, state), atom, state)
     }
 
     /// Returns `true` if this deserialize is `u8`.
@@ -807,8 +900,11 @@ pub trait Deserialize<'de>: Sized + Send {
     /// The collection is created if the slot is empty.  This is only used
     /// if [`__private_collects`](Self::__private_collects) returns `true`.
     #[doc(hidden)]
-    fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        Self::deserialize_into(out)
+    fn __private_collect_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        Self::deserialize_into(out, state)
     }
 
     /// Returns a sink for a value that is added to a collection that is
@@ -818,9 +914,13 @@ pub trait Deserialize<'de>: Sized + Send {
     /// only used if [`__private_collects`](Self::__private_collects) returns
     /// `true`.
     #[doc(hidden)]
-    fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
+    fn __private_collect_update<'out>(
+        value: &'out mut Self,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         let _ = first;
-        Self::deserialize_update(value)
+        Self::deserialize_update(value, state)
     }
 
     /// Returns the value of a collection whose key is missing in a

@@ -21,8 +21,11 @@ use alloc::format;
 /// performance critical).
 #[cfg(feature = "derive")]
 #[inline(never)]
-pub fn field_update<'a, 'de, T: Deserialize<'de>>(value: &'a mut T) -> SinkHandle<'a, 'de> {
-    T::deserialize_update(value)
+pub fn field_update<'a, 'de, T: Deserialize<'de>>(
+    value: &'a mut T,
+    state: &mut State,
+) -> SinkHandle<'a, 'de> {
+    T::deserialize_update(value, state)
 }
 
 /// Deserializes an atom into a slot.
@@ -83,8 +86,9 @@ pub fn atom_into_handle(
     atom: Atom,
     state: &mut State,
 ) -> Result<(), Error> {
-    sink.atom(atom, state)?;
-    sink.finish(state)
+    let rv = sink.atom(atom, state).and_then(|()| sink.finish(state));
+    sink.release(state);
+    rv
 }
 
 /// Deserializes a borrowed atom into a sink handle.
@@ -94,8 +98,11 @@ pub fn borrowed_atom_into_handle<'de>(
     atom: Atom<'de>,
     state: &mut State,
 ) -> Result<(), Error> {
-    sink.borrowed_atom(atom, state)?;
-    sink.finish(state)
+    let rv = sink
+        .borrowed_atom(atom, state)
+        .and_then(|()| sink.finish(state));
+    sink.release(state);
+    rv
 }
 
 // The following functions implement the default methods of `Sink`.  The

@@ -83,12 +83,12 @@ where
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
-        Ok(ChildSink::handle(&mut self.collector))
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
+        Ok(ChildSink::handle(&mut self.collector, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
-        Ok(ChildSink::handle(&mut self.collector))
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
+        Ok(ChildSink::handle(&mut self.collector, state))
     }
 
     fn __private_key_atom(
@@ -143,14 +143,17 @@ struct ChildSink<'b, C: ?Sized> {
 }
 
 impl<'b, C: ?Sized> ChildSink<'b, C> {
-    fn handle<'de>(collector: &'b mut C) -> SinkHandle<'b, 'de>
+    fn handle<'de>(collector: &'b mut C, state: &mut State) -> SinkHandle<'b, 'de>
     where
         C: Push<'de>,
     {
-        SinkHandle::boxed(ChildSink {
-            collector,
-            end: None,
-        })
+        SinkHandle::arena(
+            ChildSink {
+                collector,
+                end: None,
+            },
+            state,
+        )
     }
 }
 
@@ -181,12 +184,12 @@ impl<'b, 'de, C: Push<'de> + ?Sized> Sink<'de> for ChildSink<'b, C> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
-        Ok(ChildSink::handle(&mut *self.collector))
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
+        Ok(ChildSink::handle(&mut *self.collector, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
-        Ok(ChildSink::handle(&mut *self.collector))
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, deser_core::Error> {
+        Ok(ChildSink::handle(&mut *self.collector, state))
     }
 
     fn __private_key_atom(

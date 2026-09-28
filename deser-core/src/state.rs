@@ -4,6 +4,7 @@ use core::any::TypeId;
 use core::fmt;
 
 use crate::de::DuplicateKeys;
+use crate::de::arena::Arena;
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::extensions::{EventData, Extensions};
@@ -73,6 +74,8 @@ pub struct State {
     remaining_errors: usize,
     // `true` once an error was not collected because of the limit
     error_limit_reached: bool,
+    // the arena the sinks of the deserialization are allocated in
+    pub(crate) arena: Arena,
 }
 
 /// The function of an [`ErrorContext`].
@@ -111,6 +114,7 @@ impl State {
             collect_errors: false,
             remaining_errors: usize::MAX,
             error_limit_reached: false,
+            arena: Arena::new(),
         }
     }
 

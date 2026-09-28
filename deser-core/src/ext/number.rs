@@ -172,8 +172,11 @@ impl<'a> Serialize for Number<'a> {
 /// Numbers are deserialized from numbers (and number extension values) and
 /// strings with the syntax of JSON numbers.  The text is always owned.
 impl<'de, 'a> Deserialize<'de> for Number<'a> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(NumberSink(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(NumberSink(out), state)
     }
 }
 

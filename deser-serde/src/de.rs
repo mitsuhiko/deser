@@ -138,7 +138,7 @@ fn parse_lexical<T: deser_core::de::DeserializeOwned>(
     let mut state = deser_core::State::new();
     rules.set(&mut state);
     {
-        let mut sink = T::deserialize_into(&mut out);
+        let mut sink = T::deserialize_into(&mut out, &mut state);
         sink.atom(Atom::Lexical(Text::borrowed(value)), &mut state)?;
         sink.finish(&mut state)?;
     }

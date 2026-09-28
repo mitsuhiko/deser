@@ -63,8 +63,11 @@ impl<T: Send, const CAP: usize> SeqTarget<T> for ArrayVec<T, CAP> {
 
 impl<'de, T: Deserialize<'de>, const CAP: usize> Deserialize<'de> for ArrayVec<T, CAP> {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        seq_sink::<Self, T, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        seq_sink::<Self, T, Same>(out, state)
     }
 
     collection_methods!(Same);
@@ -73,8 +76,11 @@ impl<'de, T: Deserialize<'de>, const CAP: usize> Deserialize<'de> for ArrayVec<T
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const CAP: usize> DeserializeAs<'de, ArrayVec<T, CAP>>
     for ArrayVec<A, CAP>
 {
-    fn deserialize_into_as(out: &mut Option<ArrayVec<T, CAP>>) -> SinkHandle<'_, 'de> {
-        seq_sink::<ArrayVec<T, CAP>, T, A>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<ArrayVec<T, CAP>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        seq_sink::<ArrayVec<T, CAP>, T, A>(out, state)
     }
 
     collection_methods_as!(ArrayVec<T, CAP>);
@@ -103,8 +109,11 @@ impl<const CAP: usize> BytesBufImpl for ArrayVec<u8, CAP> {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 
@@ -143,7 +152,10 @@ impl<'de, const CAP: usize> Sink<'de> for SlotWrapper<ArrayString<CAP>> {
 }
 
 impl<'de, const CAP: usize> Deserialize<'de> for ArrayString<CAP> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 

@@ -71,8 +71,11 @@ impl<T: Send> Via<Option<T>> for OnceLock<T> {
 
 /// Deserializes like an `Option`: null and missing values are not set.
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for OnceLock<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        via_handle::<Option<T>, Self, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        via_handle::<Option<T>, Self, Same>(out, state)
     }
 
     fn initial_value() -> Option<Self> {
@@ -123,7 +126,10 @@ impl<'de> Sink<'de> for SlotWrapper<PathBuf> {
 }
 
 impl<'de> Deserialize<'de> for PathBuf {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 

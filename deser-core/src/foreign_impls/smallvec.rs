@@ -7,6 +7,7 @@
 use ::smallvec::SmallVec;
 use alloc::vec::Vec;
 
+use crate::State;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::adapters::ser_impls::serialize_as_slice;
 use crate::adapters::{DeserializeAs, Same, SerializeAs};
@@ -36,8 +37,11 @@ impl<T: Send, const N: usize> SeqTarget<T> for SmallVec<[T; N]> {
 
 impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for SmallVec<[T; N]> {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        seq_sink::<Self, T, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        seq_sink::<Self, T, Same>(out, state)
     }
 
     collection_methods!(Same);
@@ -46,8 +50,11 @@ impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for SmallVec<[T;
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, SmallVec<[T; N]>>
     for SmallVec<[A; N]>
 {
-    fn deserialize_into_as(out: &mut Option<SmallVec<[T; N]>>) -> SinkHandle<'_, 'de> {
-        seq_sink::<SmallVec<[T; N]>, T, A>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<SmallVec<[T; N]>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        seq_sink::<SmallVec<[T; N]>, T, A>(out, state)
     }
 
     collection_methods_as!(SmallVec<[T; N]>);
@@ -76,8 +83,11 @@ impl<const N: usize> BytesBufImpl for SmallVec<[u8; N]> {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 

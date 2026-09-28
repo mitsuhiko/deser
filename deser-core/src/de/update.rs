@@ -1,12 +1,12 @@
 //! Support for updating existing values (see
 //! [`Deserialize::deserialize_update`]).
 use alloc::borrow::Cow;
-use alloc::boxed::Box;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
 use crate::adapters::DeserializeAs;
+use crate::de::arena::ArenaBox;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
@@ -110,24 +110,29 @@ impl<'a, 'de, T: Send> Replace<'de> for Replacer<'a, 'de, T> {
 /// The new value is deserialized into an owned sink and replaces the value
 /// once it's complete.
 struct ReplaceSink<'a, 'de> {
-    inner: Box<dyn Replace<'de> + 'a>,
+    // in the arena, the sink exists once for all types
+    inner: ArenaBox<dyn Replace<'de> + 'a>,
 }
 
 /// Creates a sink handle that replaces a value.
 ///
 /// This is the default implementation of
 /// [`Deserialize::deserialize_update`].
-pub fn replace_handle<'a, 'de, T: Deserialize<'de>>(out: &'a mut T) -> SinkHandle<'a, 'de> {
-    replace_with(out, OwnedSink::deserialize())
+pub fn replace_handle<'a, 'de, T: Deserialize<'de>>(
+    out: &'a mut T,
+    state: &mut State,
+) -> SinkHandle<'a, 'de> {
+    replace_with(out, OwnedSink::deserialize(state), state)
 }
 
 /// Creates a sink handle that replaces a value with a value that is
 /// deserialized with a sink the function creates.
 pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
     out: &'a mut T,
-    make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+    make: for<'x> fn(&'x mut Option<T>, &mut State) -> SinkHandle<'x, 'de>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    replace_with(out, OwnedSink::with(make))
+    replace_with(out, OwnedSink::with(make, state), state)
 }
 
 /// Creates a sink handle that updates a value and checks it once the update
@@ -160,11 +165,9 @@ pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
 /// }
 ///
 /// let mut range = Range { min: 1, max: 5 };
-/// let mut driver = DeserializeDriver::from_sink(checked_update(
-///     &mut range,
-///     Range::deserialize_update,
-///     check,
-/// ));
+/// let mut driver = DeserializeDriver::from_fn(|state| {
+///     checked_update(&mut range, Range::deserialize_update, check, state)
+/// });
 /// driver.emit(Event::map_start()).unwrap();
 /// driver.emit("min").unwrap();
 /// driver.emit(10u64).unwrap();
@@ -173,20 +176,24 @@ pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
 /// ```
 pub fn checked_update<'a, 'de, T: Send + 'a>(
     value: &'a mut T,
-    update: for<'x> fn(&'x mut T) -> SinkHandle<'x, 'de>,
+    update: for<'x> fn(&'x mut T, &mut State) -> SinkHandle<'x, 'de>,
     check: fn(&T) -> Result<(), Error>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
     let ptr = NonNull::from(value);
     // SAFETY: the sink borrows the value for 'a, the pointer is only used
     // again once the sink was dropped (in `finish`).
-    let sink = update(unsafe { &mut *ptr.as_ptr() });
-    SinkHandle::boxed(CheckedUpdateSink {
-        value: ptr,
-        sink: Some(sink),
-        check,
-        start: None,
-        _marker: PhantomData,
-    })
+    let sink = update(unsafe { &mut *ptr.as_ptr() }, state);
+    SinkHandle::arena(
+        CheckedUpdateSink {
+            value: ptr,
+            sink: Some(sink),
+            check,
+            start: None,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 /// The sink of [`checked_update`].
@@ -303,43 +310,48 @@ impl<'a, 'de, T: Send> Sink<'de> for CheckedUpdateSink<'a, 'de, T> {
 pub fn replace_with<'a, 'de, T: Send + 'a>(
     out: &'a mut T,
     sink: OwnedSink<'de, T>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    SinkHandle::boxed(ReplaceSink {
-        inner: Box::new(Replacer { out, sink }),
-    })
+    let inner = ArenaBox::into_raw(ArenaBox::new(Replacer { out, sink }, &mut state.arena));
+    // SAFETY: the pointer comes from the box
+    let inner = unsafe { ArenaBox::from_raw(inner.as_ptr() as *mut (dyn Replace<'de> + 'a)) };
+    SinkHandle::arena(ReplaceSink { inner }, state)
 }
 
 impl<'a, 'de> Sink<'de> for ReplaceSink<'a, 'de> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().atom(atom, state)
+        self.inner.get_mut().sink().atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().borrowed_atom(atom, state)
+        self.inner.get_mut().sink().borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().map(state)
+        self.inner.get_mut().sink().map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().seq(state)
+        self.inner.get_mut().sink().seq(state)
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.inner.sink().next_key(state)
+        self.inner.get_mut().sink().next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.inner.sink().next_value(state)
+        self.inner.get_mut().sink().next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().__private_key_atom(atom, state)
+        self.inner.get_mut().sink().__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().__private_value_atom(atom, state)
+        self.inner
+            .get_mut()
+            .sink()
+            .__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -347,7 +359,10 @@ impl<'a, 'de> Sink<'de> for ReplaceSink<'a, 'de> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.inner.sink().__private_borrowed_key_atom(atom, state)
+        self.inner
+            .get_mut()
+            .sink()
+            .__private_borrowed_key_atom(atom, state)
     }
 
     fn __private_borrowed_value_atom(
@@ -355,7 +370,10 @@ impl<'a, 'de> Sink<'de> for ReplaceSink<'a, 'de> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.inner.sink().__private_borrowed_value_atom(atom, state)
+        self.inner
+            .get_mut()
+            .sink()
+            .__private_borrowed_value_atom(atom, state)
     }
 
     fn value_for_key(
@@ -363,20 +381,20 @@ impl<'a, 'de> Sink<'de> for ReplaceSink<'a, 'de> {
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.inner.sink().value_for_key(key, state)
+        self.inner.get_mut().sink().value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().recover(err, state)
+        self.inner.get_mut().sink().recover(err, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        self.inner.sink_ref().expecting()
+        self.inner.get().sink_ref().expecting()
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.inner.sink().finish(state)?;
-        self.inner.replace();
+        self.inner.get_mut().sink().finish(state)?;
+        self.inner.get_mut().replace();
         Ok(())
     }
 }
@@ -397,13 +415,17 @@ struct OptionUpdateSink<'a, 'de, T> {
 /// is deserialized.  Null clears the option.
 pub(crate) fn update_option<'a, 'de, T: Deserialize<'de>>(
     out: &'a mut Option<T>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
     match out.take() {
-        Some(value) => SinkHandle::boxed(OptionUpdateSink {
-            out,
-            sink: OwnedSink::update(value),
-        }),
-        None => replace_handle(out),
+        Some(value) => SinkHandle::arena(
+            OptionUpdateSink {
+                out,
+                sink: OwnedSink::update(value, state),
+            },
+            state,
+        ),
+        None => replace_handle(out, state),
     }
 }
 
@@ -571,7 +593,7 @@ where
             Err(err) if err.kind() == ErrorKind::Unexpected => {
                 // the element that rejected the sequence is not a value
                 // (the slots of optionals are set when they are created)
-                self.element = OwnedSink::null();
+                self.element = OwnedSink::null(state);
                 self.extend = true;
                 Ok(())
             }
@@ -587,7 +609,7 @@ where
         if self.extend {
             // the previous item was finished by the driver
             CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)?;
-            self.element = OwnedSink::deserialize_as::<A>();
+            self.element = OwnedSink::deserialize_as::<A>(state);
             return Ok(SinkHandle::to(self.element.borrow_mut()));
         }
         self.element.borrow_mut().next_value(state)
@@ -660,18 +682,25 @@ where
 /// Creates the sink of a value that is added to the collection in a slot.
 ///
 /// This implements [`Deserialize::__private_collect_into`] for collections.
-pub(crate) fn collect_into<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
+pub(crate) fn collect_into<'a, 'de, C, T, A>(
+    out: &'a mut Option<C>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     C: Collection<T> + 'a,
     T: Send + 'a,
     A: DeserializeAs<'de, T>,
 {
-    SinkHandle::boxed(CollectSink {
-        target: CollectTarget::Slot(out),
-        element: OwnedSink::deserialize_as::<A>(),
-        extend: false,
-        _marker: PhantomData::<fn() -> A>,
-    })
+    let element = OwnedSink::deserialize_as::<A>(state);
+    SinkHandle::arena(
+        CollectSink {
+            target: CollectTarget::Slot(out),
+            element,
+            extend: false,
+            _marker: PhantomData::<fn() -> A>,
+        },
+        state,
+    )
 }
 
 /// Creates the sink of a value that is added to a collection that is
@@ -679,7 +708,11 @@ where
 ///
 /// This implements [`Deserialize::__private_collect_update`] for
 /// collections.  The first value of a key replaces the collection.
-pub(crate) fn collect_update<'a, 'de, C, T, A>(value: &'a mut C, first: bool) -> SinkHandle<'a, 'de>
+pub(crate) fn collect_update<'a, 'de, C, T, A>(
+    value: &'a mut C,
+    first: bool,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     C: Collection<T> + 'a,
     T: Send + 'a,
@@ -688,10 +721,14 @@ where
     if first {
         *value = C::empty();
     }
-    SinkHandle::boxed(CollectSink {
-        target: CollectTarget::Value(value),
-        element: OwnedSink::deserialize_as::<A>(),
-        extend: false,
-        _marker: PhantomData::<fn() -> A>,
-    })
+    let element = OwnedSink::deserialize_as::<A>(state);
+    SinkHandle::arena(
+        CollectSink {
+            target: CollectTarget::Value(value),
+            element,
+            extend: false,
+            _marker: PhantomData::<fn() -> A>,
+        },
+        state,
+    )
 }

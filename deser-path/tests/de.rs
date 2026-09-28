@@ -11,7 +11,10 @@ struct MyBool(bool);
 deser::make_slot_wrapper!(SlotWrapper);
 
 impl<'de> Deserialize<'de> for MyBool {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
@@ -55,7 +58,10 @@ fn test_path() {
 struct RecordPath(String);
 
 impl<'de> Deserialize<'de> for RecordPath {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
@@ -278,8 +284,11 @@ fn test_error_paths_after_recovery() {
     struct PathsSink<'a>(&'a mut Option<Paths>, Vec<String>);
 
     impl<'de> Deserialize<'de> for Paths {
-        fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-            SinkHandle::boxed(PathsSink(out, Vec::new()))
+        fn deserialize_into<'out>(
+            out: &'out mut Option<Self>,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            SinkHandle::arena(PathsSink(out, Vec::new()), state)
         }
     }
 
@@ -288,8 +297,8 @@ fn test_error_paths_after_recovery() {
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            Ok(SinkHandle::boxed(Nothing))
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            Ok(SinkHandle::arena(Nothing, state))
         }
 
         fn recover(&mut self, err: Error, _state: &mut State) -> Result<(), Error> {
@@ -311,8 +320,8 @@ fn test_error_paths_after_recovery() {
             Ok(())
         }
 
-        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            Ok(SinkHandle::boxed(Nothing))
+        fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            Ok(SinkHandle::arena(Nothing, state))
         }
     }
 

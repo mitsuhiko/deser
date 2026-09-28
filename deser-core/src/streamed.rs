@@ -190,11 +190,17 @@ fn complete<T: Send + 'static>(value: T, items: &mut Vec<T>, state: &State) {
 }
 
 impl<'de, T: Deserialize<'de> + 'static> Deserialize<'de> for Streamed<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(StreamedSink {
-            out,
-            items: Vec::new(),
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            StreamedSink {
+                out,
+                items: Vec::new(),
+            },
+            state,
+        )
     }
 }
 
@@ -212,11 +218,14 @@ impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for StreamedSink<'a, T> {
         Ok(())
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(SinkHandle::boxed(ElementSink {
-            sink: OwnedSink::deserialize(),
-            items: &mut self.items,
-        }))
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(SinkHandle::arena(
+            ElementSink {
+                sink: OwnedSink::deserialize(state),
+                items: &mut self.items,
+            },
+            state,
+        ))
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {

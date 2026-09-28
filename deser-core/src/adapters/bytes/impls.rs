@@ -18,13 +18,17 @@ mod sealed {
     pub trait BytesBufImpl: Sized + Send + Sync {
         fn bytes(&self) -> &[u8];
         fn from_vec(bytes: Vec<u8>) -> Result<Self, Error>;
-        fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de>;
+        fn deserialize_into<'a, 'de>(
+            out: &'a mut Option<Self>,
+            state: &mut State,
+        ) -> SinkHandle<'a, 'de>;
     }
 
     pub trait BytesFallbackFormatImpl: 'static {
         const FORMAT: BytesFormat;
         fn deserialize_into<'a, 'de, T: BytesBufImpl>(
             out: &'a mut Option<T>,
+            state: &mut State,
         ) -> SinkHandle<'a, 'de>;
     }
 }
@@ -55,8 +59,11 @@ impl BytesBufImpl for Vec<u8> {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 
@@ -73,8 +80,11 @@ impl<const N: usize> BytesBufImpl for [u8; N] {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 
@@ -90,8 +100,11 @@ impl<'c> BytesBufImpl for Cow<'c, [u8]> {
     }
 
     #[inline]
-    fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out)
+    fn deserialize_into<'a, 'de>(
+        out: &'a mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        Deserialize::deserialize_into(out, state)
     }
 }
 
@@ -108,8 +121,11 @@ impl<E: BytesEncoding> BytesFallbackFormatImpl for E {
     const FORMAT: BytesFormat = BytesFormat::encoded::<E>();
 
     #[inline]
-    fn deserialize_into<'a, 'de, T: BytesBufImpl>(out: &'a mut Option<T>) -> SinkHandle<'a, 'de> {
-        encoded_handle::<T, E>(out)
+    fn deserialize_into<'a, 'de, T: BytesBufImpl>(
+        out: &'a mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        encoded_handle::<T, E>(out, state)
     }
 }
 
@@ -124,9 +140,12 @@ impl BytesFallbackFormatImpl for IntSeq {
     const FORMAT: BytesFormat = BytesFormat::SEQ;
 
     #[inline]
-    fn deserialize_into<'a, 'de, T: BytesBufImpl>(out: &'a mut Option<T>) -> SinkHandle<'a, 'de> {
+    fn deserialize_into<'a, 'de, T: BytesBufImpl>(
+        out: &'a mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
         // bytes accept sequences of integers anyways
-        T::deserialize_into(out)
+        T::deserialize_into(out, state)
     }
 }
 
@@ -155,11 +174,15 @@ impl<'a, 'de, T: BytesBufImpl, E: BytesEncoding> Sink<'de> for EncodedSink<'a, T
 #[inline]
 pub(crate) fn encoded_handle<'a, 'de, T: BytesBufImpl, E: BytesEncoding>(
     out: &'a mut Option<T>,
+    state: &mut State,
 ) -> SinkHandle<'a, 'de> {
-    SinkHandle::boxed(EncodedSink::<T, E> {
-        out,
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        EncodedSink::<T, E> {
+            out,
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 /// Makes the encodings adapters which represent bytes as strings in all
@@ -201,9 +224,8 @@ macro_rules! encoding_adapter {
             {
                 #[inline]
                 fn deserialize_into_as<'a>(
-                    out: &'a mut Option<$ty>,
-                ) -> $crate::de::SinkHandle<'a, 'de> {
-                    $crate::adapters::bytes::encoded_handle::<$ty, E>(out)
+                    out: &'a mut Option<$ty>, state: &mut $crate::State) -> $crate::de::SinkHandle<'a, 'de> {
+                    $crate::adapters::bytes::encoded_handle::<$ty, E>(out, state)
                 }
             }
         )*
@@ -272,7 +294,10 @@ impl<T: BytesBuf, F: BytesFallbackFormat> SerializeAs<T> for BytesFallback<F> {
 
 impl<'de, T: BytesBuf, F: BytesFallbackFormat> DeserializeAs<'de, T> for BytesFallback<F> {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        F::deserialize_into(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        F::deserialize_into(out, state)
     }
 }

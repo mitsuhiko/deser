@@ -202,13 +202,19 @@ macro_rules! table {
 }
 
 impl<'de> Deserialize<'de> for Value {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(ValueSink {
-            out,
-            compound: None,
-            key: None,
-            value: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            ValueSink {
+                out,
+                compound: None,
+                key: None,
+                value: None,
+            },
+            state,
+        )
     }
 }
 
@@ -264,16 +270,16 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.key))
+        Ok(Deserialize::deserialize_into(&mut self.key, state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(Compound::Array(_)) = self.compound {
             self.flush();
         }
-        Ok(Deserialize::deserialize_into(&mut self.value))
+        Ok(Deserialize::deserialize_into(&mut self.value, state))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {

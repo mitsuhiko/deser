@@ -284,14 +284,14 @@ fn test_recording() {
     let mut recording = Recording::new();
     assert!(recording.is_empty());
     {
-        let mut driver = DeserializeDriver::from_sink(recording.recorder());
+        let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
         driver.emit("hello").unwrap();
     }
     assert_eq!(recording.as_str(), Some("hello"));
 
     // recording again replaces the value
     {
-        let mut driver = DeserializeDriver::from_sink(recording.recorder());
+        let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
         driver.emit(Event::map_start()).unwrap();
         driver.emit("a").unwrap();
         driver.emit(Event::seq_start()).unwrap();
@@ -316,7 +316,10 @@ fn test_recording() {
     for _ in 0..2 {
         let mut out = None::<BTreeMap<String, Vec<u32>>>;
         recording
-            .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
+            .replay(
+                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                driver.state_mut(),
+            )
             .unwrap();
         assert_eq!(out.unwrap()["a"], Vec::<u32>::new());
     }
@@ -342,7 +345,10 @@ impl<'de> deser::de::Sink<'de> for ProbeSlot<Probe> {
 }
 
 impl<'de> Deserialize<'de> for Probe {
-    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut deser::State,
+    ) -> deser::de::SinkHandle<'out, 'de> {
         ProbeSlot::make_handle(out)
     }
 }

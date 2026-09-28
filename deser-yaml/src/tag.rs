@@ -153,13 +153,19 @@ impl<T: Serialize> Serialize for Tagged<T> {
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tagged<T> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(TaggedSink {
-            out,
-            slot: None,
-            compound: None,
-            tag: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            TaggedSink {
+                out,
+                slot: None,
+                compound: None,
+                tag: None,
+            },
+            state,
+        )
     }
 }
 
@@ -173,9 +179,9 @@ struct TaggedSink<'a, 'de, T> {
 }
 
 impl<'a, 'de, T: Deserialize<'de>> TaggedSink<'a, 'de, T> {
-    fn compound(&mut self) -> &mut dyn Sink<'de> {
+    fn compound(&mut self, state: &mut State) -> &mut dyn Sink<'de> {
         self.compound
-            .get_or_insert_with(OwnedSink::deserialize)
+            .get_or_insert_with(|| OwnedSink::deserialize(state))
             .borrow_mut()
     }
 }
@@ -183,34 +189,34 @@ impl<'a, 'de, T: Deserialize<'de>> TaggedSink<'a, 'de, T> {
 impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
-        let mut sink = T::deserialize_into(&mut self.slot);
+        let mut sink = T::deserialize_into(&mut self.slot, state);
         sink.atom(atom, state)?;
         sink.finish(state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
-        let mut sink = T::deserialize_into(&mut self.slot);
+        let mut sink = T::deserialize_into(&mut self.slot, state);
         sink.borrowed_atom(atom, state)?;
         sink.finish(state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
-        self.compound().map(state)
+        self.compound(state).map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         self.tag = take_tag(state);
-        self.compound().seq(state)
+        self.compound(state).seq(state)
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.compound().next_key(state)
+        self.compound(state).next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.compound().next_value(state)
+        self.compound(state).next_value(state)
     }
 
     fn value_for_key(
@@ -218,7 +224,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.compound().value_for_key(key, state)
+        self.compound(state).value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
@@ -246,6 +252,11 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
             return compound.borrow().expecting();
         }
         let mut slot = None;
-        Cow::Owned(T::deserialize_into(&mut slot).expecting().into_owned())
+        let mut state = State::new();
+        Cow::Owned(
+            T::deserialize_into(&mut slot, &mut state)
+                .expecting()
+                .into_owned(),
+        )
     }
 }

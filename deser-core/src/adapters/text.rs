@@ -144,8 +144,8 @@ struct TextSink<'a, 'de> {
 }
 
 impl<'a, 'de> TextSink<'a, 'de> {
-    fn handle(inner: SinkHandle<'a, 'de>, op: TextOp) -> SinkHandle<'a, 'de> {
-        SinkHandle::boxed(TextSink { inner, op })
+    fn handle(inner: SinkHandle<'a, 'de>, op: TextOp, state: &mut State) -> SinkHandle<'a, 'de> {
+        SinkHandle::arena(TextSink { inner, op }, state)
     }
 }
 
@@ -344,12 +344,12 @@ enum SkipBlankSink<'a, 'de, T, A> {
 
 impl<'a, 'de, T, A: DeserializeAs<'de, T>> SkipBlankSink<'a, 'de, T, A> {
     /// Returns the sink of the value, creates it if needed.
-    fn active(&mut self) -> &mut SinkHandle<'a, 'de> {
+    fn active(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
         if let SkipBlankSink::Pending(..) = self
             && let SkipBlankSink::Pending(out, _) =
                 core::mem::replace(self, SkipBlankSink::Active(SinkHandle::null()))
         {
-            *self = SkipBlankSink::Active(A::deserialize_into_as(out));
+            *self = SkipBlankSink::Active(A::deserialize_into_as(out, state));
         }
         match self {
             SkipBlankSink::Active(sink) => sink,
@@ -372,38 +372,38 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
         if self.skip(&atom) {
             return Ok(());
         }
-        self.active().atom(atom, state)
+        self.active(state).atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         if self.skip(&atom) {
             return Ok(());
         }
-        self.active().borrowed_atom(atom, state)
+        self.active(state).borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active().map(state)
+        self.active(state).map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active().seq(state)
+        self.active(state).seq(state)
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.active().next_key(state)
+        self.active(state).next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.active().next_value(state)
+        self.active(state).next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.active().__private_key_atom(atom, state)
+        self.active(state).__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.active().__private_value_atom(atom, state)
+        self.active(state).__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -411,7 +411,7 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.active().__private_borrowed_key_atom(atom, state)
+        self.active(state).__private_borrowed_key_atom(atom, state)
     }
 
     fn __private_borrowed_value_atom(
@@ -419,7 +419,8 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.active().__private_borrowed_value_atom(atom, state)
+        self.active(state)
+            .__private_borrowed_value_atom(atom, state)
     }
 
     fn value_for_key(
@@ -427,15 +428,15 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.active().value_for_key(key, state)
+        self.active(state).value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.active().recover(err, state)
+        self.active(state).recover(err, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active().finish(state)
+        self.active(state).finish(state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
@@ -444,15 +445,23 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
             // the sink of the value does not exist yet
             SkipBlankSink::Pending(..) => {
                 let mut slot = None;
-                Cow::Owned(A::deserialize_into_as(&mut slot).expecting().into_owned())
+                let mut state = State::new();
+                Cow::Owned(
+                    A::deserialize_into_as(&mut slot, &mut state)
+                        .expecting()
+                        .into_owned(),
+                )
             }
         }
     }
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank<A> {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(SkipBlankSink::<T, A>::Pending(out, PhantomData))
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(SkipBlankSink::<T, A>::Pending(out, PhantomData), state)
     }
 
     fn initial_value_as() -> Option<T> {
@@ -497,8 +506,11 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank
 }
 
 impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for TrimWhitespace<A> {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        TextSink::handle(A::deserialize_into_as(out), TextOp::Trim)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        TextSink::handle(A::deserialize_into_as(out, state), TextOp::Trim, state)
     }
 
     fn initial_value_as() -> Option<T> {
@@ -701,11 +713,10 @@ macro_rules! separated_impls {
             impl<'de, $($bound)*, A: DeserializeAs<'de, T>, const SEP: char>
                 DeserializeAs<'de, $target> for Separated<SEP, A>
             {
-                fn deserialize_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
+                fn deserialize_into_as<'out>(out: &'out mut Option<$target>, state: &mut State) -> SinkHandle<'out, 'de> {
                     TextSink::handle(
-                        <$adapter as DeserializeAs<'de, $target>>::deserialize_into_as(out),
-                        TextOp::Split(SEP),
-                    )
+                        <$adapter as DeserializeAs<'de, $target>>::deserialize_into_as(out, state),
+                        TextOp::Split(SEP), state)
                 }
             }
 

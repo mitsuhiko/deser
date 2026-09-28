@@ -526,7 +526,10 @@ impl<'de> deser::de::Sink<'de> for HexSlot<Vec<u8>> {
 }
 
 impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-    fn deserialize_into_as(out: &mut Option<Vec<u8>>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<Vec<u8>>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         HexSlot::make_handle(out)
     }
 }

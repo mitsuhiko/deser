@@ -187,8 +187,11 @@ macro_rules! impl_well_known {
         }
 
         impl<'de> $crate::de::Deserialize<'de> for $ty {
-            fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_, 'de> {
-                $crate::de::SinkHandle::boxed($crate::ext::known::KnownSink(out))
+            fn deserialize_into<'out>(
+                out: &'out mut Option<Self>,
+                state: &mut $crate::State,
+            ) -> $crate::de::SinkHandle<'out, 'de> {
+                $crate::de::SinkHandle::arena($crate::ext::known::KnownSink(out), state)
             }
         }
     };
@@ -209,8 +212,8 @@ macro_rules! impl_bridge {
             }
 
             impl<'de> $crate::de::Deserialize<'de> for $ty {
-                fn deserialize_into(out: &mut Option<Self>) -> $crate::de::SinkHandle<'_, 'de> {
-                    $crate::de::SinkHandle::boxed($crate::ext::known::BridgeSink(out))
+                fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut $crate::State) -> $crate::de::SinkHandle<'out, 'de> {
+                    $crate::de::SinkHandle::arena($crate::ext::known::BridgeSink(out), state)
                 }
             }
         )*

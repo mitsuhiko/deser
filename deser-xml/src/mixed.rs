@@ -285,14 +285,20 @@ impl WhitespaceDepths {
 }
 
 impl<'de, T: Deserialize<'de>, W: Whitespace> Deserialize<'de> for Mixed<T, W> {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(MixedSink {
-            out,
-            values: Vec::new(),
-            key: None,
-            pending: None,
-            depth: None,
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            MixedSink {
+                out,
+                values: Vec::new(),
+                key: None,
+                pending: None,
+                depth: None,
+            },
+            state,
+        )
     }
 
     /// Missing content is empty.
@@ -332,7 +338,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> MixedSink<'_, 'de, T, W> {
     /// Begins a value with the key and returns the sink of its value.
     fn begin(&mut self, key: &str, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.end(state)?;
-        let pending = self.pending.insert(OwnedSink::deserialize());
+        let pending = self.pending.insert(OwnedSink::deserialize(state));
         let sink = pending.borrow_mut();
         sink.map(state)?;
         let mut key_sink = sink.next_key(state)?;
@@ -389,7 +395,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> Sink<'de> for MixedSink<'_, 'de, T
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.end(state)?;
-        Ok(String::deserialize_into(&mut self.key))
+        Ok(String::deserialize_into(&mut self.key, state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {

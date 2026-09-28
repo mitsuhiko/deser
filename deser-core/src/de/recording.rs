@@ -31,7 +31,7 @@ use alloc::vec::Vec;
 ///
 /// let mut recording = Recording::new();
 /// {
-///     let mut driver = DeserializeDriver::from_sink(recording.recorder());
+///     let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
 ///     driver.emit(Event::seq_start()).unwrap();
 ///     driver.emit(1u64).unwrap();
 ///     driver.emit(2u64).unwrap();
@@ -42,8 +42,9 @@ use alloc::vec::Vec;
 /// {
 ///     let mut driver_out = None::<()>;
 ///     let mut driver = DeserializeDriver::new(&mut driver_out);
+///     let state = driver.state_mut();
 ///     recording
-///         .replay(Deserialize::deserialize_into(&mut out), driver.state_mut())
+///         .replay(Deserialize::deserialize_into(&mut out, state), state)
 ///         .unwrap();
 /// }
 /// assert_eq!(out, Some(vec![1, 2]));
@@ -207,14 +208,17 @@ impl Recording {
     /// Returns a sink that records a value into this recording.
     ///
     /// A previously recorded value is discarded.
-    pub fn recorder<'de>(&mut self) -> SinkHandle<'_, 'de> {
+    pub fn recorder<'de>(&mut self, state: &mut State) -> SinkHandle<'_, 'de> {
         self.0.events.clear();
         self.0.is_map_key = false;
-        SinkHandle::boxed(Recorder {
-            target: self,
-            end: None,
-            is_root: true,
-        })
+        SinkHandle::arena(
+            Recorder {
+                target: self,
+                end: None,
+                is_root: true,
+            },
+            state,
+        )
     }
 
     /// Returns a sink that records a value and passes the recording to a
@@ -225,6 +229,7 @@ impl Recording {
     /// value into different types.
     ///
     /// ```
+    /// use deser::State;
     /// use deser::de::{Deserialize, Recording, SinkHandle};
     ///
     /// /// Deserializes either as number or as string.
@@ -235,18 +240,18 @@ impl Recording {
     /// }
     ///
     /// impl<'de> Deserialize<'de> for NumberOrString {
-    ///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    ///     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
     ///         Recording::capture(move |recording, state| {
     ///             let mut number = None;
-    ///             if recording.replay(u64::deserialize_into(&mut number), state).is_ok() {
+    ///             if recording.replay(u64::deserialize_into(&mut number, state), state).is_ok() {
     ///                 *out = number.map(NumberOrString::Number);
     ///             } else {
     ///                 let mut string = None;
-    ///                 recording.replay(String::deserialize_into(&mut string), state)?;
+    ///                 recording.replay(String::deserialize_into(&mut string, state), state)?;
     ///                 *out = string.map(NumberOrString::String);
     ///             }
     ///             Ok(())
-    ///         })
+    ///         }, state)
     ///     }
     /// }
     ///
@@ -262,15 +267,18 @@ impl Recording {
     /// };
     /// assert_eq!(values, [NumberOrString::Number(42), NumberOrString::String("x".into())]);
     /// ```
-    pub fn capture<'a, 'de, F>(then: F) -> SinkHandle<'a, 'de>
+    pub fn capture<'a, 'de, F>(then: F, state: &mut State) -> SinkHandle<'a, 'de>
     where
         F: FnOnce(Recording, &mut State) -> Result<(), Error> + Send + 'a,
     {
-        SinkHandle::boxed(CaptureSink {
-            recording: Recording::new(),
-            end: None,
-            then: Some(Box::new(FnCapture(Some(then)))),
-        })
+        SinkHandle::arena(
+            CaptureSink {
+                recording: Recording::new(),
+                end: None,
+                then: Some(FnCapture(Some(then))),
+            },
+            state,
+        )
     }
 
     /// Returns `true` if nothing was recorded.
@@ -310,25 +318,28 @@ impl<'de> RecordBuf<'de> {
     ///
     /// A previously recorded value is discarded.
     #[cfg_attr(not(feature = "derive"), allow(dead_code))]
-    pub fn recorder(&mut self) -> SinkHandle<'_, 'de> {
+    pub fn recorder(&mut self, state: &mut State) -> SinkHandle<'_, 'de> {
         self.events.clear();
         self.is_map_key = false;
-        SinkHandle::boxed(Recorder {
-            target: self,
-            end: None,
-            is_root: true,
-        })
+        SinkHandle::arena(
+            Recorder {
+                target: self,
+                end: None,
+                is_root: true,
+            },
+            state,
+        )
     }
 
     /// Returns a sink that records a value and passes the buffer to a
     /// callback once the value is complete (see [`Recording::capture`]).
     #[cfg_attr(not(feature = "derive"), allow(dead_code))]
-    pub fn capture<'a, F>(then: F) -> SinkHandle<'a, 'de>
+    pub fn capture<'a, F>(then: F, state: &mut State) -> SinkHandle<'a, 'de>
     where
         F: FnOnce(RecordBuf<'de>, &mut State) -> Result<(), Error> + Send + 'a,
         'de: 'a,
     {
-        RecordBuf::capture_with(Box::new(FnCapture(Some(then))))
+        RecordBuf::capture_with(FnCapture(Some(then)), state)
     }
 
     /// Returns a sink that captures a value and passes it on.
@@ -336,17 +347,21 @@ impl<'de> RecordBuf<'de> {
     /// Unlike [`capture`](Self::capture) values which are a single atom are
     /// passed on without recording them.
     #[cfg_attr(not(feature = "derive"), allow(dead_code))]
-    pub(crate) fn capture_with<'a>(
-        then: Box<dyn Capture<'de, RecordBuf<'de>> + 'a>,
+    pub(crate) fn capture_with<'a, C: Capture<'de, RecordBuf<'de>> + 'a>(
+        then: C,
+        state: &mut State,
     ) -> SinkHandle<'a, 'de>
     where
         'de: 'a,
     {
-        SinkHandle::boxed(CaptureSink {
-            recording: RecordBuf::new(),
-            end: None,
-            then: Some(then),
-        })
+        SinkHandle::arena(
+            CaptureSink {
+                recording: RecordBuf::new(),
+                end: None,
+                then: Some(then),
+            },
+            state,
+        )
     }
 
     /// Records a single atom, discarding a previously recorded value.
@@ -512,27 +527,30 @@ where
 }
 
 /// Records a value and passes it on.
-struct CaptureSink<'a, 'de, T> {
+struct CaptureSink<T, C> {
     recording: T,
     end: Option<Event<'static>>,
     // `None` once the value was passed on
-    then: Option<Box<dyn Capture<'de, T> + 'a>>,
+    then: Option<C>,
 }
 
-impl<'a, 'de, T> CaptureSink<'a, 'de, T> {
-    fn child(&mut self) -> SinkHandle<'_, 'de>
+impl<'de, T, C> CaptureSink<T, C> {
+    fn child(&mut self, state: &mut State) -> SinkHandle<'_, 'de>
     where
         T: Target<'de>,
     {
-        SinkHandle::boxed(Recorder {
-            target: &mut self.recording,
-            end: None,
-            is_root: false,
-        })
+        SinkHandle::arena(
+            Recorder {
+                target: &mut self.recording,
+                end: None,
+                is_root: false,
+            },
+            state,
+        )
     }
 }
 
-impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, 'de, T> {
+impl<'de, T: Target<'de> + Default, C: Capture<'de, T>> Sink<'de> for CaptureSink<T, C> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match self.then.take() {
             Some(mut then) => then.atom(atom, state),
@@ -564,12 +582,12 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, 'de, T> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(self.child())
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(self.child(state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(self.child())
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(self.child(state))
     }
 
     // atoms in the container are recorded without creating a sink for them
@@ -623,7 +641,7 @@ impl<'a, 'de, T: Target<'de> + Default> Sink<'de> for CaptureSink<'a, 'de, T> {
         }
         self.recording
             .push(false, Event::Atom(Atom::Str(key.to_owned().into())), state);
-        Ok(Some(self.child()))
+        Ok(Some(self.child(state)))
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
@@ -652,15 +670,18 @@ struct Recorder<'a, T> {
 }
 
 impl<'a, T> Recorder<'a, T> {
-    fn child<'de>(&mut self) -> SinkHandle<'_, 'de>
+    fn child<'de>(&mut self, state: &mut State) -> SinkHandle<'_, 'de>
     where
         T: Target<'de>,
     {
-        SinkHandle::boxed(Recorder {
-            target: &mut *self.target,
-            end: None,
-            is_root: false,
-        })
+        SinkHandle::arena(
+            Recorder {
+                target: &mut *self.target,
+                end: None,
+                is_root: false,
+            },
+            state,
+        )
     }
 }
 
@@ -696,12 +717,12 @@ impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
         Ok(())
     }
 
-    fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(self.child())
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(self.child(state))
     }
 
-    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(self.child())
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(self.child(state))
     }
 
     // atoms in the container are recorded without creating a sink for them
@@ -760,11 +781,17 @@ impl PartialEq for Recording {
 }
 
 impl<'de> Deserialize<'de> for Recording {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        Recording::capture(move |recording, _state| {
-            *out = Some(recording);
-            Ok(())
-        })
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        Recording::capture(
+            move |recording, _state| {
+                *out = Some(recording);
+                Ok(())
+            },
+            state,
+        )
     }
 }
 

@@ -847,7 +847,10 @@ mod counting {
 struct Ignore;
 
 impl<'de> deser::Deserialize<'de> for Ignore {
-    fn deserialize_into(out: &mut Option<Self>) -> deser::de::SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut deser::State,
+    ) -> deser::de::SinkHandle<'out, 'de> {
         *out = Some(Ignore);
         deser::de::SinkHandle::null()
     }

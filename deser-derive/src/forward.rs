@@ -328,10 +328,9 @@ pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(Token
             #[automatically_derived]
             impl #impl_generics __deser::Deserialize<'de> for #ident #ty_generics #where_clause {
                 #[inline]
-                fn deserialize_into(__slot: &mut __deser::__derive::Option<Self>)
-                    -> __deser::de::SinkHandle<'_, 'de>
+                fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::deserialize_into_as(__slot)
+                    #adapter::deserialize_into_as(__slot, __state)
                 }
 
                 #[inline]
@@ -340,8 +339,8 @@ pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(Token
                 }
 
                 #[inline]
-                fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
-                    #adapter::deserialize_update_as(__value)
+                fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
+                    #adapter::deserialize_update_as(__value, __state)
                 }
 
                 #[inline]
@@ -350,17 +349,17 @@ pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(Token
                 }
 
                 #[inline]
-                fn __private_collect_into(__slot: &mut __deser::__derive::Option<Self>)
-                    -> __deser::de::SinkHandle<'_, 'de>
+                fn __private_collect_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State)
+                    -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::__private_collect_into_as(__slot)
+                    #adapter::__private_collect_into_as(__slot, __state)
                 }
 
                 #[inline]
-                fn __private_collect_update(__value: &mut Self, __first: bool)
-                    -> __deser::de::SinkHandle<'_, 'de>
+                fn __private_collect_update<'__out>(__value: &'__out mut Self, __first: bool, __state: &mut __deser::State)
+                    -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::__private_collect_update_as(__value, __first)
+                    #adapter::__private_collect_update_as(__value, __first, __state)
                 }
 
                 #[inline]

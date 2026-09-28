@@ -93,13 +93,19 @@ where
     V: Validator<T> + 'static,
     A: DeserializeAs<'de, T>,
 {
-    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
-        SinkHandle::boxed(CheckSink::<T, V> {
-            out,
-            sink: OwnedSink::deserialize_as::<A>(),
-            start: None,
-            _validator: PhantomData,
-        })
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        SinkHandle::arena(
+            CheckSink::<T, V> {
+                out,
+                sink: OwnedSink::deserialize_as::<A>(state),
+                start: None,
+                _validator: PhantomData,
+            },
+            state,
+        )
     }
 
     fn initial_value_as() -> Option<T> {
@@ -108,13 +114,16 @@ where
 
     /// Updates the value with `A` and validates it once the update is
     /// complete.
-    fn deserialize_update_as(value: &mut T) -> SinkHandle<'_, 'de>
+    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
-        checked_update(value, A::deserialize_update_as, |value| {
-            V::validate(value).map_err(Violation::into_error)
-        })
+        checked_update(
+            value,
+            A::deserialize_update_as,
+            |value| V::validate(value).map_err(Violation::into_error),
+            state,
+        )
     }
 
     #[inline]

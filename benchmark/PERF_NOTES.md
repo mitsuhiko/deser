@@ -134,10 +134,21 @@ only improvements that survive repeated comparisons.
    rather than inlining the entire driver into every parser.  Layers,
    recovery, input ranges and event data must still behave identically.
 
-6. **Revisit sink storage only with a profile-backed design.**  The existing
-   block cache already avoids most global allocations.  Earlier profiling
-   attributed about 6% of tree and Canada to taking/returning blocks,
-   including two thread-local lookups on macOS.  Experiments storing sinks
+6. **Revisit sink storage only with a profile-backed design.**  Sinks are
+   allocated in an arena of the state (see `deser-core/src/de/arena.rs`).
+   Without any reuse of sink memory deserialization is two to six times
+   slower (macOS allocator).  The arena replaced a cache of blocks per
+   thread and size class and is on par or faster (geomean -0.9% over all
+   deserialization benchmarks, -13% to +3%).  What mattered: the driver
+   releases the sinks it's done with (`SinkHandle::release`), so the top
+   block is popped right away instead of being marked as dead in its
+   footer and popped by the next allocation (that cost up to 8%), the
+   root sink is dropped before the state (otherwise the arena is leaked
+   and every document allocates a chunk, logs was 50% slower) and the
+   chunk of a finished deserialization is parked for the next one.
+   Earlier profiling of the per thread cache attributed about 6% of tree
+   and Canada to taking/returning blocks, including two thread-local
+   lookups on macOS.  Experiments storing sinks
    of up to 32 or 128 bytes inline in handles (then moving them into driver
    blocks while containers are open) regressed 5%-25%: handles are copied
    several times on the way to the driver.  Driving sinks through raw

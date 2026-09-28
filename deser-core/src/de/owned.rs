@@ -3,7 +3,9 @@ use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
+use crate::State;
 use crate::adapters::DeserializeAs;
+use crate::de::arena::ArenaBox;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 
@@ -74,11 +76,11 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 /// struct AtomWrapper<T>(T);
 ///
 /// impl<'de, T: Deserialize<'de>> Deserialize<'de> for AtomWrapper<T> {
-///     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-///         SinkHandle::boxed(WrapperSink {
+///     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+///         SinkHandle::arena(WrapperSink {
 ///             out,
-///             sink: OwnedSink::deserialize(),
-///         })
+///             sink: OwnedSink::deserialize(state),
+///         }, state)
 ///     }
 /// }
 ///
@@ -99,10 +101,11 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 /// }
 /// ```
 pub struct OwnedSink<'de, T> {
-    // The sink borrows from the storage.  The sink is always dropped before
-    // the storage is accessed (in `take`) or dropped.  The lifetime of the
+    // The sink borrows from the storage (in the arena, like the sink).  The
+    // sink is always dropped before the storage is accessed (in `take`) or
+    // dropped.  The lifetime of the
     // borrow is erased (to `'de` as the handle cannot outlive that).
-    storage: NonuniqueBox<Option<T>>,
+    storage: ArenaBox<Option<T>>,
     sink: ManuallyDrop<SinkHandle<'de, 'de>>,
 }
 
@@ -112,8 +115,12 @@ impl<'de, T: Deserialize<'de>> OwnedSink<'de, T> {
     /// This begins the deserialization with [`Deserialize::deserialize_into`]
     /// into a slot contained within the owned sink.  To extract the final
     /// value use [`take`](Self::take).
-    pub fn deserialize() -> OwnedSink<'de, T> {
-        OwnedSink::with(T::deserialize_into)
+    ///
+    /// The sink is allocated in the arena of the state (see
+    /// [`SinkHandle::arena`]), the owned sink should not outlive the
+    /// deserialization.
+    pub fn deserialize(state: &mut State) -> OwnedSink<'de, T> {
+        OwnedSink::with(T::deserialize_into, state)
     }
 }
 
@@ -123,20 +130,21 @@ impl<'de, T> OwnedSink<'de, T> {
     /// This is like [`deserialize`](Self::deserialize) but begins the
     /// deserialization with
     /// [`DeserializeAs::deserialize_into_as`] of the adapter `A`.
-    pub fn deserialize_as<A: DeserializeAs<'de, T>>() -> OwnedSink<'de, T> {
-        OwnedSink::with(A::deserialize_into_as)
+    pub fn deserialize_as<A: DeserializeAs<'de, T>>(state: &mut State) -> OwnedSink<'de, T> {
+        OwnedSink::with(A::deserialize_into_as, state)
     }
 
     /// Creates an owned sink whose slot starts out with a value.
     pub(crate) fn with_slot(
         slot: Option<T>,
-        make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+        make: for<'x> fn(&'x mut Option<T>, &mut State) -> SinkHandle<'x, 'de>,
+        state: &mut State,
     ) -> OwnedSink<'de, T> {
-        let storage = NonuniqueBox::new(slot);
+        let storage = ArenaBox::new(slot, &mut state.arena);
         // SAFETY: like in `with`
         let sink = unsafe {
-            let slot = unbounded(storage.ptr.as_ptr());
-            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
+            let slot = unbounded(storage.ptr().as_ptr());
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot, state))
         };
         OwnedSink {
             storage,
@@ -145,19 +153,20 @@ impl<'de, T> OwnedSink<'de, T> {
     }
 
     /// Creates an owned sink without a value that ignores everything.
-    pub(crate) fn null() -> OwnedSink<'de, T> {
-        OwnedSink::with(|_| SinkHandle::null())
+    pub(crate) fn null(state: &mut State) -> OwnedSink<'de, T> {
+        OwnedSink::with(|_, _| SinkHandle::null(), state)
     }
 
     pub(crate) fn with(
-        make: for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>,
+        make: for<'x> fn(&'x mut Option<T>, &mut State) -> SinkHandle<'x, 'de>,
+        state: &mut State,
     ) -> OwnedSink<'de, T> {
-        let storage = NonuniqueBox::new(None);
-        // SAFETY: the storage is heap allocated and not moved.  The sink is
+        let storage = ArenaBox::new(None, &mut state.arena);
+        // SAFETY: the storage is in the arena and not moved.  The sink is
         // dropped before the storage is accessed again or freed.
         let sink = unsafe {
-            let slot = unbounded(storage.ptr.as_ptr());
-            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot))
+            let slot = unbounded(storage.ptr().as_ptr());
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(make(slot, state))
         };
         OwnedSink {
             storage,
@@ -170,19 +179,19 @@ impl<'de, T> OwnedSink<'de, T> {
     /// The value is moved into the owned sink and updated with
     /// [`Deserialize::deserialize_update`].  It can be taken out again with
     /// [`take`](Self::take), also if the update failed.
-    pub(crate) fn update(value: T) -> OwnedSink<'de, T>
+    pub(crate) fn update(value: T, state: &mut State) -> OwnedSink<'de, T>
     where
         T: Deserialize<'de>,
     {
-        let storage = NonuniqueBox::new(Some(value));
-        // SAFETY: like in `with`, the storage is heap allocated and not
+        let storage = ArenaBox::new(Some(value), &mut state.arena);
+        // SAFETY: like in `with`, the storage is in the arena and not
         // moved.  The value in it is not replaced while the sink exists, the
         // sink is dropped before the storage is accessed again or freed.
         let sink = unsafe {
-            let slot = unbounded(storage.ptr.as_ptr());
+            let slot = unbounded(storage.ptr().as_ptr());
             let value = slot.as_mut().unwrap_unchecked();
             core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(
-                T::deserialize_update(value),
+                T::deserialize_update(value, state),
             )
         };
         OwnedSink {
@@ -210,7 +219,7 @@ impl<'de, T> OwnedSink<'de, T> {
     pub fn take(&mut self) -> Option<T> {
         // the sink borrows from the storage, so it needs to go first.
         *self.sink = SinkHandle::null();
-        self.storage.take()
+        self.storage.get_mut().take()
     }
 }
 

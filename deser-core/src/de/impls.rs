@@ -34,7 +34,10 @@ make_slot_wrapper!(SlotWrapper);
 macro_rules! deserialize {
     ($ty:ty) => {
         impl<'de> Deserialize<'de> for $ty {
-            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+            fn deserialize_into<'out>(
+                out: &'out mut Option<Self>,
+                _state: &mut State,
+            ) -> SinkHandle<'out, 'de> {
                 SlotWrapper::make_handle(out)
             }
 
@@ -233,7 +236,10 @@ macro_rules! int_sink {
 int_sink!(u8);
 
 impl<'de> Deserialize<'de> for u8 {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 
@@ -446,7 +452,10 @@ impl<T: Send + Sync> SeqTarget<T> for Arc<[T]> {
 ///
 /// The elements are collected into a vector which is converted into the
 /// sequence at the end.  For elements of type `u8` bytes are accepted.
-pub(crate) fn seq_sink<'a, 'de, C, T, A>(out: &'a mut Option<C>) -> SinkHandle<'a, 'de>
+pub(crate) fn seq_sink<'a, 'de, C, T, A>(
+    out: &'a mut Option<C>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     C: SeqTarget<T> + 'a,
     T: Send + 'a,
@@ -513,9 +522,9 @@ where
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             self.flush();
-            Ok(A::deserialize_into_as(&mut self.element))
+            Ok(A::deserialize_into_as(&mut self.element, state))
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -547,14 +556,17 @@ where
         }
     }
 
-    SinkHandle::boxed(SeqSink::<C, T, A> {
-        slot: out,
-        vec: Vec::new(),
-        element: None,
-        is_seq: false,
-        errors: CollectedErrors::new(),
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        SeqSink::<C, T, A> {
+            slot: out,
+            vec: Vec::new(),
+            element: None,
+            is_seq: false,
+            errors: CollectedErrors::new(),
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 /// The methods of `Deserialize` for collections that collect the values of
@@ -581,12 +593,19 @@ macro_rules! collection_methods {
     };
     (@common $elem:ty) => {
 
-        fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-            crate::de::update::collect_into::<Self, T, $elem>(out)
+        fn __private_collect_into<'out>(
+            out: &'out mut Option<Self>,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            crate::de::update::collect_into::<Self, T, $elem>(out, state)
         }
 
-        fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
-            crate::de::update::collect_update::<Self, T, $elem>(value, first)
+        fn __private_collect_update<'out>(
+            value: &'out mut Self,
+            first: bool,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            crate::de::update::collect_update::<Self, T, $elem>(value, first, state)
         }
 
         fn __private_collect_empty() -> Option<Self> {
@@ -616,16 +635,23 @@ macro_rules! collection_methods_as {
     };
     (@common $target:ty) => {
 
-        fn __private_collect_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
-            crate::de::update::collect_into::<$target, T, A>(out)
+        fn __private_collect_into_as<'out>(
+            out: &'out mut Option<$target>,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de> {
+            crate::de::update::collect_into::<$target, T, A>(out, state)
         }
 
-        fn __private_collect_update_as(value: &mut $target, first: bool) -> SinkHandle<'_, 'de>
+        fn __private_collect_update_as<'out>(
+            value: &'out mut $target,
+            first: bool,
+            state: &mut State,
+        ) -> SinkHandle<'out, 'de>
         where
             $target: Send,
             Self: Sized,
         {
-            crate::de::update::collect_update::<$target, T, A>(value, first)
+            crate::de::update::collect_update::<$target, T, A>(value, first, state)
         }
 
         fn __private_collect_empty_as() -> Option<$target> {
@@ -648,16 +674,16 @@ macro_rules! deserialize_seq {
                 T: Deserialize<'de>,
             {
                 #[inline]
-                fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-                    seq_sink::<Self, T, Same>(out)
+                fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+                    seq_sink::<Self, T, Same>(out, state)
                 }
 
                 $(deserialize_seq! { @$collect de })?
             }
 
             impl<'de, $($bound)*, A: DeserializeAs<'de, T>> DeserializeAs<'de, $target> for $adapter {
-                fn deserialize_into_as(out: &mut Option<$target>) -> SinkHandle<'_, 'de> {
-                    seq_sink::<$target, T, A>(out)
+                fn deserialize_into_as<'out>(out: &'out mut Option<$target>, state: &mut State) -> SinkHandle<'out, 'de> {
+                    seq_sink::<$target, T, A>(out, state)
                 }
 
                 $(deserialize_seq! { @$collect adapter $target })?
@@ -858,7 +884,10 @@ pub(crate) enum MapOut<'a, M> {
 }
 
 /// Creates the sink for a map with key and value adapters.
-pub(crate) fn map_sink<'a, 'de, M, K, V, KA, VA>(out: MapOut<'a, M>) -> SinkHandle<'a, 'de>
+pub(crate) fn map_sink<'a, 'de, M, K, V, KA, VA>(
+    out: MapOut<'a, M>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     M: MapTarget<K, V> + 'a,
     K: Send + 'a,
@@ -899,7 +928,7 @@ where
         /// [`Deserialize::__private_collects`]) collect the values of all
         /// occurrences of their key.
         #[cold]
-        fn collect_value<'de>(&mut self) -> SinkHandle<'_, 'de>
+        fn collect_value<'de>(&mut self, state: &mut State) -> SinkHandle<'_, 'de>
         where
             VA: DeserializeAs<'de, V>,
             V: Send,
@@ -907,9 +936,9 @@ where
             if let Some(ref key) = self.key
                 && let Some(value) = self.map.entry_mut(key)
             {
-                return VA::__private_collect_update_as(value, false);
+                return VA::__private_collect_update_as(value, false, state);
             }
-            VA::__private_collect_into_as(&mut self.value)
+            VA::__private_collect_into_as(&mut self.value, state)
         }
 
         /// Adds the previous entry before the next one starts.
@@ -945,14 +974,14 @@ where
 
         fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             self.flush_before(state)?;
-            Ok(KA::deserialize_into_as(&mut self.key))
+            Ok(KA::deserialize_into_as(&mut self.key, state))
         }
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             if VA::__private_collects_as() && state.is_multimap() {
-                return Ok(self.collect_value());
+                return Ok(self.collect_value(state));
             }
-            Ok(VA::deserialize_into_as(&mut self.value))
+            Ok(VA::deserialize_into_as(&mut self.value, state))
         }
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -962,7 +991,7 @@ where
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             if VA::__private_collects_as() && state.is_multimap() {
-                return atom_into_handle(self.collect_value(), atom, state);
+                return atom_into_handle(self.collect_value(state), atom, state);
             }
             VA::__private_atom_into_as(&mut self.value, atom, state)
         }
@@ -982,7 +1011,7 @@ where
             state: &mut State,
         ) -> Result<(), Error> {
             if VA::__private_collects_as() && state.is_multimap() {
-                return borrowed_atom_into_handle(self.collect_value(), atom, state);
+                return borrowed_atom_into_handle(self.collect_value(state), atom, state);
             }
             VA::__private_borrowed_atom_into_as(&mut self.value, atom, state)
         }
@@ -1001,9 +1030,9 @@ where
             self.flush_before(state)?;
             KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Text::borrowed(key)), state)?;
             if VA::__private_collects_as() && state.is_multimap() {
-                return Ok(Some(self.collect_value()));
+                return Ok(Some(self.collect_value(state)));
             }
-            Ok(Some(VA::deserialize_into_as(&mut self.value)))
+            Ok(Some(VA::deserialize_into_as(&mut self.value, state)))
         }
 
         fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
@@ -1024,15 +1053,18 @@ where
         }
     }
 
-    SinkHandle::boxed(MapSink::<M, K, V, KA, VA> {
-        out,
-        map: M::default(),
-        key: None,
-        value: None,
-        duplicate_keys: DuplicateKeys::Error,
-        errors: CollectedErrors::new(),
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        MapSink::<M, K, V, KA, VA> {
+            out,
+            map: M::default(),
+            key: None,
+            value: None,
+            duplicate_keys: DuplicateKeys::Error,
+            errors: CollectedErrors::new(),
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de, K, V> Deserialize<'de> for BTreeMap<K, V>
@@ -1041,14 +1073,17 @@ where
     V: Deserialize<'de>,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out), state)
     }
 
     /// Merges the entries into the map, the values of keys that exist are
     /// replaced (not updated).
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Update(value))
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Update(value), state)
     }
 }
 
@@ -1059,8 +1094,11 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<BTreeMap<K, V>>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<BTreeMap<K, V>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
     }
 }
 
@@ -1072,14 +1110,17 @@ where
     H: BuildHasher + Default + Send,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out))
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out), state)
     }
 
     /// Merges the entries into the map, the values of keys that exist are
     /// replaced (not updated).
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Update(value))
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, Same, Same>(MapOut::Update(value), state)
     }
 }
 
@@ -1092,8 +1133,11 @@ where
     KA: DeserializeAs<'de, K>,
     VA: DeserializeAs<'de, V>,
 {
-    fn deserialize_into_as(out: &mut Option<HashMap<K, V, H>>) -> SinkHandle<'_, 'de> {
-        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out))
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<HashMap<K, V, H>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
     }
 }
 
@@ -1162,7 +1206,10 @@ set_collection! {
 }
 
 /// Creates the sink for a set with an element adapter.
-pub(crate) fn set_sink<'a, 'de, S, T, A>(out: &'a mut Option<S>) -> SinkHandle<'a, 'de>
+pub(crate) fn set_sink<'a, 'de, S, T, A>(
+    out: &'a mut Option<S>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     S: SetTarget<T> + 'a,
     T: Send + 'a,
@@ -1196,9 +1243,9 @@ where
             Ok(())
         }
 
-        fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             self.flush();
-            Ok(A::deserialize_into_as(&mut self.element))
+            Ok(A::deserialize_into_as(&mut self.element, state))
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1228,27 +1275,36 @@ where
         }
     }
 
-    SinkHandle::boxed(SetSink::<S, T, A> {
-        slot: out,
-        set: S::default(),
-        element: None,
-        errors: CollectedErrors::new(),
-        _marker: PhantomData,
-    })
+    SinkHandle::arena(
+        SetSink::<S, T, A> {
+            slot: out,
+            set: S::default(),
+            element: None,
+            errors: CollectedErrors::new(),
+            _marker: PhantomData,
+        },
+        state,
+    )
 }
 
 impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for BTreeSet<T> {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        set_sink::<_, T, Same>(out, state)
     }
 
     collection_methods!(set Same);
 }
 
 impl<'de, T: Ord + Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, BTreeSet<T>> for BTreeSet<A> {
-    fn deserialize_into_as(out: &mut Option<BTreeSet<T>>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, A>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<BTreeSet<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        set_sink::<_, T, A>(out, state)
     }
 
     collection_methods_as!(set BTreeSet<T>);
@@ -1261,8 +1317,11 @@ where
     H: BuildHasher + Default + Send,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        set_sink::<_, T, Same>(out, state)
     }
 
     collection_methods!(set Same);
@@ -1275,8 +1334,11 @@ where
     H: BuildHasher + Default + Send,
     A: DeserializeAs<'de, T>,
 {
-    fn deserialize_into_as(out: &mut Option<HashSet<T, H>>) -> SinkHandle<'_, 'de> {
-        set_sink::<_, T, A>(out)
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<HashSet<T, H>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        set_sink::<_, T, A>(out, state)
     }
 
     collection_methods_as!(set HashSet<T, H>);
@@ -1287,8 +1349,11 @@ where
     T: Deserialize<'de>,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        <Option<Same> as DeserializeAs<'de, Option<T>>>::deserialize_into_as(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <Option<Same> as DeserializeAs<'de, Option<T>>>::deserialize_into_as(out, state)
     }
 
     #[inline]
@@ -1315,8 +1380,8 @@ where
         Some(None)
     }
 
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        crate::de::update::update_option(value)
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        crate::de::update::update_option(value, state)
     }
 
     #[inline]
@@ -1324,19 +1389,31 @@ where
         T::__private_collects()
     }
 
-    fn __private_collect_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_into_as(out)
+    fn __private_collect_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_into_as(out, state)
     }
 
-    fn __private_collect_update(value: &mut Self, first: bool) -> SinkHandle<'_, 'de> {
-        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_update_as(value, first)
+    fn __private_collect_update<'out>(
+        value: &'out mut Self,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <Option<Same> as DeserializeAs<'de, Option<T>>>::__private_collect_update_as(
+            value, first, state,
+        )
     }
 }
 
 impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<A> {
     #[inline]
-    fn deserialize_into_as(out: &mut Option<Option<T>>) -> SinkHandle<'_, 'de> {
-        A::deserialize_into_as(out.insert(None)).ignore_null()
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<Option<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::deserialize_into_as(out.insert(None), state).ignore_null()
     }
 
     // An optional collection collects into the collection, it's `None` if
@@ -1348,18 +1425,25 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
         A::__private_collects_as()
     }
 
-    fn __private_collect_into_as(out: &mut Option<Option<T>>) -> SinkHandle<'_, 'de> {
-        A::__private_collect_into_as(out.get_or_insert(None)).ignore_null()
+    fn __private_collect_into_as<'out>(
+        out: &'out mut Option<Option<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::__private_collect_into_as(out.get_or_insert(None), state).ignore_null()
     }
 
-    fn __private_collect_update_as(value: &mut Option<T>, first: bool) -> SinkHandle<'_, 'de>
+    fn __private_collect_update_as<'out>(
+        value: &'out mut Option<T>,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>
     where
         Option<T>: Send,
     {
         if first {
             *value = None;
         }
-        A::__private_collect_into_as(value).ignore_null()
+        A::__private_collect_into_as(value, state).ignore_null()
     }
 
     #[inline]
@@ -1373,7 +1457,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
             // the sink is created (and dropped without being used) so that
             // this behaves exactly like `deserialize_into`.  This matters
             // for nested options where the inner one becomes `Some(None)`.
-            drop(A::deserialize_into_as(inner));
+            drop(A::deserialize_into_as(inner, state));
             Ok(())
         } else if is_empty_lexical(&atom, state) {
             if !empty_lexical_or_none(atom, state, |atom, state| {
@@ -1395,7 +1479,7 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
     ) -> Result<(), Error> {
         let inner = out.insert(None);
         if is_null_atom(&atom) {
-            drop(A::deserialize_into_as(inner));
+            drop(A::deserialize_into_as(inner, state));
             Ok(())
         } else if is_empty_lexical(&atom, state) {
             if !empty_lexical_or_none(atom, state, |atom, state| {
@@ -1425,13 +1509,13 @@ macro_rules! deserialize_for_tuple {
     ($(($name:ident, $adapter:ident),)+) => (
         impl<'de, $($name: Deserialize<'de>),*> Deserialize<'de> for ($($name,)*) {
             #[inline]
-            fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-                <($(same_adapter!($name),)*) as DeserializeAs<'de, ($($name,)*)>>::deserialize_into_as(out)
+            fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+                <($(same_adapter!($name),)*) as DeserializeAs<'de, ($($name,)*)>>::deserialize_into_as(out, state)
             }
         }
 
         impl<'de, $($name: Send,)* $($adapter: DeserializeAs<'de, $name>),*> DeserializeAs<'de, ($($name,)*)> for ($($adapter,)*) {
-            fn deserialize_into_as(out: &mut Option<($($name,)*)>) -> SinkHandle<'_, 'de> {
+            fn deserialize_into_as<'out>(out: &'out mut Option<($($name,)*)>, state: &mut State) -> SinkHandle<'out, 'de> {
                 #![allow(non_snake_case)]
 
                 struct TupleSink<'a, $($name,)* $($adapter,)*> {
@@ -1452,13 +1536,13 @@ macro_rules! deserialize_for_tuple {
                         Ok(())
                     }
 
-                    fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+                    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
                         let __index = self.index;
                         self.index += 1;
                         let mut __counter = 0;
                         $(
                             if __index == __counter {
-                                return Ok($adapter::deserialize_into_as(&mut self.$name));
+                                return Ok($adapter::deserialize_into_as(&mut self.$name, state));
                             }
                             __counter += 1;
                         )*
@@ -1501,14 +1585,14 @@ macro_rules! deserialize_for_tuple {
                     }
                 }
 
-                SinkHandle::boxed(TupleSink::<$($name,)* $($adapter,)*> {
+                SinkHandle::arena(TupleSink::<$($name,)* $($adapter,)*> {
                     slot: out,
                     index: 0,
                     $(
                         $name: None,
                     )*
                     _marker: PhantomData,
-                })
+                }, state)
             }
         }
 
@@ -1527,13 +1611,19 @@ deserialize_for_tuple! {
 
 impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        <[Same; N] as DeserializeAs<'de, [T; N]>>::deserialize_into_as(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <[Same; N] as DeserializeAs<'de, [T; N]>>::deserialize_into_as(out, state)
     }
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]> for [A; N] {
-    fn deserialize_into_as(out: &mut Option<[T; N]>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into_as<'out>(
+        out: &'out mut Option<[T; N]>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         // Invariant: if `buffer` is `Some`, the first `index` elements of it
         // are initialized.  Once the buffer was moved into the slot, `buffer`
         // is `None`.
@@ -1615,7 +1705,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                 Ok(())
             }
 
-            fn next_value(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
                 self.flush();
                 if self.index >= N {
                     Err(Error::new(
@@ -1623,7 +1713,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
                         "too many elements in array",
                     ))
                 } else {
-                    Ok(A::deserialize_into_as(&mut self.element))
+                    Ok(A::deserialize_into_as(&mut self.element, state))
                 }
             }
 
@@ -1682,15 +1772,18 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, 
             }
         }
 
-        SinkHandle::boxed(ArraySink::<T, A, N> {
-            slot: out,
-            // SAFETY: an array of `MaybeUninit` does not require initialization
-            buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
-            element: None,
-            index: 0,
-            is_seq: false,
-            _marker: PhantomData,
-        })
+        SinkHandle::arena(
+            ArraySink::<T, A, N> {
+                slot: out,
+                // SAFETY: an array of `MaybeUninit` does not require initialization
+                buffer: Some(unsafe { MaybeUninit::uninit().assume_init() }),
+                element: None,
+                index: 0,
+                is_seq: false,
+                _marker: PhantomData,
+            },
+            state,
+        )
     }
 }
 
@@ -1702,13 +1795,21 @@ pub(crate) trait Via<T>: Sized + Send {
 
 /// Creates the sink for a type that is deserialized as `T` with an adapter.
 #[inline]
-pub(crate) fn via_handle<'a, 'de, T, U, A>(out: &'a mut Option<U>) -> SinkHandle<'a, 'de>
+pub(crate) fn via_handle<'a, 'de, T, U, A>(
+    out: &'a mut Option<U>,
+    state: &mut State,
+) -> SinkHandle<'a, 'de>
 where
     T: Send + 'a,
     U: Via<T> + 'a,
     A: DeserializeAs<'de, T>,
 {
-    MappedSink::handle(out, OwnedSink::deserialize_as::<A>(), U::convert)
+    MappedSink::handle(
+        out,
+        OwnedSink::deserialize_as::<A>(state),
+        U::convert,
+        state,
+    )
 }
 
 /// Deserializes an atom into a type that is deserialized as `T`.
@@ -1755,10 +1856,8 @@ macro_rules! deserialize_via {
         $(
             impl<'de, $($gen)*> $crate::de::Deserialize<'de> for $ty {
                 #[inline]
-                fn deserialize_into(
-                    out: &mut Option<Self>,
-                ) -> $crate::de::SinkHandle<'_, 'de> {
-                    $crate::de::impls::via_handle::<$via, Self, $crate::adapters::Same>(out)
+                fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut $crate::State) -> $crate::de::SinkHandle<'out, 'de> {
+                    $crate::de::impls::via_handle::<$via, Self, $crate::adapters::Same>(out, state)
                 }
 
                 #[inline]
@@ -1795,8 +1894,8 @@ macro_rules! deserialize_as_via {
         $(
             impl<'de, T: $($bound)*, A: DeserializeAs<'de, T>> DeserializeAs<'de, $wrapper<T>> for $wrapper<A> {
                 #[inline]
-                fn deserialize_into_as(out: &mut Option<$wrapper<T>>) -> SinkHandle<'_, 'de> {
-                    via_handle::<T, $wrapper<T>, A>(out)
+                fn deserialize_into_as<'out>(out: &'out mut Option<$wrapper<T>>, state: &mut State) -> SinkHandle<'out, 'de> {
+                    via_handle::<T, $wrapper<T>, A>(out, state)
                 }
 
                 #[inline]
@@ -1851,8 +1950,11 @@ impl Via<String> for Arc<str> {
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        via_handle::<T, Self, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        via_handle::<T, Self, Same>(out, state)
     }
 
     #[inline]
@@ -1875,8 +1977,8 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
 
     /// Updates the value in the box.
     #[inline]
-    fn deserialize_update(value: &mut Self) -> SinkHandle<'_, 'de> {
-        T::deserialize_update(value)
+    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
+        T::deserialize_update(value, state)
     }
 }
 
@@ -1907,8 +2009,11 @@ where
     T::Owned: Deserialize<'de>,
 {
     #[inline]
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
-        via_handle::<T::Owned, Self, Same>(out)
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        via_handle::<T::Owned, Self, Same>(out, state)
     }
 
     #[inline]
@@ -1971,7 +2076,10 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
 }
 
 impl<'de: 'a, 'a> Deserialize<'de> for &'a str {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }
@@ -2005,7 +2113,10 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
 }
 
 impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
-    fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        _state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
         SlotWrapper::make_handle(out)
     }
 }

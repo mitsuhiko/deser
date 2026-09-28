@@ -1,3 +1,4 @@
+use crate::State;
 use crate::de::{Deserialize, DeserializeDriver, SinkHandle};
 use crate::error::{Error, ErrorKind};
 
@@ -69,7 +70,9 @@ pub trait Deserializer<'de> {
         // the driver is created and run by a function that exists once.
         let mut out = None;
         let mut setup = Some(setup);
-        drive_sink(self, T::deserialize_into(&mut out), &mut |driver| {
+        let mut state = State::new();
+        let sink = T::deserialize_into(&mut out, &mut state);
+        drive_sink(self, state, sink, &mut |driver| {
             if let Some(setup) = setup.take() {
                 setup(driver);
             }
@@ -110,10 +113,11 @@ pub trait Deserializer<'de> {
 #[inline(never)]
 fn drive_sink<'de>(
     de: &mut dyn Deserializer<'de>,
+    state: State,
     sink: SinkHandle<'_, 'de>,
     setup: &mut dyn FnMut(&mut DeserializeDriver<'_, 'de>),
 ) -> Result<(), Error> {
-    let mut driver = DeserializeDriver::from_sink(sink);
+    let mut driver = DeserializeDriver::from_state(state, sink);
     setup(&mut driver);
     de.drive(&mut driver)
 }
