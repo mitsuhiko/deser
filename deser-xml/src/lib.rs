@@ -265,20 +265,22 @@ macro_rules! namespace {
 
 #[doc(hidden)]
 #[macro_export]
+// rustfmt indents the inner macro further on every run
+#[rustfmt::skip]
 macro_rules! __namespace {
     ($name:ident, $uri:literal, $d:tt) => {
         #[allow(unused_macros)]
         macro_rules! $name {
-                                            () => {
-                                                $uri
-                                            };
-                                            (@ $d local:literal) => {
-                                                $crate::qname!(@ $uri, $d local)
-                                            };
-                                            ($d local:literal) => {
-                                                $crate::qname!($uri, $d local)
-                                            };
-                                        }
+            () => {
+                $uri
+            };
+            (@ $d local:literal) => {
+                $crate::qname!(@ $uri, $d local)
+            };
+            ($d local:literal) => {
+                $crate::qname!($uri, $d local)
+            };
+        }
     };
 }
 
