@@ -37,6 +37,13 @@ let xml = deser_xml::to_string(&feed).unwrap();
 * Names are kept as written, namespaces can be given fixed prefixes or
   be resolved into `{uri}local` names (`qname!`, `namespace!`) which the
   serializer writes with configured (`prefixes!`) or generated prefixes.
+* `Root<T>` captures the name of the root element and the namespaces
+  declared on it, and writes them.  Values that keep event data (like
+  `Recording` and `deser_value::Value`) keep them too, so documents that
+  are read into them or transcoded keep their root element.
+* `deser_xml::Serializer` implements deser's `Serializer` trait for code
+  that does not know the format upfront (like `deser-transcode`).  Values
+  without a name (like maps) need a `Root` or `SerializerConfig::root`.
 * `SerializerConfig::pretty` indents child elements where the whitespace
   is not text, mixed content stays on a single line.
 * Parsing is done by [quick-xml](https://crates.io/crates/quick-xml), the

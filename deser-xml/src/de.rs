@@ -11,6 +11,7 @@ use quick_xml::reader::NsReader;
 
 use crate::Names;
 use crate::mixed::WhitespaceDepths;
+use crate::root::RootData;
 
 /// Configures how XML documents are deserialized.
 ///
@@ -298,6 +299,7 @@ impl<'a> Deserializer<'a> {
             reader: NsReader::from_str(self.input),
             stack: Vec::new(),
             root_done: false,
+            root: None,
         }
         .run(driver)
         .map_err(|err| err.resolve_position(self.input.as_bytes()))
@@ -385,6 +387,9 @@ struct Parser<'a, 'c> {
     reader: NsReader<&'a [u8]>,
     stack: Vec<Element<'a>>,
     root_done: bool,
+    /// The name and the namespaces of the root element until they are
+    /// attached to its first event.
+    root: Option<RootData>,
 }
 
 impl<'a> Parser<'a, '_> {
@@ -442,8 +447,9 @@ impl<'a> Parser<'a, '_> {
 
     /// Passes on the element on top of the stack as map if it's not yet.
     fn make_map(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        let element = self.stack.last_mut().unwrap();
-        if !element.is_map {
+        if !self.stack.last().unwrap().is_map {
+            self.attach_root(driver);
+            let element = self.stack.last_mut().unwrap();
             element.is_map = true;
             emit_at(
                 driver,
@@ -495,6 +501,7 @@ impl<'a> Parser<'a, '_> {
                         .with_offset(range.0),
                 );
             }
+            self.root = Some(self.root_data(tag, range.0)?);
         } else {
             self.make_map(driver)?;
             let name = self.name(tag.name(), false, range.0)?;
@@ -533,6 +540,53 @@ impl<'a> Parser<'a, '_> {
         Ok(())
     }
 
+    /// Returns the name of the root element and the namespaces declared
+    /// on it.
+    ///
+    /// Namespaces with a configured prefix are declared with it as that's
+    /// how names in them are passed on.
+    fn root_data(&self, tag: &BytesStart<'a>, offset: usize) -> Result<RootData, Error> {
+        let mut namespaces: Vec<(String, String)> = Vec::new();
+        // invalid attributes are reported when the attributes are passed on
+        for attr in tag.attributes().flatten() {
+            let raw: &str = attr.key.as_ref();
+            let prefix = match raw.strip_prefix("xmlns") {
+                Some("") => "",
+                Some(rest) => match rest.strip_prefix(':') {
+                    Some(prefix) => prefix,
+                    None => continue,
+                },
+                None => continue,
+            };
+            let uri = attr
+                .normalized_value(XmlVersion::Implicit1_0)
+                .map_err(|err| xml_error(err, offset))?;
+            // undeclaring namespaces is not a declaration
+            if uri.is_empty() {
+                continue;
+            }
+            let prefix = match self.config.names.namespaces.iter().find(|(_, x)| *x == uri) {
+                Some((alias, _)) => alias,
+                None => prefix,
+            };
+            if !namespaces.iter().any(|(x, _)| x == prefix) {
+                namespaces.push((prefix.to_string(), uri.into_owned()));
+            }
+        }
+        Ok(RootData {
+            name: Some(self.name(tag.name(), false, offset)?.into_owned()),
+            namespaces,
+        })
+    }
+
+    /// Attaches the name and the namespaces of the root element to the next
+    /// event if it's the first event of the root element.
+    fn attach_root(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
+        if let Some(root) = self.root.take() {
+            *driver.state_mut().event_mut::<RootData>() = root;
+        }
+    }
+
     fn end(&mut self, driver: &mut DeserializeDriver<'_, 'a>, range: Range) -> Result<(), Error> {
         if self.stack.last().unwrap().is_map {
             self.flush_text(driver)?;
@@ -540,6 +594,7 @@ impl<'a> Parser<'a, '_> {
             emit_at(driver, Event::MapEnd, range)?;
             WhitespaceDepths::prune(driver.state_mut());
         } else {
+            self.attach_root(driver);
             let element = self.stack.pop().unwrap();
             element.text.emit(driver, element.start)?;
         }

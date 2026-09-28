@@ -353,15 +353,12 @@ fn test_attribute_order() {
         r#"<m xmlns:ns0="urn:a" ns0:a="1">x</m>"#
     );
 
-    // values read from documents
+    // values read from documents (they keep the name of the root)
     let mut value: deser_value::Value =
         from_str(r#"<doc><a>1</a><b x="y"><c/></b></doc>"#).unwrap();
     value.as_map_mut().unwrap().insert("@late", "1");
     assert_eq!(
-        SerializerConfig::new()
-            .root("doc")
-            .to_string(&value)
-            .unwrap(),
+        to_string(&value).unwrap(),
         r#"<doc late="1"><a>1</a><b x="y"><c/></b></doc>"#
     );
 }
@@ -399,11 +396,58 @@ fn test_value_round_trip() {
     // grouped by name, text is kept)
     let input = r#"<doc id="1"><a>1</a><a>2</a><b x="y">text</b><c/></doc>"#;
     let value: deser_value::Value = from_str(input).unwrap();
+    assert_eq!(to_string(&value).unwrap(), input);
+}
+
+#[test]
+fn test_serializer() {
+    #[derive(Serialize)]
+    #[deser(rename = "point")]
+    struct Point {
+        #[deser(rename = "@x")]
+        x: i32,
+        y: i32,
+    }
+
+    // the root element is named after the struct
+    let mut serializer = deser_xml::Serializer::new();
+    serializer.serialize(&Point { x: 1, y: 2 }).unwrap();
+    assert_eq!(serializer.output(), r#"<point x="1"><y>2</y></point>"#);
+    // a document has a single root element
+    let err = serializer.serialize(&Point { x: 3, y: 4 }).unwrap_err();
     assert_eq!(
-        SerializerConfig::new()
-            .root("doc")
-            .to_string(&value)
-            .unwrap(),
-        input
+        err.to_string(),
+        "Unexpected: an XML document holds a single root element"
     );
+    assert_eq!(serializer.finish(), r#"<point x="1"><y>2</y></point>"#);
+
+    // values without a name need the configured one, nothing is written if
+    // the value fails
+    let mut serializer = deser_xml::Serializer::new();
+    let err = serializer
+        .serialize(&BTreeMap::from([("a", 1)]))
+        .unwrap_err();
+    assert!(err.message().starts_with("the name of the root element"));
+    assert_eq!(serializer.output(), "");
+    let config = SerializerConfig::new().root("r").declaration(true);
+    let mut serializer = deser_xml::Serializer::with_config(&config);
+    serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();
+    assert_eq!(
+        serializer.finish(),
+        r#"<?xml version="1.0" encoding="UTF-8"?><r><a>1</a></r>"#
+    );
+}
+
+#[test]
+fn test_serializer_trait() {
+    // the serializer can be used where the format is not known
+    fn write(ser: &mut dyn deser::ser::Serializer, value: &dyn deser::Serialize) {
+        ser.serialize(value).unwrap();
+    }
+    let mut serializer = deser_xml::Serializer::with_config(&SerializerConfig::new().root("r"));
+    write(
+        &mut serializer,
+        &vec![("a", 1)].into_iter().collect::<BTreeMap<_, _>>(),
+    );
+    assert_eq!(serializer.finish(), "<r><a>1</a></r>");
 }

@@ -5,12 +5,13 @@ use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
-use deser_core::ser::{Describe, PausableSink, SerializeDriver};
+use deser_core::ser::{self, Describe, PausableSink, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
 use crate::de::XML_NAMESPACE;
 use crate::mixed::KeepsWhitespace;
+use crate::root::RootData;
 
 /// How the output is indented.
 ///
@@ -30,9 +31,12 @@ pub enum Indent {
 
 /// Configures how values are serialized to XML.
 ///
-/// The value becomes the root element.  Its name is the configured
-/// [`root`](Self::root) or the name of the struct (or enum) that is
-/// serialized.  Maps are elements: keys with the
+/// The value becomes the root element.  Its name is the one of the
+/// [`Root`](crate::Root) of the value (or of the document the value was
+/// read from, if it's a value that keeps event data like a
+/// [`Recording`](deser_core::de::Recording)), the name of the struct (or
+/// enum) that is serialized or the configured [`root`](Self::root).  Maps
+/// are elements: keys with the
 /// [attribute prefix](Self::attribute_prefix) are attributes, the
 /// [text key](Self::text_key) is text and all other keys are child
 /// elements.  Sequences are elements with the same name, one per value.
@@ -100,10 +104,13 @@ impl SerializerConfig {
         }
     }
 
-    /// Sets the name of the root element.
+    /// Sets the name of the root element of values without a name.
     ///
-    /// By default it's the name of the struct or enum that is serialized,
-    /// values without a name (like maps) need it.
+    /// The root element is named after the [`Root`](crate::Root) of the
+    /// value or the struct or enum that is serialized.  Other values (like
+    /// maps) are named with this.  This is useful where values cannot be
+    /// wrapped in a `Root`, for instance when transcoding from another
+    /// format.
     pub const fn root(mut self, name: &'static str) -> SerializerConfig {
         self.root = Some(name);
         self
@@ -124,7 +131,9 @@ impl SerializerConfig {
     /// Sets the prefixes of namespaces that are declared on the root
     /// element.
     ///
-    /// The empty prefix declares the default namespace.  Names that are
+    /// The namespaces of the [`Root`](crate::Root) of the value come first,
+    /// configured namespaces whose prefix they use are left out.  The empty
+    /// prefix declares the default namespace.  Names that are
     /// `{uri}local` are written with these prefixes, attributes only with
     /// prefixes that are not empty.  Namespaces without prefix get
     /// generated ones.  The table can be written with
@@ -272,6 +281,11 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
+        self.serialize_driver(&mut driver)
+    }
+
+    /// Serializes the value of a driver into a document.
+    fn serialize_driver(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
         let mut writer = Writer::new(self);
         driver.drive_described(|event, value, state| writer.event(event, value, state))?;
         writer.finish()?;
@@ -314,6 +328,98 @@ impl SerializerConfig {
         writer.pass_on(out);
         *value = Some(writer);
         Ok(false)
+    }
+}
+
+/// Serializes values to XML.
+///
+/// This is the XML implementation of the [`Serializer`](ser::Serializer)
+/// trait, which allows serializing to XML where the format is not known
+/// upfront.  For a value that is serialized once
+/// [`SerializerConfig::to_string`] (or [`to_string`]) is simpler.
+///
+/// An XML document has a single root element, serializing a second value
+/// fails.  Values without a name (like maps) need a [`Root`](crate::Root)
+/// or the name of the root element in the configuration (see
+/// [`SerializerConfig::root`]).
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use deser_xml::{Serializer, SerializerConfig};
+///
+/// let mut serializer = Serializer::with_config(&SerializerConfig::new().root("r"));
+/// serializer.serialize(&BTreeMap::from([("@a", 1), ("b", 2)])).unwrap();
+/// assert!(serializer.serialize(&BTreeMap::from([("b", 3)])).is_err());
+/// assert_eq!(serializer.finish(), r#"<r a="1"><b>2</b></r>"#);
+/// ```
+#[derive(Debug, Clone)]
+pub struct Serializer {
+    config: SerializerConfig,
+    out: String,
+    written: bool,
+}
+
+impl Default for Serializer {
+    fn default() -> Serializer {
+        Serializer::new()
+    }
+}
+
+impl Serializer {
+    /// Creates a serializer.
+    pub fn new() -> Serializer {
+        Serializer::with_config(&SerializerConfig::new())
+    }
+
+    /// Creates a serializer with the given configuration.
+    pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer {
+            config: config.clone(),
+            out: String::new(),
+            written: false,
+        }
+    }
+
+    /// Serializes a value.
+    ///
+    /// If the value fails to serialize, nothing is written.
+    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+        ser::Serializer::serialize(self, value)
+    }
+
+    /// Serializes a value with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
+    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SerializeDriver<'_>),
+    {
+        ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Returns the output written so far.
+    pub fn output(&self) -> &str {
+        &self.out
+    }
+
+    /// Returns the output.
+    pub fn finish(self) -> String {
+        self.out
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        if self.written {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "an XML document holds a single root element",
+            ));
+        }
+        self.out = self.config.serialize_driver(driver)?;
+        self.written = true;
+        Ok(())
     }
 }
 
@@ -558,17 +664,26 @@ impl Writer {
         value: &dyn Serialize,
         state: &State,
     ) -> Result<(), Error> {
-        let name = match self.config.root {
-            Some(name) => name.to_string(),
+        // the name and the namespaces of a `Root` or of the root element the
+        // value was read from come first, then the name of the type and the
+        // configured name
+        let root = state.event::<RootData>();
+        if let Some(root) = root {
+            self.bind_root(&root.namespaces)?;
+        }
+        let name = match root.and_then(|root| root.name.clone()) {
+            Some(name) => name,
             None => {
                 let mut name = TypeName::default();
                 value.describe(&mut name);
-                name.0.ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::UnsupportedType,
-                        "the name of the root element is unknown (see SerializerConfig::root)",
-                    )
-                })?
+                name.0
+                    .or_else(|| self.config.root.map(str::to_string))
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::UnsupportedType,
+                            "the name of the root element is unknown (see deser_xml::Root)",
+                        )
+                    })?
             }
         };
         check_element_name(&name)?;
@@ -580,6 +695,35 @@ impl Writer {
                 "the root element must be a map or a single value",
             )),
         }
+    }
+
+    /// Declares the namespaces of the root value on the root element.
+    ///
+    /// They come before the configured ones, which are left out if they
+    /// have the same prefix.
+    fn bind_root(&mut self, namespaces: &[(String, String)]) -> Result<(), Error> {
+        let mut bindings = vec![self.root_bindings[0].clone()];
+        for (prefix, uri) in namespaces {
+            if !prefix.is_empty() {
+                check_name(prefix)?;
+                if prefix.contains(':') {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedType,
+                        format!("`{prefix}` is not a prefix in XML"),
+                    ));
+                }
+            }
+            if !bindings.iter().any(|(x, _)| x == prefix) {
+                bindings.push((prefix.clone(), uri.clone()));
+            }
+        }
+        for binding in self.root_bindings.drain(1..) {
+            if !bindings.iter().any(|(x, _)| *x == binding.0) {
+                bindings.push(binding);
+            }
+        }
+        self.root_bindings = bindings;
+        Ok(())
     }
 
     fn key(&mut self, event: Event<'_>) -> Result<(), Error> {

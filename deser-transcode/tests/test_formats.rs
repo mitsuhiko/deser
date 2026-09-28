@@ -206,3 +206,54 @@ fn test_deep_nesting() {
     assert!(cbor[..depth - 1].iter().all(|&b| b == 0x81));
     assert_eq!(cbor[depth - 1], 0x80);
 }
+
+fn to_xml<'de>(de: &mut impl deser::de::Deserializer<'de>) -> Result<String, deser::Error> {
+    let mut ser = deser_xml::Serializer::with_config(&deser_xml::SerializerConfig::new().root("r"));
+    transcode(de, &mut ser)?;
+    Ok(ser.finish())
+}
+
+#[test]
+fn test_json_to_xml() {
+    // keys with the attribute prefix are attributes, sequences are
+    // repeated elements, nulls are left out
+    let mut de = deser_json::Deserializer::from_str(
+        r#"{"@id": 1, "item": [{"@n": 1, "$text": "a"}, "b"], "none": null, "x": true}"#,
+    );
+    assert_eq!(
+        to_xml(&mut de).unwrap(),
+        r#"<r id="1"><item n="1">a</item><item>b</item><x>true</x></r>"#
+    );
+
+    // values without a name need the configured one
+    let mut de = deser_json::Deserializer::from_str(r#"{"a": 1}"#);
+    let mut ser = deser_xml::Serializer::new();
+    let err = transcode(&mut de, &mut ser).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::UnsupportedType);
+
+    // what XML cannot express is an error
+    let mut de = deser_json::Deserializer::from_str(r#"{"a": [[1]]}"#);
+    assert_eq!(
+        to_xml(&mut de).unwrap_err().kind(),
+        ErrorKind::UnsupportedType
+    );
+}
+
+#[test]
+fn test_xml_to_xml() {
+    // the root element (its name and namespaces) is kept, the configured
+    // name is only for values without one
+    let input = r#"<feed xmlns="urn:atom" a="1"><b>x</b><c>2</c><b>y</b></feed>"#;
+    let mut de = deser_xml::Deserializer::from_str(input);
+    assert_eq!(to_xml(&mut de).unwrap(), input);
+}
+
+#[test]
+fn test_yaml_to_xml() {
+    let mut de =
+        deser_yaml::Deserializer::from_str("title: T\nentry:\n  - '@id': 1\n  - '@id': 2\n");
+    assert_eq!(
+        to_xml(&mut de).unwrap(),
+        r#"<r><title>T</title><entry id="1"/><entry id="2"/></r>"#
+    );
+}
