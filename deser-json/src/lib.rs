@@ -141,7 +141,7 @@
 //!
 //! * `io` (enabled by default): reading and writing streams, see
 //!   [streams](#streams).  Requires `std`.
-//! * `speedups`: uses the `zmij` and `itoa` crates for number formatting and
+//! * `speedups`: uses the `zmij` crate for float formatting and
 //!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
 //!   crate has no dependencies other than `deser`.
 //! * `std` (enabled by default): uses the standard library.  Without it

@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use deser::de::Recording;
+use deser::de::{Limits, Recording};
 use deser::io::{Reader, Writer};
 use deser::{ErrorKind, Event};
 use deser_cbor::{Deserializer, DeserializerConfig, SerializerConfig};
@@ -181,21 +181,26 @@ fn test_feeding_skips_items_that_fail() {
 fn test_feeding_with_limits() {
     // [[[1]]] exceeds a depth of 2, [[1]] does not
     let input = [0x81, 0x81, 0x81, 0x01, 0x81, 0x81, 0x01];
-    let config = DeserializerConfig::new().max_depth(2);
     let mut reader = Reader::new(
         Chunked {
             input: &input,
             size: 2,
         },
-        config,
+        DeserializerConfig::new(),
     );
-    let err = reader.read::<Recording>().unwrap_err();
+    let limits = |driver: &mut deser::de::DeserializeDriver<'_, '_>| {
+        driver.push_layer(Limits::new().max_depth(2))
+    };
+    let err = reader.read_with::<Recording, _>(limits).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: recursion limit exceeded at offset 2"
     );
-    // the item is skipped, the depth is limited per item
-    assert_eq!(reader.read::<Vec<Vec<u32>>>().unwrap(), Some(vec![vec![1]]));
+    // the item is skipped, the layer is added for every item
+    assert_eq!(
+        reader.read_with::<Vec<Vec<u32>>, _>(limits).unwrap(),
+        Some(vec![vec![1]])
+    );
 }
 
 #[test]

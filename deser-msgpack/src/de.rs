@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use deser_core::Error;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Limits};
+use deser_core::de::{self, Deserialize, DeserializeDriver};
 
 use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 
@@ -16,37 +16,19 @@ use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 /// ```
 /// use deser_msgpack::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().max_depth(1);
-/// assert!(CONFIG.from_slice::<Vec<u32>>(&[0x91, 0x01]).is_ok());
-/// assert!(CONFIG.from_slice::<Vec<Vec<u32>>>(&[0x91, 0x91, 0x01]).is_err());
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new();
+/// assert_eq!(CONFIG.from_slice::<Vec<u32>>(&[0x92, 0x01, 0x02]).unwrap(), [1, 2]);
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeserializerConfig {
-    max_depth: Option<usize>,
+    // there are no options yet
+    _private: (),
 }
 
 impl DeserializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> DeserializerConfig {
-        DeserializerConfig { max_depth: None }
-    }
-
-    /// Limits the nesting depth of arrays and maps.
-    ///
-    /// Deser does not use the stack to process nested data so arbitrarily
-    /// deep structures do not overflow the stack.  Still it can be useful to
-    /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.  This adds a [`Limits`] layer to the driver, which can also
-    /// limit other aspects of the input.
-    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
-        self.max_depth = Some(depth);
-        self
-    }
-
-    #[cfg(feature = "io")]
-    /// Returns the maximum depth.
-    pub(crate) fn max_depth_limit(&self) -> Option<usize> {
-        self.max_depth
+        DeserializerConfig { _private: () }
     }
 
     /// Deserializes a value from MessagePack.
@@ -181,13 +163,6 @@ impl<'a> Deserializer<'a> {
     /// [`State::input_range`](deser_core::State::input_range)) and errors carry
     /// the offset in the input (see [`Error::offset`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if let Some(max_depth) = self.config.max_depth {
-            driver.push_layer(Limits::new().max_depth(max_depth));
-        }
-        self.drive_impl(driver)
-    }
-
-    fn drive_impl(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         match self
             .parser
             .parse(self.input, self.pos, true, 0, &mut Borrowing(driver))

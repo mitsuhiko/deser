@@ -22,7 +22,6 @@ pub struct DeserializerConfig {
     resolve_namespaces: bool,
     duplicate_keys: DuplicateKeys,
     track_locations: bool,
-    max_depth: usize,
 }
 
 impl Default for DeserializerConfig {
@@ -39,7 +38,6 @@ impl DeserializerConfig {
             resolve_namespaces: false,
             duplicate_keys: DuplicateKeys::Error,
             track_locations: true,
-            max_depth: 128,
         }
     }
 
@@ -161,12 +159,6 @@ impl DeserializerConfig {
     /// [`DuplicateKeys::Error`].
     pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
         self.duplicate_keys = policy;
-        self
-    }
-
-    /// Sets how deeply elements can be nested.  The default is 128.
-    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
-        self.max_depth = depth;
         self
     }
 
@@ -504,12 +496,6 @@ impl<'a> Parser<'a, '_> {
                 );
             }
         } else {
-            if self.stack.len() >= self.config.max_depth {
-                return Err(
-                    Error::new(ErrorKind::Unexpected, "elements are nested too deeply")
-                        .with_offset(range.0),
-                );
-            }
             self.make_map(driver)?;
             let name = self.name(tag.name(), false, range.0)?;
             emit_key(driver, name, range)?;

@@ -5,10 +5,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
+use deser_core::__format::{Float, IntBuffer, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::ser::{self, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
 use crate::{Escape, Nulls, QuoteStyle, Terminator};
@@ -186,7 +187,7 @@ impl SerializerConfig {
     ///     .columns(&["kind", "radius", "width", "height"]);
     /// assert_eq!(
     ///     config.to_string(&shapes).unwrap(),
-    ///     "kind,radius,width,height\ncircle,1,,\nrect,,2,3\n"
+    ///     "kind,radius,width,height\ncircle,1.0,,\nrect,,2.0,3.0\n"
     /// );
     /// ```
     pub const fn columns(mut self, names: &'static [&'static str]) -> SerializerConfig {
@@ -292,11 +293,9 @@ impl SerializerConfig {
             },
             names: state.names.take(),
             len: state.len,
-            depth: 0,
             document,
             direct: false,
             is_map: false,
-            has_key: false,
             fields: 0,
             record_start: 0,
             field_ends: core::mem::take(&mut state.buffers.field_ends),
@@ -305,12 +304,7 @@ impl SerializerConfig {
             out,
         };
         let had_names = writer.names.is_some();
-        let rv = driver
-            .drive(|event, _state| writer.event(event))
-            .and_then(|()| match document && writer.depth != 0 {
-                true => Err(Error::new(ErrorKind::Unexpected, "incomplete document")),
-                false => Ok(()),
-            });
+        let rv = driver.drive(|event, state| writer.event(event, state));
         // the state only changes if the value was written
         if rv.is_ok() || had_names {
             state.names = writer.names;
@@ -576,14 +570,10 @@ struct RecordWriter<'a> {
     encoder: FieldEncoder<'a>,
     names: Option<Vec<String>>,
     len: Option<usize>,
-    /// 0 at the top level, 1 in a record (2 in the record of a document).
-    depth: usize,
     document: bool,
     /// The fields are written to the output directly.
     direct: bool,
     is_map: bool,
-    /// In maps: the key of the next field was read.
-    has_key: bool,
     /// The number of fields of the current record.
     fields: usize,
     /// Where the current record starts in the output.
@@ -600,29 +590,34 @@ struct RecordWriter<'a> {
 
 impl RecordWriter<'_> {
     #[inline]
-    fn event(&mut self, event: Event<'_>) -> Result<(), Error> {
+    fn event(&mut self, event: Event<'_>, state: &State) -> Result<(), Error> {
         // most events are the fields of records
         if let Event::Atom(ref atom) = event
-            && self.depth == usize::from(self.document) + 1
+            && state.depth() == usize::from(self.document) + 1
         {
-            return self.atom(atom);
+            return self.atom(atom, state.is_map_key());
         }
-        self.structure(event)
+        self.structure(event, state)
     }
 
     /// Handles the events that are not fields.
-    fn structure(&mut self, event: Event<'_>) -> Result<(), Error> {
+    fn structure(&mut self, event: Event<'_>, state: &State) -> Result<(), Error> {
+        // the depth of the event, without the container it starts: 0 at the
+        // top level, 1 in a record (2 in the record of a document)
+        let depth = match event {
+            Event::MapStart(_) | Event::SeqStart(_) => state.depth().saturating_sub(1),
+            _ => state.depth(),
+        };
         let record_depth = usize::from(self.document);
         match event {
-            Event::SeqStart(_) if self.document && self.depth == 0 => self.depth = 1,
-            Event::SeqEnd if self.document && self.depth == 1 => self.depth = 0,
-            _ if self.depth < record_depth => {
+            Event::SeqStart(_) | Event::SeqEnd if self.document && depth == 0 => {}
+            _ if depth < record_depth => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "CSV documents are sequences of records",
                 ));
             }
-            Event::MapStart(_) | Event::SeqStart(_) if self.depth == record_depth => {
+            Event::MapStart(_) | Event::SeqStart(_) if depth == record_depth => {
                 if self.names.is_none()
                     && let Some(columns) = self.encoder.config.columns
                 {
@@ -634,41 +629,36 @@ impl RecordWriter<'_> {
                 }
                 self.is_map = matches!(event, Event::MapStart(_));
                 self.direct = !self.is_map || self.names.is_some();
-                self.has_key = false;
                 self.fields = 0;
                 self.record_start = self.out.len();
                 self.field_ends.clear();
                 self.record.clear();
-                self.depth += 1;
             }
-            _ if self.depth == record_depth => {
+            Event::MapEnd | Event::SeqEnd if depth == record_depth => self.finish_record()?,
+            _ if depth == record_depth => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "CSV records must be maps or sequences",
                 ));
             }
-            Event::MapEnd | Event::SeqEnd => {
-                self.depth -= 1;
-                self.finish_record()?;
-            }
-            Event::MapStart(_) | Event::SeqStart(_) => {
+            // the ends only if layers emitted maps or sequences
+            Event::MapStart(_) | Event::SeqStart(_) | Event::MapEnd | Event::SeqEnd => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "CSV fields cannot hold maps or sequences",
                 ));
             }
-            Event::Atom(ref atom) => return self.atom(atom),
+            Event::Atom(ref atom) => return self.atom(atom, state.is_map_key()),
         }
         Ok(())
     }
 
     /// Handles a key or field of a record.
     #[inline]
-    fn atom(&mut self, atom: &Atom<'_>) -> Result<(), Error> {
-        if self.is_map && !self.has_key {
+    fn atom(&mut self, atom: &Atom<'_>, is_key: bool) -> Result<(), Error> {
+        if is_key {
             return self.key(atom);
         }
-        self.has_key = false;
         let text = self.encoder.text(atom, &mut self.scratch)?;
         if self.direct {
             if self.fields > 0 {
@@ -686,7 +676,6 @@ impl RecordWriter<'_> {
 
     /// Handles the key of a field.
     fn key(&mut self, atom: &Atom<'_>) -> Result<(), Error> {
-        self.has_key = true;
         let key = match atom {
             Atom::Null | Atom::Bytes(_) => None,
             atom => self.encoder.text(atom, &mut self.scratch)?,
@@ -1015,23 +1004,19 @@ impl FieldEncoder<'_> {
                 false
             }
             Atom::U64(value) => {
-                write_u64(scratch, value);
+                scratch.extend_from_slice(IntBuffer::new().format_u64(value).as_bytes());
                 true
             }
             Atom::I64(value) => {
-                if value < 0 {
-                    scratch.push(b'-');
-                }
-                write_u64(scratch, value.unsigned_abs());
+                scratch.extend_from_slice(IntBuffer::new().format_i64(value).as_bytes());
                 true
             }
-            // writing into a vector does not fail
             Atom::F32(value) => {
-                let _ = write!(ByteWriter(scratch), "{}", value);
+                write_float(scratch, value);
                 true
             }
             Atom::F64(value) => {
-                let _ = write!(ByteWriter(scratch), "{}", value);
+                write_float(scratch, value);
                 true
             }
             Atom::Bytes(ref bytes) => {
@@ -1105,7 +1090,6 @@ impl FieldEncoder<'_> {
     }
 }
 
-/// Writes an integer (faster than formatting it).
 /// Formats into a byte buffer (`std::io::Write` is not in `core`).
 struct ByteWriter<'a>(&'a mut Vec<u8>);
 
@@ -1116,18 +1100,15 @@ impl fmt::Write for ByteWriter<'_> {
     }
 }
 
-fn write_u64(out: &mut Vec<u8>, mut value: u64) {
-    let mut buf = [0u8; 20];
-    let mut pos = buf.len();
-    loop {
-        pos -= 1;
-        buf[pos] = b'0' + (value % 10) as u8;
-        value /= 10;
-        if value == 0 {
-            break;
-        }
+/// Writes a float with the shortest text that reads back as the same value
+/// of its type (`f32` or `f64`), like the other formats.
+fn write_float<F: Float>(out: &mut Vec<u8>, value: F) {
+    if value.is_finite() {
+        out.extend_from_slice(format_finite(value).as_bytes());
+    } else {
+        // `NaN`, `inf` and `-inf`
+        let _ = write!(ByteWriter(out), "{}", value.to_f64());
     }
-    out.extend_from_slice(&buf[pos..]);
 }
 
 #[cold]

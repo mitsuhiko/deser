@@ -502,17 +502,13 @@ fn test_alias_limit() {
 
 #[test]
 fn test_max_depth() {
-    let input = "[[[[1]]]]";
-    assert!(
-        DeserializerConfig::new()
-            .max_depth(4)
-            .from_str::<Value>(input)
-            .is_ok()
-    );
-    let err = DeserializerConfig::new()
-        .max_depth(3)
-        .from_str::<Value>(input)
-        .unwrap_err();
+    let parse = |max_depth| {
+        Deserializer::from_str("[[[[1]]]]").deserialize_with::<Value, _>(|driver| {
+            driver.push_layer(deser::de::Limits::new().max_depth(max_depth))
+        })
+    };
+    assert!(parse(4).is_ok());
+    let err = parse(3).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: recursion limit exceeded at line 1 column 4"

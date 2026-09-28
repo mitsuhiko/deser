@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use deser::Deserialize;
-use deser::de::DuplicateKeys;
+use deser::de::{DuplicateKeys, Limits};
 use deser_path::{Path, PathLayer};
 use deser_value::Value;
 use deser_xml::{Deserializer, DeserializerConfig, from_str};
@@ -477,9 +477,21 @@ fn test_errors() {
         let err = from_str::<Value>(input).unwrap_err();
         assert!(err.message().starts_with(message), "{input}: {err}");
     }
+}
 
-    const SHALLOW: DeserializerConfig = DeserializerConfig::new().max_depth(2);
-    assert!(SHALLOW.from_str::<Value>("<a><b><c/></b></a>").is_err());
+#[test]
+fn test_limits() {
+    // elements are maps if they have attributes or child elements
+    let parse = |max_depth| {
+        Deserializer::from_str("<a><b><c/></b></a>").deserialize_with::<Value, _>(|driver| {
+            driver.push_layer(Limits::new().max_depth(max_depth))
+        })
+    };
+    assert!(parse(2).is_ok());
+    assert_eq!(
+        parse(1).unwrap_err().to_string(),
+        "Unexpected: recursion limit exceeded at line 1 column 4"
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
+use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
@@ -1067,7 +1068,7 @@ impl<'c, 'o> Writer<'c, 'o> {
             Atom::Char(value) => Cow::Owned(value.to_string()),
             Atom::U64(value) => Cow::Owned(value.to_string()),
             Atom::I64(value) => Cow::Owned(value.to_string()),
-            Atom::F32(value) => Cow::Owned(float_text(value as f64)),
+            Atom::F32(value) => Cow::Owned(float_text(value)),
             Atom::F64(value) => Cow::Owned(float_text(value)),
             Atom::Bytes(ref bytes) => {
                 let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
@@ -1118,13 +1119,19 @@ fn keeps_whitespace(state: &State) -> bool {
 }
 
 /// Writes a float like XML Schema (`INF`, `-INF` and `NaN`).
-fn float_text(value: f64) -> String {
-    if value.is_nan() {
+/// Returns the text of a float.
+///
+/// Finite floats have the shortest text that reads back as the same value
+/// of their type, like in the other formats.  The others are written as in
+/// XML Schema.
+fn float_text<F: Float>(value: F) -> String {
+    let wide = value.to_f64();
+    if wide.is_nan() {
         "NaN".into()
-    } else if value.is_infinite() {
-        if value > 0.0 { "INF" } else { "-INF" }.into()
+    } else if wide.is_infinite() {
+        if wide > 0.0 { "INF" } else { "-INF" }.into()
     } else {
-        value.to_string()
+        format_finite(value)
     }
 }
 

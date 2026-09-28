@@ -73,7 +73,7 @@ fn test_round_trip() {
         out,
         "<person id=\"7\"><name>Jane &lt;J&gt; &amp; Co</name><tag>a</tag><tag>b</tag>\
          <address country=\"AT\"><city>Vienna</city></address>\
-         <shape><circle r=\"1.5\"/></shape><shape><square><side>2</side></square></shape>\
+         <shape><circle r=\"1.5\"/></shape><shape><square><side>2.0</side></square></shape>\
          <shape>empty</shape><note lang=\"en\">hi \"there\"</note></person>"
     );
     assert_eq!(from_str::<Person>(&out).unwrap(), person());

@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
+use deser::de::DuplicateKeys;
 use deser::ext::{ExtValue, Uuid};
 use deser::{Deserialize, Order};
 use deser_value::{Kind, Map, Seq, Value, from_value, to_value, value};
@@ -382,6 +383,22 @@ fn test_duplicate_keys() {
         err.to_string(),
         r#"Unexpected: duplicate map key "a" at line 1 column 23"#
     );
+
+    // the policy of the deserialization decides
+    let parse = |policy| {
+        deser_json::Deserializer::from_str(r#"{"a": 1, "b": 2, "a": {"c": 3}}"#)
+            .deserialize_with::<Value, _>(|driver| {
+                *driver.state_mut().get_mut::<DuplicateKeys>() = policy;
+            })
+    };
+    let value = parse(DuplicateKeys::First).unwrap();
+    assert_eq!(value, value!({"a": 1, "b": 2}));
+    let value = parse(DuplicateKeys::Last).unwrap();
+    assert_eq!(value, value!({"a": {"c": 3}, "b": 2}));
+    // the entry keeps its position
+    let keys: Vec<_> = value.as_map().unwrap().keys().collect();
+    assert_eq!(keys, [&value!("a"), &value!("b")]);
+    assert!(parse(DuplicateKeys::Error).is_err());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Tests for malformed input, error reporting and edge cases.
 use crate::common;
 
-use deser::de::DeserializeOwned;
+use deser::de::{DeserializeOwned, Limits};
 use std::collections::HashMap;
 
 use common::{Value, de, hex};
@@ -43,12 +43,14 @@ fn recursion_limit() {
     }
     assert_eq!(value, Value::U64(1));
 
-    // ...but the depth can be limited.
+    // ...but the depth can be limited with a layer.
+    let limited = |input: &[u8], max_depth| {
+        deser_msgpack::Deserializer::from_slice(input).deserialize_with::<Value, _>(|driver| {
+            driver.push_layer(Limits::new().max_depth(max_depth))
+        })
+    };
     let bomb = vec![0x91u8; depth];
-    let err = deser_msgpack::DeserializerConfig::new()
-        .max_depth(256)
-        .from_slice::<Value>(&bomb)
-        .unwrap_err();
+    let err = limited(&bomb, 256).unwrap_err();
     assert!(
         err.to_string().contains("recursion limit exceeded"),
         "{}",
@@ -56,16 +58,8 @@ fn recursion_limit() {
     );
 
     let shallow = [0x91, 0x91, 0x91, 0x01]; // [[[1]]]
-    let config = deser_msgpack::DeserializerConfig::new().max_depth(2);
-    let mut de = deser_msgpack::Deserializer::from_slice_with_config(&shallow, &config);
-    assert!(de.deserialize::<Value>().is_err());
-
-    let config = deser_msgpack::DeserializerConfig::new().max_depth(3);
-    let mut de = deser_msgpack::Deserializer::from_slice_with_config(&shallow, &config);
-    assert_eq!(
-        de.deserialize::<Value>().unwrap(),
-        array![array![array![1u64]]]
-    );
+    assert!(limited(&shallow, 2).is_err());
+    assert_eq!(limited(&shallow, 3).unwrap(), array![array![array![1u64]]]);
 }
 
 #[test]

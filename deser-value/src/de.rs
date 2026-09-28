@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser_core::de::{Deserialize, Sink, SinkHandle, Source};
+use deser_core::de::{Deserialize, DuplicateKeys, Sink, SinkHandle, Source};
 use deser_core::{Atom, Error, ErrorKind, State};
 
 use crate::map::Map;
@@ -30,6 +30,21 @@ enum Building {
     Map(Map),
 }
 
+/// What happens to the value of an entry of a map.
+#[derive(Default)]
+enum Entry {
+    /// The entry is inserted, it replaces the value of a key that was given
+    /// before.
+    #[default]
+    Insert,
+    /// The value is added to the values of a key of a multimap that was
+    /// given before.
+    Repeat,
+    /// The value is dropped as the key was given before and the first value
+    /// is used.
+    Ignore,
+}
+
 /// Deserializes values.
 struct ValueSink<'a> {
     out: Out<'a>,
@@ -39,9 +54,8 @@ struct ValueSink<'a> {
     key: Option<Value>,
     // the key or value that is deserialized.
     slot: Option<Value>,
-    // `true` if the value is one of a key of a multimap that was given
-    // before
-    repeated: bool,
+    // what happens to the value of the current entry
+    entry: Entry,
 }
 
 impl<'a> ValueSink<'a> {
@@ -52,7 +66,7 @@ impl<'a> ValueSink<'a> {
             meta: None,
             key: None,
             slot: None,
-            repeated: false,
+            entry: Entry::Insert,
         }
     }
 
@@ -63,10 +77,12 @@ impl<'a> ValueSink<'a> {
                 Building::Seq(ref mut seq) => seq.items.push(value),
                 Building::Map(ref mut map) => {
                     if let Some(key) = self.key.take() {
-                        if std::mem::take(&mut self.repeated) {
-                            add_repeated(map, &key, value);
-                        } else {
-                            map.inner.entries.insert(key, value);
+                        match std::mem::take(&mut self.entry) {
+                            Entry::Insert => {
+                                map.inner.entries.insert(key, value);
+                            }
+                            Entry::Repeat => add_repeated(map, &key, value),
+                            Entry::Ignore => {}
                         }
                     }
                 }
@@ -76,7 +92,10 @@ impl<'a> ValueSink<'a> {
     }
 
     /// Prepares for the next value in the container.
-    fn begin_value(&mut self) -> Result<(), Error> {
+    ///
+    /// A key that was given before collects the values in a multimap,
+    /// otherwise the [`DuplicateKeys`] policy decides.
+    fn begin_value(&mut self, state: &State) -> Result<(), Error> {
         match self.building {
             Building::Map(ref map) => {
                 let key = self
@@ -84,10 +103,15 @@ impl<'a> ValueSink<'a> {
                     .take()
                     .ok_or_else(|| Error::new(ErrorKind::Unexpected, "missing map key"))?;
                 if map.contains_key(&key) {
-                    if !map.is_multimap() {
-                        return Err(duplicate_key(&key));
-                    }
-                    self.repeated = true;
+                    self.entry = if map.is_multimap() {
+                        Entry::Repeat
+                    } else {
+                        match state.get::<DuplicateKeys>().copied().unwrap_or_default() {
+                            DuplicateKeys::Last => Entry::Insert,
+                            DuplicateKeys::First => Entry::Ignore,
+                            _ => return Err(duplicate_key(&key)),
+                        }
+                    };
                 }
                 self.key = Some(key);
             }
@@ -198,7 +222,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.begin_value()?;
+        self.begin_value(state)?;
         Ok(Value::deserialize_into(&mut self.slot, state))
     }
 
@@ -209,7 +233,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.begin_value()?;
+        self.begin_value(state)?;
         self.slot = Some(atom_value(atom, state)?);
         Ok(())
     }
@@ -244,7 +268,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             _ => return Ok(None),
         }
         self.slot = Some(Value::from(key));
-        self.begin_value()?;
+        self.begin_value(state)?;
         Ok(Some(Value::deserialize_into(&mut self.slot, state)))
     }
 

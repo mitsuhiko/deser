@@ -7,14 +7,13 @@
 //!   produces the same text, so the output does not depend on the feature.
 //! * [`extend`] and [`push_str`] append short bytes and strings without
 //!   calling into `memcpy`.
-use alloc::format;
 use alloc::string::String;
-use alloc::string::ToString;
 use alloc::vec::Vec;
-use core::fmt::{Debug, LowerExp};
+use core::fmt::{self, Debug, LowerExp, Write};
+use core::str::FromStr;
 
 /// The floats that can be formatted (`f32` and `f64`).
-pub trait Float: Copy + LowerExp + Debug + sealed::Sealed {
+pub trait Float: Copy + PartialEq + FromStr + LowerExp + Debug + sealed::Sealed {
     /// Values below `10^MAX_PLAIN` are written without exponent.
     #[doc(hidden)]
     const MAX_PLAIN: i32;
@@ -84,22 +83,38 @@ impl Float for f32 {
 /// `1.5e-7`).
 pub fn format_finite<F: Float>(val: F) -> String {
     // the standard library formats the shortest digits that read back
-    let scientific = format!("{:e}", val);
-    let (mantissa, exp) = scientific.split_once('e').unwrap();
+    let mut scientific = StackText::new();
+    write!(scientific, "{:e}", val).unwrap();
+    let (mantissa, exp) = scientific.as_str().split_once('e').unwrap();
     let exp: i32 = exp.parse().unwrap();
     let (sign, mantissa) = match mantissa.strip_prefix('-') {
         Some(mantissa) => ("-", mantissa),
         None => ("", mantissa),
     };
-    let mut digits = mantissa.replace('.', "");
-    // if the value is exactly between two candidates, the standard library
-    // rounds up and zmij to the even one
-    let last = digits.as_bytes()[digits.len() - 1];
-    if (last - b'0') % 2 == 1 && is_tie(val.abs(), &digits, exp) {
-        digits.pop();
-        digits.push((last - 1) as char);
+    // the digits without the point, at most 17
+    let mut buffer = [0u8; 17];
+    let mut len = 0;
+    for &byte in mantissa.as_bytes() {
+        if byte != b'.' {
+            buffer[len] = byte;
+            len += 1;
+        }
     }
-    let len = digits.len() as i32;
+    let digits = &mut buffer[..len];
+    // if the value is exactly between two candidates, the standard library
+    // rounds up and zmij to the even one.  Only if both read back: the gap
+    // to the next smaller value of a power of two is half as large.
+    let last = digits[len - 1];
+    if (last - b'0') % 2 == 1 && is_tie(val.abs(), ascii(digits), exp) {
+        digits[len - 1] = last - 1;
+        let mut even = StackText::new();
+        write!(even, "{}e{}", ascii(digits), exp - (len as i32 - 1)).unwrap();
+        if even.as_str().parse::<F>().ok() != Some(val.abs()) {
+            digits[len - 1] = last;
+        }
+    }
+    let digits = ascii(digits);
+    let len = len as i32;
     // the value is digits * 10^k and 10^(kk - 1) <= value < 10^kk
     let kk = exp + 1;
     let k = kk - len;
@@ -107,7 +122,7 @@ pub fn format_finite<F: Float>(val: F) -> String {
     out.push_str(sign);
     if 0 <= k && kk <= F::MAX_PLAIN {
         // 1234e7 -> 12340000000.0
-        out.push_str(&digits);
+        out.push_str(digits);
         out.extend(core::iter::repeat_n('0', k as usize));
         out.push_str(".0");
     } else if 0 < kk && kk <= F::MAX_PLAIN {
@@ -119,7 +134,7 @@ pub fn format_finite<F: Float>(val: F) -> String {
         // 1234e-6 -> 0.001234
         out.push_str("0.");
         out.extend(core::iter::repeat_n('0', -kk as usize));
-        out.push_str(&digits);
+        out.push_str(digits);
     } else {
         // 1e30, 1234e30 -> 1.234e+33
         out.push_str(&digits[..1]);
@@ -131,29 +146,86 @@ pub fn format_finite<F: Float>(val: F) -> String {
         if kk > 1 {
             out.push('+');
         }
-        out.push_str(&(kk - 1).to_string());
+        out.push_str(IntBuffer::new().format_i64(i64::from(kk - 1)));
     }
     out
 }
 
+/// Returns ASCII bytes as string.
+fn ascii(bytes: &[u8]) -> &str {
+    core::str::from_utf8(bytes).unwrap()
+}
+
+/// Text formatted on the stack.
+///
+/// This holds the scientific notation of floats (at most 24 bytes, like
+/// `-2.2250738585072014e-308`).
+struct StackText {
+    bytes: [u8; 32],
+    len: usize,
+}
+
+impl StackText {
+    fn new() -> StackText {
+        StackText {
+            bytes: [0; 32],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        // only strings are written
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap()
+    }
+}
+
+impl fmt::Write for StackText {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let end = self.len + s.len();
+        self.bytes
+            .get_mut(self.len..end)
+            .ok_or(fmt::Error)?
+            .copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
 /// Returns `true` if the value is exactly between the digits and the digits
 /// with the last one decremented (with the same exponent).
-#[cold]
+///
+/// The value is positive, the digits `d` (`n` of them) stand for
+/// `d * 10^(exp - n + 1)`.  With `q = exp - n` the middle is
+/// `(2d - 1) * 5 * 10^q`, which is `(2d - 1) * 5^(q + 1) * 2^q`.  The value
+/// is `m * 2^e` with an odd `m` (floats are exact as doubles).  As the
+/// factors before the powers of two are odd on both sides, they are equal
+/// if the exponents of two are and the rest is.
 fn is_tie<F: Float>(val: F, digits: &str, exp: i32) -> bool {
-    let mut middle = digits.to_string();
-    let last = middle.pop().unwrap();
-    middle.push((last as u8 - 1) as char);
-    middle.push('5');
-    let matches = |precision: usize| {
-        let formatted = format!("{:.*e}", precision, val);
-        let (mantissa, formatted_exp) = formatted.split_once('e').unwrap();
-        formatted_exp.parse() == Ok(exp)
-            && mantissa.replace('.', "").trim_end_matches('0') == middle
+    let bits = val.to_f64().to_bits();
+    let (mut m, mut e) = match (bits >> 52) as i32 & 0x7ff {
+        0 => (bits & ((1 << 52) - 1), -1074),
+        biased => (bits & ((1 << 52) - 1) | (1 << 52), biased - 1075),
     };
-    // the rounded digits are cheap to check, the exact ones are only
-    // formatted if they match.  The exact expansion of a double has at
-    // most 767 significant digits (a float at most 112).
-    matches(digits.len()) && matches(800)
+    let zeros = m.trailing_zeros();
+    m >>= zeros;
+    e += zeros as i32;
+
+    let q = exp - digits.len() as i32;
+    if e != q {
+        return false;
+    }
+    // at most 17 digits
+    let odd = u128::from(digits.parse::<u64>().unwrap()) * 2 - 1;
+    let m = u128::from(m);
+    // the power of five on the side of the middle
+    let p = q + 1;
+    let (small, large, power) = if p >= 0 {
+        (m, odd, p as u32)
+    } else {
+        (odd, m, p.unsigned_abs())
+    };
+    // both are below 2^64, a larger product cannot be equal
+    5u128.checked_pow(power).and_then(|x| x.checked_mul(large)) == Some(small)
 }
 
 /// Formats integers without the `fmt` machinery.
@@ -373,6 +445,11 @@ mod tests {
         ] {
             check(val);
         }
+        // the candidate below a power of two does not always read back
+        for exp in -1074..1024 {
+            check(2f64.powi(exp));
+            check(-2f64.powi(exp));
+        }
         // every iteration takes about 40ms in miri
         let iterations = if cfg!(miri) { 100 } else { 100_000 };
         let mut x: u64 = 0x2545_f491_4f6c_dd1d;
@@ -412,6 +489,9 @@ mod tests {
             f32::from_bits(0x3b90_0000),
         ] {
             check(val);
+        }
+        for exp in -149..128 {
+            check(2f32.powi(exp));
         }
         let iterations = if cfg!(miri) { 100 } else { 100_000 };
         let mut x: u32 = 0x4f6c_dd1d;

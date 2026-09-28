@@ -60,8 +60,12 @@
 //!
 //! # Duplicate Keys
 //!
-//! Map keys are unique.  If a map with duplicate keys is deserialized into
-//! a value, the deserialization fails.
+//! Map keys are unique.  If a key is given more than once, the
+//! [`DuplicateKeys`](deser_core::de::DuplicateKeys) policy of the
+//! deserialization decides: by default the deserialization fails, otherwise
+//! the first or the last value is used.  The keys of multimaps (like the
+//! parameters of query strings) collect their values instead, see
+//! [`Seq::is_repeated`].
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod convert;

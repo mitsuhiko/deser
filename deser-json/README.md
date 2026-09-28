@@ -38,8 +38,8 @@ assert_eq!(
 Why use it:
 
 * **No dependencies** besides `deser` by default.  The `speedups` feature
-  pulls in `ryu`, `itoa` and `simdutf8` for faster number formatting and
-  UTF-8 validation.
+  pulls in `zmij` and `simdutf8` for faster float formatting and UTF-8
+  validation.
 * **Borrowing:** strings without escapes are passed on borrowed so types
   can hold `&str` pointing into the input.
 * **Numbers without loss:** 128 bit integers are written and read as

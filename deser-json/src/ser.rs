@@ -853,12 +853,6 @@ impl Output {
         Ok(())
     }
 
-    #[cfg(feature = "speedups")]
-    fn write_int<I: itoa::Integer>(&mut self, val: I) {
-        self.write_str(itoa::Buffer::new().format(val))
-    }
-
-    #[cfg(not(feature = "speedups"))]
     fn write_int<I: core::fmt::Display>(&mut self, val: I) {
         self.write_str(&val.to_string())
     }

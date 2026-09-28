@@ -98,7 +98,7 @@ fn test_indent() {
   </shape>
   <shape>
     <square>
-      <side>2</side>
+      <side>2.0</side>
     </square>
   </shape>
   <shape>empty</shape>

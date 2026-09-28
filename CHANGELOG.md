@@ -4,6 +4,10 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Without the `speedups` feature some powers of two were written with
+  digits that do not read back as the same float (`-5.960464477539062e-8`
+  for `-2^-24`), floats now always have the same text as with the
+  feature.  Formatting them without it is also faster.
 - Added `deser-transcode`, which converts a value from any deserializer
   into any serializer (JSON to YAML, CBOR to JSON, ...) without types in
   between.  Values are passed on as the deserializer emitted them and
@@ -490,7 +494,7 @@ All notable changes to deser are documented here.
   same input is a security problem.  `deser-urlencoded` uses the last
   value by default as repeated keys are common in query strings.  It's set
   on the state (`State::set_duplicate_keys`) and also applies to buffered
-  values.
+  values and to the maps of `deser-value`.
   `MapSkipError` skips duplicate entries if they are an error.  Values of
   fields that are containers (like `Vec`) are replaced, not merged.
 - Sequences can be marked as the values of a key that was given more than
@@ -702,8 +706,8 @@ All notable changes to deser are documented here.
   `SerializeDriver::next` panics if layers were added.
 - Added `deser::de::Limits`, a layer which limits the depth, the number of
   events, the number of items of maps and sequences and the length of strings
-  and bytes.  The `max_depth` options of `deser-yaml` and `deser-cbor` add
-  this layer and no longer have their own implementation.
+  and bytes.  The formats have no options for limits, the layer is added
+  with `deserialize_with` (or `Reader::read_with` for streams).
 - Added the `deser::de::Deserializer` trait which is implemented by the
   deserializers of all formats.  `Deserializer::deserialize_with` (also an
   inherent method of the deserializers) allows configuring the driver, for
@@ -756,7 +760,6 @@ All notable changes to deser are documented here.
     becomes `SerializerConfig::new().to_string(&v)` (`to_vec` for CBOR).
     `deser_cbor::to_canonical_vec` was removed in favor of
     `SerializerConfig::new().canonical(true).to_vec(&v)`.
-  - `max_depth` takes a `usize` instead of an `Option<usize>`.
 - `Deserialize`, `Sink`, `SinkHandle`, `DeserializeDriver`, `OwnedSink` and
   `DeserializeAs` have a lifetime `'de` for the data that is deserialized.
   Types can borrow from it: `&str` and `&[u8]` borrow, `Cow<str>` and

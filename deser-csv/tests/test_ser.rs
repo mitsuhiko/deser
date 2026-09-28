@@ -144,7 +144,7 @@ fn test_values() {
     assert_eq!(
         csv,
         "yes,char,small,large,negative,big,bytes,unit\n\
-         true,x,0.1,10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,-1,340282366920938463463374607431768211455,aGk=,\n"
+         true,x,0.1,1e+100,-1,340282366920938463463374607431768211455,aGk=,\n"
     );
 }
 
@@ -228,7 +228,7 @@ fn test_escape_formulas() {
     let rows = vec![("=HYPERLINK(\"x\")", -1.5), ("+1", 2.0), ("a", 3.0)];
     assert_eq!(
         config.to_string(&rows).unwrap(),
-        "\"'=HYPERLINK(\"\"x\"\")\",-1.5\n\"'+1\",2\na,3\n"
+        "\"'=HYPERLINK(\"\"x\"\")\",-1.5\n\"'+1\",2.0\na,3.0\n"
     );
 }
 

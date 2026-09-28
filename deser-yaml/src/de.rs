@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Limits, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::hints::Layout;
 use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue};
 
@@ -33,15 +33,13 @@ const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
 /// use deser_yaml::{DeserializerConfig, Version};
 ///
 /// const CONFIG: DeserializerConfig = DeserializerConfig::new()
-///     .version(Version::V1_1)
-///     .max_depth(64);
+///     .version(Version::V1_1);
 /// let (flag, mode): (bool, u32) = CONFIG.from_str("[yes, 0777]").unwrap();
 /// assert_eq!((flag, mode), (true, 0o777));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
     version: Version,
-    max_depth: Option<usize>,
     alias_limit: usize,
     merge_keys: bool,
     track_locations: bool,
@@ -59,7 +57,6 @@ impl DeserializerConfig {
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
             version: Version::V1_2,
-            max_depth: None,
             alias_limit: DEFAULT_ALIAS_LIMIT,
             merge_keys: true,
             track_locations: false,
@@ -74,18 +71,6 @@ impl DeserializerConfig {
     /// default is [`Version::V1_2`].
     pub const fn version(mut self, version: Version) -> DeserializerConfig {
         self.version = version;
-        self
-    }
-
-    /// Limits the nesting depth of sequences and mappings.
-    ///
-    /// Deser does not use the stack to process nested data so arbitrarily
-    /// deep structures do not overflow the stack.  Still it can be useful to
-    /// limit the depth of untrusted inputs.  By default the depth is not
-    /// limited.  This adds a [`Limits`] layer to the driver, which can also
-    /// limit other aspects of the input.
-    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
-        self.max_depth = Some(depth);
         self
     }
 
@@ -674,9 +659,6 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
             Source::set(driver.state_mut(), source.clone());
-        }
-        if let Some(max_depth) = self.config.max_depth {
-            driver.push_layer(Limits::new().max_depth(max_depth));
         }
         if self.config.bytes != BytesFormat::BASE64 {
             *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;

@@ -1,7 +1,6 @@
 //! Reading and writing CBOR streams.
 use std::io::{Read, Write};
 
-use deser_core::de::Limits;
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
 use deser_core::io::Encoder;
 use deser_core::io::{Decoder, Frame, Progress};
@@ -275,9 +274,6 @@ impl Decoder for DeserializerConfig {
                 } else {
                     Progress::NeedMore { consumed: pos }
                 });
-            }
-            if let Some(max_depth) = self.max_depth_limit() {
-                driver.push_layer(Limits::new().max_depth(max_depth));
             }
             state.started = true;
         }

@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
+use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::ser::SerializeDriver;
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Case;
 
@@ -141,7 +142,7 @@ impl SerializerConfig {
             name: prefix.to_string(),
             stack: Vec::new(),
         };
-        driver.drive(|event, _state| writer.event(event))?;
+        driver.drive(|event, state| writer.event(event, state))?;
         Ok(writer.out)
     }
 }
@@ -169,9 +170,8 @@ pub fn to_vars(prefix: &str, value: &dyn Serialize) -> Result<Vec<(String, Strin
 
 /// A container that is being written.
 enum Frame {
-    /// A map, with the length of its name and `true` if a key is expected
-    /// next.
-    Map { prefix: usize, expect_key: bool },
+    /// A map, with the length of its name.
+    Map { prefix: usize },
     /// A sequence, with the length of its name and the index of the next
     /// element.
     Seq { prefix: usize, index: usize },
@@ -187,11 +187,10 @@ struct Writer<'c> {
 }
 
 impl Writer<'_> {
-    fn event(&mut self, event: Event) -> Result<(), Error> {
+    fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match (self.stack.last_mut(), event) {
             (None, Event::MapStart(_)) => self.stack.push(Frame::Map {
                 prefix: self.name.len(),
-                expect_key: true,
             }),
             (None, Event::Atom(Atom::Null)) => {}
             (None, _) => {
@@ -204,15 +203,8 @@ impl Writer<'_> {
             (Some(Frame::Map { .. }), Event::MapEnd) => {
                 self.stack.pop();
             }
-            (
-                Some(&mut Frame::Map {
-                    prefix,
-                    ref mut expect_key,
-                }),
-                event,
-            ) => {
-                if *expect_key {
-                    *expect_key = false;
+            (Some(&mut Frame::Map { prefix }), event) => {
+                if state.is_map_key() {
                     let key = match event {
                         Event::Atom(ref atom) => key_text(atom)?,
                         _ => return Err(unsupported_key()),
@@ -236,7 +228,6 @@ impl Writer<'_> {
                     }
                     self.push_key(&key);
                 } else {
-                    *expect_key = true;
                     self.value(event, false)?;
                 }
             }
@@ -293,7 +284,6 @@ impl Writer<'_> {
             }
             Event::MapStart(_) => self.stack.push(Frame::Map {
                 prefix: self.name.len(),
-                expect_key: true,
             }),
             Event::SeqStart(_) => self.stack.push(Frame::Seq {
                 prefix: self.name.len(),
@@ -327,8 +317,8 @@ fn value_text<'a>(atom: &'a Atom<'_>, bytes: BytesFormat) -> Result<Option<Cow<'
         Atom::Char(value) => Cow::Owned(value.to_string()),
         Atom::U64(value) => Cow::Owned(value.to_string()),
         Atom::I64(value) => Cow::Owned(value.to_string()),
-        Atom::F32(value) => Cow::Owned(value.to_string()),
-        Atom::F64(value) => Cow::Owned(value.to_string()),
+        Atom::F32(value) => Cow::Owned(float_text(value)),
+        Atom::F64(value) => Cow::Owned(float_text(value)),
         Atom::Bytes(ref value) => {
             let format = value.fallback.copied().unwrap_or(bytes);
             Cow::Owned(
@@ -376,4 +366,17 @@ fn unsupported_key() -> Error {
         ErrorKind::UnsupportedType,
         "keys of environment variables must be strings, numbers or booleans",
     )
+}
+
+/// Returns the text of a float.
+///
+/// Finite floats have the shortest text that reads back as the same value
+/// of their type, like in the other formats.  The others are `NaN`, `inf`
+/// and `-inf`.
+fn float_text<F: Float>(value: F) -> String {
+    if value.is_finite() {
+        format_finite(value)
+    } else {
+        value.to_f64().to_string()
+    }
 }

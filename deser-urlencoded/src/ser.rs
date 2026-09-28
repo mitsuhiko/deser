@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
+use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::ser::{self, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Nesting;
 use crate::encoding::encode;
@@ -148,7 +149,7 @@ impl SerializerConfig {
             key: String::new(),
             stack: Vec::new(),
         };
-        driver.drive(|event, _state| writer.event(event))?;
+        driver.drive(|event, state| writer.event(event, state))?;
         // the parameters of more than one value are joined
         if !out.is_empty() && !writer.out.is_empty() {
             out.push('&');
@@ -263,9 +264,8 @@ pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
 
 /// A container that is being written.
 enum Frame {
-    /// A map, with the length of the key of the map and `true` if a key is
-    /// expected next.
-    Map { prefix: usize, expect_key: bool },
+    /// A map, with the length of the key of the map.
+    Map { prefix: usize },
     /// A sequence, with the length of its key and the index of the next
     /// element.
     Seq { prefix: usize, index: usize },
@@ -288,12 +288,9 @@ struct Writer<'c> {
 }
 
 impl Writer<'_> {
-    fn event(&mut self, event: Event) -> Result<(), Error> {
+    fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match (self.stack.last_mut(), event) {
-            (None, Event::MapStart(_)) => self.stack.push(Frame::Map {
-                prefix: 0,
-                expect_key: true,
-            }),
+            (None, Event::MapStart(_)) => self.stack.push(Frame::Map { prefix: 0 }),
             (None, Event::SeqStart(_)) => self.stack.push(Frame::Pairs),
             (None, Event::Atom(Atom::Null)) => {}
             (None, _) => {
@@ -306,15 +303,8 @@ impl Writer<'_> {
             (Some(Frame::Map { .. }), Event::MapEnd) => {
                 self.stack.pop();
             }
-            (
-                Some(&mut Frame::Map {
-                    prefix,
-                    ref mut expect_key,
-                }),
-                event,
-            ) => {
-                if *expect_key {
-                    *expect_key = false;
+            (Some(&mut Frame::Map { prefix }), event) => {
+                if state.is_map_key() {
                     let key = match event {
                         Event::Atom(ref atom) => self.key_text(atom)?,
                         _ => return Err(unsupported_key()),
@@ -326,7 +316,6 @@ impl Writer<'_> {
                         self.key.push_str(&key);
                     }
                 } else {
-                    *expect_key = true;
                     self.value(event, false)?;
                 }
             }
@@ -419,7 +408,6 @@ impl Writer<'_> {
                 }
                 self.stack.push(Frame::Map {
                     prefix: self.key.len(),
-                    expect_key: true,
                 });
             }
             Event::SeqStart(_) => self.stack.push(Frame::Seq {
@@ -469,8 +457,8 @@ impl Writer<'_> {
             Atom::Char(value) => Cow::Owned(value.to_string()),
             Atom::U64(value) => Cow::Owned(value.to_string()),
             Atom::I64(value) => Cow::Owned(value.to_string()),
-            Atom::F32(value) => Cow::Owned(value.to_string()),
-            Atom::F64(value) => Cow::Owned(value.to_string()),
+            Atom::F32(value) => Cow::Owned(float_text(value)),
+            Atom::F64(value) => Cow::Owned(float_text(value)),
             Atom::Bytes(ref bytes) => {
                 let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
                 Cow::Owned(
@@ -519,4 +507,17 @@ fn unsupported_key() -> Error {
         ErrorKind::UnsupportedType,
         "keys of query strings must be strings, numbers or booleans",
     )
+}
+
+/// Returns the text of a float.
+///
+/// Finite floats have the shortest text that reads back as the same value
+/// of their type, like in the other formats.  The others are `NaN`, `inf`
+/// and `-inf`.
+fn float_text<F: Float>(value: F) -> String {
+    if value.is_finite() {
+        format_finite(value)
+    } else {
+        value.to_f64().to_string()
+    }
 }
