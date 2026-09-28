@@ -1,0 +1,10 @@
+Two sessions of the pi coding agent (https://pi.dev) by Armin Ronacher,
+stripped of all personal data with scripts/scrub-pi-session.mjs:
+
+openai.jsonl     an OpenAI Codex session (19 MiB, 2,823 entries, 23 images)
+anthropic.jsonl  an Anthropic session (25 MiB, 1,028 entries, 29 images)
+
+All text is replaced by random words of the same length and case, ids by
+random ids, the images by generated PNGs of about the same size and the
+timestamps are shifted.  The structure, the keys, the numbers, the escapes
+and the names of the providers, models and tools are those of the sessions.

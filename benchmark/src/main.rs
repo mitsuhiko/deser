@@ -37,6 +37,7 @@ mod kubernetes;
 mod logs;
 mod manifests;
 mod saphyr;
+mod sessions;
 mod table;
 mod twitter;
 
@@ -210,6 +211,42 @@ where
         documents
     }
 
+    /// Loads the documents of a JSONL file in `benchmark/data`, they are
+    /// only benchmarked with JSON.  `check` makes sure that a value has
+    /// everything of its line (that the types are complete).
+    fn load_jsonl(
+        name: &'static str,
+        path: &str,
+        check: impl Fn(&str, &T) -> Result<(), String>,
+    ) -> Documents<T> {
+        let jsonl = read_data(path);
+        let lines = jsonl
+            .lines()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let values = lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                let value = deser_json::from_str(line).unwrap_or_else(|err| {
+                    panic!("{}: deser cannot read line {}: {}", name, index + 1, err)
+                });
+                if let Err(err) = check(line, &value) {
+                    panic!("{}: line {}: {}", name, index + 1, err);
+                }
+                value
+            })
+            .collect();
+        let inputs = lines.iter().map(|line| line.as_bytes().to_vec()).collect();
+        let documents = Documents {
+            name,
+            values,
+            inputs: vec![(Format::Json, inputs)],
+        };
+        documents.check("serde", formats::serde_de);
+        documents
+    }
+
     fn check(&self, library: &str, de: impl Fn(Format, Input) -> Result<T, formats::Error>) {
         for (format, documents) in &self.inputs {
             for (document, expected) in documents.iter().zip(&self.values) {
@@ -223,10 +260,17 @@ where
         }
     }
 
-    /// Returns the total size of the documents of a format.
-    fn size(&self, format: Format) -> usize {
-        let (_, documents) = self.inputs.iter().find(|(f, _)| *f == format).unwrap();
-        documents.iter().map(Vec::len).sum()
+    /// Prints the total size of the documents of every format.
+    fn sizes(&self) {
+        for (format, documents) in &self.inputs {
+            let name = format!("{}/{}", self.name, format.name());
+            println!(
+                "{:<NAME_WIDTH$} {:>10} in {} documents",
+                name,
+                format_size(documents.iter().map(Vec::len).sum()),
+                documents.len()
+            );
+        }
     }
 }
 
@@ -426,6 +470,8 @@ struct Data {
     // synthetic data
     manifests: Dataset<manifests::ManifestList>,
     logs: Documents<logs::LogEvent>,
+    session_openai: Documents<sessions::Entry>,
+    session_anthropic: Documents<sessions::Entry>,
     table: Table,
     features: Dataset<datasets::FeatureCollection>,
     point_cloud: Dataset<datasets::PointCloud>,
@@ -464,6 +510,16 @@ impl Data {
                 .with_serde(),
             manifests: Dataset::new("manifests", manifests::manifests()).with_serde(),
             logs: Documents::new("logs", logs::events()),
+            session_openai: Documents::load_jsonl(
+                "session-openai",
+                "pi-sessions/openai.jsonl",
+                sessions::check,
+            ),
+            session_anthropic: Documents::load_jsonl(
+                "session-anthropic",
+                "pi-sessions/anthropic.jsonl",
+                sessions::check,
+            ),
             table: Table::new(),
             features: Dataset::new("features", datasets::features()).with_serde(),
             point_cloud: Dataset::new("point-cloud", datasets::point_cloud()).with_serde(),
@@ -498,6 +554,8 @@ impl Data {
         benches.add_deser_and_serde(&self.kubernetes);
         benches.add_deser_and_serde(&self.manifests);
         benches.add_documents(&self.logs);
+        benches.add_documents(&self.session_openai);
+        benches.add_documents(&self.session_anthropic);
         self.table.add_benches(&mut benches);
         benches.add_deser_and_serde(&self.features);
         benches.add_deser_and_serde(&self.point_cloud);
@@ -535,15 +593,9 @@ impl Data {
             self.registry,
             self.tree
         );
-        for format in Format::ALL {
-            let name = format!("{}/{}", self.logs.name, format.name());
-            println!(
-                "{:<NAME_WIDTH$} {:>10} in {} documents",
-                name,
-                format_size(self.logs.size(format)),
-                self.logs.values.len()
-            );
-        }
+        self.logs.sizes();
+        self.session_openai.sizes();
+        self.session_anthropic.sizes();
     }
 
     /// Prints how the output of deser and serde differs and whether they

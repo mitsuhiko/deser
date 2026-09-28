@@ -21,6 +21,10 @@
 # Every file is used for all formats: the benchmark converts it into the
 # other formats.
 #
+# The sessions of the pi coding agent in `pi-sessions` are not downloaded,
+# they were stripped of personal data with `scrub-pi-session.mjs` and are
+# left alone by this script.
+#
 # To update, change the pinned commits below and re-run the script.
 set -euo pipefail
 
@@ -47,7 +51,8 @@ fetch() {
   curl -fsSL -o "$dest" "https://raw.githubusercontent.com/$repo/$commit/$path"
 }
 
-rm -rf "$DATA"
+rm -rf "$DATA/json-benchmark" "$DATA/toml" "$DATA/serde-saphyr" "$DATA/github" \
+  "$DATA/kubernetes"
 mkdir -p "$DATA/json-benchmark" "$DATA/toml" "$DATA/serde-saphyr" "$DATA/github" \
   "$DATA/kubernetes"
 TMP="$(mktemp -d)"

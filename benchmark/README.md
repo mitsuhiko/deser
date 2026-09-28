@@ -38,6 +38,19 @@ The geometric mean over the 15 datasets, with the best and the worst one:
 * **Untagged enums** (cargo-manifest) are 1.43x slower in JSON and 1.54x
   in MessagePack, in the other formats they are faster.
 
+The two sessions of the pi coding agent are only benchmarked with JSON
+(line by line, like pi reads and writes them) and are not part of the
+geometric means above:
+
+| benchmark              | input    | de       | serde    | ratio | ser     | serde   | ratio |
+|------------------------|----------|----------|----------|-------|---------|---------|-------|
+| session-openai/json    | 18.9 MiB | 11.17 ms | 12.56 ms | 0.89x | 7.07 ms | 9.93 ms | 0.71x |
+| session-anthropic/json | 25.5 MiB | 4.09 ms  | 4.38 ms  | 0.93x | 3.14 ms | 8.43 ms | 0.37x |
+
+The OpenAI session is mostly text with many escapes (code, diffs, tool
+output and signatures which are JSON in strings), the Anthropic session
+is mostly base64 images.
+
 For the Twitter JSON document `cargo bench` also compares with miniserde:
 
 | library    | de       | ser      |
@@ -164,6 +177,20 @@ manifests (internally tagged by `kind`, flattened fields, see
 hundred bytes which are read and written one by one, which measures what
 a document costs (see `src/logs.rs`).  `table` is a table of 20,000 rows
 which only exists for CSV (see `src/table.rs`).
+
+`session-openai` and `session-anthropic` are two long sessions of the pi
+coding agent (`data/pi-sessions`), one with an OpenAI model (18.9 MiB in
+2,823 lines, 23 screenshots) and one with an Anthropic model (25.5 MiB in
+1,028 lines, 29 screenshots).  They were stripped of all personal data
+with `scripts/scrub-pi-session.mjs`: text is replaced by random words of
+the same length and case, ids by random ids and images by generated PNGs
+of about the same size, the structure, keys, numbers and escapes are
+kept.  Every line is an entry, fully typed after the TypeScript types of
+pi (see `src/sessions.rs`): internally tagged enums on three levels (entry,
+message, content), untagged enums for the arguments and details of tools,
+recursive JSON schemas and many optional fields.  When the data is loaded,
+every entry is serialized again and compared with its line, which makes
+sure that the types do not drop anything.
 
 A document is the input of its own format, the inputs of the other formats
 are serialized from it with deser.  Both libraries read the same input and
