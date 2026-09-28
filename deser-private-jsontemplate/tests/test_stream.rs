@@ -1,4 +1,4 @@
-use super::dialect;
+use super::{DIALECT, dialect};
 use deser::de::Recording;
 use deser::{Deserialize, ErrorKind};
 use dialect::{Deserializer, DeserializerConfig, Trailing};
@@ -37,6 +37,10 @@ fn test_default_is_strict() {
         ("truefalse", "1 column 5"),
         ("{}{}", "1 column 3"),
     ] {
+        // in Hjson these are strings without quotes
+        if DIALECT.hjson && !input.starts_with(['[', '{']) && !input.contains('\n') {
+            continue;
+        }
         assert_eq!(
             dialect::from_str::<Recording>(input)
                 .unwrap_err()
@@ -89,7 +93,12 @@ fn test_newline() {
     // a value per line
     assert_eq!(
         stream::<u32>(&NEWLINE, "1 2\n").unwrap_err(),
-        "Unexpected: expected end of line after value at line 1 column 3"
+        if DIALECT.hjson {
+            // a string without quotes
+            "Unexpected: unexpected string, expected u32 at line 1 column 1"
+        } else {
+            "Unexpected: expected end of line after value at line 1 column 3"
+        }
     );
     assert_eq!(
         stream::<Vec<u32>>(&NEWLINE, "[1,\n2]\n").unwrap_err(),
@@ -143,6 +152,10 @@ fn test_newline_from_slice() {
 
 #[test]
 fn test_stop() {
+    if DIALECT.hjson {
+        return test_stop_hjson();
+    }
+
     // stops right after the value
     let mut de = Deserializer::from_str_with_config("[1] trash", &STOP);
     assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1]);
@@ -170,6 +183,45 @@ fn test_stop() {
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
         "Unexpected: unexpected string, expected u32 at line 1 column 3"
+    );
+    assert!(de.is_end());
+    assert_eq!(
+        de.deserialize::<u32>().unwrap_err().to_string(),
+        "Unexpected: cannot continue after an error"
+    );
+}
+
+/// Numbers and literals without quotes end at the end of the line in Hjson,
+/// so values that follow them start on the next line.
+fn test_stop_hjson() {
+    // stops right after the value
+    let mut de = Deserializer::from_str_with_config("[1] trash", &STOP);
+    assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1]);
+    assert_eq!(de.offset(), 3);
+    assert_eq!(
+        de.end().unwrap_err().to_string(),
+        "Unexpected: garbage after input at line 1 column 5"
+    );
+    assert_eq!(STOP.from_str::<u32>("1 # c\ntrash").unwrap(), 1);
+    assert_eq!(STOP.from_slice::<u32>(b"1\n\xff").unwrap(), 1);
+    assert!(STOP.from_str::<u32>("1 trash").is_err());
+
+    // the next value continues after it
+    assert_eq!(
+        stream::<Recording>(&STOP, "[1]{\"a\":2}\"x\" 3\n4")
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(stream::<i32>(&STOP, "1\n-2").unwrap(), [1, -2]);
+    assert_eq!(stream::<String>(&STOP, "1-2").unwrap(), ["1-2"]);
+
+    // after an error the stream cannot continue
+    let mut de = Deserializer::from_str_with_config("1\n\"x\" 3", &STOP);
+    assert_eq!(de.deserialize::<u32>().unwrap(), 1);
+    assert_eq!(
+        de.deserialize::<u32>().unwrap_err().to_string(),
+        "Unexpected: unexpected string, expected u32 at line 2 column 1"
     );
     assert!(de.is_end());
     assert_eq!(

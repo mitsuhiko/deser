@@ -275,8 +275,8 @@ fn test_strings() {
     assert_eq!(s, "a longer string with \"escapes\" and \u{e9} and \\");
     let s: String = from_str("\"日本語のテキストもちゃんと動く\"").unwrap();
     assert_eq!(s, "日本語のテキストもちゃんと動く");
-    // JSON5 only disallows line breaks in strings
-    if !DIALECT.json5 {
+    // JSON5 and Hjson only disallow line breaks in strings
+    if !DIALECT.single_quotes {
         assert!(from_str::<String>("\"control \x01 character\"").is_err());
     }
     assert!(from_str::<String>("\"line \n break\"").is_err());
@@ -296,9 +296,12 @@ fn test_syntax_errors() {
     ] {
         assert!(from_str::<Vec<u32>>(json).is_err(), "accepted {:?}", json);
     }
+    // in Hjson `1` is a key without quotes
+    if !DIALECT.hjson {
+        assert!(from_str::<BTreeMap<String, u32>>(r#"{1: 2}"#).is_err());
+    }
     for json in [
         r#"{"a" 1}"#,
-        r#"{1: 2}"#,
         r#"{"a":"#,
         r#"{"a"}"#,
         r#"{,"a":1}"#,
@@ -672,14 +675,26 @@ fn test_error_locations() {
     }
 
     // syntax errors
-    assert_eq!(
-        fails::<Vec<u32>>("[1,\n 2 x]"),
-        "Unexpected: expected a comma at line 2 column 4"
-    );
-    assert_eq!(
-        fails::<Vec<u32>>("  \n  @"),
-        "Unexpected: unexpected character at line 2 column 3"
-    );
+    if DIALECT.hjson {
+        // `2 x]` is a string without quotes
+        assert_eq!(
+            fails::<Vec<u32>>("[1,\n 2 x]"),
+            "Unexpected: unexpected string, expected u32 at line 2 column 2"
+        );
+        assert_eq!(
+            fails::<Vec<u32>>("  \n  [:]"),
+            "Unexpected: unexpected colon at line 2 column 4"
+        );
+    } else {
+        assert_eq!(
+            fails::<Vec<u32>>("[1,\n 2 x]"),
+            "Unexpected: expected a comma at line 2 column 4"
+        );
+        assert_eq!(
+            fails::<Vec<u32>>("  \n  @"),
+            "Unexpected: unexpected character at line 2 column 3"
+        );
+    }
     assert_eq!(
         fails::<Vec<u32>>("[1, , 2]"),
         "Unexpected: unexpected comma at line 1 column 5"
@@ -865,7 +880,12 @@ fn test_error_messages() {
     );
     assert_eq!(
         msg(from_str::<f64>("1e400").unwrap_err()),
-        "number out of range"
+        // in Hjson numbers out of range are strings
+        if DIALECT.hjson {
+            "unexpected string, expected f64"
+        } else {
+            "number out of range"
+        }
     );
     assert_eq!(
         msg(from_str::<String>(r#""\ud800""#).unwrap_err()),

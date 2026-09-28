@@ -5,7 +5,9 @@ pub use deser_json5 as dialect;
 pub const DIALECT: crate::Dialect = crate::Dialect {
     comments: true,
     trailing_commas: true,
+    single_quotes: true,
     json5: true,
+    hjson: false,
 };
 
 #[path = "common.rs"]

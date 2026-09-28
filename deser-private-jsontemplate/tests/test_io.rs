@@ -3,11 +3,17 @@ use deser::io::Reader;
 use deser::{ErrorKind, Event};
 
 use super::common::{Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, events, read_chunked};
-use super::dialect;
+use super::{DIALECT, dialect};
 use dialect::SerializerConfig;
 
-const VALUES: &str = r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
-{"a": {"b": "}]"}, "c": [false]} "\u00e4ä" 42"#;
+const VALUES: &str = if DIALECT.hjson {
+    // numbers and literals end at the end of the line
+    " 1\n-2.5e3\n\"a\\\"b\\\\\" true\nnull\n[] {} [1, [2, [3]]]
+{\"a\": {\"b\": \"}]\"}, \"c\": [false]} \"\\u00e4ä\" 42"
+} else {
+    r#" 1 -2.5e3 "a\"b\\" true null [] {} [1, [2, [3]]]
+{"a": {"b": "}]"}, "c": [false]} "\u00e4ä" 42"#
+};
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
@@ -70,10 +76,16 @@ fn test_from_reader() {
     // `Trailing::Stop` reads the first value, but it must be the only one
     let value: u32 = STOP.from_reader(&b" 1 "[..]).unwrap();
     assert_eq!(value, 1);
-    let err = STOP.from_reader::<u32, _>(&b"1 2"[..]).unwrap_err();
+    // in Hjson numbers end at the end of the line
+    let (input, column): (&[u8], _) = if DIALECT.hjson {
+        (b"1\n2", "line 2 column 1")
+    } else {
+        (b"1 2", "line 1 column 3")
+    };
+    let err = STOP.from_reader::<u32, _>(input).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected value after the end at line 1 column 3"
+        format!("Unexpected: unexpected value after the end at {column}")
     );
 }
 
@@ -99,7 +111,12 @@ fn test_errors() {
             [
                 Ok(vec![1]),
                 Err("Unexpected: unexpected string, expected u32 at line 2 column 2".into()),
-                Err("Unexpected: unexpected character at line 3 column 7".into()),
+                Err(if DIALECT.hjson {
+                    // `x]` is a string without quotes
+                    "Unexpected: unexpected string, expected u32 at line 3 column 7".into()
+                } else {
+                    "Unexpected: unexpected character at line 3 column 7".into()
+                }),
                 Ok(vec![3]),
             ]
         );
@@ -184,8 +201,10 @@ fn test_generic_formats() {
     // the configurations deserialize from slices like `from_slice`
     let value: Vec<&str> = Decoder::from_slice(&STRICT, br#"["a", "b"]"#).unwrap();
     assert_eq!(value, ["a", "b"]);
-    assert!(Decoder::from_slice::<u32>(&STRICT, b"1 2").is_err());
-    assert_eq!(Decoder::from_slice::<u32>(&STOP, b"1 2").unwrap(), 1);
+    // in Hjson numbers end at the end of the line
+    let input: &[u8] = if DIALECT.hjson { b"1\n2" } else { b"1 2" };
+    assert!(Decoder::from_slice::<u32>(&STRICT, input).is_err());
+    assert_eq!(Decoder::from_slice::<u32>(&STOP, input).unwrap(), 1);
 }
 
 #[test]

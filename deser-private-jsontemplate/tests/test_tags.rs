@@ -1,5 +1,5 @@
 //! Variants named by integers and booleans.
-use super::dialect;
+use super::{DIALECT, dialect};
 use std::collections::BTreeMap;
 
 use deser::{Deserialize, Serialize};
@@ -39,7 +39,13 @@ fn test_unit_enums() {
     );
     assert_eq!(
         from_str::<Level>("1.5").unwrap_err().message(),
-        "unexpected float, expected Level"
+        // in Hjson numbers are implicit values, variants are looked up by
+        // their text too
+        if DIALECT.hjson {
+            "unknown variant `1.5` of Level, expected one of `0`, `1`, `-1`, `high`"
+        } else {
+            "unexpected float, expected Level"
+        }
     );
 
     // the keys of JSON objects are text of unknown type

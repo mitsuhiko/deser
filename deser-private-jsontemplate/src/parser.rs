@@ -18,8 +18,10 @@ use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
+#[cfg(hjson)]
+use deser_core::{Implicit, ImplicitValue};
 
-#[cfg(json5)]
+#[cfg(single_quotes)]
 use crate::scan::skip_to_escape_single;
 use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
 
@@ -179,6 +181,9 @@ enum Container {
     Top,
     Seq,
     Map,
+    /// A map without braces at the root, it ends at the end of the input.
+    #[cfg(hjson)]
+    Braceless,
 }
 
 /// What the parser expects next.
@@ -222,6 +227,10 @@ pub(crate) struct Parser {
     // the last error was an error of a sink, the rest of the value
     // continues at the position
     recoverable: Option<usize>,
+    // the number of characters of the line before the input that follows
+    // (the indentation of multiline strings is relative to their column)
+    #[cfg(hjson)]
+    column: usize,
 }
 
 impl Default for Parser {
@@ -233,6 +242,8 @@ impl Default for Parser {
             scratch: Vec::new(),
             partial: None,
             recoverable: None,
+            #[cfg(hjson)]
+            column: 0,
         }
     }
 }
@@ -275,6 +286,16 @@ impl Parser {
         self.recoverable
     }
 
+    /// Tells the parser that the input was consumed without it
+    /// suspending, for instance a complete value or the whitespace between
+    /// values in a stream.
+    ///
+    /// The parser tracks the column where the next input starts.
+    #[cfg(all(hjson, feature = "io"))]
+    pub(crate) fn advance(&mut self, input: &[u8]) {
+        self.column = advance_column(self.column, input);
+    }
+
     /// Parses a value (or continues it) from `input[pos..]`.
     ///
     /// `eof` is `true` if no input follows, `base` is the offset of the
@@ -302,6 +323,8 @@ impl Parser {
             truncated: false,
             #[cfg(comments)]
             eof,
+            #[cfg(hjson)]
+            column: self.column,
         };
         match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
@@ -330,6 +353,10 @@ impl Parser {
             ($consumed:expr, $expect:expr) => {{
                 self.container = container;
                 self.expect = $expect;
+                #[cfg(hjson)]
+                {
+                    self.column = advance_column(self.column, &input[..$consumed]);
+                }
                 return Ok(Progress::NeedMore($consumed));
             }};
         }
@@ -396,7 +423,7 @@ impl Parser {
                         cur.bump();
                         string!(start, Expect::Key)
                     }
-                    #[cfg(json5)]
+                    #[cfg(single_quotes)]
                     b'\'' => {
                         cur.bump();
                         string!(start, Expect::Key)
@@ -410,6 +437,21 @@ impl Parser {
                         }
                         rv?
                     }
+                    #[cfg(hjson)]
+                    b'{' | b'}' | b'[' | b']' | b',' | b':' => {
+                        return Err(token_error(base + start, "expected map key"));
+                    }
+                    // keys without quotes end at whitespace and punctuators
+                    #[cfg(hjson)]
+                    _ => {
+                        cur.hit_end = false;
+                        let rv = cur.parse_quoteless_key();
+                        if cur.hit_end && !eof {
+                            suspend!(start, Expect::Key)
+                        }
+                        rv?
+                    }
+                    #[cfg(not(hjson))]
                     _ => return Err(token_error(base + start, "expected map key")),
                 };
                 match key {
@@ -472,6 +514,37 @@ impl Parser {
             }};
         }
 
+        // skips whitespace and returns the next byte or `None` at the end
+        // of the input
+        #[cfg(hjson)]
+        macro_rules! next_byte_or_end {
+            ($expect:expr) => {
+                match cur.parse_whitespace() {
+                    Some(byte) => Some(byte),
+                    None if eof => None,
+                    None => suspend!(cur.pos, $expect),
+                }
+            };
+        }
+
+        // in a map without braces the map ends at the end of the input or
+        // the next key follows.  Evaluates to `true` if a value follows.
+        #[cfg(hjson)]
+        macro_rules! open_braceless {
+            () => {{
+                match next_byte_or_end!(Expect::KeyOrEnd) {
+                    Some(byte) => {
+                        key!(byte);
+                        true
+                    }
+                    None => {
+                        close!(cur.pos, Event::MapEnd);
+                        false
+                    }
+                }
+            }};
+        }
+
         // emits a string value, the cursor is after the opening quote
         macro_rules! string_value {
             ($start:expr) => {
@@ -493,6 +566,7 @@ impl Parser {
         }
 
         // emits a number, the cursor is after its first byte
+        #[cfg(not(hjson))]
         macro_rules! number {
             ($byte:expr, $start:expr) => {{
                 cur.number_start = $start;
@@ -523,10 +597,51 @@ impl Parser {
             }};
         }
 
+        // emits a value without quotes: a number, `true`, `false` or `null`
+        // if only whitespace, a comma, the end of a container or a comment
+        // follows it on the line, otherwise the rest of the line is a
+        // string.
+        #[cfg(hjson)]
+        macro_rules! quoteless {
+            ($start:expr) => {{
+                cur.pos = $start;
+                let rv = cur.parse_quoteless();
+                if cur.hit_end && !eof {
+                    suspend!($start, Expect::Value)
+                }
+                let value = rv?;
+                out.state_mut()
+                    .set_input_range(base + $start, base + cur.pos);
+                sink!(
+                    emit_quoteless(out, value, input, exact_numbers, $start, cur.pos),
+                    Expect::AfterValue
+                )
+            }};
+        }
+
+        // emits a multiline string, the cursor is after the first quote
+        #[cfg(hjson)]
+        macro_rules! multiline_string {
+            ($start:expr) => {{
+                cur.hit_end = false;
+                let rv = cur.parse_multiline_str(scratch, $start);
+                if cur.hit_end && !eof {
+                    suspend!($start, Expect::Value)
+                }
+                let val = rv?;
+                sink!(
+                    emit!(out, base, $start, cur.pos, Event::from(val)),
+                    Expect::AfterValue
+                )
+            }};
+        }
+
         // continue where the parser was suspended
         let mut skip_value = match self.expect {
             Expect::Value => false,
             Expect::ValueOrEnd => !open_seq!(),
+            #[cfg(hjson)]
+            Expect::KeyOrEnd if container == Container::Braceless => !open_braceless!(),
             Expect::KeyOrEnd => !open_map!(),
             Expect::Key => {
                 let byte = if partial.is_some() {
@@ -551,6 +666,25 @@ impl Parser {
                 } else {
                     next_byte!(Expect::Value)
                 };
+                // a map key at the root starts a map without braces
+                #[cfg(hjson)]
+                if container == Container::Top && partial.is_none() && byte != b'{' && byte != b'['
+                {
+                    match cur.is_map_key() {
+                        Some(true) => {
+                            stack.push(container);
+                            container = Container::Braceless;
+                            sink!(
+                                emit!(out, base, cur.pos, cur.pos, Event::map_start()),
+                                Expect::KeyOrEnd
+                            );
+                            key!(byte);
+                            continue 'value;
+                        }
+                        Some(false) => {}
+                        None => suspend!(cur.pos, Expect::Value),
+                    }
+                }
                 let start = cur.pos;
                 cur.bump();
                 cur.hit_end = false;
@@ -558,10 +692,19 @@ impl Parser {
                     b'"' => string_value!(start),
                     #[cfg(json5)]
                     b'\'' => string_value!(start),
+                    // `'''` starts a multiline string
+                    #[cfg(hjson)]
+                    b'\'' => match input.get(start + 1..start + 3) {
+                        Some(b"''") => multiline_string!(start),
+                        None if !eof => suspend!(start, Expect::Value),
+                        _ => string_value!(start),
+                    },
+                    #[cfg(not(hjson))]
                     b'0'..=b'9' | b'-' => number!(byte, start),
                     // `+1`, `.5`, `Infinity` and `NaN`
                     #[cfg(json5)]
                     b'+' | b'.' | b'I' | b'N' => number!(byte, start),
+                    #[cfg(not(hjson))]
                     b'n' | b't' | b'f' => {
                         let (rest, event): (&[u8], _) = match byte {
                             b'n' => (b"ull", Event::Atom(Atom::Null)),
@@ -600,7 +743,10 @@ impl Parser {
                     b',' => return Err(token_error(base + start, "unexpected comma")),
                     b':' => return Err(token_error(base + start, "unexpected colon")),
                     b']' | b'}' => return Err(token_error(base + start, "expected a value")),
+                    #[cfg(not(hjson))]
                     _ => return Err(token_error(base + start, "unexpected character")),
+                    #[cfg(hjson)]
+                    _ => quoteless!(start),
                 }
             }
             skip_value = false;
@@ -616,6 +762,17 @@ impl Parser {
                     }
                     Container::Map => b'}',
                     Container::Seq => b']',
+                    // the comma is optional
+                    #[cfg(hjson)]
+                    Container::Braceless => {
+                        if next_byte_or_end!(Expect::AfterValue) == Some(b',') {
+                            cur.bump();
+                        }
+                        if open_braceless!() {
+                            continue 'value;
+                        }
+                        continue;
+                    }
                 };
                 match next_byte!(Expect::AfterValue) {
                     b',' => {
@@ -663,8 +820,17 @@ impl Parser {
                             },
                         ));
                     }
+                    #[cfg(not(hjson))]
                     _ => {
                         return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
+                    }
+                    // the comma between values is optional
+                    #[cfg(hjson)]
+                    byte => {
+                        if container == Container::Map {
+                            key!(byte);
+                        }
+                        continue 'value;
                     }
                 }
             }
@@ -694,6 +860,9 @@ pub(crate) struct Cursor<'a> {
     // `true` if no input follows, a comment at the end is complete
     #[cfg(comments)]
     eof: bool,
+    // the number of characters of the line before the input
+    #[cfg(hjson)]
+    column: usize,
 }
 
 /// A comment in the input (see [`Cursor::skip_comment`]).
@@ -722,6 +891,8 @@ impl<'a> Cursor<'a> {
             truncated: false,
             #[cfg(comments)]
             eof: true,
+            #[cfg(hjson)]
+            column: 0,
         }
     }
 
@@ -778,15 +949,15 @@ impl<'a> Cursor<'a> {
         };
 
         // strings in single quotes end at a single quote
-        #[cfg(json5)]
+        #[cfg(single_quotes)]
         let single = self.input[start] == b'\'';
 
         loop {
-            #[cfg(not(json5))]
+            #[cfg(not(single_quotes))]
             {
                 self.pos = skip_to_escape(self.input, self.pos);
             }
-            #[cfg(json5)]
+            #[cfg(single_quotes)]
             {
                 self.pos = if single {
                     skip_to_escape_single(self.input, self.pos)
@@ -804,7 +975,7 @@ impl<'a> Cursor<'a> {
             }
             let byte = self.input[self.pos];
             // the closing single quote is handled like a double quote
-            #[cfg(json5)]
+            #[cfg(single_quotes)]
             let byte = if single && byte == b'\'' { b'"' } else { byte };
             match byte {
                 b'"' => {
@@ -833,7 +1004,7 @@ impl<'a> Cursor<'a> {
                     copied = self.pos;
                 }
                 // control characters other than line breaks are allowed
-                #[cfg(json5)]
+                #[cfg(single_quotes)]
                 byte if byte != b'\n' && byte != b'\r' => self.pos += 1,
                 _ => {
                     return Err(Error::new(
@@ -955,7 +1126,7 @@ impl<'a> Cursor<'a> {
 
                 buffer.extend_from_slice(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
             }
-            #[cfg(json5)]
+            #[cfg(single_quotes)]
             b'\'' => buffer.push(b'\''),
             #[cfg(json5)]
             b'v' => buffer.push(b'\x0b'),
@@ -1085,6 +1256,219 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// Parses a map key without quotes.
+    ///
+    /// The key ends at whitespace or a punctuator (`{}[],:`), it's
+    /// borrowed from the input.
+    #[cfg(hjson)]
+    fn parse_quoteless_key<'b>(&mut self) -> Result<Str<'a, 'b>, Error> {
+        let input = self.input;
+        let start = self.pos;
+        let len = input[start..]
+            .iter()
+            .position(|&byte| !is_key_byte(byte))
+            .unwrap_or_else(|| {
+                // the key might continue
+                self.hit_end = true;
+                input.len() - start
+            });
+        self.pos = start + len;
+        let key = &input[start..self.pos];
+        if self.validate_utf8 && !is_ascii(key) && !validate_utf8_slice(key) {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "invalid utf-8 in map key",
+            ));
+        }
+        // SAFETY: the key is valid UTF-8 as it comes from a `&str` or was
+        // validated above, it ends at an ASCII character
+        Ok(Str::Borrowed(unsafe { str::from_utf8_unchecked(key) }))
+    }
+
+    /// Returns `true` if a map key followed by a colon is at the cursor.
+    ///
+    /// This tells if the value at the root is a map without braces.
+    /// Returns `None` if more input is needed to tell.
+    #[cfg(hjson)]
+    fn is_map_key(&self) -> Option<bool> {
+        let input = self.input;
+        let incomplete = || if self.eof { Some(false) } else { None };
+        let mut pos = self.pos;
+        match input[pos] {
+            quote @ (b'"' | b'\'') => loop {
+                pos += 1;
+                match input.get(pos) {
+                    Some(b'\\') => pos += 1,
+                    Some(&byte) if byte == quote => {
+                        pos += 1;
+                        break;
+                    }
+                    // an invalid string, the parser reports the error
+                    Some(b'\n' | b'\r') => return Some(false),
+                    Some(_) => {}
+                    None => return incomplete(),
+                }
+            },
+            _ => match input[pos..].iter().position(|&byte| !is_key_byte(byte)) {
+                Some(0) => return Some(false),
+                Some(len) => pos += len,
+                None => return incomplete(),
+            },
+        }
+        let mut cur = Cursor::new(input, pos);
+        cur.eof = self.eof;
+        match cur.parse_whitespace() {
+            Some(byte) => Some(byte == b':'),
+            None => incomplete(),
+        }
+    }
+
+    /// Parses a value without quotes, the cursor is at its start.
+    ///
+    /// Numbers and literals are complete once the byte after them (and
+    /// after the whitespace that follows) is known, strings once the line
+    /// is complete.  If more input is needed, `hit_end` is set.
+    #[cfg(hjson)]
+    fn parse_quoteless(&mut self) -> Result<Quoteless<'a>, Error> {
+        let input = self.input;
+        let start = self.pos;
+        let value = match input[start] {
+            byte @ (b'-' | b'0'..=b'9') => {
+                self.number_start = start;
+                self.truncated = false;
+                self.bump();
+                let rv = if byte == b'-' {
+                    let first_digit = self.next_or_nul();
+                    self.parse_integer(false, first_digit)
+                } else {
+                    self.parse_integer(true, byte)
+                };
+                rv.ok().map(Quoteless::Number)
+            }
+            byte @ (b't' | b'f' | b'n') => {
+                let (word, value): (&[u8], _) = match byte {
+                    b't' => (b"true", ImplicitValue::Bool(true)),
+                    b'f' => (b"false", ImplicitValue::Bool(false)),
+                    _ => (b"null", ImplicitValue::Null),
+                };
+                let rest = &input[start..];
+                if rest.starts_with(word) {
+                    self.pos = start + word.len();
+                    Some(Quoteless::Literal(value))
+                } else {
+                    // the word might continue
+                    self.hit_end |= word.starts_with(rest);
+                    None
+                }
+            }
+            _ => None,
+        };
+        // `5 times` is a string, `5 # times` is a number
+        if let Some(value) = value {
+            let pos = input[self.pos..]
+                .iter()
+                .position(|&byte| byte != b' ' && byte != b'\t')
+                .map_or(input.len(), |index| self.pos + index);
+            match input[pos..] {
+                [b',' | b']' | b'}' | b'#' | b'\n' | b'\r', ..] | [b'/', b'/' | b'*', ..] => {
+                    return Ok(value);
+                }
+                [] if self.eof => return Ok(value),
+                // what follows is not known yet
+                [] | [b'/'] => self.hit_end = true,
+                _ => {}
+            }
+        }
+
+        // the string ends at the end of the line
+        let end = match line_end(input, start) {
+            Some(end) => end,
+            None => {
+                self.hit_end = true;
+                input.len()
+            }
+        };
+        // the whitespace at the end is not part of the string
+        let mut stop = end;
+        while matches!(input[stop - 1], b' ' | b'\t') {
+            stop -= 1;
+        }
+        let bytes = &input[start..stop];
+        if self.validate_utf8 && !is_ascii(bytes) && !validate_utf8_slice(bytes) {
+            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+        }
+        self.pos = stop;
+        // SAFETY: the input is valid UTF-8 as it comes from a `&str` or was
+        // validated above, the string ends at an ASCII character
+        Ok(Quoteless::Str(unsafe { str::from_utf8_unchecked(bytes) }))
+    }
+
+    /// Parses a multiline string, the cursor is after the first of the
+    /// three quotes at `start`.
+    ///
+    /// Whitespace after the opening quotes and the indentation up to the
+    /// column of the opening quotes are removed, as are carriage returns
+    /// and the last line break.
+    #[cfg(hjson)]
+    fn parse_multiline_str<'b>(
+        &mut self,
+        buffer: &'b mut Vec<u8>,
+        start: usize,
+    ) -> Result<&'b str, Error> {
+        let input = self.input;
+        let content = start + 3;
+        let Some(len) = input[content..].windows(3).position(|w| w == b"'''") else {
+            self.hit_end = true;
+            self.pos = input.len();
+            return Err(eof_error());
+        };
+        let close = content + len;
+        let text = &input[content..close];
+        if self.validate_utf8 && !is_ascii(text) && !validate_utf8_slice(text) {
+            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+        }
+        let indent = match input[..start].iter().rposition(|&byte| byte == b'\n') {
+            Some(index) => count_chars(&input[index + 1..start]),
+            None => self.column + count_chars(&input[..start]),
+        };
+        // skips whitespace up to the column of the quotes
+        let skip_indent = |mut pos: usize| {
+            let limit = (pos + indent).min(close);
+            while pos < limit && input[pos] <= b' ' && input[pos] != b'\n' {
+                pos += 1;
+            }
+            pos
+        };
+
+        buffer.clear();
+        let mut pos = content;
+        while pos < close && input[pos] <= b' ' && input[pos] != b'\n' {
+            pos += 1;
+        }
+        if pos < close && input[pos] == b'\n' {
+            pos = skip_indent(pos + 1);
+        }
+        while pos < close {
+            match input[pos] {
+                b'\n' => {
+                    buffer.push(b'\n');
+                    pos = skip_indent(pos + 1);
+                }
+                b'\r' => pos += 1,
+                byte => {
+                    buffer.push(byte);
+                    pos += 1;
+                }
+            }
+        }
+        if buffer.last() == Some(&b'\n') {
+            buffer.pop();
+        }
+        self.pos = close + 3;
+        // SAFETY: the text was validated, only ASCII characters were removed
+        Ok(unsafe { str::from_utf8_unchecked(buffer) })
+    }
+
     fn decode_hex_escape(&mut self) -> Result<u16, Error> {
         let mut n = 0;
         for _ in 0..4 {
@@ -1125,8 +1509,23 @@ impl<'a> Cursor<'a> {
                 // vertical tab and form feed
                 #[cfg(json5)]
                 Some(0x0b | 0x0c) => pos += 1,
-                #[cfg(comments)]
+                #[cfg(all(comments, not(hjson)))]
                 Some(b'/') => match self.skip_comment(pos) {
+                    Comment::End(end) => pos = end,
+                    // the comment is scanned again with more input
+                    Comment::Incomplete => {
+                        self.pos = pos;
+                        self.hit_end = true;
+                        return None;
+                    }
+                    Comment::Invalid(pos) => {
+                        self.pos = pos;
+                        return Some(input[pos]);
+                    }
+                },
+                // `#` starts a line comment too
+                #[cfg(hjson)]
+                Some(b'/' | b'#') => match self.skip_comment(pos) {
                     Comment::End(end) => pos = end,
                     // the comment is scanned again with more input
                     Comment::Incomplete => {
@@ -1171,7 +1570,15 @@ impl<'a> Cursor<'a> {
     #[cold]
     fn skip_comment(&self, pos: usize) -> Comment {
         let input = self.input;
+        #[cfg(hjson)]
+        let hash = input[pos] == b'#';
         let end = match input.get(pos + 1) {
+            #[cfg(hjson)]
+            _ if hash => match line_comment_len(&input[pos + 1..]) {
+                Some(len) => pos + 1 + len,
+                None if self.eof => input.len(),
+                None => return Comment::Incomplete,
+            },
             Some(b'/') => match line_comment_len(&input[pos + 2..]) {
                 Some(len) => pos + 2 + len,
                 None if self.eof => input.len(),
@@ -1198,6 +1605,7 @@ impl<'a> Cursor<'a> {
         Comment::End(end)
     }
 
+    #[cfg(not(hjson))]
     fn parse_ident(&mut self, ident: &[u8]) -> Result<(), Error> {
         for expected in ident {
             match self.next() {
@@ -1836,6 +2244,78 @@ fn emit_big_int<'i, O: Out<'i>>(out: &mut O, text: &str) -> Result<(), Error> {
     }
 }
 
+/// A value without quotes.
+#[cfg(hjson)]
+enum Quoteless<'a> {
+    Str(&'a str),
+    /// `true`, `false` or `null`.
+    Literal(ImplicitValue),
+    Number(Number<'a>),
+}
+
+/// Emits a value without quotes.
+///
+/// Hjson infers the type of numbers, `true`, `false` and `null` from their
+/// text, they are passed on as implicit values (a string receives the
+/// text).  Integers that do not fit into 64 bits and, with exact numbers,
+/// floats whose text cannot be recovered from their value are passed on as
+/// in JSON.
+#[cfg(hjson)]
+#[inline(never)]
+fn emit_quoteless<'i, O: Out<'i>>(
+    out: &mut O,
+    value: Quoteless<'i>,
+    input: &'i [u8],
+    exact_numbers: bool,
+    start: usize,
+    end: usize,
+) -> Result<(), Error> {
+    let value = match value {
+        Quoteless::Str(value) => return out.emit_input(Atom::Str(Text::borrowed(value))),
+        Quoteless::Literal(value) => value,
+        Quoteless::Number(Number::U64(value)) => ImplicitValue::U64(value),
+        Quoteless::Number(Number::I64(value)) => ImplicitValue::I64(value),
+        Quoteless::Number(Number::F64(value)) => ImplicitValue::F64(value),
+        Quoteless::Number(Number::Literal(value)) if !exact_numbers => ImplicitValue::F64(value),
+        Quoteless::Number(number) => {
+            return emit_number(out, number, input, exact_numbers, start, end);
+        }
+    };
+    // SAFETY: numbers and literals only consist of ASCII characters
+    let text = unsafe { str::from_utf8_unchecked(&input[start..end]) };
+    out.emit_input(Atom::Implicit(Implicit::new(Text::borrowed(text), value)))
+}
+
+/// Returns the position of the line break that ends the line at `pos`.
+#[cfg(hjson)]
+fn line_end(input: &[u8], pos: usize) -> Option<usize> {
+    input[pos..]
+        .iter()
+        .position(|&byte| byte == b'\n' || byte == b'\r')
+        .map(|index| pos + index)
+}
+
+/// Returns `true` if the byte can be part of a map key without quotes.
+#[cfg(hjson)]
+fn is_key_byte(byte: u8) -> bool {
+    byte > b' ' && !matches!(byte, b'{' | b'}' | b'[' | b']' | b',' | b':')
+}
+
+/// Returns the number of characters in valid UTF-8.
+#[cfg(hjson)]
+fn count_chars(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|&&byte| byte & 0xc0 != 0x80).count()
+}
+
+/// Returns the column after the input starting at `column`.
+#[cfg(hjson)]
+fn advance_column(column: usize, input: &[u8]) -> usize {
+    match input.iter().rposition(|&byte| byte == b'\n') {
+        Some(index) => count_chars(&input[index + 1..]),
+        None => column + count_chars(input),
+    }
+}
+
 /// Returns the length of the rest of a line comment (after the slashes)
 /// including the line break that ends it.
 #[cfg(comments)]
@@ -2089,6 +2569,14 @@ mod tests {
             Ok(value) if value.is_finite() => {
                 assert_eq!(parse(text).map(f64::to_bits), Ok(value.to_bits()), "{text}");
             }
+            // numbers out of range are strings
+            #[cfg(hjson)]
+            _ => assert_eq!(
+                parse(text),
+                Err("unexpected string, expected f64".into()),
+                "{text}"
+            ),
+            #[cfg(not(hjson))]
             _ => assert_eq!(parse(text), Err("number out of range".into()), "{text}"),
         };
         for text in [
@@ -2219,6 +2707,7 @@ mod tests {
             ),
             ("/* ä */ [/* 😀 */]", "[]"),
         ]);
+        #[cfg(not(hjson))]
         assert_errors(&[
             ("[1 /* c", "unexpected end of file"),
             ("[1 / 2]", "expected a comma"),
@@ -2317,6 +2806,65 @@ mod tests {
         ]);
     }
 
+    #[test]
+    #[cfg(hjson)]
+    fn test_hjson() {
+        assert_like_json(&[
+            // comments
+            ("# c\n1 # c", "1"),
+            ("[1 # c\n, 2 // c\n, 3 /* c */]", "[1, 2, 3]"),
+            // strings without quotes run to the end of the line
+            (
+                "[\n  a b \t\n  c, d # e ] // f\n  3 # c\n  true\n  4 5\n  nulls\n]",
+                r#"["a b", "c, d # e ] // f", 3, true, "4 5", "nulls"]"#,
+            ),
+            (
+                "[\n  -0\n  01\n  1e999\n  .5\n  1.\n  -\n  0x1\n]",
+                r#"[-0, "01", "1e999", ".5", "1.", "-", "0x1"]"#,
+            ),
+            ("[\n  ä ö\r\n  😀\r]", r#"["ä ö", "😀"]"#),
+            // optional commas
+            (
+                r#"{"a": "b" "c": ["d" 'e']}"#,
+                r#"{"a": "b", "c": ["d", "e"]}"#,
+            ),
+            ("{\na: 1\nb: [\n2\n3\n]\n}", r#"{"a": 1, "b": [2, 3]}"#),
+            // keys
+            (
+                "{a-b: 1, 'c d': 2, \"e\": 3, é/#*.: 4\n  f\n  :\n  5}",
+                r#"{"a-b": 1, "c d": 2, "e": 3, "é/#*.": 4, "f": 5}"#,
+            ),
+            // multiline strings
+            ("x:\n  '''\n  a\n   b\n\n  '''", r#"{"x": "a\n b\n"}"#),
+            (
+                "x: '''  \r\n     a\r\n    b'c''d'''",
+                r#"{"x": "  a\n b'c''d"}"#,
+            ),
+            ("'''a'''", r#""a""#),
+            ("ä: '''\n    a\n   '''", r#"{"ä": " a"}"#),
+            ("[''' a ''', '''''']", r#"["a ", ""]"#),
+            // maps without braces
+            ("a: 1\nb: 2", r#"{"a": 1, "b": 2}"#),
+            ("a: 1, b: x,\n", r#"{"a": 1, "b": "x,"}"#),
+            ("\"a\" : [\n]\n'b': {}", r#"{"a": [], "b": {}}"#),
+            ("a b: c", r#""a b: c""#),
+        ]);
+        assert_errors(&[
+            ("{a b: 1}", "expected colon"),
+            ("{:1}", "expected map key"),
+            ("{a,: 1}", "expected colon"),
+            ("a: 1\n}", "expected map key"),
+            ("[a", "unexpected end of file"),
+            ("{a: 1", "unexpected end of file"),
+            ("a:", "unexpected end of file"),
+            ("'''abc''", "unexpected end of file"),
+            ("[1,,2]", "unexpected comma"),
+            ("x: ]", "expected a value"),
+            ("x: \"a\nb\"", "unexpected character in string"),
+            (r#"x: "\x""#, "invalid escape in string"),
+        ]);
+    }
+
     /// Returns `2^exp` exactly (`powi` may be imprecise, and is in miri).
     #[cfg(json5)]
     fn pow2(exp: u64) -> f64 {
@@ -2354,7 +2902,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(comments)]
+    #[cfg(all(comments, not(hjson)))]
     fn test_line_scan() {
         fn lines(input: &str) -> Vec<&str> {
             let mut rv = Vec::new();

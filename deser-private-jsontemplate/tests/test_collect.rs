@@ -1,5 +1,5 @@
 //! Tests for collecting errors (see `State::set_collect_errors`).
-use super::dialect;
+use super::{DIALECT, dialect};
 use std::collections::BTreeMap;
 
 use deser::{Deserialize, Error};
@@ -15,6 +15,17 @@ fn collect<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
 fn errors<T: std::fmt::Debug>(rv: Result<T, Error>) -> Vec<String> {
     rv.unwrap_err()
         .errors()
+        .map(|err| err.to_string())
+        .collect()
+}
+
+/// Returns the expected errors of the dialect.
+///
+/// In Hjson numbers are implicit values, strings receive their text.
+fn expected_errors(errors: &[&str]) -> Vec<String> {
+    errors
+        .iter()
+        .filter(|err| !(DIALECT.hjson && err.contains("integer, expected string")))
         .map(|err| err.to_string())
         .collect()
 }
@@ -41,7 +52,7 @@ fn test_collect_errors() {
     );
     assert_eq!(
         errors(rv),
-        [
+        expected_errors(&[
             "Unexpected: unexpected unsigned integer, expected string at line 2 column 12",
             "Unexpected: unexpected string, expected u16 at line 2 column 23",
             "Unexpected: unexpected unsigned integer, expected string at line 2 column 42",
@@ -50,7 +61,7 @@ fn test_collect_errors() {
             "MissingField: missing field `host` at line 4 column 14",
             "MissingField: missing field `port` at line 4 column 14",
             "OutOfRange: invalid value -1, expected u16 at line 5 column 60",
-        ]
+        ])
     );
 }
 
@@ -216,6 +227,18 @@ fn test_collect_flatten() {
     // errors of the keys flattened fields take are theirs, fields that
     // failed are not missing
     let rv = collect::<Outer>(r#"{"a": "x", "name": 1, "other": "y", "more": 2}"#);
+    if DIALECT.hjson {
+        // `name` receives the text of the number, like it does for
+        // `"name": "1"` in JSON the error of `other` is not reported then
+        assert_eq!(
+            errors(rv),
+            [
+                "Unexpected: unexpected string, expected u32 at line 1 column 7",
+                "MissingField: missing field `b` at line 1 column 46",
+            ]
+        );
+        return;
+    }
     assert_eq!(
         errors(rv),
         [

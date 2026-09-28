@@ -4,6 +4,13 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-hjson` for [Hjson](https://hjson.github.io/): comments
+  with `#`, optional commas, keys and strings without quotes (which end
+  at the end of the line), multiline strings and maps without braces at
+  the root.  Numbers, `true`, `false` and `null` without quotes are
+  implicit values, a `String` receives their text.  Like the JSONC and
+  JSON5 parsers it is generated from the parser of `deser-json`, which is
+  unchanged, and it passes the Hjson test suite.
 - Added `deser-xml` for XML, built on quick-xml.  An element is its text
   or, if it has attributes or child elements, a multimap with attributes
   as `@name` entries, child elements under their names and text as

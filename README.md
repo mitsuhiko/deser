@@ -43,7 +43,10 @@ The same type works unchanged with
 [`deser-msgpack`](https://docs.rs/deser-msgpack),
 [`deser-xml`](https://docs.rs/deser-xml),
 [`deser-urlencoded`](https://docs.rs/deser-urlencoded) and (as long as it's
-flat) [`deser-csv`](https://docs.rs/deser-csv).  Deriving requires the `derive`
+flat) [`deser-csv`](https://docs.rs/deser-csv).  Configuration files in the
+JSON dialects are read with [`deser-jsonc`](https://docs.rs/deser-jsonc),
+[`deser-json5`](https://docs.rs/deser-json5) and
+[`deser-hjson`](https://docs.rs/deser-hjson).  Deriving requires the `derive`
 feature, which is not enabled by default:
 
 ```sh
@@ -274,7 +277,7 @@ Every format has the same pieces:
   XML does not support streams yet and only has `from_str`, `from_slice`,
   `to_string` and a `Deserializer`.
 * Without the `std` feature (enabled by default) deser and the JSON, JSONC,
-  JSON5, CBOR, MessagePack and CSV crates only need `alloc` and work on
+  JSON5, Hjson, CBOR, MessagePack and CSV crates only need `alloc` and work on
   targets without an operating system (see
   [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 
@@ -415,6 +418,7 @@ Formats:
 * [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json): JSON
 * [deser-jsonc](https://github.com/mitsuhiko/deser/tree/main/deser-jsonc): JSONC (JSON with comments)
 * [deser-json5](https://github.com/mitsuhiko/deser/tree/main/deser-json5): JSON5
+* [deser-hjson](https://github.com/mitsuhiko/deser/tree/main/deser-hjson): Hjson
 * [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml): YAML
 * [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml): TOML
 * [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor): CBOR

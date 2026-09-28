@@ -58,15 +58,22 @@ CAPABILITIES = {
     "comments",
     # a comma after the last element of a sequence or map
     "trailing_commas",
-    # the rest of JSON5: single quoted strings, identifiers as keys, more
-    # number formats and escapes, `Infinity` and `NaN`
+    # strings in single quotes (and the escape `\'`), strings can contain
+    # control characters other than line breaks
+    "single_quotes",
+    # the rest of JSON5: identifiers as keys, more number formats and
+    # escapes, `Infinity` and `NaN`
     "json5",
+    # the rest of Hjson: quoteless strings and keys, multiline strings, `#`
+    # comments, optional commas and maps without braces at the root
+    "hjson",
 }
 
 DIALECTS = {
     "deser-json": set(),
     "deser-jsonc": {"comments", "trailing_commas"},
-    "deser-json5": {"comments", "trailing_commas", "json5"},
+    "deser-json5": {"comments", "trailing_commas", "single_quotes", "json5"},
+    "deser-hjson": {"comments", "trailing_commas", "single_quotes", "hjson"},
 }
 
 FILES = ["de.rs", "io.rs", "parser.rs", "scan.rs"]

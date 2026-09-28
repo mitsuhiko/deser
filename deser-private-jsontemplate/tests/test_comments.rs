@@ -1,4 +1,4 @@
-//! Comments and trailing commas (JSONC and JSON5).
+//! Comments and trailing commas (JSONC, JSON5 and Hjson).
 use std::collections::BTreeMap;
 
 use deser::Deserialize;
@@ -7,7 +7,7 @@ use deser::io::Reader;
 use deser_location::Spanned;
 
 use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream};
-use super::dialect;
+use super::{DIALECT, dialect};
 use dialect::{Deserializer, DeserializerConfig, Trailing, from_slice, from_str};
 
 #[test]
@@ -60,7 +60,12 @@ fn test_errors() {
         "unexpected end of file at 1:5"
     );
     assert_eq!(fails("[1] /* unterminated"), "garbage after input at 1:5");
-    assert_eq!(fails("[1 / 2]"), "expected a comma at 1:4");
+    if DIALECT.hjson {
+        // a string without quotes
+        assert_eq!(fails("[1 / 2]"), "unexpected string, expected u32 at 1:2");
+    } else {
+        assert_eq!(fails("[1 / 2]"), "expected a comma at 1:4");
+    }
     assert_eq!(fails("[1, 2,,]"), "unexpected comma at 1:7");
     assert_eq!(fails("[,]"), "unexpected comma at 1:2");
     // comments are not whitespace within tokens
@@ -151,7 +156,11 @@ fn test_newline() {
         2,
     );
     // line breaks in comments do not end the line, strings can contain
-    // what looks like a comment
+    // what looks like a comment.  In Hjson every line break ends the line
+    // as strings without quotes can contain what looks like a comment.
+    if DIALECT.hjson {
+        return;
+    }
     check_stream(
         &NEWLINE,
         "/* a\n b */ [1, /* c\n */ 2]\n\"/*\"\n{\"a\": \"*/\"} // d\n/* e\n*/\n3",

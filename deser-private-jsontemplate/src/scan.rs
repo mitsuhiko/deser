@@ -30,7 +30,7 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
 /// Returns the index of the first byte at or after `pos` which needs special
 /// handling within a string in single quotes (a single quote, a backslash or
 /// a control character).
-#[cfg(json5)]
+#[cfg(single_quotes)]
 pub fn skip_to_escape_single(input: &[u8], mut pos: usize) -> usize {
     while pos < input.len() && !matches!(input[pos], b'\'' | b'\\' | 0x00..=0x1f) {
         pos += 1;
@@ -43,7 +43,10 @@ pub fn skip_to_escape_single(input: &[u8], mut pos: usize) -> usize {
 /// Only line breaks outside of comments and strings end a line, so a
 /// comment can span lines and a string can contain what looks like a
 /// comment.  The scan can be continued with more input.
-#[cfg(comments)]
+//#
+//# In Hjson strings without quotes can contain what looks like a comment
+//# or a quote, there every line break ends the line.
+#[cfg(all(comments, not(hjson)))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum LineScan {
     #[default]
@@ -63,7 +66,7 @@ pub enum LineScan {
     StrEscapeCr(u8),
 }
 
-#[cfg(comments)]
+#[cfg(all(comments, not(hjson)))]
 impl LineScan {
     /// Returns the position of the line feed that ends the line.
     ///
@@ -80,7 +83,7 @@ impl LineScan {
                 }
                 (LineScan::Code, b'/') => LineScan::Slash,
                 (LineScan::Code, b'"') => LineScan::Str(b'"'),
-                #[cfg(json5)]
+                #[cfg(single_quotes)]
                 (LineScan::Code, b'\'') => LineScan::Str(b'\''),
                 (LineScan::Code, _) => LineScan::Code,
                 (LineScan::Slash, b'/') => LineScan::LineComment,

@@ -1,5 +1,5 @@
-//! The template of the parsers of `deser-json`, `deser-jsonc` and
-//! `deser-json5`.
+//! The template of the parsers of `deser-json`, `deser-jsonc`,
+//! `deser-json5` and `deser-hjson`.
 //!
 //! This crate is not published and not used by anything.  The modules
 //! other than this one are the source the parsers of the dialect crates are
@@ -7,8 +7,8 @@
 //! mirrors the `lib.rs` of the dialect crates just enough for the template
 //! to compile (as the dialect with all capabilities).
 //!
-//! The integration tests of this crate are the tests of reading JSON, JSONC
-//! and JSON5 (see `tests/integration.rs`).
+//! The integration tests of this crate are the tests of reading JSON,
+//! JSONC, JSON5 and Hjson (see `tests/integration.rs`).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 

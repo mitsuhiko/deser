@@ -11,13 +11,14 @@ use crate::de::{Deserializer, DeserializerConfig};
 #[cfg(comments)]
 use crate::parser::Cursor;
 use crate::parser::{Copying, Discard, Options, Parser, Progress as ParseProgress};
-#[cfg(comments)]
+#[cfg(all(comments, not(hjson)))]
 use crate::scan::LineScan;
+#[cfg(not(hjson))]
 use crate::scan::skip_to_escape;
 #[cfg(json5)]
 use crate::scan::skip_to_escape_single;
 
-#[cfg(not(json5))]
+#[cfg(not(any(json5, hjson)))]
 fn is_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
 }
@@ -71,13 +72,14 @@ pub struct StreamState {
     // the position up to which the input was scanned
     pos: usize,
     // `Trailing::Newline`: the scan of the current line
-    #[cfg(comments)]
+    #[cfg(all(comments, not(hjson)))]
     line: LineScan,
     // `Trailing::Stop`: the value being scanned
     value: Option<Value>,
 }
 
 /// The state of the scan of a value.
+#[cfg(not(hjson))]
 #[derive(Debug)]
 struct Value {
     start: usize,
@@ -89,6 +91,7 @@ struct Value {
     single: bool,
 }
 
+#[cfg(not(hjson))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ValueKind {
     /// A number or literal.
@@ -139,13 +142,14 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
 }
 
 fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
-    #[cfg(not(comments))]
+    //#(hjson) every line break ends the line (see `LineScan` for why)
+    #[cfg(any(not(comments), hjson))]
     let end = input[state.pos..]
         .iter()
         .position(|&b| b == b'\n')
         .map(|index| state.pos + index);
     // line breaks in comments and strings do not end the line
-    #[cfg(comments)]
+    #[cfg(all(comments, not(hjson)))]
     let end = state.line.find_end(input, state.pos);
     let end = match end {
         Some(end) => end,
@@ -156,7 +160,7 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
         }
     };
     state.pos = 0;
-    #[cfg(comments)]
+    #[cfg(all(comments, not(hjson)))]
     {
         state.line = LineScan::default();
     }
@@ -173,6 +177,7 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
     }
 }
 
+#[cfg(not(hjson))]
 fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
     let value = match state.value {
         Some(ref mut value) => value,
@@ -268,6 +273,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 /// Scans a string, map or sequence from `pos`.
 ///
 /// Returns the end of the value if it's complete.
+#[cfg(not(hjson))]
 fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<usize> {
     let mut index = *pos;
     while index < input.len() {
@@ -355,6 +361,69 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
     }
     *pos = index;
     None
+}
+
+/// The state of the scan of a value.
+///
+/// Where Hjson values end depends on the lines, the values are scanned by
+/// parsing them.
+#[cfg(hjson)]
+#[derive(Debug)]
+struct Value {
+    start: usize,
+    parser: Parser,
+    // the parser consumed the input up to `start + parsed`
+    parsed: usize,
+}
+
+#[cfg(hjson)]
+fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
+    let value = match state.value {
+        Some(ref mut value) => value,
+        None => {
+            let start = match skip_whitespace(input, 0, eof) {
+                (start, true) => start,
+                (_, false) if input.is_empty() && eof => return Frame::End,
+                (consumed, false) => return Frame::Incomplete { consumed },
+            };
+            state.value.insert(Value {
+                start,
+                parser: Parser::default(),
+                parsed: 0,
+            })
+        }
+    };
+
+    let start = value.start;
+    let pos = start + value.parsed;
+    let options = Options {
+        validate_utf8: true,
+        exact_numbers: false,
+    };
+    let mut discard = Discard(State::new());
+    let end = match value
+        .parser
+        .parse(&input[pos..], 0, eof, 0, options, &mut discard)
+    {
+        Ok(ParseProgress::Done(end)) => pos + end,
+        Ok(ParseProgress::NeedMore(consumed)) => {
+            value.parsed += consumed;
+            // discard the whitespace before the value
+            value.start = 0;
+            return Frame::Incomplete { consumed: start };
+        }
+        // the value ends at the error, the parser reports it when the value
+        // is deserialized
+        Err(err) => err
+            .offset()
+            .map_or(input.len(), |offset| (pos + offset + 1).min(input.len())),
+    };
+    state.value = None;
+    Frame::Value {
+        start,
+        end,
+        consumed: end,
+    }
 }
 
 /// Splits a JSON stream into values (see [`deser::io`](deser_core::io)).
@@ -487,6 +556,9 @@ impl Decoder for DeserializerConfig {
             let token;
             (pos, token) = skip_whitespace(input, pos, eof);
             if !token && (pos == input.len() || !eof) {
+                // the column of the next input depends on the whitespace
+                #[cfg(hjson)]
+                state.parser.advance(&input[..pos]);
                 return Ok(if eof {
                     Progress::End
                 } else {
@@ -503,6 +575,8 @@ impl Decoder for DeserializerConfig {
         {
             Ok(ParseProgress::Done(end)) => {
                 state.done = self.trailing_mode() == Trailing::Strict;
+                #[cfg(hjson)]
+                state.parser.advance(&input[..end]);
                 Ok(Progress::Done { consumed: end })
             }
             Ok(ParseProgress::NeedMore(consumed)) => Ok(Progress::NeedMore { consumed }),

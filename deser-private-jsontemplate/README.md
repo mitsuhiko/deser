@@ -1,18 +1,20 @@
 # deser-private-jsontemplate
 
-The source of the parsers of `deser-json`, `deser-jsonc` and `deser-json5`
-and their tests.  This crate is not published and nothing depends on it.
+The source of the parsers of `deser-json`, `deser-jsonc`, `deser-json5` and
+`deser-hjson` and their tests.  This crate is not published and nothing depends on it.
 It only exists so that the template is Rust code that compiles, can be
 tested and works in editors.
 
-The three crates share one parser.  The code that only some dialects have
-is marked with `#[cfg]` attributes on made up *capabilities*:
+The crates share one parser.  The code that only some dialects have is
+marked with `#[cfg]` attributes on made up *capabilities*:
 
-| capability        | what it adds                                                        | jsonc | json5 |
-|-------------------|---------------------------------------------------------------------|:-----:|:-----:|
-| `comments`        | `//` and `/* */` comments                                           |   ✓   |   ✓   |
-| `trailing_commas` | a comma after the last element of a sequence or map                 |   ✓   |   ✓   |
-| `json5`           | the rest of JSON5 (single quotes, identifier keys, numbers, escapes) |       |   ✓   |
+| capability        | what it adds                                                          | jsonc | json5 | hjson |
+|-------------------|-----------------------------------------------------------------------|:-----:|:-----:|:-----:|
+| `comments`        | `//` and `/* */` comments                                             |   ✓   |   ✓   |   ✓   |
+| `trailing_commas` | a comma after the last element of a sequence or map                   |   ✓   |   ✓   |   ✓   |
+| `single_quotes`   | strings in single quotes, control characters in strings               |       |   ✓   |   ✓   |
+| `json5`           | the rest of JSON5 (identifier keys, numbers, escapes)                 |       |   ✓   |       |
+| `hjson`           | the rest of Hjson (strings and keys without quotes, multiline strings, `#` comments, optional commas, maps without braces) |       |       |   ✓   |
 
 `generate.py` evaluates the capabilities for every dialect and writes the
 files in `src/` (except `lib.rs`) into the `src/` directory of the dialect
@@ -29,8 +31,13 @@ match byte {
 }
 ```
 
-The build script of this crate enables all capabilities, so it compiles as
-JSON5 and editors analyze all of the code.
+The build script of this crate enables the capabilities of JSON5, the
+dialect with the most of them, so that editors analyze most of the code.
+JSON5 and Hjson read unquoted keys and values differently and a dialect
+can only be one of them, the code of Hjson is checked by compiling
+`deser-hjson`.  The code of a dialect is removed from the others, the
+generated parsers of JSON, JSONC and JSON5 do not change when Hjson
+changes.
 
 ## Workflow
 
@@ -46,8 +53,9 @@ JSON5 and editors analyze all of the code.
 ## Tests
 
 The integration tests of this crate (`tests/`) are the tests of reading
-JSON, JSONC and JSON5.  Every test file is a module of the dialects it
-applies to (see `tests/json.rs`, `tests/jsonc.rs` and `tests/json5.rs`), so
+JSON, JSONC, JSON5 and Hjson.  Every test file is a module of the dialects
+it applies to (see `tests/json.rs`, `tests/jsonc.rs`, `tests/json5.rs` and
+`tests/hjson.rs`), so
 it's compiled once per dialect and the tests show up as
 `jsonc::test_de::test_strings`.  The files import the crate under test as
 `dialect` and the capabilities of the dialect as `DIALECT` for the few
@@ -62,10 +70,11 @@ if !DIALECT.trailing_commas {
 ```
 
 The tests of a capability are in their own file which is only a module of
-the dialects with the capability (`test_comments.rs` and `test_json5.rs`).
-`generate.py` checks that the capabilities in the tests match the dialects.
-The tests of writing JSON are in `deser-json` and the JSON5 test suite
-(with its vendored data) is in `deser-json5`.
+the dialects with the capability (`test_comments.rs`, `test_json5.rs` and
+`test_hjson.rs`).  `generate.py` checks that the capabilities in the tests
+match the dialects.  The tests of writing JSON are in `deser-json`, the
+JSON5 test suite (with its vendored data) is in `deser-json5` and the
+Hjson test suite in `deser-hjson`.
 
 ## Template Syntax
 

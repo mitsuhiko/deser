@@ -38,6 +38,8 @@ pub struct Account {
 //!   as JSON.
 //! * [`deser-json5`](https://docs.rs/deser-json5): implements deserialization of
 //!   [JSON5](https://json5.org/) and serialization as JSON.
+//! * [`deser-hjson`](https://docs.rs/deser-hjson): implements deserialization of
+//!   [Hjson](https://hjson.github.io/) and serialization as JSON.
 //! * [`deser-cbor`](https://docs.rs/deser-cbor): implements CBOR serialization and
 //!   deserialization.
 //! * [`deser-msgpack`](https://docs.rs/deser-msgpack): implements MessagePack
@@ -114,8 +116,8 @@ pub struct Account {
 //! Without the `std` feature deser only needs `alloc` (a global allocator)
 //! and works on targets without an operating system.  Disable the default
 //! features of deser and of the formats (`deser-json`, `deser-jsonc`,
-//! `deser-json5`, `deser-cbor`, `deser-msgpack` and `deser-csv` support
-//! this):
+//! `deser-json5`, `deser-hjson`, `deser-cbor`, `deser-msgpack` and
+//! `deser-csv` support this):
 //!
 //! ```toml
 //! [dependencies]
