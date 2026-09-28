@@ -1,8 +1,8 @@
 use std::io::Read;
 
-use deser::io::{Decoder, Encoder, Reader, Writer};
+use deser::io::{Reader, Writer};
 use deser::{Deserialize, Serialize};
-use deser_csv::{DeserializerConfig, Headers, SerializerConfig, StreamState, WriterState};
+use deser_csv::{DeserializerConfig, Headers, Serializer, SerializerConfig, StreamDeserializer};
 
 /// A reader that returns the input in chunks of a fixed size.
 struct Chunked<'a> {
@@ -43,20 +43,17 @@ fn test_read_in_chunks() {
     let input =
         "\u{feff}sep=;\r\n# comment\r\nname;age\r\n\r\n\"ja\r\nne\";42\r\"jo\"\"hn\";23\r\n\r\n";
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(
-            Chunked {
-                input: input.as_bytes(),
-                size,
-            },
-            &config,
-        );
+        let mut reader = config.reader(Chunked {
+            input: input.as_bytes(),
+            size,
+        });
         assert_eq!(
             reader.read::<Row>().unwrap(),
             Some(row("ja\r\nne", 42)),
             "size {}",
             size
         );
-        assert_eq!(reader.state().headers().unwrap(), ["name", "age"]);
+        assert_eq!(reader.deserializer().headers().unwrap(), ["name", "age"]);
         assert_eq!(reader.read::<Row>().unwrap(), Some(row("jo\"hn", 23)));
         assert_eq!(reader.read::<Row>().unwrap(), None);
         reader.end().unwrap();
@@ -67,7 +64,7 @@ fn test_read_in_chunks() {
 fn test_errors_continue() {
     let input = b"name,age\njane,42\njohn,x\n\"max\"x,1\nmoritz,1,2\nanna,7";
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(Chunked { input, size }, DeserializerConfig::new());
+        let mut reader = DeserializerConfig::new().reader(Chunked { input, size });
         let mut results = Vec::new();
         loop {
             match reader.read::<Row>() {
@@ -101,7 +98,7 @@ fn test_errors_continue() {
 fn test_stream_errors_end_the_stream() {
     let config = DeserializerConfig::new().max_record_len(16);
     let input = b"name,age\n\"this record never ends,1\njane,42\n";
-    let mut reader = Reader::new(Chunked { input, size: 4 }, config);
+    let mut reader = config.reader(Chunked { input, size: 4 });
     let err = reader.read::<Row>().unwrap_err();
     assert_eq!(
         err.message(),
@@ -119,7 +116,7 @@ fn test_read_borrowed() {
         age: u32,
     }
 
-    let mut reader = Reader::new(&b"name,age\njane,42\n"[..], DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(&b"name,age\njane,42\n"[..]);
     let row: Row = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(
         row,
@@ -131,33 +128,33 @@ fn test_read_borrowed() {
 }
 
 #[test]
-fn test_reader_with_state() {
-    let state = StreamState::with_headers(["name", "age"]);
-    let mut reader = Reader::with_state(&b"jane,42\n"[..], DeserializerConfig::new(), state);
+fn test_reader_with_headers() {
+    let de = StreamDeserializer::with_headers(&DeserializerConfig::new(), ["name", "age"]);
+    let mut reader = Reader::new(&b"jane,42\n"[..], de);
     assert_eq!(reader.read::<Row>().unwrap(), Some(row("jane", 42)));
 
     // without names
     let config = DeserializerConfig::new().headers(Headers::None);
-    let mut reader = Reader::new(&b"jane,42\n"[..], config);
+    let mut reader = config.reader(&b"jane,42\n"[..]);
     assert_eq!(
         reader.read::<(String, u32)>().unwrap(),
         Some(("jane".into(), 42))
     );
-    assert_eq!(reader.state().headers(), None);
+    assert_eq!(reader.deserializer().headers(), None);
 }
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    let mut writer = SerializerConfig::new().writer(Vec::new());
     writer.write(&row("jane", 42)).unwrap();
     assert!(writer.write(&42).is_err());
     writer.write(&row("john,jr", 23)).unwrap();
-    assert_eq!(writer.state().headers().unwrap(), ["name", "age"]);
+    assert_eq!(writer.serializer().headers().unwrap(), ["name", "age"]);
     assert_eq!(writer.into_inner(), b"name,age\njane,42\n\"john,jr\",23\n");
 
     // appending to a stream with names
-    let state = WriterState::with_headers(["age", "name"]);
-    let mut writer = Writer::with_state(Vec::new(), SerializerConfig::new(), state);
+    let ser = Serializer::with_headers(&SerializerConfig::new(), ["age", "name"]);
+    let mut writer = Writer::new(Vec::new(), ser);
     writer.write(&row("jane", 42)).unwrap();
     assert_eq!(writer.into_inner(), b"42,jane\n");
 }
@@ -167,7 +164,10 @@ fn test_single_values() {
     let rows = vec![row("jane", 42), row("john", 23)];
 
     // single values are all records
-    let csv = SerializerConfig::new().to_vec(&rows).unwrap();
+    let csv = SerializerConfig::new()
+        .to_string(&rows)
+        .unwrap()
+        .into_bytes();
     assert_eq!(csv, b"name,age\njane,42\njohn,23\n");
     let mut out = Vec::new();
     deser_csv::to_writer(&mut out, &rows).unwrap();
@@ -175,7 +175,7 @@ fn test_single_values() {
 
     let back: Vec<Row> = DeserializerConfig::new().from_slice(&csv).unwrap();
     assert_eq!(back, rows);
-    let back: Vec<Row> = Decoder::from_reader(&DeserializerConfig::new(), &csv[..]).unwrap();
+    let back: Vec<Row> = DeserializerConfig::new().from_reader(&csv[..]).unwrap();
     assert_eq!(back, rows);
     let back: Vec<Row> = deser_csv::from_reader(&csv[..]).unwrap();
     assert_eq!(back, rows);
@@ -186,18 +186,15 @@ fn test_roundtrip_stream() {
     let rows: Vec<Row> = (0..100)
         .map(|index| row(&format!("name \"{}\"\n,", index), index))
         .collect();
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    let mut writer = SerializerConfig::new().writer(Vec::new());
     for row in &rows {
         writer.write(row).unwrap();
     }
     let csv = writer.into_inner();
-    let mut reader = Reader::new(
-        Chunked {
-            input: &csv,
-            size: 7,
-        },
-        DeserializerConfig::new(),
-    );
+    let mut reader = DeserializerConfig::new().reader(Chunked {
+        input: &csv,
+        size: 7,
+    });
     let back = reader.iter::<Row>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(back, rows);
 }

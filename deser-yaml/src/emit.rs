@@ -284,7 +284,6 @@ impl Emitter {
     ///
     /// This is only done while no collection is written in flow style
     /// tentatively (see `pause`), the offsets of the attempt are not moved.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
     pub fn take_output(&mut self) -> String {
         debug_assert!(self.attempt.is_none());
         self.base_column = self.column();

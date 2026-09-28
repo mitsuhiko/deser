@@ -1036,3 +1036,163 @@ fn test_owned_driver() {
 fn events_clone(split: usize) -> Vec<Event<'static>> {
     outer_events()[split..].to_vec()
 }
+
+/// Emits a map of the words of the input to their lengths, borrowing the
+/// words.
+fn emit_words<'de>(input: &'de str, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+    driver.emit(Event::map_start())?;
+    for word in input.split(' ') {
+        driver.emit_borrowed(word)?;
+        driver.emit(word.len() as u64)?;
+    }
+    driver.emit(Event::MapEnd)
+}
+
+#[test]
+fn test_transient_driver() {
+    // owned values copy the data that only lives for the call
+    let mut out = None::<BTreeMap<String, u64>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        let input = String::from("hello transient world");
+        driver
+            .transient(|driver| emit_words(&input, driver))
+            .unwrap();
+    }
+    assert_eq!(out.unwrap()["transient"], 9);
+
+    // borrowed values cannot borrow it, `Cow` copies it
+    let mut out = None::<BTreeMap<&'static str, u64>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        let input = String::from("a b");
+        assert!(
+            driver
+                .transient(|driver| emit_words(&input, driver))
+                .is_err()
+        );
+    }
+    let mut out = None::<BTreeMap<Cow<'static, str>, u64>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        let input = String::from("a bb");
+        driver
+            .transient(|driver| emit_words(&input, driver))
+            .unwrap();
+    }
+    let out = out.unwrap();
+    assert!(out.keys().all(|key| matches!(key, Cow::Owned(_))));
+    assert_eq!(out[&Cow::Borrowed("bb")], 2);
+
+    // values that are buffered (untagged enums record their input) and
+    // replayed later
+    #[derive(Debug, Deserialize)]
+    #[deser(untagged)]
+    enum Words<'a> {
+        #[allow(dead_code)]
+        Numbers(Vec<u64>),
+        Borrowed(BTreeMap<Cow<'a, str>, u64>),
+    }
+    let mut out = None::<Words<'static>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        let input = String::from("x yy");
+        driver
+            .transient(|driver| emit_words(&input, driver))
+            .unwrap();
+    }
+    match out.unwrap() {
+        Words::Borrowed(map) => assert_eq!(map[&Cow::Borrowed("yy")], 2),
+        other => panic!("unexpected {other:?}"),
+    }
+
+    // a driver can be lent out in parts and nested
+    let mut out = None::<Vec<String>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        driver.emit(Event::seq_start()).unwrap();
+        for word in ["a", "b"] {
+            let word = word.to_string();
+            driver
+                .transient(|driver| {
+                    let inner = format!("{word}!");
+                    driver.emit_borrowed(word.as_str())?;
+                    driver.transient(|driver| driver.emit_borrowed(inner.as_str()))
+                })
+                .unwrap();
+        }
+        driver.emit(Event::SeqEnd).unwrap();
+    }
+    assert_eq!(out.unwrap(), ["a", "a!", "b", "b!"]);
+}
+
+#[test]
+fn test_transient_driver_with_layers() {
+    use deser::de::{Layer, LayerEvent, Next};
+
+    /// Passes events on unchanged.
+    struct Passthrough;
+
+    impl Layer for Passthrough {
+        fn event<'de>(
+            &mut self,
+            event: LayerEvent<'_, 'de>,
+            next: &mut Next<'_, 'de>,
+        ) -> Result<(), Error> {
+            next.emit(event)
+        }
+    }
+
+    let mut out = None::<BTreeMap<Cow<'static, str>, u64>>;
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        driver.push_layer(Passthrough);
+        let input = String::from("layered words");
+        driver
+            .transient(|driver| {
+                driver.push_layer(Passthrough);
+                emit_words(&input, driver)
+            })
+            .unwrap();
+    }
+    assert!(out.unwrap().keys().all(|key| matches!(key, Cow::Owned(_))));
+}
+
+#[test]
+fn test_transient_driver_cannot_be_replaced() {
+    let mut out = None::<Vec<u64>>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    driver.emit(Event::seq_start()).unwrap();
+    let input = String::from("x");
+    // the output of the replacement, freed at the end
+    let leaked = std::cell::Cell::new(std::ptr::null_mut::<()>());
+    let rv = catch_unwind(AssertUnwindSafe(|| {
+        driver.transient(|driver| {
+            // a driver whose sink borrows the data of the call (its output
+            // is leaked, a local would not live long enough)
+            let other_out = Box::leak(Box::new(None::<Vec<&str>>));
+            leaked.set((other_out as *mut Option<Vec<&str>>).cast());
+            let mut other = DeserializeDriver::new(other_out);
+            other.emit(Event::seq_start()).unwrap();
+            other.emit_borrowed(input.as_str()).unwrap();
+            std::mem::swap(driver, &mut other);
+            // `other` is the original driver now, it's dropped here
+        })
+    }));
+    assert!(rv.is_err());
+    // the driver has no sink anymore, the replacement was dropped
+    let rv = catch_unwind(AssertUnwindSafe(|| driver.emit(1u64)));
+    assert!(rv.is_err());
+    drop(driver);
+    assert_eq!(out, None);
+    // SAFETY: the replacement was dropped, nothing refers to its output
+    drop(unsafe { Box::from_raw(leaked.get().cast::<Option<Vec<&str>>>()) });
+
+    // wrapping the sink is not allowed either
+    let mut out = None::<u64>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    let rv = catch_unwind(AssertUnwindSafe(|| {
+        driver.transient(|driver| driver.wrap_sink(|sink, _| sink));
+    }));
+    assert!(rv.is_err());
+}

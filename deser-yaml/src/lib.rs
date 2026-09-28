@@ -122,58 +122,65 @@
 //!
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
-//! or write streams of documents the configurations are used with
-//! [`deser::io`](deser_core::io) (or an adapter for an async runtime such as
-//! `deser-tokio`).  The reader only buffers until a document is complete:
+//! or write streams of documents the configurations create readers and
+//! writers of [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`]
+//! and [`SerializerConfig::writer`]).  The reader only buffers until a
+//! document is complete:
 //!
 //! ```rust
 //! # #[cfg(feature = "io")] {
-//! use deser::io::{Reader, Writer};
 //! use deser_yaml::{DeserializerConfig, SerializerConfig};
 //!
 //! const ENDED: SerializerConfig =
 //!     SerializerConfig::new().end_documents(true);
-//! let mut writer = Writer::new(Vec::new(), ENDED);
+//! let mut writer = ENDED.writer(Vec::new());
 //! writer.write(&vec![1, 2]).unwrap();
 //! writer.write(&"done").unwrap();
 //! let output = writer.into_inner();
 //! assert_eq!(output, b"- 1\n- 2\n...\n---\ndone\n...\n");
 //!
-//! let mut reader = Reader::new(&output[..], DeserializerConfig::new());
+//! let mut reader = DeserializerConfig::new().reader(&output[..]);
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("done"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
 //! # }
 //! ```
 //!
+//! The stream serializer ([`Serializer`]) and the stream deserializer
+//! ([`StreamDeserializer`]) do not do IO themselves (see
+//! [`deser::stream`](deser_core::stream)), they also work with other kinds
+//! of IO (for instance async runtimes with `deser-tokio`).
+//!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod de;
 mod emit;
 mod event;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod quote;
 mod resolve;
 mod scanner;
 mod ser;
+mod stream;
 pub mod style;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
-#[cfg(feature = "io")]
-pub use self::io::{StreamState, WriterState, from_reader, to_writer};
 pub use self::resolve::Version;
+#[cfg(feature = "io")]
+pub use self::ser::to_writer;
 pub use self::ser::{
     FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
     to_string,
 };
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 pub use self::tag::{Tagged, set_tag, take_tag};
 
 #[doc(hidden)]

@@ -1,15 +1,15 @@
-//! Reading and writing CBOR streams.
-use std::io::{Read, Write};
+//! Reading CBOR streams.
+#[cfg(feature = "io")]
+use std::io::Read;
 
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::{Decoder, Frame, Progress};
-use deser_core::io::{Encoded, Encoder};
-use deser_core::ser::{Serialize, SerializeDriver};
+use alloc::vec::Vec;
+#[cfg(feature = "io")]
+use deser_core::de::DeserializeOwned;
+use deser_core::de::{self, DeserializeDriver, Frame, Progress};
 use deser_core::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::parser::{Copying, Discard, Parser, Progress as ParseProgress};
-use crate::ser::{SerializerConfig, Writer};
 
 const MAJOR_BYTES: u8 = 2;
 const MAJOR_TEXT: u8 = 3;
@@ -20,10 +20,8 @@ const MAJOR_SIMPLE: u8 = 7;
 const INDEFINITE: u8 = 31;
 
 /// The state of a CBOR stream that is read.
-///
-/// See [`Decoder::State`].
 #[derive(Default)]
-pub struct StreamState {
+struct StreamState {
     // the position up to which the item was scanned
     pos: usize,
     // the number of items the open containers (and tags) still need, `None`
@@ -31,7 +29,7 @@ pub struct StreamState {
     stack: Vec<Option<u64>>,
     // an item was not well-formed
     failed: bool,
-    // parses items incrementally (see `Decoder::feed`)
+    // parses items while their input arrives (see `feed`)
     parser: Parser,
     // the driver of the current item was set up
     started: bool,
@@ -158,7 +156,7 @@ impl StreamState {
     }
 }
 
-/// Splits a stream of CBOR data items into items (see [`deser::io`](deser_core::io)).
+/// Reads a stream of CBOR data items into items (see [`deser::stream`](deser_core::stream)).
 ///
 /// The stream is a [CBOR sequence](https://www.rfc-editor.org/rfc/rfc8742)
 /// of data items that follow each other.  An item is complete once its last
@@ -166,26 +164,111 @@ impl StreamState {
 /// items that are not well-formed end the stream.
 ///
 /// Items which do not borrow are deserialized while their input arrives
-/// (see [`Decoder::feed`]) so only incomplete data items (like strings)
+/// (see
+/// [`StreamDeserializer::feed`](de::StreamDeserializer::feed)) so only incomplete data items (like strings)
 /// are buffered.
 ///
 /// ```
-/// use deser::io::Reader;
+/// # #[cfg(feature = "io")] {
 /// use deser_cbor::DeserializerConfig;
 ///
 /// let mut reader =
-///     Reader::new(&[0x01, 0x62, b'h', b'i'][..], DeserializerConfig::new());
+///     DeserializerConfig::new().reader(&[0x01, 0x62, b'h', b'i'][..]);
 /// assert_eq!(reader.read::<u32>().unwrap(), Some(1));
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hi"));
 /// assert_eq!(reader.read::<u32>().unwrap(), None);
+/// # }
 /// ```
 ///
 /// Items are parsed like with a [`Deserializer`], so they can borrow from
-/// the stream's buffer (see [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).
-impl Decoder for DeserializerConfig {
-    type State = StreamState;
+/// the stream's buffer (see
+/// [`InputBuffer::deserialize`](deser_core::stream::InputBuffer::deserialize)).
+#[derive(Debug)]
+pub struct StreamDeserializer {
+    config: DeserializerConfig,
+    state: StreamState,
+}
 
-    fn frame(&self, state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+impl Default for StreamDeserializer {
+    fn default() -> StreamDeserializer {
+        StreamDeserializer::new()
+    }
+}
+
+impl StreamDeserializer {
+    /// Creates a stream deserializer.
+    pub fn new() -> StreamDeserializer {
+        StreamDeserializer::with_config(&DeserializerConfig::new())
+    }
+
+    /// Creates a stream deserializer with the given configuration.
+    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+        StreamDeserializer {
+            config: config.clone(),
+            state: StreamState::default(),
+        }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
+    }
+
+    /// Skips the rest of an item that failed in a sink.
+    ///
+    /// Returns where the next item starts, or the progress if there is no
+    /// item (yet).
+    fn skip_to_item(
+        &mut self,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+    ) -> Result<Result<usize, Progress>, Error> {
+        let state = &mut self.state;
+        if state.ended {
+            return Ok(Err(Progress::End));
+        }
+        if state.feed_failed {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "cannot continue after an error",
+            ));
+        }
+
+        // skip the rest of an item that failed in a sink
+        let mut pos = 0;
+        if let Some(skip) = state.skipping {
+            let mut discard = Discard(State::new());
+            match state.parser.parse(input, skip, eof, offset, &mut discard) {
+                Ok(ParseProgress::Done(end)) => {
+                    state.skipping = None;
+                    pos = end;
+                }
+                Ok(ParseProgress::NeedMore(consumed)) => {
+                    state.skipping = Some(0);
+                    return Ok(Err(Progress::NeedMore { consumed }));
+                }
+                Err(err) => {
+                    state.skipping = None;
+                    return Err(fail(state, err, eof));
+                }
+            }
+        }
+
+        if !state.started && pos == input.len() {
+            return Ok(Err(if eof {
+                Progress::End
+            } else {
+                Progress::NeedMore { consumed: pos }
+            }));
+        }
+        Ok(Ok(pos))
+    }
+}
+
+impl de::StreamDeserializer for StreamDeserializer {
+    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let state = &mut self.state;
         if state.failed {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -214,13 +297,12 @@ impl Decoder for DeserializerConfig {
         })
     }
 
-    fn drive<'de>(
-        &self,
-        _state: &mut Self::State,
+    fn drive_frame<'de>(
+        &mut self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(frame, self);
+        let mut de = Deserializer::from_slice_with_config(frame, &self.config);
         de.drive(driver)?;
         de.end()
     }
@@ -230,53 +312,18 @@ impl Decoder for DeserializerConfig {
     }
 
     fn feed(
-        &self,
-        state: &mut StreamState,
+        &mut self,
         input: &[u8],
         offset: usize,
         eof: bool,
         driver: &mut DeserializeDriver<'_, '_>,
     ) -> Result<Progress, Error> {
-        if state.ended {
-            return Ok(Progress::End);
-        }
-        if state.feed_failed {
-            return Err(Error::new(
-                ErrorKind::Unexpected,
-                "cannot continue after an error",
-            ));
-        }
-
-        // skip the rest of an item that failed in a sink
-        let mut pos = 0;
-        if let Some(skip) = state.skipping {
-            let mut discard = Discard(State::new());
-            match state.parser.parse(input, skip, eof, offset, &mut discard) {
-                Ok(ParseProgress::Done(end)) => {
-                    state.skipping = None;
-                    pos = end;
-                }
-                Ok(ParseProgress::NeedMore(consumed)) => {
-                    state.skipping = Some(0);
-                    return Ok(Progress::NeedMore { consumed });
-                }
-                Err(err) => {
-                    state.skipping = None;
-                    return Err(fail(state, err, eof));
-                }
-            }
-        }
-
-        if !state.started {
-            if pos == input.len() {
-                return Ok(if eof {
-                    Progress::End
-                } else {
-                    Progress::NeedMore { consumed: pos }
-                });
-            }
-            state.started = true;
-        }
+        let pos = match self.skip_to_item(input, offset, eof)? {
+            Ok(pos) => pos,
+            Err(progress) => return Ok(progress),
+        };
+        let state = &mut self.state;
+        state.started = true;
         match state
             .parser
             .parse(input, pos, eof, offset, &mut Copying(driver))
@@ -301,105 +348,29 @@ impl Decoder for DeserializerConfig {
         }
     }
 
-    fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
-    where
-        T: Deserialize<'de>,
-        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
-    {
-        let mut de = Deserializer::from_slice_with_config(input, self);
-        let rv = de.deserialize_with(setup)?;
-        de.end()?;
-        Ok(rv)
+    fn peek(&mut self, input: &[u8], eof: bool) -> Result<Option<Progress>, Error> {
+        Ok(Some(match self.skip_to_item(input, 0, eof)? {
+            Ok(pos) => Progress::Done { consumed: pos },
+            Err(progress) => progress,
+        }))
     }
 }
 
-/// Writes CBOR data items to a stream (see [`deser::io`](deser_core::io)).
-///
-/// The items follow each other which makes the stream a [CBOR
-/// sequence](https://www.rfc-editor.org/rfc/rfc8742).
-///
-/// ```
-/// use deser::io::Writer;
-/// use deser_cbor::SerializerConfig;
-///
-/// let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
-/// writer.write(&1u32).unwrap();
-/// writer.write(&"hi").unwrap();
-/// assert_eq!(writer.into_inner(), [0x01, 0x62, b'h', b'i']);
-/// ```
-///
-/// Items are written incrementally (see [`Encoder::encode_incremental`]):
-/// the output of large items is written in pieces while they are
-/// serialized.  The output of arrays and maps whose length is not known
-/// upfront (and of maps in canonical mode) is held back until they are
-/// complete, as their header or the order of their entries is only known
-/// then.
-impl Encoder for SerializerConfig {
-    type State = WriterState;
-
-    fn encode(
-        &self,
-        state: &mut WriterState,
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
-        self.serialize_part(&mut state.item, driver, out, usize::MAX)
-            .map(|_| ())
-    }
-
-    fn supports_incremental(&self) -> bool {
-        true
-    }
-
-    fn encode_incremental(
-        &self,
-        state: &mut WriterState,
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-        limit: usize,
-    ) -> Result<Encoded, Error> {
-        Ok(
-            if self.serialize_part(&mut state.item, driver, out, limit)? {
-                Encoded::Done
-            } else {
-                Encoded::Partial
-            },
-        )
-    }
-}
-
-/// The state of a CBOR sequence that is written.
-///
-/// Data items do not depend on each other, this only holds the progress of
-/// the item that is being written.  See [`Encoder::State`].
-#[derive(Default)]
-pub struct WriterState {
-    item: Option<Box<Writer>>,
-}
-
-impl std::fmt::Debug for WriterState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WriterState")
-            .field("in_progress", &self.item.is_some())
-            .finish()
-    }
-}
-
+#[cfg(feature = "io")]
 impl DeserializerConfig {
+    /// Creates a reader of a stream of data items (see
+    /// [`deser::io::Reader`](deser_core::io::Reader)).
+    ///
+    /// See [`StreamDeserializer`] for how the stream is read.
+    pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+    }
+
     /// Deserializes a data item from a reader.
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser_core::io::from_reader(reader, self)
-    }
-}
-
-impl SerializerConfig {
-    /// Serializes a value to a writer.
-    ///
-    /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser_core::io::to_writer(writer, self, value)
+        deser_core::io::from_reader(reader, StreamDeserializer::with_config(self))
     }
 }
 
@@ -407,30 +378,16 @@ impl SerializerConfig {
 ///
 /// The reader is read to the end, no data may follow the item.  The reader
 /// does not need to be buffered.  To read more than one item (a CBOR
-/// sequence) use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
+/// sequence) use [`DeserializerConfig::reader`].
 ///
 /// ```
 /// let value: Vec<u32> =
 ///     deser_cbor::from_reader(&[0x82, 0x01, 0x02][..]).unwrap();
 /// assert_eq!(value, [1, 2]);
 /// ```
+#[cfg(feature = "io")]
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {
     DeserializerConfig::new().from_reader(reader)
-}
-
-/// Serializes a value to a writer.
-///
-/// The output of large values is written in pieces while they are
-/// serialized (see [`deser::io`](deser_core::io)), the writer does not need to be
-/// buffered.
-///
-/// ```
-/// let mut out = Vec::new();
-/// deser_cbor::to_writer(&mut out, &vec![1u32, 2]).unwrap();
-/// assert_eq!(out, [0x82, 0x01, 0x02]);
-/// ```
-pub fn to_writer<W: Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
-    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Ends the stream after an error that cannot be recovered from.

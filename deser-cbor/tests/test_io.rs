@@ -1,7 +1,6 @@
 use std::io::Read;
 
 use deser::de::{Limits, Recording};
-use deser::io::{Reader, Writer};
 use deser::{ErrorKind, Event};
 use deser_cbor::{Deserializer, DeserializerConfig, SerializerConfig};
 
@@ -74,16 +73,26 @@ fn test_sequence_in_chunks() {
         .collect::<Vec<_>>();
     assert_eq!(expected.len(), 10);
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(
-            Chunked {
-                input: &input,
-                size,
-            },
-            DeserializerConfig::new(),
-        );
+        let mut reader = DeserializerConfig::new().reader(Chunked {
+            input: &input,
+            size,
+        });
         let mut values = Vec::new();
         while let Some(value) = reader.read::<Recording>().unwrap() {
             values.push(events(value));
+        }
+        assert_eq!(values, expected, "size {size}");
+
+        // the reader is a deserializer, whether an item follows is found
+        // without reading it
+        use deser::de::Deserializer as _;
+        let mut reader = DeserializerConfig::new().reader(Chunked {
+            input: &input,
+            size,
+        });
+        let mut values = Vec::new();
+        while !reader.is_end().unwrap() {
+            values.push(events(reader.deserialize::<Recording>().unwrap()));
         }
         assert_eq!(values, expected, "size {size}");
     }
@@ -92,7 +101,7 @@ fn test_sequence_in_chunks() {
 #[test]
 fn test_no_read_while_an_item_is_complete() {
     let input = [0x01, 0x82, 0x02, 0x03, 0x61, b'x'];
-    let mut reader = Reader::new(Blocking(&input), DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(Blocking(&input));
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("x"));
@@ -102,7 +111,7 @@ fn test_no_read_while_an_item_is_complete() {
 fn test_errors() {
     // items that do not match the type are skipped
     let input = [0x01, 0x61, b'x', 0x02];
-    let mut reader = Reader::new(&input[..], DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(&input[..]);
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     let err = reader.read::<u32>().unwrap_err();
     assert_eq!(err.offset(), Some(1));
@@ -114,14 +123,14 @@ fn test_errors() {
         &[0x01, 0xff, 0x02],
         &[0x01, 0x82, 0xff],
     ] {
-        let mut reader = Reader::new(input, DeserializerConfig::new());
+        let mut reader = DeserializerConfig::new().reader(input);
         assert_eq!(reader.read::<u32>().unwrap(), Some(1));
         assert!(reader.read::<Recording>().is_err());
         assert!(reader.read::<Recording>().is_err());
     }
 
     // truncated items
-    let mut reader = Reader::new(&[0x01, 0x82, 0x01][..], DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(&[0x01, 0x82, 0x01][..]);
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
@@ -143,7 +152,7 @@ fn test_from_reader_and_to_writer() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    let mut writer = SerializerConfig::new().writer(Vec::new());
     writer.write(&1u32).unwrap();
     writer.write(&vec![2u32]).unwrap();
     assert_eq!(writer.into_inner(), [0x01, 0x81, 0x02]);
@@ -152,7 +161,7 @@ fn test_writer() {
 #[test]
 fn test_borrowed() {
     let input = [0x62, b'h', b'i'];
-    let mut reader = Reader::new(&input[..], DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(&input[..]);
     let value: &str = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value, "hi");
 }
@@ -162,18 +171,26 @@ fn test_feeding_skips_items_that_fail() {
     // [1, "x", [2]] does not fit, the items around it do
     let input = [0x81, 0x01, 0x83, 0x01, 0x61, b'x', 0x81, 0x02, 0x81, 0x03];
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(
-            Chunked {
-                input: &input,
-                size,
-            },
-            DeserializerConfig::new(),
-        );
+        let mut reader = DeserializerConfig::new().reader(Chunked {
+            input: &input,
+            size,
+        });
         assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
         let err = reader.read::<Vec<u32>>().unwrap_err();
         assert_eq!(err.offset(), Some(4));
         assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
         assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
+
+        // also when the rest of the item is skipped to find the next one
+        let mut reader = DeserializerConfig::new().reader(Chunked {
+            input: &input,
+            size,
+        });
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
+        assert!(reader.read::<Vec<u32>>().is_err());
+        assert!(!reader.is_end().unwrap());
+        assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
+        assert!(reader.is_end().unwrap());
     }
 }
 
@@ -181,13 +198,10 @@ fn test_feeding_skips_items_that_fail() {
 fn test_feeding_with_limits() {
     // [[[1]]] exceeds a depth of 2, [[1]] does not
     let input = [0x81, 0x81, 0x81, 0x01, 0x81, 0x81, 0x01];
-    let mut reader = Reader::new(
-        Chunked {
-            input: &input,
-            size: 2,
-        },
-        DeserializerConfig::new(),
-    );
+    let mut reader = DeserializerConfig::new().reader(Chunked {
+        input: &input,
+        size: 2,
+    });
     let limits = |driver: &mut deser::de::DeserializeDriver<'_, '_>| {
         driver.push_layer(Limits::new().max_depth(2))
     };
@@ -206,7 +220,7 @@ fn test_feeding_with_limits() {
 #[test]
 fn test_feeding_bounds_the_buffer() {
     use deser::de::DeserializeDriver;
-    use deser::io::{DecodeBuffer, Status};
+    use deser::stream::{InputBuffer, Status};
 
     // many chunks, fewer under miri which is slow
     let count = if cfg!(miri) { 150 } else { 10_000 };
@@ -214,7 +228,7 @@ fn test_feeding_bounds_the_buffer() {
         .map(|idx| (idx, "x".repeat(50)))
         .collect::<Vec<_>>();
     let bytes = deser_cbor::to_vec(&value).unwrap();
-    let mut buffer = DecodeBuffer::new(DeserializerConfig::new());
+    let mut buffer = InputBuffer::new(deser_cbor::StreamDeserializer::new());
     let mut out = None::<Vec<(u32, String)>>;
     let mut max_buffered = 0;
     {
@@ -231,10 +245,9 @@ fn test_feeding_bounds_the_buffer() {
     assert!(max_buffered < 100, "{max_buffered} bytes buffered");
 }
 
-mod incremental {
+mod partial {
     use std::collections::{BTreeMap, HashMap};
 
-    use deser::io::Writer;
     use deser::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
     use deser::{Error, State};
     use deser_cbor::SerializerConfig;
@@ -276,7 +289,7 @@ mod incremental {
         value: &dyn Serialize,
         limit: usize,
     ) -> (Vec<u8>, usize) {
-        let mut writer = Writer::new(Pieces(Vec::new(), 0), config);
+        let mut writer = config.writer(Pieces(Vec::new(), 0));
         writer.set_buffer_limit(limit);
         writer.write(value).unwrap();
         let Pieces(out, writes) = writer.into_inner();
@@ -365,7 +378,7 @@ mod incremental {
     #[test]
     fn test_stream() {
         let config = SerializerConfig::new();
-        let mut writer = Writer::new(Vec::new(), &config);
+        let mut writer = config.writer(Vec::new());
         writer.set_buffer_limit(3);
         let mut expected = Vec::new();
         for idx in 0..10u64 {

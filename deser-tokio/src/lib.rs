@@ -1,9 +1,10 @@
 //! Read and write [deser](https://docs.rs/deser) values with
 //! [tokio](https://tokio.rs).
 //!
-//! This crate connects the configurations of the data formats (which
-//! implement [`Decoder`] and [`Encoder`], see [`deser::io`](deser_core::io)) to tokio's
-//! [`AsyncRead`] and [`AsyncWrite`].  It works with every format.  Values
+//! This crate connects the stream serializers and stream deserializers of
+//! the data formats (which implement [`StreamSerializer`] and
+//! [`StreamDeserializer`], see [`deser::stream`](deser_core::stream)) to
+//! tokio's [`AsyncRead`] and [`AsyncWrite`].  It works with every format.  Values
 //! of formats which support it (like JSON and CBOR) are deserialized while
 //! their input arrives, other values are buffered until they are complete,
 //! so streams of values (like JSON Lines, CBOR sequences or YAML documents)
@@ -13,7 +14,7 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), deser::Error> {
 //! use deser::{Deserialize, Serialize};
-//! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
+//! use deser_json::{DeserializerConfig, Serializer, SerializerConfig, StreamDeserializer, Trailing};
 //! use deser_tokio::{Reader, Writer};
 //!
 //! const READ_LINES: DeserializerConfig =
@@ -30,17 +31,17 @@
 //! # let (client, server) = tokio::io::duplex(1024);
 //! # let client = tokio::spawn(async move {
 //! #     let (input, output) = tokio::io::split(client);
-//! #     let mut requests = Writer::new(output, WRITE_LINES);
+//! #     let mut requests = Writer::new(output, Serializer::with_config(&WRITE_LINES));
 //! #     requests.write(&Request { id: 1, method: "ping".into() }).await.unwrap();
 //! #     requests.shutdown().await.unwrap();
-//! #     let mut responses = Reader::new(input, READ_LINES);
+//! #     let mut responses = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
 //! #     assert_eq!(responses.read::<u64>().await.unwrap(), Some(1));
 //! # });
 //! let (input, output) = tokio::io::split(server);
 //!
 //! // JSON Lines in, JSON Lines out
-//! let mut requests = Reader::new(input, READ_LINES);
-//! let mut responses = Writer::new(output, WRITE_LINES);
+//! let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
+//! let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
 //! while let Some(request) = requests.read::<Request>().await? {
 //!     responses.write(&request.id).await?;
 //! }
@@ -55,13 +56,14 @@
 //!
 //! # Multi-Threaded Runtimes
 //!
-//! The futures are `Send` if the reader or writer, the decoder or encoder
-//! and their states are, so they can be spawned on multi-threaded runtimes.
+//! The futures are `Send` if the reader or writer and the stream
+//! deserializer or serializer are, so they can be spawned on multi-threaded
+//! runtimes.
 //!
 //! # Large Values
 //!
-//! Formats which support it (like JSON and CBOR) serialize values
-//! incrementally: once the output of a value exceeds the
+//! Formats which support it (like JSON and CBOR) serialize values in
+//! parts: once the output of a value exceeds the
 //! [buffer limit](Writer::set_buffer_limit), what was serialized so far is
 //! written and the serialization continues after that.  The memory used for
 //! writing does not depend on the size of the values either.
@@ -83,12 +85,13 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
-use deser_core::io::{
-    DEFAULT_BUFFER_LIMIT, DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoded, Encoder,
-    Next, Status, encode_part,
+use deser_core::de::{
+    Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver, StreamDeserializer,
 };
-use deser_core::ser::{Serialize, SerializeDriver};
+use deser_core::ser::{Serialize, SerializeDriver, StreamSerializer, Written};
+use deser_core::stream::{
+    DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Next, Status,
+};
 use deser_core::{Error, ErrorKind};
 use futures_core::Stream;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
@@ -101,34 +104,33 @@ pub use self::codec::Codec;
 
 /// Reads values from an [`AsyncRead`].
 ///
-/// The values are split and deserialized with a [`Decoder`] (the
-/// deserializer configuration of a data format).  The reader buffers the
-/// input so it does not need to be buffered.  If the decoder supports it
-/// (see [`Decoder::supports_feed`]), values are deserialized while their
-/// input arrives which means that only incomplete tokens are buffered.
-pub struct Reader<R, D: Decoder> {
+/// The values are split and deserialized with a [`StreamDeserializer`] (for
+/// instance `deser_json::StreamDeserializer`).  The reader buffers the
+/// input so it does not need to be buffered.  If the format supports it
+/// (see [`StreamDeserializer::supports_feed`]), values are deserialized
+/// while their input arrives which means that only incomplete tokens are
+/// buffered.
+pub struct Reader<R, D: StreamDeserializer> {
     reader: R,
-    buffer: DecodeBuffer<D>,
+    buffer: InputBuffer<D>,
     // a value that is being deserialized while its input arrives (an
     // `OwnedDriver<'static, T>`), kept when a read is cancelled.
     pending: Option<Box<dyn Any + Send>>,
 }
 
 // the reader is never pinned structurally
-impl<R, D: Decoder> Unpin for Reader<R, D> {}
+impl<R, D: StreamDeserializer> Unpin for Reader<R, D> {}
 
-impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
+impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
     /// Creates a reader.
-    pub fn new(reader: R, decoder: D) -> Reader<R, D> {
-        Reader::with_state(reader, decoder, D::State::default())
-    }
-
-    /// Creates a reader for a stream that continues with the given state
-    /// (see [`Decoder::State`]).
-    pub fn with_state(reader: R, decoder: D, state: D::State) -> Reader<R, D> {
+    ///
+    /// To continue a stream whose context is known (for instance the
+    /// names of the columns of a CSV file), create the stream deserializer
+    /// with that context.
+    pub fn new(reader: R, deserializer: D) -> Reader<R, D> {
         Reader {
             reader,
-            buffer: DecodeBuffer::with_state(decoder, state),
+            buffer: InputBuffer::new(deserializer),
             pending: None,
         }
     }
@@ -236,7 +238,7 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
     /// Resolves to `None` if there are no more values.  If the future is
     /// dropped before it resolves, the next read continues where it
     /// stopped (a value of another type cannot be read then).  Whether
-    /// reading can continue after an error depends on the decoder (for
+    /// reading can continue after an error depends on the format (for
     /// instance with JSON Lines it continues with the next line).
     pub async fn read<T: DeserializeOwned + 'static>(&mut self) -> Result<Option<T>, Error> {
         poll_fn(|cx| self.poll_read(cx)).await
@@ -346,6 +348,24 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         self.buffer.deserialize().map(Some)
     }
 
+    /// Returns `true` if there are no more values.
+    ///
+    /// This reads until the start of the next value or the end of the
+    /// stream (see
+    /// [`deser::io::Reader::is_end`](https://docs.rs/deser/latest/deser/io/struct.Reader.html#method.is_end)).
+    pub async fn is_end(&mut self) -> Result<bool, Error> {
+        poll_fn(|cx| {
+            loop {
+                match self.buffer.peek()? {
+                    Status::Ready => return Poll::Ready(Ok(false)),
+                    Status::End => return Poll::Ready(Ok(true)),
+                    Status::NeedInput => ready!(self.poll_read_more(cx))?,
+                }
+            }
+        })
+        .await
+    }
+
     /// Checks that there are no more values.
     ///
     /// Fails if another value follows (or if the data that follows is not
@@ -368,14 +388,12 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
         }
     }
 
-    /// Returns the decoder.
-    pub fn decoder(&self) -> &D {
-        self.buffer.decoder()
-    }
-
-    /// Returns the state of the stream (see [`Decoder::State`]).
-    pub fn state(&self) -> &D::State {
-        self.buffer.state()
+    /// Returns the stream deserializer.
+    ///
+    /// This gives access to what the stream established so far, for
+    /// instance the names of the columns of a CSV file.
+    pub fn deserializer(&self) -> &D {
+        self.buffer.deserializer()
     }
 
     /// Returns a reference to the underlying reader.
@@ -402,22 +420,22 @@ impl<R: AsyncRead + Unpin, D: Decoder> Reader<R, D> {
 /// A [`Stream`] of the values of a [`Reader`].
 ///
 /// Created with [`Reader::into_stream`].
-pub struct ReaderStream<R, D: Decoder, T> {
+pub struct ReaderStream<R, D: StreamDeserializer, T> {
     reader: Reader<R, D>,
     failed: bool,
     _marker: PhantomData<fn() -> T>,
 }
 
-impl<R, D: Decoder, T> Unpin for ReaderStream<R, D, T> {}
+impl<R, D: StreamDeserializer, T> Unpin for ReaderStream<R, D, T> {}
 
-impl<R, D: Decoder, T> ReaderStream<R, D, T> {
+impl<R, D: StreamDeserializer, T> ReaderStream<R, D, T> {
     /// Returns the reader.
     pub fn into_inner(self) -> Reader<R, D> {
         self.reader
     }
 }
 
-impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
+impl<R: AsyncRead + Unpin, D: StreamDeserializer, T: DeserializeOwned + 'static> Stream
     for ReaderStream<R, D, T>
 {
     type Item = Result<T, Error>;
@@ -440,15 +458,15 @@ impl<R: AsyncRead + Unpin, D: Decoder, T: DeserializeOwned + 'static> Stream
 /// the values.
 ///
 /// Created with [`Reader::into_element_stream`].
-pub struct ElementStream<R, D: Decoder, T, E> {
+pub struct ElementStream<R, D: StreamDeserializer, T, E> {
     reader: Reader<R, D>,
     failed: bool,
     _marker: PhantomData<fn() -> (T, E)>,
 }
 
-impl<R, D: Decoder, T, E> Unpin for ElementStream<R, D, T, E> {}
+impl<R, D: StreamDeserializer, T, E> Unpin for ElementStream<R, D, T, E> {}
 
-impl<R, D: Decoder, T, E> ElementStream<R, D, T, E> {
+impl<R, D: StreamDeserializer, T, E> ElementStream<R, D, T, E> {
     /// Returns the reader.
     pub fn into_inner(self) -> Reader<R, D> {
         self.reader
@@ -458,7 +476,7 @@ impl<R, D: Decoder, T, E> ElementStream<R, D, T, E> {
 impl<R, D, T, E> Stream for ElementStream<R, D, T, E>
 where
     R: AsyncRead + Unpin,
-    D: Decoder,
+    D: StreamDeserializer,
     T: DeserializeOwned + 'static,
     E: Send + 'static,
 {
@@ -480,51 +498,46 @@ where
 
 /// Writes values to an [`AsyncWrite`].
 ///
-/// The values are serialized with an [`Encoder`] (the serializer
-/// configuration of a data format) into a buffer and written with
-/// [`write_all`](tokio::io::AsyncWriteExt::write_all), wrap the writer in a
-/// [`BufWriter`](tokio::io::BufWriter) when writing many small values (and
-/// [`flush`](Self::flush) it).  If the encoder supports it (see
-/// [`Encoder::supports_incremental`]), the output of large values is
-/// written in pieces while they are serialized, so the memory used does not
-/// depend on the size of the values (see
+/// The values are serialized with a [`StreamSerializer`] (the serializer
+/// of a data format, for instance `deser_json::Serializer`) and its output
+/// is written with [`write_all`](tokio::io::AsyncWriteExt::write_all), wrap
+/// the writer in a [`BufWriter`](tokio::io::BufWriter) when writing many
+/// small values (and [`flush`](Self::flush) it).  If the format supports it
+/// (see [`StreamSerializer::supports_partial`]), the output of large values
+/// is written in parts while they are serialized, so the memory used does
+/// not depend on the size of the values (see
 /// [`set_buffer_limit`](Self::set_buffer_limit)).
-pub struct Writer<W, E: Encoder> {
+pub struct Writer<W, S: StreamSerializer> {
     writer: W,
-    encoder: E,
-    state: E::State,
-    buffer: Vec<u8>,
+    serializer: S,
     limit: usize,
-    // a value was abandoned after a part of it was written
-    broken: bool,
+    // output is being written, if the future is dropped meanwhile it's
+    // unknown what was written
+    writing: bool,
 }
 
-impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
+impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
     /// Creates a writer.
-    pub fn new(writer: W, encoder: E) -> Writer<W, E> {
-        Writer::with_state(writer, encoder, E::State::default())
-    }
-
-    /// Creates a writer for a stream that continues with the given state
-    /// (see [`Encoder::State`]).
-    pub fn with_state(writer: W, encoder: E, state: E::State) -> Writer<W, E> {
+    ///
+    /// To append to a stream that was written before, create the
+    /// serializer with the state of the stream (for instance the number of
+    /// values that were written).
+    pub fn new(writer: W, serializer: S) -> Writer<W, S> {
         Writer {
             writer,
-            encoder,
-            state,
-            buffer: Vec::new(),
+            serializer,
             limit: DEFAULT_BUFFER_LIMIT,
-            broken: false,
+            writing: false,
         }
     }
 
     /// Sets how much output of a value is buffered before it's written.
     ///
-    /// If the encoder supports it, the output of a value is written once it
+    /// If the format supports it, the output of a value is written once it
     /// exceeds the limit, the serialization continues after that.  The
     /// default is [`DEFAULT_BUFFER_LIMIT`] (8 KiB).  With `usize::MAX`
     /// every value is serialized completely before it's written.  See
-    /// [`deser::io::Writer::set_buffer_limit`](deser_core::io::Writer::set_buffer_limit).
+    /// [`deser::io::Writer::set_buffer_limit`](https://docs.rs/deser/latest/deser/io/struct.Writer.html#method.set_buffer_limit).
     pub fn set_buffer_limit(&mut self, limit: usize) {
         self.limit = limit;
     }
@@ -555,7 +568,7 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        if self.broken {
+        if self.writing || self.serializer.in_progress() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "a value was only partially written, the stream cannot continue",
@@ -563,27 +576,33 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
         }
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
+        // output that was not written (for instance of values serialized
+        // before the serializer was given to the writer) comes first
+        self.write_output().await?;
+        let limit = match self.serializer.supports_partial() {
+            true => self.limit.max(1),
+            false => usize::MAX,
+        };
         loop {
-            let encoded = encode_part(
-                &self.encoder,
-                &mut self.state,
-                &mut driver,
-                self.limit,
-                &mut self.buffer,
-            )?;
-            if encoded == Encoded::Partial {
-                // cleared once the rest of the value was written, it stays
-                // set if the future is dropped
-                self.broken = true;
-            }
-            if !self.buffer.is_empty() {
-                self.writer.write_all(&self.buffer).await?;
-            }
-            if encoded == Encoded::Done {
-                self.broken = false;
+            let written = self.serializer.drive_partial(&mut driver, limit)?;
+            self.write_output().await?;
+            if written == Written::Done {
                 return Ok(());
             }
         }
+    }
+
+    /// Writes the output of the serializer and clears it.
+    async fn write_output(&mut self) -> Result<(), Error> {
+        if self.serializer.output().is_empty() {
+            return Ok(());
+        }
+        // stays set if the future is dropped or the write fails
+        self.writing = true;
+        self.writer.write_all(self.serializer.output()).await?;
+        self.serializer.clear_output();
+        self.writing = false;
+        Ok(())
     }
 
     /// Flushes the underlying writer.
@@ -598,14 +617,12 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
         Ok(())
     }
 
-    /// Returns the encoder.
-    pub fn encoder(&self) -> &E {
-        &self.encoder
-    }
-
-    /// Returns the state of the stream (see [`Encoder::State`]).
-    pub fn state(&self) -> &E::State {
-        &self.state
+    /// Returns the stream serializer.
+    ///
+    /// This gives access to the state of the stream, for instance the
+    /// number of values that were written.
+    pub fn serializer(&self) -> &S {
+        &self.serializer
     }
 
     /// Returns a reference to the underlying writer.
@@ -622,32 +639,35 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     pub fn into_inner(self) -> W {
         self.writer
     }
+
+    /// Returns the underlying writer and the stream serializer.
+    pub fn into_parts(self) -> (W, S) {
+        (self.writer, self.serializer)
+    }
 }
 
 /// Reads a single value from an [`AsyncRead`].
 ///
 /// Fails if there is no value or if another value follows it.  How the
-/// value is read depends on the decoder, for instance with JSON the reader
+/// value is read depends on the format, for instance with JSON the reader
 /// is read to the end.
 ///
 /// ```
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let input = &b"[1, 2, 3]"[..];
-/// let config = deser_json::DeserializerConfig::new();
-/// let value: Vec<u32> = deser_tokio::from_reader(input, config)
-///     .await
-///     .unwrap();
+/// let de = deser_json::StreamDeserializer::new();
+/// let value: Vec<u32> = deser_tokio::from_reader(input, de).await.unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// # }
 /// ```
-pub async fn from_reader<T, R, D>(reader: R, decoder: D) -> Result<T, Error>
+pub async fn from_reader<T, R, D>(reader: R, deserializer: D) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static,
     R: AsyncRead + Unpin,
-    D: Decoder,
+    D: StreamDeserializer,
 {
-    let mut reader = Reader::new(reader, decoder);
+    let mut reader = Reader::new(reader, deserializer);
     let value = reader
         .read()
         .await?
@@ -662,22 +682,17 @@ where
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let mut out = Vec::new();
-/// deser_tokio::to_writer(
-///     &mut out,
-///     deser_json::SerializerConfig::new(),
-///     &vec![1, 2],
-/// )
-/// .await
-/// .unwrap();
+/// let ser = deser_json::Serializer::new();
+/// deser_tokio::to_writer(&mut out, ser, &vec![1, 2]).await.unwrap();
 /// assert_eq!(out, b"[1,2]");
 /// # }
 /// ```
-pub async fn to_writer<W, E>(writer: W, encoder: E, value: &dyn Serialize) -> Result<(), Error>
+pub async fn to_writer<W, S>(writer: W, serializer: S, value: &dyn Serialize) -> Result<(), Error>
 where
     W: AsyncWrite + Unpin,
-    E: Encoder,
+    S: StreamSerializer,
 {
-    let mut writer = Writer::new(writer, encoder);
+    let mut writer = Writer::new(writer, serializer);
     writer.write(value).await?;
     writer.flush().await
 }

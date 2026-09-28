@@ -1,12 +1,10 @@
 use deser::de::Recording;
-use deser::io::Reader;
 use deser::{ContainerShape, ErrorKind, Event};
 
 use super::common::{
     Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes, events, read_chunked,
 };
 use super::{DIALECT, dialect};
-use dialect::SerializerConfig;
 
 const VALUES: &str = if DIALECT.hjson {
     // numbers and literals end at the end of the line
@@ -45,11 +43,11 @@ fn test_strict_in_chunks() {
 #[test]
 fn test_no_read_while_a_value_is_complete() {
     // everything after the complete values is only read when needed
-    let mut reader = Reader::new(Blocking(b"1\n\n[2]\n"), NEWLINE);
+    let mut reader = NEWLINE.reader(Blocking(b"1\n\n[2]\n"));
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2]));
 
-    let mut reader = Reader::new(Blocking(b"[1] \"x\" {} 2"), STOP);
+    let mut reader = STOP.reader(Blocking(b"[1] \"x\" {} 2"));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("x"));
     assert_eq!(
@@ -96,7 +94,7 @@ fn test_from_reader() {
 
 #[test]
 fn test_borrowed() {
-    let mut reader = Reader::new(&b"{\"name\": \"Peter\"}\n"[..], NEWLINE);
+    let mut reader = NEWLINE.reader(&b"{\"name\": \"Peter\"}\n"[..]);
     let value: std::collections::BTreeMap<&str, &str> = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value["name"], "Peter");
 }
@@ -106,7 +104,7 @@ fn test_errors() {
     // lines continue after errors, positions refer to the stream
     for size in [1, 3, 100] {
         let input = b"[1]\n[\"x\"]\n  [2, x]\n[3]\n";
-        let mut reader = Reader::new(Chunked { input, size }, NEWLINE);
+        let mut reader = NEWLINE.reader(Chunked { input, size });
         let mut results = Vec::new();
         while let Some(result) = reader.read::<Vec<u32>>().transpose() {
             results.push(result.map_err(|err| err.to_string()));
@@ -128,10 +126,10 @@ fn test_errors() {
     }
 
     // with `Trailing::Stop` values that do not match the type are skipped
-    // (also while they are read incrementally)
+    // (also while they are fed)
     for size in [1, 3, 100] {
         let input = b"[1] [\"x\", [{}]] {\"a\": 1}\n[3]";
-        let mut reader = Reader::new(Chunked { input, size }, STOP);
+        let mut reader = STOP.reader(Chunked { input, size });
         assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
         let err = reader.read::<Vec<u32>>().unwrap_err();
         assert_eq!(
@@ -144,8 +142,8 @@ fn test_errors() {
         assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
     }
 
-    // values that are not valid end the stream when read incrementally
-    let mut reader = Reader::new(&b"[1] {] [3]"[..], STOP);
+    // values that are not valid end the stream when they are fed
+    let mut reader = STOP.reader(&b"[1] {] [3]"[..]);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(err.offset(), Some(4));
@@ -161,13 +159,13 @@ fn test_errors() {
     );
 
     // values which are read from their frames (borrowing) are skipped
-    let mut reader = Reader::new(&b"[1] {] [3]"[..], STOP);
+    let mut reader = STOP.reader(&b"[1] {] [3]"[..]);
     assert_eq!(reader.read_borrowed::<Vec<u32>>().unwrap(), Some(vec![1]));
     assert!(reader.read_borrowed::<Vec<u32>>().is_err());
     assert_eq!(reader.read_borrowed::<Vec<u32>>().unwrap(), Some(vec![3]));
 
     // incomplete values at the end
-    let mut reader = Reader::new(&b"[1] [2"[..], STOP);
+    let mut reader = STOP.reader(&b"[1] [2"[..]);
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1]));
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
@@ -176,46 +174,64 @@ fn test_errors() {
 
 #[test]
 fn test_generic_formats() {
-    use deser::de::DeserializeOwned;
-    use deser::io::Decoder;
-    use deser::io::Encoder;
-    use deser::ser::Serialize;
+    use deser::de::{DeserializeOwned, Deserializer as _};
+    use deser::ser::{Serialize, StreamSerializer};
 
     /// Roundtrips a value through any format.
-    fn roundtrip<T, D, E>(decoder: &D, encoder: &E, value: &T) -> T
+    fn roundtrip<T, S>(ser: &mut S, de: impl FnOnce(&[u8]) -> T, value: &T) -> T
     where
         T: Serialize + DeserializeOwned,
-        D: Decoder,
-        E: Encoder,
+        S: StreamSerializer,
     {
-        let bytes = encoder.to_vec(value).unwrap();
-        decoder.from_slice(&bytes).unwrap()
+        ser.serialize(value).unwrap();
+        de(ser.output())
     }
 
     let value = vec![(1u32, "a".to_string())];
-    assert_eq!(roundtrip(&STRICT, &SerializerConfig::new(), &value), value);
-    assert_eq!(
-        roundtrip(
-            &dialect::DeserializerConfig::new(),
-            &SerializerConfig::new(),
-            &value
-        ),
-        value
-    );
+    let mut ser = dialect::Serializer::new();
+    let rv = roundtrip(&mut ser, |bytes| STRICT.from_slice(bytes).unwrap(), &value);
+    assert_eq!(rv, value);
 
-    // the configurations deserialize from slices like `from_slice`
-    let value: Vec<&str> = Decoder::from_slice(&STRICT, br#"["a", "b"]"#).unwrap();
-    assert_eq!(value, ["a", "b"]);
+    // readers are deserializers
     // in Hjson numbers end at the end of the line
     let input: &[u8] = if DIALECT.hjson { b"1\n2" } else { b"1 2" };
-    assert!(Decoder::from_slice::<u32>(&STRICT, input).is_err());
-    assert_eq!(Decoder::from_slice::<u32>(&STOP, input).unwrap(), 1);
+    let mut reader = STOP.reader(input);
+    let mut values = Vec::<u32>::new();
+    while !reader.is_end().unwrap() {
+        values.push(reader.deserialize().unwrap());
+    }
+    assert_eq!(values, [1, 2]);
+    let value: Vec<&str> = STRICT.from_slice(br#"["a", "b"]"#).unwrap();
+    assert_eq!(value, ["a", "b"]);
+    assert!(STRICT.from_slice::<u32>(input).is_err());
+}
+
+#[test]
+fn test_stream_deserializer_without_io() {
+    use deser::stream::{InputBuffer, Status};
+    use dialect::StreamDeserializer;
+
+    // values are fed in, the deserializer frames or feeds them
+    let mut buffer = InputBuffer::new(StreamDeserializer::with_config(&STOP));
+    buffer.extend_from_slice(b"[1]\n[2");
+    assert_eq!(buffer.peek().unwrap(), Status::Ready);
+    let mut out = None::<Vec<u32>>;
+    let mut driver = deser::de::DeserializeDriver::new(&mut out);
+    assert_eq!(buffer.feed(&mut driver).unwrap(), Status::Ready);
+    drop(driver);
+    assert_eq!(out, Some(vec![1]));
+    assert_eq!(buffer.peek().unwrap(), Status::Ready);
+    buffer.extend_from_slice(b"]  ");
+    buffer.set_eof();
+    assert_eq!(buffer.poll().unwrap(), Status::Ready);
+    assert_eq!(buffer.deserialize::<Vec<u32>>().unwrap(), [2]);
+    assert_eq!(buffer.peek().unwrap(), Status::End);
 }
 
 #[test]
 fn test_feeding_bounds_the_buffer() {
     use deser::de::DeserializeDriver;
-    use deser::io::{DecodeBuffer, Status};
+    use deser::stream::{InputBuffer, Status};
 
     // a large value that arrives in chunks is deserialized while it
     // arrives, only incomplete tokens are buffered
@@ -231,7 +247,7 @@ fn test_feeding_bounds_the_buffer() {
     }
     input.push(']');
 
-    let mut buffer = DecodeBuffer::new(STRICT);
+    let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(&STRICT));
     let mut out = None::<Vec<std::collections::BTreeMap<String, Recording>>>;
     let mut max_buffered = 0;
     {
@@ -264,13 +280,10 @@ fn test_feeding_bounds_the_buffer() {
 fn test_feeding_with_layers() {
     use deser::de::Limits;
 
-    let mut reader = Reader::new(
-        Chunked {
-            input: b"[1, 2, 3]",
-            size: 2,
-        },
-        STRICT,
-    );
+    let mut reader = STRICT.reader(Chunked {
+        input: b"[1, 2, 3]",
+        size: 2,
+    });
     let err = reader
         .read_with::<Vec<u32>, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
         .unwrap_err();
@@ -282,7 +295,8 @@ fn test_feeding_with_layers() {
 
 mod streamed {
     use deser::Streamed;
-    use deser::io::{Next, Reader};
+    use deser::io::Reader;
+    use deser::stream::Next;
     use deser::{Deserialize, Serialize};
 
     use super::dialect::{self, DeserializerConfig, Trailing};
@@ -309,7 +323,7 @@ mod streamed {
     }
 
     fn read_all(
-        reader: &mut Reader<impl std::io::Read, DeserializerConfig>,
+        reader: &mut Reader<impl std::io::Read, dialect::StreamDeserializer>,
     ) -> Vec<Next<Item, Page>> {
         let mut rv = Vec::new();
         while let Some(next) = reader.read_next::<Page, Item>().unwrap() {
@@ -337,13 +351,10 @@ mod streamed {
             }),
         ];
         for size in chunk_sizes(json.len()) {
-            let mut reader = Reader::new(
-                Chunked {
-                    input: json.as_bytes(),
-                    size,
-                },
-                STRICT,
-            );
+            let mut reader = STRICT.reader(Chunked {
+                input: json.as_bytes(),
+                size,
+            });
             assert_eq!(read_all(&mut reader), expected, "size {size}");
         }
     }
@@ -352,7 +363,7 @@ mod streamed {
     fn test_elements_are_handed_out_as_they_arrive() {
         // the stream stays open after the second element
         let input = b"{\"total\": 2, \"items\": [{\"id\": 0, \"name\": \"item 0\"}, {\"id\": 1, \"name\": \"item 1\"}";
-        let mut reader = Reader::new(Blocking(input), STRICT);
+        let mut reader = STRICT.reader(Blocking(input));
         assert_eq!(
             reader.read_next::<Page, Item>().unwrap(),
             Some(Next::Element(item(0)))
@@ -377,7 +388,7 @@ mod streamed {
 
         // without read_next the elements are collected
         let input = br#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#;
-        let mut reader = Reader::new(&input[..], STRICT);
+        let mut reader = STRICT.reader(&input[..]);
         assert_eq!(reader.read::<Page>().unwrap().unwrap().items.len(), 1);
     }
 
@@ -387,7 +398,7 @@ mod streamed {
         // the line is complete
         let lines = DeserializerConfig::new().trailing(Trailing::Newline);
         let input = b"{\"total\": 1, \"items\": [{\"id\": 0, \"name\": \"item 0\"}], \"next\": null}\n{\"total\": 0, \"items\": [], \"next\": \"x\"}\n";
-        let mut reader = Reader::new(&input[..], lines);
+        let mut reader = lines.reader(&input[..]);
         assert_eq!(
             read_all(&mut reader),
             [
@@ -420,7 +431,7 @@ mod streamed {
 
         let input = br#"{"inner": {"values": [1, 2, 3]}} {"inner": {"values": []}}"#;
         let stop = DeserializerConfig::new().trailing(Trailing::Stop);
-        let mut reader = Reader::new(Chunked { input, size: 3 }, stop);
+        let mut reader = stop.reader(Chunked { input, size: 3 });
         let mut rv = Vec::new();
         while let Some(next) = reader.read_next::<Outer, u32>().unwrap() {
             rv.push(match next {
@@ -434,7 +445,7 @@ mod streamed {
     #[test]
     fn test_other_reads_while_reading_elements() {
         let input = br#"{"total": 1, "items": [{"id": 0, "name": "item 0"}], "next": null}"#;
-        let mut reader = Reader::new(&input[..], STRICT);
+        let mut reader = STRICT.reader(&input[..]);
         assert!(matches!(
             reader.read_next::<Page, Item>().unwrap(),
             Some(Next::Element(_))
@@ -450,7 +461,7 @@ mod streamed {
 
     #[test]
     fn test_elements_bound_the_buffer() {
-        use deser::io::{DecodeBuffer, ElementReader, ElementStatus};
+        use deser::stream::{ElementReader, ElementStatus, InputBuffer};
 
         // many chunks, fewer under miri which is slow
         let total = if cfg!(miri) { 150 } else { 10_000 };
@@ -460,7 +471,7 @@ mod streamed {
             next: None,
         };
         let json = dialect::to_string(&page).unwrap();
-        let mut buffer = DecodeBuffer::new(STRICT);
+        let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(&STRICT));
         let mut reader = ElementReader::<Page, Item>::new();
         let mut chunks = json.as_bytes().chunks(1024);
         let mut count = 0;

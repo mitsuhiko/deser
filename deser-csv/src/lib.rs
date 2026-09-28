@@ -106,14 +106,15 @@
 //!
 //! # Streams
 //!
-//! A stream of records is read with a [`Reader`](deser_core::io::Reader)
-//! (or the one of an adapter for an async runtime such as `deser-tokio`):
-//! every read returns the next record.  Errors of a record (like a field
-//! that does not fit the type) only discard the record.  The names of the
-//! columns are in the state of the stream (see [`StreamState`]).
+//! A stream of records is read with a reader of `deser::io` which the
+//! configuration creates ([`DeserializerConfig::reader`]): every read
+//! returns the next record.  Errors of a record (like a field that does
+//! not fit the type) only discard the record.  The names of the columns
+//! are known to the stream deserializer (see
+//! [`StreamDeserializer::headers`]).
 //!
 //! ```rust
-//! use deser::io::Reader;
+//! # #[cfg(feature = "io")] {
 //! use deser_csv::DeserializerConfig;
 //!
 //! #[derive(deser::Deserialize)]
@@ -123,7 +124,7 @@
 //! }
 //!
 //! let input = &b"name,age\njane,42\njohn,x\nmax,7\n"[..];
-//! let mut reader = Reader::new(input, DeserializerConfig::new());
+//! let mut reader = DeserializerConfig::new().reader(input);
 //! let mut ages = Vec::new();
 //! let mut errors = Vec::new();
 //! loop {
@@ -135,19 +136,25 @@
 //! }
 //! assert_eq!(ages, [42, 7]);
 //! assert_eq!(errors, [Some(3)]);
-//! assert_eq!(reader.state().headers().unwrap(), ["name", "age"]);
+//! assert_eq!(reader.deserializer().headers().unwrap(), ["name", "age"]);
+//! # }
 //! ```
 //!
-//! Likewise every value written with a [`Writer`](deser_core::io::Writer)
-//! is a record, the names are written before the first one.  The
-//! functions that read and write a single value ([`from_reader`] and
-//! [`to_writer`]) read and write all records as a sequence, like
-//! [`from_str`] and [`to_string`].
+//! Likewise every value written with a writer created by
+//! [`SerializerConfig::writer`] is a record, the names are written before
+//! the first one.  The functions that read and write a single value
+//! ([`from_reader`] and [`to_writer`]) read and write all records as a
+//! sequence, like [`from_str`] and [`to_string`].
+//!
+//! The stream serializer ([`Serializer`]) and the stream deserializer
+//! ([`StreamDeserializer`]) do not do IO themselves (see
+//! [`deser::stream`](deser_core::stream)), they also work with other kinds
+//! of IO and without the standard library.
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).  Requires `std`.
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).  Requires `std`.
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
@@ -156,15 +163,17 @@
 extern crate alloc;
 
 mod de;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod ser;
+mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Records, StreamState};
+pub use self::de::{Deserializer, DeserializerConfig, Records};
 #[cfg(feature = "io")]
-pub use self::io::{from_reader, to_writer};
-pub use self::ser::{Serializer, SerializerConfig, WriterState, to_string};
+pub use self::ser::to_writer;
+pub use self::ser::{Serializer, SerializerConfig, to_string};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 
 use deser_core::Error;
 use deser_core::de::Deserialize;
@@ -202,7 +211,7 @@ pub enum Headers {
     /// The first record holds the names, but records are sequences (for
     /// instance to read them into tuples).
     ///
-    /// The names are still read (see [`StreamState::headers`]).
+    /// The names are still read (see [`StreamDeserializer::headers`]).
     Skip,
     /// There are no names, records are sequences.
     None,

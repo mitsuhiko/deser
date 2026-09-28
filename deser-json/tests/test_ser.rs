@@ -338,7 +338,7 @@ fn test_serializer() {
     let mut serializer = Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Stop));
     serializer.serialize(&1).unwrap();
     serializer.serialize(&2).unwrap();
-    assert_eq!(serializer.output(), "1\n2");
+    assert_eq!(serializer.as_str(), "1\n2");
     let mut serializer =
         Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Newline));
     serializer.serialize(&1).unwrap();

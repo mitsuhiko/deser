@@ -361,7 +361,6 @@ impl Error {
     ///
     /// This is used for errors of inputs which are part of a larger input,
     /// the base is the position of the start of the part.
-    #[cfg(feature = "io")]
     pub(crate) fn shift_position(self, base: Position) -> Self {
         self.map_each(|mut err| {
             let data = err.data_mut();

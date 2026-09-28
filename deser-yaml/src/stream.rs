@@ -1,15 +1,15 @@
-//! Reading and writing YAML streams.
-use std::io::{Read, Write};
+//! Reading YAML streams.
+#[cfg(feature = "io")]
+use std::io::Read;
 
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::{Decoder, Frame};
-use deser_core::io::{Encoded, Encoder};
-use deser_core::ser::{Serialize, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind};
+use deser_core::Error;
+#[cfg(feature = "io")]
+use deser_core::de::DeserializeOwned;
+use deser_core::de::{self, DeserializeDriver, Frame};
+#[cfg(feature = "io")]
+use deser_core::{Atom, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
-use crate::emit::Emitter;
-use crate::ser::SerializerConfig;
 
 /// The kind of a line for splitting documents.
 #[derive(PartialEq, Eq)]
@@ -48,10 +48,8 @@ fn classify(line: &[u8]) -> Line {
 }
 
 /// The state of a YAML stream that is read.
-///
-/// See [`Decoder::State`].
 #[derive(Debug, Default)]
-pub struct StreamState {
+struct StreamState {
     // the start of the next line to scan
     pos: usize,
     // the lines scanned so far contain a document
@@ -70,34 +68,67 @@ impl StreamState {
     }
 }
 
-/// Splits a YAML stream into documents (see [`deser::io`](deser_core::io)).
+/// Reads a stream of YAML documents (see [`deser::stream`](deser_core::stream)).
 ///
 /// A document ends where the next one starts (at a `---` line) or at a
 /// document end marker (`...`).  When reading a stream that stays open
 /// (for instance a socket), the writer should end every document with `...`
-/// (see [`SerializerConfig::end_documents`]), otherwise a document is only
+/// (see [`SerializerConfig::end_documents`](crate::SerializerConfig::end_documents)), otherwise a document is only
 /// complete once the next one starts.  Comments and directives before a
 /// document belong to it.
 ///
 /// ```
-/// use deser::io::Reader;
+/// # #[cfg(feature = "io")] {
 /// use deser_yaml::DeserializerConfig;
 ///
 /// let mut reader =
-///     Reader::new(&b"--- a\n--- b\n"[..], DeserializerConfig::new());
+///     DeserializerConfig::new().reader(&b"--- a\n--- b\n"[..]);
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("a"));
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("b"));
 /// assert_eq!(reader.read::<String>().unwrap(), None);
+/// # }
 /// ```
 ///
 /// Documents are parsed like with a [`Deserializer`], so they can borrow
-/// from the stream's buffer (see [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).
+/// from the stream's buffer (see
+/// [`InputBuffer::deserialize`](deser_core::stream::InputBuffer::deserialize)).
 /// Errors (including syntax errors) only discard their document, reading
 /// continues with the next one.
-impl Decoder for DeserializerConfig {
-    type State = StreamState;
+#[derive(Debug)]
+pub struct StreamDeserializer {
+    config: DeserializerConfig,
+    state: StreamState,
+}
 
-    fn frame(&self, state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+impl Default for StreamDeserializer {
+    fn default() -> StreamDeserializer {
+        StreamDeserializer::new()
+    }
+}
+
+impl StreamDeserializer {
+    /// Creates a stream deserializer.
+    pub fn new() -> StreamDeserializer {
+        StreamDeserializer::with_config(&DeserializerConfig::new())
+    }
+
+    /// Creates a stream deserializer with the given configuration.
+    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+        StreamDeserializer {
+            config: config.clone(),
+            state: StreamState::default(),
+        }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
+    }
+}
+
+impl de::StreamDeserializer for StreamDeserializer {
+    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let state = &mut self.state;
         loop {
             let line_end = match input[state.pos..].iter().position(|&b| b == b'\n') {
                 Some(index) => state.pos + index + 1,
@@ -123,13 +154,12 @@ impl Decoder for DeserializerConfig {
         }
     }
 
-    fn drive<'de>(
-        &self,
-        _state: &mut Self::State,
+    fn drive_frame<'de>(
+        &mut self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(frame, self);
+        let mut de = Deserializer::from_slice_with_config(frame, &self.config);
         de.drive(driver)?;
         de.end()
     }
@@ -137,107 +167,24 @@ impl Decoder for DeserializerConfig {
     fn is_text(&self) -> bool {
         true
     }
-
-    fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
-    where
-        T: Deserialize<'de>,
-        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
-    {
-        crate::de::deserialize_single(Deserializer::from_slice_with_config(input, self), setup)
-    }
 }
 
-/// Writes YAML documents to a stream (see [`deser::io`](deser_core::io)).
-///
-/// Every value is written as a document, documents after the first start
-/// with `---`.
-///
-/// ```
-/// use deser::io::Writer;
-/// use deser_yaml::SerializerConfig;
-///
-/// let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
-/// writer.write(&"a").unwrap();
-/// writer.write(&vec![1, 2]).unwrap();
-/// assert_eq!(writer.into_inner(), b"a\n---\n- 1\n- 2\n");
-/// ```
-///
-/// Documents are written incrementally (see
-/// [`Encoder::encode_incremental`]): the output of large documents is
-/// written in pieces while they are serialized.
-impl Encoder for SerializerConfig {
-    type State = WriterState;
-
-    fn encode(
-        &self,
-        state: &mut WriterState,
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
-        self.encode_incremental(state, driver, out, usize::MAX)
-            .map(|_| ())
-    }
-
-    fn supports_incremental(&self) -> bool {
-        true
-    }
-
-    fn encode_incremental(
-        &self,
-        state: &mut WriterState,
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-        limit: usize,
-    ) -> Result<Encoded, Error> {
-        if !self.document_part(state.written, &mut state.document, driver, out, limit)? {
-            return Ok(Encoded::Partial);
-        }
-        state.written += 1;
-        Ok(Encoded::Done)
-    }
-}
-
-/// The state of a stream of YAML documents that is written.
-///
-/// This holds the number of documents that were written and the progress
-/// of the document that is being written.  See [`Encoder::State`].
-#[derive(Default)]
-pub struct WriterState {
-    written: usize,
-    document: Option<Box<Emitter>>,
-}
-
-impl WriterState {
-    /// Creates the state of a stream that continues after the given number
-    /// of documents.
-    pub fn with_written(written: usize) -> WriterState {
-        WriterState {
-            written,
-            document: None,
-        }
-    }
-
-    /// Returns the number of documents that were written.
-    pub fn written(&self) -> usize {
-        self.written
-    }
-}
-
-impl std::fmt::Debug for WriterState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WriterState")
-            .field("written", &self.written)
-            .field("in_progress", &self.document.is_some())
-            .finish()
-    }
-}
-
+#[cfg(feature = "io")]
 impl DeserializerConfig {
+    /// Creates a reader of a stream of YAML documents (see
+    /// [`deser::io::Reader`](deser_core::io::Reader)).
+    ///
+    /// See [`StreamDeserializer`] for how the stream is split into
+    /// documents.
+    pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+    }
+
     /// Deserializes a value from a reader.
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        let mut reader = deser_core::io::Reader::new(reader, self);
+        let mut reader = self.reader(reader);
         let value = match reader.read()? {
             Some(value) => value,
             None => {
@@ -255,42 +202,19 @@ impl DeserializerConfig {
     }
 }
 
-impl SerializerConfig {
-    /// Serializes a value to a writer.
-    ///
-    /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        deser_core::io::to_writer(writer, self, value)
-    }
-}
-
 /// Deserializes a value from a reader.
 ///
 /// This works like [`from_str`](crate::from_str): the stream must contain
 /// at most one document, an empty stream is null.  The reader is read to
 /// the end, it does not need to be buffered.  To read more than one
-/// document use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
+/// document use [`DeserializerConfig::reader`].
 ///
 /// ```
 /// let value: Vec<u32> =
 ///     deser_yaml::from_reader(&b"- 1\n- 2\n"[..]).unwrap();
 /// assert_eq!(value, [1, 2]);
 /// ```
+#[cfg(feature = "io")]
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {
     DeserializerConfig::new().from_reader(reader)
-}
-
-/// Serializes a value to a writer.
-///
-/// The output of large documents is written in pieces while they are
-/// serialized (see [`deser::io`](deser_core::io)), the writer does not need to be
-/// buffered.
-///
-/// ```
-/// let mut out = Vec::new();
-/// deser_yaml::to_writer(&mut out, &vec![1, 2]).unwrap();
-/// assert_eq!(out, b"- 1\n- 2\n");
-/// ```
-pub fn to_writer<W: Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
-    SerializerConfig::new().to_writer(writer, value)
 }

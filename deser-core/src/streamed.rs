@@ -23,15 +23,14 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// # #[cfg(all(feature = "derive", feature = "io"))] {
 /// use deser::Deserialize;
 /// use deser::Streamed;
-/// use deser::io::{Next, Reader};
-/// # use deser::de::DeserializeDriver;
-/// # use deser::io::{Decoder, Frame};
+/// use deser::io::Reader;
+/// use deser::stream::Next;
+/// # use deser::de::{DeserializeDriver, Frame, StreamDeserializer};
 /// # use deser::{Error, Event};
 /// # /// Numbers on a line of their own form a page (with a sequence of the numbers).
-/// # struct PagesConfig;
-/// # impl Decoder for PagesConfig {
-/// #     type State = ();
-/// #     fn frame(&self, _: &mut (), input: &[u8], eof: bool) -> Result<Frame, Error> {
+/// # struct Pages;
+/// # impl StreamDeserializer for Pages {
+/// #     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
 /// #         Ok(match input.iter().position(|&b| b == b'\n') {
 /// #             Some(end) => Frame::Value { start: 0, end, consumed: end + 1 },
 /// #             None if eof && input.is_empty() => Frame::End,
@@ -39,7 +38,7 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// #             None => Frame::Incomplete { consumed: 0 },
 /// #         })
 /// #     }
-/// #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+/// #     fn drive_frame<'de>(&mut self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 /// #         driver.emit(Event::map_start())?;
 /// #         driver.emit("items")?;
 /// #         driver.emit(Event::seq_start())?;
@@ -56,8 +55,8 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 ///     items: Streamed<u32>,
 /// }
 ///
-/// // `PagesConfig` is the configuration of a format with pages of numbers
-/// let mut reader = Reader::new(&b"1 2 3"[..], PagesConfig);
+/// // `Pages` is the stream deserializer of a format with pages of numbers
+/// let mut reader = Reader::new(&b"1 2 3"[..], Pages);
 /// let mut items = Vec::new();
 /// while let Some(next) = reader.read_next::<Page, u32>()? {
 ///     match next {
@@ -71,9 +70,11 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// ```
 ///
 /// If the format can deserialize values while their input arrives (see
-/// `deser::io::Decoder::feed`), the memory used does not depend on the length of the
-/// sequence.  The elements have to be owned (they cannot borrow from the
-/// input).
+/// [`StreamDeserializer::feed`](crate::de::StreamDeserializer::feed)), the
+/// memory used does not depend on the length of the sequence.  The
+/// elements have to be owned (they cannot borrow from the input).  Without
+/// IO, the elements are handed out by an
+/// [`ElementReader`](crate::stream::ElementReader).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Streamed<T> {
     items: Vec<T>,
@@ -180,12 +181,9 @@ impl<T: Serialize> Serialize for Streamed<T> {
 
 /// Hands out a complete element or collects it.
 fn complete<T: Send + 'static>(value: T, items: &mut Vec<T>, state: &State) {
-    #[cfg(feature = "io")]
-    let Err(value) = crate::io::elements::hand_out(value, state) else {
+    let Err(value) = crate::stream::elements::hand_out(value, state) else {
         return;
     };
-    #[cfg(not(feature = "io"))]
-    let _ = state;
     items.push(value);
 }
 

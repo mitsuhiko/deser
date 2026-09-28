@@ -110,16 +110,15 @@
 //! Values are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  To read
 //! or write more than one value (for instance JSON Lines from a socket) the
-//! configurations are used with [`deser::io`](deser_core::io) (or an adapter for an async
-//! runtime such as `deser-tokio`): [`DeserializerConfig`] splits streams
-//! into values and [`SerializerConfig`] writes them.  How values are
-//! separated depends on the `trailing` setting of the configurations (see
-//! [`Trailing`]).  The reader only buffers until a value is complete:
+//! configurations create readers and writers of
+//! [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`] and
+//! [`SerializerConfig::writer`]).  How values are separated depends on the
+//! `trailing` setting of the configurations (see [`Trailing`]).  The reader
+//! only buffers until a value is complete:
 //!
 //! ```rust
 //! # #[cfg(feature = "io")] {
 //! use std::collections::BTreeMap;
-//! use deser::io::{Reader, Writer};
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //!
 //! const READ_LINES: DeserializerConfig =
@@ -128,8 +127,8 @@
 //!     SerializerConfig::new().trailing(Trailing::Newline);
 //!
 //! let input = &b"{\"id\": 1}\n{\"id\": 2}\n"[..];
-//! let mut reader = Reader::new(input, READ_LINES);
-//! let mut writer = Writer::new(Vec::new(), WRITE_LINES);
+//! let mut reader = READ_LINES.reader(input);
+//! let mut writer = WRITE_LINES.writer(Vec::new());
 //! while let Some(value) = reader.read::<BTreeMap<String, u32>>().unwrap() {
 //!     writer.write(&value).unwrap();
 //! }
@@ -137,10 +136,16 @@
 //! # }
 //! ```
 //!
+//! The stream serializer ([`Serializer`]) and the stream deserializer
+//! ([`StreamDeserializer`]) do not do IO themselves (see
+//! [`deser::stream`](deser_core::stream)), they also work with other kinds
+//! of IO (for instance async runtimes with `deser-tokio`) and without the
+//! standard library.
+//!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).  Requires `std`.
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).  Requires `std`.
 //! * `speedups`: uses the `zmij` crate for float formatting and
 //!   `simdutf8` to validate UTF-8 when parsing byte slices.  Otherwise this
 //!   crate has no dependencies other than `deser`.
@@ -155,21 +160,19 @@ mod buf;
 mod escape;
 mod pretty;
 mod ser;
-#[cfg(feature = "io")]
-mod ser_io;
 mod trailing;
 
 // These are generated from `deser-template-json`.
 mod de;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod scan;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader};
+pub use self::ser::to_writer;
 pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};
+pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
-pub use self::ser_io::{WriterState, to_writer};
+pub use self::stream::from_reader;
 pub use self::trailing::Trailing;

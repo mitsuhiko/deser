@@ -143,26 +143,31 @@
 //!
 //! Form data is read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
-//! configurations can also be used with [`deser::io`](deser_core::io) or an adapter for an
-//! async runtime (such as `deser-tokio`).  The whole stream is read before
-//! it's parsed.
+//! configurations also create readers and writers of
+//! [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`] and
+//! [`SerializerConfig::writer`]), the stream serializer ([`Serializer`])
+//! and deserializer ([`StreamDeserializer`]) work with other kinds of IO
+//! too (for instance async runtimes with `deser-tokio`).  The whole stream
+//! is read before it's parsed.
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod de;
 mod encoding;
-#[cfg(feature = "io")]
-mod io;
 mod ser;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig};
 #[cfg(feature = "io")]
-pub use self::io::{WriterState, from_reader, to_writer};
+pub use self::ser::to_writer;
 pub use self::ser::{ArrayFormat, Serializer, SerializerConfig, to_string};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 
 use deser_core::Error;
 use deser_core::de::Deserialize;

@@ -5,7 +5,7 @@ use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
-use deser_core::ser::{self, Describe, PausableSink, SerializeDriver};
+use deser_core::ser::{self, Describe, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
@@ -296,18 +296,28 @@ impl SerializerConfig {
     /// that is final.
     ///
     /// The progress of the value is kept in `value` (see
-    /// `Encoder::encode_incremental`), `true` is returned once the value is
-    /// complete.  The output of a value is final once its start tag is
-    /// complete, which is the case once no more attributes can come for
-    /// the element (see `final_until`).
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// `StreamSerializer::drive_partial`), `true` is returned once the
+    /// value is complete.  The output of a value is final once its start
+    /// tag is complete, which is the case once no more attributes can come
+    /// for the element (see `final_until`).  Output is only appended if
+    /// this succeeds.
     pub(crate) fn serialize_part(
         &self,
         value: &mut Option<Box<Writer>>,
         driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
+        out: &mut String,
         limit: usize,
     ) -> Result<bool, Error> {
+        // a document that is written at once does not box the writer
+        if value.is_none() && limit == usize::MAX {
+            let document = self.serialize_driver(driver)?;
+            if out.is_empty() {
+                *out = document;
+            } else {
+                out.push_str(&document);
+            }
+            return Ok(true);
+        }
         let mut writer = value.take().unwrap_or_else(|| Box::new(Writer::new(self)));
         // after an error the value is abandoned, its writer is dropped
         let done = if limit == usize::MAX {
@@ -322,7 +332,7 @@ impl SerializerConfig {
         }
         if done {
             writer.finish()?;
-            out.extend_from_slice(writer.out.as_bytes());
+            out.push_str(&writer.out);
             return Ok(true);
         }
         writer.pass_on(out);
@@ -352,16 +362,60 @@ impl SerializerConfig {
 /// assert!(serializer.serialize(&BTreeMap::from([("b", 3)])).is_err());
 /// assert_eq!(serializer.finish(), r#"<r a="1"><b>2</b></r>"#);
 /// ```
-#[derive(Debug, Clone)]
+///
+/// The serializer is also the stream serializer of XML (see
+/// [`StreamSerializer`](ser::StreamSerializer)): the output can be taken
+/// while the document is written, and large documents can be written in
+/// parts.  Output is final once the start tag it's in is complete: the
+/// start tag of an element is held back until no more attributes can come,
+/// which for maps (whose keys are not known upfront) is the end of the
+/// element.  The namespaces that are found once the start tag of the root
+/// element was written are declared on the elements that use them rather
+/// than on the root element (configured
+/// [namespaces](SerializerConfig::namespaces) are always declared on the
+/// root element).  To write to a [`Write`](std::io::Write) use
+/// [`SerializerConfig::writer`].
 pub struct Serializer {
     config: SerializerConfig,
     out: String,
     written: bool,
+    // the document that is written in parts
+    document: Option<Box<Writer>>,
+    // a document was started with `drive_partial` and is not complete
+    in_progress: bool,
 }
 
 impl Default for Serializer {
     fn default() -> Serializer {
         Serializer::new()
+    }
+}
+
+impl Clone for Serializer {
+    /// Clones the serializer.
+    ///
+    /// The clone of a serializer that writes a document in parts cannot
+    /// write more values (see
+    /// [`StreamSerializer::in_progress`](ser::StreamSerializer::in_progress)).
+    fn clone(&self) -> Serializer {
+        Serializer {
+            config: self.config.clone(),
+            out: self.out.clone(),
+            written: self.written,
+            document: None,
+            in_progress: self.in_progress,
+        }
+    }
+}
+
+impl std::fmt::Debug for Serializer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Serializer")
+            .field("config", &self.config)
+            .field("output", &self.out)
+            .field("written", &self.written)
+            .field("in_progress", &self.in_progress)
+            .finish()
     }
 }
 
@@ -377,7 +431,19 @@ impl Serializer {
             config: config.clone(),
             out: String::new(),
             written: false,
+            document: None,
+            in_progress: false,
         }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns `true` once the document was written.
+    pub fn written(&self) -> bool {
+        self.written
     }
 
     /// Serializes a value.
@@ -398,8 +464,8 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
-    pub fn output(&self) -> &str {
+    /// Returns the output written so far (that was not cleared).
+    pub fn as_str(&self) -> &str {
         &self.out
     }
 
@@ -411,16 +477,124 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        if self.written {
-            return Err(Error::new(
-                ErrorKind::Unexpected,
-                "an XML document holds a single root element",
-            ));
+        // only `drive_partial` continues a document
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
         }
-        self.out = self.config.serialize_driver(driver)?;
-        self.written = true;
-        Ok(())
+        ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        self.out.as_bytes()
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    fn supports_partial(&self) -> bool {
+        true
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if self.document.is_none() {
+            if self.in_progress {
+                return Err(deser_core::__format::in_progress_error());
+            }
+            if self.written {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "an XML document holds a single root element",
+                ));
+            }
+        }
+        // the parts of a document that failed stay written (see
+        // `in_progress`)
+        if !self
+            .config
+            .serialize_part(&mut self.document, driver, &mut self.out, limit)?
+        {
+            self.in_progress = true;
+            return Ok(Written::Partial);
+        }
+        self.in_progress = false;
+        self.written = true;
+        Ok(Written::Done)
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of an XML document (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// A stream holds a single document, writing a second value fails.  The
+    /// document is written in parts while the value is serialized (see
+    /// [`Serializer`]).
+    ///
+    /// ```
+    /// use deser_xml::SerializerConfig;
+    ///
+    /// #[derive(deser::Serialize)]
+    /// #[deser(rename = "feed")]
+    /// struct Feed {
+    ///     entry: Vec<u32>,
+    /// }
+    ///
+    /// let mut writer = SerializerConfig::new().writer(Vec::new());
+    /// writer.set_buffer_limit(8);
+    /// writer.write(&Feed { entry: vec![1, 2, 3] }).unwrap();
+    /// assert_eq!(
+    ///     writer.into_inner(),
+    ///     b"<feed><entry>1</entry><entry>2</entry><entry>3</entry></feed>"
+    /// );
+    /// ```
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value as XML document to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value as XML document to a writer.
+///
+/// The output is written in parts while the value is serialized (see
+/// [`Serializer`]), the writer does not need to be buffered.
+///
+/// ```
+/// #[derive(deser::Serialize)]
+/// #[deser(rename = "a")]
+/// struct Link {
+///     #[deser(rename = "@href")]
+///     href: String,
+/// }
+///
+/// let mut out = Vec::new();
+/// deser_xml::to_writer(&mut out, &Link { href: "/x".into() }).unwrap();
+/// assert_eq!(out, br#"<a href="/x"/>"#);
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to XML with the default configuration.
@@ -1218,10 +1392,9 @@ impl Writer {
     }
 
     /// Passes the output that is final on.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
-    fn pass_on(&mut self, out: &mut Vec<u8>) {
+    fn pass_on(&mut self, out: &mut String) {
         let len = self.final_until() - self.base;
-        out.extend_from_slice(&self.out.as_bytes()[..len]);
+        out.push_str(&self.out[..len]);
         self.out.drain(..len);
         self.base += len;
     }
@@ -1485,9 +1658,9 @@ mod tests {
         let mut driver = SerializeDriver::new(value);
         let mut progress = None;
         loop {
-            let mut out = Vec::new();
+            let mut out = String::new();
             let done = config.serialize_part(&mut progress, &mut driver, &mut out, 1)?;
-            pieces.push(String::from_utf8(out).unwrap());
+            pieces.push(out);
             if done {
                 return Ok(pieces);
             }

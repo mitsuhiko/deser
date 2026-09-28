@@ -1,22 +1,25 @@
 use std::io::Read;
 
-use deser::de::DeserializeDriver;
-use deser::io::{DecodeBuffer, Decoder, Encoder, Frame, Reader, Status, Writer};
-use deser::ser::SerializeDriver;
+use deser::de::{DeserializeDriver, Deserializer, Frame, StreamDeserializer};
+use deser::io::{Reader, Writer};
+use deser::ser::{SerializeDriver, Serializer, StreamSerializer};
+use deser::stream::{InputBuffer, Status};
 use deser::{Atom, Error, ErrorKind, Event};
 
 /// A format with a string or number per line.  Blank lines and leading
 /// spaces are skipped.
 ///
-/// The decoder remembers how far it scanned so it does not scan again.
+/// The deserializer remembers how far it scanned so it does not scan
+/// again.
 #[derive(Default, Clone, Copy)]
-struct Lines;
-
-impl Decoder for Lines {
+struct Lines {
     /// How far the input was scanned.
-    type State = usize;
+    scanned: usize,
+}
 
-    fn frame(&self, scanned: &mut usize, input: &[u8], eof: bool) -> Result<Frame, Error> {
+impl StreamDeserializer for Lines {
+    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let scanned = &mut self.scanned;
         // skip blank lines
         let blank = input
             .iter()
@@ -59,9 +62,8 @@ impl Decoder for Lines {
         }
     }
 
-    fn drive<'de>(
-        &self,
-        _scanned: &mut usize,
+    fn drive_frame<'de>(
+        &mut self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
@@ -76,15 +78,14 @@ impl Decoder for Lines {
     }
 }
 
-impl Encoder for Lines {
-    type State = ();
+/// Writes a string or number per line.
+#[derive(Default)]
+struct LinesOut {
+    out: Vec<u8>,
+}
 
-    fn encode(
-        &self,
-        _state: &mut (),
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
+impl Serializer for LinesOut {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         let mut line = String::new();
         driver.drive(|event, _| {
             match event {
@@ -94,9 +95,19 @@ impl Encoder for Lines {
             }
             Ok(())
         })?;
-        out.extend_from_slice(line.as_bytes());
-        out.push(b'\n');
+        self.out.extend_from_slice(line.as_bytes());
+        self.out.push(b'\n');
         Ok(())
+    }
+}
+
+impl StreamSerializer for LinesOut {
+    fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
     }
 }
 
@@ -129,7 +140,7 @@ const INPUT: &[u8] = b"1\n\n22\nhello\n\n333";
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_read_in_chunks() {
     for size in chunk_sizes(INPUT.len()) {
-        let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines);
+        let mut reader = Reader::new(Chunked { input: INPUT, size }, Lines::default());
         assert_eq!(reader.read::<u64>().unwrap(), Some(1));
         assert_eq!(reader.read::<u64>().unwrap(), Some(22));
         assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hello"));
@@ -142,7 +153,7 @@ fn test_read_in_chunks() {
 
 #[test]
 fn test_read_borrowed() {
-    let mut reader = Reader::new(&b"a\nb\n"[..], Lines);
+    let mut reader = Reader::new(&b"a\nb\n"[..], Lines::default());
     let value: &str = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(value, "a");
     let value: &str = reader.read_borrowed().unwrap().unwrap();
@@ -152,7 +163,7 @@ fn test_read_borrowed() {
 
 #[test]
 fn test_iter() {
-    let mut reader = Reader::new(&b"1\n2\n3"[..], Lines);
+    let mut reader = Reader::new(&b"1\n2\n3"[..], Lines::default());
     let values = reader.iter::<u64>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2, 3]);
 }
@@ -163,7 +174,7 @@ fn test_errors_refer_to_the_stream() {
     for size in 1..=8 {
         // errors of values continue with the next value
         let input = b"1\n\nx\n2\n";
-        let mut reader = Reader::new(Chunked { input, size }, Lines);
+        let mut reader = Reader::new(Chunked { input, size }, Lines::default());
         assert_eq!(reader.read::<u64>().unwrap(), Some(1));
         let err = reader.read::<u64>().unwrap_err();
         assert_eq!(err.offset(), Some(3));
@@ -173,7 +184,7 @@ fn test_errors_refer_to_the_stream() {
         // frames that do not start at the start of a line (columns are
         // counted in characters)
         let input = "ä\n  x\n".as_bytes();
-        let mut reader = Reader::new(Chunked { input, size }, Lines);
+        let mut reader = Reader::new(Chunked { input, size }, Lines::default());
         assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("ä"));
         let err = reader.read::<u64>().unwrap_err();
         assert_eq!(err.offset(), Some(5));
@@ -182,8 +193,8 @@ fn test_errors_refer_to_the_stream() {
 }
 
 #[test]
-fn test_decoder_errors_are_fatal() {
-    let mut reader = Reader::new(&b"1\n\n!\n2\n"[..], Lines);
+fn test_frame_errors_are_fatal() {
+    let mut reader = Reader::new(&b"1\n\n!\n2\n"[..], Lines::default());
     assert_eq!(reader.read::<u64>().unwrap(), Some(1));
     let err = reader.read::<u64>().unwrap_err();
     assert_eq!(err.message(), "bang");
@@ -198,12 +209,12 @@ fn test_decoder_errors_are_fatal() {
 #[test]
 fn test_from_reader() {
     assert_eq!(
-        deser::io::from_reader::<u64, _, _>(&b"42\n\n"[..], Lines).unwrap(),
+        deser::io::from_reader::<u64, _, _>(&b"42\n\n"[..], Lines::default()).unwrap(),
         42
     );
-    let err = deser::io::from_reader::<u64, _, _>(&b""[..], Lines).unwrap_err();
+    let err = deser::io::from_reader::<u64, _, _>(&b""[..], Lines::default()).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
-    let err = deser::io::from_reader::<u64, _, _>(&b"1\n\n2\n"[..], Lines).unwrap_err();
+    let err = deser::io::from_reader::<u64, _, _>(&b"1\n\n2\n"[..], Lines::default()).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected value after the end at line 3 column 1"
@@ -220,7 +231,9 @@ fn test_io_errors() {
         }
     }
 
-    let err = Reader::new(Failing, Lines).read::<u64>().unwrap_err();
+    let err = Reader::new(Failing, Lines::default())
+        .read::<u64>()
+        .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Io);
     assert_eq!(
         std::error::Error::source(&err).unwrap().to_string(),
@@ -229,8 +242,8 @@ fn test_io_errors() {
 }
 
 #[test]
-fn test_decode_buffer() {
-    let mut buffer = DecodeBuffer::new(Lines);
+fn test_input_buffer() {
+    let mut buffer = InputBuffer::new(Lines::default());
     assert_eq!(buffer.poll().unwrap(), Status::NeedInput);
     buffer.extend_from_slice(b"1\n2");
     assert_eq!(buffer.poll().unwrap(), Status::Ready);
@@ -249,7 +262,7 @@ fn test_large_values() {
     // larger than a few reads, miri needs smaller values
     let long = "x".repeat(if cfg!(miri) { 20_000 } else { 100_000 });
     let input = format!("{long}\n{long}\n");
-    let mut reader = Reader::new(input.as_bytes(), Lines);
+    let mut reader = Reader::new(input.as_bytes(), Lines::default());
     assert_eq!(reader.read::<String>().unwrap().unwrap(), long);
     assert_eq!(reader.read::<String>().unwrap().unwrap(), long);
     assert_eq!(reader.read::<String>().unwrap(), None);
@@ -257,7 +270,7 @@ fn test_large_values() {
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), Lines);
+    let mut writer = Writer::new(Vec::new(), LinesOut::default());
     writer.write(&1u64).unwrap();
     writer.write(&"hello").unwrap();
     // failed values write nothing
@@ -266,49 +279,69 @@ fn test_writer() {
     assert_eq!(writer.into_inner(), b"1\nhello\n2\n");
 
     let mut out = Vec::new();
-    deser::io::to_writer(&mut out, Lines, &42u64).unwrap();
+    deser::io::to_writer(&mut out, LinesOut::default(), &42u64).unwrap();
     assert_eq!(out, b"42\n");
 }
 
 #[test]
-fn test_provided_methods() {
-    // `from_slice` finds the value with the frames of the decoder
-    assert_eq!(Lines.from_slice::<u64>(b"\n\n42\n\n").unwrap(), 42);
-    let value: &str = Lines.from_slice(b"hello").unwrap();
-    assert_eq!(value, "hello");
-    let err = Lines.from_slice::<u64>(b"").unwrap_err();
+fn test_writer_is_a_serializer() {
+    fn write_all<S: Serializer>(ser: &mut S) {
+        ser.serialize(&1u64).unwrap();
+        ser.serialize_with(&"x", |_| {}).unwrap();
+    }
+
+    let mut writer = Writer::new(Vec::new(), LinesOut::default());
+    write_all(&mut writer);
+    assert_eq!(writer.into_inner(), b"1\nx\n");
+
+    // a serializer lent to a writer continues afterwards
+    let mut ser = LinesOut::default();
+    ser.serialize(&0u64).unwrap();
+    {
+        let mut writer = Writer::new(Vec::new(), &mut ser);
+        write_all(&mut writer);
+        // the output of the serializer is written first
+        assert_eq!(writer.get_ref(), b"0\n1\nx\n");
+    }
+    assert_eq!(ser.output(), b"");
+    ser.serialize(&2u64).unwrap();
+    assert_eq!(ser.output(), b"2\n");
+}
+
+#[test]
+fn test_reader_is_a_deserializer() {
+    let input = b"1\n\nhello\n2";
+    let mut reader = Reader::new(&input[..], Lines::default());
+    let mut values = Vec::new();
+    while !reader.is_end().unwrap() {
+        values.push(reader.deserialize::<deser::de::Recording>().unwrap());
+    }
+    assert_eq!(values.len(), 3);
+    assert_eq!(values[1].as_str(), Some("hello"));
+    let err = reader.deserialize::<u64>().unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
-    let err = Lines.from_slice::<u64>(b"1\n\n2").unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "Unexpected: unexpected value after the end at line 3 column 1"
-    );
-    let err = Lines.from_slice::<u64>(b"\n  x\n").unwrap_err();
-    assert_eq!((err.line(), err.column()), (Some(2), Some(3)));
 
-    assert_eq!(Lines.from_reader::<u64, _>(&b"7\n"[..]).unwrap(), 7);
-
-    assert_eq!(Lines.to_vec(&42u64).unwrap(), b"42\n");
-    let mut out = Vec::new();
-    Lines.to_writer(&mut out, &"x").unwrap();
-    assert_eq!(out, b"x\n");
+    // the values cannot borrow from the reader
+    let mut reader = Reader::new(&b"hello\n"[..], Lines::default());
+    assert!(!reader.is_end().unwrap());
+    let err = reader.deserialize::<&str>().unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Unexpected, "{err}");
+    let mut reader = Reader::new(&b"hello\n"[..], Lines::default());
+    assert_eq!(reader.deserialize::<String>().unwrap(), "hello");
+    assert!(reader.is_end().unwrap());
 }
 
 /// A format with a line of column names followed by lines of values that
 /// are separated by spaces.  Rows are maps of the column names to the
 /// values.
-struct Columns;
-
-/// The state of a stream of [`Columns`].
 #[derive(Default, Debug, Clone, PartialEq)]
-struct ColumnsState {
+struct Columns {
     names: Option<Vec<String>>,
 }
 
-impl Decoder for Columns {
-    type State = ColumnsState;
-
-    fn frame(&self, state: &mut ColumnsState, input: &[u8], eof: bool) -> Result<Frame, Error> {
+impl StreamDeserializer for Columns {
+    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let state = self;
         let (end, consumed) = match input.iter().position(|&b| b == b'\n') {
             Some(end) => (end, end + 1),
             None if eof && input.is_empty() => return Ok(Frame::End),
@@ -328,13 +361,12 @@ impl Decoder for Columns {
         })
     }
 
-    fn drive<'de>(
-        &self,
-        state: &mut ColumnsState,
+    fn drive_frame<'de>(
+        &mut self,
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let names = state.names.as_ref().expect("names are read first");
+        let names = self.names.as_ref().expect("names are read first");
         driver.emit(Event::map_start())?;
         for (name, value) in names
             .iter()
@@ -348,15 +380,27 @@ impl Decoder for Columns {
     }
 }
 
-impl Encoder for Columns {
-    type State = ColumnsState;
+/// Writes rows of [`Columns`].
+#[derive(Default)]
+struct ColumnsOut {
+    names: Option<Vec<String>>,
+    out: Vec<u8>,
+}
 
-    fn encode(
-        &self,
-        state: &mut ColumnsState,
-        driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
+impl StreamSerializer for ColumnsOut {
+    fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+}
+
+impl Serializer for ColumnsOut {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        let state = &mut self.names;
+        let out = &mut self.out;
         let mut names = Vec::new();
         let mut values = Vec::new();
         let mut is_key = false;
@@ -380,8 +424,8 @@ impl Encoder for Columns {
             }
             Ok(())
         })?;
-        match state.names {
-            Some(ref expected) if *expected != names => {
+        match state {
+            Some(expected) if *expected != names => {
                 return Err(Error::new(ErrorKind::Unexpected, "different columns"));
             }
             Some(_) => {}
@@ -393,7 +437,7 @@ impl Encoder for Columns {
         out.extend_from_slice(values.join(" ").as_bytes());
         out.push(b'\n');
         // the state is only updated once the value was serialized
-        state.names = Some(names);
+        *state = Some(names);
         Ok(())
     }
 }
@@ -409,8 +453,8 @@ struct Row<'a> {
 fn test_state_in_drive() {
     let input = b"name age\njane 42\njohn 23\n";
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(Chunked { input, size }, Columns);
-        assert_eq!(reader.state().names, None);
+        let mut reader = Reader::new(Chunked { input, size }, Columns::default());
+        assert_eq!(reader.deserializer().names, None);
         let row: Row = reader.read_borrowed().unwrap().unwrap();
         assert_eq!(
             row,
@@ -420,7 +464,7 @@ fn test_state_in_drive() {
             }
         );
         assert_eq!(
-            reader.state().names.as_deref(),
+            reader.deserializer().names.as_deref(),
             Some(&["name".to_string(), "age".to_string()][..])
         );
         let row: Row = reader.read_borrowed().unwrap().unwrap();
@@ -433,24 +477,14 @@ fn test_state_in_drive() {
         );
         assert_eq!(reader.read_borrowed::<Row>().unwrap(), None);
     }
-
-    // `from_slice` passes the state from the frames to the value
-    let row: Row = Columns.from_slice(b"age name\n42 jane").unwrap();
-    assert_eq!(
-        row,
-        Row {
-            name: "jane",
-            age: 42
-        }
-    );
 }
 
 #[test]
-fn test_reader_with_state() {
-    let state = ColumnsState {
+fn test_reader_with_headers() {
+    let state = Columns {
         names: Some(vec!["name".into(), "age".into()]),
     };
-    let mut reader = Reader::with_state(&b"jane 42\n"[..], Columns, state.clone());
+    let mut reader = Reader::new(&b"jane 42\n"[..], state.clone());
     let row: Row = reader.read_borrowed().unwrap().unwrap();
     assert_eq!(
         row,
@@ -460,7 +494,7 @@ fn test_reader_with_state() {
         }
     );
 
-    let mut buffer = DecodeBuffer::with_state(Columns, state);
+    let mut buffer = InputBuffer::new(state);
     buffer.extend_from_slice(b"john 23");
     buffer.set_eof();
     assert_eq!(buffer.poll().unwrap(), Status::Ready);
@@ -480,11 +514,11 @@ fn test_writer_state() {
         age: u64,
     }
 
-    let mut writer = Writer::new(Vec::new(), Columns);
+    let mut writer = Writer::new(Vec::new(), ColumnsOut::default());
     // a failed value leaves the state as it was: the next value writes the
     // names
     assert!(writer.write(&vec![1u64]).is_err());
-    assert_eq!(writer.state().names, None);
+    assert_eq!(writer.serializer().names, None);
     writer
         .write(&Row {
             name: "jane",
@@ -500,10 +534,11 @@ fn test_writer_state() {
         .unwrap();
     assert_eq!(writer.into_inner(), b"name age\njane 42\njohn 23\n");
 
-    let state = ColumnsState {
+    let state = ColumnsOut {
         names: Some(vec!["name".into(), "age".into()]),
+        out: Vec::new(),
     };
-    let mut writer = Writer::with_state(Vec::new(), Columns, state);
+    let mut writer = Writer::new(Vec::new(), state);
     writer
         .write(&Row {
             name: "jane",

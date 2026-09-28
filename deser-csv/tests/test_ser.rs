@@ -239,7 +239,7 @@ fn test_serializer() {
     // failed records write nothing and do not change the columns
     assert!(serializer.serialize(&vec![vec![1]]).is_err());
     serializer.serialize(&row("john", 23, None)).unwrap();
-    assert_eq!(serializer.output(), "name,age,note\njane,42,x\njohn,23,\n");
+    assert_eq!(serializer.as_str(), "name,age,note\njane,42,x\njohn,23,\n");
 
     // the columns are the keys of the first record, a field that is
     // skipped there cannot be written later

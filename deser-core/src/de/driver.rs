@@ -69,6 +69,11 @@ pub(crate) struct DriverCore<'de> {
     // is open.
     root: Option<SinkHandle<'de, 'de>>,
     sink_stack: Vec<(SinkHandle<'de, 'de>, Container)>,
+    // non-zero while the driver is lent out with a shorter lifetime for
+    // the borrowed data (see `DeserializeDriver::transient`): borrowed
+    // atoms are delivered as transient ones.  The value identifies the
+    // call that lent the driver out.
+    transient: usize,
 }
 
 const STACK_CAPACITY: usize = 128;
@@ -128,6 +133,59 @@ impl Container {
 /// borrows from.
 unsafe fn erase_lifetime<'de>(handle: SinkHandle<'_, 'de>) -> SinkHandle<'de, 'de> {
     unsafe { core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(handle) }
+}
+
+/// Restores a driver after it was lent out (see
+/// `DeserializeDriver::transient`).
+struct Lent<'a, 'de> {
+    driver: *mut DeserializeDriver<'a, 'de>,
+    id: usize,
+    outer: usize,
+}
+
+impl Drop for Lent<'_, '_> {
+    fn drop(&mut self) {
+        // SAFETY: the driver outlives this and is not borrowed anymore
+        let driver = unsafe { &mut *self.driver };
+        if driver.core.transient == self.id {
+            driver.core.transient = self.outer;
+            return;
+        }
+        // the callback replaced the driver with one whose sinks can borrow
+        // data that lives shorter than `'de`.  It's dropped while that
+        // data is alive and the driver is left without sinks.
+        let replacement = core::mem::replace(
+            &mut driver.core,
+            DriverCore {
+                state: State::new(),
+                root: None,
+                sink_stack: Vec::new(),
+                transient: 0,
+            },
+        );
+        drop(replacement);
+    }
+}
+
+/// Shortens the lifetimes of a driver (see `DeserializeDriver::transient`).
+///
+/// The lifetime of the sinks becomes the lifetime of the reference, so a
+/// driver that is swapped out cannot outlive the call.
+fn shorten<'r, 'a, 'de, 'f>(
+    driver: &'r mut DeserializeDriver<'a, 'de>,
+) -> &'r mut DeserializeDriver<'r, 'f>
+where
+    'de: 'f,
+    'f: 'r,
+{
+    // SAFETY: the driver has the same layout for all lifetimes.  The
+    // sinks accept data borrowed for `'de` and receive data that lives for
+    // `'f`: the driver delivers borrowed atoms as transient ones while it's
+    // lent out (`DriverCore::transient`), so no data of `'f` is passed to
+    // them as borrowed.  Sinks cannot be wrapped while it's lent out, and
+    // if the driver is replaced the replacement is dropped before `'f`
+    // ends (see `transient`).
+    unsafe { &mut *(driver as *mut DeserializeDriver<'a, 'de>).cast::<DeserializeDriver<'r, 'f>>() }
 }
 
 impl<'a, 'de> DeserializeDriver<'a, 'de> {
@@ -264,6 +322,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                 sink_stack,
                 // SAFETY: the driver cannot outlive 'a
                 root: Some(unsafe { erase_lifetime(sink) }),
+                transient: 0,
             },
             layers: Vec::new(),
             _marker: PhantomData,
@@ -315,6 +374,11 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             self.core.sink_stack.is_empty(),
             "sinks can only be wrapped before events are emitted"
         );
+        // a wrapper could keep data of the shorter lifetime
+        assert!(
+            self.core.transient == 0,
+            "sinks cannot be wrapped in a transient driver"
+        );
         let root = self.core.root.take().expect("no active sink");
         self.core.root = Some(f(root, &mut self.core.state));
     }
@@ -365,6 +429,65 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             Event::MapEnd => self.end_event(true),
             Event::SeqEnd => self.end_event(false),
         }
+    }
+
+    /// Lends the driver out for data that lives shorter than `'de`.
+    ///
+    /// The callback receives the driver with the lifetime `'f` for borrowed
+    /// data.  Events emitted with [`emit_borrowed`](Self::emit_borrowed)
+    /// within it are delivered like the ones emitted with
+    /// [`emit`](Self::emit): types that keep the data copy it and types
+    /// which can only borrow (like `&str`) fail.  This allows data that
+    /// only lives for a call (like the frame of a value in a stream buffer)
+    /// to be deserialized with code that borrows from its input into a
+    /// driver for any lifetime:
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    ///
+    /// /// Emits the words of the input, borrowing from it.
+    /// fn words<'de>(input: &'de str, driver: &mut DeserializeDriver<'_, 'de>) {
+    ///     driver.emit(deser::Event::seq_start()).unwrap();
+    ///     for word in input.split(' ') {
+    ///         driver.emit_borrowed(word).unwrap();
+    ///     }
+    ///     driver.emit(deser::Event::SeqEnd).unwrap();
+    /// }
+    ///
+    /// let mut out = None::<Vec<String>>;
+    /// {
+    ///     let mut driver = DeserializeDriver::new(&mut out);
+    ///     let input = String::from("hello world");
+    ///     driver.transient(|driver| words(&input, driver));
+    /// }
+    /// assert_eq!(out.unwrap(), ["hello", "world"]);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the callback replaces the driver (for instance with
+    /// [`mem::swap`](core::mem::swap)), the driver cannot be used after
+    /// that.  Wrapping the sink ([`wrap_sink`](Self::wrap_sink)) in the
+    /// callback panics as well.
+    pub fn transient<'f, R>(&mut self, f: impl FnOnce(&mut DeserializeDriver<'_, 'f>) -> R) -> R
+    where
+        'de: 'f,
+    {
+        // identifies this call, the address is unique while it runs
+        let marker = 0u8;
+        let id = &marker as *const u8 as usize;
+        let outer = core::mem::replace(&mut self.core.transient, id);
+        let driver: *mut DeserializeDriver<'a, 'de> = self;
+        // restores the driver, also if the callback panics
+        let lent = Lent { driver, id, outer };
+        // SAFETY: the pointer comes from `self`, which is not used until
+        // the callback returned
+        let rv = f(shorten(unsafe { &mut *driver }));
+        // SAFETY: the callback returned, nothing borrows the driver
+        let replaced = unsafe { (*driver).core.transient != id };
+        drop(lent);
+        assert!(!replaced, "the driver was replaced while it was lent out");
+        rv
     }
 
     // The following functions deliver an event emitted into the driver and
@@ -490,6 +613,11 @@ impl<'de> DriverCore<'de> {
 
     #[inline(always)]
     fn deliver_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
+        // the data does not live for the lifetime of the sinks (see
+        // `DeserializeDriver::transient`)
+        if self.transient != 0 {
+            return self.deliver_atom(atom);
+        }
         match self.emit_borrowed_atom(atom) {
             Ok(()) => Ok(()),
             Err(err) => self.recover(err, None),

@@ -16,6 +16,46 @@ fn test_stream() {
 }
 
 #[test]
+fn test_io_streams() {
+    use std::io::Read;
+
+    /// A reader that returns the input in chunks of a few bytes.
+    struct Chunked<'a>(&'a [u8]);
+
+    impl Read for Chunked<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let len = buf.len().min(self.0.len()).min(3);
+            buf[..len].copy_from_slice(&self.0[..len]);
+            self.0 = &self.0[len..];
+            Ok(len)
+        }
+    }
+
+    // JSON Lines (framed) from a reader into YAML documents on a writer
+    let config = deser_json::DeserializerConfig::new().trailing(deser_json::Trailing::Newline);
+    let mut de = config.reader(Chunked(b"{\"a\": \"x\"}\n[1, 2]\n"));
+    let mut ser = deser_yaml::SerializerConfig::new().writer(Vec::new());
+    let mut transcoder = Transcoder::new();
+    while !de.is_end().unwrap() {
+        transcoder.transcode(&mut de, &mut ser).unwrap();
+    }
+    assert_eq!(ser.into_inner(), b"a: x\n---\n- 1\n- 2\n");
+
+    // a CBOR sequence (fed) into JSON Lines
+    let mut cbor = deser_cbor::Serializer::new();
+    cbor.serialize(&vec!["a", "b"]).unwrap();
+    cbor.serialize(&42u32).unwrap();
+    let cbor = cbor.finish();
+    let mut de = deser_cbor::DeserializerConfig::new().reader(Chunked(&cbor));
+    let lines = deser_json::SerializerConfig::new().trailing(deser_json::Trailing::Newline);
+    let mut ser = lines.writer(Vec::new());
+    while !de.is_end().unwrap() {
+        transcoder.transcode(&mut de, &mut ser).unwrap();
+    }
+    assert_eq!(ser.into_inner(), b"[\"a\",\"b\"]\n42\n");
+}
+
+#[test]
 fn test_yaml_documents_to_json_lines() {
     let mut de = deser_yaml::Deserializer::from_str("a: 1\n---\nb: [x]\n");
     let mut out = String::new();

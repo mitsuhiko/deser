@@ -80,10 +80,14 @@
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams with
-//!   [`from_reader`] and [`to_writer`] and the configurations with
-//!   [`deser::io`](deser_core::io).  As property lists cannot be split,
-//!   the whole stream is read before it's parsed.  Requires `std`.
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library with [`from_reader`] and [`to_writer`] and the
+//!   readers and writers of [`deser::io`](deser_core::io)
+//!   ([`DeserializerConfig::reader`] and [`SerializerConfig::writer`]).
+//!   As property lists cannot be split, the whole stream is read before
+//!   it's parsed.  Requires `std`.  The stream serializer
+//!   ([`Serializer`]) and deserializer ([`StreamDeserializer`]) do not
+//!   need it.
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
@@ -94,12 +98,11 @@ extern crate alloc;
 mod common;
 mod de;
 mod format;
-#[cfg(feature = "io")]
-mod io;
 mod read_ascii;
 mod read_binary;
 mod read_xml;
 mod ser;
+mod stream;
 mod uid;
 mod write_ascii;
 mod write_binary;
@@ -109,8 +112,11 @@ mod write_xml;
 pub use self::de::{Deserializer, DeserializerConfig, from_slice};
 pub use self::format::Format;
 #[cfg(feature = "io")]
-pub use self::io::{WriterState, from_reader, to_writer};
+pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_string, to_vec};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 pub use self::uid::Uid;
 
 // the examples of the readme are tested

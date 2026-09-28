@@ -198,9 +198,12 @@
 //!
 //! Documents are read from a [`Read`](std::io::Read) with
 //! [`from_reader`] and written to a [`Write`](std::io::Write) with
-//! [`to_writer`].  The configurations also work with
-//! [`deser::io`](deser_core::io) (or an adapter for an async runtime such as
-//! `deser-tokio`), a stream holds a single document.  The reader is read to
+//! [`to_writer`].  The configurations also create readers and writers of
+//! [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`] and
+//! [`SerializerConfig::writer`]), the stream serializer ([`Serializer`])
+//! and deserializer ([`StreamDeserializer`]) work with other kinds of IO
+//! too (for instance async runtimes with `deser-tokio`).  A stream holds a
+//! single document.  The reader is read to
 //! the end before the document is parsed.  The output is written while the
 //! value is serialized: an element is only held back until no more
 //! attributes can come for it, which for structs is known from their fields
@@ -224,8 +227,8 @@
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).
 //!
 //! # Limitations
 //!
@@ -234,18 +237,20 @@
 #![deny(missing_docs)]
 
 mod de;
-#[cfg(feature = "io")]
-mod io;
 mod mixed;
 mod root;
 mod ser;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
-#[cfg(feature = "io")]
-pub use self::io::{WriterState, from_reader, to_writer};
 pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
 pub use self::root::Root;
+#[cfg(feature = "io")]
+pub use self::ser::to_writer;
 pub use self::ser::{Indent, Serializer, SerializerConfig, to_string};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 
 /// Writes a name in a namespace as `{uri}local`.
 ///

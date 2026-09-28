@@ -582,10 +582,8 @@ fn test_values() {
 #[test]
 #[cfg(feature = "io")]
 fn test_locations() {
-    use deser::io::Reader;
-
     // from streams, like the body of a request
-    let mut reader = Reader::new(&b"a=1&b=x"[..], DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(&b"a=1&b=x"[..]);
     let err = reader.read::<BTreeMap<String, u32>>().unwrap_err();
     assert_eq!(err.message(), "invalid value \"x\", expected u32");
     assert_eq!((err.line(), err.column()), (Some(1), Some(7)));

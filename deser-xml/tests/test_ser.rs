@@ -412,7 +412,7 @@ fn test_serializer() {
     // the root element is named after the struct
     let mut serializer = deser_xml::Serializer::new();
     serializer.serialize(&Point { x: 1, y: 2 }).unwrap();
-    assert_eq!(serializer.output(), r#"<point x="1"><y>2</y></point>"#);
+    assert_eq!(serializer.as_str(), r#"<point x="1"><y>2</y></point>"#);
     // a document has a single root element
     let err = serializer.serialize(&Point { x: 3, y: 4 }).unwrap_err();
     assert_eq!(
@@ -428,7 +428,7 @@ fn test_serializer() {
         .serialize(&BTreeMap::from([("a", 1)]))
         .unwrap_err();
     assert!(err.message().starts_with("the name of the root element"));
-    assert_eq!(serializer.output(), "");
+    assert_eq!(serializer.as_str(), "");
     let config = SerializerConfig::new().root("r").declaration(true);
     let mut serializer = deser_xml::Serializer::with_config(&config);
     serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();

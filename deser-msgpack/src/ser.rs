@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
@@ -5,7 +6,7 @@ use core::mem::ManuallyDrop;
 use deser_core::__format::extend;
 use deser_core::State;
 use deser_core::ext::{BigInt, ExtValue, Timestamp};
-use deser_core::ser::{self, PausableSink, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::ext::{Ext, TIMESTAMP, encode_timestamp};
@@ -628,33 +629,52 @@ impl SerializerConfig {
     /// that is final.
     ///
     /// The progress of the value is kept in `item` (see
-    /// `Encoder::encode_incremental`), `true` is returned once the value is
-    /// complete.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// `StreamSerializer::drive_partial`), `true` is returned once the
+    /// value is complete.  If this fails, what was appended by the call is
+    /// removed from the output.
     pub(crate) fn serialize_part(
         &self,
-        item: &mut Option<alloc::boxed::Box<Writer>>,
+        item: &mut Option<Box<Writer>>,
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
         limit: usize,
     ) -> Result<bool, Error> {
+        let len = out.len();
+        // a value that is written at once is written into the output
+        // directly without boxing the writer
+        if item.is_none() && limit == usize::MAX {
+            let mut writer = Writer::new(self.canonical, core::mem::take(out));
+            let rv = writer.drive(driver, usize::MAX);
+            *out = writer.out;
+            if rv.is_err() {
+                out.truncate(len);
+            }
+            return rv;
+        }
         // the writer writes into an empty output directly, otherwise its
         // output is appended
         let adopt = out.is_empty();
         let mut writer = item
             .take()
-            .unwrap_or_else(|| alloc::boxed::Box::new(Writer::new(self.canonical, Vec::new())));
+            .unwrap_or_else(|| Box::new(Writer::new(self.canonical, Vec::new())));
         if adopt {
             writer.out = core::mem::take(out);
         }
         // after an error the value is abandoned, its writer is dropped
-        let done = writer.drive(driver, limit)?;
+        let rv = writer.drive(driver, limit);
         let output = core::mem::take(&mut writer.out);
         if adopt {
             *out = output;
-        } else {
+        } else if rv.is_ok() {
             out.extend_from_slice(&output);
         }
+        let done = match rv {
+            Ok(done) => done,
+            Err(err) => {
+                out.truncate(len);
+                return Err(err);
+            }
+        };
         if !done {
             *item = Some(writer);
         }
@@ -686,18 +706,54 @@ impl SerializerConfig {
 /// assert_eq!(serializer.finish(), [0x01, 0xa2, b'h', b'i']);
 /// ```
 ///
-/// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
-#[derive(Debug, Clone)]
+/// The serializer is also the stream serializer of MessagePack (see
+/// [`StreamSerializer`](ser::StreamSerializer)): the output can be taken
+/// while values are written, and large values can be written in parts.
+/// The output of arrays and maps whose length is not known upfront (and of
+/// maps in canonical mode) is held back until they are complete, as their
+/// header or the order of their entries is only known then.  To write to
+/// a [`Write`](std::io::Write) use [`SerializerConfig::writer`].
 pub struct Serializer {
     config: SerializerConfig,
     out: Vec<u8>,
     written: usize,
+    // the value that is written in parts
+    item: Option<Box<Writer>>,
+    // a value was started with `drive_partial` and is not complete
+    in_progress: bool,
 }
 
 impl Default for Serializer {
     fn default() -> Serializer {
         Serializer::new()
+    }
+}
+
+impl Clone for Serializer {
+    /// Clones the serializer.
+    ///
+    /// The clone of a serializer that writes a value in parts cannot write
+    /// more values (see
+    /// [`StreamSerializer::in_progress`](ser::StreamSerializer::in_progress)).
+    fn clone(&self) -> Serializer {
+        Serializer {
+            config: self.config.clone(),
+            out: self.out.clone(),
+            written: self.written,
+            item: None,
+            in_progress: self.in_progress,
+        }
+    }
+}
+
+impl core::fmt::Debug for Serializer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Serializer")
+            .field("config", &self.config)
+            .field("output", &self.out)
+            .field("written", &self.written)
+            .field("in_progress", &self.in_progress)
+            .finish()
     }
 }
 
@@ -713,7 +769,19 @@ impl Serializer {
             config: config.clone(),
             out: Vec::new(),
             written: 0,
+            item: None,
+            in_progress: false,
         }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns the number of values that were written.
+    pub fn written(&self) -> usize {
+        self.written
     }
 
     /// Serializes a value.
@@ -734,7 +802,7 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
+    /// Returns the output written so far (that was not cleared).
     pub fn output(&self) -> &[u8] {
         &self.out
     }
@@ -747,11 +815,99 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        let bytes = self.config.serialize_driver(driver)?;
-        self.out.extend_from_slice(&bytes);
-        self.written += 1;
-        Ok(())
+        // only `drive_partial` continues a value
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    fn supports_partial(&self) -> bool {
+        true
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if self.item.is_none() && self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        // the parts of a value that failed stay written (see
+        // `in_progress`)
+        if !self
+            .config
+            .serialize_part(&mut self.item, driver, &mut self.out, limit)?
+        {
+            self.in_progress = true;
+            return Ok(Written::Partial);
+        }
+        self.in_progress = false;
+        self.written += 1;
+        Ok(Written::Done)
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of MessagePack items to a stream
+    /// (see [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// The items follow each other without separators.
+    ///
+    /// ```
+    /// use deser_msgpack::SerializerConfig;
+    ///
+    /// let mut writer = SerializerConfig::new().writer(Vec::new());
+    /// writer.write(&1u32).unwrap();
+    /// writer.write(&"hi").unwrap();
+    /// assert_eq!(writer.into_inner(), [0x01, 0xa2, b'h', b'i']);
+    /// ```
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value to a writer.
+///
+/// The output of large values is written in pieces while they are
+/// serialized (see [`deser::io`](deser_core::io)), the writer does not need to be
+/// buffered.
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_msgpack::to_writer(&mut out, &vec![1u32, 2]).unwrap();
+/// assert_eq!(out, [0x92, 0x01, 0x02]);
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to MessagePack.

@@ -58,11 +58,9 @@ impl<'i> Out<'i> for Borrowing<'_, '_, 'i> {
     }
 }
 
-#[cfg(any(test, feature = "io"))]
 /// Passes events of the input on as data that is only valid for the call.
 pub(crate) struct Copying<'a, 'd, 'de>(pub &'a mut DeserializeDriver<'d, 'de>);
 
-#[cfg(any(test, feature = "io"))]
 impl<'i> Out<'i> for Copying<'_, '_, '_> {
     #[inline(always)]
     fn state_mut(&mut self) -> &mut State {
@@ -80,13 +78,11 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
     }
 }
 
-#[cfg(feature = "io")]
 /// Discards the events.
 ///
 /// This is used to skip the rest of an item after an error.
 pub(crate) struct Discard(pub State);
 
-#[cfg(feature = "io")]
 impl<'i> Out<'i> for Discard {
     #[inline(always)]
     fn state_mut(&mut self) -> &mut State {
@@ -145,7 +141,6 @@ impl Parser {
         self.position
     }
 
-    #[cfg(feature = "io")]
     /// Returns where the rest of the item continues if the last error was
     /// an error of a sink.
     ///

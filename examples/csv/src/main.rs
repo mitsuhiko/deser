@@ -7,7 +7,6 @@
 //! errors are reported with their line and column and skipped.  Then the
 //! orders are written as CSV and as TSV.
 use deser::adapters::Separated;
-use deser::io::Reader;
 use deser::{Deserialize, Serialize};
 use deser_csv::{DeserializerConfig, Nulls, SerializerConfig};
 use deser_path::{Path, PathLayer};
@@ -43,7 +42,7 @@ fn main() {
     // empty fields are null, so `copies` of a gift is missing instead of
     // an empty number
     let config = DeserializerConfig::new().nulls(Nulls::Empty);
-    let mut reader = Reader::new(INPUT.as_bytes(), &config);
+    let mut reader = config.reader(INPUT.as_bytes());
     let mut orders = Vec::new();
     loop {
         match reader.read_with::<Order, _>(|driver| driver.push_layer(PathLayer::new())) {
@@ -57,7 +56,7 @@ fn main() {
             }
         }
     }
-    println!("columns: {:?}", reader.state().headers().unwrap());
+    println!("columns: {:?}", reader.deserializer().headers().unwrap());
     for order in &orders {
         println!("{:?}", order);
     }

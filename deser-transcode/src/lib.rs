@@ -67,6 +67,29 @@
 //! assert_eq!(ser.finish(), "a: 1\n---\na: 2\n");
 //! ```
 //!
+//! Readers and writers of `deser::io` are deserializers and serializers
+//! too, so values can be transcoded from one stream to another (for
+//! instance from a file to standard output) without holding more than one
+//! value in memory:
+//!
+//! ```rust
+//! use deser_json::{DeserializerConfig, Trailing};
+//! use deser_transcode::Transcoder;
+//!
+//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let input = &b"{\"a\": 1}\n{\"a\": 2}\n"[..];
+//! let mut de = config.reader(input);
+//! let mut ser = deser_yaml::SerializerConfig::new().writer(Vec::new());
+//! let mut transcoder = Transcoder::new();
+//! while !de.is_end().unwrap() {
+//!     transcoder.transcode(&mut de, &mut ser).unwrap();
+//! }
+//! assert_eq!(ser.into_inner(), b"a: 1\n---\na: 2\n");
+//! ```
+//!
+//! Values that are read from streams cannot borrow from the input, strings
+//! are copied into the buffer of the transcoder.
+//!
 //! # Layers
 //!
 //! Layers can be added to both sides (see [`transcode_with`]), for

@@ -86,29 +86,35 @@
 //!
 //! Documents are read from a [`Read`](std::io::Read) with [`from_reader`]
 //! and written to a [`Write`](std::io::Write) with [`to_writer`].  The
-//! configurations can also be used with [`deser::io`](deser_core::io) or an adapter for an
-//! async runtime (such as `deser-tokio`).  As TOML documents cannot
-//! be split, the whole document is read before it's parsed.
+//! configurations also create readers and writers of
+//! [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`] and
+//! [`SerializerConfig::writer`]), the stream serializer ([`Serializer`])
+//! and deserializer ([`StreamDeserializer`]) work with other kinds of IO
+//! too (for instance async runtimes with `deser-tokio`).  As TOML
+//! documents cannot be split, the whole document is read before it's
+//! parsed.
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod datetime;
 mod de;
 mod document;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod scan;
 mod ser;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
 #[cfg(feature = "io")]
-pub use self::io::{from_reader, to_writer};
+pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_string};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;
 /// Re-exported from [`deser::ext`](deser_core::ext) for convenience.
 pub use deser_core::ext::{Date, Datetime, Offset, Time};

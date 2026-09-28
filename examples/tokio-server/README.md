@@ -15,13 +15,15 @@ JSON Lines RPC server and client in one binary, both on tokio.
 ## What it shows
 
 - **Server** (`handle`): `deser_tokio::Reader` over the read half of a
-  `TcpStream` and `deser_tokio::Writer` over the write half, both
-  configured for JSON Lines (`Trailing::Newline`). Each request line is
+  `TcpStream` and `deser_tokio::Writer` over the write half, with the
+  JSON stream deserializer and serializer configured for JSON Lines
+  (`Trailing::Newline`). Each request line is
   answered with one response line. A malformed request becomes a
   `Response::Error` and only fails that one request. I/O errors end the
   connection (`err.kind() == ErrorKind::Io`).
-- **Client**: `Framed::new(stream, Codec::<_, _, Response>::new(read_cfg,
-  write_cfg))`, using `SinkExt::send` and `StreamExt::next`.
+- **Client**: `Framed::new(stream, Codec::<_, _, Response>::new(de, ser))`
+  with the JSON stream deserializer and serializer created from the
+  configs, using `SinkExt::send` and `StreamExt::next`.
 - Requests use an internally tagged enum (`"method": "add"`). Responses
   use an externally tagged enum.
 

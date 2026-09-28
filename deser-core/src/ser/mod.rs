@@ -112,12 +112,14 @@ pub(crate) mod flatten;
 pub(crate) mod impls;
 mod layer;
 mod serializer;
+mod stream;
 
 pub use self::boxed::Boxed;
 pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
+pub use self::stream::{StreamSerializer, Written};
 
 pub use driver::{EventSink, PausableSink, SerializeDriver};
 

@@ -44,8 +44,8 @@
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams, see
-//!   [streams](#streams).  Requires `std`.
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library, see [streams](#streams).  Requires `std`.
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
@@ -55,26 +55,32 @@
 //! Items are read from a [`Read`](std::io::Read) with [`from_reader`] and
 //! written to a [`Write`](std::io::Write) with [`to_writer`].  To read or
 //! write items that follow each other (for instance on a socket) the
-//! configurations are used with [`deser::io`](deser_core::io) (or an
-//! adapter for an async runtime such as `deser-tokio`).  The reader only
-//! buffers until an item is complete:
+//! configurations create readers and writers of
+//! [`deser::io`](deser_core::io) ([`DeserializerConfig::reader`] and
+//! [`SerializerConfig::writer`]).  The reader only buffers until an item is
+//! complete:
 //!
 //! ```rust
 //! # #[cfg(feature = "io")] {
-//! use deser::io::{Reader, Writer};
 //! use deser_msgpack::{DeserializerConfig, SerializerConfig};
 //!
-//! let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+//! let mut writer = SerializerConfig::new().writer(Vec::new());
 //! writer.write(&vec![1u32, 2]).unwrap();
 //! writer.write(&"three").unwrap();
 //! let bytes = writer.into_inner();
 //!
-//! let mut reader = Reader::new(&bytes[..], DeserializerConfig::new());
+//! let mut reader = DeserializerConfig::new().reader(&bytes[..]);
 //! assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 //! assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("three"));
 //! assert_eq!(reader.read::<String>().unwrap(), None);
 //! # }
 //! ```
+//!
+//! The stream serializer ([`Serializer`]) and the stream deserializer
+//! ([`StreamDeserializer`]) do not do IO themselves (see
+//! [`deser::stream`](deser_core::stream)), they also work with other kinds
+//! of IO (for instance async runtimes with `deser-tokio`) and without the
+//! standard library.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
@@ -83,13 +89,15 @@ extern crate alloc;
 mod de;
 mod ext;
 mod head;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod ser;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
 pub use self::ext::Ext;
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, WriterState, from_reader, to_writer};
+pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_vec};
+pub use self::stream::StreamDeserializer;
+#[cfg(feature = "io")]
+pub use self::stream::from_reader;

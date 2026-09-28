@@ -76,7 +76,7 @@ DIALECTS = {
     "deser-hjson": {"comments", "trailing_commas", "single_quotes", "hjson"},
 }
 
-FILES = ["de.rs", "io.rs", "parser.rs", "scan.rs"]
+FILES = ["de.rs", "parser.rs", "scan.rs", "stream.rs"]
 
 # names in conditions which are not capabilities
 OTHER_CFGS = {"test", "miri", "doc", "docsrs", "debug_assertions", "unix", "windows"}

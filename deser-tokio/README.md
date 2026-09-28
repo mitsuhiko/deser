@@ -1,13 +1,14 @@
 # deser-tokio
 
 Read and write [deser](https://github.com/mitsuhiko/deser) values with
-[tokio](https://tokio.rs).  This connects the configurations of all deser
-formats (JSON, CBOR, YAML, TOML, ...) to `AsyncRead` and `AsyncWrite`, for
-instance to speak JSON Lines or CBOR sequences over a socket:
+[tokio](https://tokio.rs).  This connects the stream serializers and
+stream deserializers of all deser formats (JSON, CBOR, YAML, TOML, ...) to
+`AsyncRead` and `AsyncWrite`, for instance to speak JSON Lines or CBOR
+sequences over a socket:
 
 ```rust
 use deser::{Deserialize, Serialize};
-use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
+use deser_json::{DeserializerConfig, Serializer, SerializerConfig, StreamDeserializer, Trailing};
 use deser_tokio::{Reader, Writer};
 use tokio::net::TcpStream;
 
@@ -24,8 +25,8 @@ struct Request {
 
 async fn serve(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let mut requests = Reader::new(input, READ_LINES);
-    let mut responses = Writer::new(output, WRITE_LINES);
+    let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
+    let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
     while let Some(request) = requests.read::<Request>().await? {
         responses.write(&request.id).await?;
     }
@@ -33,8 +34,9 @@ async fn serve(socket: TcpStream) -> Result<(), deser::Error> {
 }
 ```
 
-* **Works with every format:** the configurations of the formats split
-  streams into values (see `deser::io`), this crate only does the IO.
+* **Works with every format:** the stream deserializers of the formats
+  split streams into values and their serializers write them without
+  doing IO (see `deser::stream`), this crate only does the IO.
 * **Bounded memory:** values of formats that support it (JSON and CBOR)
   are deserialized while their input arrives, only incomplete tokens are
   buffered.  Values of other formats are buffered one at a time.  Values

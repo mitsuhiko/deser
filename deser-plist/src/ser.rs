@@ -1,10 +1,11 @@
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, ExtValue, Number, Timestamp};
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, SerializeDriver, Written};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::format::Format;
@@ -96,8 +97,7 @@ impl SerializerConfig {
         Ok(write_binary::write(&tree))
     }
 
-    /// Returns `true` if the output can be written in pieces.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// Returns `true` if the output can be written in parts.
     pub(crate) fn is_text(&self) -> bool {
         self.format.is_text()
     }
@@ -106,62 +106,76 @@ impl SerializerConfig {
     /// and appends it to the output.
     ///
     /// The progress of the value is kept in `value` (see
-    /// `Encoder::encode_incremental`), `true` is returned once the value is
-    /// complete.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// `StreamSerializer::drive_partial`), `true` is returned once the
+    /// value is complete.  If this fails, what was appended by the call is
+    /// removed from the output.
     pub(crate) fn serialize_part(
         &self,
-        value: &mut Option<alloc::boxed::Box<TextWriter>>,
+        value: &mut Option<Box<TextWriter>>,
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
         limit: usize,
     ) -> Result<bool, Error> {
+        let len = out.len();
         // the writer writes into an empty output directly, otherwise its
         // output is appended
         let adopt = out.is_empty();
-        let mut writer = match value.take() {
-            Some(mut writer) => {
-                if adopt {
-                    writer.out = String::from_utf8(core::mem::take(out)).unwrap();
-                }
+        let buffer = match adopt {
+            // the output only holds text if it's not empty
+            true => String::new(),
+            false => String::with_capacity(256),
+        };
+        let mut local;
+        let writer: &mut TextWriter = match value {
+            Some(writer) => {
+                writer.out = buffer;
                 writer
             }
-            None => {
-                let buffer = match adopt {
-                    true => String::from_utf8(core::mem::take(out)).unwrap(),
-                    false => String::new(),
-                };
-                alloc::boxed::Box::new(TextWriter::new(self.format, buffer))
+            // a value that is written at once does not box the writer
+            None if limit == usize::MAX => {
+                local = TextWriter::new(self.format, buffer);
+                &mut local
             }
+            None => value.insert(Box::new(TextWriter::new(self.format, buffer))),
         };
-        // after an error the value is abandoned, its writer is dropped
-        let done = if limit == usize::MAX {
-            driver.drive_sink(&mut *writer)?;
-            true
+        let rv = if limit == usize::MAX {
+            driver.drive_sink(writer).map(|()| true)
         } else {
             writer.limit = limit;
-            driver.drive_until(&mut *writer)?
+            driver.drive_until(writer)
         };
-        if done {
-            writer.finish()?;
-        }
+        let rv = rv.and_then(|done| {
+            if done {
+                writer.finish()?;
+            }
+            Ok(done)
+        });
         let output = core::mem::take(&mut writer.out).into_bytes();
-        if adopt {
-            *out = output;
-        } else {
-            out.extend_from_slice(&output);
+        match rv {
+            Ok(done) => {
+                if adopt {
+                    *out = output;
+                } else {
+                    out.extend_from_slice(&output);
+                }
+                if done {
+                    *value = None;
+                }
+                Ok(done)
+            }
+            Err(err) => {
+                // the value is abandoned
+                *value = None;
+                out.truncate(len);
+                Err(err)
+            }
         }
-        if !done {
-            *value = Some(writer);
-        }
-        Ok(done)
     }
 }
 
 /// Serializes values into property lists.
 ///
-/// A property list holds a single value.  The serializer is used to
-/// [`drive`](ser::Serializer::drive) a configured driver.
+/// A property list holds a single value.
 ///
 /// ```
 /// use deser_plist::Serializer;
@@ -170,11 +184,50 @@ impl SerializerConfig {
 /// serializer.serialize(&true).unwrap();
 /// assert!(serializer.output().ends_with(b"<plist version=\"1.0\">\n<true/>\n</plist>\n"));
 /// ```
-#[derive(Debug, Clone, Default)]
+///
+/// The serializer is also the stream serializer of property lists (see
+/// [`StreamSerializer`](ser::StreamSerializer)).  XML and OpenStep
+/// property lists can be written in parts, binary property lists are
+/// written once the value is complete as the object table needs all
+/// objects.  To write to a [`Write`](std::io::Write) use
+/// [`SerializerConfig::writer`].
+#[derive(Default)]
 pub struct Serializer {
     config: SerializerConfig,
     out: Vec<u8>,
     written: bool,
+    // the value that is written in parts
+    value: Option<Box<TextWriter>>,
+    // a value was started with `drive_partial` and is not complete
+    in_progress: bool,
+}
+
+impl Clone for Serializer {
+    /// Clones the serializer.
+    ///
+    /// The clone of a serializer that writes a value in parts cannot write
+    /// more values (see
+    /// [`StreamSerializer::in_progress`](ser::StreamSerializer::in_progress)).
+    fn clone(&self) -> Serializer {
+        Serializer {
+            config: self.config.clone(),
+            out: self.out.clone(),
+            written: self.written,
+            value: None,
+            in_progress: self.in_progress,
+        }
+    }
+}
+
+impl core::fmt::Debug for Serializer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Serializer")
+            .field("config", &self.config)
+            .field("output", &self.out)
+            .field("written", &self.written)
+            .field("in_progress", &self.in_progress)
+            .finish()
+    }
 }
 
 impl Serializer {
@@ -189,7 +242,19 @@ impl Serializer {
             config: config.clone(),
             out: Vec::new(),
             written: false,
+            value: None,
+            in_progress: false,
         }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns `true` once the value was written.
+    pub fn written(&self) -> bool {
+        self.written
     }
 
     /// Serializes a value.
@@ -211,7 +276,7 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
+    /// Returns the output written so far (that was not cleared).
     pub fn output(&self) -> &[u8] {
         &self.out
     }
@@ -220,20 +285,119 @@ impl Serializer {
     pub fn finish(self) -> Vec<u8> {
         self.out
     }
-}
 
-impl ser::Serializer for Serializer {
-    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+    /// Fails if a value was written or is being written.
+    fn check_single(&self) -> Result<(), Error> {
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
         if self.written {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "a property list holds a single value",
             ));
         }
-        self.out = self.config.serialize_driver(driver)?;
+        Ok(())
+    }
+}
+
+impl ser::Serializer for Serializer {
+    fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        self.check_single()?;
+        if self.config.is_text() {
+            self.config
+                .serialize_part(&mut self.value, driver, &mut self.out, usize::MAX)?;
+        } else {
+            let bytes = self.config.serialize_driver(driver)?;
+            self.out.extend_from_slice(&bytes);
+        }
         self.written = true;
         Ok(())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    /// XML and OpenStep property lists are written in parts.
+    fn supports_partial(&self) -> bool {
+        self.config.is_text()
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if self.value.is_none() {
+            if limit == usize::MAX || !self.config.is_text() {
+                ser::Serializer::drive(self, driver)?;
+                return Ok(Written::Done);
+            }
+            self.check_single()?;
+        }
+        // the parts of a value that failed stay written (see
+        // `in_progress`)
+        if !self
+            .config
+            .serialize_part(&mut self.value, driver, &mut self.out, limit)?
+        {
+            self.in_progress = true;
+            return Ok(Written::Partial);
+        }
+        self.in_progress = false;
+        self.written = true;
+        Ok(Written::Done)
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of a property list (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// A stream holds a single property list, writing a second value fails.
+    /// XML and OpenStep property lists are written in parts while the value
+    /// is serialized.  Binary property lists are written once the value is
+    /// complete as the object table needs all objects.
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value to a writer as XML property list.
+///
+/// To write other formats use [`SerializerConfig::to_writer`].
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_plist::to_writer(&mut out, &true).unwrap();
+/// assert!(out.ends_with(b"<true/>\n</plist>\n"));
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to an XML property list.

@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use deser::Deserialize;
 use deser::de::Recording;
-use deser::io::Reader;
 use deser_location::Spanned;
 
 use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes};
@@ -136,13 +135,13 @@ fn test_end_after_comments() {
     // comments after the value can be split across reads
     let input = b"[1] /* a */ // b\n/* c */";
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(Chunked { input, size }, STRICT);
+        let mut reader = STRICT.reader(Chunked { input, size });
         reader.read::<Vec<u32>>().unwrap();
         reader.end().unwrap();
     }
     let input = b"[1] /* unterminated";
     for size in chunk_sizes(input.len()) {
-        let mut reader = Reader::new(Chunked { input, size }, STRICT);
+        let mut reader = STRICT.reader(Chunked { input, size });
         reader.read::<Vec<u32>>().unwrap();
         assert!(reader.end().is_err(), "size {size}");
     }
@@ -172,13 +171,10 @@ fn test_newline() {
 fn test_unterminated_comment() {
     for config in [&STRICT, &STOP] {
         for size in 1..=8 {
-            let mut reader = Reader::new(
-                Chunked {
-                    input: b"[1] /* x",
-                    size,
-                },
-                config,
-            );
+            let mut reader = config.reader(Chunked {
+                input: b"[1] /* x",
+                size,
+            });
             let rv = (|| {
                 while reader.read::<Recording>()?.is_some() {}
                 Ok::<_, deser::Error>(())

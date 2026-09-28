@@ -1,27 +1,27 @@
 //! Writing JSON streams (reading is tested by deser-template-json).
 use deser::Event;
-use deser::io::{Reader, Writer};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 
 const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
 
 #[test]
 fn test_writer() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new().trailing(Trailing::Stop));
+    let mut writer = SerializerConfig::new()
+        .trailing(Trailing::Stop)
+        .writer(Vec::new());
     writer.write(&1).unwrap();
     writer.write(&vec![2, 3]).unwrap();
     let out = writer.into_inner();
     assert_eq!(out, b"1\n[2,3]");
 
     // the output can be read again
-    let mut reader = Reader::new(&out[..], STOP);
+    let mut reader = STOP.reader(&out[..]);
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
 
-    let mut writer = Writer::new(
-        Vec::new(),
-        SerializerConfig::new().trailing(Trailing::Newline),
-    );
+    let mut writer = SerializerConfig::new()
+        .trailing(Trailing::Newline)
+        .writer(Vec::new());
     writer.write(&"a").unwrap();
     writer.write(&"b").unwrap();
     assert_eq!(writer.into_inner(), b"\"a\"\n\"b\"\n");
@@ -37,7 +37,7 @@ fn test_writer_strict_and_layers() {
     use deser::{Atom, Error};
 
     // a strict stream holds a single value
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    let mut writer = SerializerConfig::new().writer(Vec::new());
     writer.write(&1).unwrap();
     assert!(writer.write(&2).is_err());
     assert_eq!(writer.into_inner(), b"1");
@@ -54,10 +54,9 @@ fn test_writer_strict_and_layers() {
         }
     }
 
-    let mut writer = Writer::new(
-        Vec::new(),
-        SerializerConfig::new().trailing(Trailing::Newline),
-    );
+    let mut writer = SerializerConfig::new()
+        .trailing(Trailing::Newline)
+        .writer(Vec::new());
     writer
         .write_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
         .unwrap();
@@ -85,7 +84,7 @@ fn streamed(
         }
     }
 
-    let mut writer = Writer::new(Pieces(Vec::new(), 0), config);
+    let mut writer = config.writer(Pieces(Vec::new(), 0));
     writer.set_buffer_limit(limit);
     writer.write(value).unwrap();
     let Pieces(out, writes) = writer.into_inner();
@@ -93,7 +92,7 @@ fn streamed(
 }
 
 #[test]
-fn test_incremental_same_output() {
+fn test_partial_same_output() {
     use std::collections::BTreeMap;
 
     use deser_json::{Indent, InlinePolicy};
@@ -187,11 +186,11 @@ fn test_incremental_same_output() {
 }
 
 #[test]
-fn test_incremental_streams() {
+fn test_partial_streams() {
     // values of a stream are separated like with a single write
     for trailing in [Trailing::Newline, Trailing::Stop] {
         let config = SerializerConfig::new().trailing(trailing);
-        let mut writer = Writer::new(Vec::new(), &config);
+        let mut writer = config.writer(Vec::new());
         writer.set_buffer_limit(2);
         writer.write(&vec![1, 2, 3]).unwrap();
         writer.write(&"abc").unwrap();
@@ -205,7 +204,7 @@ fn test_incremental_streams() {
 }
 
 #[test]
-fn test_incremental_errors() {
+fn test_partial_errors() {
     use deser::ser::Chunk;
     use deser::{Error, ErrorKind, State};
 
@@ -222,7 +221,7 @@ fn test_incremental_errors() {
 
     // a value that fails before anything was written is not written, the
     // stream continues
-    let mut writer = Writer::new(Vec::new(), &config);
+    let mut writer = config.writer(Vec::new());
     writer.set_buffer_limit(1000);
     let value: (Vec<u32>, Fail) = ((0..10).collect(), Fail);
     assert!(writer.write(&value).is_err());
@@ -230,10 +229,66 @@ fn test_incremental_errors() {
     assert_eq!(writer.into_inner(), b"1\n");
 
     // after a part of the value was written, the stream is broken
-    let mut writer = Writer::new(Vec::new(), &config);
+    let mut writer = config.writer(Vec::new());
     writer.set_buffer_limit(4);
     assert!(writer.write(&value).is_err());
     let err = writer.write(&1).unwrap_err();
     assert!(err.message().contains("partially written"), "{err}");
     assert!(writer.into_inner().starts_with(b"[[0,1,"));
+}
+
+#[test]
+fn test_serializer_in_parts() {
+    use deser::ser::{SerializeDriver, StreamSerializer, Written};
+    use deser_json::Serializer;
+
+    // without IO: the output is taken while the value is written
+    let config = SerializerConfig::new().trailing(Trailing::Newline);
+    let mut serializer = Serializer::with_config(&config);
+    // miri is slow, it checks a smaller value
+    let len = if cfg!(miri) { 60 } else { 200 };
+    let value: Vec<Vec<u64>> = (0..len).map(|x| (0..x).collect()).collect();
+    let mut out = Vec::new();
+    let mut parts = 0;
+    let mut driver = SerializeDriver::new(&value);
+    loop {
+        let written = serializer.drive_partial(&mut driver, 64).unwrap();
+        out.extend_from_slice(serializer.output());
+        serializer.clear_output();
+        parts += 1;
+        if written == Written::Done {
+            break;
+        }
+        assert!(serializer.in_progress());
+        // no other value can be written in the meantime
+        assert!(serializer.serialize(&1).is_err());
+    }
+    assert!(parts > 5, "{parts}");
+    assert!(!serializer.in_progress());
+    serializer.serialize(&1).unwrap();
+    out.extend_from_slice(serializer.output());
+    let mut expected = deser_json::to_string(&value).unwrap();
+    expected.push_str("\n1\n");
+    assert_eq!(String::from_utf8(out).unwrap(), expected);
+    assert_eq!(serializer.written(), 2);
+
+    // output that was not taken is kept, pretty output keeps its columns
+    let config = SerializerConfig::new()
+        .trailing(Trailing::Newline)
+        .pretty(deser_json::Indent::Spaces(2))
+        .inline(deser_json::InlinePolicy::LeafIfFits(20));
+    let mut serializer = Serializer::with_config(&config);
+    let value = vec![vec![1, 2], (0..20).collect()];
+    for _ in 0..2 {
+        let mut driver = SerializeDriver::new(&value);
+        while serializer.drive_partial(&mut driver, 1).unwrap() == Written::Partial {}
+    }
+    let single = config.to_string(&value).unwrap();
+    assert_eq!(serializer.as_str(), format!("{single}\n{single}\n"));
+
+    // continuing a stream
+    let config = SerializerConfig::new().trailing(Trailing::Stop);
+    let mut serializer = Serializer::with_written(&config, 1);
+    serializer.serialize(&2).unwrap();
+    assert_eq!(serializer.finish(), "\n2");
 }

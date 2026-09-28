@@ -3,7 +3,6 @@ use std::io::Read;
 
 use deser::Event;
 use deser::de::Recording;
-use deser::io::Reader;
 
 use super::dialect::{Deserializer, DeserializerConfig, Trailing};
 
@@ -71,13 +70,10 @@ pub fn read_chunked(
     input: &str,
     size: usize,
 ) -> Vec<Vec<Event<'static>>> {
-    let mut reader = Reader::new(
-        Chunked {
-            input: input.as_bytes(),
-            size,
-        },
-        config,
-    );
+    let mut reader = config.reader(Chunked {
+        input: input.as_bytes(),
+        size,
+    });
     let mut rv = Vec::new();
     while let Some(value) = reader.read::<Recording>().unwrap() {
         rv.push(events(value));
@@ -91,13 +87,10 @@ pub fn read_framed(
     input: &str,
     size: usize,
 ) -> Vec<Vec<Event<'static>>> {
-    let mut reader = Reader::new(
-        Chunked {
-            input: input.as_bytes(),
-            size,
-        },
-        config,
-    );
+    let mut reader = config.reader(Chunked {
+        input: input.as_bytes(),
+        size,
+    });
     let mut rv = Vec::new();
     while let Some(value) = reader.read_borrowed::<Recording>().unwrap() {
         rv.push(events(value));
@@ -105,8 +98,29 @@ pub fn read_framed(
     rv
 }
 
+/// Reads all values of a stream in chunks with the reader's
+/// `Deserializer` implementation.
+pub fn read_deserializer(
+    config: &DeserializerConfig,
+    input: &str,
+    size: usize,
+) -> Vec<Vec<Event<'static>>> {
+    use deser::de::Deserializer as _;
+
+    let mut reader = config.reader(Chunked {
+        input: input.as_bytes(),
+        size,
+    });
+    let mut rv = Vec::new();
+    while !reader.is_end().unwrap() {
+        rv.push(events(reader.deserialize::<Recording>().unwrap()));
+    }
+    rv
+}
+
 /// Checks that a stream of `count` values reads the same in memory and in
-/// chunks (while the input arrives and from frames).
+/// chunks (while the input arrives, from frames and with the reader's
+/// `Deserializer` implementation).
 pub fn check_stream(config: &DeserializerConfig, input: &str, count: usize) {
     let expected = read_in_memory(config, input);
     assert_eq!(expected.len(), count, "{input:?}");
@@ -121,5 +135,14 @@ pub fn check_stream(config: &DeserializerConfig, input: &str, count: usize) {
             expected,
             "framed {input:?} size {size}"
         );
+        // miri is slow, reading with the deserializer (which peeks and
+        // then feeds or frames) is only checked with the whole input
+        if !cfg!(miri) || size == input.len() {
+            assert_eq!(
+                read_deserializer(config, input, size),
+                expected,
+                "deserializer {input:?} size {size}"
+            );
+        }
     }
 }

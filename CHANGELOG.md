@@ -19,7 +19,9 @@ every intermediate step.
   moved all crates to the 2024 edition.
 - **Breaking:** the standard library is optional (the `std` feature,
   enabled by default).  Without it `deser` and most formats only need
-  `alloc`.  The `io` feature (also default) gates stream support.
+  `alloc`.  The `io` feature (also default) gates the readers and
+  writers of `std::io` streams, reading and writing streams without IO
+  (`deser::stream`) does not need it.
 - **Breaking:** `DeserializerState` and `SerializerState` were merged into
   a single `deser::State` which is passed as `&mut State` to all methods
   of sinks, serializers and emitters.  Extension values no longer use a
@@ -83,6 +85,9 @@ every intermediate step.
   expanded.
 - Added `OwnedDriver`, `Streamed<T>` (sequences whose elements are handed
   out while they are read), `Chunk::Forward` and `Position`.
+- Added `DeserializeDriver::transient` which lends a driver out for data
+  that lives shorter than the data the driver's sinks can borrow (for
+  instance the frame of a value in a stream buffer).
 
 ### Errors
 
@@ -192,29 +197,52 @@ every intermediate step.
 
 - **Breaking:** format options moved into `DeserializerConfig` and
   `SerializerConfig` types which are `const` constructible and reusable.
-  The `Serializer` types of the formats were replaced by
-  `SerializerConfig::to_string` / `to_vec`, `Deserializer::new` by
-  `from_str` / `from_slice`.
+  Single values are serialized with `SerializerConfig::to_string` /
+  `to_vec` and deserialized with `from_str` / `from_slice`.  The
+  `Serializer` and `Deserializer` types of the formats are created from a
+  configuration (`with_config`, `from_str_with_config`) and handle more
+  than one value.
 - **Breaking:** `deser-path` was rewritten as `PathLayer` which works in
   both directions and attaches a structured `Path` to errors.
-- Added `deser::io` with the `Decoder` and `Encoder` traits, `Reader` and
-  `Writer` for `std::io`, and `DecodeBuffer` for other kinds of IO.
-  JSON (and its dialects), CBOR and MessagePack parse incrementally
-  while input arrives.
-- Writers serialize values incrementally (`Encoder::encode_incremental`):
+- Added stream serializers and deserializers which do not do IO
+  (sans-io).  The `Serializer` of every format that writes bytes (JSON,
+  CBOR, MessagePack, YAML, TOML, XML, property lists, CSV and query
+  strings) implements `ser::StreamSerializer`: it holds the state of a
+  stream of values and its output, which is taken with `output` and
+  `clear_output`.  Every format has a `StreamDeserializer` (implementing
+  `de::StreamDeserializer`) which splits the input of a stream into
+  frames that are deserialized with the regular parser (values can borrow
+  from the frame) or deserializes values while their input is fed
+  (JSON and its dialects, CBOR and MessagePack), only buffering incomplete
+  tokens.  `deser::stream` holds the `InputBuffer` which buffers the input
+  and invokes a stream deserializer, and the `ElementReader` for
+  `Streamed<T>`.
+- Added `deser::io` with `Reader` and `Writer` for `std::io`.  The
+  configurations of the formats create them (`DeserializerConfig::reader`
+  and `SerializerConfig::writer`).  A `Writer` is a `ser::Serializer` and
+  a `Reader` is a `de::Deserializer` (with `Reader::is_end`), so generic
+  code like `deser-transcode` can read from and write to streams.
+- Stream serializers write values in parts (`StreamSerializer::drive_partial`):
   once the output of a value exceeds the buffer limit
   (`Writer::set_buffer_limit`, 8 KiB by default) it's written and the
   serialization continues, so the memory used for writing does not depend
   on the size of the values.  All formats support this except TOML and
   binary property lists, which need the complete value.  This also covers
-  `to_writer`, `deser-tokio` and CSV documents.  Values below the limit are
-  still written at once.  A writer refuses more values after one was
-  abandoned partway through.
+  `to_writer`, `deser-tokio` and CSV documents (`csv::Serializer::document`).
+  Values below the limit are still written at once.  A value that was
+  abandoned partway through stays in progress
+  (`StreamSerializer::in_progress`) and the stream refuses more values.
+- The state of a stream is created with the stream serializer or
+  deserializer, for instance to continue a CSV file with known columns
+  (`csv::Serializer::with_headers`, `csv::StreamDeserializer::with_headers`)
+  or a JSON stream after a number of values (`json::Serializer::with_written`).
 - Added `SerializeDriver::drive_until` and `PausableSink` to drive a
   serialization until the sink pauses it.  Large plain sequences are
   emitted in pieces so that the driver can pause in between.
-- `deser-xml` supports streams: `from_reader`, `to_writer` and `deser::io`
-  (the `io` feature).
+- `deser-xml` supports streams: `from_reader`, `to_writer` and the
+  readers and writers of `deser::io` (the `io` feature).
+- The parameters of all values written with a `deser-urlencoded` writer
+  are joined, like with its `Serializer`.
 - `deser-json` reads from bytes, reads streams of values and JSON Lines
   (`Trailing`), can pretty print, keeps exact numbers
   (`deser::ext::Number`) and has source locations.

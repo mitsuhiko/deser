@@ -1,12 +1,14 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use crate::Position;
-use crate::de::{Deserialize, DeserializeDriver};
+use crate::de::{Deserialize, DeserializeDriver, Frame, Progress, StreamDeserializer};
 use crate::error::{Error, ErrorKind};
-use crate::io::{Decoder, Frame, Progress};
 
 /// The minimum number of bytes offered to read into.
 const READ_SIZE: usize = 8 * 1024;
 
-/// The state of a [`DecodeBuffer`], see [`DecodeBuffer::poll`].
+/// The state of an [`InputBuffer`], see [`InputBuffer::poll`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Status {
     /// A value is complete and can be deserialized.
@@ -20,22 +22,20 @@ pub enum Status {
 /// Splits a stream into values without doing IO.
 ///
 /// The buffer holds the data of a stream that was read so far and splits it
-/// into values with a [`Decoder`].  It does not do IO itself which makes it
-/// usable with any kind of IO: [`poll`](Self::poll) reports if a value is
-/// ready or if more input is needed.  Input is read into
+/// into values with a [`StreamDeserializer`].  It does not do IO itself
+/// which makes it usable with any kind of IO: [`poll`](Self::poll) reports
+/// if a value is ready or if more input is needed.  Input is read into
 /// [`read_buf`](Self::read_buf) and committed with
-/// [`filled`](Self::filled) (or [`set_eof`](Self::set_eof) at the end of the
-/// stream).  Once a value is ready it's deserialized with
+/// [`filled`](Self::filled) (or [`set_eof`](Self::set_eof) at the end of
+/// the stream).  Once a value is ready it's deserialized with
 /// [`deserialize`](Self::deserialize):
 ///
 /// ```
-/// # use deser::io::{Decoder, Frame};
-/// # use deser::de::DeserializeDriver;
+/// # use deser::de::{DeserializeDriver, Frame, StreamDeserializer};
 /// # use deser::Error;
-/// # struct LinesConfig;
-/// # impl Decoder for LinesConfig {
-/// #     type State = ();
-/// #     fn frame(&self, _: &mut (), input: &[u8], eof: bool) -> Result<Frame, Error> {
+/// # struct Lines;
+/// # impl StreamDeserializer for Lines {
+/// #     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
 /// #         Ok(match input.iter().position(|&b| b == b'\n') {
 /// #             Some(end) => Frame::Value { start: 0, end, consumed: end + 1 },
 /// #             None if eof && input.is_empty() => Frame::End,
@@ -43,18 +43,18 @@ pub enum Status {
 /// #             None => Frame::Incomplete { consumed: 0 },
 /// #         })
 /// #     }
-/// #     fn drive<'de>(&self, _: &mut (), frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+/// #     fn drive_frame<'de>(&mut self, frame: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
 /// #         let value: u64 = std::str::from_utf8(frame).unwrap().parse().unwrap();
 /// #         driver.emit(value)
 /// #     }
 /// # }
 /// use std::io::Read;
-/// use deser::io::{DecodeBuffer, Status};
+/// use deser::stream::{InputBuffer, Status};
 ///
 /// fn read_all(mut input: impl Read) -> Result<Vec<u64>, deser::Error> {
-///     // `LinesConfig` is the configuration of a format with a number
+///     // `Lines` is the stream deserializer of a format with a number
 ///     // per line
-///     let mut buffer = DecodeBuffer::new(LinesConfig);
+///     let mut buffer = InputBuffer::new(Lines);
 ///     let mut values = Vec::new();
 ///     loop {
 ///         match buffer.poll()? {
@@ -73,11 +73,10 @@ pub enum Status {
 ///
 /// The offsets, lines and columns of errors refer to the stream.
 ///
-/// Decoders which support it can also deserialize values while their input
-/// arrives, see [`feed`](Self::feed).
-pub struct DecodeBuffer<D: Decoder> {
-    decoder: D,
-    state: D::State,
+/// Stream deserializers which support it can also deserialize values while
+/// their input arrives, see [`feed`](Self::feed).
+pub struct InputBuffer<D: StreamDeserializer> {
+    deserializer: D,
     // `data[start..end]` holds the input that was not consumed yet, the
     // data after `end` is space to read into.
     data: Vec<u8>,
@@ -88,25 +87,22 @@ pub struct DecodeBuffer<D: Decoder> {
     position: Position,
     // the frame of the value which is ready (relative to `start`)
     ready: Option<(usize, usize, usize)>,
-    // `true` once the decoder reported the end or failed
+    // `true` once the deserializer reported the end or failed
     done: bool,
     failed: bool,
     // a value is being fed into a driver
     feeding: bool,
 }
 
-impl<D: Decoder> DecodeBuffer<D> {
+impl<D: StreamDeserializer> InputBuffer<D> {
     /// Creates an empty buffer.
-    pub fn new(decoder: D) -> DecodeBuffer<D> {
-        DecodeBuffer::with_state(decoder, D::State::default())
-    }
-
-    /// Creates an empty buffer for a stream that continues with the given
-    /// state (see [`Decoder::State`]).
-    pub fn with_state(decoder: D, state: D::State) -> DecodeBuffer<D> {
-        DecodeBuffer {
-            decoder,
-            state,
+    ///
+    /// To continue a stream whose context is known (for instance the
+    /// names of the columns of a CSV file), create the stream deserializer
+    /// with that context.
+    pub fn new(deserializer: D) -> InputBuffer<D> {
+        InputBuffer {
+            deserializer,
             data: Vec::new(),
             start: 0,
             end: 0,
@@ -119,14 +115,17 @@ impl<D: Decoder> DecodeBuffer<D> {
         }
     }
 
-    /// Returns the decoder.
-    pub fn decoder(&self) -> &D {
-        &self.decoder
+    /// Returns the stream deserializer.
+    pub fn deserializer(&self) -> &D {
+        &self.deserializer
     }
 
-    /// Returns the state of the stream (see [`Decoder::State`]).
-    pub fn state(&self) -> &D::State {
-        &self.state
+    /// Returns the stream deserializer and the input that was read but
+    /// not consumed.
+    pub fn into_parts(mut self) -> (D, Vec<u8>) {
+        self.data.truncate(self.end);
+        self.data.drain(..self.start);
+        (self.deserializer, self.data)
     }
 
     /// Returns the number of bytes of the stream that were consumed.
@@ -155,10 +154,11 @@ impl<D: Decoder> DecodeBuffer<D> {
 
     /// Checks if the next value is ready.
     ///
-    /// This invokes the decoder to find the next value if needed.  Once the
+    /// This invokes the stream deserializer to find the next value if
+    /// needed.  Once the
     /// status is [`Status::Ready`], the value has to be deserialized with
     /// [`deserialize`](Self::deserialize) before the next one can be found.
-    /// If the decoder fails, all further calls fail.
+    /// If the stream deserializer fails, all further calls fail.
     pub fn poll(&mut self) -> Result<Status, Error> {
         if self.ready.is_some() {
             return Ok(Status::Ready);
@@ -167,22 +167,19 @@ impl<D: Decoder> DecodeBuffer<D> {
             return Err(failed_error());
         }
         if self.feeding {
-            return Err(Error::new(
-                ErrorKind::Unexpected,
-                "a value is being read incrementally",
-            ));
+            return Err(Error::new(ErrorKind::Unexpected, "a value is being fed"));
         }
         if self.done {
             return Ok(Status::End);
         }
         loop {
             let input = &self.data[self.start..self.end];
-            let frame = match self.decoder.frame(&mut self.state, input, self.eof) {
+            let frame = match self.deserializer.frame(input, self.eof) {
                 Ok(frame) => frame,
                 Err(err) => {
                     self.failed = true;
                     let base = self.position;
-                    let err = if self.decoder.is_text() {
+                    let err = if self.deserializer.is_text() {
                         err.resolve_position(input)
                     } else {
                         err
@@ -211,7 +208,7 @@ impl<D: Decoder> DecodeBuffer<D> {
                         continue;
                     }
                     if self.eof {
-                        // the decoder cannot get more input
+                        // the deserializer cannot get more input
                         self.failed = true;
                         return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of input")
                             .shift_position(self.position));
@@ -227,58 +224,124 @@ impl<D: Decoder> DecodeBuffer<D> {
         }
     }
 
-    /// Returns `true` if the decoder can deserialize values while their
-    /// input arrives.
+    /// Checks if another value follows.
     ///
-    /// See [`Decoder::supports_feed`] and [`feed`](Self::feed).
+    /// Returns [`Status::Ready`] if a value follows (it does not need to be
+    /// complete), [`Status::End`] if there are no more values and
+    /// [`Status::NeedInput`] if more input is needed to know.  The value is
+    /// then read with [`feed`](Self::feed) or, once
+    /// [`poll`](Self::poll) reports it's complete, with
+    /// [`deserialize`](Self::deserialize).  If the stream deserializer
+    /// cannot find the start of a value on its own (see
+    /// [`StreamDeserializer::peek`]), the value is framed which means that
+    /// it's buffered completely.
+    pub fn peek(&mut self) -> Result<Status, Error> {
+        if self.ready.is_some() || self.feeding {
+            return Ok(Status::Ready);
+        }
+        if self.failed {
+            return Err(failed_error());
+        }
+        if self.done {
+            return Ok(Status::End);
+        }
+        loop {
+            let input = &self.data[self.start..self.end];
+            let progress = match self.deserializer.peek(input, self.eof) {
+                Ok(Some(progress)) => progress,
+                Ok(None) => return self.poll(),
+                Err(err) => {
+                    self.failed = true;
+                    let err = if self.deserializer.is_text() {
+                        err.resolve_position(input)
+                    } else {
+                        err
+                    };
+                    return Err(err.shift_position(self.position));
+                }
+            };
+            match progress {
+                Progress::Done { consumed } => {
+                    assert!(consumed <= input.len(), "invalid progress");
+                    self.consume(consumed);
+                    return Ok(Status::Ready);
+                }
+                Progress::NeedMore { consumed } => {
+                    assert!(consumed <= input.len(), "invalid progress");
+                    if consumed > 0 {
+                        self.consume(consumed);
+                        continue;
+                    }
+                    if self.eof {
+                        self.failed = true;
+                        return Err(Error::new(ErrorKind::EndOfFile, "unexpected end of input")
+                            .shift_position(self.position));
+                    }
+                    return Ok(Status::NeedInput);
+                }
+                Progress::End => {
+                    assert!(self.eof, "end of values before the end of the input");
+                    self.done = true;
+                    return Ok(Status::End);
+                }
+            }
+        }
+    }
+
+    /// Returns `true` if the stream deserializer can deserialize values
+    /// while their input arrives.
+    ///
+    /// See [`StreamDeserializer::supports_feed`] and [`feed`](Self::feed).
     pub fn supports_feed(&self) -> bool {
-        self.decoder.supports_feed()
+        self.deserializer.supports_feed()
     }
 
     /// Feeds the input into the driver of the next value.
     ///
-    /// This is the incremental alternative to [`poll`](Self::poll) and
-    /// [`deserialize`](Self::deserialize) for decoders which support it
-    /// (see [`supports_feed`](Self::supports_feed)) and values which do not
-    /// borrow from the input.  The input is fed into the driver until the
+    /// This is the alternative to [`poll`](Self::poll) and
+    /// [`deserialize`](Self::deserialize) for stream deserializers which
+    /// support it (see [`supports_feed`](Self::supports_feed)) and values
+    /// which do not borrow from the input.  If the value was framed already
+    /// (by [`peek`](Self::peek) of a format that cannot find the start of a
+    /// value otherwise), it's deserialized from its frame.  The input is fed into the driver until the
     /// value is complete ([`Status::Ready`]), the input is consumed as it's
     /// used.  If more input is needed ([`Status::NeedInput`]) the method has
     /// to be invoked again with the same driver once more input was read.
     /// In the meantime the buffer cannot be used otherwise.  After an error
     /// the value is abandoned, whether the stream can continue with the next
-    /// value depends on the decoder.
+    /// value depends on the stream deserializer.
     ///
     /// ```
-    /// # use deser::io::{Decoder, Frame, Progress};
+    /// # use deser::de::{Frame, Progress, StreamDeserializer};
     /// # use deser::Error;
     /// # /// A format with sequences of digits (without separators).
-    /// # struct DigitsConfig;
-    /// # impl Decoder for DigitsConfig {
-    /// #     type State = bool;
-    /// #     fn frame(&self, _: &mut bool, _: &[u8], _: bool) -> Result<Frame, Error> { unimplemented!() }
-    /// #     fn drive<'de>(&self, _: &mut bool, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
+    /// # #[derive(Default)]
+    /// # struct Digits { started: bool }
+    /// # impl StreamDeserializer for Digits {
+    /// #     fn frame(&mut self, _: &[u8], _: bool) -> Result<Frame, Error> { unimplemented!() }
+    /// #     fn drive_frame<'de>(&mut self, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
     /// #     fn supports_feed(&self) -> bool { true }
-    /// #     fn feed(&self, started: &mut bool, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
-    /// #         if !*started {
+    /// #     fn feed(&mut self, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
+    /// #         if !self.started {
     /// #             if input.is_empty() && eof { return Ok(Progress::End); }
     /// #             driver.emit(deser::Event::seq_start())?;
-    /// #             *started = true;
+    /// #             self.started = true;
     /// #         }
     /// #         for digit in input { driver.emit(u64::from(digit - b'0'))?; }
     /// #         if eof {
     /// #             driver.emit(deser::Event::SeqEnd)?;
-    /// #             *started = false;
+    /// #             self.started = false;
     /// #             return Ok(Progress::Done { consumed: input.len() });
     /// #         }
     /// #         Ok(Progress::NeedMore { consumed: input.len() })
     /// #     }
     /// # }
     /// use deser::de::DeserializeDriver;
-    /// use deser::io::{DecodeBuffer, Status};
+    /// use deser::stream::{InputBuffer, Status};
     ///
-    /// // `DigitsConfig` is the configuration of a format with a sequence
+    /// // `Digits` is the stream deserializer of a format with a sequence
     /// // of digits
-    /// let mut buffer = DecodeBuffer::new(DigitsConfig);
+    /// let mut buffer = InputBuffer::new(Digits::default());
     /// let mut out = None::<Vec<u32>>;
     /// {
     ///     let mut driver = DeserializeDriver::new(&mut out);
@@ -294,14 +357,16 @@ impl<D: Decoder> DecodeBuffer<D> {
     ///
     /// # Panics
     ///
-    /// Panics if the decoder does not support feeding or if a value is
-    /// ready to be deserialized from its frame.
+    /// Panics if the stream deserializer does not support feeding.
     pub fn feed(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<Status, Error> {
         assert!(
-            self.decoder.supports_feed(),
-            "the decoder does not support feeding"
+            self.deserializer.supports_feed(),
+            "the stream deserializer does not support feeding"
         );
-        assert!(self.ready.is_none(), "a value is ready to be deserialized");
+        // a value that was framed already (see `peek`)
+        if self.ready.is_some() {
+            return self.drive_transient(driver).map(|()| Status::Ready);
+        }
         if self.failed {
             return Err(failed_error());
         }
@@ -309,13 +374,9 @@ impl<D: Decoder> DecodeBuffer<D> {
             return Ok(Status::End);
         }
         let input = &self.data[self.start..self.end];
-        let rv = self.decoder.feed(
-            &mut self.state,
-            input,
-            self.position.offset,
-            self.eof,
-            driver,
-        );
+        let rv = self
+            .deserializer
+            .feed(input, self.position.offset, self.eof, driver);
         match rv {
             Ok(Progress::Done { consumed }) => {
                 assert!(consumed <= input.len(), "invalid progress");
@@ -342,7 +403,7 @@ impl<D: Decoder> DecodeBuffer<D> {
                 self.feeding = false;
                 Ok(Status::End)
             }
-            // whether the stream can continue is up to the decoder
+            // whether the stream can continue is up to the deserializer
             Err(err) => {
                 self.feeding = false;
                 Err(self.locate(err))
@@ -357,7 +418,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     fn locate(&self, err: Error) -> Error {
         err.map_each(|err| match err.offset() {
             Some(offset)
-                if self.decoder.is_text()
+                if self.deserializer.is_text()
                     && err.line().is_none()
                     && offset >= self.position.offset
                     && offset - self.position.offset <= self.end - self.start =>
@@ -488,8 +549,29 @@ impl<D: Decoder> DecodeBuffer<D> {
     pub fn drive<'a>(&'a mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         let (range, position) = self.take_ready();
         let frame = &self.data[range];
-        self.decoder
-            .drive(&mut self.state, frame, driver)
+        self.deserializer
+            .drive_frame(frame, driver)
+            .map_err(|err| err.shift_position(position))
+    }
+
+    /// Feeds the events of the ready value into a driver for any lifetime.
+    ///
+    /// This is like [`drive`](Self::drive) but the value cannot borrow
+    /// from the buffer: the driver is lent out with
+    /// [`DeserializeDriver::transient`], borrowed data is passed on like
+    /// data that is only valid for the call.  This allows driving a value
+    /// into a driver which outlives the buffer's data, for instance to
+    /// implement [`Deserializer`](crate::de::Deserializer) for a reader.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no value is ready (see [`poll`](Self::poll)).
+    pub fn drive_transient(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<(), Error> {
+        let (range, position) = self.take_ready();
+        let frame = &self.data[range];
+        let deserializer = &mut self.deserializer;
+        driver
+            .transient(|driver| deserializer.drive_frame(frame, driver))
             .map_err(|err| err.shift_position(position))
     }
 
@@ -497,7 +579,7 @@ impl<D: Decoder> DecodeBuffer<D> {
     ///
     /// The error refers to the start of the ready value.  Adapters use
     /// this to check that a stream ends after a value (see
-    /// [`Reader::end`](crate::io::Reader::end)).
+    /// `Reader::end` of `deser::io`).
     ///
     /// # Panics
     ///

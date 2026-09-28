@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
-use deser_core::ser::{self, PausableSink, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Nesting;
@@ -137,7 +137,7 @@ impl SerializerConfig {
     }
 
     /// Creates the writer of a value which writes into the output.
-    pub(crate) fn writer(&self, out: String) -> Writer {
+    pub(crate) fn value_writer(&self, out: String) -> Writer {
         Writer {
             config: self.clone(),
             separate: false,
@@ -152,40 +152,66 @@ impl SerializerConfig {
     /// output.
     ///
     /// The progress of the value is kept in `value` (see
-    /// `Encoder::encode_incremental`), `true` is returned once the value is
-    /// complete.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// `StreamSerializer::drive_partial`), `true` is returned once the
+    /// value is complete.  `separate` is `true` if parameters were written
+    /// before (the parameters of more than one value are joined).  If this
+    /// fails, what was appended by the call is removed from the output.
     pub(crate) fn serialize_part(
         &self,
         value: &mut Option<Box<Writer>>,
         driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
+        out: &mut String,
+        separate: &mut bool,
         limit: usize,
     ) -> Result<bool, Error> {
-        let mut writer = value
-            .take()
-            .unwrap_or_else(|| Box::new(self.writer(String::new())));
+        let len = out.len();
+        // a value that is written at once is written into the output
+        // directly without boxing the writer
+        if value.is_none() && limit == usize::MAX {
+            let mut writer = self.value_writer(std::mem::take(out));
+            writer.separate = *separate;
+            let rv = driver.drive(|event, state| writer.event(event, state));
+            *out = writer.out;
+            if let Err(err) = rv {
+                out.truncate(len);
+                return Err(err);
+            }
+            *separate = writer.separate;
+            return Ok(true);
+        }
+        let mut writer = value.take().unwrap_or_else(|| {
+            let mut writer = self.value_writer(String::new());
+            writer.separate = *separate;
+            Box::new(writer)
+        });
         // the writer writes into an empty output directly, otherwise its
         // output is appended
         let adopt = out.is_empty();
         if adopt {
-            writer.out = String::from_utf8(std::mem::take(out)).unwrap();
+            writer.out = std::mem::take(out);
         }
         // after an error the value is abandoned, its writer is dropped
-        let done = if limit == usize::MAX {
-            driver.drive(|event, state| writer.event(event, state))?;
-            true
-        } else {
-            writer.limit = limit;
-            driver.drive_until(&mut *writer)?
+        writer.limit = limit;
+        let rv = driver.drive_until(&mut *writer);
+        let output = std::mem::take(&mut writer.out);
+        let done = match rv {
+            Ok(done) => done,
+            Err(err) => {
+                if adopt {
+                    *out = output;
+                }
+                out.truncate(len);
+                return Err(err);
+            }
         };
-        let output = std::mem::take(&mut writer.out).into_bytes();
         if adopt {
             *out = output;
         } else {
-            out.extend_from_slice(&output);
+            out.push_str(&output);
         }
-        if !done {
+        if done {
+            *separate = writer.separate;
+        } else {
             *value = Some(writer);
         }
         Ok(done)
@@ -197,14 +223,9 @@ impl SerializerConfig {
         driver: &mut SerializeDriver<'_>,
         out: &mut String,
     ) -> Result<(), Error> {
-        let mut writer = self.writer(String::new());
-        driver.drive(|event, state| writer.event(event, state))?;
-        // the parameters of more than one value are joined
-        if !out.is_empty() && !writer.out.is_empty() {
-            out.push('&');
-        }
-        out.push_str(&writer.out);
-        Ok(())
+        let mut separate = false;
+        self.serialize_part(&mut None, driver, out, &mut separate, usize::MAX)
+            .map(|_| ())
     }
 }
 
@@ -221,15 +242,54 @@ impl SerializerConfig {
 /// serializer.serialize(&BTreeMap::from([("b", 2)])).unwrap();
 /// assert_eq!(serializer.finish(), "a=1&b=2");
 /// ```
-#[derive(Debug, Clone)]
+///
+/// The serializer is also the stream serializer of query strings (see
+/// [`StreamSerializer`](ser::StreamSerializer)): the output can be taken
+/// while values are written, and large values can be written in parts.
+/// To write to a [`Write`](std::io::Write) use
+/// [`SerializerConfig::to_writer`] or a
+/// [`deser::io::Writer`](https://docs.rs/deser/latest/deser/io/struct.Writer.html).
 pub struct Serializer {
     config: SerializerConfig,
     out: String,
+    // parameters were written, the next ones are separated with `&`
+    separate: bool,
+    // the value that is written in parts
+    value: Option<Box<Writer>>,
+    // a value was started with `drive_partial` and is not complete
+    in_progress: bool,
 }
 
 impl Default for Serializer {
     fn default() -> Serializer {
         Serializer::new()
+    }
+}
+
+impl Clone for Serializer {
+    /// Clones the serializer.
+    ///
+    /// The clone of a serializer that writes a value in parts cannot write
+    /// more values (see
+    /// [`StreamSerializer::in_progress`](ser::StreamSerializer::in_progress)).
+    fn clone(&self) -> Serializer {
+        Serializer {
+            config: self.config.clone(),
+            out: self.out.clone(),
+            separate: self.separate,
+            value: None,
+            in_progress: self.in_progress,
+        }
+    }
+}
+
+impl std::fmt::Debug for Serializer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Serializer")
+            .field("config", &self.config)
+            .field("output", &self.out)
+            .field("in_progress", &self.in_progress)
+            .finish()
     }
 }
 
@@ -244,7 +304,15 @@ impl Serializer {
         Serializer {
             config: config.clone(),
             out: String::new(),
+            separate: false,
+            value: None,
+            in_progress: false,
         }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
     }
 
     /// Serializes a value.
@@ -265,8 +333,8 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
-    pub fn output(&self) -> &str {
+    /// Returns the output written so far (that was not cleared).
+    pub fn as_str(&self) -> &str {
         &self.out
     }
 
@@ -278,8 +346,92 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        self.config.serialize_driver(driver, &mut self.out)
+        // only `drive_partial` continues a value
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        self.out.as_bytes()
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    fn supports_partial(&self) -> bool {
+        true
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if self.value.is_none() && self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        // the parts of a value that failed stay written (see
+        // `in_progress`)
+        if !self.config.serialize_part(
+            &mut self.value,
+            driver,
+            &mut self.out,
+            &mut self.separate,
+            limit,
+        )? {
+            self.in_progress = true;
+            return Ok(Written::Partial);
+        }
+        self.in_progress = false;
+        Ok(Written::Done)
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of form data (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// The parameters of more than one value are joined.  The output of
+    /// large values is written in parts while they are serialized.
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value as form data to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value as form data to a writer.
+///
+/// ```
+/// use std::collections::BTreeMap;
+///
+/// let mut out = Vec::new();
+/// deser_urlencoded::to_writer(&mut out, &BTreeMap::from([("a", 1)]))
+///     .unwrap();
+/// assert_eq!(out, b"a=1");
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to a query string.

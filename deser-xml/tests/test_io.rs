@@ -2,7 +2,6 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use deser::io::{Reader, Writer};
 use deser::{Deserialize, Serialize};
 use deser_xml::{DeserializerConfig, Indent, SerializerConfig};
 
@@ -22,7 +21,7 @@ impl std::io::Write for Pieces {
 }
 
 fn streamed(config: &SerializerConfig, value: &dyn Serialize, limit: usize) -> (String, usize) {
-    let mut writer = Writer::new(Pieces(Vec::new(), 0), config);
+    let mut writer = config.writer(Pieces(Vec::new(), 0));
     writer.set_buffer_limit(limit);
     writer.write(value).unwrap();
     let Pieces(out, writes) = writer.into_inner();
@@ -180,10 +179,10 @@ fn test_writer_namespaces() {
 
 #[test]
 fn test_writer_single_document() {
-    let mut writer = Writer::new(Vec::new(), SerializerConfig::new());
+    let mut writer = SerializerConfig::new().writer(Vec::new());
     writer.write(&feed(1)).unwrap();
     let err = writer.write(&feed(1)).unwrap_err();
-    assert!(err.message().contains("single document"), "{err}");
+    assert!(err.message().contains("single root element"), "{err}");
 }
 
 #[test]
@@ -191,7 +190,7 @@ fn test_reader() {
     let feed = feed(3);
     let xml = deser_xml::to_string(&feed).unwrap();
 
-    let mut reader = Reader::new(xml.as_bytes(), DeserializerConfig::new());
+    let mut reader = DeserializerConfig::new().reader(xml.as_bytes());
     let read: Feed = reader.read().unwrap().unwrap();
     assert_eq!(read, feed);
     assert!(reader.read::<Feed>().unwrap().is_none());

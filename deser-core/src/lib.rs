@@ -23,6 +23,7 @@ pub mod hints;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod ser;
+pub mod stream;
 
 mod extensions;
 mod foreign_impls;

@@ -64,7 +64,9 @@ pub struct Account {
 //! The data formats have a deserializer (which deserializes values from a
 //! slice) and a serializer (which serializes values into a buffer).  Values
 //! can also be read from and written to streams (such as files or sockets),
-//! see [`io`][io-module].
+//! see [`io`][io-module].  The stream serializers and deserializers of the
+//! formats do not do IO themselves (see [`stream`]), so they also work with
+//! other kinds of IO and without the standard library.
 //!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
@@ -110,7 +112,9 @@ pub struct Account {
 //!   the [adapters](crate::adapters) (for instance `IndexMap<_, DisplayFromStr>`).
 //!   Without `std` the adapters of `IndexMap` and `IndexSet` are not available.
 //! * `io` (enabled by default) adds [`io`][io-module] to read values from and
-//!   write values to streams.  It requires `std`.
+//!   write values to streams of the standard library (`std::io`).  It
+//!   requires `std`.  Reading and writing streams without IO (see
+//!   [`stream`]) does not need it.
 //! * `std` (enabled by default) uses the standard library, see below.
 //!
 //! # `no_std`
@@ -157,7 +161,7 @@ pub struct Account {
 // deser-core need to be added here.
 
 #[doc(inline)]
-pub use deser_core::{adapters, de, ext, hints, ser};
+pub use deser_core::{adapters, de, ext, hints, ser, stream};
 
 #[cfg(feature = "io")]
 #[doc(inline)]

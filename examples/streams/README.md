@@ -16,10 +16,10 @@ stream between three formats.
 
 - Single values: `deser_toml::to_writer` / `deser_toml::from_reader` with
   a `File`.
-- Streams of values with the format-independent
-  `deser::io::Writer::new(writer, config)` and
-  `deser::io::Reader::new(reader, config)`. The format's
-  (de)serializer config selects the format and framing:
+- Streams of values with `config.writer(writer)` and
+  `config.reader(reader)`, which create a `deser::io::Writer` and
+  `deser::io::Reader` for the format. The format's (de)serializer config
+  selects the format and framing:
   - JSON Lines: `trailing(Trailing::Newline)` on both configs.
   - A CBOR sequence: the default `deser_cbor` configs.
   - YAML multi-document (`---`): the default `deser_yaml` configs.
@@ -53,7 +53,8 @@ Lines to CBOR to YAML documents, and are finally read back from YAML
 ## How to read it
 
 Follow the data: TOML file → JSON Lines file → CBOR `Vec<u8>` → YAML
-`String`. Each step swaps only the config passed to `Reader`/`Writer`.
+`String`. Each step swaps only the config that creates the reader or
+writer.
 
 Related: `json-lines` (the in-memory version), `tokio-server` (the async
 version).

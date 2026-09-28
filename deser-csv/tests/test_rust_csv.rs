@@ -8,7 +8,6 @@
 //! stream in chunks of all sizes.
 use std::io::Read;
 
-use deser::io::Reader;
 use deser_csv::{DeserializerConfig, Escape, Headers, Terminator};
 
 type Csv = Vec<Vec<String>>;
@@ -58,13 +57,10 @@ fn parses_to(name: &str, config: &DeserializerConfig, input: &str, expected: Res
         (1..=input.len().max(1)).collect()
     };
     for size in sizes {
-        let mut reader = Reader::new(
-            Chunked {
-                input: input.as_bytes(),
-                size,
-            },
-            config,
-        );
+        let mut reader = config.reader(Chunked {
+            input: input.as_bytes(),
+            size,
+        });
         let rv = reader
             .iter::<Vec<String>>()
             .collect::<Result<Csv, _>>()

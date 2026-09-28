@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 
 use deser_core::Text;
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver, Frame, LexicalRules, Source};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};
@@ -324,12 +324,10 @@ impl DeserializerConfig {
 
 /// The state of a stream of records.
 ///
-/// This holds the names of the columns (see [`headers`](Self::headers)) and
-/// what is needed to split the records.  Streams can also start with given
-/// names (see [`with_headers`](Self::with_headers)).  See
-/// [`Decoder::State`](deser_core::io::Decoder::State).
+/// This holds the names of the columns and what is needed to split the
+/// records.
 #[derive(Debug, Default)]
-pub struct StreamState {
+pub(crate) struct StreamState {
     // `None` before the start of the stream (BOM and `sep=` line) was read
     dialect: Option<Dialect>,
     scanner: Scanner,
@@ -345,53 +343,23 @@ pub struct StreamState {
 impl StreamState {
     /// Creates the state of a stream which continues with the given names
     /// of the columns.
-    ///
-    /// The stream does not start with names (they are not read from the
-    /// first record), for instance because it's the second half of a file:
-    ///
-    /// ```
-    /// use deser::io::Reader;
-    /// use deser_csv::{DeserializerConfig, StreamState};
-    ///
-    /// #[derive(deser::Deserialize)]
-    /// struct Row {
-    ///     name: String,
-    ///     age: u32,
-    /// }
-    ///
-    /// let state = StreamState::with_headers(["name", "age"]);
-    /// let mut reader = Reader::with_state(
-    ///     &b"jane,42\n"[..],
-    ///     DeserializerConfig::new(),
-    ///     state,
-    /// );
-    /// let row: Row = reader.read().unwrap().unwrap();
-    /// assert_eq!((row.name.as_str(), row.age), ("jane", 42));
-    /// ```
-    pub fn with_headers<I, S>(names: I) -> StreamState
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
+    pub(crate) fn with_headers(names: Vec<String>) -> StreamState {
         StreamState {
-            names: Some(names.into_iter().map(Into::into).collect()),
+            names: Some(names),
             has_names: true,
             ..StreamState::default()
         }
     }
 
     /// Returns the names of the columns.
-    ///
-    /// This is `None` until the first record was read (with
-    /// [`Headers::First`]) or if records have no names
-    /// ([`Headers::None`]).
-    pub fn headers(&self) -> Option<&[String]> {
+    pub(crate) fn headers(&self) -> Option<&[String]> {
         self.names.as_deref()
     }
 
     /// Finds the next record.
     ///
-    /// This works like [`Decoder::frame`](deser_core::io::Decoder::frame).
+    /// This works like
+    /// [`StreamDeserializer::frame`](deser_core::de::StreamDeserializer::frame).
     /// Blank lines, comments and names are consumed without returning a
     /// record.  The fields of the record are kept in the scanner.
     pub(crate) fn frame(
@@ -619,22 +587,6 @@ impl StreamState {
             }
         }
     }
-}
-
-/// The result of [`StreamState::frame`] (the same as the frames of
-/// `deser::io` which are only available with the `io` feature).
-pub(crate) enum Frame {
-    /// A record is in `input[start..end]`, the first `consumed` bytes are
-    /// used.
-    Value {
-        start: usize,
-        end: usize,
-        consumed: usize,
-    },
-    /// The first `consumed` bytes were skipped, more input might be needed.
-    Incomplete { consumed: usize },
-    /// There are no more records.
-    End,
 }
 
 /// Emits the fields of a record.

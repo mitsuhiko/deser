@@ -130,8 +130,10 @@ impl SerializerConfig {
 /// assert_eq!(serializer.finish(), "a = 1\n");
 /// ```
 ///
-/// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
+/// The serializer is also the stream serializer of TOML (see
+/// [`StreamSerializer`](ser::StreamSerializer)).  A TOML document cannot be
+/// written in parts: the values of a table come before its subtables.  To
+/// write to a [`Write`](std::io::Write) use [`SerializerConfig::writer`].
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
@@ -178,8 +180,13 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
-    pub fn output(&self) -> &str {
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns the output written so far (that was not cleared).
+    pub fn as_str(&self) -> &str {
         &self.out
     }
 
@@ -202,6 +209,57 @@ impl ser::Serializer for Serializer {
         self.written += 1;
         Ok(())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        self.out.as_bytes()
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of a TOML document (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// A stream holds a single document, writing a second value fails.  The
+    /// document is written with a single write once it's complete.
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value to a writer.
+///
+/// The document is written with a single write once it's complete: TOML
+/// documents cannot be written while the value is serialized as the values
+/// of a table come before its subtables.
+///
+/// ```
+/// use std::collections::BTreeMap;
+///
+/// let mut out = Vec::new();
+/// deser_toml::to_writer(&mut out, &BTreeMap::from([("a", 1)])).unwrap();
+/// assert_eq!(out, b"a = 1\n");
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to TOML.

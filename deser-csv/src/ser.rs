@@ -8,7 +8,7 @@ use core::fmt::{self, Write as _};
 use deser_core::__format::{Float, IntBuffer, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
-use deser_core::ser::{self, PausableSink, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
@@ -357,10 +357,9 @@ impl core::fmt::Debug for Buffers {
 /// The state of a stream of records that is written.
 ///
 /// This holds the names of the columns after the first record was written
-/// (or the given names, see [`with_headers`](Self::with_headers)).  See
-/// [`Encoder::State`](deser_core::io::Encoder::State).
+/// (or the given names).
 #[derive(Debug, Clone, Default)]
-pub struct WriterState {
+pub(crate) struct WriterState {
     names: Option<Vec<String>>,
     // the number of fields of the records
     len: Option<usize>,
@@ -372,27 +371,7 @@ pub struct WriterState {
 impl WriterState {
     /// Creates the state of a stream that continues with the given names
     /// of the columns.
-    ///
-    /// The names are not written, for instance because the records are
-    /// appended to an existing file.
-    ///
-    /// ```
-    /// use std::collections::BTreeMap;
-    /// use deser::io::Writer;
-    /// use deser_csv::{SerializerConfig, WriterState};
-    ///
-    /// let state = WriterState::with_headers(["b", "a"]);
-    /// let mut writer =
-    ///     Writer::with_state(Vec::new(), SerializerConfig::new(), state);
-    /// writer.write(&BTreeMap::from([("a", 1), ("b", 2)])).unwrap();
-    /// assert_eq!(writer.into_inner(), b"2,1\n");
-    /// ```
-    pub fn with_headers<I, S>(names: I) -> WriterState
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        let names: Vec<String> = names.into_iter().map(Into::into).collect();
+    fn with_headers(names: Vec<String>) -> WriterState {
         WriterState {
             len: Some(names.len()),
             names: Some(names),
@@ -400,18 +379,12 @@ impl WriterState {
             buffers: Buffers::default(),
         }
     }
-
-    /// Returns the names of the columns.
-    pub fn headers(&self) -> Option<&[String]> {
-        self.names.as_deref()
-    }
 }
 
 /// Serializes records into delimited text.
 ///
 /// Every value is a record, the names of the columns are written before
-/// the first one.  This is the in-memory counterpart of writing records
-/// with a [`Writer`](deser_core::io::Writer).
+/// the first one.
 ///
 /// ```
 /// use deser_csv::Serializer;
@@ -427,11 +400,22 @@ impl WriterState {
 /// serializer.serialize(&Row { name: "john", age: 23 }).unwrap();
 /// assert_eq!(serializer.finish(), "name,age\njane,42\njohn,23\n");
 /// ```
+///
+/// The serializer is also the stream serializer of delimited text (see
+/// [`StreamSerializer`](ser::StreamSerializer)): the output can be taken
+/// while records are written.  To write to a [`Write`](std::io::Write) use
+/// [`SerializerConfig::writer`].  A serializer created with
+/// [`document`](Self::document) writes the records of sequences instead,
+/// like [`SerializerConfig::to_string`].
 #[derive(Debug, Clone)]
 pub struct Serializer {
     config: SerializerConfig,
     state: WriterState,
     out: Vec<u8>,
+    // the values are sequences of records
+    document: bool,
+    // a document was started with `drive_partial` and is not complete
+    in_progress: bool,
 }
 
 impl Default for Serializer {
@@ -448,14 +432,77 @@ impl Serializer {
 
     /// Creates a serializer with the given configuration.
     pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer::with_state(config, WriterState::default(), false)
+    }
+
+    /// Creates a serializer for a stream that continues with the given
+    /// names of the columns.
+    ///
+    /// The names are not written, for instance because the records are
+    /// appended to an existing file.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser_csv::{Serializer, SerializerConfig};
+    ///
+    /// let mut serializer =
+    ///     Serializer::with_headers(&SerializerConfig::new(), ["b", "a"]);
+    /// serializer.serialize(&BTreeMap::from([("a", 1), ("b", 2)])).unwrap();
+    /// assert_eq!(serializer.finish(), "2,1\n");
+    /// ```
+    pub fn with_headers<I, S>(config: &SerializerConfig, names: I) -> Serializer
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let names = names.into_iter().map(Into::into).collect();
+        Serializer::with_state(config, WriterState::with_headers(names), false)
+    }
+
+    /// Creates a serializer whose values are sequences of records.
+    ///
+    /// Every value is written like with [`SerializerConfig::to_string`]:
+    /// the elements of the sequence are the records.  The records are
+    /// written while they are serialized, so large documents can be
+    /// written in parts (see
+    /// [`StreamSerializer::drive_partial`](ser::StreamSerializer::drive_partial)).
+    ///
+    /// ```
+    /// use deser_csv::{Serializer, SerializerConfig};
+    ///
+    /// let mut serializer = Serializer::document(&SerializerConfig::new());
+    /// serializer.serialize(&vec![(1, "a"), (2, "b")]).unwrap();
+    /// assert_eq!(serializer.finish(), "1,a\n2,b\n");
+    /// ```
+    pub fn document(config: &SerializerConfig) -> Serializer {
+        Serializer::with_state(config, WriterState::default(), true)
+    }
+
+    fn with_state(config: &SerializerConfig, state: WriterState, document: bool) -> Serializer {
         Serializer {
             config: config.clone(),
-            state: WriterState::default(),
+            state,
             out: Vec::new(),
+            document,
+            in_progress: false,
         }
     }
 
-    /// Serializes a record.
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns the names of the columns.
+    ///
+    /// This is `None` until the first record was written (unless the names
+    /// were given, see [`with_headers`](Self::with_headers)).
+    pub fn headers(&self) -> Option<&[String]> {
+        self.state.names.as_deref()
+    }
+
+    /// Serializes a record (or the records of a sequence, see
+    /// [`document`](Self::document)).
     ///
     /// If the record fails to serialize, nothing is written.
     pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
@@ -473,8 +520,8 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the output written so far.
-    pub fn output(&self) -> &str {
+    /// Returns the output written so far (that was not cleared).
+    pub fn as_str(&self) -> &str {
         // SAFETY: the output is valid UTF-8, see `into_string`
         unsafe { core::str::from_utf8_unchecked(&self.out) }
     }
@@ -487,11 +534,17 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
         let len = self.out.len();
-        match self
-            .config
-            .write(&mut self.state, driver, false, &mut self.out, usize::MAX)
-        {
+        match self.config.write(
+            &mut self.state,
+            driver,
+            self.document,
+            &mut self.out,
+            usize::MAX,
+        ) {
             Ok(_) => Ok(()),
             Err(err) => {
                 self.out.truncate(len);
@@ -499,6 +552,112 @@ impl ser::Serializer for Serializer {
             }
         }
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        &self.out
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    /// Documents are written in parts (between records).
+    fn supports_partial(&self) -> bool {
+        self.document
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if !self.document || (limit == usize::MAX && !self.in_progress) {
+            ser::Serializer::drive(self, driver)?;
+            return Ok(Written::Done);
+        }
+        let len = self.out.len();
+        match self
+            .config
+            .write(&mut self.state, driver, true, &mut self.out, limit)
+        {
+            Ok(true) => {
+                self.in_progress = false;
+                Ok(Written::Done)
+            }
+            Ok(false) => {
+                self.in_progress = true;
+                Ok(Written::Partial)
+            }
+            Err(err) => {
+                // the records of the parts that were taken stay written
+                // (and the stream broken, see `in_progress`)
+                self.out.truncate(len);
+                Err(err)
+            }
+        }
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of a stream of records (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// Every value is a record, the names of the columns are written before
+    /// the first one (see [`headers`](Self::headers)).  A record that fails
+    /// to serialize is not written.
+    ///
+    /// ```
+    /// use deser_csv::SerializerConfig;
+    ///
+    /// #[derive(deser::Serialize)]
+    /// struct Row {
+    ///     name: &'static str,
+    ///     age: u32,
+    /// }
+    ///
+    /// let mut writer = SerializerConfig::new().writer(Vec::new());
+    /// writer.write(&Row { name: "jane", age: 42 }).unwrap();
+    /// writer.write(&Row { name: "john", age: 23 }).unwrap();
+    /// assert_eq!(writer.into_inner(), b"name,age\njane,42\njohn,23\n");
+    /// ```
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes the records of a value to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        deser_core::io::to_writer(writer, Serializer::document(self), value)
+    }
+}
+
+/// Serializes the records of a value to a writer.
+///
+/// The records are written while they are serialized (in parts of about
+/// 8 KiB, see [`deser::io`](deser_core::io)), so the writer does not need
+/// to be buffered and the records are not held in memory.  To write one
+/// record at a time use [`SerializerConfig::writer`].
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_csv::to_writer(&mut out, &vec![(1, "a"), (2, "b")]).unwrap();
+/// assert_eq!(out, b"1,a\n2,b\n");
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Converts the output into a string.

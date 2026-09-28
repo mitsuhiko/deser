@@ -1,14 +1,15 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
 use core::any::{Any, TypeId};
 use core::fmt;
 use core::marker::PhantomData;
-use std::sync::{Arc, Mutex};
 
 use crate::State;
-use crate::de::{DeserializeOwned, OwnedDriver};
+use crate::de::{DeserializeOwned, OwnedDriver, StreamDeserializer};
 use crate::error::Error;
-use crate::io::{DecodeBuffer, Decoder, Status};
+use crate::stream::{InputBuffer, Status};
+use crate::sync::Mutex;
 
 /// The queue elements of [`Streamed`] are handed out through.
 struct Queue {
@@ -18,12 +19,12 @@ struct Queue {
 
 impl Queue {
     fn pop(&self) -> Option<Box<dyn Any + Send>> {
-        self.elements.lock().unwrap().pop_front()
+        self.elements.lock().pop_front()
     }
 }
 
 /// The queue registered in the state of a value whose elements are handed
-/// out (see `deser::io::ElementReader`).
+/// out (see [`ElementReader`]).
 #[derive(Clone, Default)]
 struct ElementQueue(Option<Arc<Queue>>);
 
@@ -40,14 +41,15 @@ impl fmt::Debug for ElementQueue {
 pub(crate) fn hand_out<T: Send + 'static>(value: T, state: &State) -> Result<(), T> {
     match state.get::<ElementQueue>() {
         Some(ElementQueue(Some(queue))) if queue.type_id == TypeId::of::<T>() => {
-            queue.elements.lock().unwrap().push_back(Box::new(value));
+            queue.elements.lock().push_back(Box::new(value));
             Ok(())
         }
         _ => Err(value),
     }
 }
 
-/// The result of [`Reader::read_next`](crate::io::Reader::read_next).
+/// The result of [`ElementReader::poll`] (and of `Reader::read_next` of
+/// `deser::io`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Next<E, T> {
     /// An element of the [`Streamed`](crate::Streamed) sequence of the value.
@@ -70,16 +72,16 @@ pub enum ElementStatus<E, T> {
 /// Reads a value and hands out the elements of its [`Streamed`](crate::Streamed) sequence
 /// without doing IO.
 ///
-/// This is to [`Reader::read_next`](crate::io::Reader::read_next) what the
-/// [`DecodeBuffer`] is to the [`Reader`](crate::io::Reader): it reads the
-/// value from a [`DecodeBuffer`] which is filled by the caller.  Adapters for
-/// other kinds of IO (for instance async runtimes) use this.  `T` is the
+/// This reads the value from an [`InputBuffer`] which is filled by the
+/// caller.  `Reader::read_next` of `deser::io` and adapters for other
+/// kinds of IO (for instance async runtimes) use this.  `T` is the
 /// type of the value, `E` the type of the elements of the [`Streamed`](crate::Streamed)
 /// sequence which are handed out.
 ///
 /// Elements are handed out before more input is needed, so an element is
-/// available as soon as its last byte was read (if the decoder supports
-/// [`Decoder::feed`], otherwise once the value is complete).
+/// available as soon as its last byte was read (if the stream
+/// deserializer supports [`StreamDeserializer::feed`], otherwise once the
+/// value is complete).
 pub struct ElementReader<T, E> {
     queue: Arc<Queue>,
     // the value that is deserialized while its input arrives
@@ -101,7 +103,7 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
         ElementReader {
             queue: Arc::new(Queue {
                 type_id: TypeId::of::<E>(),
-                elements: Mutex::new(VecDeque::new()),
+                elements: Mutex::default(),
             }),
             driver: None,
             value: None,
@@ -121,9 +123,9 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
     ///
     /// Once the value is ready ([`Next::Done`]) the reader is done, the next
     /// call starts with the next value.
-    pub fn poll<D: Decoder>(
+    pub fn poll<D: StreamDeserializer>(
         &mut self,
-        buffer: &mut DecodeBuffer<D>,
+        buffer: &mut InputBuffer<D>,
     ) -> Result<ElementStatus<E, T>, Error> {
         loop {
             if let Some(element) = self.queue.pop() {
@@ -159,7 +161,7 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
                 }
                 // elements that were completed are handed out first
                 Ok(Status::NeedInput) => {
-                    if self.queue.elements.lock().unwrap().is_empty() {
+                    if self.queue.elements.lock().is_empty() {
                         return Ok(ElementStatus::NeedInput);
                     }
                 }

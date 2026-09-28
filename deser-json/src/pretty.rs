@@ -70,13 +70,14 @@ impl PrettyWriter {
         inline_width: Option<usize>,
     ) -> PrettyWriter {
         PrettyWriter {
+            // the value starts on a line of its own after the output
+            line_start: ser.out.len(),
             ser,
             indent,
             compact,
             inline_width,
             stack: Vec::new(),
             is_key: false,
-            line_start: 0,
             line_offset: 0,
             attempt: None,
             entries: Vec::new(),
@@ -94,7 +95,6 @@ impl PrettyWriter {
     ///
     /// This is only done while no container is written on a single line
     /// tentatively (see `pause`), the offsets of the attempt are not moved.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
     pub fn take_output(&mut self) -> Vec<u8> {
         debug_assert!(self.attempt.is_none());
         self.line_offset += self.ser.out.as_str()[self.line_start..].chars().count();
@@ -103,7 +103,6 @@ impl PrettyWriter {
     }
 
     /// Returns the output buffer.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
     pub fn output(&mut self) -> &mut crate::buf::Buffer {
         &mut self.ser.out
     }

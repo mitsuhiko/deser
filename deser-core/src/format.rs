@@ -366,6 +366,17 @@ pub unsafe fn copy_small(src: *const u8, dst: *mut u8, len: usize) {
     }
 }
 
+/// The error for a value that is serialized while another one is only
+/// partially written (see
+/// [`StreamSerializer::in_progress`](crate::ser::StreamSerializer::in_progress)).
+#[cold]
+pub fn in_progress_error() -> crate::Error {
+    crate::Error::new(
+        crate::ErrorKind::Unexpected,
+        "a value was only partially written, the stream cannot continue",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

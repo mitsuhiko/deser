@@ -288,10 +288,9 @@ fn test_top_level() {
 
 #[cfg(feature = "io")]
 #[test]
-fn test_incremental_writer() {
+fn test_partial_writer() {
     use std::collections::BTreeMap;
 
-    use deser::io::Writer;
     use deser_urlencoded::{ArrayFormat, SerializerConfig};
 
     #[derive(deser::Serialize)]
@@ -312,12 +311,12 @@ fn test_incremental_writer() {
     ] {
         let expected = config.to_string(&params).unwrap();
         for limit in [1, 10, 100, usize::MAX] {
-            let mut writer = Writer::new(Vec::new(), &config);
+            let mut writer = config.writer(Vec::new());
             writer.set_buffer_limit(limit);
             writer.write(&params).unwrap();
-            // a stream holds a single value
-            assert!(writer.write(&params).is_err());
-            assert_eq!(writer.into_inner(), expected.as_bytes());
+            // the parameters of more values are joined
+            writer.write(&BTreeMap::from([("x", 1)])).unwrap();
+            assert_eq!(writer.into_inner(), format!("{expected}&x=1").as_bytes());
         }
     }
 }

@@ -318,13 +318,10 @@ fn test_suite_as_stream() {
     } else {
         &[1, 2, 3, 7, 64][..]
     } {
-        let mut reader = deser::io::Reader::new(
-            common::Chunked {
-                input: &bytes,
-                size,
-            },
-            deser_msgpack::DeserializerConfig::new(),
-        );
+        let mut reader = deser_msgpack::DeserializerConfig::new().reader(common::Chunked {
+            input: &bytes,
+            size,
+        });
         let mut count = 0;
         while let Some(value) = reader.read::<Value>().unwrap() {
             assert!(equivalent(&value, &values_expected[count]), "size {}", size);

@@ -5,7 +5,7 @@
 //! its own task (the futures are `Send`).  The client uses the `Codec` with
 //! tokio-util's `Framed`.
 use deser::{Deserialize, Serialize};
-use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
+use deser_json::{DeserializerConfig, Serializer, SerializerConfig, StreamDeserializer, Trailing};
 use deser_tokio::{Codec, Reader, Writer};
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
@@ -32,8 +32,8 @@ const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing:
 
 async fn handle(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let mut requests = Reader::new(input, READ_LINES);
-    let mut responses = Writer::new(output, WRITE_LINES);
+    let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
+    let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
     loop {
         let response = match requests.read::<Request>().await {
             Ok(Some(Request::Add { a, b })) => Response::Number(a + b),
@@ -62,7 +62,10 @@ async fn main() -> Result<(), deser::Error> {
         }
     });
 
-    let codec = Codec::<_, _, Response>::new(READ_LINES, WRITE_LINES);
+    let codec = Codec::<_, _, Response>::new(
+        StreamDeserializer::with_config(&READ_LINES),
+        Serializer::with_config(&WRITE_LINES),
+    );
     let mut client = Framed::new(TcpStream::connect(addr).await?, codec);
     client.send(Request::Add { a: 1, b: 2 }).await?;
     client

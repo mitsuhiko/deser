@@ -1,5 +1,5 @@
 use deser_core::adapters::BytesFormat;
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, SerializeDriver, Written};
 use deser_core::{Error, Serialize};
 
 use crate::emit::Emitter;
@@ -410,20 +410,6 @@ impl SerializerConfig {
         self
     }
 
-    /// Serializes the value of a driver as a document of a stream.
-    ///
-    /// `index` is the number of documents written before.
-    pub(crate) fn document(
-        &self,
-        driver: &mut SerializeDriver<'_>,
-        index: usize,
-    ) -> Result<String, Error> {
-        let mut emitter = self.emitter(index, String::new());
-        driver.drive(|event, state| emitter.event(event, state))?;
-        self.end_document(&mut emitter)?;
-        Ok(emitter.out)
-    }
-
     /// Creates the emitter of a document which writes into the output.
     ///
     /// This writes what precedes the document, `index` is the number of
@@ -454,51 +440,74 @@ impl SerializerConfig {
     /// stream and appends it to the output.
     ///
     /// The progress of the document is kept in `document` (see
-    /// `Encoder::encode_incremental`), `true` is returned once the document
-    /// is complete.  `index` is the number of documents written before.
-    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    /// `StreamSerializer::drive_partial`), `true` is returned once the
+    /// document is complete.  `index` is the number of documents written
+    /// before.  If this fails, what was appended by the call is removed
+    /// from the output.
     pub(crate) fn document_part(
         &self,
         index: usize,
         document: &mut Option<Box<Emitter>>,
         driver: &mut SerializeDriver<'_>,
-        out: &mut Vec<u8>,
+        out: &mut String,
         limit: usize,
     ) -> Result<bool, Error> {
+        let len = out.len();
+        // a document that is written at once is written into the output
+        // directly without boxing the emitter
+        if document.is_none() && limit == usize::MAX {
+            let mut emitter = self.emitter(index, std::mem::take(out));
+            let rv = driver
+                .drive(|event, state| emitter.event(event, state))
+                .and_then(|()| self.end_document(&mut emitter));
+            *out = emitter.out;
+            if let Err(err) = rv {
+                out.truncate(len);
+                return Err(err);
+            }
+            return Ok(true);
+        }
         // the emitter writes into an empty output directly, otherwise its
         // output is appended
         let adopt = out.is_empty();
         let mut emitter = match document.take() {
             Some(mut emitter) => {
                 if adopt {
-                    emitter.out = String::from_utf8(std::mem::take(out)).unwrap();
+                    emitter.out = std::mem::take(out);
                 }
                 emitter
             }
             None => {
                 let buffer = match adopt {
-                    true => String::from_utf8(std::mem::take(out)).unwrap(),
+                    true => std::mem::take(out),
                     false => String::new(),
                 };
                 Box::new(self.emitter(index, buffer))
             }
         };
         // after an error the document is abandoned, its emitter is dropped
-        let done = if limit == usize::MAX {
-            driver.drive(|event, state| emitter.event(event, state))?;
-            true
-        } else {
-            emitter.limit = limit;
-            driver.drive_until(&mut *emitter)?
+        emitter.limit = limit;
+        let rv = driver.drive_until(&mut *emitter).and_then(|done| {
+            if done {
+                self.end_document(&mut emitter)?;
+            }
+            Ok(done)
+        });
+        let done = match rv {
+            Ok(done) => done,
+            Err(err) => {
+                if adopt {
+                    *out = std::mem::take(&mut emitter.out);
+                }
+                out.truncate(len);
+                return Err(err);
+            }
         };
-        if done {
-            self.end_document(&mut emitter)?;
-        }
-        let output = emitter.take_output().into_bytes();
+        let output = emitter.take_output();
         if adopt {
             *out = output;
         } else {
-            out.extend_from_slice(&output);
+            out.push_str(&output);
         }
         if !done {
             *document = Some(emitter);
@@ -521,7 +530,9 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        self.document(&mut driver, 0)
+        let mut out = String::new();
+        self.document_part(0, &mut None, &mut driver, &mut out, usize::MAX)?;
+        Ok(out)
     }
 }
 
@@ -539,18 +550,52 @@ impl SerializerConfig {
 /// assert_eq!(serializer.finish(), "a\n---\n- 1\n- 2\n");
 /// ```
 ///
-/// To write to a [`Write`](std::io::Write) use a
-/// [`deser::io::Writer`](deser_core::io::Writer) with the configuration.
-#[derive(Debug, Clone)]
+/// The serializer is also the stream serializer of YAML (see
+/// [`StreamSerializer`](ser::StreamSerializer)): the output can be taken
+/// while documents are written, and large documents can be written in
+/// parts.  To write to a [`Write`](std::io::Write) use
+/// [`SerializerConfig::writer`].
 pub struct Serializer {
     config: SerializerConfig,
     out: String,
     written: usize,
+    // the document that is written in parts
+    document: Option<Box<Emitter>>,
+    // a document was started with `drive_partial` and is not complete
+    in_progress: bool,
 }
 
 impl Default for Serializer {
     fn default() -> Serializer {
         Serializer::new()
+    }
+}
+
+impl Clone for Serializer {
+    /// Clones the serializer.
+    ///
+    /// The clone of a serializer that writes a document in parts cannot
+    /// write more documents (see
+    /// [`StreamSerializer::in_progress`](ser::StreamSerializer::in_progress)).
+    fn clone(&self) -> Serializer {
+        Serializer {
+            config: self.config.clone(),
+            out: self.out.clone(),
+            written: self.written,
+            document: None,
+            in_progress: self.in_progress,
+        }
+    }
+}
+
+impl std::fmt::Debug for Serializer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Serializer")
+            .field("config", &self.config)
+            .field("output", &self.out)
+            .field("written", &self.written)
+            .field("in_progress", &self.in_progress)
+            .finish()
     }
 }
 
@@ -562,11 +607,32 @@ impl Serializer {
 
     /// Creates a serializer with the given configuration.
     pub fn with_config(config: &SerializerConfig) -> Serializer {
+        Serializer::with_written(config, 0)
+    }
+
+    /// Creates a serializer for a stream that continues after the given
+    /// number of documents.
+    ///
+    /// This is useful to append to a stream that was written before: the
+    /// next document starts with `---`.
+    pub fn with_written(config: &SerializerConfig, written: usize) -> Serializer {
         Serializer {
             config: config.clone(),
             out: String::new(),
-            written: 0,
+            written,
+            document: None,
+            in_progress: false,
         }
+    }
+
+    /// Returns the configuration.
+    pub fn config(&self) -> &SerializerConfig {
+        &self.config
+    }
+
+    /// Returns the number of documents that were written.
+    pub fn written(&self) -> usize {
+        self.written
     }
 
     /// Serializes a value.
@@ -587,8 +653,8 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Returns the documents written so far.
-    pub fn output(&self) -> &str {
+    /// Returns the documents written so far (that were not cleared).
+    pub fn as_str(&self) -> &str {
         &self.out
     }
 
@@ -600,11 +666,104 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        let document = self.config.document(driver, self.written)?;
-        self.out.push_str(&document);
-        self.written += 1;
-        Ok(())
+        // only `drive_partial` continues a document
+        if self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
+}
+
+impl ser::StreamSerializer for Serializer {
+    fn output(&self) -> &[u8] {
+        self.out.as_bytes()
+    }
+
+    fn clear_output(&mut self) {
+        self.out.clear();
+    }
+
+    fn supports_partial(&self) -> bool {
+        true
+    }
+
+    fn drive_partial(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<Written, Error> {
+        if self.document.is_none() && self.in_progress {
+            return Err(deser_core::__format::in_progress_error());
+        }
+        // the parts of a document that failed stay written (see
+        // `in_progress`)
+        if !self.config.document_part(
+            self.written,
+            &mut self.document,
+            driver,
+            &mut self.out,
+            limit,
+        )? {
+            self.in_progress = true;
+            return Ok(Written::Partial);
+        }
+        self.in_progress = false;
+        self.written += 1;
+        Ok(Written::Done)
+    }
+
+    fn in_progress(&self) -> bool {
+        self.in_progress
+    }
+}
+
+#[cfg(feature = "io")]
+impl SerializerConfig {
+    /// Creates a writer of YAML documents (see
+    /// [`deser::io::Writer`](deser_core::io::Writer)).
+    ///
+    /// Every value is written as a document, documents after the first
+    /// start with `---`.  The output of large documents is written in parts
+    /// while they are serialized.
+    ///
+    /// ```
+    /// use deser_yaml::SerializerConfig;
+    ///
+    /// let mut writer = SerializerConfig::new().writer(Vec::new());
+    /// writer.write(&"a").unwrap();
+    /// writer.write(&vec![1, 2]).unwrap();
+    /// assert_eq!(writer.into_inner(), b"a\n---\n- 1\n- 2\n");
+    /// ```
+    pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
+        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+    }
+
+    /// Serializes a value to a writer.
+    ///
+    /// See [`to_writer`](crate::to_writer).
+    pub fn to_writer<W: std::io::Write>(
+        &self,
+        writer: W,
+        value: &dyn Serialize,
+    ) -> Result<(), Error> {
+        self.writer(writer).write(value)
+    }
+}
+
+/// Serializes a value to a writer.
+///
+/// The output of large documents is written in parts while they are
+/// serialized (see [`deser::io`](deser_core::io)), the writer does not
+/// need to be buffered.
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_yaml::to_writer(&mut out, &vec![1, 2]).unwrap();
+/// assert_eq!(out, b"- 1\n- 2\n");
+/// ```
+#[cfg(feature = "io")]
+pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+    SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to YAML.

@@ -1,11 +1,13 @@
-// @generated from deser-template-json/src/io.rs by
+// @generated from deser-template-json/src/stream.rs by
 // deser-template-json/generate.py.  Do not edit.
 //! Reading JSON streams.
+#[cfg(feature = "io")]
 use std::io::Read;
 
 use deser_core::adapters::BytesFormat;
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::{Decoder, Frame, Progress};
+#[cfg(feature = "io")]
+use deser_core::de::DeserializeOwned;
+use deser_core::de::{self, DeserializeDriver, Frame, Progress};
 use deser_core::{Error, ErrorKind, State};
 
 use crate::Trailing;
@@ -31,13 +33,11 @@ fn skip_whitespace(input: &[u8], pos: usize, eof: bool) -> (usize, bool) {
 }
 
 /// The state of a JSON stream that is read.
-///
-/// See [`Decoder::State`].
 #[derive(Debug, Default)]
-pub struct StreamState {
+struct StreamState {
     // `Trailing::Strict`: the value was read
     done: bool,
-    // parses values incrementally (see `Decoder::feed`)
+    // parses values while their input arrives (see `feed`)
     parser: Parser,
     // the rest of a value that failed in a sink is skipped from the
     // position in the input
@@ -284,7 +284,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
     None
 }
 
-/// Splits a JSON stream into values (see [`deser::io`](deser_core::io)).
+/// Reads a stream of JSON values (see [`deser::stream`](deser_core::stream)).
 ///
 /// How the stream is split depends on [`DeserializerConfig::trailing`]:
 ///
@@ -301,67 +301,75 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 ///   the stream (unless they are read from their frames).
 ///
 /// Except for JSON Lines, values which do not borrow are deserialized
-/// while their input arrives (see [`Decoder::feed`]) so only incomplete
-/// tokens are buffered.
+/// while their input arrives (see
+/// [`StreamDeserializer::feed`](de::StreamDeserializer::feed)) so only
+/// incomplete tokens are buffered.
 ///
 /// ```
-/// use deser::io::Reader;
+/// # #[cfg(feature = "io")] {
 /// use deser_jsonc::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig =
 ///     DeserializerConfig::new().trailing(Trailing::Newline);
-/// let mut reader = Reader::new(&b"[1, 2]\n[3]\n"[..], LINES);
+/// let mut reader = LINES.reader(&b"[1, 2]\n[3]\n"[..]);
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), None);
+/// # }
 /// ```
 ///
 /// Values which are read from their frames are parsed like with a
 /// [`Deserializer`], so they can borrow from the stream's buffer (see
-/// [`deser::io::Reader::read_borrowed`](deser_core::io::Reader::read_borrowed)).  The input ranges (and thus
+/// [`InputBuffer::deserialize`](deser_core::stream::InputBuffer::deserialize)).  The input ranges (and thus
 /// locations) of these values refer to the start of their line (or value),
 /// those of values that are deserialized while their input arrives to the
 /// stream.
-impl Decoder for DeserializerConfig {
-    type State = StreamState;
+#[derive(Debug)]
+pub struct StreamDeserializer {
+    config: DeserializerConfig,
+    state: StreamState,
+}
 
-    fn frame(&self, state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
-        match self.trailing_mode() {
-            Trailing::Strict => frame_all(state, input, eof),
-            Trailing::Newline => Ok(frame_line(state, input, eof)),
-            Trailing::Stop => Ok(frame_value(state, input, eof)),
+impl Default for StreamDeserializer {
+    fn default() -> StreamDeserializer {
+        StreamDeserializer::new()
+    }
+}
+
+impl StreamDeserializer {
+    /// Creates a stream deserializer.
+    pub fn new() -> StreamDeserializer {
+        StreamDeserializer::with_config(&DeserializerConfig::new())
+    }
+
+    /// Creates a stream deserializer with the given configuration.
+    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+        StreamDeserializer {
+            config: config.clone(),
+            state: StreamState::default(),
         }
     }
 
-    fn drive<'de>(
-        &self,
-        _state: &mut Self::State,
-        frame: &'de [u8],
-        driver: &mut DeserializeDriver<'_, 'de>,
-    ) -> Result<(), Error> {
-        Deserializer::from_frame(frame, self).drive(driver)
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
     }
 
-    fn is_text(&self) -> bool {
-        true
-    }
-
-    /// JSON Lines are read line by line, the other values while their
-    /// input arrives.
-    fn supports_feed(&self) -> bool {
-        self.trailing_mode() != Trailing::Newline
-    }
-
-    fn feed(
-        &self,
-        state: &mut StreamState,
+    /// Skips what precedes the next value.
+    ///
+    /// This skips the rest of a value that failed in a sink and the
+    /// whitespace before the next value.  Returns where the value starts,
+    /// or the progress if there is no value (yet).
+    fn skip_to_value(
+        &mut self,
         input: &[u8],
         offset: usize,
         eof: bool,
-        driver: &mut DeserializeDriver<'_, '_>,
-    ) -> Result<Progress, Error> {
+    ) -> Result<Result<usize, Progress>, Error> {
+        let options = self.options();
+        let state = &mut self.state;
         if state.ended {
-            return Ok(Progress::End);
+            return Ok(Err(Progress::End));
         }
         if state.failed {
             return Err(Error::new(
@@ -369,10 +377,6 @@ impl Decoder for DeserializerConfig {
                 "cannot continue after an error",
             ));
         }
-        let options = Options {
-            validate_utf8: true,
-            exact_numbers: self.exact_numbers_enabled(),
-        };
 
         // skip the rest of a value that failed in a sink
         let mut pos = 0;
@@ -384,12 +388,12 @@ impl Decoder for DeserializerConfig {
             {
                 Ok(ParseProgress::Done(end)) => {
                     state.skipping = None;
-                    state.done = self.trailing_mode() == Trailing::Strict;
+                    state.done = self.config.trailing_mode() == Trailing::Strict;
                     pos = end;
                 }
                 Ok(ParseProgress::NeedMore(consumed)) => {
                     state.skipping = Some(0);
-                    return Ok(Progress::NeedMore { consumed });
+                    return Ok(Err(Progress::NeedMore { consumed }));
                 }
                 Err(err) => {
                     state.parser.reset();
@@ -400,36 +404,91 @@ impl Decoder for DeserializerConfig {
             }
         }
 
-        if state.parser.is_idle() {
-            if state.done {
-                return match trailing_whitespace(&input[pos..], offset + pos, eof)? {
-                    Progress::NeedMore { consumed } => Ok(Progress::NeedMore {
-                        consumed: pos + consumed,
-                    }),
-                    progress => Ok(progress),
-                };
-            }
-            // a new value, skip the whitespace before it
-            // (an incomplete comment is scanned again with more input)
-            let token;
-            (pos, token) = skip_whitespace(input, pos, eof);
-            if !token && (pos == input.len() || !eof) {
-                return Ok(if eof {
-                    Progress::End
-                } else {
-                    Progress::NeedMore { consumed: pos }
-                });
-            }
-            if self.bytes_format() != BytesFormat::BASE64 {
-                *driver.state_mut().get_mut::<BytesFormat>() = self.bytes_format();
-            }
+        if !state.parser.is_idle() {
+            return Ok(Ok(pos));
         }
+        if state.done {
+            return match trailing_whitespace(&input[pos..], offset + pos, eof)? {
+                Progress::NeedMore { consumed } => Ok(Err(Progress::NeedMore {
+                    consumed: pos + consumed,
+                })),
+                progress => Ok(Err(progress)),
+            };
+        }
+        // a new value, skip the whitespace before it
+        // (an incomplete comment is scanned again with more input)
+        let token;
+        (pos, token) = skip_whitespace(input, pos, eof);
+        if !token && (pos == input.len() || !eof) {
+            return Ok(Err(if eof {
+                Progress::End
+            } else {
+                Progress::NeedMore { consumed: pos }
+            }));
+        }
+        Ok(Ok(pos))
+    }
+
+    /// Returns the options of the parser.
+    fn options(&self) -> Options {
+        Options {
+            validate_utf8: true,
+            exact_numbers: self.config.exact_numbers_enabled(),
+        }
+    }
+}
+
+impl de::StreamDeserializer for StreamDeserializer {
+    fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
+        let state = &mut self.state;
+        match self.config.trailing_mode() {
+            Trailing::Strict => frame_all(state, input, eof),
+            Trailing::Newline => Ok(frame_line(state, input, eof)),
+            Trailing::Stop => Ok(frame_value(state, input, eof)),
+        }
+    }
+
+    fn drive_frame<'de>(
+        &mut self,
+        frame: &'de [u8],
+        driver: &mut DeserializeDriver<'_, 'de>,
+    ) -> Result<(), Error> {
+        Deserializer::from_frame(frame, &self.config).drive(driver)
+    }
+
+    fn is_text(&self) -> bool {
+        true
+    }
+
+    /// JSON Lines are read line by line, the other values while their
+    /// input arrives.
+    fn supports_feed(&self) -> bool {
+        self.config.trailing_mode() != Trailing::Newline
+    }
+
+    fn feed(
+        &mut self,
+        input: &[u8],
+        offset: usize,
+        eof: bool,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Progress, Error> {
+        let pos = match self.skip_to_value(input, offset, eof)? {
+            Ok(pos) => pos,
+            Err(progress) => return Ok(progress),
+        };
+        // a new value starts
+        if self.state.parser.is_idle() && self.config.bytes_format() != BytesFormat::BASE64 {
+            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes_format();
+        }
+        let options = self.options();
+        let state = &mut self.state;
         match state
             .parser
             .parse(input, pos, eof, offset, options, &mut Copying(driver))
         {
             Ok(ParseProgress::Done(end)) => {
-                state.done = self.trailing_mode() == Trailing::Strict;
+                state.done = self.config.trailing_mode() == Trailing::Strict;
                 Ok(Progress::Done { consumed: end })
             }
             Ok(ParseProgress::NeedMore(consumed)) => Ok(Progress::NeedMore { consumed }),
@@ -450,21 +509,32 @@ impl Decoder for DeserializerConfig {
         }
     }
 
-    fn from_slice_with<'de, T, F>(&self, input: &'de [u8], setup: F) -> Result<T, Error>
-    where
-        T: Deserialize<'de>,
-        F: FnOnce(&mut DeserializeDriver<'_, 'de>),
-    {
-        Deserializer::from_slice_with_config(input, self).deserialize_with(setup)
+    fn peek(&mut self, input: &[u8], eof: bool) -> Result<Option<Progress>, Error> {
+        if !de::StreamDeserializer::supports_feed(self) {
+            return Ok(None);
+        }
+        Ok(Some(match self.skip_to_value(input, 0, eof)? {
+            Ok(pos) => Progress::Done { consumed: pos },
+            Err(progress) => progress,
+        }))
     }
 }
 
+#[cfg(feature = "io")]
 impl DeserializerConfig {
+    /// Creates a reader of a stream of values (see
+    /// [`deser::io::Reader`](deser_core::io::Reader)).
+    ///
+    /// See [`StreamDeserializer`] for how the stream is split into values.
+    pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+    }
+
     /// Deserializes a value from a reader.
     ///
     /// See [`from_reader`](crate::from_reader).
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser_core::io::from_reader(reader, self)
+        deser_core::io::from_reader(reader, StreamDeserializer::with_config(self))
     }
 }
 
@@ -472,14 +542,14 @@ impl DeserializerConfig {
 ///
 /// The reader is read to the end.  Only whitespace may follow the value.
 /// The reader does not need to be buffered.  To read more than one value
-/// (for instance JSON Lines) use a [`deser::io::Reader`](deser_core::io::Reader) with a
-/// [`DeserializerConfig`].
+/// (for instance JSON Lines) use [`DeserializerConfig::reader`].
 ///
 /// ```
 /// let value: Vec<u32> =
 ///     deser_jsonc::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
+#[cfg(feature = "io")]
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {
     DeserializerConfig::new().from_reader(reader)
 }

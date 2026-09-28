@@ -1,4 +1,3 @@
-use deser::io::{Reader, Writer};
 use deser_plist::{DeserializerConfig, Format, SerializerConfig};
 
 use crate::common::Value;
@@ -15,11 +14,11 @@ fn test_reader_and_writer() {
         assert_eq!(value, ["a", "b"]);
 
         // a stream holds a single property list
-        let mut writer = Writer::new(Vec::new(), config.clone());
+        let mut writer = config.clone().writer(Vec::new());
         writer.write(&1u32).unwrap();
         assert!(writer.write(&2u32).is_err());
         let bytes = writer.into_inner();
-        let mut reader = Reader::new(&bytes[..], DeserializerConfig::new());
+        let mut reader = DeserializerConfig::new().reader(&bytes[..]);
         assert_eq!(reader.read::<u32>().unwrap(), Some(1));
         assert_eq!(reader.read::<u32>().unwrap(), None);
     }
@@ -32,7 +31,7 @@ fn test_reader_errors() {
 }
 
 #[test]
-fn test_incremental_writer() {
+fn test_partial_writer() {
     use std::collections::BTreeMap;
 
     #[derive(deser::Serialize)]
@@ -67,7 +66,7 @@ fn test_incremental_writer() {
         for value in values {
             let expected = config.to_vec(value).unwrap();
             for limit in [1, 13, 500, usize::MAX] {
-                let mut writer = Writer::new(Vec::new(), &config);
+                let mut writer = config.writer(Vec::new());
                 writer.set_buffer_limit(limit);
                 writer.write(value).unwrap();
                 // a stream holds a single value
@@ -81,7 +80,7 @@ fn test_incremental_writer() {
     let config = SerializerConfig::new();
     let nulls = vec![Some(1), None];
     let err = config.to_vec(&nulls).unwrap_err();
-    let mut writer = Writer::new(Vec::new(), &config);
+    let mut writer = config.writer(Vec::new());
     writer.set_buffer_limit(1);
     assert_eq!(writer.write(&nulls).unwrap_err().message(), err.message());
 }

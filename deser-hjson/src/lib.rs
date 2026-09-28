@@ -58,7 +58,8 @@
 //!
 //! # Features
 //!
-//! * `io` (enabled by default): reading and writing streams.  Requires
+//! * `io` (enabled by default): reading and writing streams of the
+//!   standard library (with `DeserializerConfig::reader`).  Requires
 //!   `std`.
 //! * `speedups`: faster UTF-8 validation and serialization.
 //! * `std` (enabled by default): uses the standard library.  Without it
@@ -70,14 +71,14 @@ extern crate alloc;
 
 // These are generated from `deser-template-json`.
 mod de;
-#[cfg(feature = "io")]
-mod io;
 mod parser;
 mod scan;
+mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader};
+pub use self::stream::from_reader;
+#[cfg(feature = "io")]
+pub use deser_json::to_writer;
 pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing, to_string};
-#[cfg(feature = "io")]
-pub use deser_json::{WriterState, to_writer};

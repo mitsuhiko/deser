@@ -92,8 +92,6 @@ fn check(actual: &Value, expected: &Value) -> Result<(), String> {
 /// Parses the input from a stream in chunks of the given size.
 #[cfg(feature = "io")]
 fn read_chunked(input: &[u8], size: usize, borrowed: bool) -> Result<Value, deser::Error> {
-    use deser::io::Reader;
-
     struct Chunked<'a>(&'a [u8], usize);
 
     impl std::io::Read for Chunked<'_> {
@@ -105,7 +103,7 @@ fn read_chunked(input: &[u8], size: usize, borrowed: bool) -> Result<Value, dese
         }
     }
 
-    let mut reader = Reader::new(Chunked(input, size), deser_hjson::DeserializerConfig::new());
+    let mut reader = deser_hjson::DeserializerConfig::new().reader(Chunked(input, size));
     let value = if borrowed {
         // from the frame of the value
         reader.read_borrowed::<Value>()?
