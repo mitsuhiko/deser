@@ -58,6 +58,7 @@
 //! driver.push_layer(PathLayer::new());
 //! driver.drive(|_event, _state| Ok(())).unwrap();
 //! ```
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![no_std]
 
 extern crate alloc;

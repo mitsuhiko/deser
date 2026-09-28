@@ -49,6 +49,8 @@
 //! [`Recording`](deser_core::de::Recording) (as some enum representations do)
 //! retain their locations when they are replayed as recordings capture the
 //! input range of every event.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;

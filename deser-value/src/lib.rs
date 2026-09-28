@@ -62,6 +62,8 @@
 //!
 //! Map keys are unique.  If a map with duplicate keys is deserialized into
 //! a value, the deserialization fails.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 mod convert;
 mod de;
 mod index;

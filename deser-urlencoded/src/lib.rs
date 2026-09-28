@@ -151,6 +151,8 @@
 //!
 //! * `io` (enabled by default): reading and writing streams, see
 //!   [streams](#streams).
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 mod de;
 mod encoding;
 #[cfg(feature = "io")]

@@ -98,6 +98,7 @@
 //! Tags are not part of the data model.  Unknown tags are transparent: a
 //! tagged value deserializes like the untagged value.  To read or write tags
 //! use [`Tagged`] or see the [`tag`] module.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 extern crate alloc;

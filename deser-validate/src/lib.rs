@@ -113,6 +113,8 @@
 //! their structure ([`Each`]).  The code of a violation is the name of the
 //! validator in snake case (`max_len`, `non_zero`), for the validators of
 //! this crate and the ones [`validator!`] creates.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 mod check;
 mod macros;
 mod report;

@@ -75,6 +75,7 @@
 //! events are pushed into deserializers.  So [`Serde`] buffers the events
 //! of compound values.  For atoms (the typical case, like `Url` or
 //! `IpAddr`) there is no buffering.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 use deser_core::State;
 use deser_core::adapters::{DeserializeAs, SerializeAs};

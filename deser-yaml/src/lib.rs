@@ -151,6 +151,8 @@
 //! * `io` (enabled by default): reading and writing streams, see
 //!   [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 mod de;
 mod emit;
 mod event;

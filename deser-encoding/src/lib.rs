@@ -58,6 +58,8 @@
 //! ```
 //!
 //! All encodings decode lowercase and uppercase letters.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 use std::sync::LazyLock;
 
 use data_encoding::Encoding;

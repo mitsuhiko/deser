@@ -9,6 +9,7 @@
 //!
 //! The integration tests of this crate are the tests of reading JSON, JSONC
 //! and JSON5 (see `tests/integration.rs`).
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 extern crate alloc;

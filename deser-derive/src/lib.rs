@@ -3,6 +3,8 @@
 //! This crate is an implementation detail of deser, use the derive macros
 //! through the [`deser`](https://docs.rs/deser) crate (with the `derive`
 //! feature) instead.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 extern crate proc_macro;
 
 mod attr;

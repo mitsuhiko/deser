@@ -142,6 +142,7 @@ pub struct Account {
     not(feature = "derive"),
     doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
 )]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![no_std]
 

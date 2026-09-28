@@ -32,6 +32,7 @@
 //!
 //! As all floats are `f64` in the data model, `f32` values are formatted
 //! as the `f64` they widen to.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;

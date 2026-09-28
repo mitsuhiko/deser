@@ -166,6 +166,7 @@
 //! # Limitations
 //!
 //! This crate is an early version.  The input has to be UTF-8.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![deny(missing_docs)]
 
 mod de;

@@ -68,6 +68,7 @@
 //! the next read continues with it.  This allows reading in
 //! `tokio::select!`.  Writing is not cancellation safe, a value might have
 //! been written partially.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::any::Any;

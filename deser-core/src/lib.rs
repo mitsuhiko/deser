@@ -5,6 +5,7 @@
 //! everything in here together with the derive macros.  The crates of the
 //! data formats depend on this crate so that they can be compiled without
 //! waiting for the derive macros.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 

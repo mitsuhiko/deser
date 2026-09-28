@@ -196,6 +196,8 @@
 //! Values are serialized into name-value pairs (see [`to_vars`] and
 //! [`SerializerConfig`]), for instance to pass a configuration to a child
 //! process with [`Command::envs`](std::process::Command::envs).
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
+
 mod de;
 mod ser;
 

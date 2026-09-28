@@ -75,6 +75,7 @@
 //! assert_eq!(reader.read::<String>().unwrap(), None);
 //! # }
 //! ```
+#![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 extern crate alloc;
