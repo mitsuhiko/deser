@@ -47,35 +47,35 @@ cargo add deser-json
 
 The same type works unchanged with every format (CSV as long as it's flat).
 
-* **Core:** [deser](https://docs.rs/deser) (the crate you depend on),
-  [deser-derive](https://docs.rs/deser-derive) (the `derive` feature) and
-  [deser-core](https://docs.rs/deser-core) (internal, what format crates
+* **Core:** [deser](https://github.com/mitsuhiko/deser/tree/main/deser) (the crate you depend on),
+  [deser-derive](https://github.com/mitsuhiko/deser/tree/main/deser-derive) (the `derive` feature) and
+  [deser-core](https://github.com/mitsuhiko/deser/tree/main/deser-core) (internal, what format crates
   depend on)
 * **Formats:**
-  [deser-json](https://docs.rs/deser-json),
-  [deser-jsonc](https://docs.rs/deser-jsonc),
-  [deser-json5](https://docs.rs/deser-json5),
-  [deser-hjson](https://docs.rs/deser-hjson),
-  [deser-yaml](https://docs.rs/deser-yaml),
-  [deser-toml](https://docs.rs/deser-toml),
-  [deser-cbor](https://docs.rs/deser-cbor),
-  [deser-msgpack](https://docs.rs/deser-msgpack),
-  [deser-xml](https://docs.rs/deser-xml),
-  [deser-plist](https://docs.rs/deser-plist) (XML, binary and OpenStep),
-  [deser-csv](https://docs.rs/deser-csv) (CSV and TSV),
-  [deser-urlencoded](https://docs.rs/deser-urlencoded) (query strings and forms),
-  [deser-env](https://docs.rs/deser-env) (environment variables),
-  [deser-debug](https://docs.rs/deser-debug) (debug formatting)
+  [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json),
+  [deser-jsonc](https://github.com/mitsuhiko/deser/tree/main/deser-jsonc),
+  [deser-json5](https://github.com/mitsuhiko/deser/tree/main/deser-json5),
+  [deser-hjson](https://github.com/mitsuhiko/deser/tree/main/deser-hjson),
+  [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml),
+  [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml),
+  [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor),
+  [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack),
+  [deser-xml](https://github.com/mitsuhiko/deser/tree/main/deser-xml),
+  [deser-plist](https://github.com/mitsuhiko/deser/tree/main/deser-plist) (XML, binary and OpenStep),
+  [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv) (CSV and TSV),
+  [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded) (query strings and forms),
+  [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env) (environment variables),
+  [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug) (debug formatting)
 * **Layers and adapters:**
-  [deser-path](https://docs.rs/deser-path) (paths in errors),
-  [deser-location](https://docs.rs/deser-location) (line and column of values),
-  [deser-validate](https://docs.rs/deser-validate) (validation),
-  [deser-encoding](https://docs.rs/deser-encoding) (hex and base32)
+  [deser-path](https://github.com/mitsuhiko/deser/tree/main/deser-path) (paths in errors),
+  [deser-location](https://github.com/mitsuhiko/deser/tree/main/deser-location) (line and column of values),
+  [deser-validate](https://github.com/mitsuhiko/deser/tree/main/deser-validate) (validation),
+  [deser-encoding](https://github.com/mitsuhiko/deser/tree/main/deser-encoding) (hex and base32)
 * **Integrations:**
-  [deser-value](https://docs.rs/deser-value) (dynamic values),
-  [deser-transcode](https://docs.rs/deser-transcode) (converting between formats),
-  [deser-tokio](https://docs.rs/deser-tokio) (async IO),
-  [deser-serde](https://docs.rs/deser-serde) (serde interop)
+  [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value) (dynamic values),
+  [deser-transcode](https://github.com/mitsuhiko/deser/tree/main/deser-transcode) (converting between formats),
+  [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio) (async IO),
+  [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde) (serde interop)
 
 ## Why Deser?
 
