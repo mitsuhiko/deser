@@ -35,8 +35,8 @@ Getting started:
   depend on the prefixes of the document, mixed content, unknown elements
   kept as dynamic values and writing with chosen or generated prefixes.
 * [`xml-pretty`](xml-pretty): an SVG drawing written as indented XML
-  with `deser-xml`, with namespaces declared on the root, mixed content
-  that stays on a single line and compact sequences.
+  with `deser-xml`, with namespaces declared on the root and mixed
+  content that stays on a single line.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.

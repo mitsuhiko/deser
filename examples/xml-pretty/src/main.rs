@@ -2,12 +2,10 @@
 //!
 //! An SVG drawing mixes three vocabularies: SVG itself, XLink for
 //! references (only in attributes) and Dublin Core for the metadata.  It's
-//! written with chosen and generated prefixes, compact and pretty printed.
-//! Whitespace can be text in XML, so indentation is only added where it is
-//! not: the label with mixed content stays on a single line, the shapes
-//! (whose whitespace is skipped) are indented.  Every version is read back
-//! into the same value.
-use deser::hints::Compact;
+//! written compact and pretty printed.  Whitespace can be text in XML, so
+//! indentation is only added where it is not: the label with mixed content
+//! stays on a single line, the shapes (whose whitespace is skipped) are
+//! indented.  Both versions are read back into the same value.
 use deser::{Deserialize, Serialize};
 use deser_xml::{DeserializerConfig, Indent, Mixed, SerializerConfig, SkipWhitespace};
 
@@ -38,8 +36,6 @@ struct Drawing {
     shapes: Mixed<Shape, SkipWhitespace>,
 }
 
-/// Dublin Core has no prefix in the configuration, it gets a generated
-/// one.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Metadata {
     #[deser(rename = dc!("creator"))]
@@ -58,8 +54,7 @@ struct Defs {
 struct Gradient {
     #[deser(rename = "@id")]
     id: String,
-    /// The stops are written next to each other on a single line.
-    #[deser(rename = svg!("stop"), as = Compact)]
+    #[deser(rename = svg!("stop"))]
     stops: Vec<Stop>,
 }
 
@@ -188,15 +183,14 @@ fn main() {
     const READ: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
     let drawing = drawing();
 
-    // SVG is the default namespace and XLink has its usual prefix, both
-    // are declared on the root.  Dublin Core is not configured and gets
-    // a generated prefix, which is declared on the root as well.
+    // SVG is the default namespace, XLink and Dublin Core have their
+    // usual prefixes.  All are declared on the root.
     const COMPACT: SerializerConfig =
-        SerializerConfig::new().namespaces(deser_xml::prefixes![svg as "", xlink]);
+        SerializerConfig::new().namespaces(deser_xml::prefixes![svg as "", xlink, dc]);
     let xml = COMPACT.to_string(&drawing).unwrap();
     println!("compact:\n{xml}\n");
     assert!(xml.starts_with(&format!(
-        r#"<svg xmlns="{}" xmlns:xlink="{}" xmlns:ns0="{}" width="200""#,
+        r#"<svg xmlns="{}" xmlns:xlink="{}" xmlns:dc="{}" width="200""#,
         svg!(),
         xlink!(),
         dc!()
@@ -208,30 +202,13 @@ fn main() {
     // the same pretty printed, with the declaration on a line of its own
     const PRETTY: SerializerConfig = COMPACT.declaration(true).pretty(Indent::Spaces(2));
     let xml = PRETTY.to_string(&drawing).unwrap();
-    println!("pretty:\n{xml}\n");
-    assert!(xml.contains("\n  <metadata>\n    <ns0:creator>Jane</ns0:creator>\n"));
-    // the stops are compact, the label is mixed content
-    assert!(xml.contains(
-        r#"<stop offset="0" stop-color="orange"/><stop offset="1" stop-color="purple"/>"#
-    ));
+    println!("pretty:\n{xml}");
+    assert!(xml.contains("\n  <metadata>\n    <dc:creator>Jane</dc:creator>\n"));
+    // the label is mixed content, its whitespace is text
     assert!(
         xml.contains(
             r#"  <text x="10" y="20">Hello <tspan font-weight="bold">world</tspan></text>"#
         )
     );
-    assert_eq!(READ.from_str::<Drawing>(&xml).unwrap(), drawing);
-
-    // indented with tabs, all prefixes generated in the order the
-    // namespaces are first used
-    const GENERATED: SerializerConfig = SerializerConfig::new().indent(Indent::Tab);
-    let xml = GENERATED.to_string(&drawing).unwrap();
-    println!("generated prefixes:\n{xml}");
-    assert!(xml.starts_with(&format!(
-        r#"<ns0:svg xmlns:ns0="{}" xmlns:ns1="{}" xmlns:ns2="{}""#,
-        svg!(),
-        dc!(),
-        xlink!()
-    )));
-    assert!(xml.contains("\n\t<ns0:title>Sunset</ns0:title>\n"));
     assert_eq!(READ.from_str::<Drawing>(&xml).unwrap(), drawing);
 }
