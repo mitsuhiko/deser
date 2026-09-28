@@ -445,8 +445,9 @@ mod tests {
         ] {
             check(val);
         }
-        // the candidate below a power of two does not always read back
-        for exp in -1074..1024 {
+        // the candidate below a power of two does not always read back.
+        // Miri is slow, it checks every 23rd power.
+        for exp in (-1074..1024).step_by(if cfg!(miri) { 23 } else { 1 }) {
             check(2f64.powi(exp));
             check(-2f64.powi(exp));
         }
@@ -490,7 +491,7 @@ mod tests {
         ] {
             check(val);
         }
-        for exp in -149..128 {
+        for exp in (-149..128).step_by(if cfg!(miri) { 23 } else { 1 }) {
             check(2f32.powi(exp));
         }
         let iterations = if cfg!(miri) { 100 } else { 100_000 };
