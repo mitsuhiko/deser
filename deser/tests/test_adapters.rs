@@ -1281,3 +1281,148 @@ fn test_trim_whitespace() {
         ]
     );
 }
+
+#[test]
+fn test_skip_blank() {
+    use deser::ContainerShape;
+    use deser::adapters::{Separated, SkipBlank, TrimWhitespace};
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Config {
+        #[deser(as = Separated<',', SkipBlank<TrimWhitespace>>, default)]
+        hosts: Vec<String>,
+        #[deser(as = Vec<SkipBlank>, default)]
+        tags: Vec<String>,
+        #[deser(as = Vec<SkipBlank<Option<_>>>, default)]
+        ports: Vec<Option<u16>>,
+        #[deser(as = SkipBlank<Option<_>>)]
+        name: Option<String>,
+        #[deser(as = SkipBlank, default)]
+        level: u32,
+    }
+
+    let lexical = |text: &'static str| Event::from(Atom::Lexical(text.into()));
+    let config = |shape: ContainerShape, entries: Vec<Event<'static>>| {
+        let mut events = vec![Event::MapStart(shape)];
+        events.extend(entries);
+        events.push(Event::MapEnd);
+        deserialize_lenient::<Config>(events)
+    };
+
+    // elements of sequences
+    let value = config(
+        ContainerShape::new(),
+        vec![
+            "hosts".into(),
+            lexical("a, ,b,"),
+            "tags".into(),
+            Event::seq_start(),
+            "x".into(),
+            " ".into(),
+            "".into(),
+            " y ".into(),
+            Event::SeqEnd,
+            "ports".into(),
+            Event::seq_start(),
+            lexical("1"),
+            lexical(" "),
+            ().into(),
+            Event::SeqEnd,
+        ],
+    )
+    .unwrap();
+    assert_eq!(value.hosts, ["a", "b"]);
+    assert_eq!(value.tags, ["x", " y "]);
+    // null is not blank
+    assert_eq!(value.ports, [Some(1), None]);
+    assert_eq!(value.name, None);
+    assert_eq!(value.level, 0);
+
+    // repeated keys of multimaps
+    let value = config(
+        ContainerShape::new().with_multimap(true),
+        vec![
+            "tags".into(),
+            lexical(""),
+            "tags".into(),
+            lexical("a"),
+            "tags".into(),
+            lexical("\n "),
+            "ports".into(),
+            lexical(" "),
+        ],
+    )
+    .unwrap();
+    assert_eq!(value.tags, ["a"]);
+    assert_eq!(value.ports, []);
+
+    // single values: blank is missing
+    let value = config(
+        ContainerShape::new(),
+        vec!["name".into(), lexical(" "), "level".into(), lexical("")],
+    )
+    .unwrap();
+    assert_eq!((value.name, value.level), (None, 0));
+    let value = config(
+        ContainerShape::new(),
+        vec!["name".into(), "x".into(), "level".into(), lexical("3")],
+    )
+    .unwrap();
+    assert_eq!((value.name.as_deref(), value.level), (Some("x"), 3));
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct Required {
+        #[deser(as = SkipBlank)]
+        name: String,
+    }
+    let err = deserialize::<Required>(vec![
+        Event::map_start(),
+        "name".into(),
+        " ".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::MissingField);
+
+    // other values are passed on, also through the sink
+    let value = config(
+        ContainerShape::new(),
+        vec![
+            "ports".into(),
+            Event::seq_start(),
+            Event::seq_start(),
+            Event::SeqEnd,
+            Event::SeqEnd,
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(value.message(), "unexpected sequence, expected u16");
+
+    // serialization is not affected
+    assert_eq!(
+        serialize(&Config {
+            hosts: vec![],
+            tags: vec![" ".into()],
+            ports: vec![],
+            name: Some("".into()),
+            level: 1,
+        }),
+        vec![
+            Event::map_start(),
+            "hosts".into(),
+            "".into(),
+            "tags".into(),
+            Event::seq_start(),
+            " ".into(),
+            Event::SeqEnd,
+            "ports".into(),
+            Event::seq_start(),
+            Event::SeqEnd,
+            "name".into(),
+            "".into(),
+            "level".into(),
+            1u64.into(),
+            Event::MapEnd,
+        ]
+    );
+}

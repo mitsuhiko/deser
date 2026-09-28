@@ -1,5 +1,5 @@
-//! Adapters that work on the text of values: [`Separated`] and
-//! [`TrimWhitespace`].
+//! Adapters that work on the text of values: [`Separated`],
+//! [`TrimWhitespace`] and [`SkipBlank`].
 use alloc::borrow::Cow;
 use alloc::collections::{BTreeSet, VecDeque};
 use alloc::format;
@@ -91,6 +91,40 @@ pub struct Separated<const SEP: char = ',', A = Same>(PhantomData<fn() -> A>);
 /// }
 /// ```
 pub struct TrimWhitespace<A = Same>(PhantomData<fn() -> A>);
+
+/// Leaves no value for blank strings.
+///
+/// Strings and [lexical atoms](Atom::Lexical) that are empty or only
+/// whitespace (as defined by [`str::trim`]) are skipped: they leave the
+/// slot as it is.  Everything else is deserialized with the adapter `A`
+/// (by default [`Same`]).  Serialization uses the inner adapter.
+///
+/// Sequences and collections leave out elements without a value, which
+/// makes this an adapter for their elements: `Vec<SkipBlank>` drops the
+/// blank elements, in sequences as well as for keys that are given more
+/// than once (like `tag=&tag=a` in a query string or the whitespace between
+/// elements in XML).  It can be combined with [`TrimWhitespace`] (which
+/// trims the other values) and [`Separated`]:
+///
+/// ```
+/// use deser::adapters::{Separated, SkipBlank, TrimWhitespace};
+/// use deser::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// pub struct Config {
+///     // `a, ,b,` is `["a", "b"]`
+///     #[deser(as = Separated<',', SkipBlank<TrimWhitespace>>)]
+///     hosts: Vec<String>,
+///     // blank values are missing, which is `None`
+///     #[deser(as = SkipBlank<Option<_>>)]
+///     name: Option<String>,
+/// }
+/// ```
+///
+/// For values that are not elements a blank string is a missing value: an
+/// optional is `None`, other types report the missing field (unless they
+/// have a default).
+pub struct SkipBlank<A = Same>(PhantomData<fn() -> A>);
 
 /// What a [`TextSink`] does with the text it receives.
 #[derive(Clone, Copy)]
@@ -292,6 +326,176 @@ impl<'a, 'de> Sink<'de> for TextSink<'a, 'de> {
     }
 }
 
+/// Returns `true` if the atom is a blank string.
+#[inline]
+fn is_blank(atom: &Atom) -> bool {
+    matches!(atom, Atom::Str(text) | Atom::Lexical(text) if text.trim().is_empty())
+}
+
+/// The sink of [`SkipBlank`].
+///
+/// The sink of the value is only created once a value arrives that is not
+/// blank, as creating it can already set the slot (like it does for
+/// optionals).  A blank string leaves a null sink.
+enum SkipBlankSink<'a, 'de, T, A> {
+    Pending(&'a mut Option<T>, PhantomData<fn() -> A>),
+    Active(SinkHandle<'a, 'de>),
+}
+
+impl<'a, 'de, T, A: DeserializeAs<'de, T>> SkipBlankSink<'a, 'de, T, A> {
+    /// Returns the sink of the value, creates it if needed.
+    fn active(&mut self) -> &mut SinkHandle<'a, 'de> {
+        if let SkipBlankSink::Pending(..) = self
+            && let SkipBlankSink::Pending(out, _) =
+                core::mem::replace(self, SkipBlankSink::Active(SinkHandle::null()))
+        {
+            *self = SkipBlankSink::Active(A::deserialize_into_as(out));
+        }
+        match self {
+            SkipBlankSink::Active(sink) => sink,
+            SkipBlankSink::Pending(..) => unreachable!(),
+        }
+    }
+
+    /// Skips the atom if it's blank and the first event.
+    fn skip(&mut self, atom: &Atom) -> bool {
+        if matches!(self, SkipBlankSink::Pending(..)) && is_blank(atom) {
+            *self = SkipBlankSink::Active(SinkHandle::null());
+            return true;
+        }
+        false
+    }
+}
+
+impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a, 'de, T, A> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if self.skip(&atom) {
+            return Ok(());
+        }
+        self.active().atom(atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        if self.skip(&atom) {
+            return Ok(());
+        }
+        self.active().borrowed_atom(atom, state)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active().map(state)
+    }
+
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active().seq(state)
+    }
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.active().next_key(state)
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.active().next_value(state)
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.active().__private_key_atom(atom, state)
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.active().__private_value_atom(atom, state)
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.active().__private_borrowed_key_atom(atom, state)
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.active().__private_borrowed_value_atom(atom, state)
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        self.active().value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.active().recover(err, state)
+    }
+
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active().finish(state)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        match self {
+            SkipBlankSink::Active(sink) => sink.expecting(),
+            // the sink of the value does not exist yet
+            SkipBlankSink::Pending(..) => {
+                let mut slot = None;
+                Cow::Owned(A::deserialize_into_as(&mut slot).expecting().into_owned())
+            }
+        }
+    }
+}
+
+impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank<A> {
+    fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
+        SinkHandle::boxed(SkipBlankSink::<T, A>::Pending(out, PhantomData))
+    }
+
+    fn initial_value_as() -> Option<T> {
+        A::initial_value_as()
+    }
+
+    #[inline]
+    fn __private_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if is_blank(&atom) {
+            return Ok(());
+        }
+        A::__private_atom_into_as(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into_as(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if is_blank(&atom) {
+            return Ok(());
+        }
+        A::__private_borrowed_atom_into_as(out, atom, state)
+    }
+
+    fn __private_is_bytes_as() -> bool {
+        A::__private_is_bytes_as()
+    }
+
+    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes_as(bytes)
+    }
+
+    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes_as::<N>(bytes)
+    }
+}
+
 impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for TrimWhitespace<A> {
     fn deserialize_into_as(out: &mut Option<T>) -> SinkHandle<'_, 'de> {
         TextSink::handle(A::deserialize_into_as(out), TextOp::Trim)
@@ -333,6 +537,40 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for TrimWhitespace<
 }
 
 impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for TrimWhitespace<A> {
+    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        A::serialize_as(value, state)
+    }
+
+    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish_as(value, state)
+    }
+
+    fn is_optional_as(value: &T) -> bool {
+        A::is_optional_as(value)
+    }
+
+    fn container_shape_as(value: &T) -> ContainerShape {
+        A::container_shape_as(value)
+    }
+
+    fn describe_as(value: &T, d: &mut dyn Describe) {
+        A::describe_as(value, d)
+    }
+
+    #[inline]
+    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        A::__private_begin_as(value, state)
+    }
+
+    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    where
+        T: Sized,
+    {
+        A::__private_slice_as_bytes_as(val)
+    }
+}
+
+impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for SkipBlank<A> {
     fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
         A::serialize_as(value, state)
     }

@@ -61,6 +61,8 @@
 //!   `a,b,c` in an environment variable).
 //! * [`TrimWhitespace`]: trims whitespace from strings before they are
 //!   deserialized.
+//! * [`SkipBlank`]: leaves no value for blank strings, which leaves them
+//!   out of sequences.
 //! * The adapters for bytes: the base64 encodings (for instance
 //!   [`Base64Url`]) and [`BytesFallback`] (see [bytes](#bytes)).
 //! * The standard containers: `Option<U>`, `Result<U, V>`, `Box<U>`,
@@ -232,7 +234,7 @@ pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
     VecSkipError,
 };
-pub use self::text::{Separated, TrimWhitespace};
+pub use self::text::{Separated, SkipBlank, TrimWhitespace};
 // used for the maps of other crates
 #[allow(unused_imports)]
 pub(crate) use self::stock::skip_map_sink;

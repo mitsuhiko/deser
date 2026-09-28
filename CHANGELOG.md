@@ -12,6 +12,9 @@ All notable changes to deser are documented here.
   `deser_xml::Mixed<T>` keeps the order of mixed content (text and child
   elements as values of `T`, typically an enum), also when flattened into
   a struct whose fields take the attributes and the other elements.
+- Added the `SkipBlank` adapter which leaves no value for strings that are
+  empty or only whitespace, so sequences and collections leave them out
+  (`Vec<SkipBlank>`, `Separated<',', SkipBlank<TrimWhitespace>>`).
 - Added `ContentKey`, the key under which maps hold their own content
   (set by formats in the state).  With it, a map is passed on as the value
   of that key to types that reject maps (`<count unit="m">3</count>` for a
