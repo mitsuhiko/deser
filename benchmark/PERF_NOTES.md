@@ -324,6 +324,13 @@ numeric value with a single dynamic call; earlier Canada measurements made
 this as fast as plain floats.  Recheck this path when changing primitive
 sinks rather than assuming extensions are rare or cold.
 
+### JSON Digits
+
+Numbers are parsed eight digits at a time (`Cursor::eight_digits`, the
+digits are checked and combined with a few multiplications in a `u64`)
+while the significand cannot overflow, the rest one by one.  Canada got
+18% faster, features 13%, others did not change.
+
 ### JSON Float Rounding
 
 Floats are rounded correctly.  Before, the value was the significand
