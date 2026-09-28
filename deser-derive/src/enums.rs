@@ -21,7 +21,7 @@ use quote::quote;
 
 use crate::attr::{
     Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, FieldBounds, Name,
-    RenameAll, TypeDefault, UnnamedFieldAttrs, VariantName,
+    RenameAll, TypeDefault, UnnamedFieldAttrs, VariantName, ident_name,
 };
 use crate::bound::{
     BoundField, collect_idents, collect_lifetimes, mentions_any, turbofish_without_lifetimes,
@@ -137,7 +137,10 @@ struct VariantInfo<'a> {
 
 impl<'a> VariantInfo<'a> {
     fn helper(&self) -> syn::Ident {
-        syn::Ident::new(&format!("__Variant{}", self.ident), Span::call_site())
+        syn::Ident::new(
+            &format!("__Variant{}", ident_name(self.ident)),
+            Span::call_site(),
+        )
     }
 
     /// Returns the pattern that binds all fields by reference.
@@ -484,7 +487,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                         && matches!(attrs.default(), None | Some(TypeDefault::Implicit)),
                     default: None,
                     binding: syn::Ident::new(
-                        &format!("__field_{}", field.ident.as_ref().unwrap()),
+                        &format!("__field_{}", ident_name(field.ident.as_ref().unwrap())),
                         Span::call_site(),
                     ),
                 });
@@ -808,7 +811,7 @@ pub fn derive_deserialize(
             quote! { #helper<#args> }
         };
         if needs_helper {
-            let helper_name = var_ident.to_string();
+            let helper_name = ident_name(var_ident);
             let mut fields = Vec::with_capacity(content_fields.len());
             for field in &content_fields {
                 let mut deser_attrs = Vec::new();
@@ -1448,7 +1451,7 @@ pub fn derive_serialize(
     for info in &variants {
         if info.skip_serializing {
             let pattern = info.wildcard_pattern(ident);
-            let variant = info.ident.to_string();
+            let variant = ident_name(info.ident);
             arms.push(quote! {
                 #pattern => {
                     return __deser::__derive::Err(

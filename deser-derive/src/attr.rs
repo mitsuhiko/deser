@@ -11,6 +11,16 @@ pub enum Direction {
     Deserialize,
 }
 
+/// Returns the name of an identifier.
+///
+/// Raw identifiers (`r#type`) are named without their prefix, like in serde.
+/// This is also used for identifiers that the derive makes up from fields
+/// and variants, which cannot contain the prefix.
+pub fn ident_name(ident: &syn::Ident) -> String {
+    use syn::ext::IdentExt;
+    ident.unraw().to_string()
+}
+
 /// An attribute that was used on an item.
 pub struct SeenAttr {
     pub name: String,
@@ -1206,7 +1216,7 @@ impl<'a> ContainerAttrs<'a> {
     pub fn container_name(&self) -> Name {
         match self.rename {
             Some(ref name) => name.clone(),
-            None => Name::Lit(self.ident.to_string()),
+            None => Name::Lit(ident_name(self.ident)),
         }
     }
 
@@ -1240,7 +1250,7 @@ impl<'a> ContainerAttrs<'a> {
     }
 
     pub fn get_field_name(&self, field: &syn::Field) -> String {
-        let name = field.ident.as_ref().unwrap().to_string();
+        let name = ident_name(field.ident.as_ref().unwrap());
         match self.rename_all {
             Some(rename_all) => rename_all.apply_to_field(&name),
             None => name,
@@ -1251,7 +1261,7 @@ impl<'a> ContainerAttrs<'a> {
     ///
     /// Aliases that are the same as the name of the field are skipped.
     pub fn field_aliases(&self, field: &syn::Field, name: &Name) -> Vec<Name> {
-        let ident = field.ident.as_ref().unwrap().to_string();
+        let ident = ident_name(field.ident.as_ref().unwrap());
         let mut rv: Vec<Name> = Vec::new();
         for style in &self.alias_all {
             let alias = Name::Lit(style.apply_to_field(&ident));
@@ -1266,7 +1276,7 @@ impl<'a> ContainerAttrs<'a> {
     ///
     /// Aliases that are the same as the name of the variant are skipped.
     pub fn variant_aliases(&self, variant: &syn::Variant, name: &VariantName) -> Vec<VariantName> {
-        let ident = variant.ident.to_string();
+        let ident = ident_name(&variant.ident);
         let mut rv: Vec<VariantName> = Vec::new();
         for style in &self.alias_all {
             let alias = VariantName::Str(Name::Lit(style.apply_to_variant(&ident)));
@@ -1441,7 +1451,7 @@ impl<'a> ContainerAttrs<'a> {
     }
 
     pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
-        let name = variant.ident.to_string();
+        let name = ident_name(&variant.ident);
         match self.rename_all {
             Some(rename_all) => rename_all.apply_to_variant(&name),
             None => name,
@@ -1769,7 +1779,7 @@ impl<'a> FieldAttrs<'a> {
     /// `style` is the name style of the fields of the variant.
     pub fn variant_field_name(&self, direction: Direction, style: Option<RenameAll>) -> Name {
         self.rename.get(direction).cloned().unwrap_or_else(|| {
-            let name = self.field.ident.as_ref().unwrap().to_string();
+            let name = ident_name(self.field.ident.as_ref().unwrap());
             Name::Lit(match style {
                 Some(style) => style.apply_to_field(&name),
                 None => name,

@@ -522,3 +522,99 @@ fn test_expecting() {
         "unexpected unsigned integer, expected nothing"
     );
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct RawInner {
+    r#loop: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(rename_all = "PascalCase")]
+struct r#RawFields {
+    r#type: String,
+    r#match_all: bool,
+    #[deser(flatten)]
+    r#in: RawInner,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum RawVariants {
+    r#Type,
+    r#Match {
+        r#type: u32,
+    },
+    #[deser(skip)]
+    r#Skipped,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[deser(tag = "t", rename_all = "snake_case")]
+enum RawTagged {
+    r#Struct { r#type: u32, r#fn: String },
+    r#Unit,
+}
+
+#[test]
+fn test_raw_identifiers() {
+    // raw identifiers are named without their prefix
+    let value = RawFields {
+        r#type: "a".into(),
+        r#match_all: true,
+        r#in: RawInner { r#loop: 1 },
+    };
+    let events = map(&[
+        ("Type", "a".into()),
+        ("MatchAll", true.into()),
+        ("loop", 1u64.into()),
+    ]);
+    assert_eq!(serialize(&value), events);
+    assert_eq!(deserialize::<RawFields>(events).unwrap(), value);
+    assert_eq!(
+        deserialize::<RawFields>(vec![true.into()])
+            .unwrap_err()
+            .message(),
+        "unexpected bool, expected RawFields"
+    );
+    assert_eq!(
+        deserialize::<RawFields>(map(&[("Type", "a".into()), ("loop", 1u64.into())]))
+            .unwrap_err()
+            .message(),
+        "missing field `MatchAll`"
+    );
+
+    assert_eq!(serialize(&RawVariants::Type), vec![Event::from("Type")]);
+    assert_eq!(
+        deserialize::<RawVariants>(vec!["Type".into()]).unwrap(),
+        RawVariants::Type
+    );
+    let value = RawVariants::Match { r#type: 1 };
+    let mut events = vec![Event::map_start(), "Match".into()];
+    events.extend(map(&[("type", 1u64.into())]));
+    events.push(Event::MapEnd);
+    assert_eq!(serialize(&value), events);
+    assert_eq!(deserialize::<RawVariants>(events).unwrap(), value);
+    let err = SerializeDriver::new(&RawVariants::Skipped)
+        .next()
+        .map(|_| ())
+        .unwrap_err();
+    assert_eq!(
+        err.message(),
+        "the variant `Skipped` of RawVariants cannot be serialized"
+    );
+
+    let value = RawTagged::Struct {
+        r#type: 1,
+        r#fn: "f".into(),
+    };
+    let events = map(&[
+        ("t", "struct".into()),
+        ("type", 1u64.into()),
+        ("fn", "f".into()),
+    ]);
+    assert_eq!(serialize(&value), events);
+    assert_eq!(deserialize::<RawTagged>(events).unwrap(), value);
+    assert_eq!(
+        deserialize::<RawTagged>(map(&[("t", "unit".into())])).unwrap(),
+        RawTagged::Unit
+    );
+}

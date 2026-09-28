@@ -18,6 +18,10 @@ All notable changes to deser are documented here.
   recording is serialized.
 - Serializing a recording no longer takes quadratic time for deeply
   nested values.
+- The derive names fields, variants and types with raw identifiers
+  (`r#type`) without the `r#` prefix, like serde.  Previously the prefix
+  was part of the name and deriving `Deserialize` for such structs (and
+  `Serialize` for struct variants with such fields) panicked.
 - Added `deser-hjson` for [Hjson](https://hjson.github.io/): comments
   with `#`, optional commas, keys and strings without quotes (which end
   at the end of the line), multiline strings and maps without braces at

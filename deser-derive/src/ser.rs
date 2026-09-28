@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, Direction, FieldAttrs};
+use crate::attr::{ContainerAttrs, Direction, FieldAttrs, ident_name};
 use crate::bound::{where_clause_for_fields, with_lifetime_bound};
 use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
@@ -485,7 +485,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
         let name = x.name(&container_attrs);
         names.push(name.str_expr());
         atoms.push(if x.skip_serializing() {
-            let variant = x.variant().ident.to_string();
+            let variant = ident_name(&x.variant().ident);
             quote! { __deser::__derive::UnitName::Skipped(#variant) }
         } else {
             name.unit_name()

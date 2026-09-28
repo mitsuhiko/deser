@@ -4,7 +4,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attr::{ContainerAttrs, Direction, FieldAttrs, Name, TypeDefault, VariantName};
+use crate::attr::{
+    ContainerAttrs, Direction, FieldAttrs, Name, TypeDefault, VariantName, ident_name,
+};
 use crate::bound::{
     mentions_any, type_param_names, where_clause_for_fields, with_de_lifetime, with_lifetime_bound,
 };
@@ -379,7 +381,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         let ty = &f.field().ty;
         fieldname.push(&f.field().ident);
         sink_fieldname.push(syn::Ident::new(
-            &format!("field_{}", f.field().ident.as_ref().unwrap()),
+            &format!("field_{}", ident_name(f.field().ident.as_ref().unwrap())),
             Span::call_site(),
         ));
         sink_fieldty.push(if f.flatten() {
@@ -630,11 +632,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             let ident = attrs.field().ident.as_ref().unwrap();
             flatten_fields.push(name);
             flatten_used.push(syn::Ident::new(
-                &format!("used_{}", ident),
+                &format!("used_{}", ident_name(ident)),
                 Span::call_site(),
             ));
             flatten_initial.push(syn::Ident::new(
-                &format!("initial_{}", ident),
+                &format!("initial_{}", ident_name(ident)),
                 Span::call_site(),
             ));
             flatten_ty.push(&attrs.field().ty);
