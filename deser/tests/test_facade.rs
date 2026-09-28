@@ -40,6 +40,10 @@ fn public_names(source: &str, prefixes: &[&str]) -> BTreeSet<String> {
 
 #[test]
 fn test_facade_reexports_core() {
+    // miri cannot read the files (and there is no unsafe code under test)
+    if cfg!(miri) {
+        return;
+    }
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let core_dir = manifest_dir.join("../deser-core/src");
     // deser-core is only next to deser in the repository
