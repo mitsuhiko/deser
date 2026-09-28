@@ -8,7 +8,10 @@ All notable changes to deser are documented here.
   or, if it has attributes or child elements, a multimap with attributes
   as `@name` entries, child elements under their names and text as
   `$text` entries.  `Vec<T>` fields collect repeated elements, namespaces
-  can be given fixed prefixes, the serializer writes the same shape.
+  can be given fixed prefixes or be resolved into `{uri}local` names
+  (written with `qname!` or macros defined by `namespace!`), the
+  serializer writes the same shape and declares the namespaces of
+  `{uri}local` names.
   `deser_xml::Mixed<T>` keeps the order of mixed content (text and child
   elements as values of `T`, typically an enum), also when flattened into
   a struct whose fields take the attributes and the other elements.  It

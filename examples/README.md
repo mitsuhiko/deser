@@ -30,6 +30,10 @@ Getting started:
 * [`csv`](csv): reading a CSV export row by row with `deser-csv`,
   flattened tagged enums, lists in a field, per-row errors and writing
   CSV and TSV.
+* [`xml-namespaces`](xml-namespaces): an Atom feed with Dublin Core,
+  Media RSS and XHTML with `deser-xml`: names in namespaces that do not
+  depend on the prefixes of the document, mixed content, unknown elements
+  kept as dynamic values and writing with chosen or generated prefixes.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.

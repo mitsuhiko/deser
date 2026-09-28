@@ -7,6 +7,7 @@ use deser_core::ser::{Describe, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::Names;
+use crate::de::XML_NAMESPACE;
 
 /// Configures how values are serialized to XML.
 ///
@@ -17,6 +18,12 @@ use crate::Names;
 /// [text key](Self::text_key) is text and all other keys are child
 /// elements.  Sequences are elements with the same name, one per value.
 /// Null values are left out.
+///
+/// Names can be `{uri}local` (the notation of James Clark, attributes are
+/// `@{uri}local`, see [`qname!`](crate::qname)): their namespace gets the
+/// [configured prefix](Self::namespaces) or a generated one (`ns0`, ...)
+/// that is declared on the element where it's first needed.  Other names
+/// are written as they are.
 ///
 /// ```
 /// #[derive(deser::Serialize)]
@@ -92,7 +99,34 @@ impl SerializerConfig {
     /// Sets the prefixes of namespaces that are declared on the root
     /// element.
     ///
-    /// The empty prefix declares the default namespace.
+    /// The empty prefix declares the default namespace.  Names that are
+    /// `{uri}local` are written with these prefixes, attributes only with
+    /// prefixes that are not empty.
+    ///
+    /// ```
+    /// use deser_xml::SerializerConfig;
+    ///
+    /// deser_xml::namespace!(atom = "http://www.w3.org/2005/Atom");
+    /// deser_xml::namespace!(dc = "http://purl.org/dc/elements/1.1/");
+    ///
+    /// #[derive(deser::Serialize)]
+    /// #[deser(rename = atom!("feed"))]
+    /// struct Feed {
+    ///     #[deser(rename = atom!("title"))]
+    ///     title: String,
+    ///     #[deser(rename = dc!("creator"))]
+    ///     creator: String,
+    /// }
+    ///
+    /// const CONFIG: SerializerConfig =
+    ///     SerializerConfig::new().namespaces(&[("", "http://www.w3.org/2005/Atom")]);
+    /// let feed = Feed { title: "x".into(), creator: "y".into() };
+    /// assert_eq!(
+    ///     CONFIG.to_string(&feed).unwrap(),
+    ///     "<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>x</title>\
+    ///      <ns0:creator xmlns:ns0=\"http://purl.org/dc/elements/1.1/\">y</ns0:creator></feed>"
+    /// );
+    /// ```
     pub const fn namespaces(
         mut self,
         namespaces: &'static [(&'static str, &'static str)],
@@ -133,6 +167,7 @@ impl SerializerConfig {
             out: String::new(),
             stack: Vec::new(),
             key: None,
+            bindings: vec![("xml".into(), XML_NAMESPACE.into())],
         };
         if self.declaration {
             writer
@@ -155,7 +190,12 @@ pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
 enum Frame {
     /// An element whose content is a map.  `open` is `true` while
     /// attributes can still be added to the start tag.
-    Element { name: String, open: bool },
+    Element {
+        name: String,
+        open: bool,
+        /// The number of bindings before the element.
+        bindings: usize,
+    },
     /// A sequence whose values are elements with the name.
     Items { name: String },
 }
@@ -173,6 +213,8 @@ struct Writer<'c> {
     stack: Vec<Frame>,
     /// The key of the next value of the element on top of the stack.
     key: Option<Key>,
+    /// The prefixes and namespaces that are in scope.
+    bindings: Vec<(String, String)>,
 }
 
 /// Finds the name of a type.
@@ -223,24 +265,9 @@ impl Writer<'_> {
                 })?
             }
         };
-        check_name(&name)?;
+        check_element_name(&name)?;
         match event {
-            Event::MapStart(_) => {
-                self.out.push('<');
-                self.out.push_str(&name);
-                for (prefix, uri) in self.config.names.namespaces {
-                    self.out.push_str(" xmlns");
-                    if !prefix.is_empty() {
-                        self.out.push(':');
-                        self.out.push_str(prefix);
-                    }
-                    self.out.push_str("=\"");
-                    escape(uri, true, &mut self.out)?;
-                    self.out.push('"');
-                }
-                self.stack.push(Frame::Element { name, open: true });
-                Ok(())
-            }
+            Event::MapStart(_) => self.open_element(&name),
             Event::Atom(atom) => self.atom_element(&name, &atom, true),
             _ => Err(Error::new(
                 ErrorKind::UnsupportedType,
@@ -265,10 +292,10 @@ impl Writer<'_> {
             .strip_prefix(names.attribute_prefix)
             .filter(|_| !names.attribute_prefix.is_empty())
         {
-            check_name(name)?;
+            check_element_name(name)?;
             Key::Attribute(name.to_string())
         } else {
-            check_name(&key)?;
+            check_element_name(&key)?;
             Key::Element(key)
         });
         Ok(())
@@ -290,6 +317,9 @@ impl Writer<'_> {
                     }
                 }
                 let text = text.into_owned();
+                let bindings = self.bindings.len();
+                let name = self.qualify(&name, true)?;
+                self.write_declarations(bindings)?;
                 self.out.push(' ');
                 self.out.push_str(&name);
                 self.out.push_str("=\"");
@@ -308,10 +338,7 @@ impl Writer<'_> {
             (Key::Element(name), Event::Atom(atom)) => self.atom_element(&name, &atom, false),
             (Key::Element(name), Event::MapStart(_)) => {
                 self.close_start_tag();
-                self.out.push('<');
-                self.out.push_str(&name);
-                self.stack.push(Frame::Element { name, open: true });
-                Ok(())
+                self.open_element(&name)
             }
             (Key::Element(name), Event::SeqStart(_)) => {
                 self.stack.push(Frame::Items { name });
@@ -342,16 +369,16 @@ impl Writer<'_> {
             // nulls keep their position
             Event::Atom(Atom::Null) => {
                 self.close_start_tag();
-                write!(self.out, "<{name}/>").unwrap();
+                let bindings = self.bindings.len();
+                self.start_tag(&name, false)?;
+                self.out.push_str("/>");
+                self.bindings.truncate(bindings);
                 Ok(())
             }
             Event::Atom(atom) => self.atom_element(&name, &atom, false),
             Event::MapStart(_) => {
                 self.close_start_tag();
-                self.out.push('<');
-                self.out.push_str(&name);
-                self.stack.push(Frame::Element { name, open: true });
-                Ok(())
+                self.open_element(&name)
             }
             _ => Err(Error::new(
                 ErrorKind::UnsupportedType,
@@ -370,14 +397,105 @@ impl Writer<'_> {
             None => return Ok(()),
         };
         self.close_start_tag();
-        self.out.push('<');
-        self.out.push_str(name);
+        let bindings = self.bindings.len();
+        let name = self.start_tag(name, is_root)?;
         if text.is_empty() {
             self.out.push_str("/>");
         } else {
             self.out.push('>');
             escape(&text, false, &mut self.out)?;
             write!(self.out, "</{name}>").unwrap();
+        }
+        self.bindings.truncate(bindings);
+        Ok(())
+    }
+
+    /// Writes the start tag of an element whose content is a map.
+    fn open_element(&mut self, name: &str) -> Result<(), Error> {
+        let bindings = self.bindings.len();
+        let name = self.start_tag(name, self.stack.is_empty())?;
+        self.stack.push(Frame::Element {
+            name,
+            open: true,
+            bindings,
+        });
+        Ok(())
+    }
+
+    /// Writes the start of a start tag with the namespaces it declares and
+    /// returns the name as written.
+    ///
+    /// The configured namespaces are declared on the root element.
+    fn start_tag(&mut self, name: &str, is_root: bool) -> Result<String, Error> {
+        let bindings = self.bindings.len();
+        if is_root {
+            for (prefix, uri) in self.config.names.namespaces {
+                self.bindings.push((prefix.to_string(), uri.to_string()));
+            }
+        }
+        let name = self.qualify(name, false)?;
+        self.out.push('<');
+        self.out.push_str(&name);
+        self.write_declarations(bindings)?;
+        Ok(name)
+    }
+
+    /// Returns how a name is written, `{uri}local` names get the prefix
+    /// of their namespace which is declared if it's not in scope.
+    fn qualify(&mut self, name: &str, is_attribute: bool) -> Result<String, Error> {
+        let Some((uri, local)) = split_name(name)? else {
+            return Ok(name.to_string());
+        };
+        let prefix = match self.prefix(uri, is_attribute) {
+            Some(prefix) => prefix.to_string(),
+            None => {
+                let prefix = (0..)
+                    .map(|n| format!("ns{n}"))
+                    .find(|prefix| self.bindings.iter().all(|(x, _)| x != prefix))
+                    .unwrap();
+                self.bindings.push((prefix.clone(), uri.to_string()));
+                prefix
+            }
+        };
+        Ok(if prefix.is_empty() {
+            local.to_string()
+        } else {
+            format!("{prefix}:{local}")
+        })
+    }
+
+    /// Returns the prefix of a namespace that is in scope.
+    ///
+    /// The empty prefix (the default namespace) does not apply to
+    /// attributes.
+    fn prefix(&self, uri: &str, is_attribute: bool) -> Option<&str> {
+        self.bindings
+            .iter()
+            .rev()
+            .filter(|(prefix, bound)| bound == uri && !(is_attribute && prefix.is_empty()))
+            .map(|(prefix, _)| prefix.as_str())
+            // an inner declaration could bind the prefix to another namespace
+            .find(|prefix| {
+                self.bindings
+                    .iter()
+                    .rev()
+                    .find(|(x, _)| x == prefix)
+                    .is_some_and(|(_, bound)| bound == uri)
+            })
+    }
+
+    /// Writes the declarations of the bindings from an index on into the
+    /// open start tag.
+    fn write_declarations(&mut self, from: usize) -> Result<(), Error> {
+        for (prefix, uri) in &self.bindings[from..] {
+            self.out.push_str(" xmlns");
+            if !prefix.is_empty() {
+                self.out.push(':');
+                self.out.push_str(prefix);
+            }
+            self.out.push_str("=\"");
+            escape(uri, true, &mut self.out)?;
+            self.out.push('"');
         }
         Ok(())
     }
@@ -395,9 +513,15 @@ impl Writer<'_> {
     }
 
     fn close_element(&mut self) -> Result<(), Error> {
-        let Some(Frame::Element { name, open }) = self.stack.pop() else {
+        let Some(Frame::Element {
+            name,
+            open,
+            bindings,
+        }) = self.stack.pop()
+        else {
             unreachable!()
         };
+        self.bindings.truncate(bindings);
         if open {
             self.out.push_str("/>");
         } else {
@@ -500,6 +624,33 @@ fn escape(text: &str, attribute: bool, out: &mut String) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// Splits a `{uri}local` name, other names are `None`.
+fn split_name(name: &str) -> Result<Option<(&str, &str)>, Error> {
+    let Some(rest) = name.strip_prefix('{') else {
+        return Ok(None);
+    };
+    match rest.split_once('}') {
+        Some((uri, local)) if !uri.is_empty() => Ok(Some((uri, local))),
+        _ => Err(Error::new(
+            ErrorKind::UnsupportedType,
+            format!("`{name}` is not a name in XML"),
+        )),
+    }
+}
+
+/// Checks that a name is a name in XML or a `{uri}local` name whose local
+/// name has no prefix.
+fn check_element_name(name: &str) -> Result<(), Error> {
+    match split_name(name)? {
+        Some((_, local)) if local.contains(':') => Err(Error::new(
+            ErrorKind::UnsupportedType,
+            format!("`{name}` is not a name in XML"),
+        )),
+        Some((_, local)) => check_name(local),
+        None => check_name(name),
+    }
 }
 
 /// Checks that a name is a name in XML.

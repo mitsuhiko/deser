@@ -152,7 +152,11 @@
 //! Names are passed on as written (`atom:link`), namespace declarations
 //! (`xmlns` attributes) are not data.  Namespaces can be given prefixes
 //! that are used regardless of the prefixes of the document (see
-//! [`DeserializerConfig::namespaces`]).  CDATA sections are text, the
+//! [`DeserializerConfig::namespaces`]) or be
+//! [resolved](DeserializerConfig::resolve_namespaces) into names like
+//! `{http://www.w3.org/2005/Atom}title` (see [`qname!`] and
+//! [`namespace!`]), which the serializer writes with prefixes.
+//! CDATA sections are text, the
 //! predefined entities (`&amp;`, ...) and character references are
 //! resolved.  Entities of document types are never expanded.
 //!
@@ -172,6 +176,80 @@ mod ser;
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
 pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
 pub use self::ser::{SerializerConfig, to_string};
+
+/// Writes a name in a namespace as `{uri}local`.
+///
+/// This is the notation for names in namespaces (see
+/// [`DeserializerConfig::resolve_namespaces`]).  With `@` in front it's
+/// the name of an attribute with the default
+/// [attribute prefix](DeserializerConfig::attribute_prefix).  The name is
+/// a literal, so it can be used for `rename`:
+///
+/// ```
+/// use deser_xml::qname;
+///
+/// #[derive(deser::Deserialize)]
+/// struct Link {
+///     #[deser(rename = qname!(@ "http://www.w3.org/1999/xlink", "href"))]
+///     href: String,
+/// }
+///
+/// assert_eq!(qname!("urn:x", "a"), "{urn:x}a");
+/// assert_eq!(qname!(@ "urn:x", "a"), "@{urn:x}a");
+/// ```
+#[macro_export]
+macro_rules! qname {
+    (@ $uri:literal, $local:literal) => {
+        concat!("@{", $uri, "}", $local)
+    };
+    ($uri:literal, $local:literal) => {
+        concat!("{", $uri, "}", $local)
+    };
+}
+
+/// Defines a macro that writes names in a namespace.
+///
+/// `namespace!(atom = "http://www.w3.org/2005/Atom")` defines `atom!` so
+/// that `atom!("title")` is [`qname!("http://www.w3.org/2005/Atom",
+/// "title")`](qname) and `atom!(@ "href")` the attribute.  Like all
+/// macros defined by macros, it can be used after the invocation in the
+/// same module and its children.
+///
+/// ```
+/// deser_xml::namespace!(atom = "http://www.w3.org/2005/Atom");
+///
+/// #[derive(deser::Deserialize)]
+/// struct Entry {
+///     #[deser(rename = atom!("title"))]
+///     title: String,
+///     #[deser(rename = atom!(@ "lang"))]
+///     lang: Option<String>,
+/// }
+///
+/// assert_eq!(atom!("title"), "{http://www.w3.org/2005/Atom}title");
+/// ```
+#[macro_export]
+macro_rules! namespace {
+    ($($name:ident = $uri:literal),+ $(,)?) => {
+        $($crate::__namespace!($name, $uri, $);)+
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __namespace {
+    ($name:ident, $uri:literal, $d:tt) => {
+        #[allow(unused_macros)]
+        macro_rules! $name {
+                    (@ $d local:literal) => {
+                        $crate::qname!(@ $uri, $d local)
+                    };
+                    ($d local:literal) => {
+                        $crate::qname!($uri, $d local)
+                    };
+                }
+    };
+}
 
 /// The names of the special keys and the prefixes of namespaces.
 ///

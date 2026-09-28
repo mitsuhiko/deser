@@ -180,6 +180,111 @@ fn test_namespaces() {
 }
 
 #[test]
+fn test_resolved_names() {
+    deser_xml::namespace!(
+        atom = "http://www.w3.org/2005/Atom",
+        dc = "http://purl.org/dc/elements/1.1/",
+        xlink = "http://www.w3.org/1999/xlink",
+    );
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename = atom!("feed"))]
+    struct Feed {
+        #[deser(rename = atom!("title"))]
+        title: String,
+        #[deser(rename = atom!("link"))]
+        link: Vec<Link>,
+        #[deser(rename = dc!("creator"))]
+        creator: Vec<String>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct Link {
+        #[deser(rename = xlink!(@ "href"))]
+        href: String,
+        #[deser(rename = atom!(@ "rel"))]
+        rel: String,
+        #[deser(rename = "@type")]
+        kind: Option<String>,
+        #[deser(rename = xlink!("title"))]
+        title: Option<String>,
+    }
+
+    let feed = Feed {
+        title: "x".into(),
+        link: vec![
+            Link {
+                href: "/a".into(),
+                rel: "self".into(),
+                kind: Some("text/html".into()),
+                title: Some("A".into()),
+            },
+            Link {
+                href: "/b".into(),
+                rel: "next".into(),
+                kind: None,
+                title: None,
+            },
+        ],
+        creator: vec!["a".into(), "b".into()],
+    };
+
+    // without configuration the prefixes are generated and declared where
+    // they are first needed
+    let xml = to_string(&feed).unwrap();
+    assert_eq!(
+        xml,
+        "<ns0:feed xmlns:ns0=\"http://www.w3.org/2005/Atom\"><ns0:title>x</ns0:title>\
+         <ns0:link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/a\" ns0:rel=\"self\" \
+         type=\"text/html\"><ns1:title>A</ns1:title></ns0:link>\
+         <ns0:link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/b\" ns0:rel=\"next\"/>\
+         <ns1:creator xmlns:ns1=\"http://purl.org/dc/elements/1.1/\">a</ns1:creator>\
+         <ns1:creator xmlns:ns1=\"http://purl.org/dc/elements/1.1/\">b</ns1:creator></ns0:feed>"
+    );
+    const RESOLVE: deser_xml::DeserializerConfig =
+        deser_xml::DeserializerConfig::new().resolve_namespaces(true);
+    assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
+
+    // configured prefixes are declared on the root, the default namespace
+    // is not used for attributes
+    const CONFIG: SerializerConfig = SerializerConfig::new().namespaces(&[
+        ("", "http://www.w3.org/2005/Atom"),
+        ("dc", "http://purl.org/dc/elements/1.1/"),
+        ("ns0", "urn:taken"),
+    ]);
+    let xml = CONFIG.to_string(&feed).unwrap();
+    assert_eq!(
+        xml,
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+         xmlns:ns0=\"urn:taken\"><title>x</title>\
+         <link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/a\" \
+         xmlns:ns2=\"http://www.w3.org/2005/Atom\" ns2:rel=\"self\" type=\"text/html\">\
+         <ns1:title>A</ns1:title></link>\
+         <link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/b\" \
+         xmlns:ns2=\"http://www.w3.org/2005/Atom\" ns2:rel=\"next\"/>\
+         <dc:creator>a</dc:creator><dc:creator>b</dc:creator></feed>"
+    );
+    assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
+
+    // the xml prefix is never declared
+    let value = BTreeMap::from([("@{http://www.w3.org/XML/1998/namespace}lang", "en")]);
+    assert_eq!(
+        SerializerConfig::new().root("a").to_string(&value).unwrap(),
+        r#"<a xml:lang="en"/>"#
+    );
+
+    // names that are not names
+    for name in ["{}a", "{urn:a", "{urn:a}", "{urn:a}x:y", "@{urn:a}1"] {
+        let value = BTreeMap::from([(name, "1")]);
+        let err = SerializerConfig::new()
+            .root("a")
+            .to_string(&value)
+            .unwrap_err();
+        assert!(err.message().ends_with("is not a name in XML"), "{name}");
+    }
+}
+
+#[test]
 fn test_errors() {
     // attributes after content
     #[derive(Serialize)]

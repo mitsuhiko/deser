@@ -1,0 +1,17 @@
+[package]
+name = "xml-namespaces"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-value = { path = "../../deser-value" }
+deser-xml = { path = "../../deser-xml" }
+
+[[bin]]
+name = "xml-namespaces"
+path = "src/main.rs"
+test = false
+doc = false

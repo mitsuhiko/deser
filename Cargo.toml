@@ -53,6 +53,7 @@ members = [
   "examples/streams",
   "examples/tokio-server",
   "examples/validation",
+  "examples/xml-namespaces",
 ]
 resolver = "3"
 

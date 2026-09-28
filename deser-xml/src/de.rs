@@ -19,6 +19,7 @@ use crate::mixed::WhitespaceDepths;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
     pub(crate) names: Names,
+    resolve_namespaces: bool,
     duplicate_keys: DuplicateKeys,
     track_locations: bool,
     max_depth: usize,
@@ -35,6 +36,7 @@ impl DeserializerConfig {
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
             names: Names::new(),
+            resolve_namespaces: false,
             duplicate_keys: DuplicateKeys::Error,
             track_locations: true,
             max_depth: 128,
@@ -63,7 +65,9 @@ impl DeserializerConfig {
     /// Names are passed on as written in the document (`atom:link`),
     /// unless their namespace has a prefix here: then they are written
     /// with this prefix, whichever prefix the document uses.  The empty
-    /// prefix leaves only the local name.
+    /// prefix leaves only the local name.  Names in other namespaces are
+    /// passed on as written or, if namespaces are
+    /// [resolved](Self::resolve_namespaces), as `{uri}local`.
     ///
     /// ```
     /// use deser_xml::DeserializerConfig;
@@ -94,6 +98,54 @@ impl DeserializerConfig {
         namespaces: &'static [(&'static str, &'static str)],
     ) -> DeserializerConfig {
         self.names.namespaces = namespaces;
+        self
+    }
+
+    /// Enables or disables resolving namespaces.
+    ///
+    /// By default names are passed on as written in the document.  If
+    /// namespaces are resolved, names in a namespace are passed on as
+    /// `{uri}local` (the notation of James Clark, attributes are
+    /// `@{uri}local`) unless the namespace has a
+    /// [prefix](Self::namespaces), so the prefixes of the document do not
+    /// matter.  Names without namespace are their local name, the `xml`
+    /// prefix is kept (`@xml:lang`).  Prefixes that are not declared are
+    /// an error.  The default is `false`.
+    ///
+    /// The names can be written with [`qname!`](crate::qname) and
+    /// [`namespace!`](crate::namespace):
+    ///
+    /// ```
+    /// use deser_xml::DeserializerConfig;
+    ///
+    /// deser_xml::namespace!(atom = "http://www.w3.org/2005/Atom");
+    ///
+    /// #[derive(deser::Deserialize)]
+    /// struct Link {
+    ///     #[deser(rename = "@href")]
+    ///     href: String,
+    /// }
+    ///
+    /// #[derive(deser::Deserialize)]
+    /// struct Feed {
+    ///     #[deser(rename = atom!("title"))]
+    ///     title: String,
+    ///     #[deser(rename = atom!("link"))]
+    ///     link: Link,
+    /// }
+    ///
+    /// const CONFIG: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    /// let feed: Feed = CONFIG.from_str(r#"
+    ///     <feed xmlns="http://www.w3.org/2005/Atom">
+    ///       <title>Example</title>
+    ///       <link href="/a"/>
+    ///     </feed>
+    /// "#).unwrap();
+    /// assert_eq!(feed.title, "Example");
+    /// assert_eq!(feed.link.href, "/a");
+    /// ```
+    pub const fn resolve_namespaces(mut self, yes: bool) -> DeserializerConfig {
+        self.resolve_namespaces = yes;
         self
     }
 
@@ -456,7 +508,7 @@ impl<'a> Parser<'a, '_> {
                 );
             }
             self.make_map(driver)?;
-            let name = self.name(tag.name(), false)?;
+            let name = self.name(tag.name(), false, range.0)?;
             emit_key(driver, name, range)?;
         }
         self.stack.push(Element {
@@ -476,7 +528,7 @@ impl<'a> Parser<'a, '_> {
                 continue;
             }
             self.make_map(driver)?;
-            let name = self.name(attr.key, true)?;
+            let name = self.name(attr.key, true, range.0)?;
             emit_key(driver, name, range)?;
             let value = attr
                 .normalized_value(XmlVersion::Implicit1_0)
@@ -523,20 +575,28 @@ impl<'a> Parser<'a, '_> {
     }
 
     /// Returns the key of an element or attribute.
-    fn name(&self, name: QName<'_>, is_attribute: bool) -> Result<Cow<'a, str>, Error> {
+    fn name(
+        &self,
+        name: QName<'_>,
+        is_attribute: bool,
+        offset: usize,
+    ) -> Result<Cow<'a, str>, Error> {
         let names = &self.config.names;
         let written: &str = name.as_ref();
-        let mut key = match self.alias(name, is_attribute) {
-            Some(alias) => {
-                let local_name = name.local_name();
-                let local: &str = local_name.as_ref();
-                Cow::Owned(if alias.is_empty() {
-                    local.to_string()
-                } else {
-                    format!("{alias}:{local}")
-                })
+        let local_name = name.local_name();
+        let local: &str = local_name.as_ref();
+        let mut key = match self.namespace(name, is_attribute) {
+            Namespace::Alias("") => Cow::Owned(local.to_string()),
+            Namespace::Alias(alias) => Cow::Owned(format!("{alias}:{local}")),
+            Namespace::Uri(uri) => Cow::Owned(format!("{{{uri}}}{local}")),
+            Namespace::Unknown if self.config.resolve_namespaces => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    format!("the prefix of `{written}` is not declared"),
+                )
+                .with_offset(offset));
             }
-            None => match reborrow(self.input, written) {
+            Namespace::Written | Namespace::Unknown => match reborrow(self.input, written) {
                 Some(written) => Cow::Borrowed(written),
                 None => Cow::Owned(written.to_string()),
             },
@@ -547,11 +607,12 @@ impl<'a> Parser<'a, '_> {
         Ok(key)
     }
 
-    /// Returns the configured prefix of the namespace of a name.
-    fn alias(&self, name: QName<'_>, is_attribute: bool) -> Option<&'static str> {
+    /// Returns how the namespace of a name is written.
+    fn namespace(&self, name: QName<'_>, is_attribute: bool) -> Namespace {
         let namespaces = self.config.names.namespaces;
-        if namespaces.is_empty() {
-            return None;
+        let resolve = self.config.resolve_namespaces;
+        if namespaces.is_empty() && !resolve {
+            return Namespace::Written;
         }
         let resolver = self.reader.resolver();
         let (ns, _) = if is_attribute {
@@ -560,13 +621,37 @@ impl<'a> Parser<'a, '_> {
             resolver.resolve_element(name)
         };
         match ns {
-            ResolveResult::Bound(ns) => namespaces
-                .iter()
-                .find(|(_, uri)| *uri == ns.as_ref())
-                .map(|(alias, _)| *alias),
-            _ => None,
+            ResolveResult::Bound(ns) => {
+                let uri: &str = ns.as_ref();
+                if let Some((alias, _)) = namespaces.iter().find(|(_, x)| *x == uri) {
+                    Namespace::Alias(alias)
+                } else if !resolve {
+                    Namespace::Written
+                } else if uri == XML_NAMESPACE {
+                    Namespace::Alias("xml")
+                } else {
+                    Namespace::Uri(uri.to_string())
+                }
+            }
+            ResolveResult::Unbound => Namespace::Written,
+            ResolveResult::Unknown(_) => Namespace::Unknown,
         }
     }
+}
+
+/// The namespace of the `xml` prefix.
+pub(crate) const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
+
+/// How the namespace of a name is written.
+enum Namespace {
+    /// The name is passed on as written.
+    Written,
+    /// The name has the configured prefix.
+    Alias(&'static str),
+    /// The name is `{uri}local`.
+    Uri(String),
+    /// The prefix is not declared.
+    Unknown,
 }
 
 /// Returns the text as a slice of the input if it is one.

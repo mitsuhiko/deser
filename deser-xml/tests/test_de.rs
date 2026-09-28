@@ -328,6 +328,112 @@ fn test_namespaces() {
 }
 
 #[test]
+fn test_resolve_namespaces() {
+    deser_xml::namespace!(
+        soap = "http://www.w3.org/2003/05/soap-envelope",
+        shop = "urn:shop",
+    );
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Envelope {
+        #[deser(rename = soap!("Body"))]
+        body: Body,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Body {
+        #[deser(rename = shop!("price"))]
+        price: Vec<Price>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Price {
+        #[deser(rename = shop!(@ "currency"))]
+        currency: Option<String>,
+        #[deser(rename = "@unit")]
+        unit: Option<String>,
+        #[deser(rename = "$text")]
+        amount: u32,
+    }
+
+    const CONFIG: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    let expected = Envelope {
+        body: Body {
+            price: vec![
+                Price {
+                    currency: Some("EUR".into()),
+                    unit: None,
+                    amount: 10,
+                },
+                Price {
+                    currency: None,
+                    unit: Some("kg".into()),
+                    amount: 20,
+                },
+            ],
+        },
+    };
+
+    // the prefixes of the document do not matter
+    for doc in [
+        r#"<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:m="urn:shop">
+             <soap:Body><m:price m:currency="EUR">10</m:price><m:price unit="kg">20</m:price></soap:Body>
+           </soap:Envelope>"#,
+        r#"<e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope">
+             <e:Body xmlns="urn:shop" xmlns:s="urn:shop">
+               <price s:currency="EUR">10</price><s:price unit="kg">20</s:price>
+             </e:Body>
+           </e:Envelope>"#,
+    ] {
+        assert_eq!(CONFIG.from_str::<Envelope>(doc).unwrap(), expected);
+    }
+
+    // other namespaces do not match
+    let doc = r#"<e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope">
+                   <e:Body><price xmlns="urn:other">10</price></e:Body>
+                 </e:Envelope>"#;
+    assert_eq!(
+        CONFIG.from_str::<Envelope>(doc).unwrap(),
+        Envelope {
+            body: Body { price: vec![] }
+        }
+    );
+
+    // the keys of dynamic values
+    let value: BTreeMap<String, String> = CONFIG
+        .from_str(
+            r#"<a xmlns="urn:a" xmlns:l="http://www.w3.org/1999/xlink" xml:lang="en"
+                  l:href="x" href="y"><b>1</b></a>"#,
+        )
+        .unwrap();
+    assert_eq!(
+        value.keys().collect::<Vec<_>>(),
+        [
+            "@href",
+            "@xml:lang",
+            "@{http://www.w3.org/1999/xlink}href",
+            "{urn:a}b"
+        ]
+    );
+
+    // configured prefixes are used instead
+    const PREFIXED: DeserializerConfig = CONFIG.namespaces(&[("", "urn:a"), ("xl", "urn:l")]);
+    let value: BTreeMap<String, String> = PREFIXED
+        .from_str(r#"<a xmlns="urn:a" xmlns:l="urn:l" l:href="x"><b>1</b><l:c>2</l:c></a>"#)
+        .unwrap();
+    assert_eq!(value.keys().collect::<Vec<_>>(), ["@xl:href", "b", "xl:c"]);
+
+    // prefixes that are not declared
+    let err = CONFIG
+        .from_str::<BTreeMap<String, String>>("<a><x:b>1</x:b></a>")
+        .unwrap_err();
+    assert_eq!(err.message(), "the prefix of `x:b` is not declared");
+    // are passed on as written otherwise
+    let value: BTreeMap<String, String> = from_str("<a><x:b>1</x:b></a>").unwrap();
+    assert_eq!(value["x:b"], "1");
+}
+
+#[test]
 fn test_config() {
     const CONFIG: DeserializerConfig = DeserializerConfig::new()
         .attribute_prefix("")

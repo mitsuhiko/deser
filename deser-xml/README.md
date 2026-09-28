@@ -30,7 +30,9 @@ let xml = deser_xml::to_string(&feed).unwrap();
   their name, also if other elements are between them.
 * Elements with attributes are their text for types that expect text,
   elements that are only text are maps for structs.
-* Names are kept as written, namespaces can be given fixed prefixes.
+* Names are kept as written, namespaces can be given fixed prefixes or
+  be resolved into `{uri}local` names (`qname!`, `namespace!`) which the
+  serializer writes with declared prefixes.
 * Parsing is done by [quick-xml](https://crates.io/crates/quick-xml), the
   events are passed on while the document is parsed and text is borrowed
   from the input where possible.
