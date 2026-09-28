@@ -26,7 +26,7 @@ pub struct Blob {
 ```
 
 They can also be used to configure how formats represent all bytes (with
-`deser::adapters::BytesFormat::encoded::<Hex>()`).
+`deser::BytesFormat::encoded::<Hex>()`).
 
 ## License and Links
 

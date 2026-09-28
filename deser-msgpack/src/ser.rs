@@ -817,7 +817,7 @@ impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         // only `drive_partial` continues a value
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
@@ -842,7 +842,7 @@ impl ser::StreamSerializer for Serializer {
         limit: usize,
     ) -> Result<Written, Error> {
         if self.item.is_none() && self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         // the parts of a value that failed stay written (see
         // `in_progress`)

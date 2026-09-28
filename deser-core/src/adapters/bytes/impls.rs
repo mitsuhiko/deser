@@ -4,8 +4,9 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use crate::BytesFormat;
 use crate::State;
-use crate::adapters::bytes::{BytesEncoding, BytesFormat};
+use crate::adapters::bytes::BytesEncoding;
 use crate::adapters::{DeserializeAs, SerializeAs};
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};

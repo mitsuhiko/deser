@@ -25,6 +25,7 @@ pub mod io;
 pub mod ser;
 pub mod stream;
 
+mod bytes_format;
 mod extensions;
 mod foreign_impls;
 mod position;
@@ -36,6 +37,7 @@ mod streamed;
 mod sync;
 mod text;
 
+pub use self::bytes_format::BytesFormat;
 pub use self::error::{Error, ErrorAttachment, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;

@@ -6,9 +6,8 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use deser_core::Text;
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Frame, LexicalRules, Source};
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};
 use crate::{Escape, Headers, Nulls, Terminator, Trim};

@@ -145,8 +145,8 @@ every intermediate step.
   bytes adapters (`BytesFallback`, `IntSeq` and the base64 encodings).
   Hex and base32 encodings are in the new `deser-encoding` crate.
 - Bytes are supported in all formats.  Formats without native bytes write
-  base64 strings, types that expect bytes also accept strings and
-  sequences of integers.
+  base64 strings (configurable with `deser::BytesFormat`), types that
+  expect bytes also accept strings and sequences of integers.
 - Added support for most of the standard library: `Arc`, `Cow`,
   `Box<str>` and other unsized boxes, `VecDeque`, `LinkedList`,
   `BinaryHeap`, `PhantomData`, `NonZero`, `Wrapping`, `Saturating`,
@@ -231,7 +231,8 @@ every intermediate step.
   `to_writer`, `deser-tokio` and CSV documents (`csv::Serializer::document`).
   Values below the limit are still written at once.  A value that was
   abandoned partway through stays in progress
-  (`StreamSerializer::in_progress`) and the stream refuses more values.
+  (`StreamSerializer::in_progress`) and the stream refuses more values
+  (with `Error::in_progress`).
 - The state of a stream is created with the stream serializer or
   deserializer, for instance to continue a CSV file with known columns
   (`csv::Serializer::with_headers`, `csv::StreamDeserializer::with_headers`)

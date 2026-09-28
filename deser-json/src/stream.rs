@@ -4,11 +4,10 @@
 #[cfg(feature = "io")]
 use std::io::Read;
 
-use deser_core::adapters::BytesFormat;
 #[cfg(feature = "io")]
 use deser_core::de::DeserializeOwned;
 use deser_core::de::{self, DeserializeDriver, Frame, Progress};
-use deser_core::{Error, ErrorKind, State};
+use deser_core::{BytesFormat, Error, ErrorKind, State};
 
 use crate::Trailing;
 use crate::de::{Deserializer, DeserializerConfig};

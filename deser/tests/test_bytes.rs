@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use deser::adapters::{As, Borrowed};
-use deser::adapters::{Base64Url, BytesEncoding, BytesFallback, BytesFormat, IntSeq};
+use deser::adapters::{Base64Url, BytesEncoding, BytesFallback, IntSeq};
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, BytesFormat, Deserialize, Error, ErrorKind, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {

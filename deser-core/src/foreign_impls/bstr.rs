@@ -17,9 +17,9 @@ use core::mem::take;
 
 use ::bstr::{BStr, BString};
 
+use crate::BytesFormat;
 use crate::State;
 use crate::Text;
-use crate::adapters::BytesFormat;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, Sink, SinkHandle};

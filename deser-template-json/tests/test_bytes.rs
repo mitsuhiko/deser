@@ -1,8 +1,8 @@
 use super::dialect;
 use std::collections::BTreeMap;
 
-use deser::adapters::{Base64UrlNoPad, BytesFallback, BytesFormat, IntSeq};
-use deser::{Deserialize, Serialize};
+use deser::adapters::{Base64UrlNoPad, BytesFallback, IntSeq};
+use deser::{BytesFormat, Deserialize, Serialize};
 use deser_encoding::Hex;
 use dialect::{DeserializerConfig, SerializerConfig, from_str, to_string};
 

@@ -3,10 +3,9 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::hints::Layout;
-use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue};
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};

@@ -289,7 +289,7 @@ impl Serializer {
     /// Fails if a value was written or is being written.
     fn check_single(&self) -> Result<(), Error> {
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         if self.written {
             return Err(Error::new(

@@ -623,7 +623,7 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// Serializes the value of a driver and writes it.
     fn write_driver(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         if self.serializer.in_progress() {
-            return Err(crate::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         // output that was not written (for instance of values serialized
         // before the serializer was given to the writer) comes first

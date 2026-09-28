@@ -2,9 +2,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use deser_core::Text;
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, Source};
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event};
 
 use crate::Nesting;
 use crate::encoding::{Decoded, decode};

@@ -1,6 +1,5 @@
-use deser_core::adapters::BytesFormat;
 use deser_core::ser::{self, SerializeDriver, Written};
-use deser_core::{Error, Serialize};
+use deser_core::{BytesFormat, Error, Serialize};
 
 use crate::emit::Emitter;
 use crate::resolve::Version;
@@ -329,7 +328,8 @@ impl SerializerConfig {
     /// or the format configured with [`bytes`](Self::bytes).
     ///
     /// ```
-    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
+    /// use deser::adapters::Base64UrlNoPad;
+    /// use deser::BytesFormat;
     /// use deser_yaml::SerializerConfig;
     ///
     /// assert_eq!(
@@ -668,7 +668,7 @@ impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         // only `drive_partial` continues a document
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }
@@ -693,7 +693,7 @@ impl ser::StreamSerializer for Serializer {
         limit: usize,
     ) -> Result<Written, Error> {
         if self.document.is_none() && self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         // the parts of a document that failed stay written (see
         // `in_progress`)

@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
 use deser_core::Text;
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event};
 
 use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};

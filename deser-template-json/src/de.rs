@@ -3,9 +3,8 @@ use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::str;
 
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
-use deser_core::{Error, ErrorKind};
+use deser_core::{BytesFormat, Error, ErrorKind};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};

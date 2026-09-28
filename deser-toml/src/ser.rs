@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use deser_core::adapters::BytesFormat;
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
 use deser_core::ser::{self, SerializeDriver};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
 use deser_core::__format::IntBuffer;
@@ -50,7 +49,8 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
+    /// use deser::adapters::Base64UrlNoPad;
+    /// use deser::BytesFormat;
     /// use deser_toml::SerializerConfig;
     ///
     /// let mut value = BTreeMap::new();

@@ -133,7 +133,8 @@ pub trait StreamSerializer: Serializer {
     /// If the value is abandoned (because it failed, or because the caller
     /// gave up on it, for instance when a write failed), this stays `true`:
     /// the output of the stream holds an incomplete value, so the stream
-    /// cannot continue.  Serializing another value fails.
+    /// cannot continue.  Serializing another value fails with
+    /// [`Error::in_progress`].
     fn in_progress(&self) -> bool {
         false
     }

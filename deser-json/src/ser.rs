@@ -5,10 +5,9 @@ use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use deser_core::__format::IntBuffer;
-use deser_core::adapters::BytesFormat;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
-use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
 use crate::Trailing;
 use crate::buf::Buffer;
@@ -249,7 +248,8 @@ impl SerializerConfig {
     /// sequences, bytes in keys are always strings.
     ///
     /// ```
-    /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
+    /// use deser::adapters::Base64UrlNoPad;
+    /// use deser::BytesFormat;
     /// use deser_json::SerializerConfig;
     ///
     /// assert_eq!(deser_json::to_string(&b"\xfb\xff").unwrap(), r#""+/8=""#);
@@ -572,7 +572,7 @@ impl Serializer {
     /// Starts a value: writes what separates it from the previous value.
     fn start_value(&mut self) -> Result<(), Error> {
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         match self.config.trailing_mode() {
             Trailing::Strict if self.written > 0 => Err(Error::new(
@@ -601,7 +601,7 @@ impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         // only `drive_partial` continues a value
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         ser::StreamSerializer::drive_partial(self, driver, usize::MAX).map(|_| ())
     }

@@ -6,10 +6,9 @@ use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
 use deser_core::__format::{Float, IntBuffer, format_finite};
-use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
 use crate::{Escape, Nulls, QuoteStyle, Terminator};
@@ -535,7 +534,7 @@ impl Serializer {
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         if self.in_progress {
-            return Err(deser_core::__format::in_progress_error());
+            return Err(Error::in_progress());
         }
         let len = self.out.len();
         match self.config.write(

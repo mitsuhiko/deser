@@ -453,8 +453,9 @@ mod with_bytes {
 #[cfg(feature = "bstr")]
 mod with_bstr {
     use ::bstr::{BStr, BString};
+    use deser::BytesFormat;
     use deser::ErrorKind;
-    use deser::adapters::{Base64Url, BytesFormat};
+    use deser::adapters::Base64Url;
 
     use super::*;
 

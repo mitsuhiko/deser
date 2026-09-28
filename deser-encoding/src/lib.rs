@@ -19,11 +19,11 @@
 //! strings in all formats.  They can be used with
 //! [`BytesFallback`](deser_core::adapters::BytesFallback) to keep native bytes in
 //! formats that have them, and with
-//! [`BytesFormat`](deser_core::adapters::BytesFormat) to configure formats:
+//! [`BytesFormat`](deser_core::BytesFormat) to configure formats:
 //!
 //! ```
-//! use deser::adapters::{BytesFallback, BytesFormat};
-//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::BytesFallback;
+//! use deser::{BytesFormat, Deserialize, Serialize};
 //! use deser_encoding::Hex;
 //!
 //! #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -194,8 +194,8 @@ encoding!(
 
 #[cfg(test)]
 mod tests {
-    use deser::adapters::{As, BytesFallback, BytesFormat};
-    use deser::{Deserialize, Serialize};
+    use deser::adapters::{As, BytesFallback};
+    use deser::{BytesFormat, Deserialize, Serialize};
 
     use super::*;
 

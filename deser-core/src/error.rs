@@ -200,6 +200,20 @@ impl Error {
         Some(rv)
     }
 
+    /// Creates the error for a value that is serialized while another one
+    /// is only partially written.
+    ///
+    /// Stream serializers return this once they are
+    /// [in progress](crate::ser::StreamSerializer::in_progress) and are asked
+    /// to serialize another value.
+    #[cold]
+    pub fn in_progress() -> Error {
+        Error::new(
+            ErrorKind::Unexpected,
+            "a value was only partially written, the stream cannot continue",
+        )
+    }
+
     /// Adds an error to this error.
     ///
     /// If the error that is added holds multiple errors, they are added

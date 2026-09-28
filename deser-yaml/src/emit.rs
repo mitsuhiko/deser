@@ -12,11 +12,10 @@ use std::borrow::Cow;
 use std::fmt::{self, Write};
 
 use deser_core::__format::IntBuffer;
-use deser_core::adapters::BytesFormat;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
 use deser_core::ser::PausableSink;
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::quote::{
     BlockScalar, MAX_SIMPLE_KEY_LEN, PushSmall, is_plain_safe, is_single_quote_safe, push_indent,

@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::ops::Deref;
 
-use crate::adapters::BytesFormat;
+use crate::BytesFormat;
 use crate::error::{Error, ErrorKind};
 use crate::ext::ExtValue;
 use crate::text::{Slice, Text};

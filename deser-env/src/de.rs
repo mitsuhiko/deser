@@ -4,11 +4,10 @@ use std::ffi::OsString;
 use std::sync::Arc;
 
 use deser_core::Text;
-use deser_core::adapters::BytesFormat;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, DeserializeOwned, DuplicateKeys, LexicalRules,
 };
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event};
 
 use crate::{Case, EnvVar};
 
