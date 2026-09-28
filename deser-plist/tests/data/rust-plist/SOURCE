@@ -1,0 +1,6 @@
+https://github.com/ebarnard/rust-plist
+commit 10ba3e3b44adb6246f3f5cc8e66134e03498f634 (tests/data)
+
+netnewswire.pbxproj originates from https://github.com/Ranchero-Software/NetNewsWire
+(MIT licensed), ascii-sample.plist from the GNUstep wiki.  The files in
+expected/ were generated with plutil (see scripts/update-plist-test-data.sh).

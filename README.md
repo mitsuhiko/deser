@@ -42,6 +42,7 @@ The same type works unchanged with
 [`deser-cbor`](https://docs.rs/deser-cbor),
 [`deser-msgpack`](https://docs.rs/deser-msgpack),
 [`deser-xml`](https://docs.rs/deser-xml),
+[`deser-plist`](https://docs.rs/deser-plist),
 [`deser-urlencoded`](https://docs.rs/deser-urlencoded) and (as long as it's
 flat) [`deser-csv`](https://docs.rs/deser-csv).  Configuration files in the
 JSON dialects are read with [`deser-jsonc`](https://docs.rs/deser-jsonc),
@@ -432,6 +433,7 @@ Formats:
 * [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv): CSV and TSV
 * [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded): query strings and forms
 * [deser-xml](https://github.com/mitsuhiko/deser/tree/main/deser-xml): XML
+* [deser-plist](https://github.com/mitsuhiko/deser/tree/main/deser-plist): property lists (XML, binary and OpenStep)
 * [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env): environment variables
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): debug formatting
 

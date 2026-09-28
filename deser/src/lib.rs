@@ -53,6 +53,8 @@ pub struct Account {
 //!   deserialization.
 //! * [`deser-xml`](https://docs.rs/deser-xml): implements XML serialization and
 //!   deserialization.
+//! * [`deser-plist`](https://docs.rs/deser-plist): implements property list
+//!   (XML, binary and OpenStep) serialization and deserialization.
 //! * [`deser-csv`](https://docs.rs/deser-csv): implements CSV, TSV and other
 //!   delimited text serialization and deserialization.
 //! * [`deser-env`](https://docs.rs/deser-env): implements reading
@@ -116,8 +118,8 @@ pub struct Account {
 //! Without the `std` feature deser only needs `alloc` (a global allocator)
 //! and works on targets without an operating system.  Disable the default
 //! features of deser and of the formats (`deser-json`, `deser-jsonc`,
-//! `deser-json5`, `deser-hjson`, `deser-cbor`, `deser-msgpack` and
-//! `deser-csv` support this):
+//! `deser-json5`, `deser-hjson`, `deser-cbor`, `deser-msgpack`,
+//! `deser-plist` and `deser-csv` support this):
 //!
 //! ```toml
 //! [dependencies]

@@ -14,6 +14,7 @@ members = [
   "deser-hjson",
   "deser-location",
   "deser-path",
+  "deser-plist",
   "deser-template-json",
   "deser-serde",
   "deser-value",
