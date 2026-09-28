@@ -1,0 +1,15 @@
+<script>
+// deser-core is an implementation detail of deser.  The crates of the data
+// formats depend on deser-core directly (so that they compile in parallel
+// with the derive macros), which makes rustdoc link their types to the
+// deser-core documentation.  On docs.rs all pages of deser-core forward to
+// the same page in the deser documentation, which inlines everything with the
+// same paths.  Add `?noredirect` to the URL to stay on deser-core.
+(function () {
+  var l = window.location;
+  if (l.hostname !== "docs.rs" || /[?&]noredirect\b/.test(l.search)) return;
+  var m = l.pathname.match(/^\/deser-core\/([^/]+)\/deser_core\/(.*)$/);
+  if (!m) return;
+  l.replace("/deser/" + m[1] + "/deser/" + m[2] + l.hash);
+})();
+</script>

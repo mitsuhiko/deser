@@ -14,7 +14,8 @@ documentation = "https://docs.rs/deser"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+# the pages forward to the documentation of deser (see the file)
+rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "docs-redirect.html"]
 
 [features]
 default = ["std", "io"]
