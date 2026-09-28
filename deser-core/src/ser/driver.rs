@@ -483,7 +483,8 @@ impl<'a> SerializeDriver<'a> {
     /// }
     ///
     /// let mut some = Vec::new();
-    /// SerializeDriver::new(&vec![Some(1), None]).drive_described(|_event, value, _state| {
+    /// let value = vec![Some(1), None];
+    /// SerializeDriver::new(&value).drive_described(|_event, value, _state| {
     ///     let mut describer = IsSome(false);
     ///     value.describe(&mut describer);
     ///     some.push(describer.0);

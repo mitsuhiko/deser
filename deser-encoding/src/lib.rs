@@ -44,12 +44,16 @@
 //!     data: vec![1, 255],
 //! };
 //! let json = deser_json::to_string(&blob).unwrap();
-//! assert_eq!(json, r#"{"digest":"deadbeef","signature":"01ff","data":"Af8="}"#);
+//! assert_eq!(
+//!     json,
+//!     r#"{"digest":"deadbeef","signature":"01ff","data":"Af8="}"#
+//! );
 //! assert_eq!(deser_json::from_str::<Blob>(&json).unwrap(), blob);
 //!
 //! // all bytes as hex
 //! const HEX: deser_json::SerializerConfig =
-//!     deser_json::SerializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+//!     deser_json::SerializerConfig::new()
+//!         .bytes(BytesFormat::encoded::<Hex>());
 //! assert_eq!(HEX.to_string(&b"\x01\xff").unwrap(), r#""01ff""#);
 //! ```
 //!

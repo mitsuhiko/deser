@@ -442,7 +442,11 @@ where
 /// impl TryFrom<u64> for Percent {
 ///     type Error = &'static str;
 ///     fn try_from(value: u64) -> Result<Percent, Self::Error> {
-///         if value <= 100 { Ok(Percent(value as u8)) } else { Err("out of range") }
+///         if value <= 100 {
+///             Ok(Percent(value as u8))
+///         } else {
+///             Err("out of range")
+///         }
 ///     }
 /// }
 ///

@@ -23,7 +23,10 @@ use crate::ser::{Serialize, SerializeDriver};
 /// struct Numbers(String);
 ///
 /// impl Serializer for Numbers {
-///     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+///     fn drive(
+///         &mut self,
+///         driver: &mut SerializeDriver<'_>,
+///     ) -> Result<(), Error> {
 ///         driver.drive(|event, _state| {
 ///             match event {
 ///                 Event::Atom(Atom::U64(value)) => {
@@ -33,7 +36,12 @@ use crate::ser::{Serialize, SerializeDriver};
 ///                     self.0.push_str(&value.to_string());
 ///                 }
 ///                 Event::SeqStart(_) | Event::SeqEnd => {}
-///                 _ => return Err(Error::new(ErrorKind::UnsupportedType, "not a number")),
+///                 _ => {
+///                     return Err(Error::new(
+///                         ErrorKind::UnsupportedType,
+///                         "not a number",
+///                     ));
+///                 }
 ///             }
 ///             Ok(())
 ///         })

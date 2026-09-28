@@ -35,10 +35,15 @@ use crate::Names;
 ///     Bold(String),
 /// }
 ///
-/// let p: Mixed<Inline> = deser_xml::from_str("<p>x <b>y</b> z</p>").unwrap();
+/// let p: Mixed<Inline> =
+///     deser_xml::from_str("<p>x <b>y</b> z</p>").unwrap();
 /// assert_eq!(
 ///     p.0,
-///     [Inline::Text("x ".into()), Inline::Bold("y".into()), Inline::Text(" z".into())]
+///     [
+///         Inline::Text("x ".into()),
+///         Inline::Bold("y".into()),
+///         Inline::Text(" z".into())
+///     ]
 /// );
 /// ```
 ///
@@ -65,7 +70,8 @@ use crate::Names;
 ///     content: Mixed<Inline>,
 /// }
 ///
-/// let p: Paragraph = deser_xml::from_str(r#"<p class="note">x <b>y</b></p>"#).unwrap();
+/// let p: Paragraph =
+///     deser_xml::from_str(r#"<p class="note">x <b>y</b></p>"#).unwrap();
 /// assert_eq!(p.class.as_deref(), Some("note"));
 /// assert_eq!(p.content.len(), 2);
 /// assert_eq!(

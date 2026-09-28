@@ -25,7 +25,8 @@ microcontroller.
 
 ```
 CBOR: 69 bytes
-JSON: {"type":"reading","sensorId":7,"unit":"celsius","values":[21.5,21.75],"scale":1.0,"raw":"3q2+7w=="}
+JSON: {"type":"reading","sensorId":7,"unit":"celsius",
+  "values":[21.5,21.75],"scale":1.0,"raw":"3q2+7w=="}
 forwarded: {"type":"calibration","offset":-0.5}
 error: OutOfRange: invalid value -1, expected u64 at line 1 column 27
 ```

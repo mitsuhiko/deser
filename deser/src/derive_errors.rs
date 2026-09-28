@@ -275,7 +275,10 @@
 ///
 /// ```compile_fail
 /// #[derive(deser::Serialize)]
-/// #[deser(as = deser::adapters::DisplayFromStr, serialize_as = deser::adapters::DisplayFromStr)]
+/// #[deser(
+///     as = deser::adapters::DisplayFromStr,
+///     serialize_as = deser::adapters::DisplayFromStr
+/// )]
 /// struct Test {
 ///     field: u32,
 /// }
@@ -284,7 +287,10 @@
 /// ```compile_fail
 /// #[derive(deser::Serialize)]
 /// struct Test {
-///     #[deser(as = deser::adapters::DisplayFromStr, deserialize_as = deser::adapters::DisplayFromStr)]
+///     #[deser(
+///         as = deser::adapters::DisplayFromStr,
+///         deserialize_as = deser::adapters::DisplayFromStr
+///     )]
 ///     field: u32,
 /// }
 /// ```
@@ -354,7 +360,10 @@
 ///
 /// ```compile_fail
 /// #[derive(deser::Serialize)]
-/// #[deser(serialize_as = deser::adapters::DisplayFromStr, skip_serializing_optionals)]
+/// #[deser(
+///     serialize_as = deser::adapters::DisplayFromStr,
+///     skip_serializing_optionals
+/// )]
 /// struct Test {
 ///     field: Option<u32>,
 /// }
@@ -368,7 +377,10 @@
 ///
 /// ```
 /// #[derive(deser::Serialize, deser::Deserialize)]
-/// #[deser(deserialize_as = deser::adapters::DisplayFromStr, rename_all = "camelCase")]
+/// #[deser(
+///     deserialize_as = deser::adapters::DisplayFromStr,
+///     rename_all = "camelCase"
+/// )]
 /// struct Test {
 ///     #[deser(skip_serializing_if = Option::is_none)]
 ///     some_field: Option<u32>,
@@ -473,7 +485,10 @@
 ///
 /// ```compile_fail
 /// #[derive(deser::Serialize)]
-/// struct Test(u32, #[deser(skip, as = deser::adapters::DisplayFromStr)] u32);
+/// struct Test(
+///     u32,
+///     #[deser(skip, as = deser::adapters::DisplayFromStr)] u32,
+/// );
 /// ```
 ///
 /// `rename_all_fields` is for enums, `rename_all` on variants for struct
@@ -641,7 +656,10 @@
 ///
 /// ```compile_fail
 /// #[derive(deser::Deserialize)]
-/// #[deser(deserialize_as = deser::adapters::FromInto<u32>, deny_unknown_fields)]
+/// #[deser(
+///     deserialize_as = deser::adapters::FromInto<u32>,
+///     deny_unknown_fields
+/// )]
 /// struct Test {
 ///     field: u32,
 /// }

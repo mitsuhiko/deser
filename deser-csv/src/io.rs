@@ -29,7 +29,10 @@ use crate::ser::{SerializerConfig, WriterState};
 ///     age: u32,
 /// }
 ///
-/// let mut reader = Reader::new(&b"name,age\njane,42\njohn,23\n"[..], DeserializerConfig::new());
+/// let mut reader = Reader::new(
+///     &b"name,age\njane,42\njohn,23\n"[..],
+///     DeserializerConfig::new(),
+/// );
 /// let rows = reader.iter::<Row>().collect::<Result<Vec<_>, _>>().unwrap();
 /// assert_eq!(rows[1].age, 23);
 /// ```
@@ -173,7 +176,8 @@ impl SerializerConfig {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let rows: Vec<BTreeMap<String, u32>> = deser_csv::from_reader(&b"a,b\n1,2\n"[..]).unwrap();
+/// let rows: Vec<BTreeMap<String, u32>> =
+///     deser_csv::from_reader(&b"a,b\n1,2\n"[..]).unwrap();
 /// assert_eq!(rows[0]["b"], 2);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

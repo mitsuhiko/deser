@@ -32,7 +32,10 @@ use crate::Violation;
 ///     /// Requires an even number of items.
 ///     pub EvenLength(items: &[u32]) {
 ///         if items.len() % 2 != 0 {
-///             return Err(format!("must have an even number of items, not {}", items.len()));
+///             return Err(format!(
+///                 "must have an even number of items, not {}",
+///                 items.len()
+///             ));
 ///         }
 ///         Ok(())
 ///     }
@@ -42,7 +45,10 @@ use crate::Violation;
 /// assert!(Slug::validate(&String::from("my-service")).is_ok());
 /// let violation = EvenLength::validate(&vec![1, 2, 3]).unwrap_err();
 /// assert_eq!(violation.code(), "even_length");
-/// assert_eq!(violation.message(), "must have an even number of items, not 3");
+/// assert_eq!(
+///     violation.message(),
+///     "must have an even number of items, not 3"
+/// );
 /// ```
 ///
 /// Functions and blocks return a `Result<(), E>`, where the error is a
@@ -58,7 +64,11 @@ use crate::Violation;
 /// ```
 /// use deser_validate::{Validator, validator};
 ///
-/// validator!(pub Port(port: &u16) => *port != 0, "must not be zero", code = "port");
+/// validator!(
+///     pub Port(port: &u16) => *port != 0,
+///     "must not be zero",
+///     code = "port"
+/// );
 /// assert_eq!(Port::validate(&0u16).unwrap_err().code(), "port");
 /// ```
 ///

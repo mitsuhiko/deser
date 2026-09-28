@@ -76,11 +76,14 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 /// struct AtomWrapper<T>(T);
 ///
 /// impl<'de, T: Deserialize<'de>> Deserialize<'de> for AtomWrapper<T> {
-///     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
-///         SinkHandle::arena(WrapperSink {
-///             out,
-///             sink: OwnedSink::deserialize(state),
-///         }, state)
+///     fn deserialize_into<'out>(
+///         out: &'out mut Option<Self>,
+///         state: &mut State,
+///     ) -> SinkHandle<'out, 'de> {
+///         SinkHandle::arena(
+///             WrapperSink { out, sink: OwnedSink::deserialize(state) },
+///             state,
+///         )
 ///     }
 /// }
 ///
@@ -90,7 +93,11 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 /// }
 ///
 /// impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for WrapperSink<'a, 'de, T> {
-///     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+///     fn atom(
+///         &mut self,
+///         atom: Atom,
+///         state: &mut State,
+///     ) -> Result<(), Error> {
 ///         self.sink.borrow_mut().atom(atom, state)
 ///     }
 ///     fn finish(&mut self, state: &mut State) -> Result<(), Error> {

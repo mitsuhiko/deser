@@ -846,9 +846,11 @@ All notable changes to deser are documented here.
 
   ```rust
   // before
-  #[deser(default = "default_port", skip_serializing_if = "Option::is_none")]
+  #[deser(default = "default_port")]
+  #[deser(skip_serializing_if = "Option::is_none")]
   // after
-  #[deser(default = default_port(), skip_serializing_if = Option::is_none)]
+  #[deser(default = default_port())]
+  #[deser(skip_serializing_if = Option::is_none)]
   #[deser(default = 8080)]
   #[deser(default = "localhost")]
   ```

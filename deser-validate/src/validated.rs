@@ -35,7 +35,8 @@ use crate::report::ReportHandle;
 ///     age: Validated<u8>,
 /// }
 ///
-/// let signup: Signup = deser_json::from_str(r#"{"email": "nope", "age": "x"}"#).unwrap();
+/// let signup: Signup =
+///     deser_json::from_str(r#"{"email": "nope", "age": "x"}"#).unwrap();
 /// assert!(!signup.email.is_valid());
 /// assert_eq!(signup.email.unchecked_value().unwrap(), "nope");
 /// assert_eq!(
@@ -70,10 +71,14 @@ use crate::report::ReportHandle;
 ///     shipping: Validated<Address>,
 /// }
 ///
-/// let order: Order = deser_json::from_str(r#"{"shipping": {"zip": "x"}}"#).unwrap();
+/// let order: Order =
+///     deser_json::from_str(r#"{"shipping": {"zip": "x"}}"#).unwrap();
 /// let err = order.shipping.error().unwrap();
 /// let errors: Vec<_> = err.errors().map(|err| err.message()).collect();
-/// assert_eq!(errors, ["unexpected string, expected u32", "missing field `street`"]);
+/// assert_eq!(
+///     errors,
+///     ["unexpected string, expected u32", "missing field `street`"]
+/// );
 /// ```
 ///
 /// When serialized, the value is serialized (also if it's invalid), a

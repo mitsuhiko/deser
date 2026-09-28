@@ -284,7 +284,8 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 /// use deser::io::Reader;
 /// use deser_json::{DeserializerConfig, Trailing};
 ///
-/// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+/// const LINES: DeserializerConfig =
+///     DeserializerConfig::new().trailing(Trailing::Newline);
 /// let mut reader = Reader::new(&b"[1, 2]\n[3]\n"[..], LINES);
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));

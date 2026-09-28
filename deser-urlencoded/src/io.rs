@@ -117,7 +117,8 @@ impl SerializerConfig {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let value: BTreeMap<String, u32> = deser_urlencoded::from_reader(&b"a=1"[..]).unwrap();
+/// let value: BTreeMap<String, u32> =
+///     deser_urlencoded::from_reader(&b"a=1"[..]).unwrap();
 /// assert_eq!(value["a"], 1);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {
@@ -130,7 +131,8 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 /// use std::collections::BTreeMap;
 ///
 /// let mut out = Vec::new();
-/// deser_urlencoded::to_writer(&mut out, &BTreeMap::from([("a", 1)])).unwrap();
+/// deser_urlencoded::to_writer(&mut out, &BTreeMap::from([("a", 1)]))
+///     .unwrap();
 /// assert_eq!(out, b"a=1");
 /// ```
 pub fn to_writer<W: Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {

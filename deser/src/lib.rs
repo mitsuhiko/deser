@@ -119,8 +119,12 @@ pub struct Account {
 //!
 //! ```toml
 //! [dependencies]
-//! deser = { version = "0.8", default-features = false, features = ["derive"] }
 //! deser-cbor = { version = "0.8", default-features = false }
+//!
+//! [dependencies.deser]
+//! version = "0.8"
+//! default-features = false
+//! features = ["derive"]
 //! ```
 //!
 //! Everything that is not in `core` and `alloc` is not available: `io`,

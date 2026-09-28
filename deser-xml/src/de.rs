@@ -135,13 +135,15 @@ impl DeserializerConfig {
     ///     link: Link,
     /// }
     ///
-    /// const CONFIG: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
-    /// let feed: Feed = CONFIG.from_str(r#"
+    /// const CONFIG: DeserializerConfig =
+    ///     DeserializerConfig::new().resolve_namespaces(true);
+    /// let xml = r#"
     ///     <feed xmlns="http://www.w3.org/2005/Atom">
     ///       <title>Example</title>
     ///       <link href="/a"/>
     ///     </feed>
-    /// "#).unwrap();
+    /// "#;
+    /// let feed: Feed = CONFIG.from_str(xml).unwrap();
     /// assert_eq!(feed.title, "Example");
     /// assert_eq!(feed.link.href, "/a");
     /// ```

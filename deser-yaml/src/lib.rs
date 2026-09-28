@@ -56,7 +56,8 @@
 //!     port: u16,
 //! }
 //!
-//! let package: Package = deser_yaml::from_str("version: 1.10\nport: 0x1F").unwrap();
+//! let package: Package =
+//!     deser_yaml::from_str("version: 1.10\nport: 0x1F").unwrap();
 //! assert_eq!(package.version, "1.10");
 //! assert_eq!(package.port, 31);
 //! ```
@@ -130,7 +131,8 @@
 //! use deser::io::{Reader, Writer};
 //! use deser_yaml::{DeserializerConfig, SerializerConfig};
 //!
-//! const ENDED: SerializerConfig = SerializerConfig::new().end_documents(true);
+//! const ENDED: SerializerConfig =
+//!     SerializerConfig::new().end_documents(true);
 //! let mut writer = Writer::new(Vec::new(), ENDED);
 //! writer.write(&vec![1, 2]).unwrap();
 //! writer.write(&"done").unwrap();

@@ -20,12 +20,20 @@ use deser_core::ser::Serialize;
 /// use deser_tokio::Codec;
 /// use tokio_util::codec::Framed;
 ///
-/// const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-/// const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+/// const READ_LINES: DeserializerConfig =
+///     DeserializerConfig::new().trailing(Trailing::Newline);
+/// const WRITE_LINES: SerializerConfig =
+///     SerializerConfig::new().trailing(Trailing::Newline);
 ///
 /// let (client, server) = tokio::io::duplex(1024);
-/// let mut client = Framed::new(client, Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES));
-/// let mut server = Framed::new(server, Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES));
+/// let mut client = Framed::new(
+///     client,
+///     Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES),
+/// );
+/// let mut server = Framed::new(
+///     server,
+///     Codec::<_, _, Vec<u32>>::new(READ_LINES, WRITE_LINES),
+/// );
 /// client.send(vec![1, 2]).await.unwrap();
 /// assert_eq!(server.next().await.unwrap().unwrap(), [1, 2]);
 /// # }

@@ -18,7 +18,10 @@
 //!
 //! let point = Point { x: 1, y: Some(2) };
 //! assert_eq!(ToDebug::new(&point).to_string(), format!("{:?}", point));
-//! assert_eq!(ToDebug::new(&point).to_string(), "Point { x: 1, y: Some(2) }");
+//! assert_eq!(
+//!     ToDebug::new(&point).to_string(),
+//!     "Point { x: 1, y: Some(2) }"
+//! );
 //! ```
 //!
 //! The names are the ones used when serializing: renamed types, variants

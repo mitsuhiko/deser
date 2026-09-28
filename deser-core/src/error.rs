@@ -112,8 +112,10 @@ pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
 /// use deser::{Error, ErrorKind};
 ///
 /// let err = Error::from_errors([
-///     Error::new(ErrorKind::MissingField, "missing field `a`").with_offset(0),
-///     Error::new(ErrorKind::Unexpected, "unexpected string").with_offset(9),
+///     Error::new(ErrorKind::MissingField, "missing field `a`")
+///         .with_offset(0),
+///     Error::new(ErrorKind::Unexpected, "unexpected string")
+///         .with_offset(9),
 /// ])
 /// .unwrap()
 /// .resolve_position(b"{\n  \"b\": \"x\"}");
@@ -121,7 +123,8 @@ pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
 /// assert_eq!(err.kind(), ErrorKind::MissingField);
 /// assert_eq!(
 ///     err.to_string(),
-///     "MissingField: missing field `a` at line 1 column 1 (and 1 more error)"
+///     "MissingField: missing field `a` at line 1 column 1 \
+///      (and 1 more error)"
 /// );
 /// assert_eq!(
 ///     format!("{:#}", err),

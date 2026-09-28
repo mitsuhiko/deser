@@ -24,7 +24,10 @@ use crate::error::{Error, ErrorKind};
 /// struct Numbers<'a>(&'a str);
 ///
 /// impl<'de> Deserializer<'de> for Numbers<'de> {
-///     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+///     fn drive(
+///         &mut self,
+///         driver: &mut DeserializeDriver<'_, 'de>,
+///     ) -> Result<(), Error> {
 ///         driver.emit(Event::seq_start())?;
 ///         for item in self.0.split(',') {
 ///             let value: u64 = item.trim().parse().map_err(|_| {

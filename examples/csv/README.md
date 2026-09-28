@@ -33,7 +33,8 @@ null values).
 ## What you should see
 
 ```
-skipped: Unexpected: invalid value "many", expected u32 at line 4 column 30 (path: copies)
+skipped: Unexpected: invalid value "many", expected u32
+  at line 4 column 30 (path: copies)
 ```
 
 followed by the column names, the three orders, and the orders as CSV and

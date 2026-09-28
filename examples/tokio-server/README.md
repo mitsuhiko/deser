@@ -34,7 +34,8 @@ three responses and exits. No manual interaction is needed.
 ```
 Number(3)
 Text("HELLO")
-Error("Unexpected: unknown variant `nope` of Request, expected `add` or `upper` at line 3 column 18")
+Error("Unexpected: unknown variant `nope` of Request, expected `add` or
+  `upper` at line 3 column 18")
 ```
 
 The error mentions line 3 because it is the third line on that

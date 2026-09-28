@@ -38,9 +38,14 @@ use crate::{Escape, Nulls, QuoteStyle, Terminator};
 ///     note: Option<&'static str>,
 /// }
 ///
-/// let rows = [Row { name: "a", note: Some("x;y") }, Row { name: "b", note: None }];
-/// let config = SerializerConfig::new().delimiter(b';').terminator(Terminator::CrLf);
-/// assert_eq!(config.to_string(&rows).unwrap(), "name;note\r\na;\"x;y\"\r\nb;\r\n");
+/// let rows =
+///     [Row { name: "a", note: Some("x;y") }, Row { name: "b", note: None }];
+/// let config =
+///     SerializerConfig::new().delimiter(b';').terminator(Terminator::CrLf);
+/// assert_eq!(
+///     config.to_string(&rows).unwrap(),
+///     "name;note\r\na;\"x;y\"\r\nb;\r\n"
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
@@ -173,7 +178,10 @@ impl SerializerConfig {
     ///     Rect { width: f64, height: f64 },
     /// }
     ///
-    /// let shapes = [Shape::Circle { radius: 1.0 }, Shape::Rect { width: 2.0, height: 3.0 }];
+    /// let shapes = [
+    ///     Shape::Circle { radius: 1.0 },
+    ///     Shape::Rect { width: 2.0, height: 3.0 },
+    /// ];
     /// let config = deser_csv::SerializerConfig::new()
     ///     .columns(&["kind", "radius", "width", "height"]);
     /// assert_eq!(
@@ -362,7 +370,8 @@ impl WriterState {
     /// use deser_csv::{SerializerConfig, WriterState};
     ///
     /// let state = WriterState::with_headers(["b", "a"]);
-    /// let mut writer = Writer::with_state(Vec::new(), SerializerConfig::new(), state);
+    /// let mut writer =
+    ///     Writer::with_state(Vec::new(), SerializerConfig::new(), state);
     /// writer.write(&BTreeMap::from([("a", 1), ("b", 2)])).unwrap();
     /// assert_eq!(writer.into_inner(), b"2,1\n");
     /// ```

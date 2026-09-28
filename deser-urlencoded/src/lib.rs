@@ -12,7 +12,8 @@
 //!     tags: Vec<String>,
 //! }
 //!
-//! let search: Search = deser_urlencoded::from_str("q=rust+serde&tags=a&tags=b").unwrap();
+//! let search: Search =
+//!     deser_urlencoded::from_str("q=rust+serde&tags=a&tags=b").unwrap();
 //! assert_eq!(search.q, "rust serde");
 //! assert_eq!(search.page, None);
 //! assert_eq!(search.tags, ["a", "b"]);
@@ -49,8 +50,10 @@
 //!     },
 //! }
 //!
-//! let query: Query = deser_urlencoded::from_str("limit=10&offset=20&active=yes&type=users")
-//!     .unwrap();
+//! let query: Query = deser_urlencoded::from_str(
+//!     "limit=10&offset=20&active=yes&type=users",
+//! )
+//! .unwrap();
 //! assert_eq!(
 //!     query,
 //!     Query::Users {
@@ -112,9 +115,15 @@
 //!     recursive: bool,
 //! }
 //!
-//! assert!(deser_urlencoded::from_str::<Tree>("recursive").unwrap().recursive);
-//! assert!(deser_urlencoded::from_str::<Tree>("recursive=").unwrap().recursive);
-//! assert!(!deser_urlencoded::from_str::<Tree>("recursive=0").unwrap().recursive);
+//! assert!(
+//!     deser_urlencoded::from_str::<Tree>("recursive").unwrap().recursive
+//! );
+//! assert!(
+//!     deser_urlencoded::from_str::<Tree>("recursive=").unwrap().recursive
+//! );
+//! assert!(
+//!     !deser_urlencoded::from_str::<Tree>("recursive=0").unwrap().recursive
+//! );
 //! assert!(!deser_urlencoded::from_str::<Tree>("").unwrap().recursive);
 //! ```
 //!
@@ -198,7 +207,8 @@ pub enum Nesting {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let value: BTreeMap<String, Vec<u32>> = deser_urlencoded::from_str("a=1&a=2&b=3").unwrap();
+/// let value: BTreeMap<String, Vec<u32>> =
+///     deser_urlencoded::from_str("a=1&a=2&b=3").unwrap();
 /// assert_eq!(value["a"], [1, 2]);
 /// assert_eq!(value["b"], [3]);
 /// ```
@@ -214,7 +224,8 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let value: BTreeMap<String, String> = deser_urlencoded::from_slice(b"a=%C3%A4").unwrap();
+/// let value: BTreeMap<String, String> =
+///     deser_urlencoded::from_slice(b"a=%C3%A4").unwrap();
 /// assert_eq!(value["a"], "\u{e4}");
 /// ```
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {

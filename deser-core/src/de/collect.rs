@@ -35,12 +35,19 @@ use crate::error::Error;
 ///         Ok(())
 ///     }
 ///
-///     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+///     fn next_value(
+///         &mut self,
+///         state: &mut State,
+///     ) -> Result<SinkHandle<'_, 'de>, Error> {
 ///         self.flush();
 ///         Ok(u32::deserialize_into(&mut self.current, state))
 ///     }
 ///
-///     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+///     fn recover(
+///         &mut self,
+///         err: Error,
+///         state: &mut State,
+///     ) -> Result<(), Error> {
 ///         self.current = None;
 ///         self.errors.collect(err, state)
 ///     }

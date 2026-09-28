@@ -52,7 +52,8 @@ pub enum Status {
 /// use deser::io::{DecodeBuffer, Status};
 ///
 /// fn read_all(mut input: impl Read) -> Result<Vec<u64>, deser::Error> {
-///     // `LinesConfig` is the configuration of a format with a number per line
+///     // `LinesConfig` is the configuration of a format with a number
+///     // per line
 ///     let mut buffer = DecodeBuffer::new(LinesConfig);
 ///     let mut values = Vec::new();
 ///     loop {
@@ -275,7 +276,8 @@ impl<D: Decoder> DecodeBuffer<D> {
     /// use deser::de::DeserializeDriver;
     /// use deser::io::{DecodeBuffer, Status};
     ///
-    /// // `DigitsConfig` is the configuration of a format with a sequence of digits
+    /// // `DigitsConfig` is the configuration of a format with a sequence
+    /// // of digits
     /// let mut buffer = DecodeBuffer::new(DigitsConfig);
     /// let mut out = None::<Vec<u32>>;
     /// {

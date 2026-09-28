@@ -113,7 +113,8 @@ impl StreamState {
 /// use deser::io::Reader;
 /// use deser_msgpack::DeserializerConfig;
 ///
-/// let mut reader = Reader::new(&[0x01, 0xa2, b'h', b'i'][..], DeserializerConfig::new());
+/// let mut reader =
+///     Reader::new(&[0x01, 0xa2, b'h', b'i'][..], DeserializerConfig::new());
 /// assert_eq!(reader.read::<u32>().unwrap(), Some(1));
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("hi"));
 /// assert_eq!(reader.read::<u32>().unwrap(), None);
@@ -307,7 +308,8 @@ impl SerializerConfig {
 /// does not need to be buffered.  To read more than one item use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_msgpack::from_reader(&[0x92, 0x01, 0x02][..]).unwrap();
+/// let value: Vec<u32> =
+///     deser_msgpack::from_reader(&[0x92, 0x01, 0x02][..]).unwrap();
 /// assert_eq!(value, [1, 2]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

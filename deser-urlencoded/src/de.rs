@@ -20,8 +20,10 @@ use crate::encoding::{Decoded, decode};
 /// use std::collections::BTreeMap;
 /// use deser_urlencoded::{DeserializerConfig, Nesting};
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().nesting(Nesting::Dots);
-/// let value: BTreeMap<String, BTreeMap<String, u32>> = CONFIG.from_str("a.b=1").unwrap();
+/// const CONFIG: DeserializerConfig =
+///     DeserializerConfig::new().nesting(Nesting::Dots);
+/// let value: BTreeMap<String, BTreeMap<String, u32>> =
+///     CONFIG.from_str("a.b=1").unwrap();
 /// assert_eq!(value["a"]["b"], 1);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,7 +174,9 @@ impl DeserializerConfig {
 /// }
 ///
 /// let err = Deserializer::from_str("filter[limit]=ten")
-///     .deserialize_with::<Query, _>(|driver| driver.push_layer(PathLayer::new()))
+///     .deserialize_with::<Query, _>(|driver| {
+///         driver.push_layer(PathLayer::new())
+///     })
 ///     .unwrap_err();
 /// assert_eq!(err.message(), "invalid value \"ten\", expected u32");
 /// assert_eq!(err.attachment::<Path>().unwrap().to_string(), "filter.limit");

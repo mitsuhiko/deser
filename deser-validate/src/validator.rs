@@ -24,7 +24,9 @@ use deser_core::{Error, ErrorAttachment, ErrorKind};
 ///     fn validate(value: &T) -> Result<(), Violation> {
 ///         let value = value.as_ref();
 ///         if !value.is_empty()
-///             && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+///             && value.bytes().all(|b| {
+///                 b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'
+///             })
 ///         {
 ///             Ok(())
 ///         } else {
@@ -152,10 +154,12 @@ impl From<String> for Param {
 ///     email: String,
 /// }
 ///
-/// let err = deser_json::from_str::<User>(r#"{"email": "nope"}"#).unwrap_err();
+/// let json = r#"{"email": "nope"}"#;
+/// let err = deser_json::from_str::<User>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: must be an email address at line 1 column 11"
+///     "Unexpected: invalid value: must be an email address \
+///      at line 1 column 11"
 /// );
 /// assert_eq!(err.attachment::<Violation>().unwrap().code(), "email");
 /// ```

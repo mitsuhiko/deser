@@ -10,7 +10,8 @@
 //!     population: Option<u64>,
 //! }
 //!
-//! let input = "name,country,population\nVienna,Austria,1897000\nAtlantis,,\n";
+//! let input =
+//!     "name,country,population\nVienna,Austria,1897000\nAtlantis,,\n";
 //! let cities: Vec<City> = deser_csv::from_str(input).unwrap();
 //! assert_eq!(cities[0].population, Some(1897000));
 //! assert_eq!(cities[1].population, None);
@@ -58,7 +59,8 @@
 //! }
 //!
 //! let input = "id,kind,radius,width,height\n1,circle,2,,\n2,rect,,3,4\n";
-//! let config = deser_csv::DeserializerConfig::new().nulls(deser_csv::Nulls::Empty);
+//! let config =
+//!     deser_csv::DeserializerConfig::new().nulls(deser_csv::Nulls::Empty);
 //! let rows: Vec<Row> = config.from_str(input).unwrap();
 //! assert_eq!(rows[1].shape, Shape::Rect { width: 3.0, height: 4.0 });
 //! ```
@@ -172,7 +174,8 @@ use deser_core::de::Deserialize;
 /// use std::collections::BTreeMap;
 /// use deser_csv::{DeserializerConfig, Headers};
 ///
-/// let rows: Vec<BTreeMap<String, u32>> = deser_csv::from_str("a,b\n1,2\n").unwrap();
+/// let rows: Vec<BTreeMap<String, u32>> =
+///     deser_csv::from_str("a,b\n1,2\n").unwrap();
 /// assert_eq!(rows[0]["b"], 2);
 ///
 /// let config = DeserializerConfig::new().headers(Headers::None);
@@ -180,10 +183,12 @@ use deser_core::de::Deserialize;
 /// assert_eq!(rows, [[1, 2], [3, 4]]);
 ///
 /// let config = DeserializerConfig::new().headers(Headers::Skip);
-/// let rows: Vec<(String, u32)> = config.from_str("name,age\njane,42\n").unwrap();
+/// let rows: Vec<(String, u32)> =
+///     config.from_str("name,age\njane,42\n").unwrap();
 /// assert_eq!(rows, [("jane".to_string(), 42)]);
 ///
-/// let config = DeserializerConfig::new().headers(Headers::Given(&["a", "b"]));
+/// let config =
+///     DeserializerConfig::new().headers(Headers::Given(&["a", "b"]));
 /// let rows: Vec<BTreeMap<String, u32>> = config.from_str("1,2\n").unwrap();
 /// assert_eq!(rows[0]["a"], 1);
 /// ```
@@ -278,7 +283,8 @@ impl Escape {
 /// }
 ///
 /// let config = DeserializerConfig::new().trim(Trim::All);
-/// let rows: Vec<Row> = config.from_str("name , age\n \"jane \" , 42\n").unwrap();
+/// let rows: Vec<Row> =
+///     config.from_str("name , age\n \"jane \" , 42\n").unwrap();
 /// assert_eq!((rows[0].name.as_str(), rows[0].age), ("jane ", 42));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -330,7 +336,9 @@ pub enum Nulls {
 /// use deser_csv::{QuoteStyle, SerializerConfig};
 ///
 /// let rows = vec![("a b", 1), ("c,d", 2)];
-/// let with = |style| SerializerConfig::new().quote_style(style).to_string(&rows).unwrap();
+/// let with = |style| {
+///     SerializerConfig::new().quote_style(style).to_string(&rows).unwrap()
+/// };
 /// assert_eq!(with(QuoteStyle::Necessary), "a b,1\n\"c,d\",2\n");
 /// assert_eq!(with(QuoteStyle::Always), "\"a b\",\"1\"\n\"c,d\",\"2\"\n");
 /// assert_eq!(with(QuoteStyle::NonNumeric), "\"a b\",1\n\"c,d\",2\n");
@@ -363,7 +371,8 @@ pub enum QuoteStyle {
 ///     score: f64,
 /// }
 ///
-/// let rows: Vec<Row> = deser_csv::from_str("name,score\na,1.5\nb,2\n").unwrap();
+/// let rows: Vec<Row> =
+///     deser_csv::from_str("name,score\na,1.5\nb,2\n").unwrap();
 /// assert_eq!(rows[1].score, 2.0);
 /// ```
 #[allow(clippy::should_implement_trait)]
@@ -378,7 +387,8 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let rows: Vec<BTreeMap<String, u32>> = deser_csv::from_slice(b"a,b\n1,2\n").unwrap();
+/// let rows: Vec<BTreeMap<String, u32>> =
+///     deser_csv::from_slice(b"a,b\n1,2\n").unwrap();
 /// assert_eq!(rows[0]["b"], 2);
 /// ```
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {

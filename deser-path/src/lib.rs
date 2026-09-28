@@ -17,16 +17,19 @@
 //!     port: u16,
 //! }
 //!
-//! let mut de = deser_json::Deserializer::from_str(r#"[{"host": "a", "port": "80"}]"#);
-//! let err = de
-//!     .deserialize_with::<Vec<Server>, _>(|driver| driver.push_layer(PathLayer::new()))
+//! let json = r#"[{"host": "a", "port": "80"}]"#;
+//! let err = deser_json::Deserializer::from_str(json)
+//!     .deserialize_with::<Vec<Server>, _>(|driver| {
+//!         driver.push_layer(PathLayer::new())
+//!     })
 //!     .unwrap_err();
 //! let path = err.attachment::<Path>().unwrap();
 //! assert_eq!(path.to_string(), "[0].port");
 //! assert_eq!(path.segments()[0], PathSegment::Index(0));
 //! assert_eq!(
 //!     err.to_string(),
-//!     "Unexpected: unexpected string, expected u16 at line 1 column 24 (path: [0].port)"
+//!     "Unexpected: unexpected string, expected u16 at line 1 column 24 \
+//!      (path: [0].port)"
 //! );
 //! ```
 //!

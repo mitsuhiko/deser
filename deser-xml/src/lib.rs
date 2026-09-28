@@ -33,8 +33,8 @@
 //!
 //! assert_eq!(
 //!     deser_xml::to_string(&feed).unwrap(),
-//!     "<feed><title>Example</title><link href=\"/a\"/><link href=\"/b\" rel=\"self\"/>\
-//!      <count>3</count></feed>"
+//!     "<feed><title>Example</title><link href=\"/a\"/>\
+//!      <link href=\"/b\" rel=\"self\"/><count>3</count></feed>"
 //! );
 //! ```
 //!
@@ -136,7 +136,8 @@
 //!     content: Mixed<Inline>,
 //! }
 //!
-//! let p: Paragraph = deser_xml::from_str(r#"<p class="x">x <b>y</b> z</p>"#).unwrap();
+//! let p: Paragraph =
+//!     deser_xml::from_str(r#"<p class="x">x <b>y</b> z</p>"#).unwrap();
 //! assert_eq!(p.content.0, [
 //!     Inline::Text("x ".into()),
 //!     Inline::Bold("y".into()),
@@ -270,15 +271,18 @@ macro_rules! __namespace {
 ///     xlink = "http://www.w3.org/1999/xlink",
 /// );
 ///
-/// const PREFIXES: &[(&str, &str)] = prefixes![atom as "", dc, xlink as "xl"];
+/// const PREFIXES: &[(&str, &str)] =
+///     prefixes![atom as "", dc, xlink as "xl"];
 /// assert_eq!(PREFIXES, [
 ///     ("", "http://www.w3.org/2005/Atom"),
 ///     ("dc", "http://purl.org/dc/elements/1.1/"),
 ///     ("xl", "http://www.w3.org/1999/xlink"),
 /// ]);
 ///
-/// const WRITE: SerializerConfig = SerializerConfig::new().namespaces(PREFIXES);
-/// const READ: DeserializerConfig = DeserializerConfig::new().namespaces(PREFIXES);
+/// const WRITE: SerializerConfig =
+///     SerializerConfig::new().namespaces(PREFIXES);
+/// const READ: DeserializerConfig =
+///     DeserializerConfig::new().namespaces(PREFIXES);
 /// ```
 #[macro_export]
 macro_rules! prefixes {

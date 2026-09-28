@@ -25,7 +25,8 @@ use crate::ext::{Ext, TIMESTAMP, encode_timestamp};
 /// use std::collections::HashMap;
 /// use deser_msgpack::SerializerConfig;
 ///
-/// const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
+/// const CANONICAL: SerializerConfig =
+///     SerializerConfig::new().canonical(true);
 /// let map = HashMap::from([("b", 1), ("a", 2)]);
 /// assert_eq!(CANONICAL.to_vec(&map).unwrap(), b"\x82\xa1a\x02\xa1b\x01");
 /// ```

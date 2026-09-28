@@ -15,12 +15,13 @@ use crate::value::{Kind, Value};
 /// for instance to add layers:
 ///
 /// ```
+/// use std::collections::BTreeMap;
 /// use deser_path::{Path, PathLayer};
 /// use deser_value::{value, Deserializer};
 ///
 /// let value = value!({"items": [1, "two"]});
 /// let err = Deserializer::new(&value)
-///     .deserialize_with::<std::collections::BTreeMap<String, Vec<u32>>, _>(|driver| {
+///     .deserialize_with::<BTreeMap<String, Vec<u32>>, _>(|driver| {
 ///         driver.push_layer(PathLayer::new());
 ///     })
 ///     .unwrap_err();
@@ -287,9 +288,15 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
 /// struct NumbersAsStrings;
 ///
 /// impl Layer for NumbersAsStrings {
-///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+///     fn event(
+///         &mut self,
+///         event: Event<'_>,
+///         next: &mut Next<'_>,
+///     ) -> Result<(), Error> {
 ///         match event {
-///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+///             Event::Atom(Atom::U64(value)) => {
+///                 next.emit(value.to_string().into())
+///             }
 ///             event => next.emit(event),
 ///         }
 ///     }
@@ -298,7 +305,9 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
 /// let mut serializer = Serializer::new();
 /// serializer.serialize(&true).unwrap();
 /// serializer
-///     .serialize_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
+///     .serialize_with(&vec![1u64, 2], |driver| {
+///         driver.push_layer(NumbersAsStrings)
+///     })
 ///     .unwrap();
 /// assert_eq!(serializer.finish(), [value!(true), value!(["1", "2"])]);
 /// ```

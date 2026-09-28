@@ -27,9 +27,12 @@ the variant is known. Their locations survive that.
 First the parsed config, then four error lines:
 
 ```
-OutOfRange: invalid value 80810, expected u16 at line 11 column 8 (path: servers[1].port)
-Unexpected: unexpected string, expected u32 at line 15 column 11 (path: servers[1].backend.timeout)
-Unexpected: unexpected string, expected u32 at line 11 column 16 (path: servers[1].backend.timeout)
+OutOfRange: invalid value 80810, expected u16 at line 11 column 8
+  (path: servers[1].port)
+Unexpected: unexpected string, expected u32 at line 15 column 11
+  (path: servers[1].backend.timeout)
+Unexpected: unexpected string, expected u32 at line 11 column 16
+  (path: servers[1].backend.timeout)
 Unexpected: unexpected newline, expected a value at line 6 column 8
 ```
 

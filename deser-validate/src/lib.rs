@@ -17,7 +17,9 @@
 //!
 //! ```
 //! use deser::Deserialize;
-//! use deser_validate::{Check, Email, MaxLen, NonEmpty, Validated, Validation};
+//! use deser_validate::{
+//!     Check, Email, MaxLen, NonEmpty, Validated, Validation,
+//! };
 //!
 //! #[derive(Deserialize)]
 //! struct Signup {
@@ -36,7 +38,9 @@
 //! let report = validation.finish(rv).into_result().err().unwrap();
 //! let issues: Vec<_> = report
 //!     .iter()
-//!     .map(|issue| format!("{}: {}", issue.path().unwrap(), issue.message()))
+//!     .map(|issue| {
+//!         format!("{}: {}", issue.path().unwrap(), issue.message())
+//!     })
 //!     .collect();
 //! assert_eq!(
 //!     issues,

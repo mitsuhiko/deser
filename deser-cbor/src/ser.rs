@@ -35,7 +35,8 @@ const MAJOR_TAG: u8 = 6;
 /// use std::collections::HashMap;
 /// use deser_cbor::SerializerConfig;
 ///
-/// const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
+/// const CANONICAL: SerializerConfig =
+///     SerializerConfig::new().canonical(true);
 /// let map = HashMap::from([("b", 1), ("a", 2)]);
 /// assert_eq!(CANONICAL.to_vec(&map).unwrap(), b"\xa2\x61a\x02\x61b\x01");
 /// ```

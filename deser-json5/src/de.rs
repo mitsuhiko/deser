@@ -25,7 +25,8 @@ use crate::scan::LineScan;
 /// ```
 /// use deser_json5::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().exact_numbers(false);
+/// const CONFIG: DeserializerConfig =
+///     DeserializerConfig::new().exact_numbers(false);
 /// let value: Vec<f64> = CONFIG.from_str("[0.10, 1e5]").unwrap();
 /// assert_eq!(value, [0.1, 1e5]);
 /// ```
@@ -93,7 +94,8 @@ impl DeserializerConfig {
     /// use deser_json5::{DeserializerConfig, Trailing};
     ///
     /// assert!(deser_json5::from_str::<Vec<u32>>("[1] trash").is_err());
-    /// const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+    /// const STOP: DeserializerConfig =
+    ///     DeserializerConfig::new().trailing(Trailing::Stop);
     /// assert_eq!(STOP.from_str::<Vec<u32>>("[1] trash").unwrap(), [1]);
     /// ```
     ///
@@ -103,7 +105,8 @@ impl DeserializerConfig {
     /// ```
     /// use deser_json5::{Deserializer, DeserializerConfig, Trailing};
     ///
-    /// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+    /// const LINES: DeserializerConfig =
+    ///     DeserializerConfig::new().trailing(Trailing::Newline);
     /// let mut de = Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
     /// let mut values = Vec::new();
     /// while !de.is_end() {
@@ -164,7 +167,8 @@ impl DeserializerConfig {
     /// ```
     /// use deser::ext::Decimal;
     ///
-    /// let value: Decimal = deser_json5::from_str("0.10000000000000000001").unwrap();
+    /// let value: Decimal =
+    ///     deser_json5::from_str("0.10000000000000000001").unwrap();
     /// assert_eq!(value.as_str(), "0.10000000000000000001");
     /// let value: f64 = deser_json5::from_str("0.10000000000000000001").unwrap();
     /// assert_eq!(value, 0.1);

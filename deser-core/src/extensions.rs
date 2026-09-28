@@ -420,7 +420,10 @@ impl Debug for Snapshot {
 /// let mut driver = DeserializeDriver::new(&mut out);
 /// driver.state_mut().attach_event_data(&data);
 /// assert_eq!(driver.state().event::<Tag>(), Some(&Tag(42)));
-/// assert_eq!(driver.state().capture_event_data().get::<Tag>(), Some(&Tag(42)));
+/// assert_eq!(
+///     driver.state().capture_event_data().get::<Tag>(),
+///     Some(&Tag(42))
+/// );
 /// ```
 ///
 /// Event data has to be [`Send`] and [`Sync`], which means that captured

@@ -460,7 +460,9 @@
 //!
 //!     fn try_from(value: String) -> Result<Email, Self::Error> {
 //!         match value.split_once('@') {
-//!             Some((user, domain)) => Ok(Email { user: user.into(), domain: domain.into() }),
+//!             Some((user, domain)) => {
+//!                 Ok(Email { user: user.into(), domain: domain.into() })
+//!             }
 //!             None => Err("missing @"),
 //!         }
 //!     }
@@ -686,7 +688,10 @@
 //! use deser_validate::{Check, validator};
 //!
 //! validator!(NonZero(port: &u16) => *port != 0, "port must not be zero");
-//! validator!(Ordered(ports: &Ports) => ports.min <= ports.max, "min is larger than max");
+//! validator!(
+//!     Ordered(ports: &Ports) => ports.min <= ports.max,
+//!     "min is larger than max"
+//! );
 //!
 //! #[derive(Deserialize)]
 //! #[deser(deserialize_as = Check<Ordered, _>)]

@@ -25,9 +25,13 @@ use crate::ext::known::{WellKnown, impl_well_known, invalid};
 /// ```
 /// use deser::ext::BigInt;
 ///
-/// let value: BigInt = "-340282366920938463463374607431768211456".parse().unwrap();
+/// let value: BigInt =
+///     "-340282366920938463463374607431768211456".parse().unwrap();
 /// assert!(value.negative);
-/// assert_eq!(value.magnitude, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+/// assert_eq!(
+///     value.magnitude,
+///     [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+/// );
 /// assert_eq!(value.to_string(), "-340282366920938463463374607431768211456");
 /// ```
 ///

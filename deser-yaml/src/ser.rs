@@ -107,10 +107,17 @@ pub enum NullStyle {
 ///
 /// let mut value = BTreeMap::new();
 /// value.insert("items", vec!["a", "yes"]);
-/// assert_eq!(deser_yaml::to_string(&value).unwrap(), "items:\n  - a\n  - 'yes'\n");
+/// assert_eq!(
+///     deser_yaml::to_string(&value).unwrap(),
+///     "items:\n  - a\n  - 'yes'\n"
+/// );
 ///
-/// const INDENTLESS: SerializerConfig = SerializerConfig::new().indent_sequences(false);
-/// assert_eq!(INDENTLESS.to_string(&value).unwrap(), "items:\n- a\n- 'yes'\n");
+/// const INDENTLESS: SerializerConfig =
+///     SerializerConfig::new().indent_sequences(false);
+/// assert_eq!(
+///     INDENTLESS.to_string(&value).unwrap(),
+///     "items:\n- a\n- 'yes'\n"
+/// );
 /// ```
 ///
 /// [`to_string`](Self::to_string) works like the
@@ -180,10 +187,18 @@ impl SerializerConfig {
     /// }
     ///
     /// let config = Config { name: "web".into(), ports: vec![80, 443] };
-    /// const WIDE: SerializerConfig = SerializerConfig::new().indent(Indent::Spaces(4));
-    /// assert_eq!(WIDE.to_string(&config).unwrap(), "name: web\nports:\n    - 80\n    - 443\n");
-    /// const LINE: SerializerConfig = SerializerConfig::new().indent(Indent::None);
-    /// assert_eq!(LINE.to_string(&config).unwrap(), "{name: web, ports: [80, 443]}\n");
+    /// const WIDE: SerializerConfig =
+    ///     SerializerConfig::new().indent(Indent::Spaces(4));
+    /// assert_eq!(
+    ///     WIDE.to_string(&config).unwrap(),
+    ///     "name: web\nports:\n    - 80\n    - 443\n"
+    /// );
+    /// const LINE: SerializerConfig =
+    ///     SerializerConfig::new().indent(Indent::None);
+    /// assert_eq!(
+    ///     LINE.to_string(&config).unwrap(),
+    ///     "{name: web, ports: [80, 443]}\n"
+    /// );
     /// ```
     pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
         self.indent = match indent {
@@ -235,7 +250,8 @@ impl SerializerConfig {
     ///     ports: vec![80, 443],
     ///     groups: vec![vec![1], vec![2, 3]],
     /// };
-    /// const FLOW: SerializerConfig = SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80));
+    /// const FLOW: SerializerConfig =
+    ///     SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80));
     /// assert_eq!(
     ///     FLOW.to_string(&config).unwrap(),
     ///     "ports: [80, 443]\ngroups:\n  - [1]\n  - [2, 3]\n"
@@ -294,7 +310,8 @@ impl SerializerConfig {
     /// use deser_yaml::{SerializerConfig, Version};
     ///
     /// assert_eq!(deser_yaml::to_string(&"yes").unwrap(), "'yes'\n");
-    /// const V1_2: SerializerConfig = SerializerConfig::new().compat(Version::V1_2);
+    /// const V1_2: SerializerConfig =
+    ///     SerializerConfig::new().compat(Version::V1_2);
     /// assert_eq!(V1_2.to_string(&"yes").unwrap(), "yes\n");
     /// ```
     pub const fn compat(mut self, version: Version) -> SerializerConfig {
@@ -315,7 +332,10 @@ impl SerializerConfig {
     /// use deser::adapters::{Base64UrlNoPad, BytesFormat};
     /// use deser_yaml::SerializerConfig;
     ///
-    /// assert_eq!(deser_yaml::to_string(&b"\xfb\xff").unwrap(), "!!binary +/8=\n");
+    /// assert_eq!(
+    ///     deser_yaml::to_string(&b"\xfb\xff").unwrap(),
+    ///     "!!binary +/8=\n"
+    /// );
     /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
     ///     .binary(false)
     ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
@@ -378,7 +398,8 @@ impl SerializerConfig {
     /// ```
     /// use deser_yaml::{Serializer, SerializerConfig};
     ///
-    /// const ENDED: SerializerConfig = SerializerConfig::new().end_documents(true);
+    /// const ENDED: SerializerConfig =
+    ///     SerializerConfig::new().end_documents(true);
     /// let mut serializer = Serializer::with_config(&ENDED);
     /// serializer.serialize(&"a").unwrap();
     /// serializer.serialize(&"b").unwrap();

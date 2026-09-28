@@ -78,11 +78,15 @@ pub fn set_tag<S: Into<String>>(state: &mut State, tag: S) {
 /// ```
 /// use deser_yaml::Tagged;
 ///
-/// let value: Vec<Tagged<String>> = deser_yaml::from_str("[!color red, blue]").unwrap();
+/// let value: Vec<Tagged<String>> =
+///     deser_yaml::from_str("[!color red, blue]").unwrap();
 /// assert_eq!(value[0].tag.as_deref(), Some("!color"));
 /// assert_eq!(value[0].value, "red");
 /// assert_eq!(value[1].tag, None);
-/// assert_eq!(deser_yaml::to_string(&value).unwrap(), "- !color red\n- blue\n");
+/// assert_eq!(
+///     deser_yaml::to_string(&value).unwrap(),
+///     "- !color red\n- blue\n"
+/// );
 /// ```
 ///
 /// Other formats do not support tags.  When deserializing from such

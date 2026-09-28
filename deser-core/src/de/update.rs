@@ -159,7 +159,10 @@ pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
 ///
 /// fn check(range: &Range) -> Result<(), Error> {
 ///     if range.min > range.max {
-///         return Err(Error::new(ErrorKind::Unexpected, "min is larger than max"));
+///         return Err(Error::new(
+///             ErrorKind::Unexpected,
+///             "min is larger than max",
+///         ));
 ///     }
 ///     Ok(())
 /// }

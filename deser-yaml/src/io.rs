@@ -82,7 +82,8 @@ impl StreamState {
 /// use deser::io::Reader;
 /// use deser_yaml::DeserializerConfig;
 ///
-/// let mut reader = Reader::new(&b"--- a\n--- b\n"[..], DeserializerConfig::new());
+/// let mut reader =
+///     Reader::new(&b"--- a\n--- b\n"[..], DeserializerConfig::new());
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("a"));
 /// assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("b"));
 /// assert_eq!(reader.read::<String>().unwrap(), None);
@@ -216,7 +217,8 @@ impl SerializerConfig {
 /// document use a [`deser::io::Reader`](deser_core::io::Reader) with a [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_yaml::from_reader(&b"- 1\n- 2\n"[..]).unwrap();
+/// let value: Vec<u32> =
+///     deser_yaml::from_reader(&b"- 1\n- 2\n"[..]).unwrap();
 /// assert_eq!(value, [1, 2]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

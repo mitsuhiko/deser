@@ -62,9 +62,13 @@ pub enum InlinePolicy {
 /// use deser_json::{Indent, SerializerConfig};
 ///
 /// let value = BTreeMap::from([("name", vec!["a", "b"])]);
-/// assert_eq!(deser_json::to_string(&value).unwrap(), r#"{"name":["a","b"]}"#);
+/// assert_eq!(
+///     deser_json::to_string(&value).unwrap(),
+///     r#"{"name":["a","b"]}"#
+/// );
 ///
-/// const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+/// const PRETTY: SerializerConfig =
+///     SerializerConfig::new().pretty(Indent::Spaces(2));
 /// assert_eq!(
 ///     PRETTY.to_string(&value).unwrap(),
 ///     "{\n  \"name\": [\n    \"a\",\n    \"b\"\n  ]\n}"
@@ -122,7 +126,8 @@ impl SerializerConfig {
     /// ```
     /// use deser_json::{Serializer, SerializerConfig, Trailing};
     ///
-    /// const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+    /// const LINES: SerializerConfig =
+    ///     SerializerConfig::new().trailing(Trailing::Newline);
     /// let mut serializer = Serializer::with_config(&LINES);
     /// serializer.serialize(&vec![1, 2]).unwrap();
     /// serializer.serialize(&vec![3]).unwrap();
@@ -223,7 +228,8 @@ impl SerializerConfig {
     /// use deser_json::{Indent, SerializerConfig};
     ///
     /// let value = BTreeMap::from([("a", 1)]);
-    /// const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(4));
+    /// const PRETTY: SerializerConfig =
+    ///     SerializerConfig::new().pretty(Indent::Spaces(4));
     /// assert_eq!(PRETTY.to_string(&value).unwrap(), "{\n    \"a\": 1\n}");
     /// const NOT_PRETTY: SerializerConfig = PRETTY.pretty(Indent::None);
     /// assert_eq!(NOT_PRETTY.to_string(&value).unwrap(), r#"{"a":1}"#);
@@ -246,10 +252,11 @@ impl SerializerConfig {
     /// use deser_json::SerializerConfig;
     ///
     /// assert_eq!(deser_json::to_string(&b"\xfb\xff").unwrap(), r#""+/8=""#);
-    /// const URL_SAFE: SerializerConfig =
-    ///     SerializerConfig::new().bytes(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
+    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
     /// assert_eq!(URL_SAFE.to_string(&b"\xfb\xff").unwrap(), r#""-_8""#);
-    /// const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
+    /// const SEQ: SerializerConfig =
+    ///     SerializerConfig::new().bytes(BytesFormat::SEQ);
     /// assert_eq!(SEQ.to_string(&b"\xfb\xff").unwrap(), "[251,255]");
     /// ```
     ///
@@ -282,16 +289,24 @@ impl SerializerConfig {
     /// struct NumbersAsStrings;
     ///
     /// impl Layer for NumbersAsStrings {
-    ///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+    ///     fn event(
+    ///         &mut self,
+    ///         event: Event<'_>,
+    ///         next: &mut Next<'_>,
+    ///     ) -> Result<(), Error> {
     ///         match event {
-    ///             Event::Atom(Atom::U64(value)) => next.emit(value.to_string().into()),
+    ///             Event::Atom(Atom::U64(value)) => {
+    ///                 next.emit(value.to_string().into())
+    ///             }
     ///             event => next.emit(event),
     ///         }
     ///     }
     /// }
     ///
     /// let json = SerializerConfig::new()
-    ///     .to_string_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
+    ///     .to_string_with(&vec![1u64, 2], |driver| {
+    ///         driver.push_layer(NumbersAsStrings)
+    ///     })
     ///     .unwrap();
     /// assert_eq!(json, r#"["1","2"]"#);
     /// ```
@@ -345,7 +360,8 @@ impl SerializerConfig {
 /// ```
 /// use deser_json::{Serializer, SerializerConfig, Trailing};
 ///
-/// const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+/// const LINES: SerializerConfig =
+///     SerializerConfig::new().trailing(Trailing::Newline);
 /// let mut serializer = Serializer::with_config(&LINES);
 /// serializer.serialize(&vec![1, 2]).unwrap();
 /// serializer.serialize(&"x").unwrap();

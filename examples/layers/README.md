@@ -40,14 +40,17 @@ raised by `Limits` also get a path.
 
 ```
 plain:
-{"user_name":"jdoe","email_address":null,"password_hash":"$argon2id$...", ...}
+{"user_name":"jdoe","email_address":null,
+  "password_hash":"$argon2id$...", ...}
 
 with layers:
-{"user-name":"jdoe","password-hash":"[redacted]","api-tokens":"[redacted]","settings":{"dark-mode":true}}
+{"user-name":"jdoe","password-hash":"[redacted]",
+  "api-tokens":"[redacted]","settings":{"dark-mode":true}}
 
 deserialization errors:
 Unexpected: too many items at line 5 column 49 (path: api_tokens[5])
-Unexpected: unexpected string, expected bool at line 6 column 35 (path: settings.dark_mode)
+Unexpected: unexpected string, expected bool at line 6 column 35
+  (path: settings.dark_mode)
 ```
 
 ## How to read it

@@ -39,7 +39,8 @@ The parsed `Search` debug dump, two serialized query strings, the parsed
 `SignUp` form, and:
 
 ```
-error: Unexpected: invalid value "soon", expected u16 at line 1 column 30 (path: year)
+error: Unexpected: invalid value "soon", expected u16 at line 1 column 30
+  (path: year)
 ```
 
 ## How to read it

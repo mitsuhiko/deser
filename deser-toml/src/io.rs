@@ -21,7 +21,8 @@ use crate::ser::SerializerConfig;
 /// use deser::io::Reader;
 /// use deser_toml::DeserializerConfig;
 ///
-/// let mut reader = Reader::new(&b"a = 1\nb = 2\n"[..], DeserializerConfig::new());
+/// let mut reader =
+///     Reader::new(&b"a = 1\nb = 2\n"[..], DeserializerConfig::new());
 /// let value: BTreeMap<String, u32> = reader.read().unwrap().unwrap();
 /// assert_eq!(value["b"], 2);
 /// assert!(reader.read::<BTreeMap<String, u32>>().unwrap().is_none());
@@ -118,7 +119,8 @@ impl SerializerConfig {
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// let value: BTreeMap<String, u32> = deser_toml::from_reader(&b"a = 1"[..]).unwrap();
+/// let value: BTreeMap<String, u32> =
+///     deser_toml::from_reader(&b"a = 1"[..]).unwrap();
 /// assert_eq!(value["a"], 1);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

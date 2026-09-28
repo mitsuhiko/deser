@@ -26,8 +26,13 @@ use crate::ser::{Begin, Chunk, Describe, PlainSink};
 /// /// Deserializes with `A`, missing values are the default.
 /// pub struct DefaultIfMissing<A>(std::marker::PhantomData<A>);
 ///
-/// impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for DefaultIfMissing<A> {
-///     fn deserialize_into_as<'out>(out: &'out mut Option<T>, state: &mut State) -> SinkHandle<'out, 'de> {
+/// impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T>
+///     for DefaultIfMissing<A>
+/// {
+///     fn deserialize_into_as<'out>(
+///         out: &'out mut Option<T>,
+///         state: &mut State,
+///     ) -> SinkHandle<'out, 'de> {
 ///         A::deserialize_into_as(out, state)
 ///     }
 ///

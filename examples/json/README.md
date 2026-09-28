@@ -35,7 +35,8 @@ User {
     isSpecial: true,
     displayName: None,
 }
-{"id":23,"emailAddress":"jane@example.com","kind":"regular_user","isSpecial":true,"displayName":null}
+{"id":23,"emailAddress":"jane@example.com","kind":"regular_user",
+  "isSpecial":true,"displayName":null}
 ```
 
 The debug output shows serialized names (`emailAddress`,

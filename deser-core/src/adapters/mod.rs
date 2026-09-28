@@ -160,8 +160,12 @@
 //! pub struct Hex;
 //!
 //! impl SerializeAs<Vec<u8>> for Hex {
-//!     fn serialize_as<'a>(value: &'a Vec<u8>, _state: &mut State) -> Result<Chunk<'a>, Error> {
-//!         let hex: String = value.iter().map(|x| format!("{:02x}", x)).collect();
+//!     fn serialize_as<'a>(
+//!         value: &'a Vec<u8>,
+//!         _state: &mut State,
+//!     ) -> Result<Chunk<'a>, Error> {
+//!         let hex: String =
+//!             value.iter().map(|x| format!("{:02x}", x)).collect();
 //!         Ok(Chunk::Atom(Atom::Str(hex.into())))
 //!     }
 //! }
@@ -169,14 +173,20 @@
 //! make_slot_wrapper!(HexSlot);
 //!
 //! impl<'de> Sink<'de> for HexSlot<Vec<u8>> {
-//!     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+//!     fn atom(
+//!         &mut self,
+//!         atom: Atom,
+//!         state: &mut State,
+//!     ) -> Result<(), Error> {
 //!         match atom {
 //!             Atom::Str(ref s) if s.len() % 2 == 0 => {
 //!                 let bytes = (0..s.len())
 //!                     .step_by(2)
 //!                     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
 //!                     .collect::<Result<Vec<_>, _>>()
-//!                     .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid hex"))?;
+//!                     .map_err(|_| {
+//!                         Error::new(ErrorKind::Unexpected, "invalid hex")
+//!                     })?;
 //!                 **self = Some(bytes);
 //!                 Ok(())
 //!             }
@@ -186,7 +196,10 @@
 //! }
 //!
 //! impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-//!     fn deserialize_into_as<'out>(out: &'out mut Option<Vec<u8>>, state: &mut State) -> SinkHandle<'out, 'de> {
+//!     fn deserialize_into_as<'out>(
+//!         out: &'out mut Option<Vec<u8>>,
+//!         state: &mut State,
+//!     ) -> SinkHandle<'out, 'de> {
 //!         HexSlot::make_handle(out)
 //!     }
 //! }

@@ -41,18 +41,23 @@ request with all of its problems at once, not just the first one.
 
 ```
 -- HTML form --
-username: "Jane Doe" <- invalid value: may only contain lowercase letters, digits and dashes
+username: "Jane Doe" <- invalid value: may only contain lowercase
+  letters, digits and dashes
 email: "jane@example.com"
 age: "" <- invalid value "eleven", expected u8
 -- JSON API --
 customer [email]: invalid value: must be an email address (line 2)
-lines[1].sku [slug]: invalid value: may only contain lowercase letters, digits and dashes (line 5)
-lines[1].quantity [quantity]: invalid value: must be between 1 and 100 (line 5)
+lines[1].sku [slug]: invalid value: may only contain lowercase letters,
+  digits and dashes (line 5)
+lines[1].quantity [quantity]: invalid value: must be between 1 and 100
+  (line 5)
 lines[2].quantity [invalid_type]: unexpected string, expected u32 (line 6)
 shipping.street [non_empty]: invalid value: must not be empty (line 8)
-shipping.zip [len]: invalid value: length must be between 4 and 10 (line 8)
+shipping.zip [len]: invalid value: length must be between 4 and 10
+  (line 8)
 shipping [invalid_type]: missing field `city` (line 8)
-gift_message [max_len]: invalid value: item 0: length must be at most 20 (line 10)
+gift_message [max_len]: invalid value: item 0: length must be at most 20
+  (line 10)
 shipping has 3 problems
 ```
 

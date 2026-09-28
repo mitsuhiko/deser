@@ -38,15 +38,18 @@ use crate::{Validator, Violation};
 ///     legacy_port: u16,
 /// }
 ///
-/// let err = deser_json::from_str::<Server>(r#"{"port": 0, "admins": []}"#).unwrap_err();
+/// let json = r#"{"port": 0, "admins": []}"#;
+/// let err = deser_json::from_str::<Server>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
 ///     "Unexpected: invalid value: must not be zero at line 1 column 10"
 /// );
-/// let err = deser_json::from_str::<Server>(r#"{"port": 1, "admins": ["x"]}"#).unwrap_err();
+/// let json = r#"{"port": 1, "admins": ["x"]}"#;
+/// let err = deser_json::from_str::<Server>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: must be an email address at line 1 column 24"
+///     "Unexpected: invalid value: must be an email address \
+///      at line 1 column 24"
 /// );
 /// ```
 ///
@@ -70,10 +73,17 @@ use crate::{Validator, Violation};
 ///     max: u16,
 /// }
 ///
-/// validator!(OrderedPorts(range: &PortRange) => range.min <= range.max, "min is larger than max");
+/// validator!(
+///     OrderedPorts(range: &PortRange) => range.min <= range.max,
+///     "min is larger than max"
+/// );
 ///
-/// let err = deser_json::from_str::<PortRange>(r#"{"min": 90, "max": 80}"#).unwrap_err();
-/// assert_eq!(err.to_string(), "Unexpected: invalid value: min is larger than max at line 1 column 1");
+/// let json = r#"{"min": 90, "max": 80}"#;
+/// let err = deser_json::from_str::<PortRange>(json).unwrap_err();
+/// assert_eq!(
+///     err.to_string(),
+///     "Unexpected: invalid value: min is larger than max at line 1 column 1"
+/// );
 /// ```
 ///
 /// # Updates

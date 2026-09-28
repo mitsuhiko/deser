@@ -56,10 +56,11 @@ impl SerializerConfig {
     /// let mut value = BTreeMap::new();
     /// value.insert("a", vec![251u8, 255]);
     /// assert_eq!(deser_toml::to_string(&value).unwrap(), "a = \"+/8=\"\n");
-    /// const URL_SAFE: SerializerConfig =
-    ///     SerializerConfig::new().bytes(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
+    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
     /// assert_eq!(URL_SAFE.to_string(&value).unwrap(), "a = \"-_8\"\n");
-    /// const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
+    /// const SEQ: SerializerConfig =
+    ///     SerializerConfig::new().bytes(BytesFormat::SEQ);
     /// assert_eq!(SEQ.to_string(&value).unwrap(), "a = [251, 255]\n");
     /// ```
     ///
@@ -213,7 +214,10 @@ impl ser::Serializer for Serializer {
 ///
 /// let mut value = BTreeMap::new();
 /// value.insert("name", vec!["a", "b"]);
-/// assert_eq!(deser_toml::to_string(&value).unwrap(), "name = [\"a\", \"b\"]\n");
+/// assert_eq!(
+///     deser_toml::to_string(&value).unwrap(),
+///     "name = [\"a\", \"b\"]\n"
+/// );
 /// ```
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)

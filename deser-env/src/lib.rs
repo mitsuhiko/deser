@@ -84,7 +84,8 @@
 //! }
 //!
 //! let options: Options =
-//!     deser_env::from_vars("APP_", [("APP_VERBOSE", ""), ("APP_PORT", "")]).unwrap();
+//!     deser_env::from_vars("APP_", [("APP_VERBOSE", ""), ("APP_PORT", "")])
+//!         .unwrap();
 //! assert!(options.verbose);
 //! assert_eq!(options.port, None);
 //! ```
@@ -138,12 +139,14 @@
 //!     port: u16,
 //! }
 //!
-//! let err = deser_env::from_vars::<Config, _, _, _>("APP_", [("APP_PORT", "http")])
+//! let vars = [("APP_PORT", "http")];
+//! let err = deser_env::from_vars::<Config, _, _, _>("APP_", vars)
 //!     .unwrap_err();
 //! assert_eq!(err.attachment::<EnvVar>().unwrap().name(), "APP_PORT");
 //! assert_eq!(
 //!     err.to_string(),
-//!     "Unexpected: invalid value \"http\", expected u16 (environment variable APP_PORT)"
+//!     "Unexpected: invalid value \"http\", expected u16 \
+//!      (environment variable APP_PORT)"
 //! );
 //! ```
 //!
@@ -266,10 +269,16 @@ pub enum Case {
 ///     port: u16,
 /// }
 ///
-/// let err = deser_env::from_vars::<Config, _, _, _>("APP_", [("APP_SERVER__PROT", "80")])
-///     .unwrap_err();
+/// let err = deser_env::from_vars::<Config, _, _, _>(
+///     "APP_",
+///     [("APP_SERVER__PROT", "80")],
+/// )
+/// .unwrap_err();
 /// assert_eq!(err.message(), "unknown field `prot`, expected `port`");
-/// assert_eq!(err.attachment::<EnvVar>().unwrap().name(), "APP_SERVER__PROT");
+/// assert_eq!(
+///     err.attachment::<EnvVar>().unwrap().name(),
+///     "APP_SERVER__PROT"
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvVar {
@@ -325,7 +334,8 @@ pub fn from_env<T: DeserializeOwned>(prefix: &str) -> Result<T, Error> {
 /// use std::collections::BTreeMap;
 ///
 /// let value: BTreeMap<String, Vec<u32>> =
-///     deser_env::from_vars("", [("A__0", "1"), ("A__1", "2"), ("B", "3")]).unwrap();
+///     deser_env::from_vars("", [("A__0", "1"), ("A__1", "2"), ("B", "3")])
+///         .unwrap();
 /// assert_eq!(value["a"], [1, 2]);
 /// assert_eq!(value["b"], [3]);
 /// ```

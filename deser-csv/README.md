@@ -20,7 +20,8 @@ struct City {
     population: Option<u64>,
 }
 
-let input = "name,country,population\nVienna,Austria,1897000\nAtlantis,,\n";
+let input =
+    "name,country,population\nVienna,Austria,1897000\nAtlantis,,\n";
 let cities: Vec<City> = deser_csv::from_str(input).unwrap();
 assert_eq!(cities[0].population, Some(1897000));
 assert_eq!(cities[1].population, None);

@@ -120,7 +120,8 @@ impl DeserializerConfig {
     ///   <<: *base
     ///   replicas: 3
     /// ";
-    /// let value: BTreeMap<String, Service> = deser_yaml::from_str(input).unwrap();
+    /// let value: BTreeMap<String, Service> =
+    ///     deser_yaml::from_str(input).unwrap();
     /// assert_eq!(value["web"].image, "app");
     /// assert_eq!(value["web"].replicas, 3);
     /// ```

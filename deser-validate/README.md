@@ -24,8 +24,8 @@ struct Server {
     admins: Vec<String>,
 }
 
-let err = deser_json::from_str::<Server>(r#"{"port": 0, "name": "web", "admins": []}"#)
-    .unwrap_err();
+let json = r#"{"port": 0, "name": "web", "admins": []}"#;
+let err = deser_json::from_str::<Server>(json).unwrap_err();
 assert_eq!(
     err.to_string(),
     "Unexpected: invalid value: must not be zero at line 1 column 10"
@@ -45,7 +45,8 @@ validator!(pub NonZero(port: &u16) => *port != 0, "must not be zero");
 
 // a function
 fn check_slug(value: &str) -> Result<(), &'static str> {
-    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') {
+    let valid = |b: u8| b.is_ascii_lowercase() || b == b'-';
+    if !value.is_empty() && value.bytes().all(valid) {
         Ok(())
     } else {
         Err("must be a lowercase identifier")
@@ -57,7 +58,10 @@ validator!(pub Slug(value: &str) = check_slug);
 // a block
 validator!(pub EvenLength(items: &[u32]) {
     if items.len() % 2 != 0 {
-        return Err(format!("must have an even number of items, not {}", items.len()));
+        return Err(format!(
+            "must have an even number of items, not {}",
+            items.len()
+        ));
     }
     Ok(())
 });
@@ -128,14 +132,16 @@ struct PortRange {
 
 fn check_port_range(range: &PortRange) -> Result<(), String> {
     if range.min > range.max {
-        return Err(format!("min {} is larger than max {}", range.min, range.max));
+        let PortRange { min, max } = range;
+        return Err(format!("min {min} is larger than max {max}"));
     }
     Ok(())
 }
 
 validator!(OrderedPorts(range: &PortRange) = check_port_range);
 
-let err = deser_json::from_str::<PortRange>(r#"{"min": 90, "max": 80}"#).unwrap_err();
+let json = r#"{"min": 90, "max": 80}"#;
+let err = deser_json::from_str::<PortRange>(json).unwrap_err();
 assert_eq!(err.message(), "invalid value: min 90 is larger than max 80");
 ```
 
@@ -189,7 +195,8 @@ struct Signup {
     age: Validated<u8, Range<13, 130>>,
 }
 
-let signup: Signup = deser_json::from_str(r#"{"email": "jane@", "age": "old"}"#).unwrap();
+let json = r#"{"email": "jane@", "age": "old"}"#;
+let signup: Signup = deser_json::from_str(json).unwrap();
 assert_eq!(signup.email.unchecked_value().unwrap(), "jane@");
 assert!(signup.email.error().is_some());
 assert!(signup.age.value().is_none());
@@ -216,17 +223,21 @@ struct Signup {
 }
 
 let validation = Validation::new();
-let rv = deser_json::Deserializer::from_str(r#"{"email": "jane@", "age": 7}"#)
+let json = r#"{"email": "jane@", "age": 7}"#;
+let rv = deser_json::Deserializer::from_str(json)
     .deserialize_with::<Signup, _>(|driver| validation.setup(driver));
 let report = validation.finish(rv).into_result().err().unwrap();
 assert_eq!(
     report.to_string(),
-    "email: invalid value: must be an email address (at line 1 column 11)\n\
-     age: invalid value: must be between 13 and 130 (at line 1 column 27)\n\
+    "email: invalid value: must be an email address \
+     (at line 1 column 11)\n\
+     age: invalid value: must be between 13 and 130 \
+     (at line 1 column 27)\n\
      missing field `name` (at line 1 column 28)"
 );
 for issue in &report {
-    // the path, the violation's code (for instance `email`) and the message
+    // the path, the violation's code (for instance `email`) and the
+    // message
     let code = issue.violation().map(|x| x.code());
     println!("{:?} {:?} {}", issue.path(), code, issue.message());
 }

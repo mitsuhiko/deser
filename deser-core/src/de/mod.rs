@@ -109,13 +109,16 @@
 //!             // for any other value we dispatch to the default handling
 //!             // which creates an unexpected type error but might have
 //!             // more elaborate default behavior in the future.
-//!             other => self.unexpected_atom(other, state)
+//!             other => self.unexpected_atom(other, state),
 //!         }
 //!     }
 //! }
 //!
 //! impl<'de> Deserialize<'de> for MyBool {
-//!     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+//!     fn deserialize_into<'out>(
+//!         out: &'out mut Option<Self>,
+//!         state: &mut State,
+//!     ) -> SinkHandle<'out, 'de> {
 //!         // Since we're using the SlotWrapper abstraction we can directly
 //!         // make a handle here by using the `make_handle` utility.
 //!         SlotWrapper::make_handle(out)
@@ -141,23 +144,27 @@
 //! }
 //!
 //! impl<'de> Deserialize<'de> for Flag {
-//!     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
-//!         SinkHandle::arena(FlagSink {
+//!     fn deserialize_into<'out>(
+//!         out: &'out mut Option<Self>,
+//!         state: &mut State,
+//!     ) -> SinkHandle<'out, 'de> {
+//!         let sink = FlagSink {
 //!             out,
 //!             key: None,
-//!             enabled_field: None,
-//!             name_field: None,
-//!         }, state)
+//!             enabled: None,
+//!             name: None,
+//!         };
+//!         SinkHandle::arena(sink, state)
 //!     }
 //! }
 //!
 //! struct FlagSink<'a> {
 //!     out: &'a mut Option<Flag>,
 //!     key: Option<String>,
-//!     enabled_field: Option<bool>,
-//!     name_field: Option<String>,
+//!     enabled: Option<bool>,
+//!     name: Option<String>,
 //! }
-//!     
+//!
 //! impl<'a, 'de> Sink<'de> for FlagSink<'a> {
 //!     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
 //!         // the default implementation returns an error, so we need to
@@ -165,42 +172,50 @@
 //!         Ok(())
 //!     }
 //!
-//!     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+//!     fn next_key(
+//!         &mut self,
+//!         state: &mut State,
+//!     ) -> Result<SinkHandle<'_, 'de>, Error> {
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
 //!         Ok(Deserialize::deserialize_into(&mut self.key, state))
 //!     }
-//!     
-//!     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+//!
+//!     fn next_value(
+//!         &mut self,
+//!         state: &mut State,
+//!     ) -> Result<SinkHandle<'_, 'de>, Error> {
 //!         let key = self.key.take().unwrap();
-//!         // since we implement a sink for a struct, move the actual logic for
-//!         // matching into `value_for_key` so that our deserializer can support
-//!         // struct flattening.  If we don't know the key, just return a null
-//!         // handle to ignore it.
-//!         Ok(self.value_for_key(&key, state)?.unwrap_or_else(SinkHandle::null))
+//!         // since we implement a sink for a struct, move the actual logic
+//!         // for matching into `value_for_key` so that our deserializer can
+//!         // support struct flattening.  If we don't know the key, just
+//!         // return a null handle to ignore it.
+//!         let handle = self.value_for_key(&key, state)?;
+//!         Ok(handle.unwrap_or_else(SinkHandle::null))
 //!     }
 //!
-//!     fn value_for_key(&mut self, key: &str, state: &mut State)
-//!         -> Result<Option<SinkHandle<'_, 'de>>, Error>
-//!     {
+//!     fn value_for_key(
+//!         &mut self,
+//!         key: &str,
+//!         state: &mut State,
+//!     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
 //!         Ok(Some(match key {
-//!             "enabled" => Deserialize::deserialize_into(&mut self.enabled_field, state),
-//!             "name" => Deserialize::deserialize_into(&mut self.name_field, state),
-//!             _ => return Ok(None)
+//!             "enabled" => bool::deserialize_into(&mut self.enabled, state),
+//!             "name" => String::deserialize_into(&mut self.name, state),
+//!             _ => return Ok(None),
 //!         }))
 //!     }
-//!     
+//!
 //!     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
 //!         // when we're done, write the final value into the output slot.
-//!         *self.out = Some(Flag {
-//!             enabled: self.enabled_field.take().ok_or_else(|| {
-//!                 Error::new(ErrorKind::MissingField, "field 'enabled' missing")
-//!             })?,
-//!             name: self.name_field.take().ok_or_else(|| {
-//!                 Error::new(ErrorKind::MissingField, "field 'name' missing")
-//!             })?,
-//!         });
+//!         let enabled = self.enabled.take().ok_or_else(|| {
+//!             Error::new(ErrorKind::MissingField, "field 'enabled' missing")
+//!         })?;
+//!         let name = self.name.take().ok_or_else(|| {
+//!             Error::new(ErrorKind::MissingField, "field 'name' missing")
+//!         })?;
+//!         *self.out = Some(Flag { enabled, name });
 //!         Ok(())
 //!     }
 //! }
@@ -328,7 +343,11 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// }
     ///
     /// impl<'de> Sink<'de> for FlagSink<'_> {
-    ///     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    ///     fn atom(
+    ///         &mut self,
+    ///         atom: Atom,
+    ///         state: &mut State,
+    ///     ) -> Result<(), Error> {
     ///         match atom {
     ///             Atom::Bool(value) => {
     ///                 *self.out = Some(Flag(value));

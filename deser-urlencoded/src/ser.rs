@@ -15,7 +15,9 @@ use crate::encoding::encode;
 /// use deser_urlencoded::{ArrayFormat, SerializerConfig};
 ///
 /// let value = BTreeMap::from([("a", vec![1, 2])]);
-/// let with = |arrays| SerializerConfig::new().arrays(arrays).to_string(&value).unwrap();
+/// let with = |arrays| {
+///     SerializerConfig::new().arrays(arrays).to_string(&value).unwrap()
+/// };
 /// assert_eq!(with(ArrayFormat::Repeat), "a=1&a=2");
 /// assert_eq!(with(ArrayFormat::Brackets), "a%5B%5D=1&a%5B%5D=2");
 /// assert_eq!(with(ArrayFormat::Indices), "a%5B0%5D=1&a%5B1%5D=2");

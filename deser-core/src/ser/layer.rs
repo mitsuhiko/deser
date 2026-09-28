@@ -30,7 +30,11 @@ pub(crate) type EventFn<'f> =
 /// struct UppercaseKeys;
 ///
 /// impl Layer for UppercaseKeys {
-///     fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+///     fn event(
+///         &mut self,
+///         event: Event<'_>,
+///         next: &mut Next<'_>,
+///     ) -> Result<(), Error> {
 ///         match event {
 ///             Event::Atom(Atom::Str(key)) if next.state().is_map_key() => {
 ///                 next.emit(Event::from(key.to_uppercase()))

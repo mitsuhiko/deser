@@ -45,7 +45,8 @@ use crate::Case;
 ///     hosts: vec!["a", "b"],
 /// };
 /// let vars = SerializerConfig::new().to_vars("APP_", &config).unwrap();
-/// let vars: Vec<_> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+/// let vars: Vec<_> =
+///     vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
 /// assert_eq!(
 ///     vars,
 ///     [

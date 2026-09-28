@@ -41,7 +41,8 @@ what the types match, and the serializer turns them back into prefixes.
 The feed, the key of the thumbnail, then
 
 ```
-as written: MissingField: missing field `{http://www.w3.org/2005/Atom}title` at line 14 column 1
+as written: MissingField: missing field
+  `{http://www.w3.org/2005/Atom}title` at line 14 column 1
 ```
 
 followed by the feed as XML with the chosen prefixes and with generated

@@ -147,7 +147,12 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     ///
     /// let mut config = Config { host: "localhost".into(), port: 80 };
     /// let mut driver = DeserializeDriver::update(&mut config);
-    /// for event in [Event::map_start(), "port".into(), 8080u64.into(), Event::MapEnd] {
+    /// for event in [
+    ///     Event::map_start(),
+    ///     "port".into(),
+    ///     8080u64.into(),
+    ///     Event::MapEnd,
+    /// ] {
     ///     driver.emit(event).unwrap();
     /// }
     /// drop(driver);
@@ -176,7 +181,8 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// use deser::Event;
     ///
     /// let mut recording = Recording::new();
-    /// let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
+    /// let mut driver =
+    ///     DeserializeDriver::from_fn(|state| recording.recorder(state));
     /// for event in [Event::seq_start(), 42u64.into(), Event::SeqEnd] {
     ///     driver.emit(event).unwrap();
     /// }

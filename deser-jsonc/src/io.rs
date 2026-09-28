@@ -308,7 +308,8 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 /// use deser::io::Reader;
 /// use deser_jsonc::{DeserializerConfig, Trailing};
 ///
-/// const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+/// const LINES: DeserializerConfig =
+///     DeserializerConfig::new().trailing(Trailing::Newline);
 /// let mut reader = Reader::new(&b"[1, 2]\n[3]\n"[..], LINES);
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));
@@ -475,7 +476,8 @@ impl DeserializerConfig {
 /// [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_jsonc::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+/// let value: Vec<u32> =
+///     deser_jsonc::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

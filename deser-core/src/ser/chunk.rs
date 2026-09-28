@@ -36,7 +36,10 @@ pub enum Chunk<'a> {
     /// impl Serialize for Point {
     ///     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
     ///         // serialize as a vector
-    ///         Ok(Chunk::Forward(SerializeHandle::arena(vec![self.0, self.1], state)))
+    ///         Ok(Chunk::Forward(SerializeHandle::arena(
+    ///             vec![self.0, self.1],
+    ///             state,
+    ///         )))
     ///     }
     /// }
     /// ```

@@ -16,8 +16,10 @@
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //! use deser_tokio::{Reader, Writer};
 //!
-//! const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-//! const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//! const READ_LINES: DeserializerConfig =
+//!     DeserializerConfig::new().trailing(Trailing::Newline);
+//! const WRITE_LINES: SerializerConfig =
+//!     SerializerConfig::new().trailing(Trailing::Newline);
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct Request {
@@ -601,9 +603,13 @@ where
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let mut out = Vec::new();
-/// deser_tokio::to_writer(&mut out, deser_json::SerializerConfig::new(), &vec![1, 2])
-///     .await
-///     .unwrap();
+/// deser_tokio::to_writer(
+///     &mut out,
+///     deser_json::SerializerConfig::new(),
+///     &vec![1, 2],
+/// )
+/// .await
+/// .unwrap();
 /// assert_eq!(out, b"[1,2]");
 /// # }
 /// ```

@@ -25,7 +25,8 @@ use crate::{Escape, Headers, Nulls, Terminator, Trim};
 /// ```
 /// use deser_csv::DeserializerConfig;
 ///
-/// const SEMICOLONS: DeserializerConfig = DeserializerConfig::new().delimiter(b';');
+/// const SEMICOLONS: DeserializerConfig =
+///     DeserializerConfig::new().delimiter(b';');
 /// let rows: Vec<(String, u32)> = SEMICOLONS
 ///     .headers(deser_csv::Headers::None)
 ///     .from_str("a;1\nb;2\n")
@@ -238,7 +239,8 @@ impl DeserializerConfig {
     /// use std::collections::BTreeMap;
     ///
     /// let config = deser_csv::DeserializerConfig::new().sep_line(true);
-    /// let rows: Vec<BTreeMap<String, u32>> = config.from_str("sep=;\na;b\n1;2\n").unwrap();
+    /// let rows: Vec<BTreeMap<String, u32>> =
+    ///     config.from_str("sep=;\na;b\n1;2\n").unwrap();
     /// assert_eq!(rows[0]["b"], 2);
     /// ```
     pub const fn sep_line(mut self, yes: bool) -> DeserializerConfig {
@@ -358,7 +360,11 @@ impl StreamState {
     /// }
     ///
     /// let state = StreamState::with_headers(["name", "age"]);
-    /// let mut reader = Reader::with_state(&b"jane,42\n"[..], DeserializerConfig::new(), state);
+    /// let mut reader = Reader::with_state(
+    ///     &b"jane,42\n"[..],
+    ///     DeserializerConfig::new(),
+    ///     state,
+    /// );
     /// let row: Row = reader.read().unwrap().unwrap();
     /// assert_eq!((row.name.as_str(), row.age), ("jane", 42));
     /// ```
@@ -705,7 +711,9 @@ impl<'de> FieldEmitter<'_, 'de> {
 /// }
 ///
 /// let err = Deserializer::from_str("name,age\njane,42\njohn,x\n")
-///     .deserialize_with::<Vec<Row>, _>(|driver| driver.push_layer(PathLayer::new()))
+///     .deserialize_with::<Vec<Row>, _>(|driver| {
+///         driver.push_layer(PathLayer::new())
+///     })
 ///     .unwrap_err();
 /// assert_eq!(err.message(), "invalid value \"x\", expected u32");
 /// assert_eq!(err.attachment::<Path>().unwrap().to_string(), "[1].age");
@@ -810,7 +818,9 @@ impl<'a> Deserializer<'a> {
     ///     age: u32,
     /// }
     ///
-    /// let mut de = deser_csv::Deserializer::from_str("name,age\njane,42\njohn,x\nmax,7\n");
+    /// let mut de = deser_csv::Deserializer::from_str(
+    ///     "name,age\njane,42\njohn,x\nmax,7\n",
+    /// );
     /// assert_eq!(de.deserialize_record::<Row>().unwrap().unwrap().age, 42);
     /// assert!(de.deserialize_record::<Row>().is_err());
     /// assert_eq!(de.deserialize_record::<Row>().unwrap().unwrap().age, 7);

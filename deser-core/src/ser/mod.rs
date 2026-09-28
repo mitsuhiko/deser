@@ -74,15 +74,20 @@
 //! }
 //!
 //! impl<'a> StructEmitter for UserEmitter<'a> {
-//!     fn next(&mut self, _state: &mut State)
-//!         -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>
+//!     fn next(
+//!         &mut self,
+//!         _state: &mut State,
+//!     ) -> Result<Option<(Cow<'_, str>, SerializeHandle<'_>)>, Error>
 //!     {
 //!         let index = self.index;
 //!         self.index += 1;
 //!         Ok(match index {
 //!             0 => Some(("id".into(), SerializeHandle::to(&self.user.id))),
-//!             1 => Some(("username".into(), SerializeHandle::to(&self.user.username))),
-//!             _ => None
+//!             1 => Some((
+//!                 "username".into(),
+//!                 SerializeHandle::to(&self.user.username),
+//!             )),
+//!             _ => None,
 //!         })
 //!     }
 //! }

@@ -23,7 +23,8 @@ use crate::{Case, EnvVar};
 /// use std::collections::BTreeMap;
 /// use deser_env::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().separator("_");
+/// const CONFIG: DeserializerConfig =
+///     DeserializerConfig::new().separator("_");
 /// let value: BTreeMap<String, BTreeMap<String, u32>> =
 ///     CONFIG.from_vars("APP_", [("APP_SERVER_PORT", "80")]).unwrap();
 /// assert_eq!(value["server"]["port"], 80);

@@ -31,7 +31,8 @@ use alloc::vec::Vec;
 ///
 /// let mut recording = Recording::new();
 /// {
-///     let mut driver = DeserializeDriver::from_fn(|state| recording.recorder(state));
+///     let mut driver =
+///         DeserializeDriver::from_fn(|state| recording.recorder(state));
 ///     driver.emit(Event::seq_start()).unwrap();
 ///     driver.emit(1u64).unwrap();
 ///     driver.emit(2u64).unwrap();
@@ -319,14 +320,19 @@ impl Recording {
     /// }
     ///
     /// impl<'de> Deserialize<'de> for NumberOrString {
-    ///     fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
+    ///     fn deserialize_into<'out>(
+    ///         out: &'out mut Option<Self>,
+    ///         state: &mut State,
+    ///     ) -> SinkHandle<'out, 'de> {
     ///         Recording::capture(move |recording, state| {
     ///             let mut number = None;
-    ///             if recording.replay(u64::deserialize_into(&mut number, state), state).is_ok() {
+    ///             let sink = u64::deserialize_into(&mut number, state);
+    ///             if recording.replay(sink, state).is_ok() {
     ///                 *out = number.map(NumberOrString::Number);
     ///             } else {
     ///                 let mut string = None;
-    ///                 recording.replay(String::deserialize_into(&mut string, state), state)?;
+    ///                 let sink = String::deserialize_into(&mut string, state);
+    ///                 recording.replay(sink, state)?;
     ///                 *out = string.map(NumberOrString::String);
     ///             }
     ///             Ok(())
@@ -338,13 +344,21 @@ impl Recording {
     ///     let mut out = None;
     ///     {
     ///         let mut driver = deser::de::DeserializeDriver::new(&mut out);
-    ///         for event in [deser::Event::seq_start(), 42u64.into(), "x".into(), deser::Event::SeqEnd] {
+    ///         for event in [
+    ///             deser::Event::seq_start(),
+    ///             42u64.into(),
+    ///             "x".into(),
+    ///             deser::Event::SeqEnd,
+    ///         ] {
     ///             driver.emit(event).unwrap();
     ///         }
     ///     }
     ///     out.unwrap()
     /// };
-    /// assert_eq!(values, [NumberOrString::Number(42), NumberOrString::String("x".into())]);
+    /// assert_eq!(
+    ///     values,
+    ///     [NumberOrString::Number(42), NumberOrString::String("x".into())]
+    /// );
     /// ```
     pub fn capture<'a, 'de, F>(then: F, state: &mut State) -> SinkHandle<'a, 'de>
     where

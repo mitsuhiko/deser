@@ -60,7 +60,8 @@
 //! ```rust
 //! use deser_json::{Indent, SerializerConfig};
 //!
-//! const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+//! const PRETTY: SerializerConfig =
+//!     SerializerConfig::new().pretty(Indent::Spaces(2));
 //! let json = PRETTY.to_string(&vec![vec![1, 2]]).unwrap();
 //! assert_eq!(json, "[\n  [\n    1,\n    2\n  ]\n]");
 //! ```
@@ -95,7 +96,8 @@
 //! ```rust
 //! use deser_json::{Serializer, SerializerConfig, Trailing};
 //!
-//! const LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//! const LINES: SerializerConfig =
+//!     SerializerConfig::new().trailing(Trailing::Newline);
 //! let mut serializer = Serializer::with_config(&LINES);
 //! for value in [vec![1, 2], vec![3]] {
 //!     serializer.serialize(&value).unwrap();
@@ -120,8 +122,10 @@
 //! use deser::io::{Reader, Writer};
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //!
-//! const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-//! const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+//! const READ_LINES: DeserializerConfig =
+//!     DeserializerConfig::new().trailing(Trailing::Newline);
+//! const WRITE_LINES: SerializerConfig =
+//!     SerializerConfig::new().trailing(Trailing::Newline);
 //!
 //! let input = &b"{\"id\": 1}\n{\"id\": 2}\n"[..];
 //! let mut reader = Reader::new(input, READ_LINES);

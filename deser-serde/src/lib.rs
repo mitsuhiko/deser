@@ -24,8 +24,13 @@
 //! }
 //!
 //! let shape: Shape = deser_json::from_str(
-//!     r#"{"name": "line", "points": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "extra": [true]}"#,
-//! ).unwrap();
+//!     r#"{
+//!         "name": "line",
+//!         "points": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
+//!         "extra": [true]
+//!     }"#,
+//! )
+//! .unwrap();
 //! assert_eq!(shape.points[1].y, 4);
 //! assert_eq!(shape.extra, serde_json::json!([true]));
 //! ```
@@ -100,7 +105,8 @@ fn missing_value<'de, T: serde::Deserialize<'de>>() -> Option<T> {
 /// use deser::adapters::As;
 /// use deser_serde::Serde;
 ///
-/// let value: As<BTreeMap<u32, String>, Serde> = deser_json::from_str(r#"{"1": "a"}"#).unwrap();
+/// let value: As<BTreeMap<u32, String>, Serde> =
+///     deser_json::from_str(r#"{"1": "a"}"#).unwrap();
 /// assert_eq!(value[&1], "a");
 /// assert_eq!(deser_json::to_string(&value).unwrap(), r#"{"1":"a"}"#);
 /// ```

@@ -9,7 +9,9 @@
 ///
 /// let mut driver = {
 ///     let mut out = None::<Vec<u32>>;
-///     DeserializeDriver::from_fn(|state| Deserialize::deserialize_into(&mut out, state))
+///     DeserializeDriver::from_fn(|state| {
+///         Deserialize::deserialize_into(&mut out, state)
+///     })
 /// };
 /// driver.emit(1u64).unwrap();
 /// ```
@@ -23,7 +25,8 @@
 /// let mut state = State::new();
 /// let mut owned = OwnedSink::<u32>::deserialize(&mut state);
 /// let mut local = None::<u32>;
-/// *owned.borrow_mut() = Deserialize::deserialize_into(&mut local, &mut state);
+/// *owned.borrow_mut() =
+///     Deserialize::deserialize_into(&mut local, &mut state);
 /// ```
 ///
 /// Borrowed extensions have to prove that their values can be shortened.
@@ -55,7 +58,9 @@
 ///     fn to_static(_value: &Invariant<'_>) -> Invariant<'static> {
 ///         Invariant(Mutex::new(""))
 ///     }
-///     fn shorten<'s, 'l: 's>(value: &'s Invariant<'l>) -> &'s Invariant<'s> {
+///     fn shorten<'s, 'l: 's>(
+///         value: &'s Invariant<'l>,
+///     ) -> &'s Invariant<'s> {
 ///         value
 ///     }
 /// }

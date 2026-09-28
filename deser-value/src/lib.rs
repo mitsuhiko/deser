@@ -7,7 +7,8 @@
 //! ```
 //! use deser_value::{Value, value};
 //!
-//! let mut config: Value = deser_json::from_str(r#"{"name": "app", "port": 8080}"#).unwrap();
+//! let mut config: Value =
+//!     deser_json::from_str(r#"{"name": "app", "port": 8080}"#).unwrap();
 //! config["port"] = value!(9090);
 //! config["tags"] = value!(["web", "prod"]);
 //! assert_eq!(

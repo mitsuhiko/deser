@@ -23,7 +23,8 @@ use crate::parser::{ROOT, parse};
 /// use std::collections::BTreeMap;
 /// use deser_toml::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().track_locations(true);
+/// const CONFIG: DeserializerConfig =
+///     DeserializerConfig::new().track_locations(true);
 /// let value: BTreeMap<String, u32> = CONFIG.from_str("a = 1").unwrap();
 /// assert_eq!(value["a"], 1);
 /// ```
@@ -59,9 +60,11 @@ impl DeserializerConfig {
     /// ```
     /// use std::collections::BTreeMap;
     ///
-    /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = \"Af8=\"").unwrap();
+    /// let value: BTreeMap<String, Vec<u8>> =
+    ///     deser_toml::from_str("a = \"Af8=\"").unwrap();
     /// assert_eq!(value["a"], [1, 255]);
-    /// let value: BTreeMap<String, Vec<u8>> = deser_toml::from_str("a = [1, 255]").unwrap();
+    /// let value: BTreeMap<String, Vec<u8>> =
+    ///     deser_toml::from_str("a = [1, 255]").unwrap();
     /// assert_eq!(value["a"], [1, 255]);
     /// ```
     ///

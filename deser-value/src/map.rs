@@ -56,7 +56,10 @@ pub(crate) struct MapInner {
 /// map.insert(42, true);
 /// assert_eq!(map.get("name"), Some(&Value::from("Jane")));
 /// assert_eq!(map.get(&42), Some(&Value::from(true)));
-/// assert_eq!(map.keys().collect::<Vec<_>>(), [&Value::from("name"), &Value::from(42)]);
+/// assert_eq!(
+///     map.keys().collect::<Vec<_>>(),
+///     [&Value::from("name"), &Value::from(42)]
+/// );
 /// ```
 ///
 /// Keys can be looked up by anything that implements [`MapKey`], which
@@ -121,10 +124,17 @@ impl Map {
     /// }
     ///
     /// let mut map = Map::new().with_multimap(true);
-    /// map.insert("tag", Seq::from(vec![Value::from("a"), Value::from("b")]).with_repeated(true));
+    /// map.insert(
+    ///     "tag",
+    ///     Seq::from(vec![Value::from("a"), Value::from("b")])
+    ///         .with_repeated(true),
+    /// );
     /// map.insert("page", 1);
     /// let query: Query = deser_value::from_value(&Value::from(map)).unwrap();
-    /// assert_eq!(query, Query { tag: vec!["a".into(), "b".into()], page: vec![1] });
+    /// assert_eq!(
+    ///     query,
+    ///     Query { tag: vec!["a".into(), "b".into()], page: vec![1] }
+    /// );
     /// ```
     pub fn is_multimap(&self) -> bool {
         self.inner.multimap

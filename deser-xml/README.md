@@ -18,9 +18,13 @@ struct Feed {
     link: Vec<Link>,
 }
 
-let feed: Feed = deser_xml::from_str(
-    r#"<feed><title>Example</title><link href="/a"/><link href="/b"/></feed>"#,
-).unwrap();
+let feed: Feed = deser_xml::from_str(r#"
+    <feed>
+      <title>Example</title>
+      <link href="/a"/>
+      <link href="/b"/>
+    </feed>
+"#).unwrap();
 assert_eq!(feed.link.len(), 2);
 let xml = deser_xml::to_string(&feed).unwrap();
 ```

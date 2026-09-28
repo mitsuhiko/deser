@@ -49,7 +49,11 @@ pub(crate) use self::encodings::decode_base64;
 ///             return Ok(Vec::new());
 ///         }
 ///         s.split('.')
-///             .map(|x| x.parse().map_err(|_| Error::new(ErrorKind::Unexpected, "invalid byte")))
+///             .map(|x| {
+///                 x.parse().map_err(|_| {
+///                     Error::new(ErrorKind::Unexpected, "invalid byte")
+///                 })
+///             })
 ///             .collect()
 ///     }
 /// }

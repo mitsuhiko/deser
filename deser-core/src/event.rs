@@ -200,7 +200,11 @@ impl<'a> Atom<'a> {
     /// # use deser::{Atom, Error, State, de::Sink};
     /// # struct MySink;
     /// impl<'de> Sink<'de> for MySink {
-    ///     fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
+    ///     fn atom(
+    ///         &mut self,
+    ///         atom: Atom,
+    ///         _state: &mut State,
+    ///     ) -> Result<(), Error> {
     ///         Err(atom.unexpected_error(&self.expecting()))
     ///     }
     /// }
@@ -388,7 +392,9 @@ impl ImplicitValue {
     /// ```
     /// use deser::ImplicitValue;
     ///
-    /// assert!(ImplicitValue::F64(f64::NAN).is_same(ImplicitValue::F64(f64::NAN)));
+    /// assert!(
+    ///     ImplicitValue::F64(f64::NAN).is_same(ImplicitValue::F64(f64::NAN))
+    /// );
     /// assert!(!ImplicitValue::F64(0.0).is_same(ImplicitValue::F64(-0.0)));
     /// assert!(!ImplicitValue::U64(1).is_same(ImplicitValue::F64(1.0)));
     /// ```
@@ -773,7 +779,8 @@ const UNKNOWN_LEN: usize = usize::MAX;
 /// ```
 /// use deser::{ContainerShape, Order};
 ///
-/// const SHAPE: ContainerShape = ContainerShape::new().with_order(Order::Sorted);
+/// const SHAPE: ContainerShape =
+///     ContainerShape::new().with_order(Order::Sorted);
 /// assert_eq!(SHAPE.order(), Order::Sorted);
 /// assert_eq!(SHAPE.len(), None);
 /// ```
@@ -858,7 +865,9 @@ impl ContainerShape {
     ///
     /// let mut out = None::<Query>;
     /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver.emit(Event::MapStart(ContainerShape::new().with_multimap(true))).unwrap();
+    /// driver
+    ///     .emit(Event::MapStart(ContainerShape::new().with_multimap(true)))
+    ///     .unwrap();
     /// for (key, value) in [("tag", "a"), ("page", "1"), ("tag", "b")] {
     ///     driver.emit(key).unwrap();
     ///     driver.emit(Atom::Lexical(value.into())).unwrap();

@@ -79,8 +79,16 @@ pub enum UnknownFields {
 /// let mut out = None::<Config>;
 /// {
 ///     let mut driver = DeserializeDriver::new(&mut out);
-///     *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Collect(ignored.clone());
-///     for event in [Event::map_start(), "name".into(), "demo".into(), "nmae".into(), "x".into(), Event::MapEnd] {
+///     *driver.state_mut().get_mut::<UnknownFields>() =
+///         UnknownFields::Collect(ignored.clone());
+///     for event in [
+///         Event::map_start(),
+///         "name".into(),
+///         "demo".into(),
+///         "nmae".into(),
+///         "x".into(),
+///         Event::MapEnd,
+///     ] {
 ///         driver.emit(event).unwrap();
 ///     }
 /// }

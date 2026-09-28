@@ -618,7 +618,8 @@ impl Kind {
     /// use deser::ext::Number;
     /// use deser_value::Value;
     ///
-    /// let value: Value = deser_json::from_str("0.10000000000000000001").unwrap();
+    /// let value: Value =
+    ///     deser_json::from_str("0.10000000000000000001").unwrap();
     /// let number = value.downcast_ext_value::<Number>().unwrap();
     /// assert_eq!(number.as_str(), "0.10000000000000000001");
     /// ```
