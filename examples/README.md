@@ -34,6 +34,9 @@ Getting started:
   Media RSS and XHTML with `deser-xml`: names in namespaces that do not
   depend on the prefixes of the document, mixed content, unknown elements
   kept as dynamic values and writing with chosen or generated prefixes.
+* [`xml-pretty`](xml-pretty): an SVG drawing written as indented XML
+  with `deser-xml`, with namespaces declared on the root, mixed content
+  that stays on a single line and compact sequences.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.

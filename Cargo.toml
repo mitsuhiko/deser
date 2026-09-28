@@ -54,6 +54,7 @@ members = [
   "examples/tokio-server",
   "examples/validation",
   "examples/xml-namespaces",
+  "examples/xml-pretty",
 ]
 resolver = "3"
 
