@@ -382,6 +382,9 @@
 //!   `#[deser(deserialize_as = Adapter)]`: serializes and deserializes the
 //!   content of the variant with an adapter.  See [variant
 //!   adapters](#variant-adapters).
+//! * `#[deser(bound(...))]`, `#[deser(serialize_bound(...))]` and
+//!   `#[deser(deserialize_bound(...))]`: replaces the bounds inferred from
+//!   the fields of the variant, see [bounds](#bounds).
 //!
 //! The fields of struct variants support the same attributes as struct
 //! fields, including `flatten`:
@@ -900,8 +903,11 @@
 //!
 //! The same attributes can be placed on fields, in which case they only
 //! replace the bounds inferred from the field (a type parameter which also
-//! appears in other fields is still bounded because of them).  The bounds
-//! of fields are added to the bounds of the container.  As with other attributes, `Self`
+//! appears in other fields is still bounded because of them), and on
+//! variants, in which case they replace the bounds inferred from the fields
+//! of the variant (fields of the variant with bounds of their own keep
+//! them).  The bounds of fields and variants are added to the bounds of the
+//! container.  As with other attributes, `Self`
 //! is not supported.  In deserialize bounds the lifetime of the data is
 //! available as `'de`.  As `bound` also applies to `Serialize` where there
 //! is no such lifetime, use
@@ -921,6 +927,17 @@
 //! )]
 //! pub struct Holder<K: Kind> {
 //!     value: K::Value,
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub enum Message<K: Kind, T> {
+//!     // `T` is bounded because of this variant
+//!     Plain(T),
+//!     #[deser(
+//!         serialize_bound(K::Value: Serialize),
+//!         deserialize_bound(K::Value: Deserialize<'de>),
+//!     )]
+//!     Value { value: K::Value },
 //! }
 //! ```
 //!

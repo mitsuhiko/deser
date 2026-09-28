@@ -545,6 +545,30 @@
 /// }
 /// ```
 ///
+/// The bounds of variants replace the bounds inferred from their fields.
+///
+/// ```compile_fail,E0277
+/// pub trait Kind {
+///     type Value;
+/// }
+///
+/// #[derive(deser::Serialize)]
+/// pub enum Message<K: Kind> {
+///     #[deser(bound())]
+///     Value(K::Value),
+/// }
+/// ```
+///
+/// Bounds of variants are lists in parentheses.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// pub enum Message<T> {
+///     #[deser(bound = T: deser::Serialize)]
+///     Value(T),
+/// }
+/// ```
+///
 /// `rename_all_fields` is for enums, `rename_all` on variants for struct
 /// variants.
 ///

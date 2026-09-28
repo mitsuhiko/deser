@@ -18,6 +18,10 @@ All notable changes to deser are documented here.
   recording is serialized.
 - Serializing a recording no longer takes quadratic time for deeply
   nested values.
+- `bound`, `serialize_bound` and `deserialize_bound` can be placed on enum
+  variants.  They replace the bounds inferred from the fields of the
+  variant and are added to the bounds of the enum, like serde's `bound`
+  on variants.
 - Added `#[deser(as = ...)]`, `#[deser(serialize_as = ...)]` and
   `#[deser(deserialize_as = ...)]` for enum variants (serde's `with`,
   `serialize_with` and `deserialize_with` on variants).  The adapter

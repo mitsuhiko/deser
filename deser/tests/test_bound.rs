@@ -206,3 +206,83 @@ fn test_field_bound() {
     let events = serialize(&message);
     assert_eq!(deserialize::<Message<Text>>(events), message);
 }
+
+#[test]
+fn test_variant_bound() {
+    // the bounds of a variant replace the bounds inferred from its fields,
+    // `V` is still bounded because of `Other`
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[deser(tag = "type", content = "content")]
+    enum Message<K: Kind, V> {
+        #[deser(
+            serialize_bound(K::Value: Serialize),
+            deserialize_bound(K::Value: Deserialize<'de>)
+        )]
+        Text {
+            value: K::Value,
+            #[deser(skip)]
+            marker: std::marker::PhantomData<K>,
+        },
+        #[deser(
+            serialize_bound(K::Value: Serialize),
+            deserialize_bound(K::Value: Deserialize<'de>)
+        )]
+        Pair(K::Value, K::Value),
+        Other {
+            other: V,
+        },
+        Empty,
+    }
+
+    for message in [
+        Message::<Text, u32>::Text {
+            value: "x".into(),
+            marker: std::marker::PhantomData,
+        },
+        Message::Pair("a".into(), "b".into()),
+        Message::Other { other: 42 },
+        Message::Empty,
+    ] {
+        let events = serialize(&message);
+        assert_eq!(deserialize::<Message<Text, u32>>(events), message);
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    enum External<K: Kind> {
+        #[deser(bound(K::Value: Serialize + DeserializeOwned))]
+        Newtype(K::Value),
+        #[deser(bound(K::Value: Serialize + DeserializeOwned))]
+        Struct { value: K::Value },
+    }
+
+    for message in [
+        External::<Text>::Newtype("x".into()),
+        External::Struct { value: "y".into() },
+    ] {
+        let events = serialize(&message);
+        assert_eq!(deserialize::<External<Text>>(events), message);
+    }
+}
+
+#[test]
+fn test_variant_bound_with_adapter() {
+    use deser::adapters::DisplayFromStr;
+
+    // the adapter would require `K::Value: Display` and `FromStr` for the
+    // tuple of the fields without the bound
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    enum Message<K: Kind> {
+        #[deser(
+            as = (DisplayFromStr, DisplayFromStr),
+            bound(
+                K::Value: std::fmt::Display + std::str::FromStr + Send + Sync,
+                <K::Value as std::str::FromStr>::Err: std::fmt::Display,
+            )
+        )]
+        Pair(K::Value, K::Value),
+    }
+
+    let message = Message::<Text>::Pair("a".into(), "b".into());
+    let events = serialize(&message);
+    assert_eq!(deserialize::<Message<Text>>(events), message);
+}

@@ -149,7 +149,7 @@ impl<T: Clone> Directional<T> {
     }
 }
 
-/// The custom bounds of a field.
+/// The custom bounds of a field (or a variant).
 ///
 /// `bound` sets them for both directions, `serialize_bound` and
 /// `deserialize_bound` for one (and take precedence).
@@ -187,6 +187,11 @@ impl FieldBounds {
         }
         .or(self.both.as_ref())
         .map(|x| &x[..])
+    }
+
+    /// Returns `true` if there are custom bounds for any direction.
+    pub fn any(&self) -> bool {
+        self.both.is_some() || self.ser.is_some() || self.de.is_some()
     }
 }
 
@@ -584,6 +589,9 @@ impl AttrLevel {
                 "as",
                 "serialize_as",
                 "deserialize_as",
+                "bound",
+                "serialize_bound",
+                "deserialize_bound",
             ],
             AttrLevel::NamedField => &[
                 "rename",
@@ -2071,6 +2079,7 @@ pub struct EnumVariantAttrs<'a> {
     skip_serializing: bool,
     skip_deserializing: bool,
     adapters: Adapters,
+    bounds: FieldBounds,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -2088,6 +2097,7 @@ impl<'a> EnumVariantAttrs<'a> {
             skip_serializing: false,
             skip_deserializing: false,
             adapters: Adapters::default(),
+            bounds: FieldBounds::default(),
         };
 
         let mut skip = false;
@@ -2095,6 +2105,10 @@ impl<'a> EnumVariantAttrs<'a> {
         let seen = parse_deser_attrs(&variant.attrs, &mut |name, meta| match name {
             "as" | "serialize_as" | "deserialize_as" => {
                 adapters.parse(name, meta, &parse_adapter)?;
+                Ok(())
+            }
+            "bound" | "serialize_bound" | "deserialize_bound" => {
+                rv.bounds.parse(name, meta)?;
                 Ok(())
             }
             "rename" => rv.rename.parse(meta, name, VariantName::parse),
@@ -2177,6 +2191,13 @@ impl<'a> EnumVariantAttrs<'a> {
     /// Returns the adapters of the content of the variant.
     pub fn adapters(&self) -> &Adapters {
         &self.adapters
+    }
+
+    /// Returns the custom bounds of the variant.
+    ///
+    /// They replace the bounds inferred from the fields of the variant.
+    pub fn bounds(&self) -> &FieldBounds {
+        &self.bounds
     }
 
     /// Returns the attributes that were used on the variant.

@@ -154,6 +154,8 @@ struct VariantInfo<'a> {
     content: Content,
     // the adapter of the content (`Content::Adapted`)
     adapted: Option<Adapted>,
+    // the custom bounds which replace the ones inferred from the fields
+    bounds: FieldBounds,
     // the name style of the fields of struct variants
     fields_rename_all: Option<RenameAll>,
 }
@@ -500,7 +502,8 @@ pub fn is_data_enum(
     }
     for variant in &enumeration.variants {
         if !matches!(variant.fields, syn::Fields::Unit)
-            || EnumVariantAttrs::of(variant).is_ok_and(|x| x.untagged() || x.adapters().any())
+            || EnumVariantAttrs::of(variant)
+                .is_ok_and(|x| x.untagged() || x.adapters().any() || x.bounds().any())
         {
             return true;
         }
@@ -855,6 +858,7 @@ fn collect_variants<'a>(
             tag_field,
             content,
             adapted,
+            bounds: attrs.bounds().clone(),
             fields_rename_all: attrs.fields_rename_all(container_attrs),
         });
     }
@@ -883,7 +887,10 @@ fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
 
 /// Returns the fields of all variants for the purpose of bound inference.
 ///
-/// The fields of skipped variants count as skipped.
+/// The fields of skipped variants count as skipped.  The fields of variants
+/// with custom bounds have empty custom bounds (unless they have their own)
+/// so that nothing is inferred from them, the bounds of the variants are
+/// added by [`add_variant_bounds`].
 fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<BoundField<'b>> {
     let mut rv = Vec::new();
     for info in variants {
@@ -891,6 +898,7 @@ fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<Bo
             Direction::Serialize => info.skip_serializing,
             Direction::Deserialize => info.skip_deserializing,
         };
+        let variant_bound = info.bounds.get(direction).map(|_| &[][..]);
         // the fields of the content of variants with adapters are handled
         // by the adapter, they are like fields that are skipped
         let content = match (&info.content, &info.adapted) {
@@ -899,7 +907,7 @@ fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<Bo
                     ty: &adapted.ty,
                     adapter: Some(&adapted.adapter),
                     skipped,
-                    bound: None,
+                    bound: variant_bound,
                     higher_ranked: adapted.higher_ranked,
                 });
                 &idxs[..]
@@ -916,12 +924,25 @@ fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<Bo
                         Direction::Serialize => field.skip_serializing,
                         Direction::Deserialize => field.skip_deserializing,
                     },
-                bound: field.bounds.get(direction),
+                bound: field.bounds.get(direction).or(variant_bound),
                 higher_ranked: false,
             });
         }
     }
     rv
+}
+
+/// Adds the custom bounds of the variants to a where clause.
+fn add_variant_bounds(
+    where_clause: &mut syn::WhereClause,
+    variants: &[VariantInfo],
+    direction: Direction,
+) {
+    for info in variants {
+        if let Some(bound) = info.bounds.get(direction) {
+            where_clause.predicates.extend(bound.iter().cloned());
+        }
+    }
 }
 
 pub fn derive_deserialize(
@@ -950,6 +971,7 @@ pub fn derive_deserialize(
         container_attrs.deserialize_bound(),
         &bound_fields(&all_variants, Direction::Deserialize),
     );
+    add_variant_bounds(&mut where_clause, &all_variants, Direction::Deserialize);
     // skipped variants cannot be deserialized, they are unknown variants
     let mut variants = Vec::with_capacity(all_variants.len());
     for info in all_variants {
@@ -959,9 +981,13 @@ pub fn derive_deserialize(
     }
     if container_attrs.deserialize_bound().is_none() {
         // skipped fields of generic types need a default, the helper
-        // structs of the variants require it
+        // structs of the variants require it (unless the variant has custom
+        // bounds)
         let params = type_param_names(&input.generics);
         for info in &variants {
+            if info.bounds.get(Direction::Deserialize).is_some() {
+                continue;
+            }
             for field in &info.fields {
                 let ty = field.ty();
                 if field.needs_default && mentions_any(quote! { #ty }, &params) {
@@ -1045,16 +1071,35 @@ pub fn derive_deserialize(
             let helper_crate = container_attrs
                 .crate_path()
                 .map(|path| quote! { #[deser(crate = #path)] });
-            let helper_bound = match container_attrs.deserialize_bound() {
-                Some(bound) => {
-                    let mut all = Vec::with_capacity(bound.len());
-                    for predicate in bound {
-                        all.push(predicate);
-                    }
-                    let predicates = filter_predicates(&input.generics, &all, &helper_params);
-                    Some(quote! { #[deser(deserialize_bound(#(#predicates),*))] })
+            // the custom bounds of the enum and the variant replace the
+            // inferred ones of the helper
+            let custom_bounds = [
+                container_attrs.deserialize_bound(),
+                info.bounds.get(Direction::Deserialize),
+            ];
+            let helper_bound = if custom_bounds.iter().any(Option::is_some) {
+                let mut all = Vec::new();
+                for bound in custom_bounds.into_iter().flatten() {
+                    all.extend(bound);
                 }
-                None => None,
+                let mut predicates: Vec<TokenStream> = Vec::new();
+                for predicate in filter_predicates(&input.generics, &all, &helper_params) {
+                    predicates.push(quote! { #predicate });
+                }
+                // the type parameters of fields with custom bounds are
+                // `Send` (see `where_clause_for_fields`) unless the enum
+                // replaces all bounds
+                if container_attrs.deserialize_bound().is_none() {
+                    for param in &helper_params {
+                        if let syn::GenericParam::Type(param) = param {
+                            let ident = &param.ident;
+                            predicates.push(quote! { #ident: __deser::__derive::Send });
+                        }
+                    }
+                }
+                Some(quote! { #[deser(deserialize_bound(#(#predicates),*))] })
+            } else {
+                None
             };
             let helper_rename_all = match info.fields_rename_all {
                 Some(style) => {
@@ -1604,7 +1649,7 @@ pub fn derive_serialize(
     let repr = repr(container_attrs);
     let variants = collect_variants(enumeration, container_attrs, Direction::Serialize)?;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
-    let where_clause = where_clause_for_fields(
+    let mut where_clause = where_clause_for_fields(
         &input.generics,
         quote!(__deser::Serialize),
         Some(quote!(__deser::__derive::Sync)),
@@ -1613,6 +1658,7 @@ pub fn derive_serialize(
         container_attrs.serialize_bound(),
         &bound_fields(&variants, Direction::Serialize),
     );
+    add_variant_bounds(&mut where_clause, &variants, Direction::Serialize);
 
     let type_name = container_attrs.container_name();
     // untagged variants of tagged enums are represented like the variants
