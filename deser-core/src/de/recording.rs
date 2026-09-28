@@ -68,6 +68,11 @@ use alloc::vec::Vec;
 /// specific information carried as event data (for instance CBOR tags)
 /// survives a round trip through a recording.
 ///
+/// The lengths of maps and sequences are known once they are recorded.
+/// If the format did not know them (like JSON, which does not say how many
+/// elements an array has before its end) they are filled in, so they are
+/// available to serializers (see [`ContainerShape::len`]).
+///
 /// ```
 /// use deser::de::Recording;
 /// use deser::Deserialize;
@@ -83,13 +88,51 @@ pub struct Recording(RecordBuf<'static>);
 
 /// A recording which keeps borrowed data borrowed.
 ///
-/// Atoms that are delivered borrowed (see
-/// [`Sink::borrowed_atom`]) are recorded as they are and replayed borrowed,
-/// all others are recorded as owned.  This is what [`Recording`] uses
-/// (with owned data only) and what the derive uses to buffer values, which
+/// This is like [`Recording`], but atoms that are delivered borrowed (see
+/// [`Sink::borrowed_atom`]) are recorded as they are and replayed or
+/// serialized borrowed, all others are recorded as owned.  Strings that
+/// the format can lend from the input are not copied, but the buffer
+/// cannot outlive the input.  The derive uses it to buffer values, which
 /// allows types that borrow to be deserialized from buffered values (for
 /// instance the fields of internally tagged enums that come before the
-/// tag).  Not public API.
+/// tag).
+///
+/// Like recordings, record buffers implement [`Deserialize`] and
+/// [`Serialize`].  This makes them useful to pass values from a
+/// deserializer to a serializer, for instance to convert them from one
+/// format to another (which is what `deser-transcode` does):
+///
+/// ```
+/// use deser::de::{DeserializeDriver, RecordBuf};
+/// use deser::ser::SerializeDriver;
+/// use deser::Event;
+///
+/// let input = String::from("borrowed");
+/// let mut buf = RecordBuf::new();
+/// {
+///     let mut driver = DeserializeDriver::from_fn(|state| buf.recorder(state));
+///     driver.emit(Event::seq_start()).unwrap();
+///     driver.emit_borrowed(input.as_str()).unwrap();
+///     driver.emit(Event::SeqEnd).unwrap();
+/// }
+///
+/// let mut events = Vec::new();
+/// SerializeDriver::new(&buf)
+///     .drive(|event, _state| {
+///         events.push(event.to_static());
+///         Ok(())
+///     })
+///     .unwrap();
+/// // the length of the sequence is known once it was recorded
+/// assert_eq!(
+///     events,
+///     [
+///         Event::SeqStart(deser::ContainerShape::new().with_len(1)),
+///         "borrowed".into(),
+///         Event::SeqEnd,
+///     ]
+/// );
+/// ```
 #[derive(Clone, Default)]
 pub struct RecordBuf<'de> {
     events: Events<'de>,
@@ -119,6 +162,15 @@ impl<'de> Events<'de> {
         match self {
             Events::Inline(None) => &[],
             Events::Inline(Some(event)) => core::slice::from_ref(event),
+            Events::Heap(events) => events,
+        }
+    }
+
+    #[inline]
+    fn as_mut_slice(&mut self) -> &mut [RecordedEvent<'de>] {
+        match self {
+            Events::Inline(None) => &mut [],
+            Events::Inline(Some(event)) => core::slice::from_mut(event),
             Events::Heap(events) => events,
         }
     }
@@ -180,6 +232,11 @@ struct RecordedEvent<'de> {
     event: Event<'de>,
     // the atom was delivered borrowed and is replayed borrowed
     borrowed: bool,
+    // the number of events of the value that starts with this event: 1 for
+    // atoms, the events of the container including the start and the end
+    // for closed containers (see `close`) and 0 if unknown.  This fits into
+    // the padding of the struct.
+    span: u32,
     input_range: (usize, usize),
     // `None` if the snapshot is empty, which it is unless there are
     // replayable extensions or event data.  This keeps recorded events small.
@@ -196,6 +253,10 @@ impl RecordedEvent<'_> {
         }
     }
 }
+
+// the span fits into the padding of recorded events
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<RecordedEvent<'static>>() == 64);
 
 // recordings are stored in sinks, they must not prevent them from moving
 // between threads.
@@ -235,6 +296,13 @@ trait Target<'de>: Send {
 
     fn is_empty(&self) -> bool;
 
+    /// Returns the number of recorded events.
+    fn len(&self) -> usize;
+
+    /// Closes the container starting at the given event after its end was
+    /// recorded (see [`close`]).
+    fn close(&mut self, start: usize);
+
     /// Reserves space for the events of a container.
     fn reserve(&mut self);
 }
@@ -255,6 +323,14 @@ impl<'de> Target<'de> for RecordBuf<'de> {
         self.events.is_empty()
     }
 
+    fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    fn close(&mut self, start: usize) {
+        close(self.events.as_mut_slice(), start);
+    }
+
     fn reserve(&mut self) {
         self.events.reserve(CONTAINER_CAPACITY);
     }
@@ -272,6 +348,14 @@ impl<'de> Target<'de> for Recording {
 
     fn is_empty(&self) -> bool {
         self.0.events.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.0.events.len()
+    }
+
+    fn close(&mut self, start: usize) {
+        close(self.0.events.as_mut_slice(), start);
     }
 
     fn reserve(&mut self) {
@@ -295,6 +379,7 @@ impl Recording {
             Recorder {
                 target: self,
                 end: None,
+                start: 0,
                 is_root: true,
             },
             state,
@@ -402,7 +487,6 @@ impl Recording {
 
 impl<'de> RecordBuf<'de> {
     /// Creates an empty buffer.
-    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub fn new() -> RecordBuf<'de> {
         RecordBuf::default()
     }
@@ -410,7 +494,6 @@ impl<'de> RecordBuf<'de> {
     /// Returns a sink that records a value into this buffer.
     ///
     /// A previously recorded value is discarded.
-    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub fn recorder(&mut self, state: &mut State) -> SinkHandle<'_, 'de> {
         self.events.clear();
         self.is_map_key = false;
@@ -418,6 +501,7 @@ impl<'de> RecordBuf<'de> {
             Recorder {
                 target: self,
                 end: None,
+                start: 0,
                 is_root: true,
             },
             state,
@@ -426,7 +510,6 @@ impl<'de> RecordBuf<'de> {
 
     /// Returns a sink that records a value and passes the buffer to a
     /// callback once the value is complete (see [`Recording::capture`]).
-    #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub fn capture<'a, F>(then: F, state: &mut State) -> SinkHandle<'a, 'de>
     where
         F: FnOnce(RecordBuf<'de>, &mut State) -> Result<(), Error> + Send + 'a,
@@ -568,6 +651,10 @@ fn record<'de>(
         buf.is_map_key = state.is_map_key();
     }
     let recorded = RecordedEvent {
+        span: match event {
+            Event::Atom(_) => 1,
+            _ => 0,
+        },
         event,
         borrowed,
         input_range: state.input_range,
@@ -641,6 +728,7 @@ impl<'de, T, C> CaptureSink<T, C> {
             Recorder {
                 target: &mut self.recording,
                 end: None,
+                start: 0,
                 is_root: false,
             },
             state,
@@ -755,6 +843,8 @@ impl<'de, T: Target<'de> + Default, C: Capture<'de, T>> Sink<'de> for CaptureSin
         }
         if let Some(end) = self.end.take() {
             self.recording.push(true, end, state);
+            // the container is the first event of the recording
+            self.recording.close(0);
         }
         then.recorded(core::mem::take(&mut self.recording), state)
     }
@@ -764,6 +854,8 @@ impl<'de, T: Target<'de> + Default, C: Capture<'de, T>> Sink<'de> for CaptureSin
 struct Recorder<'a, T> {
     target: &'a mut T,
     end: Option<Event<'static>>,
+    // the index of the start event if the value is a container
+    start: usize,
     is_root: bool,
 }
 
@@ -776,6 +868,7 @@ impl<'a, T> Recorder<'a, T> {
             Recorder {
                 target: &mut *self.target,
                 end: None,
+                start: 0,
                 is_root: false,
             },
             state,
@@ -796,6 +889,7 @@ impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        self.start = self.target.len();
         self.target.push(
             self.is_root,
             Event::MapStart(state.container_shape()),
@@ -806,6 +900,7 @@ impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        self.start = self.target.len();
         self.target.push(
             self.is_root,
             Event::SeqStart(state.container_shape()),
@@ -857,6 +952,7 @@ impl<'a, 'de, T: Target<'de>> Sink<'de> for Recorder<'a, T> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(end) = self.end.take() {
             self.target.push(self.is_root, end, state);
+            self.target.close(self.start);
         }
         Ok(())
     }
@@ -894,7 +990,20 @@ impl<'de> Deserialize<'de> for Recording {
 }
 
 /// Returns the number of events of the value the events start with.
-fn value_len(events: &[RecordedEvent<'static>]) -> usize {
+///
+/// Atoms and closed containers know their number of events, other values
+/// are scanned.
+#[inline]
+fn value_len(events: &[RecordedEvent<'_>]) -> usize {
+    match events.first() {
+        Some(first) if first.span != 0 => first.span as usize,
+        _ => scan_value_len(events),
+    }
+}
+
+/// Returns the number of events of a value by looking for its end.
+#[cold]
+fn scan_value_len(events: &[RecordedEvent<'_>]) -> usize {
     let mut depth = 0usize;
     for (index, recorded) in events.iter().enumerate() {
         match recorded.event {
@@ -909,10 +1018,42 @@ fn value_len(events: &[RecordedEvent<'static>]) -> usize {
     events.len()
 }
 
-/// A recorded value that is serialized.
-struct RecordedValue<'a>(&'a [RecordedEvent<'static>]);
+/// Closes the container starting at `start` after its end was recorded.
+///
+/// The number of events of the container is stored in its start event,
+/// which makes skipping over it cheap when the recording is serialized.
+/// The containers in it were closed before, so this only walks over its
+/// elements.  If the format did not know the length of the container, the
+/// number of elements is stored in its shape: it's known now, and
+/// serializers can use it (for instance to write the header of the
+/// container right away in binary formats) as can sinks that preallocate.
+fn close(events: &mut [RecordedEvent<'_>], start: usize) {
+    let Some((head, rest)) = events.get_mut(start..).and_then(|x| x.split_first_mut()) else {
+        return;
+    };
+    // values of more than `u32::MAX` events are scanned
+    head.span = u32::try_from(rest.len() + 1).unwrap_or(0);
+    let is_map = match head.event {
+        Event::MapStart(shape) if shape.len().is_none() => true,
+        Event::SeqStart(shape) if shape.len().is_none() => false,
+        _ => return,
+    };
+    let inner = &rest[..rest.len().saturating_sub(1)];
+    let mut count = 0;
+    let mut index = 0;
+    while index < inner.len() {
+        index += value_len(&inner[index..]);
+        count += 1;
+    }
+    if let Event::MapStart(ref mut shape) | Event::SeqStart(ref mut shape) = head.event {
+        *shape = shape.with_len(if is_map { count / 2 } else { count });
+    }
+}
 
-impl<'a> RecordedValue<'a> {
+/// A recorded value that is serialized.
+struct RecordedValue<'a, 'de>(&'a [RecordedEvent<'de>]);
+
+impl<'a, 'de> RecordedValue<'a, 'de> {
     fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, Error> {
         let events = self.0;
         let (first, snapshot) = match events.first() {
@@ -952,18 +1093,26 @@ impl<'a> RecordedValue<'a> {
             }
         })
     }
-}
 
-impl<'a> RecordedValue<'a> {
     fn container_shape(&self) -> ContainerShape {
         match self.0.first().map(|x| &x.event) {
             Some(Event::MapStart(shape) | Event::SeqStart(shape)) => *shape,
             _ => ContainerShape::new(),
         }
     }
+
+    fn is_optional(&self) -> bool {
+        matches!(
+            self.0,
+            [RecordedEvent {
+                event: Event::Atom(Atom::Null),
+                ..
+            }]
+        )
+    }
 }
 
-impl<'a> Serialize for RecordedValue<'a> {
+impl Serialize for RecordedValue<'_, '_> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
         self.chunk(state)
     }
@@ -974,12 +1123,12 @@ impl<'a> Serialize for RecordedValue<'a> {
 }
 
 /// Emits the values of a recorded map or sequence.
-struct RecordedEmitter<'a> {
-    rest: &'a [RecordedEvent<'static>],
-    current: RecordedValue<'a>,
+struct RecordedEmitter<'a, 'de> {
+    rest: &'a [RecordedEvent<'de>],
+    current: RecordedValue<'a, 'de>,
 }
 
-impl<'a> RecordedEmitter<'a> {
+impl RecordedEmitter<'_, '_> {
     fn next_value(&mut self) -> Option<SerializeHandle<'_>> {
         if self.rest.is_empty() {
             return None;
@@ -992,13 +1141,13 @@ impl<'a> RecordedEmitter<'a> {
     }
 }
 
-impl<'a> SeqEmitter for RecordedEmitter<'a> {
+impl SeqEmitter for RecordedEmitter<'_, '_> {
     fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.next_value())
     }
 }
 
-impl<'a> MapEmitter for RecordedEmitter<'a> {
+impl MapEmitter for RecordedEmitter<'_, '_> {
     fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
         Ok(self.next_value())
     }
@@ -1019,12 +1168,39 @@ impl Serialize for Recording {
     }
 
     fn is_optional(&self) -> bool {
-        matches!(
-            self.0.events.as_slice(),
-            [RecordedEvent {
-                event: Event::Atom(Atom::Null),
-                ..
-            }]
+        RecordedValue(self.0.events.as_slice()).is_optional()
+    }
+}
+
+/// Record buffers serialize like [`Recording`]s, borrowed atoms are
+/// serialized without copying them.
+impl Serialize for RecordBuf<'_> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        RecordedValue(self.events.as_slice()).chunk(state)
+    }
+
+    fn container_shape(&self) -> ContainerShape {
+        RecordedValue(self.events.as_slice()).container_shape()
+    }
+
+    fn is_optional(&self) -> bool {
+        RecordedValue(self.events.as_slice()).is_optional()
+    }
+}
+
+/// Record buffers deserialize like [`Recording`]s but keep borrowed atoms
+/// borrowed.
+impl<'de> Deserialize<'de> for RecordBuf<'de> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Self>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        RecordBuf::capture(
+            move |buf, _state| {
+                *out = Some(buf);
+                Ok(())
+            },
+            state,
         )
     }
 }

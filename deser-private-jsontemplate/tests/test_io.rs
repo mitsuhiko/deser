@@ -1,6 +1,6 @@
 use deser::de::Recording;
 use deser::io::Reader;
-use deser::{ErrorKind, Event};
+use deser::{ContainerShape, ErrorKind, Event};
 
 use super::common::{Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, events, read_chunked};
 use super::{DIALECT, dialect};
@@ -52,7 +52,10 @@ fn test_no_read_while_a_value_is_complete() {
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("x"));
     assert_eq!(
         reader.read::<Recording>().unwrap().map(events),
-        Some(vec![Event::map_start(), Event::MapEnd])
+        Some(vec![
+            Event::MapStart(ContainerShape::new().with_len(0)),
+            Event::MapEnd
+        ])
     );
 }
 

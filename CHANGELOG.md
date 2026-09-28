@@ -4,6 +4,20 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-transcode`, which converts a value from any deserializer
+  into any serializer (JSON to YAML, CBOR to JSON, ...) without types in
+  between.  Values are passed on as the deserializer emitted them and
+  every serializer applies its usual rules to them.  One value is buffered
+  at a time and strings that the deserializer borrows from the input are
+  not copied.
+- `RecordBuf`, the recording that keeps borrowed data borrowed, is now
+  public and implements `Serialize` and `Deserialize`.
+- Recordings now know the lengths of the maps and sequences in them, also
+  when the format did not say (the length is in the `ContainerShape` of
+  the start event).  Binary formats write the length upfront when a
+  recording is serialized.
+- Serializing a recording no longer takes quadratic time for deeply
+  nested values.
 - Added `deser-hjson` for [Hjson](https://hjson.github.io/): comments
   with `#`, optional commas, keys and strings without quotes (which end
   at the end of the line), multiline strings and maps without braces at

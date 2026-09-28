@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use deser::adapters::DisplayFromStr;
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording};
 use deser::ser::SerializeDriver;
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{Atom, ContainerShape, Deserialize, Error, ErrorKind, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -152,7 +152,8 @@ fn test_external_capture() {
             assert_eq!(
                 events_of(content),
                 recorded(vec![
-                    Event::seq_start(),
+                    // recordings know the length of containers
+                    Event::SeqStart(ContainerShape::new().with_len(2)),
                     1u64.into(),
                     2u64.into(),
                     Event::SeqEnd

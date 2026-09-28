@@ -439,6 +439,7 @@ Layers and adapters:
 Integrations:
 
 * [deser-value](https://github.com/mitsuhiko/deser/tree/main/deser-value): dynamic values
+* [deser-transcode](https://github.com/mitsuhiko/deser/tree/main/deser-transcode): converting between formats
 * [deser-tokio](https://github.com/mitsuhiko/deser/tree/main/deser-tokio): async IO with tokio
 * [deser-serde](https://github.com/mitsuhiko/deser/tree/main/deser-serde): serde interop
 

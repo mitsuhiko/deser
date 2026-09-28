@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use deser::de::{DeserializeDriver, DeserializeOwned, IgnoredFields, Recording, UnknownFields};
-use deser::{Deserialize, Error, Event};
+use deser::{ContainerShape, Deserialize, Error, Event};
 
 fn deserialize<T: DeserializeOwned>(
     policy: Option<UnknownFields>,
@@ -27,6 +27,13 @@ fn map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
         events.push(value.clone());
     }
     events.push(Event::MapEnd);
+    events
+}
+
+/// The events of a recorded map, recordings know the length of maps.
+fn recorded_map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
+    let mut events = map(pairs);
+    events[0] = Event::MapStart(ContainerShape::new().with_len(pairs.len()));
     events
 }
 
@@ -467,7 +474,7 @@ fn test_flattened_recordings() {
     assert_eq!(tag, "X");
     assert_eq!(
         content.events().cloned().collect::<Vec<_>>(),
-        map(&[("x", 1u64.into()), ("y", 2u64.into())])
+        recorded_map(&[("x", 1u64.into()), ("y", 2u64.into())])
     );
 
     let value: WithRest = deserialize(
@@ -478,12 +485,15 @@ fn test_flattened_recordings() {
     assert_eq!(value.id, 3);
     assert_eq!(
         value.rest.events().cloned().collect::<Vec<_>>(),
-        map(&[("x", 1u64.into()), ("y", 2u64.into())])
+        recorded_map(&[("x", 1u64.into()), ("y", 2u64.into())])
     );
 
     // without keys the recording is an empty map
     let value: WithRest = deserialize(None, map(&[("id", 3u64.into())])).unwrap();
-    assert_eq!(value.rest.events().cloned().collect::<Vec<_>>(), map(&[]));
+    assert_eq!(
+        value.rest.events().cloned().collect::<Vec<_>>(),
+        recorded_map(&[])
+    );
 }
 
 #[test]

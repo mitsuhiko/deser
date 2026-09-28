@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording};
 use deser::ser::SerializeDriver;
-use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
+use deser::{ContainerShape, Deserialize, Error, ErrorKind, Event, Serialize};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
@@ -301,10 +301,11 @@ fn test_recording() {
     assert_eq!(recording.as_str(), None);
     assert_eq!(
         recording.events().cloned().collect::<Vec<_>>(),
+        // the lengths of the containers are known once they are recorded
         vec![
-            Event::map_start(),
+            Event::MapStart(ContainerShape::new().with_len(1)),
             "a".into(),
-            Event::seq_start(),
+            Event::SeqStart(ContainerShape::new().with_len(0)),
             Event::SeqEnd,
             Event::MapEnd
         ]

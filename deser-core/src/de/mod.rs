@@ -267,7 +267,7 @@ pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};
-pub use self::recording::Recording;
+pub use self::recording::{RecordBuf, Recording};
 #[cfg(feature = "derive")]
 use self::sinkbox::StructBox;
 use self::sinkbox::{ArenaSink, HeapSink, arena_sink};

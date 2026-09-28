@@ -48,7 +48,7 @@ NO_STD_TARGET := thumbv7em-none-eabihf
 NO_STD_TARGET_64 := aarch64-unknown-none
 # crates that support `no_std` (their `std` feature is off), the no-std
 # example uses the derive
-NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hjson deser-msgpack deser-path deser-debug no-std
+NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hjson deser-msgpack deser-path deser-debug deser-transcode no-std
 # the features of deser-core that work without `std`
 NO_STD_FEATURES := derive,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
 # the crates with speedups that work without `std`

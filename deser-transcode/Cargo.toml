@@ -1,0 +1,32 @@
+[package]
+name = "deser-transcode"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Converts values from one data format to another with deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "transcode", "json", "yaml"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-transcode"
+autotests = false
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-cbor = { path = "../deser-cbor" }
+deser-json = { path = "../deser-json" }
+deser-msgpack = { path = "../deser-msgpack" }
+deser-path = { path = "../deser-path" }
+deser-toml = { path = "../deser-toml" }
+deser-urlencoded = { path = "../deser-urlencoded" }
+deser-value = { path = "../deser-value" }
+deser-xml = { path = "../deser-xml" }
+deser-yaml = { path = "../deser-yaml" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

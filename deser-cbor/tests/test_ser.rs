@@ -420,10 +420,29 @@ fn test_lengths_are_passed_on() {
         }
     }
     assert_eq!(shapes, [Some(2), Some(2), Some(1)]);
-    // indefinite lengths are unknown
-    let recording: deser::de::Recording = deser_cbor::from_slice(&hex("9f01ff")).unwrap();
+
+    // indefinite lengths are unknown to the parser
+    struct Shape<'a>(&'a mut Option<Option<usize>>);
+    impl<'de> deser::de::Sink<'de> for Shape<'_> {
+        fn seq(&mut self, state: &mut deser::State) -> Result<(), deser::Error> {
+            *self.0 = Some(state.container_shape().len());
+            Ok(())
+        }
+    }
+    let mut shape = None;
+    let input = hex("9f01ff");
+    let mut driver =
+        deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::heap(Shape(&mut shape)));
+    deser_cbor::Deserializer::from_slice(&input)
+        .drive(&mut driver)
+        .unwrap();
+    drop(driver);
+    assert_eq!(shape, Some(None));
+
+    // but recordings count the elements
+    let recording: deser::de::Recording = deser_cbor::from_slice(&input).unwrap();
     assert!(matches!(
         recording.events().next(),
-        Some(deser::Event::SeqStart(shape)) if shape.len().is_none()
+        Some(deser::Event::SeqStart(shape)) if shape.len() == Some(1)
     ));
 }
