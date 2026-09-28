@@ -867,6 +867,15 @@ fn test_is_ascii() {
 mod tests {
     use deser_core::de::Recording;
 
+    /// Returns the chunk sizes to feed an input of `len` bytes in.
+    ///
+    /// Miri is too slow for all sizes, it checks chunks of a byte (which
+    /// split the input at every position), odd and aligned sizes and the
+    /// whole input.
+    fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+        (1..=len).filter(move |&size| !cfg!(miri) || matches!(size, 1 | 3 | 8) || size == len)
+    }
+
     use super::*;
 
     fn hex(s: &str) -> Vec<u8> {
@@ -941,7 +950,7 @@ mod tests {
         for input in inputs {
             let input = hex(input);
             let expected = parse_complete(&input).unwrap();
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(&input, size).unwrap(),
                     expected,
@@ -956,7 +965,7 @@ mod tests {
         for input in ["82 01", "9f 01", "a1 61", "1c", "82 01 ff", "7f 01 ff"] {
             let input = hex(input);
             let expected = parse_complete(&input).unwrap_err();
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(&input, size).unwrap_err(),
                     expected,

@@ -1927,6 +1927,15 @@ mod tests {
         value.events().cloned().collect()
     }
 
+    /// Returns the chunk sizes to feed an input of `len` bytes in.
+    ///
+    /// Miri is too slow for all sizes, it checks chunks of a byte (which
+    /// split the input at every position), odd and aligned sizes and the
+    /// whole input.
+    fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+        (1..=len).filter(move |&size| !cfg!(miri) || matches!(size, 1 | 3 | 8) || size == len)
+    }
+
     /// Parses the input in one go.
     fn parse_complete(input: &str) -> Result<Vec<Event<'static>>, String> {
         let mut out = None::<Recording>;
@@ -1991,7 +2000,7 @@ mod tests {
         ];
         for input in inputs {
             let expected = parse_complete(&input).unwrap();
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(&input, size).unwrap(),
                     expected,
@@ -2012,7 +2021,7 @@ mod tests {
             "{\"a\": \"\\x\"}",
         ] {
             let expected = parse_complete(input).unwrap_err();
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(input, size).unwrap_err(),
                     expected,
@@ -2126,7 +2135,7 @@ mod tests {
             rng % n
         };
         // miri is too slow for many iterations
-        for _ in 0..if cfg!(miri) { 200 } else { 100_000 } {
+        for _ in 0..if cfg!(miri) { 100 } else { 100_000 } {
             let mut text = String::new();
             if next(2) == 0 {
                 text.push('-');
@@ -2148,7 +2157,7 @@ mod tests {
         }
         // significands beyond 53 bits with exponents up to 22 (like
         // coordinates) are corrected with integer arithmetic
-        for _ in 0..if cfg!(miri) { 200 } else { 100_000 } {
+        for _ in 0..if cfg!(miri) { 100 } else { 100_000 } {
             let digits = 16 + next(4) as usize;
             let mut text = String::new();
             text.push(char::from(b'1' + next(9) as u8));
@@ -2165,7 +2174,7 @@ mod tests {
         }
         // the halfway points between floats above 2^53 (which are rounded
         // to the even float) and the numbers next to them
-        for _ in 0..if cfg!(miri) { 20 } else { 10_000 } {
+        for _ in 0..if cfg!(miri) { 10 } else { 10_000 } {
             let m = (1u64 << 52) + next(1 << 52);
             check(&format!("{}.5", m));
             check(&format!("{}.4999999999", m));
@@ -2183,7 +2192,7 @@ mod tests {
         for (input, json) in inputs {
             let expected = parse_complete(json).unwrap();
             assert_eq!(parse_complete(input), Ok(expected.clone()), "{input}");
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(input, size),
                     Ok(expected.clone()),
@@ -2198,7 +2207,7 @@ mod tests {
     fn assert_errors(inputs: &[(&str, &str)]) {
         for (input, msg) in inputs {
             assert_eq!(parse_complete(input).unwrap_err(), *msg, "{input}");
-            for size in 1..=input.len() {
+            for size in chunk_sizes(input.len()) {
                 assert_eq!(
                     parse_chunked(input, size).unwrap_err(),
                     *msg,

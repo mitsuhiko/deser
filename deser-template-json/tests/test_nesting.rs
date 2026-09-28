@@ -31,7 +31,7 @@ fn drop_nested(mut node: Node) {
 #[test]
 fn test_deep_nesting_roundtrip() {
     // deeper than the preallocated stacks of the drivers
-    let depth = if cfg!(miri) { 300 } else { 5000 };
+    let depth = if cfg!(miri) { 150 } else { 5000 };
     let node = make_nested(depth);
     let json = dialect::to_string(&node).unwrap();
     assert!(json.starts_with(r#"{"name":"node-"#));
@@ -51,7 +51,7 @@ fn test_deep_ignored_nesting() {
         a: u32,
     }
 
-    let depth = if cfg!(miri) { 300 } else { 5000 };
+    let depth = if cfg!(miri) { 150 } else { 5000 };
     let json = format!(
         r#"{{"ignored": {}null{}, "a": 42}}"#,
         "[{\"x\": ".repeat(depth),

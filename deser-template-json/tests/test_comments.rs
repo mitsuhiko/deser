@@ -6,7 +6,7 @@ use deser::de::Recording;
 use deser::io::Reader;
 use deser_location::Spanned;
 
-use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream};
+use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes};
 use super::{DIALECT, dialect};
 use dialect::{Deserializer, DeserializerConfig, Trailing, from_slice, from_str};
 
@@ -135,13 +135,13 @@ fn test_strict() {
 fn test_end_after_comments() {
     // comments after the value can be split across reads
     let input = b"[1] /* a */ // b\n/* c */";
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         let mut reader = Reader::new(Chunked { input, size }, STRICT);
         reader.read::<Vec<u32>>().unwrap();
         reader.end().unwrap();
     }
     let input = b"[1] /* unterminated";
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         let mut reader = Reader::new(Chunked { input, size }, STRICT);
         reader.read::<Vec<u32>>().unwrap();
         assert!(reader.end().is_err(), "size {size}");

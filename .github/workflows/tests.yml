@@ -58,7 +58,7 @@ jobs:
           - name: deser-json
             crates: deser-template-json deser-json
           - name: other crates
-            crates: deser-cbor deser-msgpack deser-xml deser-path deser-location deser-debug
+            crates: deser-msgpack deser-cbor deser-xml deser-csv deser-transcode deser-debug deser-path deser-location
 
     steps:
       - uses: actions/checkout@v3

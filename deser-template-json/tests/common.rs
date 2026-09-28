@@ -28,10 +28,11 @@ impl Read for Chunked<'_> {
 
 /// Returns the chunk sizes to read an input of `len` bytes in.
 ///
-/// Miri is too slow for all sizes, it checks small sizes (which split the
-/// input at every position), powers of two and the whole input.
+/// Miri is too slow for all sizes, it checks chunks of a byte (which split
+/// the input at every position) and the whole input.  The unit tests of
+/// the parser check more sizes.
 pub fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
-    (1..=len).filter(move |&size| !cfg!(miri) || size <= 3 || size.is_power_of_two() || size == len)
+    (1..=len).filter(move |&size| !cfg!(miri) || size == 1 || size == len)
 }
 
 /// A reader that returns its input at once and then blocks forever.

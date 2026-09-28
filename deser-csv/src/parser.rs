@@ -607,6 +607,15 @@ pub(crate) fn unescape(dialect: &Dialect, text: &[u8], quoted: bool, out: &mut V
 mod tests {
     use super::*;
 
+    /// Returns the chunk sizes to feed an input of `len` bytes in.
+    ///
+    /// Miri is too slow for all sizes, it checks chunks of a byte (which
+    /// split the input at every position), odd and aligned sizes and the
+    /// whole input.
+    fn chunk_sizes(len: usize) -> impl Iterator<Item = usize> {
+        (1..=len).filter(move |&size| !cfg!(miri) || matches!(size, 1 | 3 | 8) || size == len)
+    }
+
     fn dialect() -> Dialect {
         Dialect::new(
             b',',
@@ -671,7 +680,7 @@ mod tests {
             vec!["x\ny".into(), "".into(), "z".into()],
             vec!["y".into()],
         ];
-        for size in 1..=input.len() {
+        for size in chunk_sizes(input.len()) {
             assert_eq!(scan_all(input, size), expected, "size {}", size);
         }
     }

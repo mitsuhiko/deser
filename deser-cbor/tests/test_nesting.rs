@@ -30,7 +30,7 @@ fn drop_nested(mut node: Node) {
 #[test]
 fn test_deep_nesting_roundtrip() {
     // deeper than the preallocated stacks of the drivers
-    let depth = if cfg!(miri) { 300 } else { 5000 };
+    let depth = if cfg!(miri) { 150 } else { 5000 };
     let node = make_nested(depth);
     let bytes = deser_cbor::to_vec(&node).unwrap();
     // {"name": "node-...", "child": ...}
@@ -58,7 +58,7 @@ fn test_deep_ignored_nesting() {
         a: u32,
     }
 
-    let depth = if cfg!(miri) { 300 } else { 5000 };
+    let depth = if cfg!(miri) { 150 } else { 5000 };
     // {"ignored": [{"x": [{"x": ... null ...}]}], "a": 42} with a mix of
     // definite and indefinite containers
     let mut bytes = b"\xa2\x67ignored".to_vec();

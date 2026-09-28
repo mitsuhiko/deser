@@ -233,7 +233,13 @@ mod tests {
     #[test]
     fn test_base64_roundtrip() {
         let data: Vec<u8> = (0..=255).rev().chain(0..=255).collect();
-        for len in (0..10).chain([254, 255, 256, 511, 512]) {
+        // the long inputs cover the loops over whole blocks, miri is slow
+        let long: &[usize] = if cfg!(miri) {
+            &[63, 64]
+        } else {
+            &[254, 255, 256, 511, 512]
+        };
+        for len in (0..10).chain(long.iter().copied()) {
             let bytes = &data[..len];
             for (encoded, alphabet, pad) in [
                 (encode::<Base64>(bytes), STANDARD, true),

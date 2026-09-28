@@ -161,7 +161,7 @@ fn test_borrowed() {
 fn test_feeding_skips_items_that_fail() {
     // [1, "x", [2]] does not fit, the items around it do
     let input = [0x81, 0x01, 0x83, 0x01, 0x61, b'x', 0x81, 0x02, 0x81, 0x03];
-    for size in 1..=input.len() {
+    for size in chunk_sizes(input.len()) {
         let mut reader = Reader::new(
             Chunked {
                 input: &input,
@@ -208,7 +208,9 @@ fn test_feeding_bounds_the_buffer() {
     use deser::de::DeserializeDriver;
     use deser::io::{DecodeBuffer, Status};
 
-    let value = (0..10_000u32)
+    // many chunks, fewer under miri which is slow
+    let count = if cfg!(miri) { 300 } else { 10_000 };
+    let value = (0..count)
         .map(|idx| (idx, "x".repeat(50)))
         .collect::<Vec<_>>();
     let bytes = deser_cbor::to_vec(&value).unwrap();

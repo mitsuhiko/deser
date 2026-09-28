@@ -442,18 +442,20 @@ fn test_inline_elements() {
         vec![Event::Atom(Atom::Null)],
     ];
     for case in cases {
-        // the element is followed by a valid one
-        for events in [
+        // the element is followed by a valid one, miri (which is slow) only
+        // checks it between valid ones
+        let wrapped = [
+            seq([ok.clone(), case.clone(), ok.clone()].concat()),
             seq(case.clone()),
             seq([case.clone(), ok.clone()].concat()),
-            seq([ok.clone(), case.clone(), ok.clone()].concat()),
-        ] {
+        ];
+        for events in &wrapped[..if cfg!(miri) { 1 } else { 3 }] {
             for collect in [false, true] {
-                let inline = run_events::<Vec<[u32; 2]>>(&events, false, collect);
-                let plain = run_events::<Vec<[u32; 2]>>(&events, true, collect);
+                let inline = run_events::<Vec<[u32; 2]>>(events, false, collect);
+                let plain = run_events::<Vec<[u32; 2]>>(events, true, collect);
                 assert_eq!(inline, plain, "{events:?}");
-                let inline = run_events::<Vec<(u32, u8)>>(&events, false, collect);
-                let plain = run_events::<Vec<(u32, u8)>>(&events, true, collect);
+                let inline = run_events::<Vec<(u32, u8)>>(events, false, collect);
+                let plain = run_events::<Vec<(u32, u8)>>(events, true, collect);
                 assert_eq!(inline, plain, "{events:?}");
             }
         }

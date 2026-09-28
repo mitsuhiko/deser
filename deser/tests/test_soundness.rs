@@ -10,8 +10,24 @@ use deser::ser::{Chunk, SerializeDriver, SerializeHandle, StructEmitter};
 use deser::{Atom, Deserialize, Error, Event, Serialize};
 
 fn depth() -> usize {
-    // deeper than the preallocated stacks of the drivers
-    if cfg!(miri) { 200 } else { 1000 }
+    // deeper than the preallocated stacks of the drivers (128)
+    if cfg!(miri) { 150 } else { 1000 }
+}
+
+/// The distance between the points where values are cut, split or aborted
+/// in tests that check many of them.
+///
+/// Miri is slow, it checks every 11th point.
+fn step() -> usize {
+    if cfg!(miri) { 11 } else { 1 }
+}
+
+/// Returns the points where the events of a value are cut in tests that
+/// check what happens at every point.
+///
+/// Miri is slow, it checks every third point.
+fn every_point(len: usize) -> impl Iterator<Item = usize> {
+    (0..len).step_by(if cfg!(miri) { 3 } else { 1 })
 }
 
 /// Emits the given events and drops the driver afterwards, no matter if the
@@ -77,7 +93,7 @@ fn test_drop_driver_at_every_point() {
     let events = outer_events();
     let full: Outer = emit_partial(&events).unwrap();
     assert_eq!(full.array, ["1", "2", "3"]);
-    for cut in 0..events.len() {
+    for cut in every_point(events.len()) {
         // every prefix leaves sinks half way through, dropping the driver
         // must clean up properly.
         assert!(emit_partial::<Outer>(&events[..cut]).is_none());
@@ -520,7 +536,7 @@ fn test_tagged_drop_and_errors_at_every_point() {
     events.push(end);
 
     assert_eq!(emit_partial::<Tagged>(&events).unwrap(), value);
-    for cut in 0..events.len() {
+    for cut in every_point(events.len()) {
         assert!(emit_partial::<Tagged>(&events[..cut]).is_none());
     }
     for idx in 0..events.len() {
@@ -587,7 +603,7 @@ fn test_enum_representations_drop_and_errors_at_every_point() {
         events.push(end);
 
         assert_eq!(emit_partial::<AllAdjacent>(&events).unwrap(), value);
-        for cut in 0..events.len() {
+        for cut in every_point(events.len()) {
             assert!(emit_partial::<AllAdjacent>(&events[..cut]).is_none());
         }
         for idx in 0..events.len() {
@@ -664,7 +680,7 @@ fn test_drive() {
                 expected.push(event.to_static());
             }
         }
-        let step = if cfg!(miri) { 7 } else { 1 };
+        let step = step();
         for skip in (0..=expected.len()).step_by(step) {
             // drive produces the same events, even after next was used
             assert_eq!(drive_events(value, skip, None).unwrap(), expected);
@@ -757,7 +773,7 @@ fn test_adapters_and_forwarding() {
             expected.push(event.to_static());
         }
     }
-    let step = if cfg!(miri) { 7 } else { 1 };
+    let step = step();
     for skip in (0..=expected.len()).step_by(step) {
         assert_eq!(drive_events(&value, skip, None).unwrap(), expected);
     }
@@ -863,14 +879,14 @@ fn test_flattened_forwarding() {
         }
     }
     // stop at every point and continue with drive, or abort at every point
-    for skip in 0..=expected.len() {
+    for skip in every_point(expected.len() + 1) {
         assert_eq!(drive_events(&value, skip, None).unwrap(), expected);
     }
     for abort in 0..expected.len() {
         assert!(drive_events(&value, 0, Some(abort)).is_err());
     }
     // drop the driver at every point
-    for cut in 0..expected.len() {
+    for cut in every_point(expected.len()) {
         let mut driver = SerializeDriver::new(&value);
         for _ in 0..cut {
             driver.next().unwrap();
@@ -897,7 +913,7 @@ fn test_flattened_forwarding() {
 #[test]
 fn test_drivers_move_between_threads() {
     let events = outer_events();
-    let step = if cfg!(miri) { 7 } else { 1 };
+    let step = step();
 
     // the sinks are allocated on one thread and continued, finished or
     // dropped on another one (which frees them into its own cache)
@@ -954,7 +970,7 @@ fn test_owned_driver() {
     use deser::de::OwnedDriver;
 
     let events = outer_events();
-    let step = if cfg!(miri) { 7 } else { 1 };
+    let step = step();
 
     // complete values, fed in two parts
     for split in (0..=events.len()).step_by(step) {

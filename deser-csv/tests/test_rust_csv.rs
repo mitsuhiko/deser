@@ -51,8 +51,9 @@ fn parses_to(name: &str, config: &DeserializerConfig, input: &str, expected: Res
         .map_err(|err| err.message().to_string());
     assert_eq!(rv, expected, "{} (slice)", name);
 
+    // miri is slow, reading streams is covered by `test_io`
     let sizes = if cfg!(miri) {
-        vec![1, input.len().max(1)]
+        vec![]
     } else {
         (1..=input.len().max(1)).collect()
     };

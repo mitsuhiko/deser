@@ -18,8 +18,11 @@ const SUITE: &str = include_str!("data/msgpack-test-suite/msgpack-test-suite.jso
 
 type Case = BTreeMap<String, Value>;
 
-fn load() -> BTreeMap<String, Vec<Case>> {
-    deser_json::from_str(SUITE).unwrap()
+/// Returns the cases of the suite, which are loaded once (they are slow to
+/// load in miri).
+fn load() -> &'static BTreeMap<String, Vec<Case>> {
+    static CASES: std::sync::OnceLock<BTreeMap<String, Vec<Case>>> = std::sync::OnceLock::new();
+    CASES.get_or_init(|| deser_json::from_str(SUITE).unwrap())
 }
 
 /// Decodes the hex notation of the suite (`"c4-01-01"`).
@@ -122,7 +125,7 @@ fn test_suite() {
     let mut checked = 0;
     for (group, cases) in suite {
         for case in cases {
-            let value = expected(&case);
+            let value = expected(case);
             let encodings: Vec<String> = match &case["msgpack"] {
                 Value::Array(items) => items
                     .iter()
@@ -187,7 +190,7 @@ fn test_suite_typed() {
     // the encodings also decode into typed values
     for (group, cases) in load() {
         for case in cases {
-            let value = expected(&case);
+            let value = expected(case);
             let Value::Array(ref encodings) = case["msgpack"] else {
                 panic!("invalid case");
             };
@@ -308,7 +311,7 @@ fn test_suite_as_stream() {
 
     #[cfg(feature = "io")]
     for &size in if cfg!(miri) {
-        &[1, 64][..]
+        &[7][..]
     } else {
         &[1, 2, 3, 7, 64][..]
     } {

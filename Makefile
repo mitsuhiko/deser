@@ -25,14 +25,17 @@ endif
 # take, the slowest start first.  CI splits them across jobs.  The parsers
 # of deser-json, deser-jsonc, deser-json5 and deser-hjson are tested by
 # deser-template-json.
-MIRI_CRATES ?= deser-core deser deser-template-json deser-json deser-cbor deser-msgpack deser-csv deser-xml deser-path deser-location deser-debug
+MIRI_CRATES ?= deser deser-template-json deser-msgpack deser-cbor deser-core deser-xml deser-json deser-csv deser-transcode deser-debug deser-path deser-location
 # Crates also tested with tree borrows.  Almost all unsafe code is in the
 # core crate (tested by its own tests and the integration tests of deser),
 # the formats only have simple byte copies.
 MIRI_TREE_BORROWS_CRATES ?= deser-core deser
-# every miri run is single threaded
-MIRI_JOBS ?= 6
-# Tests that are slow in miri and do not test unsafe code opt out with
+# every miri run is single threaded, they all run at once where there are
+# enough cores (a run is as slow as the slowest crate)
+MIRI_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+# A run should take a few minutes at most (about 3 with enough cores), or
+# it's not run.  Tests that are slow in miri and do not test unsafe code opt
+# out with
 # `#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]`.  Tests
 # with unsafe code under test should rather do less work in miri (see the
 # uses of `cfg!(miri)`).  `make miri-test-full` also runs the ignored tests.

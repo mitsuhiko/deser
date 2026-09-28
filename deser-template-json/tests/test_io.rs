@@ -2,7 +2,9 @@ use deser::de::Recording;
 use deser::io::Reader;
 use deser::{ContainerShape, ErrorKind, Event};
 
-use super::common::{Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, events, read_chunked};
+use super::common::{
+    Blocking, Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes, events, read_chunked,
+};
 use super::{DIALECT, dialect};
 use dialect::SerializerConfig;
 
@@ -219,7 +221,9 @@ fn test_feeding_bounds_the_buffer() {
     // arrives, only incomplete tokens are buffered
     let long = "x".repeat(50);
     let mut input = String::from("[");
-    for idx in 0..10_000 {
+    // many chunks, fewer under miri which is slow
+    let count = if cfg!(miri) { 300 } else { 10_000 };
+    for idx in 0..count {
         if idx > 0 {
             input.push(',');
         }
@@ -246,7 +250,7 @@ fn test_feeding_bounds_the_buffer() {
         }
     }
     buffer.set_eof();
-    assert_eq!(out.unwrap().len(), 10_000);
+    assert_eq!(out.unwrap().len(), count);
     assert!(max_buffered < 100, "{max_buffered} bytes buffered");
     assert_eq!(
         buffer
@@ -282,7 +286,7 @@ mod streamed {
     use deser::{Deserialize, Serialize};
 
     use super::dialect::{self, DeserializerConfig, Trailing};
-    use super::{Blocking, Chunked, STRICT};
+    use super::{Blocking, Chunked, STRICT, chunk_sizes};
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Item {
@@ -332,7 +336,7 @@ mod streamed {
                 next: Some("cursor".into()),
             }),
         ];
-        for size in 1..=json.len() {
+        for size in chunk_sizes(json.len()) {
             let mut reader = Reader::new(
                 Chunked {
                     input: json.as_bytes(),
@@ -448,9 +452,11 @@ mod streamed {
     fn test_elements_bound_the_buffer() {
         use deser::io::{DecodeBuffer, ElementReader, ElementStatus};
 
+        // many chunks, fewer under miri which is slow
+        let total = if cfg!(miri) { 300 } else { 10_000 };
         let page = Page {
-            total: 10_000,
-            items: (0..10_000).map(item).collect(),
+            total,
+            items: (0..total).map(item).collect(),
             next: None,
         };
         let json = dialect::to_string(&page).unwrap();
@@ -466,7 +472,7 @@ mod streamed {
                     count += 1;
                 }
                 ElementStatus::Ready(Next::Done(page)) => {
-                    assert_eq!(page.total, 10_000);
+                    assert_eq!(page.total, total);
                     assert!(page.items.is_empty());
                     break;
                 }
@@ -481,7 +487,7 @@ mod streamed {
                 ElementStatus::End => unreachable!(),
             }
         }
-        assert_eq!(count, 10_000);
+        assert_eq!(count, total);
         assert!(max_buffered < 100, "{max_buffered} bytes buffered");
     }
 }
