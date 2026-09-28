@@ -2,7 +2,9 @@
 # Compares the compile times of serde, miniserde and deser.
 #
 # 1. Clean builds of a small program (`LIB-version`), including all
-#    dependencies.  The best of three runs is reported.
+#    dependencies.  The best of three runs is reported.  deser is used
+#    through path dependencies which cargo compiles incrementally (unlike
+#    crates from crates.io), so these builds are not incremental.
 # 2. Builds of a library with 100 structs and 100 enums (generated into
 #    `target/many`), without the dependencies.  This is the cost of the
 #    derived code.  It's a library as in a binary only the code that is
@@ -13,13 +15,14 @@ cd "$(dirname "$0")"
 LIBS="serde miniserde deser"
 
 # Prints the best of three runs of a command in a directory.  `prepare`
-# runs before every run.
+# runs before every run, `incremental` is the value of `CARGO_INCREMENTAL`
+# (if given).
 best_of_three() {
-  dir=$1; cmd=$2; prepare=$3
+  dir=$1; cmd=$2; prepare=$3; incremental=$4
   best=
   for _ in 1 2 3; do
     (cd $dir; eval "$prepare")
-    t=$( { /usr/bin/time -p sh -c "cd $dir && cargo $cmd -q"; } 2>&1 | awk '/^real/ { print $2 }')
+    t=$( { /usr/bin/time -p sh -c "cd $dir && ${incremental:+CARGO_INCREMENTAL=$incremental} cargo $cmd -q"; } 2>&1 | awk '/^real/ { print $2 }')
     if [ -z "$best" ] || [ "$(echo "$t < $best" | bc)" = 1 ]; then
       best=$t
     fi
@@ -32,7 +35,7 @@ clean_builds() {
   lib=$1
   echo "$lib"
   for cmd in "check" "build" "build --release"; do
-    best_of_three $lib-version "$cmd" "rm -rf target"
+    best_of_three $lib-version "$cmd" "rm -rf target" 0
   done
 }
 
