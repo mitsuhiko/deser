@@ -1132,7 +1132,14 @@ impl<'a> ContainerAttrs<'a> {
             }
             "default" => {
                 let value = parse_default(meta)?;
-                set_once(meta, name, &mut rv.default, value)
+                set_once(meta, name, &mut rv.default, value)?;
+                if is_enum {
+                    return Err(meta.error(
+                        "default is only supported on structs, on enums place it on a variant \
+                         (for missing tags) or on the fields of struct variants",
+                    ));
+                }
+                Ok(())
             }
             "skip_serializing_optionals" => {
                 set_flag(meta, name, &mut rv.skip_serializing_optionals)

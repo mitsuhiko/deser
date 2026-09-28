@@ -510,6 +510,33 @@
 /// }
 /// ```
 ///
+/// `default` is for structs, on enums it's placed on variants or the fields
+/// of struct variants.
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// #[deser(default)]
+/// enum Test {
+///     A,
+///     B { a: u32 },
+/// }
+///
+/// impl Default for Test {
+///     fn default() -> Test {
+///         Test::A
+///     }
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// #[deser(tag = "t", default = Test::A)]
+/// enum Test {
+///     A,
+///     B { a: u32 },
+/// }
+/// ```
+///
 /// Transparent structs have exactly one field that is not skipped.
 ///
 /// ```compile_fail

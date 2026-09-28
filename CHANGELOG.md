@@ -18,6 +18,9 @@ All notable changes to deser are documented here.
   recording is serialized.
 - Serializing a recording no longer takes quadratic time for deeply
   nested values.
+- `#[deser(default)]` on enums is an error.  It was accepted and had no
+  effect, defaults go on variants (the variant for missing tags) and on
+  the fields of struct variants.
 - `rename_all` and `alias_all` convert the case of letters that are not
   ASCII: `rename_all = "camelCase"` no longer panics for variants that
   start with such a letter (like `Ärger`) and `rename_all = "snake_case"`
