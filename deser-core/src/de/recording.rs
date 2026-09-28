@@ -553,12 +553,17 @@ fn record<'de>(
     if is_root && buf.events.is_empty() {
         buf.is_map_key = state.is_map_key();
     }
-    buf.events.push(RecordedEvent {
+    let recorded = RecordedEvent {
         event,
         borrowed,
         input_range: state.input_range,
         snapshot: state.extensions().snapshot_if_any().map(Box::new),
-    });
+    };
+    // the events of containers go to the vector directly
+    match buf.events {
+        Events::Heap(ref mut events) => events.push(recorded),
+        ref mut events => events.push(recorded),
+    }
 }
 
 /// Receives a value that was captured (see [`RecordBuf::capture_with`]).

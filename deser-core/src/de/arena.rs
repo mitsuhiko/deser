@@ -49,7 +49,8 @@ struct Chunk {
     next: *mut Chunk,
     /// The layout the chunk was allocated with.
     layout: Layout,
-    /// The buffers of the arena while the chunk is parked.
+    /// The buffers of the arena (in the first chunk of the arena, they are
+    /// parked with it).
     bufs: Buffers,
 }
 
@@ -181,8 +182,6 @@ pub(crate) struct Arena {
     base: *mut u8,
     /// The chunk `top` is in.
     chunk: *mut Chunk,
-    /// Buffers of vectors that are kept for the next driver.
-    bufs: Buffers,
 }
 
 // SAFETY: the arena owns its chunks, they can be used and freed on any
@@ -204,8 +203,17 @@ impl Arena {
             end: ptr::null_mut(),
             base: ptr::null_mut(),
             chunk: ptr::null_mut(),
-            bufs: [RawBuf::EMPTY; 2],
         }
+    }
+
+    /// Returns the buffers, they are in the first chunk.
+    #[inline(always)]
+    fn bufs(&mut self) -> Option<&mut Buffers> {
+        if self.chunk.is_null() {
+            return None;
+        }
+        // SAFETY: the first chunk is valid, its data starts at the base
+        unsafe { Some(&mut (*self.base.wrapping_sub(CHUNK_HEADER).cast::<Chunk>()).bufs) }
     }
 
     /// Takes the buffer of a vector that was kept, the vector is empty.
@@ -218,7 +226,7 @@ impl Arena {
         if self.chunk.is_null() {
             self.take_parked();
         }
-        let buf = core::mem::replace(&mut self.bufs[kind as usize], RawBuf::EMPTY);
+        let buf = core::mem::replace(&mut self.bufs()?[kind as usize], RawBuf::EMPTY);
         if buf.cap == 0 {
             return None;
         }
@@ -242,6 +250,10 @@ impl Arena {
         if vec.capacity() == 0 || size == 0 || vec.capacity() * size > MAX_BUFFER_SIZE {
             return;
         }
+        let Some(bufs) = self.bufs() else {
+            // without a chunk there is nothing to keep it with
+            return;
+        };
         let mut vec = core::mem::ManuallyDrop::new(vec);
         vec.clear();
         let buf = RawBuf {
@@ -250,7 +262,7 @@ impl Arena {
             size,
             align: align_of::<T>(),
         };
-        let old = core::mem::replace(&mut self.bufs[kind as usize], buf);
+        let old = core::mem::replace(&mut bufs[kind as usize], buf);
         // SAFETY: the old buffer is not used after
         unsafe { old.free() };
     }
@@ -270,19 +282,6 @@ impl Arena {
         self.base = Chunk::start(self.chunk);
         self.top = self.base;
         self.end = Chunk::end(self.chunk);
-        // SAFETY: the chunk is valid, its buffers move into the arena
-        // (unless the arena has its own already)
-        unsafe {
-            let bufs = &mut (*self.chunk).bufs;
-            for (own, parked) in self.bufs.iter_mut().zip(bufs.iter_mut()) {
-                let parked = core::mem::replace(parked, RawBuf::EMPTY);
-                if own.cap == 0 {
-                    *own = parked;
-                } else {
-                    parked.free();
-                }
-            }
-        }
     }
 
     /// Allocates a block for a (non zero sized) layout.
@@ -419,8 +418,6 @@ impl Arena {
 impl Drop for Arena {
     fn drop(&mut self) {
         if self.chunk.is_null() {
-            // SAFETY: the buffers are not used after
-            unsafe { free_buffers(&mut self.bufs) };
             return;
         }
         self.reclaim();
@@ -436,12 +433,20 @@ impl Drop for Arena {
                 // blocks are still alive, their chunks must stay valid
                 #[cfg(test)]
                 LEAKED.with(|leaked| leaked.set(leaked.get() + 1));
-                free_buffers(&mut self.bufs);
+                if let Some(bufs) = self.bufs() {
+                    free_buffers(bufs);
+                }
                 return;
             }
             // the arena is empty, the largest chunk (the current one) is
             // parked for the next arena
             let chunk = self.chunk;
+            // the buffers are in the first chunk, they are parked with the
+            // chunk that is parked (before the other chunks are freed)
+            let first = self.base.wrapping_sub(CHUNK_HEADER).cast::<Chunk>();
+            if first != chunk {
+                (*chunk).bufs = core::mem::replace(&mut (*first).bufs, [RawBuf::EMPTY; 2]);
+            }
             let prev = (*chunk).prev;
             if !prev.is_null() {
                 (*chunk).prev = ptr::null_mut();
@@ -452,8 +457,6 @@ impl Drop for Arena {
                     chunk = prev;
                 }
             }
-            // the buffers are parked with the chunk
-            (*chunk).bufs = core::mem::replace(&mut self.bufs, [RawBuf::EMPTY; 2]);
             if (*chunk).layout.size() > MAX_PARKED_CHUNK_SIZE {
                 Chunk::free(chunk);
             } else if let Some(chunk) = parked::park(NonNull::new_unchecked(chunk)) {
@@ -838,6 +841,35 @@ mod tests {
         assert!(!arena.is_empty());
         big_boxes.clear();
         assert!(arena.is_empty());
+    }
+
+    #[test]
+    fn test_buffers() {
+        // the buffers are kept in the first chunk and parked with the
+        // largest chunk, also if the arena has more than one
+        for chunks in [1, 3] {
+            let mut arena = Arena::new();
+            let boxes = (0..chunks * 300)
+                .map(|idx| ArenaBox::new([idx as u64; 4], &mut arena))
+                .collect::<Vec<_>>();
+            let mut vec = arena.take_vec::<u64>(Buffer::SinkStack).unwrap_or_default();
+            vec.extend(0..100u64);
+            let cap = vec.capacity();
+            arena.put_vec(Buffer::SinkStack, vec);
+            // a vector of another type does not get the buffer
+            assert!(arena.take_vec::<u8>(Buffer::SerializeStack).is_none());
+            let vec = arena.take_vec::<u64>(Buffer::SinkStack).unwrap();
+            assert!(vec.is_empty() && vec.capacity() == cap);
+            arena.put_vec(Buffer::SinkStack, vec);
+            drop(boxes);
+            drop(arena);
+            // the next arena gets them back (unless another thread took the
+            // parked chunk), with the right type only
+            let mut arena = Arena::new();
+            if let Some(vec) = arena.take_vec::<u64>(Buffer::SinkStack) {
+                assert!(vec.is_empty() && vec.capacity() == cap);
+            }
+        }
     }
 
     #[test]

@@ -138,14 +138,21 @@ only improvements that survive repeated comparisons.
    allocated in an arena of the state (see `deser-core/src/de/arena.rs`).
    Without any reuse of sink memory deserialization is two to six times
    slower (macOS allocator).  The arena replaced a cache of blocks per
-   thread and size class and is on par or faster (geomean -0.9% over all
-   deserialization benchmarks, -13% to +3%).  What mattered: the driver
+   thread and size class.  Together with the emitters of serializations
+   in the arena (which had no cache at all), the driver stacks that are
+   kept with the arena and recordings of single events without an
+   allocation, deserializing is 1.5% faster (geomean, -8% to +2%) and
+   serializing 1.3% faster (-12% to +4%, the events benchmarks vary by up
+   to 7% with inlining).  What mattered: the driver
    releases the sinks it's done with (`SinkHandle::release`), so the top
    block is popped right away instead of being marked as dead in its
    footer and popped by the next allocation (that cost up to 8%), the
    root sink is dropped before the state (otherwise the arena is leaked
-   and every document allocates a chunk, logs was 50% slower) and the
-   chunk of a finished deserialization is parked for the next one.
+   and every document allocates a chunk, logs was 50% slower), the
+   chunk of a finished deserialization is parked for the next one and
+   the state stays small (nested replays move it, keeping the buffers of
+   the driver stacks in the state made small documents 2% slower, they
+   are in the first chunk).
    Earlier profiling of the per thread cache attributed about 6% of tree
    and Canada to taking/returning blocks, including two thread-local
    lookups on macOS.  Experiments storing sinks
