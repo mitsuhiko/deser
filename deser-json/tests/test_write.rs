@@ -1,4 +1,4 @@
-//! Writing JSON streams (reading is tested by deser-private-jsontemplate).
+//! Writing JSON streams (reading is tested by deser-template-json).
 use deser::Event;
 use deser::io::{Reader, Writer};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};

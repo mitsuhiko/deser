@@ -68,7 +68,7 @@
 
 extern crate alloc;
 
-// These are generated from `deser-private-jsontemplate`.
+// These are generated from `deser-template-json`.
 mod de;
 #[cfg(feature = "io")]
 mod io;

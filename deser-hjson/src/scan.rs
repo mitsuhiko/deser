@@ -1,5 +1,5 @@
-// @generated from deser-private-jsontemplate/src/scan.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
+// @generated from deser-template-json/src/scan.rs by
+// deser-template-json/generate.py.  Do not edit.
 //! Shared scanning utilities for the parser and serializer.
 
 /// Returns the index of the first byte at or after `pos` which needs special

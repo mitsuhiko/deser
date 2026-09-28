@@ -3,7 +3,7 @@
 //! is slow, so separate binaries make the tests slower.
 //!
 //! These are the tests of writing JSON.  Reading is tested for all dialects
-//! (JSON, JSONC and JSON5) by `deser-private-jsontemplate`.
+//! (JSON, JSONC and JSON5) by `deser-template-json`.
 mod test_pretty;
 mod test_ser;
 #[cfg(feature = "io")]

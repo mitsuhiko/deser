@@ -24,8 +24,8 @@ endif
 # Crates tested with miri (with stacked borrows), ordered by how long they
 # take, the slowest start first.  CI splits them across jobs.  The parsers
 # of deser-json, deser-jsonc, deser-json5 and deser-hjson are tested by
-# deser-private-jsontemplate.
-MIRI_CRATES ?= deser-core deser deser-private-jsontemplate deser-json deser-cbor deser-msgpack deser-csv deser-xml deser-path deser-location deser-debug
+# deser-template-json.
+MIRI_CRATES ?= deser-core deser deser-template-json deser-json deser-cbor deser-msgpack deser-csv deser-xml deser-path deser-location deser-debug
 # Crates also tested with tree borrows.  Almost all unsafe code is in the
 # core crate (tested by its own tests and the integration tests of deser),
 # the formats only have simple byte copies.
@@ -106,7 +106,7 @@ format-check:
 	@rustup component add rustfmt > /dev/null 2>&1
 	@$(RUN) -j 5 \
 		"fmt" "cargo fmt --all -- --check" \
-		"codegen" "python3 deser-private-jsontemplate/generate.py --check" \
+		"codegen" "python3 deser-template-json/generate.py --check" \
 		"fmt:benchmark" "cd benchmark && cargo fmt --all -- --check" \
 		$(foreach ws,$(EXTRA_WORKSPACES),"fmt:$(notdir $(ws))" "cd $(ws) && cargo fmt --all -- --check")
 
@@ -119,9 +119,9 @@ lint:
 
 # regenerates the parsers of deser-json, deser-jsonc, deser-json5 and
 # deser-hjson from
-# deser-private-jsontemplate
+# deser-template-json
 codegen:
-	@$(RUN) "codegen" --show-on-output "python3 deser-private-jsontemplate/generate.py"
+	@$(RUN) "codegen" --show-on-output "python3 deser-template-json/generate.py"
 
 bench:
 	@$(RUN) "bench" --show-on-output "cd benchmark && RUSTC_BOOTSTRAP=1 cargo bench"

@@ -1,5 +1,5 @@
-// @generated from deser-private-jsontemplate/src/io.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
+// @generated from deser-template-json/src/io.rs by
+// deser-template-json/generate.py.  Do not edit.
 //! Reading JSON streams.
 use std::io::Read;
 

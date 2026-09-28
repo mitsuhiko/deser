@@ -1,5 +1,5 @@
-// @generated from deser-private-jsontemplate/src/de.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
+// @generated from deser-template-json/src/de.rs by
+// deser-template-json/generate.py.  Do not edit.
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::marker::PhantomData;

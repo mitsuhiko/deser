@@ -22,6 +22,6 @@ assert_eq!(config.name, "api");
 
 Otherwise it works like [`deser-json`](https://docs.rs/deser-json), which
 is also used to serialize (JSON is valid JSONC).  The parser is generated
-from the one of `deser-json` (see `deser-private-jsontemplate` in the
+from the one of `deser-json` (see `deser-template-json` in the
 repository).
 

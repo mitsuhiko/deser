@@ -35,5 +35,5 @@ Numbers, `true`, `false` and `null` without quotes are implicit values: an
 `u16` receives `8080` as number, a `String` as `"8080"`.  Otherwise it
 works like [`deser-json`](https://docs.rs/deser-json), which is also used
 to serialize (JSON is valid Hjson).  The parser is generated from the one
-of `deser-json` (see `deser-private-jsontemplate` in the repository) and
+of `deser-json` (see `deser-template-json` in the repository) and
 passes the [Hjson test suite](https://github.com/hjson/hjson/tree/master/testCases).

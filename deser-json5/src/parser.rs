@@ -1,5 +1,5 @@
-// @generated from deser-private-jsontemplate/src/parser.rs by
-// deser-private-jsontemplate/generate.py.  Do not edit.
+// @generated from deser-template-json/src/parser.rs by
+// deser-template-json/generate.py.  Do not edit.
 //! The JSON parser.
 //!
 //! The parser is a state machine which can be suspended between tokens: if
