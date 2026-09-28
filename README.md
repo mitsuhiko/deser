@@ -371,17 +371,9 @@ built around the format instead.  Common non self describing formats are:
 
 * [bincode](https://crates.io/crates/bincode)
 * [postcard](https://crates.io/crates/postcard)
-* [bitcode](https://crates.io/crates/bitcode)
-* [Borsh](https://borsh.io/)
-* [SCALE](https://docs.substrate.io/reference/scale-codec/)
 * [rkyv](https://rkyv.org/)
 * [Protocol Buffers](https://protobuf.dev/)
-* [Cap'n Proto](https://capnproto.org/)
-* [FlatBuffers](https://flatbuffers.dev/)
 * [Apache Avro](https://avro.apache.org/)
-* [Apache Thrift](https://thrift.apache.org/)
-* [XDR](https://www.rfc-editor.org/rfc/rfc4506)
-* ASN.1 with schema driven encodings such as PER
 
 ## Known Limitations
 
