@@ -8,7 +8,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
-        *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Error;
+        UnknownFields::Error.set(driver.state_mut());
         for event in events {
             driver.emit(event)?;
         }

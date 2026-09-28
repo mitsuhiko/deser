@@ -32,7 +32,7 @@ fn deserialize_with<T: DeserializeOwned>(
     {
         let mut driver = DeserializeDriver::new(&mut out);
         if let Some(format) = format {
-            *driver.state_mut().get_mut::<BytesFormat>() = format;
+            format.set(driver.state_mut());
         }
         for event in events {
             driver.emit(event)?;

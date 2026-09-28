@@ -517,7 +517,7 @@ impl StreamState {
             return Err(Error::new(ErrorKind::Unexpected, msg).with_offset(base + offset));
         }
         if config.bytes != BytesFormat::BASE64 {
-            *driver.state_mut().get_mut::<BytesFormat>() = config.bytes;
+            config.bytes.set(driver.state_mut());
         }
         // everything in a CSV file is text, like in a query string
         LexicalRules::LENIENT.set(driver.state_mut());

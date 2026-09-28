@@ -436,7 +436,7 @@ impl<'a> Deserializer<'a> {
             Source::set(driver.state_mut(), source);
         }
         if self.config.bytes != BytesFormat::BASE64 {
-            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
+            self.config.bytes.set(driver.state_mut());
         }
 
         // for JSON Lines the input is cut off at the end of the line.  The

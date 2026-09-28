@@ -471,7 +471,7 @@ fn test_unknown_fields() {
         ],
     )
     .deserialize_with::<Config, _>(|driver| {
-        *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Collect(warnings.clone());
+        UnknownFields::Collect(warnings.clone()).set(driver.state_mut());
     })
     .unwrap();
     let warnings = warnings.take();

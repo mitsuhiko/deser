@@ -73,8 +73,5 @@ pub trait BytesEncoding: 'static {
 
 /// Decodes a string into bytes with the format in the state.
 pub(crate) fn decode_str(s: &str, state: &State) -> Result<Vec<u8>, Error> {
-    match state.get::<BytesFormat>() {
-        Some(format) => format.decode(s),
-        None => decode_base64(s),
-    }
+    BytesFormat::of(state).decode(s)
 }

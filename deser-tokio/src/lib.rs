@@ -257,7 +257,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
         poll_fn(|cx| self.poll_read_setup(cx, &mut setup)).await
     }
 
-    /// Polls for the next element of the [`Streamed`](deser_core::Streamed) sequence of a value or
+    /// Polls for the next element of the [`Streamed`](deser_core::stream::Streamed) sequence of a value or
     /// the value.
     ///
     /// This is the poll based version of [`read_next`](Self::read_next).
@@ -303,11 +303,11 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
         }
     }
 
-    /// Reads the next element of the [`Streamed`](deser_core::Streamed) sequence of a value or
+    /// Reads the next element of the [`Streamed`](deser_core::stream::Streamed) sequence of a value or
     /// the value.
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
-    /// [`Streamed<E>`](deser_core::Streamed) sequence within it.  The elements are
+    /// [`Streamed<E>`](deser_core::stream::Streamed) sequence within it.  The elements are
     /// handed out as they are read ([`Part::Element`]), the value once it's
     /// complete ([`Part::Done`]).  The next call continues with the next
     /// value.  Resolves to `None` if there are no more values.  This is
@@ -322,7 +322,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
     }
 
     /// Converts the reader into a [`Stream`] of the elements of the
-    /// [`Streamed`](deser_core::Streamed) sequence of values and the values.
+    /// [`Streamed`](deser_core::stream::Streamed) sequence of values and the values.
     ///
     /// See [`read_next`](Self::read_next).  The stream ends after the first
     /// error.
@@ -454,7 +454,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer, T: DeserializeOwned + 'static>
     }
 }
 
-/// A [`Stream`] of the elements of the [`Streamed`](deser_core::Streamed) sequence of values and
+/// A [`Stream`] of the elements of the [`Streamed`](deser_core::stream::Streamed) sequence of values and
 /// the values.
 ///
 /// Created with [`Reader::into_element_stream`].

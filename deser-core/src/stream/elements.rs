@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::stream::{InputBuffer, Status};
 use crate::sync::Mutex;
 
-/// The queue elements of [`Streamed`] are handed out through.
+/// The queue elements of [`Streamed`](super::Streamed) are handed out through.
 struct Queue {
     type_id: TypeId,
     elements: Mutex<VecDeque<Box<dyn Any + Send>>>,
@@ -49,14 +49,14 @@ pub(crate) fn hand_out<T: Send + 'static>(value: T, state: &State) -> Result<(),
 }
 
 /// A part of a value that is read with the elements of its
-/// [`Streamed`](crate::Streamed) sequence handed out.
+/// [`Streamed`](super::Streamed) sequence handed out.
 ///
 /// Such a value is read in parts: first the elements, then the rest of the
 /// value.  This is the result of [`ElementReader::poll`] (and of
 /// `Reader::read_next` of `deser::io`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Part<E, T> {
-    /// An element of the [`Streamed`](crate::Streamed) sequence of the value.
+    /// An element of the [`Streamed`](super::Streamed) sequence of the value.
     Element(E),
     /// The value is complete (without the elements that were handed out).
     Done(T),
@@ -73,13 +73,13 @@ pub enum ElementStatus<E, T> {
     End,
 }
 
-/// Reads a value and hands out the elements of its [`Streamed`](crate::Streamed) sequence
+/// Reads a value and hands out the elements of its [`Streamed`](super::Streamed) sequence
 /// without doing IO.
 ///
 /// This reads the value from an [`InputBuffer`] which is filled by the
 /// caller.  `Reader::read_next` of `deser::io` and adapters for other
 /// kinds of IO (for instance async runtimes) use this.  `T` is the
-/// type of the value, `E` the type of the elements of the [`Streamed`](crate::Streamed)
+/// type of the value, `E` the type of the elements of the [`Streamed`](super::Streamed)
 /// sequence which are handed out.
 ///
 /// Elements are handed out before more input is needed, so an element is

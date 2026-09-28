@@ -34,24 +34,22 @@ mod state;
 mod std_impls;
 #[cfg(feature = "std")]
 mod std_only_impls;
-mod streamed;
 mod sync;
 mod text;
 
 pub use self::bytes_format::BytesFormat;
-pub use self::error::{Error, ErrorAttachment, ErrorKind};
+pub use self::error::{Error, ErrorAttachment, ErrorContext, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;
 pub use self::position::Position;
 pub use self::source::Source;
-pub use self::state::{ErrorContext, State};
-pub use self::streamed::Streamed;
+pub use self::state::State;
 pub use self::text::Text;
 
 // common re-exports
 
 #[doc(no_inline)]
-pub use self::{de::Deserialize, ser::Serialize};
+pub use self::{de::Deserialize, ser::Serialize, stream::Streamed};
 
 #[cfg(feature = "derive")]
 pub mod derive;

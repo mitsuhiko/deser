@@ -1019,7 +1019,7 @@ where
 
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
             self.map.reserve_entries(cautious_capacity::<(K, V)>(state));
-            self.duplicate_keys = state.duplicate_keys();
+            self.duplicate_keys = DuplicateKeys::of(state);
             Ok(())
         }
 
@@ -1077,7 +1077,7 @@ where
             state: &mut State,
         ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
             // `map` is not invoked for flattened maps
-            self.duplicate_keys = state.duplicate_keys();
+            self.duplicate_keys = DuplicateKeys::of(state);
             self.flush_before(state)?;
             KA::__private_atom_into_as(&mut self.key, Atom::Lexical(Text::borrowed(key)), state)?;
             if VA::__private_collects_as() && state.is_multimap() {

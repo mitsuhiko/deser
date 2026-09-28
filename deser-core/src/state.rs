@@ -3,9 +3,8 @@ use alloc::vec::Vec;
 use core::any::TypeId;
 use core::fmt;
 
-use crate::de::DuplicateKeys;
 use crate::de::arena::{Arena, Buffer};
-use crate::error::Error;
+use crate::error::{Error, ErrorContext};
 use crate::event::ContainerShape;
 use crate::extensions::{EventData, Extensions};
 
@@ -34,9 +33,12 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///   value, such as a tag.
 ///
 /// Some extension values are well-known: the policy for keys that are
-/// given more than once ([`DuplicateKeys`]), the policy for keys that no
-/// field of a struct takes ([`UnknownFields`](crate::de::UnknownFields))
-/// and the source the input ranges refer to ([`Source`](crate::Source)).
+/// given more than once ([`DuplicateKeys`](crate::de::DuplicateKeys)),
+/// the policy for keys that no field of a struct takes
+/// ([`UnknownFields`](crate::de::UnknownFields)), how bytes are decoded
+/// from strings ([`BytesFormat`](crate::BytesFormat)) and the source the
+/// input ranges refer to ([`Source`](crate::Source)).  They are read and
+/// set with their `of` and `set` functions.
 ///
 /// Additionally formats can publish the byte range in the input of every
 /// event (see [`input_range`](Self::input_range)) and extensions can
@@ -80,19 +82,6 @@ pub struct State {
 
 /// The function of an [`ErrorContext`].
 type AddContextFn = fn(Error, &State) -> Error;
-
-/// Adds context to errors, see [`State::add_error_context`].
-///
-/// This is typically implemented by the extension type which holds the
-/// information that is attached to errors.
-pub trait ErrorContext: 'static {
-    /// Adds context to an error.
-    ///
-    /// This is invoked with the state as it was when the error happened.
-    /// Context that is already attached to the error should not be
-    /// replaced.
-    fn add_context(err: Error, state: &State) -> Error;
-}
 
 impl State {
     /// Creates an empty state.
@@ -471,14 +460,6 @@ impl State {
     #[inline]
     pub fn is_multimap(&self) -> bool {
         self.is_multimap
-    }
-
-    /// Returns what happens if a key is given more than once.
-    ///
-    /// This is the [`DuplicateKeys`] extension value or the default.
-    #[inline]
-    pub(crate) fn duplicate_keys(&self) -> DuplicateKeys {
-        self.get::<DuplicateKeys>().copied().unwrap_or_default()
     }
 
     /// Returns the byte range in the input of the current event.

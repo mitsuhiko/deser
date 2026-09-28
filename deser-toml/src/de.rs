@@ -217,7 +217,7 @@ impl<'a> Deserializer<'a> {
             Source::set(driver.state_mut(), self.input);
         }
         if self.config.bytes != BytesFormat::BASE64 {
-            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
+            self.config.bytes.set(driver.state_mut());
         }
         emit(&doc, driver).map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

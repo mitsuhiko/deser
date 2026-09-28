@@ -287,7 +287,7 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             Source::set(state, self.input);
         }
-        *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        self.config.duplicate_keys.set(state);
         TEXT_RULES.set(state);
         // elements with attributes are text for types that expect text,
         // text is an element for types that expect maps

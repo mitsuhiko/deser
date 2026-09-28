@@ -385,11 +385,9 @@ fn test_duplicate_keys() {
     );
 
     // the policy of the deserialization decides
-    let parse = |policy| {
+    let parse = |policy: DuplicateKeys| {
         deser_json::Deserializer::from_str(r#"{"a": 1, "b": 2, "a": {"c": 3}}"#)
-            .deserialize_with::<Value, _>(|driver| {
-                *driver.state_mut().get_mut::<DuplicateKeys>() = policy;
-            })
+            .deserialize_with::<Value, _>(|driver| policy.set(driver.state_mut()))
     };
     let value = parse(DuplicateKeys::First).unwrap();
     assert_eq!(value, value!({"a": 1, "b": 2}));

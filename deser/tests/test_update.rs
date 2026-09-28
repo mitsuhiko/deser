@@ -153,7 +153,7 @@ fn test_top_level_values() {
 fn test_unknown_fields_policy() {
     let mut limits = defaults().limits;
     let mut driver = DeserializeDriver::update(&mut limits);
-    *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Error;
+    UnknownFields::Error.set(driver.state_mut());
     driver.emit(Event::map_start()).unwrap();
     driver.emit("nope").unwrap();
     let err = driver.emit(1u64).unwrap_err();

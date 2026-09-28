@@ -235,8 +235,7 @@ async fn test_feeding_across_tasks() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_streamed_elements() {
-    use deser::Streamed;
-    use deser::stream::Part;
+    use deser::stream::{Part, Streamed};
 
     #[derive(Debug, PartialEq, Deserialize)]
     struct Feed {

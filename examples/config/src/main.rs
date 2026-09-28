@@ -110,7 +110,7 @@ fn check_timeouts(config: &Config) -> Result<(), String> {
 /// Sets up a driver: errors get paths and unknown keys are collected.
 fn setup(driver: &mut DeserializeDriver<'_, '_>, warnings: &IgnoredFields) {
     driver.push_layer(PathLayer::new());
-    *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Collect(warnings.clone());
+    UnknownFields::Collect(warnings.clone()).set(driver.state_mut());
 }
 
 /// Applies a TOML file to the configuration.

@@ -341,9 +341,9 @@ impl<'a> Deserializer<'a> {
         let tree = Tree::build(&self.vars, &self.config)?;
         let state = driver.state_mut();
         if self.config.bytes != BytesFormat::BASE64 {
-            *state.get_mut::<BytesFormat>() = self.config.bytes;
+            self.config.bytes.set(state);
         }
-        *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        self.config.duplicate_keys.set(state);
         LexicalRules::LENIENT.set(state);
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)
@@ -606,11 +606,7 @@ impl Tree {
                 }
                 // an index of a sequence given more than once
                 (values @ [_, _, ..], true) => {
-                    let policy = driver
-                        .state()
-                        .get::<DuplicateKeys>()
-                        .copied()
-                        .unwrap_or_default();
+                    let policy = DuplicateKeys::of(driver.state());
                     let var = match policy {
                         DuplicateKeys::First => values[0],
                         DuplicateKeys::Error => {

@@ -14,6 +14,7 @@ mod test_duplicates;
 mod test_enums;
 mod test_event_data;
 mod test_ext;
+mod test_facade;
 mod test_implicit;
 #[cfg(feature = "io")]
 mod test_io;

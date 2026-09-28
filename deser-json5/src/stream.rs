@@ -503,7 +503,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         };
         // a new value starts
         if self.state.parser.is_idle() && self.config.bytes_format() != BytesFormat::BASE64 {
-            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes_format();
+            self.config.bytes_format().set(driver.state_mut());
         }
         let options = self.options();
         let state = &mut self.state;

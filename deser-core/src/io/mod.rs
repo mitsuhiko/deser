@@ -79,7 +79,7 @@
 //! # Large Sequences
 //!
 //! Values which contain a large (or unbounded) sequence can be processed
-//! while they are read: a [`Streamed`](crate::Streamed) sequence hands out
+//! while they are read: a [`Streamed`](crate::stream::Streamed) sequence hands out
 //! its elements as they are read with [`Reader::read_next`] (and behaves
 //! like a `Vec` otherwise).
 //!
@@ -111,9 +111,9 @@ use crate::de::{
 };
 use crate::error::{Error, ErrorKind};
 use crate::ser::{Serialize, SerializeDriver, Serializer, StreamSerializer, Written};
-use crate::stream::{ElementReader, ElementStatus, InputBuffer, Part, Status};
-
-pub use crate::stream::DEFAULT_BUFFER_LIMIT;
+use crate::stream::{
+    DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Part, Status,
+};
 
 /// Reads values from a [`Read`].
 ///
@@ -284,14 +284,14 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         self.buffer.deserialize().map(Some)
     }
 
-    /// Reads the next element of the [`Streamed`](crate::Streamed) sequence of a value or
+    /// Reads the next element of the [`Streamed`](crate::stream::Streamed) sequence of a value or
     /// the value.
     ///
     /// `T` is the type of the value and `E` the type of the elements of a
-    /// [`Streamed<E>`](crate::Streamed) sequence within it.  The elements are
+    /// [`Streamed<E>`](crate::stream::Streamed) sequence within it.  The elements are
     /// handed out as they are read ([`Part::Element`]), the value once it's
     /// complete ([`Part::Done`]).  The next call continues with the next
-    /// value.  Returns `None` if there are no more values.  See [`Streamed`](crate::Streamed)
+    /// value.  Returns `None` if there are no more values.  See [`Streamed`](crate::stream::Streamed)
     /// for an example.
     ///
     /// Until the value is complete, the reader can only be used to read the

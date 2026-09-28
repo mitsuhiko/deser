@@ -660,7 +660,7 @@ impl<'a> Deserializer<'a> {
             Source::set(driver.state_mut(), source.clone());
         }
         if self.config.bytes != BytesFormat::BASE64 {
-            *driver.state_mut().get_mut::<BytesFormat>() = self.config.bytes;
+            self.config.bytes.set(driver.state_mut());
         }
         let input = self.input;
         let rv = self

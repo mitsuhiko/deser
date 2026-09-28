@@ -106,7 +106,7 @@ impl<'a> ValueSink<'a> {
                     self.entry = if map.is_multimap() {
                         Entry::Repeat
                     } else {
-                        match state.get::<DuplicateKeys>().copied().unwrap_or_default() {
+                        match DuplicateKeys::of(state) {
                             DuplicateKeys::Last => Entry::Insert,
                             DuplicateKeys::First => Entry::Ignore,
                             _ => return Err(duplicate_key(&key)),

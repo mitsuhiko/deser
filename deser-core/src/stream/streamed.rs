@@ -22,9 +22,8 @@ use crate::ser::{Begin, Chunk, Describe, Serialize};
 /// # fn example() -> Result<(), deser::Error> {
 /// # #[cfg(all(feature = "derive", feature = "io"))] {
 /// use deser::Deserialize;
-/// use deser::Streamed;
 /// use deser::io::Reader;
-/// use deser::stream::Part;
+/// use deser::stream::{Part, Streamed};
 /// # use deser::de::{DeserializeDriver, Frame, StreamDeserializer};
 /// # use deser::{Error, Event};
 /// # /// Numbers on a line of their own form a page (with a sequence of the numbers).

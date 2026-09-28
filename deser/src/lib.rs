@@ -158,7 +158,7 @@ pub struct Account {
 // of the data formats (which only depend on deser-core) can be compiled in
 // parallel with the derive macros.  The items are inlined so that the
 // documentation shows them as part of this crate.  New public items of
-// deser-core need to be added here.
+// deser-core need to be added here (`tests/test_facade.rs` checks this).
 
 #[doc(inline)]
 pub use deser_core::{adapters, de, ext, hints, ser, stream};
@@ -174,7 +174,7 @@ pub use deser_core::derive;
 #[doc(inline)]
 pub use deser_core::{
     Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorAttachment, ErrorContext, ErrorKind,
-    Event, EventData, Implicit, ImplicitValue, Order, Position, Source, State, Streamed, Text,
+    Event, EventData, Implicit, ImplicitValue, Order, Position, Source, State, Text,
 };
 
 #[doc(inline)]
@@ -183,7 +183,7 @@ pub use deser_core::make_slot_wrapper;
 // common re-exports
 
 #[doc(no_inline)]
-pub use crate::{de::Deserialize, ser::Serialize};
+pub use crate::{de::Deserialize, ser::Serialize, stream::Streamed};
 
 #[cfg(feature = "derive")]
 #[doc(inline)]

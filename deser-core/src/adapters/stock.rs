@@ -1036,7 +1036,7 @@ where
         VA: DeserializeAs<'de, V>,
     {
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
-            self.replace = state.duplicate_keys() == DuplicateKeys::Last;
+            self.replace = DuplicateKeys::of(state) == DuplicateKeys::Last;
             Ok(())
         }
 

@@ -210,7 +210,7 @@ fn test_unknown_field_paths() {
         &DeserializerConfig::new().track_locations(true),
     )
     .deserialize_with::<BTreeMap<String, Vec<Server>>, _>(|driver| {
-        *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Collect(ignored.clone());
+        UnknownFields::Collect(ignored.clone()).set(driver.state_mut());
         driver.push_layer(PathLayer::new())
     })
     .unwrap();

@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use core::any::{Any, TypeId};
 use core::fmt;
 
-use crate::Position;
+use crate::{Position, State};
 
 /// Describes the kind of error.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -67,6 +67,19 @@ pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
         let _ = f;
         Ok(())
     }
+}
+
+/// Adds context to errors, see [`State::add_error_context`](crate::State::add_error_context).
+///
+/// This is typically implemented by the extension type which holds the
+/// information that is attached to errors.
+pub trait ErrorContext: 'static {
+    /// Adds context to an error.
+    ///
+    /// This is invoked with the state as it was when the error happened.
+    /// Context that is already attached to the error should not be
+    /// replaced.
+    fn add_context(err: Error, state: &State) -> Error;
 }
 
 /// An error for deser.

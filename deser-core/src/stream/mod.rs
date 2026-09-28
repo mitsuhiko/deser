@@ -40,7 +40,7 @@
 //! # Large Sequences
 //!
 //! Values which contain a large (or unbounded) sequence can be processed
-//! while they are read: a [`Streamed`](crate::Streamed) sequence hands out
+//! while they are read: a [`Streamed`] sequence hands out
 //! its elements as they are read with an [`ElementReader`] (and behaves
 //! like a `Vec` otherwise).
 //!
@@ -55,8 +55,11 @@
 //! refer to the frame of the value.
 mod buffer;
 pub(crate) mod elements;
+mod streamed;
 
 pub use self::buffer::{InputBuffer, Status};
+pub use self::elements::{ElementReader, ElementStatus, Part};
+pub use self::streamed::Streamed;
 
 /// The default for how much output of a value writers buffer before it's
 /// written (see `Writer::set_buffer_limit` of `deser::io`).
@@ -64,4 +67,3 @@ pub use self::buffer::{InputBuffer, Status};
 /// Writers pass this as the limit to
 /// [`StreamSerializer::drive_partial`](crate::ser::StreamSerializer::drive_partial).
 pub const DEFAULT_BUFFER_LIMIT: usize = 8 * 1024;
-pub use self::elements::{ElementReader, ElementStatus, Part};

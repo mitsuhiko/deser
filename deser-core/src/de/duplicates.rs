@@ -8,7 +8,7 @@ use alloc::string::String;
 /// JSON objects can contain the same key more than once and query strings
 /// commonly repeat keys.  Where a single value is expected (the field of a
 /// struct or an entry of a map) the policy decides what happens.  It's an
-/// extension value in the [`State`] (see [`State::get_mut`]).  The default is
+/// extension value in the [`State`] (see [`set`](Self::set)).  The default is
 /// [`Error`](Self::Error): if the same key could mean different values to
 /// different parsers (a proxy might use the first value, the application the
 /// last) the input is rejected.
@@ -20,7 +20,7 @@ use alloc::string::String;
 ///
 /// let mut out = None::<BTreeMap<String, u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// *driver.state_mut().get_mut::<DuplicateKeys>() = DuplicateKeys::Error;
+/// DuplicateKeys::Error.set(driver.state_mut());
 /// driver.emit(Event::map_start()).unwrap();
 /// for value in [1u64, 2] {
 ///     driver.emit("a").unwrap();
@@ -42,6 +42,18 @@ pub enum DuplicateKeys {
 }
 
 impl DuplicateKeys {
+    /// Returns the policy of a deserialization.
+    #[inline]
+    pub fn of(state: &State) -> DuplicateKeys {
+        state.get::<DuplicateKeys>().copied().unwrap_or_default()
+    }
+
+    /// Sets the policy of a deserialization.
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<DuplicateKeys>() = self;
+    }
+
     /// Decides if a duplicate value is used.
     ///
     /// Returns `Ok(true)` if the value replaces the previous one, `Ok(false)`
@@ -79,7 +91,5 @@ pub(crate) fn is_seen(seen: &[u64], index: usize) -> bool {
 /// Returns `Ok(true)` if the value replaces the previous one.
 #[cold]
 pub fn duplicate_field(name: &str, state: &State) -> Result<bool, Error> {
-    state
-        .duplicate_keys()
-        .resolve(|| format!("duplicate field `{}`", name))
+    DuplicateKeys::of(state).resolve(|| format!("duplicate field `{}`", name))
 }

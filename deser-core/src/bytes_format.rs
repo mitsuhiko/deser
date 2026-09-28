@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::State;
 use crate::adapters::bytes::decode_base64;
 use crate::adapters::{Base64, BytesEncoding};
 use crate::error::Error;
@@ -18,9 +19,10 @@ use crate::error::Error;
 ///   over the configuration of the serializer.  The
 ///   [`BytesFallback`](crate::adapters::BytesFallback) adapter does this.
 /// * The types that expect bytes decode strings with the format placed into
-///   the [`State`](crate::State).  The deserializers of formats without
-///   native bytes can be configured to do this, otherwise lenient base64
-///   is used.  Strings are decoded as base64 for [`BytesFormat::SEQ`].
+///   the [`State`] (see [`set`](Self::set)).  The deserializers of formats
+///   without native bytes can be configured to do this, otherwise lenient
+///   base64 is used.  Strings are decoded as base64 for
+///   [`BytesFormat::SEQ`].
 ///
 /// ```
 /// use deser::adapters::Base64UrlNoPad;
@@ -66,6 +68,21 @@ impl BytesFormat {
             encode: E::encode,
             decode: E::decode,
         })
+    }
+
+    /// Returns the format the types that expect bytes decode strings with.
+    ///
+    /// This is [`BytesFormat::BASE64`] unless the deserializer of the format
+    /// [`set`](Self::set) a different one.
+    #[inline]
+    pub fn of(state: &State) -> BytesFormat {
+        state.get::<BytesFormat>().copied().unwrap_or_default()
+    }
+
+    /// Sets the format the types that expect bytes decode strings with.
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<BytesFormat>() = self;
     }
 
     /// Returns the name of the format.

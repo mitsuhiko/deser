@@ -294,9 +294,8 @@ fn test_feeding_with_layers() {
 }
 
 mod streamed {
-    use deser::Streamed;
     use deser::io::Reader;
-    use deser::stream::Part;
+    use deser::stream::{Part, Streamed};
     use deser::{Deserialize, Serialize};
 
     use super::dialect::{self, DeserializerConfig, Trailing};

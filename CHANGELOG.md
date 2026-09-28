@@ -76,15 +76,18 @@ every intermediate step.
   `serialize_with` to configure the drivers.
 - Added `DuplicateKeys` (duplicate keys are an error by default) and
   `UnknownFields` (reject or collect unknown keys) policies on the state.
-  Both work with flattened fields and internally tagged enums.
+  Both work with flattened fields and internally tagged enums.  Like the
+  other settings in the state (`LexicalRules`, `BytesFormat`, `Layout`)
+  they are read and changed with their `of` and `set` functions.
 - Added `Serialize::describe` and `deser::ser::Describe` with which values
   describe their Rust shape.  `deser-debug` uses it to format values like
   `#[derive(Debug)]`.
 - Added `deser::hints` with formatting hints: `Layout` (and the `Compact`
   and `Expanded` adapters) asks formats to lay out containers inline or
   expanded.
-- Added `OwnedDriver`, `Streamed<T>` (sequences whose elements are handed
-  out while they are read), `Chunk::Forward` and `Position`.
+- Added `OwnedDriver`, `deser::stream::Streamed<T>` (sequences whose
+  elements are handed out while they are read), `Chunk::Forward`,
+  `Position` and `Source`.
 - Added `DeserializeDriver::transient` which lends a driver out for data
   that lives shorter than the data the driver's sinks can borrow (for
   instance the frame of a value in a stream buffer).

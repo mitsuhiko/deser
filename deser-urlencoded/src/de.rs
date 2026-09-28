@@ -272,9 +272,9 @@ impl<'a> Deserializer<'a> {
             Source::set(state, self.input);
         }
         if self.config.bytes != BytesFormat::BASE64 {
-            *state.get_mut::<BytesFormat>() = self.config.bytes;
+            self.config.bytes.set(state);
         }
-        *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        self.config.duplicate_keys.set(state);
         LexicalRules::LENIENT.set(state);
         tree.emit(driver)
             .map_err(|err| err.resolve_position(self.input.as_bytes()))
@@ -564,11 +564,7 @@ impl<'a> Tree<'a> {
                 ([], true) => unreachable!(),
                 // an index of a sequence given more than once (`a[0]=1&a[0]=2`)
                 (values @ [_, _, ..], true) => {
-                    let policy = driver
-                        .state()
-                        .get::<DuplicateKeys>()
-                        .copied()
-                        .unwrap_or_default();
+                    let policy = DuplicateKeys::of(driver.state());
                     let (value, range) = match policy {
                         DuplicateKeys::First => &values[0],
                         DuplicateKeys::Error => {

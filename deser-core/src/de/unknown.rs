@@ -16,7 +16,7 @@ use crate::sync::{Mutex, MutexGuard};
 /// changes that for all structs of a deserialization, while
 /// `#[deser(deny_unknown_fields)]` rejects unknown keys for a single type
 /// regardless of the policy.  It's an extension value in the [`State`] (see
-/// [`State::get_mut`]).
+/// [`set`](Self::set)).
 ///
 /// Only the struct that the key is given to decides: flattened fields are
 /// asked if they take a key first (see
@@ -34,7 +34,7 @@ use crate::sync::{Mutex, MutexGuard};
 ///
 /// let mut out = None::<Config>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// *driver.state_mut().get_mut::<UnknownFields>() = UnknownFields::Error;
+/// UnknownFields::Error.set(driver.state_mut());
 /// driver.emit(Event::map_start()).unwrap();
 /// driver.emit("name").unwrap();
 /// driver.emit("demo").unwrap();
@@ -52,6 +52,23 @@ pub enum UnknownFields {
     Error,
     /// Unknown keys are ignored but reported to a [`IgnoredFields`].
     Collect(IgnoredFields),
+}
+
+/// The policy of deserializations that do not set one.
+static IGNORE: UnknownFields = UnknownFields::Ignore;
+
+impl UnknownFields {
+    /// Returns the policy of a deserialization.
+    #[inline]
+    pub fn of(state: &State) -> &UnknownFields {
+        state.get::<UnknownFields>().unwrap_or(&IGNORE)
+    }
+
+    /// Sets the policy of a deserialization.
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<UnknownFields>() = self;
+    }
 }
 
 /// Collects the keys ignored with [`UnknownFields::Collect`].
@@ -79,8 +96,7 @@ pub enum UnknownFields {
 /// let mut out = None::<Config>;
 /// {
 ///     let mut driver = DeserializeDriver::new(&mut out);
-///     *driver.state_mut().get_mut::<UnknownFields>() =
-///         UnknownFields::Collect(ignored.clone());
+///     UnknownFields::Collect(ignored.clone()).set(driver.state_mut());
 ///     for event in [
 ///         Event::map_start(),
 ///         "name".into(),
@@ -156,10 +172,7 @@ pub(crate) struct UnclaimedKeys(Vec<Error>);
 /// returns `true` (or they need them for other reasons).
 #[inline]
 pub fn wants_unknown_fields(state: &State) -> bool {
-    !matches!(
-        state.get::<UnknownFields>(),
-        None | Some(UnknownFields::Ignore)
-    )
+    !matches!(UnknownFields::of(state), UnknownFields::Ignore)
 }
 
 /// Creates the error for an unknown key.
@@ -208,10 +221,10 @@ fn decide(make_error: impl FnOnce() -> Error, deny: bool, state: &mut State) -> 
     if deny {
         return Err(make_error());
     }
-    match state.get::<UnknownFields>() {
-        None | Some(UnknownFields::Ignore) => Ok(()),
-        Some(UnknownFields::Error) => Err(make_error()),
-        Some(UnknownFields::Collect(ignored)) => {
+    match UnknownFields::of(state) {
+        UnknownFields::Ignore => Ok(()),
+        UnknownFields::Error => Err(make_error()),
+        UnknownFields::Collect(ignored) => {
             let ignored = ignored.clone();
             ignored.push(located(make_error(), state));
             Ok(())

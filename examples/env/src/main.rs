@@ -108,8 +108,7 @@ fn main() {
     let config: Config = Deserializer::from_vars("SHOP_", ENV.iter().copied())
         .deserialize_with(|driver| {
             driver.push_layer(PathLayer::new());
-            *driver.state_mut().get_mut::<UnknownFields>() =
-                UnknownFields::Collect(warnings.clone());
+            UnknownFields::Collect(warnings.clone()).set(driver.state_mut());
         })
         .unwrap();
     println!("{:#?}\n", config);
