@@ -1026,7 +1026,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 && container_attrs.default().is_none()
         })
         .map(|(name, attrs)| {
-            (name, field_collect_empty(&attrs.field().ty, attrs.adapters().de()))
+            (
+                name,
+                field_collect_empty(&attrs.field().ty, attrs.adapters().de()),
+            )
         })
         .unzip();
     let fill_empty = if empty_field.is_empty() {

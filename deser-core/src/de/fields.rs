@@ -301,7 +301,13 @@ pub trait StructFields<'de>: Send {
     fn field_sink(&mut self, index: usize, collect: Collect) -> SinkHandle<'_, 'de>;
 
     /// Deserializes an atom into the field with the index.
-    fn field_atom(&mut self, index: usize, collect: Collect, atom: Atom, state: &mut State) -> Result<(), Error>;
+    fn field_atom(
+        &mut self,
+        index: usize,
+        collect: Collect,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error>;
 
     /// Deserializes a borrowed atom into the field with the index.
     ///
@@ -527,7 +533,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
             Some(index) => {
                 let collect = self.collect(index, state);
                 self.fields().field_sink(index, collect)
-            },
+            }
             None => SinkHandle::null(),
         })
     }
@@ -541,7 +547,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
             Some(index) => {
                 let collect = self.collect(index, state);
                 self.fields().field_atom(index, collect, atom, state)
-            },
+            }
             None => Ok(()),
         }
     }
@@ -563,12 +569,13 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
         match self.next_index(state)? {
             Some(index) if self.info.borrows => {
                 let collect = self.collect(index, state);
-                self.fields().field_borrowed_atom(index, collect, atom, state)
+                self.fields()
+                    .field_borrowed_atom(index, collect, atom, state)
             }
             Some(index) => {
                 let collect = self.collect(index, state);
                 self.fields().field_atom(index, collect, atom, state)
-            },
+            }
             None => Ok(()),
         }
     }
@@ -663,7 +670,8 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
         let index = core::mem::replace(&mut self.key.index, UNKNOWN);
         if index == UNKNOWN {
             if self.key.other.is_some() {
-                self.key.unknown_key(self.info.fields, self.info.deny, state)?;
+                self.key
+                    .unknown_key(self.info.fields, self.info.deny, state)?;
             }
             return Ok(SinkHandle::null());
         }
