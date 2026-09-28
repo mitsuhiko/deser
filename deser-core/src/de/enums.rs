@@ -410,13 +410,14 @@ pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Err
 }
 
 /// Looks up a variant by tag.
-pub type VariantLookup<'a, 'de, E> = fn(Tag<'_>, &mut State) -> Option<BoxedVariant<'a, 'de, E>>;
+pub(crate) type VariantLookup<'a, 'de, E> =
+    fn(Tag<'_>, &mut State) -> Option<BoxedVariant<'a, 'de, E>>;
 
 /// Creates the builder of a special variant.
 pub type VariantMaker<'a, 'de, E> = fn(&mut State) -> BoxedVariant<'a, 'de, E>;
 
 /// Looks up a unit variant by tag.
-pub type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
+pub(crate) type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
 
 /// The variants of a tagged enum.
 pub struct Variants<'a, 'de, E> {
@@ -1335,7 +1336,7 @@ pub fn unit_enum_index(atom: Atom<'_>, info: &UnitEnum) -> Result<usize, Error> 
 }
 
 /// A function that sets a value to the variant of a unit enum by index.
-pub type VariantSetter<T> = fn(&mut T, usize);
+pub(crate) type VariantSetter<T> = fn(&mut T, usize);
 
 /// [`VariantSetter`] with the type of the value erased.
 type ErasedVariantSetter = fn(NonNull<()>, usize);
@@ -1436,7 +1437,7 @@ impl<'de> Sink<'de> for UnitEnumSink<'_> {
 }
 
 /// A function that sets a value from an atom.
-pub type AtomSetter<T> = for<'x> fn(&mut T, Atom<'x>, &mut State) -> Result<(), Error>;
+pub(crate) type AtomSetter<T> = for<'x> fn(&mut T, Atom<'x>, &mut State) -> Result<(), Error>;
 
 /// [`AtomSetter`] with the type of the value erased.
 type ErasedAtomSetter = for<'x> fn(NonNull<()>, Atom<'x>, &mut State) -> Result<(), Error>;

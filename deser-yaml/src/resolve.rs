@@ -34,7 +34,7 @@ pub enum Version {
 const TAG_PREFIX: &str = "tag:yaml.org,2002:";
 
 /// How a tag affects a scalar.
-pub enum ScalarTag<'t> {
+pub(crate) enum ScalarTag<'t> {
     /// The scalar is a string (the `!` tag or a quoted scalar).
     Str,
     /// A standard tag that determines the type.
@@ -44,7 +44,7 @@ pub enum ScalarTag<'t> {
 }
 
 /// Classifies a tag.
-pub fn classify_tag(tag: &str) -> ScalarTag<'_> {
+pub(crate) fn classify_tag(tag: &str) -> ScalarTag<'_> {
     if tag == "!" {
         return ScalarTag::Str;
     }
@@ -58,7 +58,7 @@ pub fn classify_tag(tag: &str) -> ScalarTag<'_> {
 }
 
 /// Returns `true` if the tag is a standard tag for a collection.
-pub fn is_collection_tag(tag: &str, is_map: bool) -> Result<bool, &'static str> {
+pub(crate) fn is_collection_tag(tag: &str, is_map: bool) -> Result<bool, &'static str> {
     match classify_tag(tag) {
         ScalarTag::Str => Ok(true),
         ScalarTag::Standard("seq") if !is_map => Ok(true),
@@ -70,7 +70,7 @@ pub fn is_collection_tag(tag: &str, is_map: bool) -> Result<bool, &'static str> 
 
 /// Resolves a plain scalar without tag.
 #[inline]
-pub fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
+pub(crate) fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
     match resolve_plain_str(&value, version) {
         Some(atom) => atom,
         None => Atom::Str(value.into()),
@@ -85,7 +85,7 @@ pub fn resolve_plain(value: Cow<'_, str>, version: Version) -> Atom<'_> {
 /// `1.1` for an `f64`).  Integers which do not fit into 64 bits are emitted
 /// as their value.
 #[inline]
-pub fn resolve_plain_implicit(value: Cow<'_, str>, version: Version) -> Atom<'_> {
+pub(crate) fn resolve_plain_implicit(value: Cow<'_, str>, version: Version) -> Atom<'_> {
     match resolve_plain_str(&value, version) {
         Some(atom) => match ImplicitValue::from_atom(&atom) {
             Some(resolved) => Atom::Implicit(Implicit::new(value, resolved)),
@@ -96,7 +96,7 @@ pub fn resolve_plain_implicit(value: Cow<'_, str>, version: Version) -> Atom<'_>
 }
 
 /// Returns `true` if a plain scalar is a string in the given version.
-pub fn is_plain_str(s: &str, version: Version) -> bool {
+pub(crate) fn is_plain_str(s: &str, version: Version) -> bool {
     resolve_plain_str(s, version).is_none()
 }
 
@@ -106,7 +106,7 @@ pub fn is_plain_str(s: &str, version: Version) -> bool {
 /// Common YAML 1.1 readers (such as PyYAML) resolve timestamps without a
 /// tag and treat `=` as the value key.  The syntax of timestamps is matched
 /// without validating the date as these readers fail on invalid dates.
-pub fn is_yaml11_implicit(s: &str) -> bool {
+pub(crate) fn is_yaml11_implicit(s: &str) -> bool {
     s == "=" || is_yaml11_timestamp_syntax(s)
 }
 
@@ -208,7 +208,7 @@ fn test_yaml11_timestamp_syntax() {
 /// This is the case if readers of all versions from `compat` on read the
 /// text as the same value.  Empty text is not written as it's only null
 /// in some places.
-pub fn writes_as_plain(value: &Implicit, compat: Version) -> bool {
+pub(crate) fn writes_as_plain(value: &Implicit, compat: Version) -> bool {
     let text = value.text().as_str();
     let reads_as = |version| {
         resolve_plain_str(text, version)
@@ -239,7 +239,7 @@ fn resolve_plain_str(s: &str, version: Version) -> Option<Atom<'static>> {
 }
 
 /// Resolves a scalar with a standard tag.
-pub fn resolve_standard<'x>(
+pub(crate) fn resolve_standard<'x>(
     name: &str,
     value: Cow<'x, str>,
     version: Version,
@@ -275,7 +275,7 @@ pub fn resolve_standard<'x>(
 ///
 /// Dates without time are local dates, timestamps without time zone are in
 /// UTC.
-pub fn parse_timestamp(s: &str) -> Option<Datetime> {
+pub(crate) fn parse_timestamp(s: &str) -> Option<Datetime> {
     let bytes = s.as_bytes();
     let mut pos = 0;
     // reads between `min` and `max` digits

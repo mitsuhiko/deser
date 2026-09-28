@@ -24,7 +24,7 @@ const FIELD_ATTRS: &[&str] = &[
 
 /// Returns the error for transparent structs that do not have exactly one
 /// field for the direction.
-pub fn field_count_error(input: &syn::DeriveInput, direction: Direction) -> syn::Error {
+pub(crate) fn field_count_error(input: &syn::DeriveInput, direction: Direction) -> syn::Error {
     let what = match direction {
         Direction::Serialize => "serialized",
         Direction::Deserialize => "deserialized",
@@ -42,7 +42,10 @@ pub fn field_count_error(input: &syn::DeriveInput, direction: Direction) -> syn:
 ///
 /// Returns `None` if the struct is not transparent or does not have named
 /// fields.
-pub fn derive(input: &syn::DeriveInput, direction: Direction) -> syn::Result<Option<TokenStream>> {
+pub(crate) fn derive(
+    input: &syn::DeriveInput,
+    direction: Direction,
+) -> syn::Result<Option<TokenStream>> {
     let fields = match input.data {
         syn::Data::Struct(syn::DataStruct {
             fields: syn::Fields::Named(ref fields),

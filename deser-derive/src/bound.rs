@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
 
-pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Generics {
+pub(crate) fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Generics {
     let bound = syn::Lifetime::new(lifetime, Span::call_site());
     let def = syn::LifetimeParam {
         attrs: Vec::new(),
@@ -40,7 +40,7 @@ pub fn with_lifetime_bound(generics: &syn::Generics, lifetime: &str) -> syn::Gen
 /// Lifetimes are left out (and inferred), which allows the turbofish to be
 /// used for functions that have more lifetime parameters than the type
 /// (such as `'de`).
-pub fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
+pub(crate) fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
     let mut params = Vec::new();
     for param in &generics.params {
         match param {
@@ -61,7 +61,7 @@ pub fn turbofish_without_lifetimes(generics: &syn::Generics) -> TokenStream {
 /// The lifetime has no bounds so that functions which take a slot with
 /// this lifetime are generic over it (it's late bound), as needed for
 /// `for<'x> fn(&'x mut Option<T>) -> SinkHandle<'x, 'de>`.
-pub fn with_slot_lifetime(generics: &syn::Generics) -> syn::Generics {
+pub(crate) fn with_slot_lifetime(generics: &syn::Generics) -> syn::Generics {
     let mut rv = generics.clone();
     rv.params.insert(
         0,
@@ -77,7 +77,7 @@ pub fn with_slot_lifetime(generics: &syn::Generics) -> syn::Generics {
 ///
 /// All lifetimes of the type are bounded by `'de` so that borrowed data can
 /// be deserialized into them.
-pub fn with_de_lifetime(generics: &syn::Generics) -> syn::Result<syn::Generics> {
+pub(crate) fn with_de_lifetime(generics: &syn::Generics) -> syn::Result<syn::Generics> {
     let mut bounds = syn::punctuated::Punctuated::<_, syn::Token![+]>::new();
     for lifetime in generics.lifetimes() {
         if lifetime.lifetime.ident == "de" {
@@ -108,7 +108,7 @@ pub fn with_de_lifetime(generics: &syn::Generics) -> syn::Result<syn::Generics> 
 ///
 /// If `custom` is `None` every type parameter gets the given bound.
 /// Otherwise the custom predicates are added instead.
-pub fn where_clause_with_bound(
+pub(crate) fn where_clause_with_bound(
     generics: &syn::Generics,
     bound: TokenStream,
     custom: Option<&[syn::WherePredicate]>,
@@ -133,7 +133,7 @@ pub fn where_clause_with_bound(
 }
 
 /// Returns the names of the type parameters.
-pub fn type_param_names(generics: &syn::Generics) -> HashSet<String> {
+pub(crate) fn type_param_names(generics: &syn::Generics) -> HashSet<String> {
     let mut rv = HashSet::new();
     for param in generics.type_params() {
         rv.insert(param.ident.to_string());
@@ -142,7 +142,7 @@ pub fn type_param_names(generics: &syn::Generics) -> HashSet<String> {
 }
 
 /// Returns `true` if one of the names is an identifier in the tokens.
-pub fn mentions_any(tokens: TokenStream, names: &HashSet<String>) -> bool {
+pub(crate) fn mentions_any(tokens: TokenStream, names: &HashSet<String>) -> bool {
     let mut idents = HashSet::new();
     collect_idents(tokens, &mut idents);
     for ident in &idents {
@@ -154,7 +154,7 @@ pub fn mentions_any(tokens: TokenStream, names: &HashSet<String>) -> bool {
 }
 
 /// Collects all identifiers in a token stream.
-pub fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
+pub(crate) fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
     for token in stream {
         match token {
             proc_macro2::TokenTree::Ident(ident) => {
@@ -167,7 +167,7 @@ pub fn collect_idents(stream: TokenStream, out: &mut HashSet<String>) {
 }
 
 /// Collects the names of all lifetimes (without the `'`) in a token stream.
-pub fn collect_lifetimes(stream: TokenStream, out: &mut HashSet<String>) {
+pub(crate) fn collect_lifetimes(stream: TokenStream, out: &mut HashSet<String>) {
     let mut after_quote = false;
     for token in stream {
         match token {
@@ -186,7 +186,7 @@ pub fn collect_lifetimes(stream: TokenStream, out: &mut HashSet<String>) {
 }
 
 /// A field for the purpose of bound inference.
-pub struct BoundField<'a> {
+pub(crate) struct BoundField<'a> {
     pub ty: &'a syn::Type,
     pub adapter: Option<&'a syn::Type>,
     /// The field is skipped (not serialized or deserialized).
@@ -207,7 +207,7 @@ pub struct BoundField<'a> {
 /// refer to type parameters a predicate that requires the adapter to
 /// implement `adapter_trait` for the field type is added.  The custom bounds
 /// of fields are always added.
-pub fn where_clause_for_fields(
+pub(crate) fn where_clause_for_fields(
     generics: &syn::Generics,
     bound: TokenStream,
     adapter_only_bound: Option<TokenStream>,

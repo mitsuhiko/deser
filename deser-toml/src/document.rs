@@ -21,7 +21,7 @@ pub(crate) struct Span {
 }
 
 impl Span {
-    pub fn new(start: usize, end: usize) -> Span {
+    pub(crate) fn new(start: usize, end: usize) -> Span {
         Span { start, end }
     }
 }
@@ -172,7 +172,7 @@ pub(crate) struct Document<'a> {
 }
 
 impl<'a> Document<'a> {
-    pub fn new_table(&mut self, kind: TableKind, span: Span) -> usize {
+    pub(crate) fn new_table(&mut self, kind: TableKind, span: Span) -> usize {
         self.tables.push(Table {
             entries: Vec::new(),
             kind,
@@ -182,7 +182,7 @@ impl<'a> Document<'a> {
         self.tables.len() - 1
     }
 
-    pub fn new_array(&mut self, of_tables: bool, span: Span) -> usize {
+    pub(crate) fn new_array(&mut self, of_tables: bool, span: Span) -> usize {
         self.arrays.push(Array {
             items: Vec::new(),
             of_tables,
@@ -192,7 +192,7 @@ impl<'a> Document<'a> {
     }
 
     /// Looks up the entry for a key in a table.
-    pub fn find(&self, table: usize, key: &str) -> Option<&Entry<'a>> {
+    pub(crate) fn find(&self, table: usize, key: &str) -> Option<&Entry<'a>> {
         let table = &self.tables[table];
         match table.index {
             Some(ref index) => index
@@ -207,7 +207,7 @@ impl<'a> Document<'a> {
     /// If the key exists the entry is returned.  This is the same as
     /// [`find`](Self::find) followed by [`insert`](Self::insert) but hashes
     /// the key only once.
-    pub fn insert_new(&mut self, table: usize, entry: Entry<'a>) -> Result<(), Entry<'a>> {
+    pub(crate) fn insert_new(&mut self, table: usize, entry: Entry<'a>) -> Result<(), Entry<'a>> {
         let table_ref = &mut self.tables[table];
         match table_ref.index {
             Some(ref mut index) => {
@@ -232,7 +232,7 @@ impl<'a> Document<'a> {
     }
 
     /// Adds an entry to a table.  The key must not exist yet.
-    pub fn insert(&mut self, table: usize, entry: Entry<'a>) {
+    pub(crate) fn insert(&mut self, table: usize, entry: Entry<'a>) {
         let table = &mut self.tables[table];
         table.entries.push(entry);
         let len = table.entries.len();

@@ -11,7 +11,7 @@ fn pow2(exp: i32) -> f64 {
 }
 
 /// Decodes a half precision float.
-pub fn f16_to_f64(half: u16) -> f64 {
+pub(crate) fn f16_to_f64(half: u16) -> f64 {
     let exponent = (half >> 10) & 0x1f;
     let mantissa = f64::from(half & 0x3ff);
     let value = match exponent {
@@ -73,7 +73,7 @@ fn f64_to_f16(value: f64) -> Option<u16> {
 /// the bits of the `f32`.  NaN is never converted, the caller has to handle
 /// it.
 #[inline]
-pub fn f32_to_f16(value: f32) -> Option<u16> {
+pub(crate) fn f32_to_f16(value: f32) -> Option<u16> {
     let bits = value.to_bits();
     let sign = ((bits >> 16) & 0x8000) as u16;
     let exponent = ((bits >> 23) & 0xff) as i32;

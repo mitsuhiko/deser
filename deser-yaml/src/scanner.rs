@@ -19,7 +19,7 @@ use crate::parser::syntax_error;
 const MAX_SIMPLE_KEY_LENGTH: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenKind<'a> {
+pub(crate) enum TokenKind<'a> {
     StreamStart,
     StreamEnd,
     VersionDirective(u32, u32),
@@ -47,7 +47,7 @@ pub enum TokenKind<'a> {
 
 /// The kind of a token without payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenType {
+pub(crate) enum TokenType {
     StreamStart,
     StreamEnd,
     VersionDirective,
@@ -73,7 +73,7 @@ pub enum TokenType {
 }
 
 impl TokenKind<'_> {
-    pub fn ty(&self) -> TokenType {
+    pub(crate) fn ty(&self) -> TokenType {
         match self {
             TokenKind::StreamStart => TokenType::StreamStart,
             TokenKind::StreamEnd => TokenType::StreamEnd,
@@ -102,7 +102,7 @@ impl TokenKind<'_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Token<'a> {
+pub(crate) struct Token<'a> {
     pub kind: TokenKind<'a>,
     pub start: Mark,
     pub end: Mark,
@@ -128,7 +128,7 @@ enum FlowKind {
     Mapping,
 }
 
-pub struct Scanner<'a> {
+pub(crate) struct Scanner<'a> {
     input: &'a str,
     mark: Mark,
     tokens: VecDeque<Token<'a>>,
@@ -240,7 +240,7 @@ fn is_tag_char(c: Option<char>) -> bool {
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(input: &'a str) -> Scanner<'a> {
+    pub(crate) fn new(input: &'a str) -> Scanner<'a> {
         Scanner {
             input,
             mark: Mark::default(),
@@ -350,19 +350,19 @@ impl<'a> Scanner<'a> {
     // -- public interface -------------------------------------------------
 
     /// Returns the type of the next token.
-    pub fn peek_type(&mut self) -> Result<TokenType, Error> {
+    pub(crate) fn peek_type(&mut self) -> Result<TokenType, Error> {
         self.fetch_more_tokens()?;
         Ok(self.tokens.front().unwrap().kind.ty())
     }
 
     /// Returns the next token.
-    pub fn peek_token(&mut self) -> Result<&Token<'a>, Error> {
+    pub(crate) fn peek_token(&mut self) -> Result<&Token<'a>, Error> {
         self.fetch_more_tokens()?;
         Ok(self.tokens.front().unwrap())
     }
 
     /// Removes the next token.  Must only be called after peeking.
-    pub fn next_token(&mut self) -> Token<'a> {
+    pub(crate) fn next_token(&mut self) -> Token<'a> {
         let token = self.tokens.pop_front().expect("no token peeked");
         self.tokens_parsed += 1;
         token

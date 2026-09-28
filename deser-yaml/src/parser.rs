@@ -35,7 +35,7 @@ enum State {
     End,
 }
 
-pub struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     scanner: Scanner<'a>,
     state: State,
     states: Vec<State>,
@@ -46,7 +46,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Parser<'a> {
+    pub(crate) fn new(input: &'a str) -> Parser<'a> {
         Parser {
             scanner: Scanner::new(input),
             state: State::StreamStart,
@@ -60,7 +60,7 @@ impl<'a> Parser<'a> {
     ///
     /// After [`EventKind::StreamEnd`] or an error, no more events must be
     /// requested.
-    pub fn next_event(&mut self) -> Result<Event<'a>, Error> {
+    pub(crate) fn next_event(&mut self) -> Result<Event<'a>, Error> {
         let event = self.parse_event()?;
         self.last_end = event.end;
         Ok(event)
@@ -662,7 +662,7 @@ impl<'a> Parser<'a> {
 /// Creates an error for a problem at a position that is not a syntax
 /// error (for instance an invalid value).
 #[cold]
-pub fn error_at(mark: Mark, msg: &str) -> Error {
+pub(crate) fn error_at(mark: Mark, msg: &str) -> Error {
     Error::new(ErrorKind::Unexpected, msg.to_string()).with_position(
         mark.offset,
         mark.line + 1,
@@ -671,7 +671,7 @@ pub fn error_at(mark: Mark, msg: &str) -> Error {
 }
 
 #[cold]
-pub fn syntax_error(mark: Mark, msg: &str) -> Error {
+pub(crate) fn syntax_error(mark: Mark, msg: &str) -> Error {
     Error::new(ErrorKind::Unexpected, format!("syntax error: {}", msg)).with_position(
         mark.offset,
         mark.line + 1,

@@ -5,7 +5,7 @@ use std::fmt::Write;
 use crate::resolve::{Version, is_plain_str, is_yaml11_implicit};
 
 /// The longest simple (implicit) key the YAML specification allows.
-pub const MAX_SIMPLE_KEY_LEN: usize = 1024;
+pub(crate) const MAX_SIMPLE_KEY_LEN: usize = 1024;
 
 /// Returns `true` if the character is printable in YAML.
 fn is_printable(c: char) -> bool {
@@ -40,7 +40,7 @@ fn is_block_safe(s: &str) -> bool {
 /// resolved as string by readers of YAML 1.2 and, if the compatibility
 /// version is YAML 1.1, by readers of YAML 1.1.  In flow collections the
 /// flow indicators are not allowed either.
-pub fn is_plain_safe(s: &str, compat: Version, flow: bool) -> bool {
+pub(crate) fn is_plain_safe(s: &str, compat: Version, flow: bool) -> bool {
     let bytes = s.as_bytes();
     let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
         return false;
@@ -92,12 +92,12 @@ pub fn is_plain_safe(s: &str, compat: Version, flow: bool) -> bool {
 }
 
 /// Returns `true` if a string can be written single-quoted.
-pub fn is_single_quote_safe(s: &str) -> bool {
+pub(crate) fn is_single_quote_safe(s: &str) -> bool {
     !s.chars().any(needs_escape)
 }
 
 /// Writes a single-quoted scalar.
-pub fn write_single_quoted(out: &mut String, s: &str) {
+pub(crate) fn write_single_quoted(out: &mut String, s: &str) {
     out.push('\'');
     for c in s.chars() {
         if c == '\'' {
@@ -110,7 +110,7 @@ pub fn write_single_quoted(out: &mut String, s: &str) {
 }
 
 /// Writes a double-quoted scalar.
-pub fn write_double_quoted(out: &mut String, s: &str) {
+pub(crate) fn write_double_quoted(out: &mut String, s: &str) {
     out.push('"');
     for c in s.chars() {
         match c {
@@ -145,7 +145,7 @@ pub fn write_double_quoted(out: &mut String, s: &str) {
 const MIN_FOLD_WIDTH: usize = 20;
 
 /// A block scalar (literal `|` or folded `>`).
-pub struct BlockScalar<'a> {
+pub(crate) struct BlockScalar<'a> {
     /// The content without the trailing line breaks.
     content: Cow<'a, str>,
     /// The number of trailing line breaks.
@@ -159,7 +159,7 @@ pub struct BlockScalar<'a> {
 impl<'a> BlockScalar<'a> {
     /// Returns a literal block scalar for a string if it can be written as
     /// one.
-    pub fn literal(s: &'a str) -> Option<BlockScalar<'a>> {
+    pub(crate) fn literal(s: &'a str) -> Option<BlockScalar<'a>> {
         if s.is_empty() || !is_block_safe(s) {
             return None;
         }
@@ -185,7 +185,7 @@ impl<'a> BlockScalar<'a> {
     /// exactly: lines are only broken at single spaces between other
     /// characters, lines must not start or end with whitespace (these are not
     /// folded by readers) and the string must not start with a line break.
-    pub fn folded(s: &'a str, width: usize) -> Option<BlockScalar<'a>> {
+    pub(crate) fn folded(s: &'a str, width: usize) -> Option<BlockScalar<'a>> {
         let mut rv = BlockScalar::literal(s)?;
         let foldable = !s.starts_with('\n')
             && rv
@@ -200,12 +200,12 @@ impl<'a> BlockScalar<'a> {
     }
 
     /// Returns `true` if a single-line string is worth folding at the width.
-    pub fn should_fold(s: &str, width: usize) -> bool {
+    pub(crate) fn should_fold(s: &str, width: usize) -> bool {
         s.len() > width && fold_points(s).next().is_some()
     }
 
     /// Creates a literal block from lines without leading spaces.
-    pub fn from_lines(lines: String) -> BlockScalar<'static> {
+    pub(crate) fn from_lines(lines: String) -> BlockScalar<'static> {
         BlockScalar {
             content: Cow::Owned(lines),
             trailing: 1,
@@ -218,7 +218,7 @@ impl<'a> BlockScalar<'a> {
     ///
     /// `indicator` is the indentation of the content relative to the parent
     /// node, it's only written if required.
-    pub fn write_header(&self, out: &mut String, indicator: usize) {
+    pub(crate) fn write_header(&self, out: &mut String, indicator: usize) {
         out.push(if self.fold.is_some() { '>' } else { '|' });
         if self.needs_indicator {
             write!(out, "{}", indicator).unwrap();
@@ -232,7 +232,7 @@ impl<'a> BlockScalar<'a> {
     }
 
     /// Writes the lines of the content, each ending with a line break.
-    pub fn write_body(&self, out: &mut String, indent: usize) {
+    pub(crate) fn write_body(&self, out: &mut String, indent: usize) {
         if self.content.is_empty() {
             // only line breaks (kept with the `+` indicator)
             for _ in 0..self.trailing {
@@ -304,7 +304,7 @@ fn write_folded_line(out: &mut String, line: &str, indent: usize, width: usize) 
 }
 
 /// Writes spaces for an indentation.
-pub fn push_indent(out: &mut String, indent: usize) {
+pub(crate) fn push_indent(out: &mut String, indent: usize) {
     const SPACES: &str = "                                                                ";
     match SPACES.get(..indent) {
         Some(spaces) => out.push_small(spaces),
@@ -314,14 +314,14 @@ pub fn push_indent(out: &mut String, indent: usize) {
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "speedups")]
-pub trait Float: zmij::Float + deser_core::__format::Float {}
+pub(crate) trait Float: zmij::Float + deser_core::__format::Float {}
 
 #[cfg(feature = "speedups")]
 impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "speedups"))]
-pub trait Float: deser_core::__format::Float {}
+pub(crate) trait Float: deser_core::__format::Float {}
 
 #[cfg(not(feature = "speedups"))]
 impl<F: deser_core::__format::Float> Float for F {}
@@ -331,7 +331,7 @@ impl<F: deser_core::__format::Float> Float for F {}
 /// YAML 1.1 requires a `.` in floats and a sign in exponents.  The text is
 /// the shortest that reads back as the same value of its type (`f32` or
 /// `f64`).
-pub fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
+pub(crate) fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
     let wide = value.to_f64();
     if wide.is_nan() {
         out.write_str(".nan").unwrap();
@@ -376,7 +376,7 @@ const YAML_TAG_PREFIX: &str = "tag:yaml.org,2002:";
 
 /// Writes a tag, using the `!!` shorthand for tags of yaml.org, the tag
 /// itself for local tags and the verbatim form for all others.
-pub fn write_tag(out: &mut String, tag: &str) {
+pub(crate) fn write_tag(out: &mut String, tag: &str) {
     if let Some(suffix) = tag.strip_prefix(YAML_TAG_PREFIX)
         && !suffix.is_empty()
         && suffix.chars().all(is_tag_char)
@@ -407,7 +407,7 @@ pub fn write_tag(out: &mut String, tag: &str) {
 }
 
 /// Appends short strings without calling into `memcpy`.
-pub trait PushSmall {
+pub(crate) trait PushSmall {
     fn push_small(&mut self, s: &str);
 }
 

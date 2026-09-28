@@ -114,7 +114,7 @@ struct UpdateSink {
     items: TokenStream,
 }
 
-pub fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     // with an adapter that wraps the derived implementation, both are
     // needed
     let forward = match crate::forward::derive_deserialize(input)? {
@@ -1604,7 +1604,7 @@ impl CompactStruct<'_> {
     }
 }
 
-pub fn derive_enum(
+pub(crate) fn derive_enum(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
 ) -> syn::Result<TokenStream> {

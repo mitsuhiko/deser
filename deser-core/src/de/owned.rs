@@ -17,7 +17,7 @@ struct NonuniqueBox<T: ?Sized> {
 unsafe impl<T: ?Sized + Send> Send for NonuniqueBox<T> {}
 
 impl<T> NonuniqueBox<T> {
-    pub fn new(value: T) -> Self {
+    pub(crate) fn new(value: T) -> Self {
         NonuniqueBox::from(Box::new(value))
     }
 }

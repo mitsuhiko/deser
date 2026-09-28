@@ -227,7 +227,7 @@ impl Default for Arena {
 
 impl Arena {
     /// Creates an arena, the first chunk is allocated with the first block.
-    pub const fn new() -> Arena {
+    pub(crate) const fn new() -> Arena {
         Arena {
             top: ptr::null_mut(),
             end: ptr::null_mut(),
@@ -252,7 +252,7 @@ impl Arena {
     /// buffers are parked with it), so that a driver which is created
     /// before anything is allocated gets the buffers of the last one.
     #[inline]
-    pub fn take_vec<T>(&mut self, kind: Buffer) -> Option<Vec<T>> {
+    pub(crate) fn take_vec<T>(&mut self, kind: Buffer) -> Option<Vec<T>> {
         if self.chunk.is_null() {
             self.take_parked();
         }
@@ -275,7 +275,7 @@ impl Arena {
     ///
     /// The elements of the vector are dropped.
     #[inline]
-    pub fn put_vec<T>(&mut self, kind: Buffer, vec: Vec<T>) {
+    pub(crate) fn put_vec<T>(&mut self, kind: Buffer, vec: Vec<T>) {
         let size = size_of::<T>();
         if vec.capacity() == 0
             || size == 0
@@ -319,7 +319,7 @@ impl Arena {
 
     /// Allocates a block for a (non zero sized) layout.
     #[inline]
-    pub fn alloc(&mut self, layout: Layout) -> NonNull<u8> {
+    pub(crate) fn alloc(&mut self, layout: Layout) -> NonNull<u8> {
         self.reclaim();
         let top = self.top;
         match place(top, self.end, layout) {
@@ -736,7 +736,7 @@ unsafe impl<T: ?Sized + Sync> Sync for ArenaBox<T> {}
 impl<T> ArenaBox<T> {
     /// Moves a value into the arena.
     #[inline(always)]
-    pub fn new(value: T, arena: &mut Arena) -> ArenaBox<T> {
+    pub(crate) fn new(value: T, arena: &mut Arena) -> ArenaBox<T> {
         let layout = Layout::new::<T>();
         let ptr = if layout.size() == 0 {
             NonNull::dangling()
@@ -763,7 +763,7 @@ impl<T: ?Sized> ArenaBox<T> {
     /// The pointer must come from [`into_raw`](Self::into_raw) (or point to a
     /// value in a block of an arena that is owned by the box).
     #[inline(always)]
-    pub unsafe fn from_raw(ptr: *mut T) -> ArenaBox<T> {
+    pub(crate) unsafe fn from_raw(ptr: *mut T) -> ArenaBox<T> {
         ArenaBox {
             // SAFETY: see above
             ptr: unsafe { NonNull::new_unchecked(ptr) },
@@ -773,7 +773,7 @@ impl<T: ?Sized> ArenaBox<T> {
 
     /// Takes the pointer out of the box without dropping the value.
     #[inline(always)]
-    pub fn into_raw(this: ArenaBox<T>) -> NonNull<T> {
+    pub(crate) fn into_raw(this: ArenaBox<T>) -> NonNull<T> {
         let ptr = this.ptr;
         core::mem::forget(this);
         ptr
@@ -787,18 +787,18 @@ impl<T: ?Sized> ArenaBox<T> {
     /// Returns the pointer to the value (for values that are borrowed while
     /// the box is moved).
     #[inline(always)]
-    pub fn ptr(&self) -> NonNull<T> {
+    pub(crate) fn ptr(&self) -> NonNull<T> {
         self.ptr
     }
 
     #[inline(always)]
-    pub fn get(&self) -> &T {
+    pub(crate) fn get(&self) -> &T {
         // SAFETY: the value is valid while the box exists
         unsafe { self.ptr.as_ref() }
     }
 
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
+    pub(crate) fn get_mut(&mut self) -> &mut T {
         // SAFETY: the value is valid while the box exists
         unsafe { self.ptr.as_mut() }
     }
@@ -808,7 +808,7 @@ impl<T: ?Sized> ArenaBox<T> {
     /// Drops the box and returns its block to the arena right away if it's
     /// the top block (see [`Arena::pop`]).
     #[inline(always)]
-    pub fn release_in(this: ArenaBox<T>, arena: &mut Arena) {
+    pub(crate) fn release_in(this: ArenaBox<T>, arena: &mut Arena) {
         let ptr = ArenaBox::into_raw(this);
         // SAFETY: the value is valid and owned by the box
         unsafe {

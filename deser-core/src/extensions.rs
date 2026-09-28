@@ -4,10 +4,10 @@ use core::any::{Any, TypeId, type_name};
 use core::fmt::{self, Debug};
 
 #[derive(Copy, Clone)]
-pub struct TypeKey(TypeId, &'static str);
+pub(crate) struct TypeKey(TypeId, &'static str);
 
 impl TypeKey {
-    pub fn of<T: 'static>() -> TypeKey {
+    pub(crate) fn of<T: 'static>() -> TypeKey {
         TypeKey(TypeId::of::<T>(), type_name::<T>())
     }
 }
@@ -112,7 +112,7 @@ struct EventEntry {
 /// is why they are held in a vector and looked up linearly.  This is much
 /// faster than a hash map for small numbers of entries.
 #[derive(Default)]
-pub struct Extensions {
+pub(crate) struct Extensions {
     // Invariant: the value of an entry is always of the type of its key.
     entries: Vec<(TypeKey, Box<dyn DebugAny>)>,
     replayable: Vec<(TypeKey, CloneFns)>,
@@ -143,7 +143,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
+    pub(crate) fn get<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         let index = self.position(TypeId::of::<T>())?;
         let value: &dyn DebugAny = &*self.entries[index].1;
         // SAFETY: values are always stored with the key of their type
@@ -151,7 +151,7 @@ impl Extensions {
     }
 
     #[inline]
-    pub fn get_mut<T: Default + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
+    pub(crate) fn get_mut<T: Default + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         let index = match self.position(TypeId::of::<T>()) {
             Some(index) => index,
             None => self.insert_default::<T>(),
@@ -169,7 +169,7 @@ impl Extensions {
     }
 
     /// Marks an extension type as replayable.
-    pub fn set_replayable<T: Clone + Debug + Send + Sync + 'static>(&mut self) {
+    pub(crate) fn set_replayable<T: Clone + Debug + Send + Sync + 'static>(&mut self) {
         let key = TypeKey::of::<T>();
         if !self.replayable.iter().any(|(k, _)| *k == key) {
             self.replayable.push((key, CloneFns::of::<T>()));
@@ -192,7 +192,7 @@ impl Extensions {
     /// Most events have no data.  The check for that is always inlined, so
     /// that looking up event data is cheap for them.
     #[inline(always)]
-    pub fn event<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
+    pub(crate) fn event<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         if !self.has_event_data {
             return None;
         }
@@ -213,7 +213,9 @@ impl Extensions {
     ///
     /// If no such data is attached yet, the default value is attached.
     #[inline]
-    pub fn event_mut<T: Default + Clone + Debug + Send + Sync + 'static>(&mut self) -> &mut T {
+    pub(crate) fn event_mut<T: Default + Clone + Debug + Send + Sync + 'static>(
+        &mut self,
+    ) -> &mut T {
         let index = match self.event_position(TypeId::of::<T>()) {
             Some(index) => index,
             None => self.insert_event::<T>(),
@@ -234,7 +236,7 @@ impl Extensions {
     /// Takes the data of a type from the current event.
     ///
     /// The data is detached from the event.
-    pub fn take_event<T: Default + Debug + Send + Sync + 'static>(&mut self) -> Option<T> {
+    pub(crate) fn take_event<T: Default + Debug + Send + Sync + 'static>(&mut self) -> Option<T> {
         if !self.has_event_data {
             return None;
         }
@@ -263,7 +265,7 @@ impl Extensions {
 
     /// Detaches all data from the current event.
     #[inline(always)]
-    pub fn clear_event_data(&mut self) {
+    pub(crate) fn clear_event_data(&mut self) {
         if self.has_event_data {
             self.deactivate_events();
         }
@@ -282,7 +284,7 @@ impl Extensions {
     /// Returns `None` if there is nothing to capture.  Most of the time
     /// there is neither, this is cheap to check.
     #[inline]
-    pub fn snapshot_if_any(&self) -> Option<Snapshot> {
+    pub(crate) fn snapshot_if_any(&self) -> Option<Snapshot> {
         if self.replayable.is_empty() && !self.has_event_data {
             return None;
         }
@@ -290,7 +292,7 @@ impl Extensions {
     }
 
     /// Captures the values of the replayable extensions and the event data.
-    pub fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot {
         let mut snapshot = Snapshot::default();
         if !self.replayable.is_empty() {
             snapshot.replayable = self
@@ -309,7 +311,7 @@ impl Extensions {
     /// Restores the values from a snapshot.
     ///
     /// The event data is replaced by the event data of the snapshot.
-    pub fn restore(&mut self, snapshot: &Snapshot) {
+    pub(crate) fn restore(&mut self, snapshot: &Snapshot) {
         // the clone functions belong to the type of the key
         for (key, value, fns) in snapshot.replayable.iter() {
             match self.position(key.0) {
@@ -321,7 +323,7 @@ impl Extensions {
     }
 
     /// Captures the data attached to the current event.
-    pub fn capture_event_data(&self) -> EventData {
+    pub(crate) fn capture_event_data(&self) -> EventData {
         if !self.has_event_data {
             return EventData::default();
         }
@@ -340,7 +342,7 @@ impl Extensions {
     }
 
     /// Replaces the data attached to the current event.
-    pub fn restore_event_data(&mut self, data: &EventData) {
+    pub(crate) fn restore_event_data(&mut self, data: &EventData) {
         self.clear_event_data();
         self.attach_event_data(data);
     }
@@ -349,7 +351,7 @@ impl Extensions {
     ///
     /// Data of the same types that is already attached is replaced, other
     /// data is retained.
-    pub fn attach_event_data(&mut self, data: &EventData) {
+    pub(crate) fn attach_event_data(&mut self, data: &EventData) {
         for entry in data.entries.iter() {
             match self.event_position(entry.key.0) {
                 Some(index) => {
@@ -371,19 +373,19 @@ impl Extensions {
 
 /// The captured values of the replayable extensions and the event data.
 #[derive(Default)]
-pub struct Snapshot {
+pub(crate) struct Snapshot {
     replayable: Vec<(TypeKey, Box<dyn DebugAny>, CloneFns)>,
     events: EventData,
 }
 
 impl Snapshot {
     /// Returns `true` if nothing was captured.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.replayable.is_empty() && self.events.is_empty()
     }
 
     /// Returns the captured event data.
-    pub fn event_data(&self) -> &EventData {
+    pub(crate) fn event_data(&self) -> &EventData {
         &self.events
     }
 }

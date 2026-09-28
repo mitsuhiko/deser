@@ -118,7 +118,7 @@ struct ReplaceSink<'a, 'de> {
 ///
 /// This is the default implementation of
 /// [`Deserialize::deserialize_update`].
-pub fn replace_handle<'a, 'de, T: Deserialize<'de>>(
+pub(crate) fn replace_handle<'a, 'de, T: Deserialize<'de>>(
     out: &'a mut T,
     state: &mut State,
 ) -> SinkHandle<'a, 'de> {

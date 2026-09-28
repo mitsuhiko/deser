@@ -25,12 +25,12 @@ use crate::event::Atom;
 const UNKNOWN: usize = usize::MAX;
 
 /// A function that returns the index of the field for a key.
-pub type FieldLookup = fn(&str) -> Option<usize>;
+pub(crate) type FieldLookup = fn(&str) -> Option<usize>;
 
 /// A function that returns `true` if the field with the index collects the
 /// values of a repeated key (see
 /// [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
-pub type FieldCollects = fn(usize) -> bool;
+pub(crate) type FieldCollects = fn(usize) -> bool;
 
 /// How the value of a field is deserialized.
 ///

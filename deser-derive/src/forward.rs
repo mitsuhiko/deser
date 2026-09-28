@@ -192,7 +192,7 @@ fn where_clause(
 /// Returns the trait the derived implementation of `Serialize` implements.
 ///
 /// This is `Serialize` unless an adapter wraps it, see the module.
-pub fn serialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
+pub(crate) fn serialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
     if container_attrs
         .adapters()
         .uses_derived(Direction::Serialize)
@@ -206,7 +206,7 @@ pub fn serialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
 /// Returns the trait the derived implementation of `Deserialize` implements.
 ///
 /// This is `Deserialize` unless an adapter wraps it, see the module.
-pub fn deserialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
+pub(crate) fn deserialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
     if container_attrs
         .adapters()
         .uses_derived(Direction::Deserialize)
@@ -221,7 +221,9 @@ pub fn deserialize_trait(container_attrs: &ContainerAttrs) -> TokenStream {
 ///
 /// Returns the implementation and whether the derived implementation is
 /// needed as well.
-pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<(TokenStream, bool)>> {
+pub(crate) fn derive_serialize(
+    input: &syn::DeriveInput,
+) -> syn::Result<Option<(TokenStream, bool)>> {
     let container_attrs = ContainerAttrs::of(input, Direction::Serialize)?;
     let Some(adapter) = container_attrs.adapters().ser() else {
         return Ok(None);
@@ -303,7 +305,9 @@ pub fn derive_serialize(input: &syn::DeriveInput) -> syn::Result<Option<(TokenSt
 ///
 /// Returns the implementation and whether the derived implementation is
 /// needed as well.
-pub fn derive_deserialize(input: &syn::DeriveInput) -> syn::Result<Option<(TokenStream, bool)>> {
+pub(crate) fn derive_deserialize(
+    input: &syn::DeriveInput,
+) -> syn::Result<Option<(TokenStream, bool)>> {
     let container_attrs = ContainerAttrs::of(input, Direction::Deserialize)?;
     let Some(adapter) = container_attrs.adapters().de() else {
         return Ok(None);

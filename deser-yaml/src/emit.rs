@@ -249,7 +249,7 @@ impl PausableSink for Emitter {
 }
 
 impl Emitter {
-    pub fn new(config: &SerializerConfig, out: String) -> Emitter {
+    pub(crate) fn new(config: &SerializerConfig, out: String) -> Emitter {
         Emitter {
             config: config.clone(),
             out,
@@ -268,7 +268,7 @@ impl Emitter {
     }
 
     /// Finishes the document, the output is complete afterwards.
-    pub fn finish(&mut self) -> Result<(), Error> {
+    pub(crate) fn finish(&mut self) -> Result<(), Error> {
         if !self.done || !self.stack.is_empty() || self.pending.is_some() {
             return Err(Error::new(ErrorKind::Unexpected, "incomplete document"));
         }
@@ -283,14 +283,14 @@ impl Emitter {
     ///
     /// This is only done while no collection is written in flow style
     /// tentatively (see `pause`), the offsets of the attempt are not moved.
-    pub fn take_output(&mut self) -> String {
+    pub(crate) fn take_output(&mut self) -> String {
         debug_assert!(self.attempt.is_none());
         self.base_column = self.column();
         self.column_offset = 0;
         std::mem::take(&mut self.out)
     }
 
-    pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
+    pub(crate) fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         let hints = Hints {
             tag: state.event::<NodeTag>().and_then(|x| x.0.clone()),
             layout: Layout::of(state),

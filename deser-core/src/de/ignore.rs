@@ -3,7 +3,7 @@ use crate::State;
 use crate::de::{Sink, SinkHandle};
 use crate::error::Error;
 
-pub struct Ignore;
+pub(super) struct Ignore;
 
 impl<'de> Sink<'de> for Ignore {
     fn atom(&mut self, _atom: Atom, _state: &mut State) -> Result<(), Error> {

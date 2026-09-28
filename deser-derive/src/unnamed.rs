@@ -12,7 +12,7 @@ use crate::attr::{Direction, TypeDefault, UnnamedFieldAttrs};
 use crate::bound::{BoundField, mentions_any, type_param_names};
 
 /// An unnamed field.
-pub struct UnnamedField<'a> {
+pub(crate) struct UnnamedField<'a> {
     pub field: &'a syn::Field,
     pub attrs: UnnamedFieldAttrs,
     /// The member to access the field (`0`, `1`, ...).
@@ -20,14 +20,14 @@ pub struct UnnamedField<'a> {
 }
 
 impl UnnamedField<'_> {
-    pub fn ty(&self) -> &syn::Type {
+    pub(crate) fn ty(&self) -> &syn::Type {
         &self.field.ty
     }
 }
 
 /// The field of a struct that is serialized and deserialized like the
 /// field (newtype structs and transparent structs).
-pub struct NewtypeField<'a> {
+pub(crate) struct NewtypeField<'a> {
     /// The member to access the field.
     pub member: syn::Member,
     pub ty: &'a syn::Type,
@@ -39,7 +39,7 @@ pub struct NewtypeField<'a> {
 }
 
 /// A struct with unnamed fields or a unit struct.
-pub struct UnnamedStruct<'a> {
+pub(crate) struct UnnamedStruct<'a> {
     ident: &'a syn::Ident,
     unit: bool,
     pub fields: Vec<UnnamedField<'a>>,
@@ -48,7 +48,7 @@ pub struct UnnamedStruct<'a> {
 impl<'a> UnnamedStruct<'a> {
     /// Returns the struct if it's a struct with unnamed fields or a unit
     /// struct.
-    pub fn of(input: &'a syn::DeriveInput) -> syn::Result<Option<UnnamedStruct<'a>>> {
+    pub(crate) fn of(input: &'a syn::DeriveInput) -> syn::Result<Option<UnnamedStruct<'a>>> {
         let (fields, unit) = match input.data {
             syn::Data::Struct(syn::DataStruct {
                 fields: syn::Fields::Unnamed(ref fields),
@@ -85,7 +85,7 @@ impl<'a> UnnamedStruct<'a> {
     }
 
     /// Describes the struct in errors about attributes.
-    pub fn kind(&self) -> &'static str {
+    pub(crate) fn kind(&self) -> &'static str {
         match self.fields.len() {
             _ if self.unit => "unit structs",
             1 => "newtype structs",
@@ -94,7 +94,7 @@ impl<'a> UnnamedStruct<'a> {
     }
 
     /// Returns the fields that are not skipped in the direction.
-    pub fn remaining(&self, direction: Direction) -> Vec<&UnnamedField<'a>> {
+    pub(crate) fn remaining(&self, direction: Direction) -> Vec<&UnnamedField<'a>> {
         let mut rv = Vec::new();
         for field in &self.fields {
             if !field.attrs.skipped(direction) {
@@ -105,7 +105,7 @@ impl<'a> UnnamedStruct<'a> {
     }
 
     /// Returns the fields for the purpose of bound inference.
-    pub fn bound_fields(&self, direction: Direction) -> Vec<BoundField<'_>> {
+    pub(crate) fn bound_fields(&self, direction: Direction) -> Vec<BoundField<'_>> {
         let mut rv = Vec::with_capacity(self.fields.len());
         for field in &self.fields {
             rv.push(BoundField {
@@ -123,7 +123,7 @@ impl<'a> UnnamedStruct<'a> {
     ///
     /// The values of the fields that are not skipped when deserializing are
     /// given in order, skipped fields are filled in with their default.
-    pub fn construct(&self, values: &[TokenStream]) -> TokenStream {
+    pub(crate) fn construct(&self, values: &[TokenStream]) -> TokenStream {
         let ident = self.ident;
         if self.unit {
             return quote! { #ident };
@@ -142,7 +142,7 @@ impl<'a> UnnamedStruct<'a> {
 
     /// Returns the `Default` bounds the skipped fields of generic types need
     /// when deserializing.
-    pub fn default_bounds(&self, generics: &syn::Generics) -> Vec<syn::WherePredicate> {
+    pub(crate) fn default_bounds(&self, generics: &syn::Generics) -> Vec<syn::WherePredicate> {
         let mut fields = Vec::new();
         for field in &self.fields {
             if field.attrs.skip_deserializing() {
@@ -154,7 +154,7 @@ impl<'a> UnnamedStruct<'a> {
 }
 
 /// Returns the value of a field that is skipped when deserializing.
-pub fn skipped_value(ty: &syn::Type, default: Option<&TypeDefault>) -> TokenStream {
+pub(crate) fn skipped_value(ty: &syn::Type, default: Option<&TypeDefault>) -> TokenStream {
     match default {
         Some(TypeDefault::Explicit(expr)) => expr.clone(),
         Some(TypeDefault::Implicit) | None => {
@@ -165,7 +165,7 @@ pub fn skipped_value(ty: &syn::Type, default: Option<&TypeDefault>) -> TokenStre
 
 /// Returns the `Default` bounds for skipped fields of generic types that
 /// are filled in with `Default`.
-pub fn default_bounds(
+pub(crate) fn default_bounds(
     generics: &syn::Generics,
     fields: &[(&syn::Type, Option<&TypeDefault>)],
 ) -> Vec<syn::WherePredicate> {

@@ -465,7 +465,7 @@ fn helper_where_clause(generics: &syn::Generics, params: &[&syn::GenericParam]) 
 
 /// Returns the identifiers and attributes of the variants of an enum with
 /// only unit variants.
-pub fn unit_variants(
+pub(crate) fn unit_variants(
     enumeration: &syn::DataEnum,
 ) -> syn::Result<(Vec<&syn::Ident>, Vec<EnumVariantAttrs<'_>>)> {
     let mut idents = Vec::with_capacity(enumeration.variants.len());
@@ -489,7 +489,7 @@ pub fn unit_variants(
 ///
 /// Enums with only unit variants and no special representation are handled
 /// by the simpler string based derive.
-pub fn is_data_enum(
+pub(crate) fn is_data_enum(
     input: &syn::DeriveInput,
     container_attrs: &ContainerAttrs,
     enumeration: &syn::DataEnum,
@@ -945,7 +945,7 @@ fn add_variant_bounds(
     }
 }
 
-pub fn derive_deserialize(
+pub(crate) fn derive_deserialize(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
     container_attrs: &ContainerAttrs,
@@ -1640,7 +1640,7 @@ fn content_handle(
     })
 }
 
-pub fn derive_serialize(
+pub(crate) fn derive_serialize(
     input: &syn::DeriveInput,
     enumeration: &syn::DataEnum,
     container_attrs: &ContainerAttrs,

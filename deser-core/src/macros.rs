@@ -34,7 +34,7 @@ macro_rules! __make_slot_wrapper {
             ///
             /// This wraps a slot (an `Option<T>`) in a slot wrapper.  Typically
             /// the [`make_handle`](Self::make_handle) shortcut is preferred.
-            pub fn wrap(out: &mut Option<T>) -> &mut Self {
+            $($vis)* fn wrap(out: &mut Option<T>) -> &mut Self {
                 unsafe { &mut *(out as *mut Option<T> as *mut $name<T>) }
             }
 
@@ -44,7 +44,7 @@ macro_rules! __make_slot_wrapper {
             /// returns a [`SinkHandle`] to it.
             ///
             /// Equivalent to `SinkHandle::to(SlotWrapper::wrap(...))`.
-            pub fn make_handle<'de>(out: &mut Option<T>) -> $crate::de::SinkHandle<'_, 'de> where $name<T>: $crate::de::Sink<'de> {
+            $($vis)* fn make_handle<'de>(out: &mut Option<T>) -> $crate::de::SinkHandle<'_, 'de> where $name<T>: $crate::de::Sink<'de> {
                 $crate::de::SinkHandle::to(Self::wrap(out))
             }
         }

@@ -8,13 +8,13 @@ use alloc::vec::Vec;
 /// The buffer only ever contains valid UTF-8 as long as it's only written
 /// with strings (or string slices split at character boundaries) and ASCII
 /// bytes.
-pub struct Buffer {
+pub(crate) struct Buffer {
     bytes: Vec<u8>,
 }
 
 impl Buffer {
     /// Creates a new buffer with a given capacity.
-    pub fn with_capacity(capacity: usize) -> Buffer {
+    pub(crate) fn with_capacity(capacity: usize) -> Buffer {
         Buffer {
             bytes: Vec::with_capacity(capacity),
         }
@@ -22,7 +22,7 @@ impl Buffer {
 
     /// Ensures that `additional` bytes can be written without reallocating.
     #[inline(always)]
-    pub fn reserve(&mut self, additional: usize) {
+    pub(crate) fn reserve(&mut self, additional: usize) {
         if self.bytes.capacity() - self.bytes.len() < additional {
             self.grow(additional);
         }
@@ -36,7 +36,7 @@ impl Buffer {
 
     /// Writes an ASCII byte.
     #[inline(always)]
-    pub fn push(&mut self, byte: u8) {
+    pub(crate) fn push(&mut self, byte: u8) {
         debug_assert!(byte.is_ascii());
         self.reserve(1);
         // SAFETY: the capacity was reserved above
@@ -49,7 +49,7 @@ impl Buffer {
     ///
     /// The capacity must have been reserved.
     #[inline(always)]
-    pub unsafe fn push_unchecked(&mut self, byte: u8) {
+    pub(crate) unsafe fn push_unchecked(&mut self, byte: u8) {
         unsafe {
             let len = self.bytes.len();
             self.bytes.as_mut_ptr().add(len).write(byte);
@@ -59,7 +59,7 @@ impl Buffer {
 
     /// Writes a string.
     #[inline(always)]
-    pub fn push_str(&mut self, s: &str) {
+    pub(crate) fn push_str(&mut self, s: &str) {
         self.reserve(s.len());
         // SAFETY: the capacity was reserved above
         unsafe { self.push_str_unchecked(s) };
@@ -71,7 +71,7 @@ impl Buffer {
     ///
     /// The capacity must have been reserved.
     #[inline(always)]
-    pub unsafe fn push_str_unchecked(&mut self, s: &str) {
+    pub(crate) unsafe fn push_str_unchecked(&mut self, s: &str) {
         unsafe {
             let len = self.bytes.len();
             deser_core::__format::copy_small(s.as_ptr(), self.bytes.as_mut_ptr().add(len), s.len());
@@ -81,12 +81,12 @@ impl Buffer {
 
     /// Returns the number of bytes written.
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.bytes.len()
     }
 
     /// Returns the written text.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         // SAFETY: the buffer only contains valid UTF-8, see above.
         unsafe { core::str::from_utf8_unchecked(&self.bytes) }
     }
@@ -94,7 +94,7 @@ impl Buffer {
     /// Shortens the buffer to the given length.
     ///
     /// The length must be at a character boundary.
-    pub fn truncate(&mut self, len: usize) {
+    pub(crate) fn truncate(&mut self, len: usize) {
         assert!(self.as_str().is_char_boundary(len));
         self.bytes.truncate(len);
     }
@@ -102,18 +102,18 @@ impl Buffer {
     /// Creates a buffer that appends to a vector.
     ///
     /// The vector must only contain valid UTF-8.
-    pub fn from_vec(bytes: Vec<u8>) -> Buffer {
+    pub(crate) fn from_vec(bytes: Vec<u8>) -> Buffer {
         debug_assert!(core::str::from_utf8(&bytes).is_ok());
         Buffer { bytes }
     }
 
     /// Takes the text out of the buffer, which is empty afterwards.
-    pub fn take(&mut self) -> Vec<u8> {
+    pub(crate) fn take(&mut self) -> Vec<u8> {
         core::mem::take(&mut self.bytes)
     }
 
     /// Converts the buffer into a string.
-    pub fn into_string(self) -> String {
+    pub(crate) fn into_string(self) -> String {
         // SAFETY: the buffer only contains valid UTF-8, see above.
         unsafe { String::from_utf8_unchecked(self.bytes) }
     }

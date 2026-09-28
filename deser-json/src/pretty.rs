@@ -63,7 +63,7 @@ pub(crate) struct PrettyWriter {
 }
 
 impl PrettyWriter {
-    pub fn new(
+    pub(crate) fn new(
         ser: Output,
         indent: Indent,
         compact: bool,
@@ -86,7 +86,7 @@ impl PrettyWriter {
         }
     }
 
-    pub fn finish(self) -> String {
+    pub(crate) fn finish(self) -> String {
         self.ser.out.into_string()
     }
 
@@ -95,7 +95,7 @@ impl PrettyWriter {
     ///
     /// This is only done while no container is written on a single line
     /// tentatively (see `pause`), the offsets of the attempt are not moved.
-    pub fn take_output(&mut self) -> Vec<u8> {
+    pub(crate) fn take_output(&mut self) -> Vec<u8> {
         debug_assert!(self.attempt.is_none());
         self.line_offset += self.ser.out.as_str()[self.line_start..].chars().count();
         self.line_start = 0;
@@ -103,11 +103,11 @@ impl PrettyWriter {
     }
 
     /// Returns the output buffer.
-    pub fn output(&mut self) -> &mut crate::buf::Buffer {
+    pub(crate) fn output(&mut self) -> &mut crate::buf::Buffer {
         &mut self.ser.out
     }
 
-    pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
+    pub(crate) fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => self.atom(atom),
             Event::MapStart(_) => self.start(true, Layout::of(state)),

@@ -9,7 +9,7 @@
 /// a word at a time (inlined into the parser).  Longer strings continue
 /// with SIMD in [`skip_to_escape_long`], out of line.
 #[inline]
-pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
+pub(crate) fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     if pos >= input.len() || ESCAPE[usize::from(input[pos])] {
         return pos;
     }
@@ -76,7 +76,7 @@ fn skip_to_escape_long(input: &[u8], mut pos: usize) -> usize {
 /// The bytes are found in blocks of 64 bytes: a bit per byte is computed
 /// once per block, the following bytes of the block are found by the bits
 /// that remain.
-pub struct EscapeScanner {
+pub(crate) struct EscapeScanner {
     /// The end of the block (0 before the first one).
     end: usize,
     /// The bytes of the block that need escaping, bit 0 is the first one.
@@ -84,7 +84,7 @@ pub struct EscapeScanner {
 }
 
 impl EscapeScanner {
-    pub fn new() -> EscapeScanner {
+    pub(crate) fn new() -> EscapeScanner {
         EscapeScanner { end: 0, bits: 0 }
     }
 
@@ -93,7 +93,7 @@ impl EscapeScanner {
     ///
     /// The positions must not go backwards.
     #[inline(always)]
-    pub fn next(&mut self, input: &[u8], mut pos: usize) -> usize {
+    pub(crate) fn next(&mut self, input: &[u8], mut pos: usize) -> usize {
         loop {
             if pos < self.end {
                 let start = self.end - 64;
@@ -192,7 +192,7 @@ unsafe fn escape_flags(block: &[u8; 16]) -> core::arch::aarch64::uint8x16_t {
 /// which needs escaping.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
 #[inline(always)]
-pub fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+pub(crate) fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
     use core::arch::aarch64::*;
     let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
     // SAFETY: neon is available
@@ -309,7 +309,7 @@ fn block64_has_escape(input: &[u8], pos: usize) -> bool {
     }) != 0
 }
 
-pub const ONE_BYTES: u64 = u64::MAX / 255;
+pub(crate) const ONE_BYTES: u64 = u64::MAX / 255;
 
 /// Flags the bytes in a word (in little endian order) which need escaping.
 ///
@@ -317,7 +317,7 @@ pub const ONE_BYTES: u64 = u64::MAX / 255;
 /// quotes and backslashes.  Only the lowest flagged byte is exact, bytes
 /// above it might be flagged falsely.
 #[inline(always)]
-pub fn escape_mask(chars: u64) -> u64 {
+pub(crate) fn escape_mask(chars: u64) -> u64 {
     let contains_ctrl = chars.wrapping_sub(ONE_BYTES * 0x20) & !chars;
     let chars_quote = chars ^ (ONE_BYTES * u64::from(b'"'));
     let contains_quote = chars_quote.wrapping_sub(ONE_BYTES) & !chars_quote;
@@ -327,14 +327,14 @@ pub fn escape_mask(chars: u64) -> u64 {
 }
 
 #[inline(always)]
-pub fn load_u64(input: &[u8], pos: usize) -> u64 {
+pub(crate) fn load_u64(input: &[u8], pos: usize) -> u64 {
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&input[pos..pos + 8]);
     u64::from_le_bytes(bytes)
 }
 
 #[inline(always)]
-pub fn load_u32(input: &[u8], pos: usize) -> u64 {
+pub(crate) fn load_u32(input: &[u8], pos: usize) -> u64 {
     let mut bytes = [0u8; 4];
     bytes.copy_from_slice(&input[pos..pos + 4]);
     u64::from(u32::from_le_bytes(bytes))
@@ -345,7 +345,7 @@ pub fn load_u32(input: &[u8], pos: usize) -> u64 {
 /// Most strings are short, these are checked with (possibly overlapping)
 /// word sized loads.
 #[inline(always)]
-pub fn is_ascii(bytes: &[u8]) -> bool {
+pub(crate) fn is_ascii(bytes: &[u8]) -> bool {
     let len = bytes.len();
     if len > 16 {
         bytes.is_ascii()
@@ -362,7 +362,7 @@ pub fn is_ascii(bytes: &[u8]) -> bool {
 
 /// Checks if the bytes are valid UTF-8.
 #[inline]
-pub fn validate_utf8_slice(bytes: &[u8]) -> bool {
+pub(crate) fn validate_utf8_slice(bytes: &[u8]) -> bool {
     #[cfg(feature = "speedups")]
     {
         simdutf8::basic::from_utf8(bytes).is_ok()
@@ -381,7 +381,7 @@ const O: bool = false; // allow unescaped
 // Lookup table of bytes that must be escaped. A value of true at index i means
 // that byte i requires an escape sequence in the input.
 #[rustfmt::skip]
-pub static ESCAPE: [bool; 256] = [
+pub(crate) static ESCAPE: [bool; 256] = [
     //   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
     CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 0
     CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 1

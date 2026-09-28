@@ -27,7 +27,7 @@ fn begin_without_finish() -> TokenStream {
     }
 }
 
-pub fn serialize_handle(
+pub(crate) fn serialize_handle(
     ty: &syn::Type,
     adapter: Option<&syn::Type>,
     value: TokenStream,
@@ -44,7 +44,11 @@ pub fn serialize_handle(
 }
 
 /// Returns an expression that checks if a value is optional.
-pub fn is_optional(ty: &syn::Type, adapter: Option<&syn::Type>, value: TokenStream) -> TokenStream {
+pub(crate) fn is_optional(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    value: TokenStream,
+) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
             <#adapter as __deser::adapters::SerializeAs<#ty>>::is_optional_as(#value)
@@ -89,7 +93,7 @@ fn reject_tag_fields(attrs: &[FieldAttrs]) -> syn::Result<()> {
     Ok(())
 }
 
-pub fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     // with an adapter that wraps the derived implementation, both are
     // needed
     let forward = match crate::forward::derive_serialize(input)? {

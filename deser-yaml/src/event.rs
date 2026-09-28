@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 /// A position in the input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Mark {
+pub(crate) struct Mark {
     /// Byte offset.
     pub offset: usize,
     /// Zero based line.
@@ -18,7 +18,7 @@ pub struct Mark {
 
 /// The presentation style of a scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScalarStyle {
+pub(crate) enum ScalarStyle {
     Plain,
     SingleQuoted,
     DoubleQuoted,
@@ -28,7 +28,7 @@ pub enum ScalarStyle {
 
 /// The properties of a node.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Props<'a> {
+pub(crate) struct Props<'a> {
     pub anchor: Option<Cow<'a, str>>,
     /// The resolved tag (tag handles are already expanded).  The
     /// non-specific tag `!` is represented as `"!"`.
@@ -36,7 +36,7 @@ pub struct Props<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EventKind<'a> {
+pub(crate) enum EventKind<'a> {
     StreamStart,
     StreamEnd,
     DocumentStart {
@@ -70,7 +70,7 @@ pub enum EventKind<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Event<'a> {
+pub(crate) struct Event<'a> {
     pub kind: EventKind<'a>,
     pub start: Mark,
     pub end: Mark,

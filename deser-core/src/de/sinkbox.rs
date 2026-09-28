@@ -46,7 +46,7 @@ unsafe impl Send for HeapSink<'_, '_> {}
 impl<'a, 'de> HeapSink<'a, 'de> {
     /// Moves a sink to the heap.
     #[inline]
-    pub fn new<S: Sink<'de> + 'a>(value: S) -> HeapSink<'a, 'de> {
+    pub(super) fn new<S: Sink<'de> + 'a>(value: S) -> HeapSink<'a, 'de> {
         let layout = Layout::new::<S>();
         let raw: *mut S = if layout.size() == 0 {
             NonNull::<S>::dangling().as_ptr()
@@ -69,14 +69,14 @@ impl<'a, 'de> HeapSink<'a, 'de> {
 
     /// Returns a reference to the sink.
     #[inline(always)]
-    pub fn get(&self) -> &(dyn Sink<'de> + 'a) {
+    pub(super) fn get(&self) -> &(dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_ref() }
     }
 
     /// Returns a mutable reference to the sink.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
+    pub(super) fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_mut() }
     }
@@ -136,7 +136,7 @@ fn struct_block_layout(fields: Layout) -> (Layout, usize) {
 impl<'a, 'de: 'a> StructBox<'a, 'de> {
     /// Moves the fields to the heap together with a sink for them.
     #[inline]
-    pub fn new<F: StructFields<'de> + 'a>(
+    pub(crate) fn new<F: StructFields<'de> + 'a>(
         fields: F,
         info: &'static StructInfo,
         arena: &mut Arena,
@@ -177,14 +177,14 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
 
     /// Returns a reference to the sink.
     #[inline(always)]
-    pub fn get(&self) -> &(dyn Sink<'de> + 'a) {
+    pub(crate) fn get(&self) -> &(dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_ref() }
     }
 
     /// Returns a mutable reference to the sink.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
+    pub(crate) fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
         // SAFETY: the sink is valid while the box exists
         unsafe { self.ptr.as_mut() }
     }
@@ -218,7 +218,7 @@ impl<'a, 'de> StructBox<'a, 'de> {
     /// Drops the box and returns its block to the arena right away if it's
     /// the top block (see [`Arena::pop`]).
     #[inline(always)]
-    pub fn release_in(self, arena: &mut Arena) {
+    pub(crate) fn release_in(self, arena: &mut Arena) {
         let mut this = core::mem::ManuallyDrop::new(self);
         // SAFETY: the box is not used after
         unsafe {

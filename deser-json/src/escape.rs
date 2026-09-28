@@ -10,7 +10,7 @@ const SPACES: u64 = ONE_BYTES * 0x20;
 /// loaded into a single word with overlapping loads and the tail of longer
 /// inputs is handled with an overlapping load of the last word.
 #[inline]
-pub fn find_escape(input: &[u8]) -> usize {
+pub(crate) fn find_escape(input: &[u8]) -> usize {
     let len = input.len();
     if len < 8 {
         let word = if len >= 4 {

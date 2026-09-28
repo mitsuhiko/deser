@@ -6,7 +6,7 @@ use crate::bound::BoundField;
 
 /// The direction of a derive.
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum Direction {
+pub(crate) enum Direction {
     Serialize,
     Deserialize,
 }
@@ -16,13 +16,13 @@ pub enum Direction {
 /// Raw identifiers (`r#type`) are named without their prefix, like in serde.
 /// This is also used for identifiers that the derive makes up from fields
 /// and variants, which cannot contain the prefix.
-pub fn ident_name(ident: &syn::Ident) -> String {
+pub(crate) fn ident_name(ident: &syn::Ident) -> String {
     use syn::ext::IdentExt;
     ident.unraw().to_string()
 }
 
 /// An attribute that was used on an item.
-pub struct SeenAttr {
+pub(crate) struct SeenAttr {
     pub name: String,
     pub span: Span,
 }
@@ -31,24 +31,24 @@ pub struct SeenAttr {
 ///
 /// `as` sets both, `serialize_as` and `deserialize_as` one of them.
 #[derive(Default, Clone)]
-pub struct Adapters {
+pub(crate) struct Adapters {
     ser: Option<syn::Type>,
     de: Option<syn::Type>,
 }
 
 impl Adapters {
     /// Returns the adapter used for serialization.
-    pub fn ser(&self) -> Option<&syn::Type> {
+    pub(crate) fn ser(&self) -> Option<&syn::Type> {
         self.ser.as_ref()
     }
 
     /// Returns the adapter used for deserialization.
-    pub fn de(&self) -> Option<&syn::Type> {
+    pub(crate) fn de(&self) -> Option<&syn::Type> {
         self.de.as_ref()
     }
 
     /// Returns the adapter for a direction.
-    pub fn get(&self, direction: Direction) -> Option<&syn::Type> {
+    pub(crate) fn get(&self, direction: Direction) -> Option<&syn::Type> {
         match direction {
             Direction::Serialize => self.ser(),
             Direction::Deserialize => self.de(),
@@ -56,7 +56,7 @@ impl Adapters {
     }
 
     /// Returns `true` if there is an adapter for any direction.
-    pub fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         self.ser.is_some() || self.de.is_some()
     }
 
@@ -67,7 +67,7 @@ impl Adapters {
     /// `DerivedSerialize` or `DerivedDeserialize` (see the `Derived`
     /// adapter) and the implementation of the trait forwards to the
     /// adapter.
-    pub fn uses_derived(&self, direction: Direction) -> bool {
+    pub(crate) fn uses_derived(&self, direction: Direction) -> bool {
         fn contains_derived(tokens: TokenStream) -> bool {
             for token in tokens {
                 let found = match token {
@@ -91,7 +91,7 @@ impl Adapters {
 /// `name = value` sets it for both directions, `name(serialize = value,
 /// deserialize = value)` for each direction on its own.
 #[derive(Clone)]
-pub struct Directional<T> {
+pub(crate) struct Directional<T> {
     ser: Option<T>,
     de: Option<T>,
 }
@@ -136,7 +136,7 @@ impl<T: Clone> Directional<T> {
     }
 
     /// Returns the value for a direction.
-    pub fn get(&self, direction: Direction) -> Option<&T> {
+    pub(crate) fn get(&self, direction: Direction) -> Option<&T> {
         match direction {
             Direction::Serialize => self.ser.as_ref(),
             Direction::Deserialize => self.de.as_ref(),
@@ -144,7 +144,7 @@ impl<T: Clone> Directional<T> {
     }
 
     /// Returns `true` if the value is set for any direction.
-    pub fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         self.ser.is_some() || self.de.is_some()
     }
 }
@@ -154,7 +154,7 @@ impl<T: Clone> Directional<T> {
 /// `bound` sets them for both directions, `serialize_bound` and
 /// `deserialize_bound` for one (and take precedence).
 #[derive(Default, Clone)]
-pub struct FieldBounds {
+pub(crate) struct FieldBounds {
     both: Option<Vec<syn::WherePredicate>>,
     ser: Option<Vec<syn::WherePredicate>>,
     de: Option<Vec<syn::WherePredicate>>,
@@ -180,7 +180,7 @@ impl FieldBounds {
     ///
     /// If this returns `Some` the predicates replace the bounds inferred
     /// from the field.
-    pub fn get(&self, direction: Direction) -> Option<&[syn::WherePredicate]> {
+    pub(crate) fn get(&self, direction: Direction) -> Option<&[syn::WherePredicate]> {
         match direction {
             Direction::Serialize => self.ser.as_ref(),
             Direction::Deserialize => self.de.as_ref(),
@@ -190,7 +190,7 @@ impl FieldBounds {
     }
 
     /// Returns `true` if there are custom bounds for any direction.
-    pub fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         self.both.is_some() || self.ser.is_some() || self.de.is_some()
     }
 }
@@ -250,7 +250,7 @@ impl AdapterAttrs {
 
 #[derive(Copy, Clone)]
 #[allow(clippy::enum_variant_names)]
-pub enum RenameAll {
+pub(crate) enum RenameAll {
     LowerCase,
     UpperCase,
     PascalCase,
@@ -338,7 +338,7 @@ impl RenameAll {
     }
 
     /// Returns the name of the style (as given to `rename_all`).
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             RenameAll::LowerCase => "lowercase",
             RenameAll::UpperCase => "UPPERCASE",
@@ -377,7 +377,7 @@ impl RenameAll {
 /// `&'static str` at compile time: paths to constants and macro
 /// invocations (such as `concat!(...)`).
 #[derive(Clone)]
-pub enum Name {
+pub(crate) enum Name {
     Lit(String),
     Expr(syn::Expr),
 }
@@ -407,7 +407,7 @@ impl Name {
     }
 
     /// Returns the name if it's a string literal.
-    pub fn as_lit(&self) -> Option<&str> {
+    pub(crate) fn as_lit(&self) -> Option<&str> {
         match self {
             Name::Lit(name) => Some(name),
             Name::Expr(_) => None,
@@ -417,7 +417,7 @@ impl Name {
     /// Returns the name for messages of the derive.
     ///
     /// For expressions this is the expression.
-    pub fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         match self {
             Name::Lit(name) => name.clone(),
             Name::Expr(expr) => expr.to_token_stream().to_string(),
@@ -427,7 +427,7 @@ impl Name {
     /// Returns match arms for names as `&str` that evaluate to `result`.
     ///
     /// Expressions cannot be used as patterns, they are compared in guards.
-    pub fn str_arms(names: &[Name], result: TokenStream) -> TokenStream {
+    pub(crate) fn str_arms(names: &[Name], result: TokenStream) -> TokenStream {
         let mut refs = Vec::with_capacity(names.len());
         for name in names {
             refs.push(name);
@@ -496,13 +496,13 @@ impl std::hash::Hash for Name {
 }
 
 #[derive(Clone)]
-pub enum TypeDefault {
+pub(crate) enum TypeDefault {
     Implicit,
     /// An expression that produces the default value.
     Explicit(TokenStream),
 }
 
-pub struct ContainerAttrs<'a> {
+pub(crate) struct ContainerAttrs<'a> {
     ident: &'a syn::Ident,
     // the direction of the derive, directional attributes are resolved for
     // it
@@ -1046,7 +1046,7 @@ fn parse_default(meta: &ParseNestedMeta) -> syn::Result<TypeDefault> {
 }
 
 impl<'a> ContainerAttrs<'a> {
-    pub fn of(
+    pub(crate) fn of(
         input: &'a syn::DeriveInput,
         direction: Direction,
     ) -> syn::Result<ContainerAttrs<'a>> {
@@ -1230,22 +1230,22 @@ impl<'a> ContainerAttrs<'a> {
     }
 
     /// Returns the attributes that were used on the container.
-    pub fn into_seen(self) -> Vec<SeenAttr> {
+    pub(crate) fn into_seen(self) -> Vec<SeenAttr> {
         self.seen
     }
 
     /// Returns the adapters the container is serialized and deserialized
     /// with.
-    pub fn adapters(&self) -> &Adapters {
+    pub(crate) fn adapters(&self) -> &Adapters {
         &self.adapters
     }
 
     /// Returns the direction of the derive.
-    pub fn direction(&self) -> Direction {
+    pub(crate) fn direction(&self) -> Direction {
         self.direction
     }
 
-    pub fn container_name(&self) -> Name {
+    pub(crate) fn container_name(&self) -> Name {
         match self.rename {
             Some(ref name) => name.clone(),
             None => Name::Lit(ident_name(self.ident)),
@@ -1253,13 +1253,13 @@ impl<'a> ContainerAttrs<'a> {
     }
 
     /// Returns the name style of the fields of struct variants.
-    pub fn rename_all_fields(&self) -> Option<RenameAll> {
+    pub(crate) fn rename_all_fields(&self) -> Option<RenameAll> {
         self.rename_all_fields
     }
 
     /// Returns what is expected in errors (the name of the type unless
     /// `expecting` was given).
-    pub fn expecting(&self) -> Name {
+    pub(crate) fn expecting(&self) -> Name {
         match self.expecting {
             Some(ref expecting) => expecting.clone(),
             None => self.container_name(),
@@ -1268,7 +1268,7 @@ impl<'a> ContainerAttrs<'a> {
 
     /// Rejects `expecting` for types which are deserialized like other
     /// values (which report what they expect).
-    pub fn reject_expecting(&self, kind: &str) -> syn::Result<()> {
+    pub(crate) fn reject_expecting(&self, kind: &str) -> syn::Result<()> {
         match self.expecting {
             Some(_) => Err(syn::Error::new(
                 self.span_of("expecting"),
@@ -1281,7 +1281,7 @@ impl<'a> ContainerAttrs<'a> {
         }
     }
 
-    pub fn get_field_name(&self, field: &syn::Field) -> String {
+    pub(crate) fn get_field_name(&self, field: &syn::Field) -> String {
         let name = ident_name(field.ident.as_ref().unwrap());
         match self.rename_all {
             Some(rename_all) => rename_all.apply_to_field(&name),
@@ -1292,7 +1292,7 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the aliases of a field from `alias_all`.
     ///
     /// Aliases that are the same as the name of the field are skipped.
-    pub fn field_aliases(&self, field: &syn::Field, name: &Name) -> Vec<Name> {
+    pub(crate) fn field_aliases(&self, field: &syn::Field, name: &Name) -> Vec<Name> {
         let ident = ident_name(field.ident.as_ref().unwrap());
         let mut rv: Vec<Name> = Vec::new();
         for style in &self.alias_all {
@@ -1307,7 +1307,11 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the aliases of a variant from `alias_all`.
     ///
     /// Aliases that are the same as the name of the variant are skipped.
-    pub fn variant_aliases(&self, variant: &syn::Variant, name: &VariantName) -> Vec<VariantName> {
+    pub(crate) fn variant_aliases(
+        &self,
+        variant: &syn::Variant,
+        name: &VariantName,
+    ) -> Vec<VariantName> {
         let ident = ident_name(&variant.ident);
         let mut rv: Vec<VariantName> = Vec::new();
         for style in &self.alias_all {
@@ -1319,11 +1323,11 @@ impl<'a> ContainerAttrs<'a> {
         rv
     }
 
-    pub fn default(&self) -> Option<&TypeDefault> {
+    pub(crate) fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
     }
 
-    pub fn skip_serializing_optionals(&self) -> bool {
+    pub(crate) fn skip_serializing_optionals(&self) -> bool {
         self.skip_serializing_optionals
     }
 
@@ -1332,7 +1336,7 @@ impl<'a> ContainerAttrs<'a> {
     ///
     /// `kind` describes the struct (for instance `"tuple structs"`).  Every
     /// derive only reports the attributes that affect its own direction.
-    pub fn reject_named_only(&self, kind: &str, direction: Direction) -> syn::Result<()> {
+    pub(crate) fn reject_named_only(&self, kind: &str, direction: Direction) -> syn::Result<()> {
         let names: &[&str] = match direction {
             Direction::Serialize => &["rename_all", "alias_all", "skip_serializing_optionals"],
             Direction::Deserialize => {
@@ -1349,38 +1353,38 @@ impl<'a> ContainerAttrs<'a> {
     }
 
     /// Returns the span of an attribute that was used on the container.
-    pub fn span_of(&self, name: &str) -> Span {
+    pub(crate) fn span_of(&self, name: &str) -> Span {
         span_of_any(&self.seen, &[name])
     }
 
     /// Returns `true` if the struct is serialized and deserialized like its
     /// only field.
-    pub fn transparent(&self) -> bool {
+    pub(crate) fn transparent(&self) -> bool {
         self.transparent
     }
 
     /// Returns `true` if keys that no field takes are rejected.
-    pub fn deny_unknown_fields(&self) -> bool {
+    pub(crate) fn deny_unknown_fields(&self) -> bool {
         self.deny_unknown_fields
     }
 
     /// Returns the key of the tag of internally and adjacently tagged enums.
-    pub fn tag(&self) -> Option<&Name> {
+    pub(crate) fn tag(&self) -> Option<&Name> {
         self.tag.as_ref()
     }
 
     /// Returns the aliases of the tag key.
-    pub fn tag_aliases(&self) -> &[Name] {
+    pub(crate) fn tag_aliases(&self) -> &[Name] {
         &self.tag_aliases
     }
 
     /// Returns the key of the content of adjacently tagged enums.
-    pub fn content(&self) -> Option<&Name> {
+    pub(crate) fn content(&self) -> Option<&Name> {
         self.content.as_ref()
     }
 
     /// Returns the aliases of the content key.
-    pub fn content_aliases(&self) -> &[Name] {
+    pub(crate) fn content_aliases(&self) -> &[Name] {
         &self.content_aliases
     }
 
@@ -1419,7 +1423,7 @@ impl<'a> ContainerAttrs<'a> {
 
     /// Returns the name of a variant if variants are named by their
     /// discriminants.
-    pub fn discriminant_name(&self, variant: &syn::Variant) -> Option<&VariantName> {
+    pub(crate) fn discriminant_name(&self, variant: &syn::Variant) -> Option<&VariantName> {
         for (ident, name) in self.discriminants.as_ref()? {
             if **ident == variant.ident {
                 return Some(name);
@@ -1453,19 +1457,19 @@ impl<'a> ContainerAttrs<'a> {
         Ok(())
     }
 
-    pub fn untagged(&self) -> bool {
+    pub(crate) fn untagged(&self) -> bool {
         self.untagged
     }
 
     /// Returns the path to the deser crate if it was overridden.
-    pub fn crate_path(&self) -> Option<&syn::Path> {
+    pub(crate) fn crate_path(&self) -> Option<&syn::Path> {
         self.crate_path.as_ref()
     }
 
     /// Returns the custom where predicates for the `Serialize` impl.
     ///
     /// If this returns `Some` the predicates replace the inferred bounds.
-    pub fn serialize_bound(&self) -> Option<&[syn::WherePredicate]> {
+    pub(crate) fn serialize_bound(&self) -> Option<&[syn::WherePredicate]> {
         self.serialize_bound
             .as_ref()
             .or(self.bound.as_ref())
@@ -1475,14 +1479,14 @@ impl<'a> ContainerAttrs<'a> {
     /// Returns the custom where predicates for the `Deserialize` impl.
     ///
     /// If this returns `Some` the predicates replace the inferred bounds.
-    pub fn deserialize_bound(&self) -> Option<&[syn::WherePredicate]> {
+    pub(crate) fn deserialize_bound(&self) -> Option<&[syn::WherePredicate]> {
         self.deserialize_bound
             .as_ref()
             .or(self.bound.as_ref())
             .map(|x| &x[..])
     }
 
-    pub fn get_variant_name(&self, variant: &syn::Variant) -> String {
+    pub(crate) fn get_variant_name(&self, variant: &syn::Variant) -> String {
         let name = ident_name(&variant.ident);
         match self.rename_all {
             Some(rename_all) => rename_all.apply_to_variant(&name),
@@ -1492,7 +1496,7 @@ impl<'a> ContainerAttrs<'a> {
 }
 
 /// The attributes of unnamed fields (of newtype structs and tuple variants).
-pub struct UnnamedFieldAttrs {
+pub(crate) struct UnnamedFieldAttrs {
     seen: Vec<SeenAttr>,
     adapters: Adapters,
     bounds: FieldBounds,
@@ -1503,7 +1507,7 @@ pub struct UnnamedFieldAttrs {
 }
 
 impl UnnamedFieldAttrs {
-    pub fn of(field: &syn::Field) -> syn::Result<UnnamedFieldAttrs> {
+    pub(crate) fn of(field: &syn::Field) -> syn::Result<UnnamedFieldAttrs> {
         let mut rv = UnnamedFieldAttrs {
             seen: Vec::new(),
             adapters: Adapters::default(),
@@ -1567,42 +1571,42 @@ impl UnnamedFieldAttrs {
     }
 
     /// Returns the attributes that were used on the field.
-    pub fn into_seen(self) -> Vec<SeenAttr> {
+    pub(crate) fn into_seen(self) -> Vec<SeenAttr> {
         self.seen
     }
 
     /// Returns the adapters of the field.
-    pub fn adapters(&self) -> &Adapters {
+    pub(crate) fn adapters(&self) -> &Adapters {
         &self.adapters
     }
 
     /// Returns `true` if the field receives the tag of the variant.
-    pub fn tag(&self) -> bool {
+    pub(crate) fn tag(&self) -> bool {
         self.tag
     }
 
     /// Returns the custom bounds of the field.
-    pub fn bounds(&self) -> &FieldBounds {
+    pub(crate) fn bounds(&self) -> &FieldBounds {
         &self.bounds
     }
 
     /// Returns the value of the field if it's skipped when deserializing.
-    pub fn default(&self) -> Option<&TypeDefault> {
+    pub(crate) fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
     }
 
     /// Returns `true` if the field is not serialized.
-    pub fn skip_serializing(&self) -> bool {
+    pub(crate) fn skip_serializing(&self) -> bool {
         self.skip_serializing
     }
 
     /// Returns `true` if the field is not deserialized.
-    pub fn skip_deserializing(&self) -> bool {
+    pub(crate) fn skip_deserializing(&self) -> bool {
         self.skip_deserializing
     }
 
     /// Returns `true` if the field is skipped in the direction.
-    pub fn skipped(&self, direction: Direction) -> bool {
+    pub(crate) fn skipped(&self, direction: Direction) -> bool {
         match direction {
             Direction::Serialize => self.skip_serializing,
             Direction::Deserialize => self.skip_deserializing,
@@ -1610,7 +1614,7 @@ impl UnnamedFieldAttrs {
     }
 }
 
-pub struct FieldAttrs<'a> {
+pub(crate) struct FieldAttrs<'a> {
     field: &'a syn::Field,
     seen: Vec<SeenAttr>,
     rename: Directional<Name>,
@@ -1627,7 +1631,7 @@ pub struct FieldAttrs<'a> {
 }
 
 impl<'a> FieldAttrs<'a> {
-    pub fn of(field: &'a syn::Field) -> syn::Result<FieldAttrs<'a>> {
+    pub(crate) fn of(field: &'a syn::Field) -> syn::Result<FieldAttrs<'a>> {
         let mut rv = FieldAttrs {
             field,
             seen: Vec::new(),
@@ -1750,7 +1754,7 @@ impl<'a> FieldAttrs<'a> {
     }
 
     /// Returns the attributes of all fields.
-    pub fn of_all(
+    pub(crate) fn of_all(
         fields: &'a syn::punctuated::Punctuated<syn::Field, syn::Token![,]>,
     ) -> syn::Result<Vec<FieldAttrs<'a>>> {
         let mut rv = Vec::with_capacity(fields.len());
@@ -1760,12 +1764,12 @@ impl<'a> FieldAttrs<'a> {
         Ok(rv)
     }
 
-    pub fn field(&self) -> &'a syn::Field {
+    pub(crate) fn field(&self) -> &'a syn::Field {
         self.field
     }
 
     /// Returns `true` if the field is skipped in the direction.
-    pub fn skipped(&self, direction: Direction) -> bool {
+    pub(crate) fn skipped(&self, direction: Direction) -> bool {
         match direction {
             Direction::Serialize => self.skip_serializing,
             Direction::Deserialize => self.skip_deserializing,
@@ -1773,7 +1777,7 @@ impl<'a> FieldAttrs<'a> {
     }
 
     /// Returns the field for the purpose of bound inference.
-    pub fn bound_field(&self, direction: Direction) -> BoundField<'_> {
+    pub(crate) fn bound_field(&self, direction: Direction) -> BoundField<'_> {
         BoundField {
             ty: &self.field.ty,
             adapter: self.adapters.get(direction),
@@ -1784,11 +1788,11 @@ impl<'a> FieldAttrs<'a> {
     }
 
     /// Returns the attributes that were used on the field.
-    pub fn into_seen(self) -> Vec<SeenAttr> {
+    pub(crate) fn into_seen(self) -> Vec<SeenAttr> {
         self.seen
     }
 
-    pub fn name(&self, container_attrs: &ContainerAttrs) -> Name {
+    pub(crate) fn name(&self, container_attrs: &ContainerAttrs) -> Name {
         self.rename
             .get(container_attrs.direction())
             .cloned()
@@ -1796,7 +1800,7 @@ impl<'a> FieldAttrs<'a> {
     }
 
     /// Returns the aliases of the field, including those of `alias_all`.
-    pub fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<Name> {
+    pub(crate) fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<Name> {
         let mut rv = self.aliases.clone();
         let name = self.name(container_attrs);
         for alias in container_attrs.field_aliases(self.field, &name) {
@@ -1810,7 +1814,11 @@ impl<'a> FieldAttrs<'a> {
     /// Returns the name of the field of a struct variant.
     ///
     /// `style` is the name style of the fields of the variant.
-    pub fn variant_field_name(&self, direction: Direction, style: Option<RenameAll>) -> Name {
+    pub(crate) fn variant_field_name(
+        &self,
+        direction: Direction,
+        style: Option<RenameAll>,
+    ) -> Name {
         self.rename.get(direction).cloned().unwrap_or_else(|| {
             let name = ident_name(self.field.ident.as_ref().unwrap());
             Name::Lit(match style {
@@ -1820,46 +1828,46 @@ impl<'a> FieldAttrs<'a> {
         })
     }
 
-    pub fn default(&self) -> Option<&TypeDefault> {
+    pub(crate) fn default(&self) -> Option<&TypeDefault> {
         self.default.as_ref()
     }
 
-    pub fn flatten(&self) -> bool {
+    pub(crate) fn flatten(&self) -> bool {
         self.flatten
     }
 
-    pub fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
+    pub(crate) fn skip_serializing_if(&self) -> Option<&syn::ExprPath> {
         self.skip_serializing_if.as_ref()
     }
 
     /// Returns `true` if the field is not serialized.
-    pub fn skip_serializing(&self) -> bool {
+    pub(crate) fn skip_serializing(&self) -> bool {
         self.skip_serializing
     }
 
     /// Returns `true` if the field is not deserialized.
-    pub fn skip_deserializing(&self) -> bool {
+    pub(crate) fn skip_deserializing(&self) -> bool {
         self.skip_deserializing
     }
 
     /// Returns `true` if the field has to be given, even if its type has a
     /// value for missing fields (like `Option`).
-    pub fn required(&self) -> bool {
+    pub(crate) fn required(&self) -> bool {
         self.required
     }
 
     /// Returns the adapters of the field.
-    pub fn adapters(&self) -> &Adapters {
+    pub(crate) fn adapters(&self) -> &Adapters {
         &self.adapters
     }
 
     /// Returns the custom bounds of the field.
-    pub fn bounds(&self) -> &FieldBounds {
+    pub(crate) fn bounds(&self) -> &FieldBounds {
         &self.bounds
     }
 
     /// Returns `true` if the field receives the tag of the variant.
-    pub fn tag(&self) -> bool {
+    pub(crate) fn tag(&self) -> bool {
         self.tag
     }
 }
@@ -1868,7 +1876,7 @@ impl<'a> FieldAttrs<'a> {
 ///
 /// Variants are named by strings, integers or booleans.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub enum VariantName {
+pub(crate) enum VariantName {
     Str(Name),
     U64(u64),
     I64(i64),
@@ -1913,7 +1921,7 @@ impl VariantName {
     }
 
     /// Returns the name if it's a string.
-    pub fn as_str(&self) -> Option<&Name> {
+    pub(crate) fn as_str(&self) -> Option<&Name> {
         match self {
             VariantName::Str(name) => Some(name),
             _ => None,
@@ -1921,7 +1929,7 @@ impl VariantName {
     }
 
     /// Returns the name as it appears in messages of the derive.
-    pub fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         match self {
             VariantName::Str(name) => name.display(),
             VariantName::U64(value) => value.to_string(),
@@ -1932,7 +1940,7 @@ impl VariantName {
 
     /// Returns an expression for the name as `&str` for descriptions and
     /// errors.
-    pub fn str_expr(&self) -> TokenStream {
+    pub(crate) fn str_expr(&self) -> TokenStream {
         match self {
             VariantName::Str(name) => quote! { #name },
             other => {
@@ -1944,7 +1952,7 @@ impl VariantName {
 
     /// Returns match arms for names as `__deser::__derive::Tag` that
     /// evaluate to `result`.
-    pub fn tag_arms(names: &[VariantName], result: TokenStream) -> TokenStream {
+    pub(crate) fn tag_arms(names: &[VariantName], result: TokenStream) -> TokenStream {
         let mut strs = Vec::new();
         let mut others = Vec::new();
         for name in names {
@@ -1973,7 +1981,7 @@ impl VariantName {
     }
 
     /// Returns an expression for the name as atom.
-    pub fn atom(&self) -> TokenStream {
+    pub(crate) fn atom(&self) -> TokenStream {
         match self {
             VariantName::Str(name) => quote! {
                 __deser::Atom::Str(__deser::Text::borrowed(#name))
@@ -1986,7 +1994,7 @@ impl VariantName {
 
     /// Returns an expression for the name as `UnitName` (see
     /// `UnitVariants`).
-    pub fn unit_name(&self) -> TokenStream {
+    pub(crate) fn unit_name(&self) -> TokenStream {
         match self {
             VariantName::Str(name) => quote! { __deser::__derive::UnitName::Str(#name) },
             VariantName::U64(value) => quote! { __deser::__derive::UnitName::U64(#value) },
@@ -1996,7 +2004,7 @@ impl VariantName {
     }
 
     /// Returns an expression for a serialize handle of the name.
-    pub fn ser_handle(&self) -> TokenStream {
+    pub(crate) fn ser_handle(&self) -> TokenStream {
         let value = match self {
             VariantName::Str(name) => quote! { #name },
             VariantName::U64(value) => quote! { #value },
@@ -2066,7 +2074,7 @@ fn unsupported_name(expr: &syn::Expr) -> syn::Error {
     )
 }
 
-pub struct EnumVariantAttrs<'a> {
+pub(crate) struct EnumVariantAttrs<'a> {
     variant: &'a syn::Variant,
     seen: Vec<SeenAttr>,
     rename: Directional<VariantName>,
@@ -2083,7 +2091,7 @@ pub struct EnumVariantAttrs<'a> {
 }
 
 impl<'a> EnumVariantAttrs<'a> {
-    pub fn of(variant: &'a syn::Variant) -> syn::Result<EnumVariantAttrs<'a>> {
+    pub(crate) fn of(variant: &'a syn::Variant) -> syn::Result<EnumVariantAttrs<'a>> {
         let mut rv = EnumVariantAttrs {
             variant,
             seen: Vec::new(),
@@ -2189,39 +2197,39 @@ impl<'a> EnumVariantAttrs<'a> {
     }
 
     /// Returns the adapters of the content of the variant.
-    pub fn adapters(&self) -> &Adapters {
+    pub(crate) fn adapters(&self) -> &Adapters {
         &self.adapters
     }
 
     /// Returns the custom bounds of the variant.
     ///
     /// They replace the bounds inferred from the fields of the variant.
-    pub fn bounds(&self) -> &FieldBounds {
+    pub(crate) fn bounds(&self) -> &FieldBounds {
         &self.bounds
     }
 
     /// Returns the attributes that were used on the variant.
-    pub fn seen(&self) -> &[SeenAttr] {
+    pub(crate) fn seen(&self) -> &[SeenAttr] {
         &self.seen
     }
 
     /// Returns `true` if the variant is not tagged (in an enum which is).
-    pub fn untagged(&self) -> bool {
+    pub(crate) fn untagged(&self) -> bool {
         self.untagged
     }
 
     /// Returns `true` if the variant cannot be serialized.
-    pub fn skip_serializing(&self) -> bool {
+    pub(crate) fn skip_serializing(&self) -> bool {
         self.skip_serializing
     }
 
     /// Returns `true` if the variant cannot be deserialized.
-    pub fn skip_deserializing(&self) -> bool {
+    pub(crate) fn skip_deserializing(&self) -> bool {
         self.skip_deserializing
     }
 
     /// Returns the attributes that were used on the variant.
-    pub fn into_seen(self) -> Vec<SeenAttr> {
+    pub(crate) fn into_seen(self) -> Vec<SeenAttr> {
         self.seen
     }
 
@@ -2229,7 +2237,7 @@ impl<'a> EnumVariantAttrs<'a> {
     ///
     /// This is the one of the variant or the one for the fields of all
     /// variants of the enum.
-    pub fn fields_rename_all(&self, container_attrs: &ContainerAttrs) -> Option<RenameAll> {
+    pub(crate) fn fields_rename_all(&self, container_attrs: &ContainerAttrs) -> Option<RenameAll> {
         self.rename_all
             .get(container_attrs.direction())
             .copied()
@@ -2237,25 +2245,25 @@ impl<'a> EnumVariantAttrs<'a> {
     }
 
     /// Returns `true` if this is the catch-all variant for unknown tags.
-    pub fn other(&self) -> bool {
+    pub(crate) fn other(&self) -> bool {
         self.other
     }
 
     /// Returns `true` if the variant rejects unknown fields.
-    pub fn deny_unknown_fields(&self) -> bool {
+    pub(crate) fn deny_unknown_fields(&self) -> bool {
         self.deny_unknown_fields
     }
 
     /// Returns `true` if this variant is used if the tag is missing.
-    pub fn default(&self) -> bool {
+    pub(crate) fn default(&self) -> bool {
         self.default
     }
 
-    pub fn variant(&self) -> &syn::Variant {
+    pub(crate) fn variant(&self) -> &syn::Variant {
         self.variant
     }
 
-    pub fn name(&self, container_attrs: &ContainerAttrs) -> VariantName {
+    pub(crate) fn name(&self, container_attrs: &ContainerAttrs) -> VariantName {
         if let Some(name) = container_attrs.discriminant_name(self.variant) {
             return name.clone();
         }
@@ -2268,7 +2276,7 @@ impl<'a> EnumVariantAttrs<'a> {
     }
 
     /// Returns the aliases of the variant, including those of `alias_all`.
-    pub fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<VariantName> {
+    pub(crate) fn aliases(&self, container_attrs: &ContainerAttrs) -> Vec<VariantName> {
         let mut rv = self.aliases.clone();
         let name = self.name(container_attrs);
         for alias in container_attrs.variant_aliases(self.variant, &name) {
