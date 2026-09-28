@@ -72,7 +72,15 @@ impl Clone for Tags {
 /// ```
 pub fn take_tag(state: &mut State) -> Option<u64> {
     if state.event::<Tags>().is_some_and(|tags| !tags.0.is_empty()) {
-        Some(state.event_mut::<Tags>().0.remove(0))
+        let tags = &mut state.event_mut::<Tags>().0;
+        let tag = tags.remove(0);
+        // without tags left they are detached so that values that capture
+        // event data do not keep an empty list which would replace the tags
+        // of a wrapper
+        if tags.is_empty() {
+            state.take_event::<Tags>();
+        }
+        Some(tag)
     } else {
         None
     }
@@ -152,10 +160,13 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 
 impl<T: Serialize> Serialize for Tagged<T> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        // the tag is added after the value attached its data (the tags of a
+        // recorded value, the tags of inner `Tagged`), in front of its tags
+        let chunk = self.value.serialize(state)?;
         if let Some(tag) = self.tag {
-            push_tag(state, tag);
+            state.event_mut::<Tags>().0.insert(0, tag);
         }
-        self.value.serialize(state)
+        Ok(chunk)
     }
 
     fn finish(&self, state: &mut State) -> Result<(), Error> {

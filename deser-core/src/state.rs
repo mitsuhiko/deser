@@ -353,6 +353,28 @@ impl State {
         self.extensions.event_mut()
     }
 
+    /// Takes the data of a type from the current event.
+    ///
+    /// Returns `None` if no such data is attached to the event.  Unlike
+    /// resetting the data through [`event_mut`](Self::event_mut) this
+    /// detaches it, so the data is not captured with the event by the sinks
+    /// it's passed on to (such as the ones of a
+    /// [`Recording`](crate::de::Recording)).  This is what types which
+    /// consume event data (like a wrapper which captures a tag) use.
+    ///
+    /// ```
+    /// # use deser::State;
+    /// #[derive(Debug, Default, Clone)]
+    /// struct Tag(String);
+    ///
+    /// fn take_tag(state: &mut State) -> Option<String> {
+    ///     state.take_event::<Tag>().map(|tag| tag.0)
+    /// }
+    /// ```
+    pub fn take_event<T: Default + fmt::Debug + Send + Sync + 'static>(&mut self) -> Option<T> {
+        self.extensions.take_event()
+    }
+
     /// Captures the data attached to the current event.
     ///
     /// The captured data can be attached to another event later with

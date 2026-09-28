@@ -940,3 +940,22 @@ fn test_plain_scalars_round_trip() {
         "a: null\nb: [1]\n"
     );
 }
+
+#[test]
+fn test_tagged_recordings() {
+    use deser::de::Recording;
+
+    // the tag of a wrapper is written in front of a recorded value (which
+    // keeps its flow style)
+    let recording: Recording = from_str("{a: 1}").unwrap();
+    assert_eq!(
+        to_string(&Tagged::new("!x", recording)).unwrap(),
+        "!x {a: 1}\n"
+    );
+
+    // a captured tag is not kept by the value as well
+    let tagged: Tagged<Recording> = from_str("!color [1]").unwrap();
+    assert_eq!(tagged.tag.as_deref(), Some("!color"));
+    assert_eq!(to_string(&tagged).unwrap(), "!color [1]\n");
+    assert_eq!(to_string(&tagged.value).unwrap(), "[1]\n");
+}

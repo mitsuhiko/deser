@@ -23,9 +23,9 @@ every intermediate step.
 - **Breaking:** `DeserializerState` and `SerializerState` were merged into
   a single `deser::State` which is passed as `&mut State` to all methods
   of sinks, serializers and emitters.  Extension values no longer use a
-  `RefCell`.  The state carries event data (`State::event_mut`, used for
-  CBOR and YAML tags), the input range of the current event, the source
-  and the policies of a deserialization.
+  `RefCell`.  The state carries event data (`State::event_mut` and
+  `State::take_event`, used for CBOR and YAML tags), the input range of
+  the current event, the source and the policies of a deserialization.
 - **Breaking:** `Descriptor` was removed.  Names are only used for error
   messages (`Sink::expecting`), maps and sequences carry a
   `ContainerShape` (order, length and whether keys repeat) on their start

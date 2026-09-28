@@ -231,6 +231,25 @@ impl Extensions {
         value
     }
 
+    /// Takes the data of a type from the current event.
+    ///
+    /// The data is detached from the event.
+    pub fn take_event<T: Default + Debug + Send + Sync + 'static>(&mut self) -> Option<T> {
+        if !self.has_event_data {
+            return None;
+        }
+        let index = self.event_position(TypeId::of::<T>())?;
+        let entry = &mut self.events[index];
+        if !entry.active {
+            return None;
+        }
+        // `as_any_mut` of the box itself would be the box
+        let value = core::mem::take((*entry.value).as_any_mut().downcast_mut::<T>()?);
+        entry.active = false;
+        self.has_event_data = self.events.iter().any(|entry| entry.active);
+        Some(value)
+    }
+
     #[cold]
     fn insert_event<T: Default + Clone + Debug + Send + Sync + 'static>(&mut self) -> usize {
         self.events.push(EventEntry {
@@ -631,4 +650,15 @@ fn test_event_data() {
     ext.restore(&empty);
     assert_eq!(ext.event::<Tags>(), None);
     assert_eq!(ext.event::<Span>(), Some(&Span(0, 0)));
+
+    // taking detaches the data of one type, it's not captured anymore
+    *ext.event_mut::<Tags>() = Tags(vec![5]);
+    assert_eq!(ext.take_event::<Tags>(), Some(Tags(vec![5])));
+    assert_eq!(ext.take_event::<Tags>(), None);
+    assert_eq!(ext.event::<Tags>(), None);
+    assert_eq!(ext.event::<Span>(), Some(&Span(0, 0)));
+    assert!(ext.capture_event_data().entries.len() == 1);
+    assert_eq!(ext.take_event::<Span>(), Some(Span(0, 0)));
+    assert!(!ext.has_event_data());
+    assert!(ext.capture_event_data().is_empty());
 }

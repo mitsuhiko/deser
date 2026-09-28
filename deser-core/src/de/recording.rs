@@ -1065,11 +1065,10 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
                 ));
             }
         };
-        match snapshot {
-            Some(snapshot) => state
-                .extensions_mut()
-                .restore_event_data(snapshot.event_data()),
-            None => state.clear_event_data(),
+        // the recorded data is added to the data that a wrapper of the
+        // recording (like one that adds a tag) attached
+        if let Some(snapshot) = snapshot {
+            state.attach_event_data(snapshot.event_data());
         }
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {

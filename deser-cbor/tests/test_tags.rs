@@ -252,3 +252,22 @@ fn recordings_keep_tags() {
         assert_eq!(ser(&recording), input);
     }
 }
+
+#[test]
+fn test_tagged_recordings() {
+    use deser::de::Recording;
+
+    // the tag of a wrapper is written in front of a recorded value
+    let recording: Recording = deser_cbor::from_slice(&hex("820102")).unwrap();
+    assert_eq!(
+        deser_cbor::to_vec(&Tagged::new(7, recording)).unwrap(),
+        hex("c7820102")
+    );
+
+    // captured tags are not kept by the value as well, tags that are not
+    // captured are
+    let tagged: Tagged<Recording> = deser_cbor::from_slice(&hex("c7c8820102")).unwrap();
+    assert_eq!(tagged.tag, Some(7));
+    assert_eq!(deser_cbor::to_vec(&tagged).unwrap(), hex("c7c8820102"));
+    assert_eq!(deser_cbor::to_vec(&tagged.value).unwrap(), hex("c8820102"));
+}

@@ -51,11 +51,9 @@ pub(crate) struct NodeTag(pub(crate) Option<String>);
 /// }
 /// ```
 pub fn take_tag(state: &mut State) -> Option<String> {
-    if state.event::<NodeTag>().is_some_and(|tag| tag.0.is_some()) {
-        state.event_mut::<NodeTag>().0.take()
-    } else {
-        None
-    }
+    // the tag is detached so that values that capture event data do not
+    // keep an empty tag which would replace the tag of a wrapper
+    state.take_event::<NodeTag>().and_then(|tag| tag.0)
 }
 
 /// Sets the tag of the node that is serialized.
@@ -133,10 +131,13 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 
 impl<T: Serialize> Serialize for Tagged<T> {
     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        // the tag is set after the value attached its data (like the tag of
+        // a recorded value), it replaces it
+        let chunk = self.value.serialize(state)?;
         if let Some(ref tag) = self.tag {
             set_tag(state, tag.as_str());
         }
-        self.value.serialize(state)
+        Ok(chunk)
     }
 
     fn finish(&self, state: &mut State) -> Result<(), Error> {
