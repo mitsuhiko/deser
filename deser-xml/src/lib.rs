@@ -211,9 +211,10 @@ macro_rules! qname {
 ///
 /// `namespace!(atom = "http://www.w3.org/2005/Atom")` defines `atom!` so
 /// that `atom!("title")` is [`qname!("http://www.w3.org/2005/Atom",
-/// "title")`](qname) and `atom!(@ "href")` the attribute.  Like all
-/// macros defined by macros, it can be used after the invocation in the
-/// same module and its children.
+/// "title")`](qname), `atom!(@ "href")` the attribute and `atom!()` the
+/// URI.  The names of the macros are the prefixes of the namespaces in
+/// [`prefixes!`].  Like all macros defined by macros, they can be used
+/// after the invocation in the same module and its children.
 ///
 /// ```
 /// deser_xml::namespace!(atom = "http://www.w3.org/2005/Atom");
@@ -227,6 +228,7 @@ macro_rules! qname {
 /// }
 ///
 /// assert_eq!(atom!("title"), "{http://www.w3.org/2005/Atom}title");
+/// assert_eq!(atom!(), "http://www.w3.org/2005/Atom");
 /// ```
 #[macro_export]
 macro_rules! namespace {
@@ -241,6 +243,9 @@ macro_rules! __namespace {
     ($name:ident, $uri:literal, $d:tt) => {
         #[allow(unused_macros)]
         macro_rules! $name {
+                    () => {
+                        $uri
+                    };
                     (@ $d local:literal) => {
                         $crate::qname!(@ $uri, $d local)
                     };
@@ -248,6 +253,50 @@ macro_rules! __namespace {
                         $crate::qname!($uri, $d local)
                     };
                 }
+    };
+}
+
+/// Writes the prefixes of namespaces defined by [`namespace!`].
+///
+/// Every namespace has the name of its macro as prefix unless another one
+/// is given with `as`.  The result is the table for
+/// [`SerializerConfig::namespaces`] and
+/// [`DeserializerConfig::namespaces`]:
+///
+/// ```
+/// use deser_xml::{DeserializerConfig, SerializerConfig, prefixes};
+///
+/// deser_xml::namespace!(
+///     atom = "http://www.w3.org/2005/Atom",
+///     dc = "http://purl.org/dc/elements/1.1/",
+///     xlink = "http://www.w3.org/1999/xlink",
+/// );
+///
+/// const PREFIXES: &[(&str, &str)] = prefixes![atom as "", dc, xlink as "xl"];
+/// assert_eq!(PREFIXES, [
+///     ("", "http://www.w3.org/2005/Atom"),
+///     ("dc", "http://purl.org/dc/elements/1.1/"),
+///     ("xl", "http://www.w3.org/1999/xlink"),
+/// ]);
+///
+/// const WRITE: SerializerConfig = SerializerConfig::new().namespaces(PREFIXES);
+/// const READ: DeserializerConfig = DeserializerConfig::new().namespaces(PREFIXES);
+/// ```
+#[macro_export]
+macro_rules! prefixes {
+    ($($name:ident $(as $prefix:literal)?),* $(,)?) => {
+        &[$(($crate::__prefix!($name $(, $prefix)?), $name!())),*]
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __prefix {
+    ($name:ident) => {
+        stringify!($name)
+    };
+    ($name:ident, $prefix:literal) => {
+        $prefix
     };
 }
 

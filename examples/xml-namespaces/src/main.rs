@@ -6,23 +6,22 @@
 //! prefixes are read into the same value because the names are resolved
 //! into `{uri}local` names.  Elements the types do not know (the
 //! thumbnail) are kept as dynamic values under their resolved names.
-//! Then the feed is written back, once with chosen prefixes and once with
-//! generated ones.
+//! Then the feed is written back, once with prefixes named after the
+//! namespaces and once with generated ones.
 use std::collections::BTreeMap;
 
 use deser::{Deserialize, Serialize};
 use deser_value::Value;
 use deser_xml::{DeserializerConfig, Mixed, SerializerConfig};
 
-// `atom!("title")` is `"{http://www.w3.org/2005/Atom}title"` and
-// `atom!(@ "rel")` the attribute in that namespace
+// `atom!("title")` is `"{http://www.w3.org/2005/Atom}title"`,
+// `atom!(@ "rel")` the attribute in that namespace and `atom!()` the URI
 deser_xml::namespace!(
     atom = "http://www.w3.org/2005/Atom",
     dc = "http://purl.org/dc/elements/1.1/",
+    media = "http://search.yahoo.com/mrss/",
     xhtml = "http://www.w3.org/1999/xhtml",
 );
-
-const MEDIA: &str = "http://search.yahoo.com/mrss/";
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[deser(rename = atom!("feed"))]
@@ -145,9 +144,11 @@ fn main() {
     );
 
     // the thumbnail is not a field, it's kept under its resolved name
-    let thumbnail = format!("{{{MEDIA}}}thumbnail");
     println!("\nextensions: {:?}", entry.extensions.keys());
-    assert_eq!(entry.extensions.keys().collect::<Vec<_>>(), [&thumbnail]);
+    assert_eq!(
+        entry.extensions.keys().collect::<Vec<_>>(),
+        [media!("thumbnail")]
+    );
 
     // the prefixes of the document do not matter
     let other: Feed = RESOLVE.from_str(UNUSUAL).unwrap();
@@ -158,25 +159,28 @@ fn main() {
     let err = deser_xml::from_str::<Feed>(UNUSUAL).unwrap_err();
     println!("\nas written: {}", err);
 
-    // writing with chosen prefixes, which are declared on the root
-    const PREFIXES: SerializerConfig = SerializerConfig::new().namespaces(&[
-        ("", "http://www.w3.org/2005/Atom"),
-        ("dc", "http://purl.org/dc/elements/1.1/"),
-        ("media", MEDIA),
-        ("h", "http://www.w3.org/1999/xhtml"),
-    ]);
+    // writing with prefixes named after the namespace macros (Atom is the
+    // default namespace, XHTML gets `h`), all declared on the root
+    const PREFIXES: SerializerConfig = SerializerConfig::new()
+        .namespaces(deser_xml::prefixes![atom as "", dc, media, xhtml as "h"]);
     let xml = PREFIXES.to_string(&feed).unwrap();
     println!("\nwith prefixes:\n{}", xml);
-    assert!(xml.starts_with(r#"<feed xmlns="http://www.w3.org/2005/Atom""#));
-    assert!(xml.contains("<dc:creator>Jane</dc:creator>"));
+    assert!(xml.starts_with(&format!(r#"<feed xmlns="{}" xmlns:dc="#, atom!())));
+    assert!(xml.contains("<dc:creator>Jane</dc:creator><dc:creator>John</dc:creator>"));
+    assert!(xml.contains("<h:div>Names are <h:b>hard</h:b>"));
     assert!(xml.contains("<media:thumbnail "));
     assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
 
-    // without them, prefixes are generated and declared where they are
-    // first needed
+    // without them, prefixes are generated in the order the namespaces
+    // are first used, they are also declared on the root
     let xml = deser_xml::to_string(&feed).unwrap();
     println!("\ngenerated prefixes:\n{}", xml);
-    assert!(xml.starts_with(r#"<ns0:feed xmlns:ns0="http://www.w3.org/2005/Atom""#));
-    assert!(xml.contains(r#"<ns1:creator xmlns:ns1="http://purl.org/dc/elements/1.1/">"#));
+    assert!(xml.starts_with(&format!(
+        r#"<ns0:feed xmlns:ns0="{}" xmlns:ns1="{}" "#,
+        atom!(),
+        dc!()
+    )));
+    assert!(xml.contains("<ns1:creator>Jane</ns1:creator>"));
+    assert_eq!(xml.matches("xmlns").count(), 4);
     assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
 }

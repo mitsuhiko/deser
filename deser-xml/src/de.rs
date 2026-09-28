@@ -67,7 +67,8 @@ impl DeserializerConfig {
     /// with this prefix, whichever prefix the document uses.  The empty
     /// prefix leaves only the local name.  Names in other namespaces are
     /// passed on as written or, if namespaces are
-    /// [resolved](Self::resolve_namespaces), as `{uri}local`.
+    /// [resolved](Self::resolve_namespaces), as `{uri}local`.  The table
+    /// can be written with [`prefixes!`](crate::prefixes).
     ///
     /// ```
     /// use deser_xml::DeserializerConfig;

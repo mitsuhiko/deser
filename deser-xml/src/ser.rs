@@ -21,9 +21,9 @@ use crate::de::XML_NAMESPACE;
 ///
 /// Names can be `{uri}local` (the notation of James Clark, attributes are
 /// `@{uri}local`, see [`qname!`](crate::qname)): their namespace gets the
-/// [configured prefix](Self::namespaces) or a generated one (`ns0`, ...)
-/// that is declared on the element where it's first needed.  Other names
-/// are written as they are.
+/// [configured prefix](Self::namespaces) or a generated one (`ns0`, ...).
+/// Every namespace has one prefix in the document, all of them are
+/// declared on the root element.  Other names are written as they are.
 ///
 /// ```
 /// #[derive(deser::Serialize)]
@@ -101,13 +101,18 @@ impl SerializerConfig {
     ///
     /// The empty prefix declares the default namespace.  Names that are
     /// `{uri}local` are written with these prefixes, attributes only with
-    /// prefixes that are not empty.
+    /// prefixes that are not empty.  Namespaces without prefix get
+    /// generated ones.  The table can be written with
+    /// [`prefixes!`](crate::prefixes).
     ///
     /// ```
     /// use deser_xml::SerializerConfig;
     ///
-    /// deser_xml::namespace!(atom = "http://www.w3.org/2005/Atom");
-    /// deser_xml::namespace!(dc = "http://purl.org/dc/elements/1.1/");
+    /// deser_xml::namespace!(
+    ///     atom = "http://www.w3.org/2005/Atom",
+    ///     dc = "http://purl.org/dc/elements/1.1/",
+    ///     media = "http://search.yahoo.com/mrss/",
+    /// );
     ///
     /// #[derive(deser::Serialize)]
     /// #[deser(rename = atom!("feed"))]
@@ -115,16 +120,24 @@ impl SerializerConfig {
     ///     #[deser(rename = atom!("title"))]
     ///     title: String,
     ///     #[deser(rename = dc!("creator"))]
-    ///     creator: String,
+    ///     creator: Vec<String>,
+    ///     #[deser(rename = media!("thumbnail"))]
+    ///     thumbnail: String,
     /// }
     ///
     /// const CONFIG: SerializerConfig =
-    ///     SerializerConfig::new().namespaces(&[("", "http://www.w3.org/2005/Atom")]);
-    /// let feed = Feed { title: "x".into(), creator: "y".into() };
+    ///     SerializerConfig::new().namespaces(deser_xml::prefixes![atom as "", dc]);
+    /// let feed = Feed {
+    ///     title: "x".into(),
+    ///     creator: vec!["y".into(), "z".into()],
+    ///     thumbnail: "t.png".into(),
+    /// };
     /// assert_eq!(
     ///     CONFIG.to_string(&feed).unwrap(),
-    ///     "<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>x</title>\
-    ///      <ns0:creator xmlns:ns0=\"http://purl.org/dc/elements/1.1/\">y</ns0:creator></feed>"
+    ///     "<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+    ///      xmlns:ns0=\"http://search.yahoo.com/mrss/\"><title>x</title>\
+    ///      <dc:creator>y</dc:creator><dc:creator>z</dc:creator>\
+    ///      <ns0:thumbnail>t.png</ns0:thumbnail></feed>"
     /// );
     /// ```
     pub const fn namespaces(
@@ -167,7 +180,11 @@ impl SerializerConfig {
             out: String::new(),
             stack: Vec::new(),
             key: None,
-            bindings: vec![("xml".into(), XML_NAMESPACE.into())],
+            bindings: std::iter::once(("xml", XML_NAMESPACE))
+                .chain(self.names.namespaces.iter().copied())
+                .map(|(prefix, uri)| (prefix.to_string(), uri.to_string()))
+                .collect(),
+            declarations_at: 0,
         };
         if self.declaration {
             writer
@@ -175,7 +192,7 @@ impl SerializerConfig {
                 .push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         }
         driver.drive_described(|event, value, _state| writer.event(event, value))?;
-        Ok(writer.out)
+        writer.finish()
     }
 }
 
@@ -190,12 +207,7 @@ pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
 enum Frame {
     /// An element whose content is a map.  `open` is `true` while
     /// attributes can still be added to the start tag.
-    Element {
-        name: String,
-        open: bool,
-        /// The number of bindings before the element.
-        bindings: usize,
-    },
+    Element { name: String, open: bool },
     /// A sequence whose values are elements with the name.
     Items { name: String },
 }
@@ -213,8 +225,11 @@ struct Writer<'c> {
     stack: Vec<Frame>,
     /// The key of the next value of the element on top of the stack.
     key: Option<Key>,
-    /// The prefixes and namespaces that are in scope.
+    /// The prefixes of the namespaces, the first one is `xml` which is
+    /// never declared.
     bindings: Vec<(String, String)>,
+    /// Where the declarations go (after the name of the root element).
+    declarations_at: usize,
 }
 
 /// Finds the name of a type.
@@ -317,9 +332,7 @@ impl Writer<'_> {
                     }
                 }
                 let text = text.into_owned();
-                let bindings = self.bindings.len();
                 let name = self.qualify(&name, true)?;
-                self.write_declarations(bindings)?;
                 self.out.push(' ');
                 self.out.push_str(&name);
                 self.out.push_str("=\"");
@@ -369,10 +382,8 @@ impl Writer<'_> {
             // nulls keep their position
             Event::Atom(Atom::Null) => {
                 self.close_start_tag();
-                let bindings = self.bindings.len();
                 self.start_tag(&name, false)?;
                 self.out.push_str("/>");
-                self.bindings.truncate(bindings);
                 Ok(())
             }
             Event::Atom(atom) => self.atom_element(&name, &atom, false),
@@ -397,7 +408,6 @@ impl Writer<'_> {
             None => return Ok(()),
         };
         self.close_start_tag();
-        let bindings = self.bindings.len();
         let name = self.start_tag(name, is_root)?;
         if text.is_empty() {
             self.out.push_str("/>");
@@ -406,55 +416,48 @@ impl Writer<'_> {
             escape(&text, false, &mut self.out)?;
             write!(self.out, "</{name}>").unwrap();
         }
-        self.bindings.truncate(bindings);
         Ok(())
     }
 
     /// Writes the start tag of an element whose content is a map.
     fn open_element(&mut self, name: &str) -> Result<(), Error> {
-        let bindings = self.bindings.len();
         let name = self.start_tag(name, self.stack.is_empty())?;
-        self.stack.push(Frame::Element {
-            name,
-            open: true,
-            bindings,
-        });
+        self.stack.push(Frame::Element { name, open: true });
         Ok(())
     }
 
-    /// Writes the start of a start tag with the namespaces it declares and
-    /// returns the name as written.
-    ///
-    /// The configured namespaces are declared on the root element.
+    /// Writes the start of a start tag and returns the name as written.
     fn start_tag(&mut self, name: &str, is_root: bool) -> Result<String, Error> {
-        let bindings = self.bindings.len();
-        if is_root {
-            for (prefix, uri) in self.config.names.namespaces {
-                self.bindings.push((prefix.to_string(), uri.to_string()));
-            }
-        }
         let name = self.qualify(name, false)?;
         self.out.push('<');
         self.out.push_str(&name);
-        self.write_declarations(bindings)?;
+        if is_root {
+            self.declarations_at = self.out.len();
+        }
         Ok(name)
     }
 
     /// Returns how a name is written, `{uri}local` names get the prefix
-    /// of their namespace which is declared if it's not in scope.
+    /// of their namespace.
     fn qualify(&mut self, name: &str, is_attribute: bool) -> Result<String, Error> {
         let Some((uri, local)) = split_name(name)? else {
             return Ok(name.to_string());
         };
-        let prefix = match self.prefix(uri, is_attribute) {
-            Some(prefix) => prefix.to_string(),
+        // the default namespace (the empty prefix) does not apply to
+        // attributes
+        let bound = self
+            .bindings
+            .iter()
+            .find(|(prefix, bound)| bound == uri && !(is_attribute && prefix.is_empty()));
+        let prefix = match bound {
+            Some((prefix, _)) => prefix,
             None => {
                 let prefix = (0..)
                     .map(|n| format!("ns{n}"))
                     .find(|prefix| self.bindings.iter().all(|(x, _)| x != prefix))
                     .unwrap();
-                self.bindings.push((prefix.clone(), uri.to_string()));
-                prefix
+                self.bindings.push((prefix, uri.to_string()));
+                &self.bindings.last().unwrap().0
             }
         };
         Ok(if prefix.is_empty() {
@@ -464,40 +467,21 @@ impl Writer<'_> {
         })
     }
 
-    /// Returns the prefix of a namespace that is in scope.
-    ///
-    /// The empty prefix (the default namespace) does not apply to
-    /// attributes.
-    fn prefix(&self, uri: &str, is_attribute: bool) -> Option<&str> {
-        self.bindings
-            .iter()
-            .rev()
-            .filter(|(prefix, bound)| bound == uri && !(is_attribute && prefix.is_empty()))
-            .map(|(prefix, _)| prefix.as_str())
-            // an inner declaration could bind the prefix to another namespace
-            .find(|prefix| {
-                self.bindings
-                    .iter()
-                    .rev()
-                    .find(|(x, _)| x == prefix)
-                    .is_some_and(|(_, bound)| bound == uri)
-            })
-    }
-
-    /// Writes the declarations of the bindings from an index on into the
-    /// open start tag.
-    fn write_declarations(&mut self, from: usize) -> Result<(), Error> {
-        for (prefix, uri) in &self.bindings[from..] {
-            self.out.push_str(" xmlns");
+    /// Declares the namespaces on the root element.
+    fn finish(mut self) -> Result<String, Error> {
+        let mut declarations = String::new();
+        for (prefix, uri) in &self.bindings[1..] {
+            declarations.push_str(" xmlns");
             if !prefix.is_empty() {
-                self.out.push(':');
-                self.out.push_str(prefix);
+                declarations.push(':');
+                declarations.push_str(prefix);
             }
-            self.out.push_str("=\"");
-            escape(uri, true, &mut self.out)?;
-            self.out.push('"');
+            declarations.push_str("=\"");
+            escape(uri, true, &mut declarations)?;
+            declarations.push('"');
         }
-        Ok(())
+        self.out.insert_str(self.declarations_at, &declarations);
+        Ok(self.out)
     }
 
     /// Ends the start tag of the element that contains the next content.
@@ -513,15 +497,9 @@ impl Writer<'_> {
     }
 
     fn close_element(&mut self) -> Result<(), Error> {
-        let Some(Frame::Element {
-            name,
-            open,
-            bindings,
-        }) = self.stack.pop()
-        else {
+        let Some(Frame::Element { name, open }) = self.stack.pop() else {
             unreachable!()
         };
-        self.bindings.truncate(bindings);
         if open {
             self.out.push_str("/>");
         } else {

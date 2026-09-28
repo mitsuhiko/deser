@@ -16,9 +16,9 @@ what the types match, and the serializer turns them back into prefixes.
 
 ## What it shows
 
-- `deser_xml::namespace!` defining `atom!`, `dc!` and `xhtml!` for the
-  names of fields and variants (`atom!("title")` is
-  `{http://www.w3.org/2005/Atom}title`).
+- `deser_xml::namespace!` defining `atom!`, `dc!`, `media!` and `xhtml!`
+  for the names of fields and variants (`atom!("title")` is
+  `{http://www.w3.org/2005/Atom}title`, `atom!()` is the URI).
 - Two documents with different prefixes (a default namespace, prefixes
   on the root and on inner elements) read into the same value with
   `DeserializerConfig::resolve_namespaces`.
@@ -30,9 +30,11 @@ what the types match, and the serializer turns them back into prefixes.
   flattened map of dynamic values under its resolved name.
 - Without resolving, names are compared as written and the second
   document does not have an Atom title.
-- Writing the feed with prefixes chosen in `SerializerConfig::namespaces`
-  (declared on the root) and with generated prefixes (`ns0`, ...) that are
-  declared on the elements that need them, and reading both back.
+- Writing the feed with the prefixes of `deser_xml::prefixes!`, which are
+  named after the namespace macros unless given with `as`
+  (`prefixes![atom as "", dc, media, xhtml as "h"]`), and with generated
+  prefixes (`ns0`, ...), and reading both back.  Every namespace has one
+  prefix in the document, all are declared on the root element.
 
 ## What you should see
 

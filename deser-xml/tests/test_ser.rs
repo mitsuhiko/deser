@@ -229,42 +229,64 @@ fn test_resolved_names() {
         creator: vec!["a".into(), "b".into()],
     };
 
-    // without configuration the prefixes are generated and declared where
-    // they are first needed
+    // without configuration the prefixes are generated, every namespace
+    // has one prefix that is declared on the root
     let xml = to_string(&feed).unwrap();
     assert_eq!(
         xml,
-        "<ns0:feed xmlns:ns0=\"http://www.w3.org/2005/Atom\"><ns0:title>x</ns0:title>\
-         <ns0:link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/a\" ns0:rel=\"self\" \
-         type=\"text/html\"><ns1:title>A</ns1:title></ns0:link>\
-         <ns0:link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/b\" ns0:rel=\"next\"/>\
-         <ns1:creator xmlns:ns1=\"http://purl.org/dc/elements/1.1/\">a</ns1:creator>\
-         <ns1:creator xmlns:ns1=\"http://purl.org/dc/elements/1.1/\">b</ns1:creator></ns0:feed>"
+        "<ns0:feed xmlns:ns0=\"http://www.w3.org/2005/Atom\" \
+         xmlns:ns1=\"http://www.w3.org/1999/xlink\" xmlns:ns2=\"http://purl.org/dc/elements/1.1/\">\
+         <ns0:title>x</ns0:title>\
+         <ns0:link ns1:href=\"/a\" ns0:rel=\"self\" type=\"text/html\"><ns1:title>A</ns1:title></ns0:link>\
+         <ns0:link ns1:href=\"/b\" ns0:rel=\"next\"/>\
+         <ns2:creator>a</ns2:creator><ns2:creator>b</ns2:creator></ns0:feed>"
     );
     const RESOLVE: deser_xml::DeserializerConfig =
         deser_xml::DeserializerConfig::new().resolve_namespaces(true);
     assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
 
-    // configured prefixes are declared on the root, the default namespace
-    // is not used for attributes
-    const CONFIG: SerializerConfig = SerializerConfig::new().namespaces(&[
-        ("", "http://www.w3.org/2005/Atom"),
-        ("dc", "http://purl.org/dc/elements/1.1/"),
-        ("ns0", "urn:taken"),
-    ]);
+    // configured prefixes are used, generated ones skip them.  The default
+    // namespace is not used for attributes, they get another prefix.
+    const CONFIG: SerializerConfig =
+        SerializerConfig::new().namespaces(&[("", atom!()), ("dc", dc!()), ("ns0", "urn:taken")]);
     let xml = CONFIG.to_string(&feed).unwrap();
     assert_eq!(
         xml,
         "<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
-         xmlns:ns0=\"urn:taken\"><title>x</title>\
-         <link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/a\" \
-         xmlns:ns2=\"http://www.w3.org/2005/Atom\" ns2:rel=\"self\" type=\"text/html\">\
-         <ns1:title>A</ns1:title></link>\
-         <link xmlns:ns1=\"http://www.w3.org/1999/xlink\" ns1:href=\"/b\" \
-         xmlns:ns2=\"http://www.w3.org/2005/Atom\" ns2:rel=\"next\"/>\
+         xmlns:ns0=\"urn:taken\" xmlns:ns1=\"http://www.w3.org/1999/xlink\" \
+         xmlns:ns2=\"http://www.w3.org/2005/Atom\"><title>x</title>\
+         <link ns1:href=\"/a\" ns2:rel=\"self\" type=\"text/html\"><ns1:title>A</ns1:title></link>\
+         <link ns1:href=\"/b\" ns2:rel=\"next\"/>\
          <dc:creator>a</dc:creator><dc:creator>b</dc:creator></feed>"
     );
     assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
+
+    // prefixes named after the macros, a prefix for the attributes in the
+    // default namespace, and the XML declaration before the root
+    const PREFIXED: SerializerConfig = SerializerConfig::new()
+        .namespaces(deser_xml::prefixes![atom as "", atom as "a", xlink])
+        .declaration(true);
+    let xml = PREFIXED.to_string(&feed).unwrap();
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+         <feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:a=\"http://www.w3.org/2005/Atom\" \
+         xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:ns0=\"http://purl.org/dc/elements/1.1/\">\
+         <title>x</title>\
+         <link xlink:href=\"/a\" a:rel=\"self\" type=\"text/html\"><xlink:title>A</xlink:title></link>\
+         <link xlink:href=\"/b\" a:rel=\"next\"/>\
+         <ns0:creator>a</ns0:creator><ns0:creator>b</ns0:creator></feed>"
+    );
+    assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
+
+    // a root that is a single value
+    #[derive(Serialize)]
+    #[deser(rename = atom!("id"))]
+    struct Id(&'static str);
+    assert_eq!(
+        to_string(&Id("x")).unwrap(),
+        r#"<ns0:id xmlns:ns0="http://www.w3.org/2005/Atom">x</ns0:id>"#
+    );
 
     // the xml prefix is never declared
     let value = BTreeMap::from([("@{http://www.w3.org/XML/1998/namespace}lang", "en")]);
