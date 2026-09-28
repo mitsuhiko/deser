@@ -4,8 +4,10 @@
 //! implementations in this crate and by the derive (through
 //! `deser::__derive`).
 use crate::State;
+use crate::Text;
 #[cfg(feature = "derive")]
 use crate::de::Deserialize;
+use crate::de::lexical::ContentKey;
 #[cfg(feature = "derive")]
 use crate::de::lexical::is_empty_null;
 use crate::de::{Sink, SinkHandle};
@@ -155,7 +157,12 @@ pub(crate) fn default_unexpected_atom(
 ) -> Result<(), Error> {
     let atom = match atom {
         Atom::F32(value) => return sink.atom(Atom::F64(f64::from(value)), state),
-        Atom::Lexical(value) => return sink.atom(Atom::Str(value), state),
+        Atom::Lexical(value) => {
+            if let Some(key) = ContentKey::of(state) {
+                return lexical_into_map(sink, value, key, state);
+            }
+            return sink.atom(Atom::Str(value), state);
+        }
         Atom::Implicit(value) => return implicit_into(sink, value, state),
         atom => atom,
     };
@@ -173,6 +180,33 @@ pub(crate) fn default_unexpected_atom(
         return Err(discarded_error(ErrorKind::Unexpected));
     }
     Err(atom.unexpected_error(&sink.expecting()))
+}
+
+/// Delivers text that a sink rejected as string or as map with the text
+/// under the key of the content (see [`ContentKey`]).
+///
+/// If the sink rejects both, the error of the string is returned.
+#[cold]
+#[inline(never)]
+fn lexical_into_map(
+    sink: &mut dyn Sink<'_>,
+    text: Text<'_>,
+    key: &'static str,
+    state: &mut State,
+) -> Result<(), Error> {
+    let err = match sink.atom(Atom::Str(text.clone()), state) {
+        Err(err) if err.kind() == ErrorKind::Unexpected => err,
+        rv => return rv,
+    };
+    if sink.map(state).is_err() {
+        return Err(err);
+    }
+    // empty text is no content
+    if !text.is_empty() {
+        sink.__private_key_atom(Atom::Lexical(Text::borrowed(key)), state)?;
+        sink.__private_value_atom(Atom::Lexical(text), state)?;
+    }
+    Ok(())
 }
 
 /// Delivers an implicit atom as its value or its text.

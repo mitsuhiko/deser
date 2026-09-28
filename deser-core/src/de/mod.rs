@@ -248,7 +248,7 @@ pub use self::deserializer::Deserializer;
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
-pub use self::lexical::LexicalRules;
+pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;

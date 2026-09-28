@@ -121,6 +121,76 @@ impl Default for LexicalRules {
     }
 }
 
+/// The key under which maps hold their own content.
+///
+/// In some formats a value is text or a map that holds the text together
+/// with more entries: the elements of XML are their text (`<count>3</count>`)
+/// or, if they have attributes, a map (`<count unit="m">3</count>` is
+/// `{"@unit": "m", "$text": "3"}`).  Which of the two a value is depends on
+/// the input, not on the type it's deserialized into.  Formats like this
+/// set the key of the content in the [`State`] (see [`set`](Self::set)),
+/// and values are then passed on in the form the type accepts:
+///
+/// * A type that rejects a map (like `u32`) receives the value of the key
+///   of the content, the other entries are skipped.  If the map has no
+///   such key it receives empty text (`""` as
+///   [lexical atom](crate::Atom::Lexical)).
+/// * A type that rejects [lexical atoms](crate::Atom::Lexical) but accepts
+///   maps (like a struct) receives a map with the text under the key of the
+///   content (no entry for empty text).
+///
+/// Both only happen after a type rejected the value, so they cost nothing
+/// otherwise.  Without the key (the default), values are passed on as
+/// they are.
+///
+/// ```
+/// use deser::de::{ContentKey, DeserializeDriver};
+/// use deser::{Atom, Deserialize, Event};
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct Price {
+///     #[deser(rename = "@currency")]
+///     currency: Option<String>,
+///     #[deser(rename = "$text")]
+///     amount: u32,
+/// }
+///
+/// let mut out = None::<(u32, Price)>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// ContentKey("$text").set(driver.state_mut());
+/// driver.emit(Event::seq_start()).unwrap();
+/// // a map for a `u32`
+/// driver.emit(Event::map_start()).unwrap();
+/// for text in ["@unit", "m", "$text", "3"] {
+///     driver.emit(Atom::Lexical(text.into())).unwrap();
+/// }
+/// driver.emit(Event::MapEnd).unwrap();
+/// // text for a struct
+/// driver.emit(Atom::Lexical("12".into())).unwrap();
+/// driver.emit(Event::SeqEnd).unwrap();
+/// drop(driver);
+/// assert_eq!(out, Some((3, Price { currency: None, amount: 12 })));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentKey(pub &'static str);
+
+impl ContentKey {
+    /// Returns the key of the content of a deserialization if there is one.
+    #[inline]
+    pub fn of(state: &State) -> Option<&'static str> {
+        Some(state.content_key).filter(|key| !key.is_empty())
+    }
+
+    /// Sets the key of the content of a deserialization.
+    ///
+    /// The empty key means that there is no key of the content (the
+    /// default).
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        state.content_key = self.0;
+    }
+}
+
 /// Parses the lexical form of a boolean with the rules of the state.
 pub(crate) fn parse_bool(value: &str, state: &State) -> Result<bool, Error> {
     parse_bool_with(value, LexicalRules::of(state).lenient_bools, state)

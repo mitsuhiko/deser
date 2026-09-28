@@ -56,6 +56,9 @@ pub struct State {
     pub(crate) is_map_key: bool,
     // `true` if the innermost open container is a multimap
     pub(crate) is_multimap: bool,
+    // the key of the content of maps, empty if there is none (see
+    // `ContentKey`)
+    pub(crate) content_key: &'static str,
     // the byte range of the current event, `NO_RANGE` if there is none.
     // This is not an option so that it can be cleared with a single store.
     pub(crate) input_range: (usize, usize),
@@ -101,6 +104,7 @@ impl State {
             container_shape: ContainerShape::new(),
             is_map_key: false,
             is_multimap: false,
+            content_key: "",
             input_range: NO_RANGE,
             error_context: Vec::new(),
             discards_errors: false,

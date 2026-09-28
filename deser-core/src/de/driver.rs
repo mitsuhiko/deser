@@ -3,9 +3,11 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::State;
+use crate::Text;
 use crate::de::layer::{Layer, LayerEvent, Next};
+use crate::de::lexical::ContentKey;
 use crate::de::{Deserialize, Sink, SinkHandle};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
@@ -83,6 +85,11 @@ enum Container {
     /// second if it's a multimap (see [`ContainerShape::with_multimap`]).
     Map(bool, bool),
     Seq,
+    /// A map for a sink that rejected it: the value of the key of the
+    /// content is delivered to the sink, the other entries are skipped (see
+    /// [`ContentKey`]).  The flags are `true` if a key is expected next, if
+    /// the next value is the content and if the content was delivered.
+    Content(bool, bool, bool),
     /// Takes the next value (an atom or a container) and ignores it.  This
     /// is placed above a map that recovered from the error of a key (see
     /// [`Sink::recover`]), the value of the key is skipped.  It holds a null
@@ -379,6 +386,8 @@ impl<'de> DriverCore<'de> {
     pub(crate) fn update_position(&mut self, event: &Event<'_>) {
         self.state.is_map_key = match event {
             Event::MapEnd | Event::SeqEnd => false,
+            // the keys of maps whose content is delivered are not
+            // delivered to sinks
             _ => matches!(self.sink_stack.last(), Some((_, Container::Map(true, _)))),
         };
     }
@@ -515,6 +524,12 @@ impl<'de> DriverCore<'de> {
                 self.state.is_map_key = false;
                 sink.__private_borrowed_value_atom(atom, &mut self.state)
             }
+            Some((sink, Container::Content(is_key, take, found))) => {
+                match content_atom(&self.state, is_key, take, found, &atom)? {
+                    true => sink.borrowed_atom(atom, &mut self.state),
+                    false => Ok(()),
+                }
+            }
             Some((_, Container::SkipValue)) => {
                 self.skip_value();
                 Ok(())
@@ -543,6 +558,12 @@ impl<'de> DriverCore<'de> {
             Some((sink, Container::Seq)) => {
                 self.state.is_map_key = false;
                 sink.__private_value_atom(atom, &mut self.state)
+            }
+            Some((sink, Container::Content(is_key, take, found))) => {
+                match content_atom(&self.state, is_key, take, found, &atom)? {
+                    true => sink.atom(atom, &mut self.state),
+                    false => Ok(()),
+                }
             }
             Some((_, Container::SkipValue)) => {
                 self.skip_value();
@@ -579,6 +600,18 @@ impl<'de> DriverCore<'de> {
                 // SAFETY: see above
                 unsafe { erase_lifetime(sink) }
             }
+            // entries of a map that is not the content are skipped
+            Some((_, Container::Content(is_key, take, _))) => {
+                if *is_key || *take {
+                    return Err(content_container_error(*is_key));
+                }
+                *is_key = true;
+                self.state.is_map_key = false;
+                self.state.depth += 1;
+                self.sink_stack
+                    .push((SinkHandle::null(), Container::new(is_map)));
+                return Ok(());
+            }
             // the skipped value is a container, the null sink takes it
             Some((_, container @ Container::SkipValue)) => {
                 self.state.is_map_key = false;
@@ -590,8 +623,17 @@ impl<'de> DriverCore<'de> {
         };
         self.state.container_shape = shape;
         let container = if is_map {
-            sink.map(&mut self.state)?;
-            Container::Map(true, shape.is_multimap())
+            match sink.map(&mut self.state) {
+                Ok(()) => Container::Map(true, shape.is_multimap()),
+                // a map for a sink that wants its content
+                Err(err)
+                    if err.kind() == ErrorKind::Unexpected
+                        && ContentKey::of(&self.state).is_some() =>
+                {
+                    Container::Content(true, false, false)
+                }
+                Err(err) => return Err(err),
+            }
         } else {
             sink.seq(&mut self.state)?;
             Container::Seq
@@ -605,7 +647,7 @@ impl<'de> DriverCore<'de> {
     #[inline(always)]
     fn emit_end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.sink_stack.last() {
-            Some((_, Container::Map(..))) if is_map => {}
+            Some((_, Container::Map(..) | Container::Content(..))) if is_map => {}
             Some((_, Container::Seq)) if !is_map => {}
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
         }
@@ -614,7 +656,21 @@ impl<'de> DriverCore<'de> {
         // can still produce values within it (for instance by replaying
         // recorded values).
         self.state.is_multimap = container.is_multimap();
-        let rv = sink.finish(&mut self.state);
+        let mut rv = Ok(());
+        // a map without content is empty text
+        if let Container::Content(_, _, false) = container {
+            self.state.is_map_key = false;
+            rv = sink
+                .atom(Atom::Lexical(Text::borrowed("")), &mut self.state)
+                .map_err(|err| match err.kind() {
+                    // it's rejected as the map it is
+                    ErrorKind::Unexpected => {
+                        super::default_container(&mut sink, "map", &self.state).unwrap_err()
+                    }
+                    _ => err,
+                });
+        }
+        let rv = rv.and_then(|()| sink.finish(&mut self.state));
         self.state.depth -= 1;
         self.state.is_multimap = self
             .sink_stack
@@ -626,6 +682,52 @@ impl<'de> DriverCore<'de> {
         }
         rv
     }
+}
+
+/// Handles an atom of a map whose content is delivered (see
+/// [`Container::Content`]).
+///
+/// Returns `true` if the atom is the content.
+#[cold]
+#[inline(never)]
+fn content_atom(
+    state: &State,
+    is_key: &mut bool,
+    take: &mut bool,
+    found: &mut bool,
+    atom: &Atom<'_>,
+) -> Result<bool, Error> {
+    let was_key = *is_key;
+    *is_key = !was_key;
+    if was_key {
+        *take = match atom {
+            Atom::Str(key) | Atom::Lexical(key) => ContentKey::of(state) == Some(&**key),
+            _ => false,
+        };
+        return Ok(false);
+    }
+    if !core::mem::take(take) {
+        return Ok(false);
+    }
+    if core::mem::replace(found, true) {
+        return Err(Error::new(
+            ErrorKind::Unexpected,
+            "unexpected map with more than one content, expected a single value",
+        ));
+    }
+    Ok(true)
+}
+
+#[cold]
+fn content_container_error(is_key: bool) -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        if is_key {
+            "unexpected map with a key that is not a single value, expected a single value"
+        } else {
+            "unexpected map whose content is not a single value, expected a single value"
+        },
+    )
 }
 
 impl<'de> Drop for DriverCore<'de> {
