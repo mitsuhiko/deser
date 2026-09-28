@@ -64,11 +64,14 @@ impl DeserializerConfig {
     /// for [`BytesFormat::SEQ`] they are still decoded as base64.
     ///
     /// ```
-    /// let value: Vec<u8> = deser_jsonc::from_str(r#""Af8=""#).unwrap();
+    /// let value: Vec<u8> =
+    ///     deser_jsonc::from_str(r#""Af8=""#).unwrap();
     /// assert_eq!(value, [1, 255]);
-    /// let value: Vec<u8> = deser_jsonc::from_str(r#""Af8""#).unwrap();
+    /// let value: Vec<u8> =
+    ///     deser_jsonc::from_str(r#""Af8""#).unwrap();
     /// assert_eq!(value, [1, 255]);
-    /// let value: Vec<u8> = deser_jsonc::from_str("[1, 255]").unwrap();
+    /// let value: Vec<u8> =
+    ///     deser_jsonc::from_str("[1, 255]").unwrap();
     /// assert_eq!(value, [1, 255]);
     /// ```
     ///
@@ -93,7 +96,10 @@ impl DeserializerConfig {
     /// ```
     /// use deser_jsonc::{DeserializerConfig, Trailing};
     ///
-    /// assert!(deser_jsonc::from_str::<Vec<u32>>("[1] trash").is_err());
+    /// assert!(
+    ///     deser_jsonc::from_str::<Vec<u32>>("[1] trash")
+    ///         .is_err()
+    /// );
     /// const STOP: DeserializerConfig =
     ///     DeserializerConfig::new().trailing(Trailing::Stop);
     /// assert_eq!(STOP.from_str::<Vec<u32>>("[1] trash").unwrap(), [1]);
@@ -103,11 +109,14 @@ impl DeserializerConfig {
     /// one.  Errors only discard their line:
     ///
     /// ```
-    /// use deser_jsonc::{Deserializer, DeserializerConfig, Trailing};
+    /// use deser_jsonc::{
+    ///     Deserializer, DeserializerConfig, Trailing,
+    /// };
     ///
     /// const LINES: DeserializerConfig =
     ///     DeserializerConfig::new().trailing(Trailing::Newline);
-    /// let mut de = Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
+    /// let mut de =
+    ///     Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
     /// let mut values = Vec::new();
     /// while !de.is_end() {
     ///     match de.deserialize::<u32>() {
@@ -168,9 +177,12 @@ impl DeserializerConfig {
     /// use deser::ext::Decimal;
     ///
     /// let value: Decimal =
-    ///     deser_jsonc::from_str("0.10000000000000000001").unwrap();
+    ///     deser_jsonc::from_str("0.10000000000000000001")
+    ///         .unwrap();
     /// assert_eq!(value.as_str(), "0.10000000000000000001");
-    /// let value: f64 = deser_jsonc::from_str("0.10000000000000000001").unwrap();
+    /// let value: f64 =
+    ///     deser_jsonc::from_str("0.10000000000000000001")
+    ///         .unwrap();
     /// assert_eq!(value, 0.1);
     /// ```
     ///
@@ -239,10 +251,13 @@ fn empty_input() -> Error {
 /// deserializer reads [JSON Lines](https://jsonlines.org/):
 ///
 /// ```
-/// use deser_jsonc::{Deserializer, DeserializerConfig, Trailing};
+/// use deser_jsonc::{
+///     Deserializer, DeserializerConfig, Trailing,
+/// };
 ///
 /// let config = DeserializerConfig::new().trailing(Trailing::Newline);
-/// let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
+/// let mut de =
+///     Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
 /// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
 /// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [3]);
 /// assert!(de.is_end());
@@ -411,7 +426,9 @@ impl<'a> Deserializer<'a> {
     /// iterator stops after the first error.
     ///
     /// ```
-    /// use deser_jsonc::{Deserializer, DeserializerConfig, Trailing};
+    /// use deser_jsonc::{
+    ///     Deserializer, DeserializerConfig, Trailing,
+    /// };
     ///
     /// let config = DeserializerConfig::new().trailing(Trailing::Newline);
     /// let mut de = Deserializer::from_str_with_config("1\n2\n3\n", &config);

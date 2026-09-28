@@ -451,7 +451,8 @@ impl DeserializerConfig {
 /// [`DeserializerConfig`].
 ///
 /// ```
-/// let value: Vec<u32> = deser_json::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+/// let value: Vec<u32> =
+///     deser_json::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> {

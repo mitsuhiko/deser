@@ -875,6 +875,29 @@ impl<'a> Cursor<'a> {
         self.peek().unwrap_or(b'\0')
     }
 
+    /// Consumes the next eight bytes if they are digits and returns their
+    /// value.
+    ///
+    /// This does not look at the end of the input, the digits after these
+    /// are parsed one by one.
+    #[inline(always)]
+    fn eight_digits(&mut self) -> Option<u64> {
+        let bytes = self.input.get(self.pos..self.pos + 8)?;
+        let value = u64::from_le_bytes(bytes.try_into().unwrap());
+        // all bytes are between b'0' and b'9'
+        let digits = value.wrapping_sub(0x3030_3030_3030_3030);
+        let above = value.wrapping_add(0x4646_4646_4646_4646);
+        if (digits | above) & 0x8080_8080_8080_8080 != 0 {
+            return None;
+        }
+        self.pos += 8;
+        // combine pairs of digits, then pairs of those and so on
+        let pairs = digits.wrapping_mul(10).wrapping_add(digits >> 8);
+        let low = (pairs & 0x0000_00ff_0000_00ff).wrapping_mul(0x000f_4240_0000_0064);
+        let high = ((pairs >> 16) & 0x0000_00ff_0000_00ff).wrapping_mul(0x0000_2710_0000_0001);
+        Some(u64::from((low.wrapping_add(high) >> 32) as u32))
+    }
+
     #[inline]
     fn bump(&mut self) {
         self.pos += 1;
@@ -1227,6 +1250,12 @@ impl<'a> Cursor<'a> {
             }
             c @ b'1'..=b'9' => {
                 let mut res = u64::from(c - b'0');
+                // eight digits at a time while they cannot overflow
+                while res < EIGHT_DIGITS_LIMIT
+                    && let Some(digits) = self.eight_digits()
+                {
+                    res = res * 100_000_000 + digits;
+                }
 
                 loop {
                     match self.peek_or_nul() {
@@ -1372,6 +1401,17 @@ impl<'a> Cursor<'a> {
         #[cfg(not(json5))]
         let mut at_least_one_digit = false;
         let mut overflowed = false;
+        // eight digits at a time while they cannot overflow
+        while significand < EIGHT_DIGITS_LIMIT
+            && let Some(digits) = self.eight_digits()
+        {
+            significand = significand * 100_000_000 + digits;
+            exponent -= 8;
+            #[cfg(not(json5))]
+            {
+                at_least_one_digit = true;
+            }
+        }
         while let c @ b'0'..=b'9' = self.peek_or_nul() {
             self.bump();
             let digit = u64::from(c - b'0');
@@ -1585,6 +1625,9 @@ impl<'a> Cursor<'a> {
         Ok(if nonnegative { 0.0 } else { -0.0 })
     }
 }
+
+/// Eight more digits can be added to significands below this.
+const EIGHT_DIGITS_LIMIT: u64 = (u64::MAX - 99_999_999) / 100_000_000;
 
 /// Powers of ten which are exact as `f64`.
 static POW10: [f64; 23] = [
@@ -1975,6 +2018,46 @@ mod tests {
                     "{input} size {size}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_integers() {
+        fn parse(text: &str) -> Result<u64, String> {
+            let mut out = None::<u64>;
+            let mut driver = DeserializeDriver::new(&mut out);
+            Parser::default()
+                .parse(
+                    text.as_bytes(),
+                    0,
+                    true,
+                    0,
+                    OPTIONS,
+                    &mut Borrowing(&mut driver),
+                )
+                .map_err(|err| err.message().to_string())?;
+            drop(driver);
+            Ok(out.unwrap())
+        }
+
+        // every length, around the groups of eight digits and the limit
+        let mut value = 0u64;
+        for digit in (1..=20).map(|x| x % 10) {
+            value = value.wrapping_mul(10).wrapping_add(digit);
+            let text = value.to_string();
+            assert_eq!(parse(&text), Ok(value), "{text}");
+        }
+        for value in [
+            u64::MAX,
+            u64::MAX - 1,
+            u64::MAX / 10,
+            99_999_999,
+            100_000_000,
+            EIGHT_DIGITS_LIMIT,
+            EIGHT_DIGITS_LIMIT * 100_000_000 + 99_999_999,
+            (EIGHT_DIGITS_LIMIT + 1) * 100_000_000,
+        ] {
+            assert_eq!(parse(&value.to_string()), Ok(value), "{value}");
         }
     }
 
