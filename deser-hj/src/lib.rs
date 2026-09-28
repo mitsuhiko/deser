@@ -36,7 +36,7 @@
 //!     motd: String,
 //! }
 //!
-//! let config: Config = deser_hjson::from_str(r#"
+//! let config: Config = deser_hj::from_str(r#"
 //!     ## the name of the service
 //!     name: api
 //!     version: 2

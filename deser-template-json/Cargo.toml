@@ -29,7 +29,7 @@ unicode-ident = "1.0.12"
 deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
 deser-json5 = { version = "0.8.0", path = "../deser-json5" }
-deser-hjson = { version = "0.8.0", path = "../deser-hjson" }
+deser-hj = { version = "0.8.0", path = "../deser-hj" }
 deser-jsonc = { version = "0.8.0", path = "../deser-jsonc" }
 deser-location = { version = "0.8.0", path = "../deser-location" }
 

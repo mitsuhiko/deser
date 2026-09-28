@@ -21,7 +21,7 @@ use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
 /// [`Deserializer::from_slice_with_config`].
 ///
 /// ```
-/// use deser_hjson::DeserializerConfig;
+/// use deser_hj::DeserializerConfig;
 ///
 /// const CONFIG: DeserializerConfig =
 ///     DeserializerConfig::new().exact_numbers(false);
@@ -63,13 +63,13 @@ impl DeserializerConfig {
     ///
     /// ```
     /// let value: Vec<u8> =
-    ///     deser_hjson::from_str(r#""Af8=""#).unwrap();
+    ///     deser_hj::from_str(r#""Af8=""#).unwrap();
     /// assert_eq!(value, [1, 255]);
     /// let value: Vec<u8> =
-    ///     deser_hjson::from_str(r#""Af8""#).unwrap();
+    ///     deser_hj::from_str(r#""Af8""#).unwrap();
     /// assert_eq!(value, [1, 255]);
     /// let value: Vec<u8> =
-    ///     deser_hjson::from_str("[1, 255]").unwrap();
+    ///     deser_hj::from_str("[1, 255]").unwrap();
     /// assert_eq!(value, [1, 255]);
     /// ```
     ///
@@ -92,10 +92,10 @@ impl DeserializerConfig {
     /// the value without looking at what follows:
     ///
     /// ```
-    /// use deser_hjson::{DeserializerConfig, Trailing};
+    /// use deser_hj::{DeserializerConfig, Trailing};
     ///
     /// assert!(
-    ///     deser_hjson::from_str::<Vec<u32>>("[1] trash")
+    ///     deser_hj::from_str::<Vec<u32>>("[1] trash")
     ///         .is_err()
     /// );
     /// const STOP: DeserializerConfig =
@@ -107,7 +107,7 @@ impl DeserializerConfig {
     /// one.  Errors only discard their line:
     ///
     /// ```
-    /// use deser_hjson::{
+    /// use deser_hj::{
     ///     Deserializer, DeserializerConfig, Trailing,
     /// };
     ///
@@ -172,11 +172,11 @@ impl DeserializerConfig {
     /// use deser::ext::Decimal;
     ///
     /// let value: Decimal =
-    ///     deser_hjson::from_str("0.10000000000000000001")
+    ///     deser_hj::from_str("0.10000000000000000001")
     ///         .unwrap();
     /// assert_eq!(value.as_str(), "0.10000000000000000001");
     /// let value: f64 =
-    ///     deser_hjson::from_str("0.10000000000000000001")
+    ///     deser_hj::from_str("0.10000000000000000001")
     ///         .unwrap();
     /// assert_eq!(value, 0.1);
     /// ```
@@ -218,7 +218,7 @@ impl DeserializerConfig {
 /// deserializer reads [JSON Lines](https://jsonlines.org/):
 ///
 /// ```
-/// use deser_hjson::{
+/// use deser_hj::{
 ///     Deserializer, DeserializerConfig, Trailing,
 /// };
 ///
@@ -392,7 +392,7 @@ impl<'a> Deserializer<'a> {
     /// iterator stops after the first error.
     ///
     /// ```
-    /// use deser_hjson::{
+    /// use deser_hj::{
     ///     Deserializer, DeserializerConfig, Trailing,
     /// };
     ///

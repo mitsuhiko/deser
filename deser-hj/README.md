@@ -1,10 +1,14 @@
-# deser-hjson
+# deser-hj
 
 [Hjson](https://hjson.github.io/) support for
 [deser](https://github.com/mitsuhiko/deser).  Hjson is JSON for humans, a
 format for configuration files: comments (`#`, `//` and `/* */`), optional
 commas, keys and strings without quotes, multiline strings and maps without
 braces at the root.
+
+Note that the [`deser-hjson`](https://crates.io/crates/deser-hjson) crate
+is entirely unrelated to this crate and deser, it is a Hjson deserializer
+for serde.
 
 ```rust
 #[derive(deser::Deserialize)]
@@ -15,7 +19,7 @@ struct Config<'a> {
     motd: String,
 }
 
-let config: Config = deser_hjson::from_str(r#"
+let config: Config = deser_hj::from_str(r#"
     # the name of the service
     name: api
     version: 2

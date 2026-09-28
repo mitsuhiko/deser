@@ -73,7 +73,7 @@ DIALECTS = {
     "deser-json": set(),
     "deser-jsonc": {"comments", "trailing_commas"},
     "deser-json5": {"comments", "trailing_commas", "single_quotes", "json5"},
-    "deser-hjson": {"comments", "trailing_commas", "single_quotes", "hjson"},
+    "deser-hj": {"comments", "trailing_commas", "single_quotes", "hjson"},
 }
 
 FILES = ["de.rs", "parser.rs", "scan.rs", "stream.rs"]

@@ -103,7 +103,7 @@ fn read_chunked(input: &[u8], size: usize, borrowed: bool) -> Result<Value, dese
         }
     }
 
-    let mut reader = deser_hjson::DeserializerConfig::new().reader(Chunked(input, size));
+    let mut reader = deser_hj::DeserializerConfig::new().reader(Chunked(input, size));
     let value = if borrowed {
         // from the frame of the value
         reader.read_borrowed::<Value>()?
@@ -131,7 +131,7 @@ fn test_hjson_suite() {
 
         let mut results = vec![(
             "in memory".to_string(),
-            deser_hjson::from_slice::<Value>(&input),
+            deser_hj::from_slice::<Value>(&input),
         )];
         #[cfg(feature = "io")]
         for size in [1, 2, 3, 7, input.len().max(1)] {

@@ -1,5 +1,5 @@
 //! The tests of Hjson (see `integration.rs`).
-pub use deser_hjson as dialect;
+pub use deser_hj as dialect;
 
 #[allow(dead_code)]
 pub const DIALECT: crate::Dialect = crate::Dialect {

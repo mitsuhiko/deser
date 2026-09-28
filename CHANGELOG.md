@@ -180,7 +180,7 @@ every intermediate step.
   namespace declarations of all elements.
 - `deser-plist`: property lists in the XML, binary and OpenStep formats
   with format detection, dates as `Timestamp` and keyed archive UIDs.
-- `deser-jsonc`, `deser-json5` and `deser-hjson`: the JSON dialects, with
+- `deser-jsonc`, `deser-json5` and `deser-hj`: the JSON dialects, with
   parsers generated from the one of `deser-json`.
 - `deser-csv`: CSV, TSV and other delimited text with configurable
   dialects.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vendors the Hjson test suite into deser-hjson/tests/data.
+# Vendors the Hjson test suite into deser-hj/tests/data.
 #
 # The suite (the `testCases` of https://github.com/hjson/hjson) has a
 # `NAME_test.hjson` (or `.json`) file per case.  Cases whose name starts
@@ -16,7 +16,7 @@ HJSON_REPO=hjson/hjson
 HJSON_COMMIT=414a9871b82ce80d8b140e30ff3458706904c160
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-OUT="$HERE/../deser-hjson/tests/data/hjson-tests"
+OUT="$HERE/../deser-hj/tests/data/hjson-tests"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

@@ -1,5 +1,5 @@
 //! The template of the parsers of `deser-json`, `deser-jsonc`,
-//! `deser-json5` and `deser-hjson`.
+//! `deser-json5` and `deser-hj`.
 //!
 //! This crate is not published and not used by anything.  The modules
 //! other than this one are the source the parsers of the dialect crates are

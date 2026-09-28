@@ -198,7 +198,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
-/// use deser_hjson::{DeserializerConfig, Trailing};
+/// use deser_hj::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig =
 ///     DeserializerConfig::new().trailing(Trailing::Newline);
@@ -440,7 +440,7 @@ impl DeserializerConfig {
 ///
 /// ```
 /// let value: Vec<u32> =
-///     deser_hjson::from_reader(&b"[1, 2, 3]"[..]).unwrap();
+///     deser_hj::from_reader(&b"[1, 2, 3]"[..]).unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 /// ```
 #[cfg(feature = "io")]

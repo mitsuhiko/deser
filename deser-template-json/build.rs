@@ -4,7 +4,7 @@
 //! so that the code of all capabilities is checked and analyzed by editors.
 //! JSON5 and Hjson differ in how they read unquoted values and keys, a
 //! dialect can only be one of them.  The code of Hjson is checked by
-//! compiling `deser-hjson`.
+//! compiling `deser-hj`.
 fn main() {
     for cap in [
         "comments",

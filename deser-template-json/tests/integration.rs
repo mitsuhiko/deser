@@ -17,7 +17,7 @@
 //! Tests of a capability are in their own file which is a module of the
 //! dialects with the capability.  The tests of writing JSON are in
 //! `deser-json`, the JSON5 test suite is in `deser-json5` and the Hjson test
-//! suite in `deser-hjson`.  All tests are compiled into a single binary.
+//! suite in `deser-hj`.  All tests are compiled into a single binary.
 
 // every test file is a module of every dialect it applies to
 #![allow(clippy::duplicate_mod)]
@@ -32,7 +32,7 @@ pub struct Dialect {
     pub hjson: bool,
 }
 
-mod hjson;
+mod hj;
 mod json;
 mod json5;
 mod jsonc;

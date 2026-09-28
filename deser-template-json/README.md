@@ -1,7 +1,7 @@
 # deser-template-json
 
 The source of the parsers of `deser-json`, `deser-jsonc`, `deser-json5` and
-`deser-hjson` and their tests.  This crate is not published and nothing depends on it.
+`deser-hj` and their tests.  This crate is not published and nothing depends on it.
 It only exists so that the template is Rust code that compiles, can be
 tested and works in editors.
 
@@ -35,7 +35,7 @@ The build script of this crate enables the capabilities of JSON5, the
 dialect with the most of them, so that editors analyze most of the code.
 JSON5 and Hjson read unquoted keys and values differently and a dialect
 can only be one of them, the code of Hjson is checked by compiling
-`deser-hjson`.  The code of a dialect is removed from the others, the
+`deser-hj`.  The code of a dialect is removed from the others, the
 generated parsers of JSON, JSONC and JSON5 do not change when Hjson
 changes.
 
@@ -74,7 +74,7 @@ the dialects with the capability (`test_comments.rs`, `test_json5.rs` and
 `test_hjson.rs`).  `generate.py` checks that the capabilities in the tests
 match the dialects.  The tests of writing JSON are in `deser-json`, the
 JSON5 test suite (with its vendored data) is in `deser-json5` and the
-Hjson test suite in `deser-hjson`.
+Hjson test suite in `deser-hj`.
 
 ## Template Syntax
 

@@ -11,7 +11,7 @@ members = [
   "deser-json",
   "deser-jsonc",
   "deser-json5",
-  "deser-hjson",
+  "deser-hj",
   "deser-location",
   "deser-path",
   "deser-plist",

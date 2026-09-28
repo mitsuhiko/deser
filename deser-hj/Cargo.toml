@@ -1,5 +1,5 @@
 [package]
-name = "deser-hjson"
+name = "deser-hj"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 version = "0.8.0"
 edition.workspace = true
@@ -10,7 +10,7 @@ keywords = ["serialization", "deserialization", "hjson", "json", "config"]
 categories = ["encoding", "parser-implementations", "config", "no-std"]
 readme = "README.md"
 license = "Apache-2.0"
-documentation = "https://docs.rs/deser-hjson"
+documentation = "https://docs.rs/deser-hj"
 # the vendored test suite is only needed for development
 exclude = ["tests/data"]
 autotests = false

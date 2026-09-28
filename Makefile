@@ -23,7 +23,7 @@ endif
 
 # Crates tested with miri (with stacked borrows), ordered by how long they
 # take, the slowest start first.  CI splits them across jobs.  The parsers
-# of deser-json, deser-jsonc, deser-json5 and deser-hjson are tested by
+# of deser-json, deser-jsonc, deser-json5 and deser-hj are tested by
 # deser-template-json.
 MIRI_CRATES ?= deser deser-template-json deser-msgpack deser-cbor deser-core deser-xml deser-json deser-csv deser-transcode deser-debug deser-path deser-location
 # Crates also tested with tree borrows (which is twice as slow as stacked
@@ -53,11 +53,11 @@ NO_STD_TARGET := thumbv7em-none-eabihf
 NO_STD_TARGET_64 := aarch64-unknown-none
 # crates that support `no_std` (their `std` feature is off), the no-std
 # example uses the derive
-NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hjson deser-msgpack deser-plist deser-path deser-debug deser-transcode no-std
+NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hj deser-msgpack deser-plist deser-path deser-debug deser-transcode no-std
 # the features of deser-core that work without `std`
 NO_STD_FEATURES := derive,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
 # the crates with speedups that work without `std`
-NO_STD_SPEEDUPS := deser-cbor deser-json deser-jsonc deser-json5 deser-hjson deser-msgpack
+NO_STD_SPEEDUPS := deser-cbor deser-json deser-jsonc deser-json5 deser-hj deser-msgpack
 NO_STD_SPEEDUPS_FEATURES := $(subst $(space),$(comma),$(foreach crate,$(NO_STD_SPEEDUPS),$(crate)/speedups))
 
 # standalone workspaces that are not part of the main workspace
@@ -87,7 +87,7 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
-	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hjson -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv -p deser-plist -p deser-xml --all-targets --no-default-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hj -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv -p deser-plist -p deser-xml --all-targets --no-default-features"
 
 # builds without the standard library for a target that does not have one
 check-no-std:
@@ -127,7 +127,7 @@ lint:
 		$(foreach ws,$(EXTRA_WORKSPACES),"clippy:$(notdir $(ws))" "cd $(ws) && cargo clippy --all-targets -- -D warnings")
 
 # regenerates the parsers of deser-json, deser-jsonc, deser-json5 and
-# deser-hjson from
+# deser-hj from
 # deser-template-json
 codegen:
 	@$(RUN) "codegen" --show-on-output "python3 deser-template-json/generate.py"

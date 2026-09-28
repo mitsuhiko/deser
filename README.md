@@ -58,7 +58,7 @@ The same type works unchanged with every format (CSV as long as it's flat).
   [deser-json](https://github.com/mitsuhiko/deser/tree/main/deser-json),
   [deser-jsonc](https://github.com/mitsuhiko/deser/tree/main/deser-jsonc),
   [deser-json5](https://github.com/mitsuhiko/deser/tree/main/deser-json5),
-  [deser-hjson](https://github.com/mitsuhiko/deser/tree/main/deser-hjson),
+  [deser-hj](https://github.com/mitsuhiko/deser/tree/main/deser-hj),
   [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml),
   [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml),
   [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor),
