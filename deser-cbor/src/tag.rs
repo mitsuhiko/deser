@@ -8,8 +8,9 @@
 //!   map or sequence).  Types can pick them up with
 //!   [`take_tag`].  Types which do not care about tags never see them, which
 //!   means that unknown tags are transparent.
-//! * When serializing, [`Tagged`] registers its tag in the state and the
-//!   serializer writes it in front of the next data item.
+//! * When serializing, [`push_tag`] registers a tag of a value in the state
+//!   and the serializer writes it in front of the data item.
+//! * [`Tagged`] captures the outermost tag of a value and writes it.
 //!
 //! Both directions use the same event data.  This means that values which
 //! capture event data (such as [`Recording`](deser_core::de::Recording)) keep

@@ -143,7 +143,7 @@ impl Serialize for Value {
                 return Ok(Chunk::map(MapEntryEmitter(items.iter(), None), state));
             }
             Value::Tag(tag, ref value) => {
-                deser_cbor::tag::push_tag(state, tag);
+                deser_cbor::push_tag(state, tag);
                 return value.serialize(state);
             }
         }))

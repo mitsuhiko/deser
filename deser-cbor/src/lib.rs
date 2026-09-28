@@ -102,8 +102,9 @@
 //! # Tags
 //!
 //! Tags are not part of the data model.  Unknown tags are transparent: a
-//! tagged value deserializes like the untagged value.  To read or write tags
-//! use [`Tagged`] or see the [`tag`] module.
+//! tagged value deserializes like the untagged value.  Tags are read with
+//! [`Tagged`] or [`take_tag`] and written with [`Tagged`] or [`push_tag`]
+//! (see [`tag`]).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
@@ -125,4 +126,4 @@ pub use self::simple::Simple;
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-pub use self::tag::{Tagged, take_tag};
+pub use self::tag::{Tagged, push_tag, take_tag};
