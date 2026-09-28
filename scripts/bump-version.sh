@@ -8,7 +8,9 @@ NEW_VERSION="${1}"
 
 echo "Bumping version: ${NEW_VERSION}"
 
-# only the crates, the benchmark and the examples keep their versions
+# only the published crates, the benchmark, the examples and the template
+# of the JSON parsers keep their versions
 for path in deser*/Cargo.toml; do
+  [ "$path" = deser-template-json/Cargo.toml ] && continue
   perl -pi -e "s/^(deser.*)?version = \".*?\"/\$1version = \"$NEW_VERSION\"/" $path
 done
