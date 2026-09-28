@@ -76,10 +76,10 @@ result if a type uses this feature, it will not work with `bincode`.
 
 **Related issues:**
 
-* [bincode: #[serde(flatten)] causes error SequenceMustHaveLength #245](https://github.com/bincode-org/bincode/issues/245) (closed)
-* [bincode:  Support serializing to Vec<u8> with unknown seq/map length #167](https://github.com/bincode-org/bincode/issues/167) (closed)
-* [postcard: #[serde(flatten)] causes serialization to fail #29](https://github.com/jamesmunns/postcard/issues/29) (closed)
-* [serde: Feedback request: How to handle unsupported "self-describing-only" attributes #2674](https://github.com/serde-rs/serde/issues/2674)
+* [bincode#245: #[serde(flatten)] causes error SequenceMustHaveLength](https://github.com/bincode-org/bincode/issues/245) (closed)
+* [bincode#167: Support serializing to Vec<u8> with unknown seq/map length](https://github.com/bincode-org/bincode/issues/167) (closed)
+* [postcard#29: #[serde(flatten)] causes serialization to fail](https://github.com/jamesmunns/postcard/issues/29) (closed)
+* [serde#2674: Feedback request: How to handle unsupported "self-describing-only" attributes](https://github.com/serde-rs/serde/issues/2674)
 
 ## Buffering Loses Information
 
@@ -119,23 +119,23 @@ are buffered.
 
 **Related issues:**
 
-* [serde: Internal buffering disrupts format-specific deserialization features #1183](https://github.com/serde-rs/serde/issues/1183)
-* [serde: Unexpected behaviour with untagged enums and numeric keys #2724](https://github.com/serde-rs/serde/issues/2724)
-* [serde: Untagged enum does not play nice with u128 #1682](https://github.com/serde-rs/serde/issues/1682)
-* [serde: ContentDeserializer does not support 128-bit integers #2576](https://github.com/serde-rs/serde/issues/2576)
-* [serde: Flattened nested structs throw deserialize error "invalid type: map, expected f64" when inner type contains a float #2748](https://github.com/serde-rs/serde/issues/2748)
-* [serde: Failed to deserialize tagged enum when inner struct has a number with trailing zeros #2903](https://github.com/serde-rs/serde/issues/2903)
-* [serde_json: The `#[serde(flatten)]` syntax is not supported with the feature `arbitrary_precision` #721](https://github.com/serde-rs/json/issues/721)
-* [serde_json: `arbitrary_precision` breaks float deserialisation in untagged enum #1108](https://github.com/serde-rs/json/issues/1108)
-* [serde_json: u128 is not supported with `#[serde(flatten)]` #625](https://github.com/serde-rs/json/issues/625)
-* [serde_json: Deserialization of 128 bit integers fail when used with untagged variants #740](https://github.com/serde-rs/json/issues/740)
-* [serde_json: Bug: f64 within flattened HashMap throws error on deserialization #1157](https://github.com/serde-rs/json/issues/1157)
-* [serde_json: Flatten causes maps with integer keys to fail deserialization #989](https://github.com/serde-rs/json/issues/989)
-* [serde_json: Bug: untagged union fails to deserialize hashmap with usize as keys #1103](https://github.com/serde-rs/json/issues/1103)
-* [serde_json: Error message points to wrong line when using attribute flatten #622](https://github.com/serde-rs/json/issues/622)
-* [serde_json: Incorrect line/column info when using tag setting with nested enums #870](https://github.com/serde-rs/json/issues/870)
-* [serde_urlencoded: using `#[serde(flatten)]` breaks deserializing #33](https://github.com/nox/serde_urlencoded/issues/33)
-* [serde_qs: Improper deserialization for #[serde(flatten)] field #159](https://github.com/samscott89/serde_qs/issues/159)
+* [serde#1183: Internal buffering disrupts format-specific deserialization features](https://github.com/serde-rs/serde/issues/1183)
+* [serde#2724: Unexpected behaviour with untagged enums and numeric keys](https://github.com/serde-rs/serde/issues/2724)
+* [serde#1682: Untagged enum does not play nice with u128](https://github.com/serde-rs/serde/issues/1682)
+* [serde#2576: ContentDeserializer does not support 128-bit integers](https://github.com/serde-rs/serde/issues/2576)
+* [serde#2748: Flattened nested structs throw deserialize error "invalid type: map, expected f64" when inner type contains a float](https://github.com/serde-rs/serde/issues/2748)
+* [serde#2903: Failed to deserialize tagged enum when inner struct has a number with trailing zeros](https://github.com/serde-rs/serde/issues/2903)
+* [json#721: The `#[serde(flatten)]` syntax is not supported with the feature `arbitrary_precision`](https://github.com/serde-rs/json/issues/721)
+* [json#1108: `arbitrary_precision` breaks float deserialisation in untagged enum](https://github.com/serde-rs/json/issues/1108)
+* [json#625: u128 is not supported with `#[serde(flatten)]`](https://github.com/serde-rs/json/issues/625)
+* [json#740: Deserialization of 128 bit integers fail when used with untagged variants](https://github.com/serde-rs/json/issues/740)
+* [json#1157: Bug: f64 within flattened HashMap throws error on deserialization](https://github.com/serde-rs/json/issues/1157)
+* [json#989: Flatten causes maps with integer keys to fail deserialization](https://github.com/serde-rs/json/issues/989)
+* [json#1103: Bug: untagged union fails to deserialize hashmap with usize as keys](https://github.com/serde-rs/json/issues/1103)
+* [json#622: Error message points to wrong line when using attribute flatten](https://github.com/serde-rs/json/issues/622)
+* [json#870: Incorrect line/column info when using tag setting with nested enums](https://github.com/serde-rs/json/issues/870)
+* [serde_urlencoded#33: using `#[serde(flatten)]` breaks deserializing](https://github.com/nox/serde_urlencoded/issues/33)
+* [serde_qs#159: Improper deserialization for #[serde(flatten)] field](https://github.com/samscott89/serde_qs/issues/159)
 
 ## Flattening
 
@@ -161,14 +161,14 @@ No buffering is required.  This also means:
 
 **Related issues:**
 
-* [serde: Avoid lossy buffering in #[serde(flatten)] #2186](https://github.com/serde-rs/serde/issues/2186)
-* [serde: Zero-alloc #[serde(flatten)] deserialization appears to be possible - should we finish the work? #2363](https://github.com/serde-rs/serde/issues/2363)
-* [serde: Flattening an Enum doesn't "consume" the fields #2200](https://github.com/serde-rs/serde/issues/2200)
-* [serde: #[serde(flatten)] on BTreeMap<String, Value> does not capture unknown/remaining fields #2176](https://github.com/serde-rs/serde/issues/2176)
-* [serde: Unexpected interaction of Option/flatten with duplicate key checking #2416](https://github.com/serde-rs/serde/issues/2416)
-* [serde: Feature request: #[flatten] on Option<SomeStruct> should raise error when only some fields are set #2793](https://github.com/serde-rs/serde/issues/2793)
-* [serde_json: A flattened Option masks parse errors inside the Option #644](https://github.com/serde-rs/json/issues/644)
-* [serde: default is ignored with flatten #2707](https://github.com/serde-rs/serde/issues/2707)
+* [serde#2186: Avoid lossy buffering in #[serde(flatten)]](https://github.com/serde-rs/serde/issues/2186)
+* [serde#2363: Zero-alloc #[serde(flatten)] deserialization appears to be possible - should we finish the work?](https://github.com/serde-rs/serde/issues/2363)
+* [serde#2200: Flattening an Enum doesn't "consume" the fields](https://github.com/serde-rs/serde/issues/2200)
+* [serde#2176: #[serde(flatten)] on BTreeMap<String, Value> does not capture unknown/remaining fields](https://github.com/serde-rs/serde/issues/2176)
+* [serde#2416: Unexpected interaction of Option/flatten with duplicate key checking](https://github.com/serde-rs/serde/issues/2416)
+* [serde#2793: Feature request: #[flatten] on Option<SomeStruct> should raise error when only some fields are set](https://github.com/serde-rs/serde/issues/2793)
+* [json#644: A flattened Option masks parse errors inside the Option](https://github.com/serde-rs/json/issues/644)
+* [serde#2707: default is ignored with flatten](https://github.com/serde-rs/serde/issues/2707)
 
 ## XML
 
@@ -225,30 +225,30 @@ uses them has these names in other formats too.
 
 **Related issues:**
 
-* [serde: Advanced #[serde(rename="", target="xml")] impl #1152](https://github.com/serde-rs/serde/issues/1152) (closed)
-* [serde: Add namespace support #2877](https://github.com/serde-rs/serde/issues/2877)
-* [serde: Repeated, Interleaved Tags in XML #1725](https://github.com/serde-rs/serde/issues/1725) (closed)
-* [serde: Deserialization of seperated sequences #1113](https://github.com/serde-rs/serde/issues/1113) (closed)
-* [serde: Allow to flatten sequences/tuples #1905](https://github.com/serde-rs/serde/issues/1905)
-* [serde: Flatten enums with vectors deserialized incorrectly #1894](https://github.com/serde-rs/serde/issues/1894)
-* [quick-xml: `#[serde(flatten)]` does not work for different types #286](https://github.com/tafia/quick-xml/issues/286) (closed)
-* [quick-xml: Attribute doesn't treated as integer. #433](https://github.com/tafia/quick-xml/issues/433) (closed)
-* [quick-xml: Deserializing tagged enum derails the parser #586](https://github.com/tafia/quick-xml/issues/586) (closed)
-* [quick-xml: Deserializing to variant vector fields fails #288](https://github.com/tafia/quick-xml/issues/288)
-* [quick-xml: Field `$value` is consumed too early when deserializing nested externally/internally tagged enums #905](https://github.com/tafia/quick-xml/issues/905) (closed)
-* [quick-xml: Deserialization behavior for Vec #177](https://github.com/tafia/quick-xml/issues/177) (closed)
-* [quick-xml: Problem with `overlapped-lists` that is enabled by the dependency #885](https://github.com/tafia/quick-xml/issues/885)
-* [quick-xml: Option<bool> doesn't (de)serialize properly with serde #497](https://github.com/tafia/quick-xml/issues/497) (closed)
-* [quick-xml: Help deserialize mixed tags and string in body $value (html text formatting) #257](https://github.com/tafia/quick-xml/issues/257)
-* [quick-xml: Deserialization of enum variant which recursively refers to itself failed with stackoverflow #819](https://github.com/tafia/quick-xml/issues/819)
-* [quick-xml: serde Deserializer has no recursion-depth limit #978](https://github.com/tafia/quick-xml/issues/978) (closed)
-* [quick-xml: Struct namespaces with Serde #218](https://github.com/tafia/quick-xml/issues/218)
-* [quick-xml: Add ability to get spans of deserialized values #695](https://github.com/tafia/quick-xml/issues/695)
-* [serde-xml-rs: Members of flattened structs are not converted #137](https://github.com/RReverser/serde-xml-rs/issues/137)
-* [serde-xml-rs: Internally tagged enums are confused #26](https://github.com/RReverser/serde-xml-rs/issues/26)
-* [serde-xml-rs: Deserializing Vec fails if there's something in between #55](https://github.com/RReverser/serde-xml-rs/issues/55) (closed)
-* [serde-xml-rs: Mixed content with text and elements #227](https://github.com/RReverser/serde-xml-rs/issues/227)
-* [serde-xml-rs: Namespaces only work with hardcoded prefixes #248](https://github.com/RReverser/serde-xml-rs/issues/248)
+* [serde#1152: Advanced #[serde(rename="", target="xml")] impl](https://github.com/serde-rs/serde/issues/1152) (closed)
+* [serde#2877: Add namespace support](https://github.com/serde-rs/serde/issues/2877)
+* [serde#1725: Repeated, Interleaved Tags in XML](https://github.com/serde-rs/serde/issues/1725) (closed)
+* [serde#1113: Deserialization of seperated sequences](https://github.com/serde-rs/serde/issues/1113) (closed)
+* [serde#1905: Allow to flatten sequences/tuples](https://github.com/serde-rs/serde/issues/1905)
+* [serde#1894: Flatten enums with vectors deserialized incorrectly](https://github.com/serde-rs/serde/issues/1894)
+* [quick-xml#286: `#[serde(flatten)]` does not work for different types](https://github.com/tafia/quick-xml/issues/286) (closed)
+* [quick-xml#433: Attribute doesn't treated as integer.](https://github.com/tafia/quick-xml/issues/433) (closed)
+* [quick-xml#586: Deserializing tagged enum derails the parser](https://github.com/tafia/quick-xml/issues/586) (closed)
+* [quick-xml#288: Deserializing to variant vector fields fails](https://github.com/tafia/quick-xml/issues/288)
+* [quick-xml#905: Field `$value` is consumed too early when deserializing nested externally/internally tagged enums](https://github.com/tafia/quick-xml/issues/905) (closed)
+* [quick-xml#177: Deserialization behavior for Vec](https://github.com/tafia/quick-xml/issues/177) (closed)
+* [quick-xml#885: Problem with `overlapped-lists` that is enabled by the dependency](https://github.com/tafia/quick-xml/issues/885)
+* [quick-xml#497: Option<bool> doesn't (de)serialize properly with serde](https://github.com/tafia/quick-xml/issues/497) (closed)
+* [quick-xml#257: Help deserialize mixed tags and string in body $value (html text formatting)](https://github.com/tafia/quick-xml/issues/257)
+* [quick-xml#819: Deserialization of enum variant which recursively refers to itself failed with stackoverflow](https://github.com/tafia/quick-xml/issues/819)
+* [quick-xml#978: serde Deserializer has no recursion-depth limit](https://github.com/tafia/quick-xml/issues/978) (closed)
+* [quick-xml#218: Struct namespaces with Serde](https://github.com/tafia/quick-xml/issues/218)
+* [quick-xml#695: Add ability to get spans of deserialized values](https://github.com/tafia/quick-xml/issues/695)
+* [serde-xml-rs#137: Members of flattened structs are not converted](https://github.com/RReverser/serde-xml-rs/issues/137)
+* [serde-xml-rs#26: Internally tagged enums are confused](https://github.com/RReverser/serde-xml-rs/issues/26)
+* [serde-xml-rs#55: Deserializing Vec fails if there's something in between](https://github.com/RReverser/serde-xml-rs/issues/55) (closed)
+* [serde-xml-rs#227: Mixed content with text and elements](https://github.com/RReverser/serde-xml-rs/issues/227)
+* [serde-xml-rs#248: Namespaces only work with hardcoded prefixes](https://github.com/RReverser/serde-xml-rs/issues/248)
 
 ## Internal Data Format
 
@@ -286,8 +286,8 @@ values as `f64`, the same way extension values fall back.
 
 **Related issues:**
 
-* [serde: Replacement API for Deserializer in-band Signalling #1463](https://github.com/serde-rs/serde/issues/1463)
-* [serde: Implement `visit_i128` and `visit_u128` for ContentVisitor #2230](https://github.com/serde-rs/serde/issues/2230)
+* [serde#1463: Replacement API for Deserializer in-band Signalling](https://github.com/serde-rs/serde/issues/1463)
+* [serde#2230: Implement `visit_i128` and `visit_u128` for ContentVisitor](https://github.com/serde-rs/serde/issues/2230)
 
 ## Recursion for Serialization and Deserialization
 
@@ -307,8 +307,8 @@ with the `Limits` layer, to any value.
 
 **Related issues:**
 
-* [serde: stack overflow in IgnoredAny when deserializing deeply nested serde_json::Value #3023](https://github.com/serde-rs/serde/issues/3023)
-* [serde_json: Expose a setter for Deserializer::remaining_depth? #1262](https://github.com/serde-rs/json/issues/1262)
+* [serde#3023: stack overflow in IgnoredAny when deserializing deeply nested serde_json::Value](https://github.com/serde-rs/serde/issues/3023)
+* [json#1262: Expose a setter for Deserializer::remaining_depth?](https://github.com/serde-rs/json/issues/1262)
 
 ## Bytes
 
@@ -326,9 +326,9 @@ them accept bytes, strings in the encoding and sequences of integers.
 
 **Related issues:**
 
-* [serde: Mention serde_bytes #1912](https://github.com/serde-rs/serde/issues/1912)
-* [serde: Serialization of byte arrays is slow #2680](https://github.com/serde-rs/serde/issues/2680)
-* [serde: Derived serialization of `Cow<'a, [u8]>` is not always reversible #2940](https://github.com/serde-rs/serde/issues/2940)
+* [serde#1912: Mention serde_bytes](https://github.com/serde-rs/serde/issues/1912)
+* [serde#2680: Serialization of byte arrays is slow](https://github.com/serde-rs/serde/issues/2680)
+* [serde#2940: Derived serialization of `Cow<'a, [u8]>` is not always reversible](https://github.com/serde-rs/serde/issues/2940)
 
 ## Attributes Are Rust
 
@@ -362,15 +362,15 @@ that is serialized through an adapter) are rejected.
 
 **Related issues:**
 
-* [serde: Support default literals #368](https://github.com/serde-rs/serde/issues/368)
-* [serde: Support non-string-literal wrapped paths #2862](https://github.com/serde-rs/serde/issues/2862)
-* [serde: rename field attribute, passing a path instead of literal #2725](https://github.com/serde-rs/serde/issues/2725)
-* [serde: Rename With Expressions #1964](https://github.com/serde-rs/serde/issues/1964)
-* [serde: Allow rename of container with &'static str #2485](https://github.com/serde-rs/serde/issues/2485)
-* [serde: Consider supporting concat! macro in attributes #1636](https://github.com/serde-rs/serde/issues/1636)
-* [serde: Add alias_all attribute for containers similar to rename_all #1530](https://github.com/serde-rs/serde/issues/1530)
-* [serde: Enum tag alias #2324](https://github.com/serde-rs/serde/issues/2324)
-* [serde: #[serde(try_from)] should error if there are any field-level attributes #2882](https://github.com/serde-rs/serde/issues/2882)
+* [serde#368: Support default literals](https://github.com/serde-rs/serde/issues/368)
+* [serde#2862: Support non-string-literal wrapped paths](https://github.com/serde-rs/serde/issues/2862)
+* [serde#2725: rename field attribute, passing a path instead of literal](https://github.com/serde-rs/serde/issues/2725)
+* [serde#1964: Rename With Expressions](https://github.com/serde-rs/serde/issues/1964)
+* [serde#2485: Allow rename of container with &'static str](https://github.com/serde-rs/serde/issues/2485)
+* [serde#1636: Consider supporting concat! macro in attributes](https://github.com/serde-rs/serde/issues/1636)
+* [serde#1530: Add alias_all attribute for containers similar to rename_all](https://github.com/serde-rs/serde/issues/1530)
+* [serde#2324: Enum tag alias](https://github.com/serde-rs/serde/issues/2324)
+* [serde#2882: #[serde(try_from)] should error if there are any field-level attributes](https://github.com/serde-rs/serde/issues/2882)
 
 ## Composable Field Customization
 
@@ -392,10 +392,10 @@ are adapters too (`FromInto` and `TryFromInto`) and work on fields.
 
 **Related issues:**
 
-* [serde: Using de/serialize_with inside of an Option, Map, Vec #723](https://github.com/serde-rs/serde/issues/723)
-* [serde: `Option` fields require explicit `default` attribute if `with` attribute specified #2878](https://github.com/serde-rs/serde/issues/2878)
-* [serde: Add `from`, `try_from`, `from_str`, ... as field attributes #2610](https://github.com/serde-rs/serde/issues/2610)
-* [serde: Document how to serialize using Display, deserialize using FromStr #1316](https://github.com/serde-rs/serde/issues/1316)
+* [serde#723: Using de/serialize_with inside of an Option, Map, Vec](https://github.com/serde-rs/serde/issues/723)
+* [serde#2878: `Option` fields require explicit `default` attribute if `with` attribute specified](https://github.com/serde-rs/serde/issues/2878)
+* [serde#2610: Add `from`, `try_from`, `from_str`, ... as field attributes](https://github.com/serde-rs/serde/issues/2610)
+* [serde#1316: Document how to serialize using Display, deserialize using FromStr](https://github.com/serde-rs/serde/issues/1316)
 
 ## Catch-All and Default Variants
 
@@ -413,10 +413,10 @@ the tag is missing, known tags are still validated.
 
 **Related issues:**
 
-* [serde: Tagged enums should support #[serde(other)] #912](https://github.com/serde-rs/serde/issues/912)
-* [serde: `#[serde(other)]` and externally tagged enum #2010](https://github.com/serde-rs/serde/issues/2010)
-* [serde: #[serde(other)] with forwarding raw string #1701](https://github.com/serde-rs/serde/issues/1701)
-* [serde: Optional tag for internally tagged enum #2231](https://github.com/serde-rs/serde/issues/2231)
+* [serde#912: Tagged enums should support #[serde(other)]](https://github.com/serde-rs/serde/issues/912)
+* [serde#2010: `#[serde(other)]` and externally tagged enum](https://github.com/serde-rs/serde/issues/2010)
+* [serde#1701: #[serde(other)] with forwarding raw string](https://github.com/serde-rs/serde/issues/1701)
+* [serde#2231: Optional tag for internally tagged enum](https://github.com/serde-rs/serde/issues/2231)
 
 ## Tags That Are Not Strings
 
@@ -431,8 +431,8 @@ crate for (which only supports enums without data).
 
 **Related issues:**
 
-* [serde: Allow integer tags for internally tagged enums #745](https://github.com/serde-rs/serde/issues/745)
-* [serde: Allow integers (or custom types) to be used as names/keys #1773](https://github.com/serde-rs/serde/issues/1773)
+* [serde#745: Allow integer tags for internally tagged enums](https://github.com/serde-rs/serde/issues/745)
+* [serde#1773: Allow integers (or custom types) to be used as names/keys](https://github.com/serde-rs/serde/issues/1773)
 
 ## Internally Tagged Enums
 
@@ -454,9 +454,9 @@ Deser keeps track of which keys belong to the tag:
 
 **Related issues:**
 
-* [serde: Internally tagged enums do not correctly handle field collision with the discriminator #2949](https://github.com/serde-rs/serde/issues/2949)
-* [serde: Internally tagged enum with `deny_unknown_fields` accepts unknown fields #2123](https://github.com/serde-rs/serde/issues/2123)
-* [serde: Unknown fields are denied for tagged newtype variant with unit struct or unit type #2304](https://github.com/serde-rs/serde/issues/2304)
+* [serde#2949: Internally tagged enums do not correctly handle field collision with the discriminator](https://github.com/serde-rs/serde/issues/2949)
+* [serde#2123: Internally tagged enum with `deny_unknown_fields` accepts unknown fields](https://github.com/serde-rs/serde/issues/2123)
+* [serde#2304: Unknown fields are denied for tagged newtype variant with unit struct or unit type](https://github.com/serde-rs/serde/issues/2304)
 
 ## Unknown Fields
 
@@ -476,11 +476,11 @@ instead of rejecting them.
 
 **Related issues:**
 
-* [serde: Combination of flattened internally-tagged enum and deny_unknown_fields results in unsatisfiable requirements #1358](https://github.com/serde-rs/serde/issues/1358)
-* [serde: Structs with nested flattens cannot be deserialized if deny_unknown_fields is set #1547](https://github.com/serde-rs/serde/issues/1547)
-* [serde: deny_unknown_fields incorrectly fails with flattened untagged enum #1600](https://github.com/serde-rs/serde/issues/1600)
-* [serde: Struct with `tag` and `deny_unknown_fields` cannot deserialize #2666](https://github.com/serde-rs/serde/issues/2666)
-* [serde: `#![serde(deny_unknown_fields)]` does not work as expected on unit variants of tagged enum #2294](https://github.com/serde-rs/serde/issues/2294)
+* [serde#1358: Combination of flattened internally-tagged enum and deny_unknown_fields results in unsatisfiable requirements](https://github.com/serde-rs/serde/issues/1358)
+* [serde#1547: Structs with nested flattens cannot be deserialized if deny_unknown_fields is set](https://github.com/serde-rs/serde/issues/1547)
+* [serde#1600: deny_unknown_fields incorrectly fails with flattened untagged enum](https://github.com/serde-rs/serde/issues/1600)
+* [serde#2666: Struct with `tag` and `deny_unknown_fields` cannot deserialize](https://github.com/serde-rs/serde/issues/2666)
+* [serde#2294: `#![serde(deny_unknown_fields)]` does not work as expected on unit variants of tagged enum](https://github.com/serde-rs/serde/issues/2294)
 
 ## Validation
 
@@ -496,8 +496,8 @@ not just the first one.
 
 **Related issues:**
 
-* [serde: Support a #[serde(validate = "some_function")] attribute on fields #939](https://github.com/serde-rs/serde/issues/939)
-* [serde: Add finalizer attribute hook to validate a deserialized structure #642](https://github.com/serde-rs/serde/issues/642)
+* [serde#939: Support a #[serde(validate = "some_function")] attribute on fields](https://github.com/serde-rs/serde/issues/939)
+* [serde#642: Add finalizer attribute hook to validate a deserialized structure](https://github.com/serde-rs/serde/issues/642)
 
 ## Missing Values, Defaults and Skipping
 
@@ -522,10 +522,10 @@ invoked if a field is actually missing.
 
 **Related issues:**
 
-* [serde: Support, or at least document the "double option" pattern #1042](https://github.com/serde-rs/serde/issues/1042)
-* [serde: #[serde(skip_deserializing)] for Option<T> wrongly requires T to implement Default #2759](https://github.com/serde-rs/serde/issues/2759)
-* [serde: `Option<T>` defaults to `None` when missing fields #2753](https://github.com/serde-rs/serde/issues/2753)
-* [serde: `#[serde(default)]` on structs could be lazily evaluated #2345](https://github.com/serde-rs/serde/issues/2345)
+* [serde#1042: Support, or at least document the "double option" pattern](https://github.com/serde-rs/serde/issues/1042)
+* [serde#2759: #[serde(skip_deserializing)] for Option<T> wrongly requires T to implement Default](https://github.com/serde-rs/serde/issues/2759)
+* [serde#2753: `Option<T>` defaults to `None` when missing fields](https://github.com/serde-rs/serde/issues/2753)
+* [serde#2345: `#[serde(default)]` on structs could be lazily evaluated](https://github.com/serde-rs/serde/issues/2345)
 
 ## Error Messages
 
@@ -544,11 +544,11 @@ applications can inspect.
 
 **Related issues:**
 
-* [serde: More descriptive unknown variant deserialize error #1481](https://github.com/serde-rs/serde/issues/1481)
-* [serde: Improve error output for unknown_variant #3018](https://github.com/serde-rs/serde/issues/3018)
-* [serde: Confusing error message when deserializing a simple enum from JSON #2702](https://github.com/serde-rs/serde/issues/2702)
-* [serde: Create a de::ErrorKind and a kind method to de::Error #3082](https://github.com/serde-rs/serde/issues/3082)
-* [serde: Allow passing extra information in deserialization error #2621](https://github.com/serde-rs/serde/issues/2621)
+* [serde#1481: More descriptive unknown variant deserialize error](https://github.com/serde-rs/serde/issues/1481)
+* [serde#3018: Improve error output for unknown_variant](https://github.com/serde-rs/serde/issues/3018)
+* [serde#2702: Confusing error message when deserializing a simple enum from JSON](https://github.com/serde-rs/serde/issues/2702)
+* [serde#3082: Create a de::ErrorKind and a kind method to de::Error](https://github.com/serde-rs/serde/issues/3082)
+* [serde#2621: Allow passing extra information in deserialization error](https://github.com/serde-rs/serde/issues/2621)
 
 ## Standard Library Types
 
@@ -562,11 +562,11 @@ uses a platform specific representation.
 
 **Related issues:**
 
-* [serde: Const generics support #1937](https://github.com/serde-rs/serde/issues/1937)
-* [serde: impl Serialize and Deserialize for ManuallyDrop #1507](https://github.com/serde-rs/serde/issues/1507)
-* [serde: impl Serialize for OnceCell #1952](https://github.com/serde-rs/serde/issues/1952)
-* [serde: Implement Serialize and Deserialize for core::convert::Infaillible #2740](https://github.com/serde-rs/serde/issues/2740)
-* [serde: OsStr and OsString platform differentiation does not match Rust standard library #2864](https://github.com/serde-rs/serde/issues/2864)
+* [serde#1937: Const generics support](https://github.com/serde-rs/serde/issues/1937)
+* [serde#1507: impl Serialize and Deserialize for ManuallyDrop](https://github.com/serde-rs/serde/issues/1507)
+* [serde#1952: impl Serialize for OnceCell](https://github.com/serde-rs/serde/issues/1952)
+* [serde#2740: Implement Serialize and Deserialize for core::convert::Infaillible](https://github.com/serde-rs/serde/issues/2740)
+* [serde#2864: OsStr and OsString platform differentiation does not match Rust standard library](https://github.com/serde-rs/serde/issues/2864)
 
 ## Updating Values
 
@@ -580,8 +580,8 @@ configuration files over defaults.
 
 **Related issues:**
 
-* [serde: Consider unhiding `deserialize_in_place` #2204](https://github.com/serde-rs/serde/issues/2204)
-* [serde: deserialize_in_place fills skipped fields with default #2512](https://github.com/serde-rs/serde/issues/2512)
+* [serde#2204: Consider unhiding `deserialize_in_place`](https://github.com/serde-rs/serde/issues/2204)
+* [serde#2512: deserialize_in_place fills skipped fields with default](https://github.com/serde-rs/serde/issues/2512)
 
 ## Streaming and Async
 
@@ -598,7 +598,7 @@ values (JSON Lines, CBOR sequences, ...) with tokio.
 
 **Related issues:**
 
-* [serde: AsyncDeserializer #2739](https://github.com/serde-rs/serde/issues/2739)
+* [serde#2739: AsyncDeserializer](https://github.com/serde-rs/serde/issues/2739)
 
 ## Compile Times and Code Size
 
