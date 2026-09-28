@@ -25,6 +25,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
+      # rustdoc only links to another crate's docs if its directory already
+      # exists in target/doc; crates are documented in parallel, so create
+      # them upfront or links to e.g. deser_core end up as raw paths.
+      - name: Pre-create doc directories
+        run: |
+          cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[].targets[] | select(.kind[] == "lib" or .kind[] == "proc-macro") | .name' \
+            | tr - _ | sed 's|^|target/doc/|' | xargs mkdir -p
       - name: Build docs
         env:
           RUSTDOCFLAGS: --cfg docsrs
