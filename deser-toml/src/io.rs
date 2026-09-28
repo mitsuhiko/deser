@@ -129,7 +129,9 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 
 /// Serializes a value to a writer.
 ///
-/// The document is written with a single write.
+/// The document is written with a single write once it's complete: TOML
+/// documents cannot be written while the value is serialized as the values
+/// of a table come before its subtables.
 ///
 /// ```
 /// use std::collections::BTreeMap;

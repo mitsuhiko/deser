@@ -99,6 +99,19 @@ impl Buffer {
         self.bytes.truncate(len);
     }
 
+    /// Creates a buffer that writes into an empty vector.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub fn from_vec(bytes: Vec<u8>) -> Buffer {
+        assert!(bytes.is_empty());
+        Buffer { bytes }
+    }
+
+    /// Takes the text out of the buffer, which is empty afterwards.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub fn take(&mut self) -> Vec<u8> {
+        core::mem::take(&mut self.bytes)
+    }
+
     /// Converts the buffer into a string.
     pub fn into_string(self) -> String {
         // SAFETY: the buffer only contains valid UTF-8, see above.

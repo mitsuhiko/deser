@@ -54,7 +54,7 @@ Why use it:
   configurations read and write streams of values (JSON Lines or
   concatenated JSON) with `deser::io` or async runtimes (`deser-tokio`).
   Values are parsed while their input arrives, so only incomplete tokens
-  are buffered.
+  are buffered, and written while they are serialized.
 * **Source locations:** errors carry line and column and with
   `DeserializerConfig::track_locations` values can be wrapped in
   [`deser_location::Spanned`](https://docs.rs/deser-location) to learn

@@ -216,3 +216,130 @@ fn test_feeding_bounds_the_buffer() {
     assert_eq!(out.unwrap(), value);
     assert!(max_buffered < 100, "{max_buffered} bytes buffered");
 }
+
+mod incremental {
+    use std::collections::{BTreeMap, HashMap};
+
+    use deser::io::Writer;
+    use deser::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
+    use deser::{Error, State};
+    use deser_msgpack::SerializerConfig;
+
+    /// A sequence whose length is not known upfront.
+    struct Unsized(Vec<u64>);
+
+    struct UnsizedEmitter<'a>(std::slice::Iter<'a, u64>);
+
+    impl SeqEmitter for UnsizedEmitter<'_> {
+        fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+            Ok(self.0.next().map(SerializeHandle::to))
+        }
+    }
+
+    impl Serialize for Unsized {
+        fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+            Ok(Chunk::seq(UnsizedEmitter(self.0.iter()), state))
+        }
+    }
+
+    /// Counts the writes.
+    struct Pieces(Vec<u8>, usize);
+
+    impl std::io::Write for Pieces {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(buf);
+            self.1 += 1;
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn streamed(
+        config: &SerializerConfig,
+        value: &dyn Serialize,
+        limit: usize,
+    ) -> (Vec<u8>, usize) {
+        let mut writer = Writer::new(Pieces(Vec::new(), 0), config);
+        writer.set_buffer_limit(limit);
+        writer.write(value).unwrap();
+        let Pieces(out, writes) = writer.into_inner();
+        (out, writes)
+    }
+
+    #[test]
+    fn test_same_output() {
+        let numbers: Vec<Vec<u64>> = (0..40).map(|x| (0..x * 10).collect()).collect();
+        let unsized_values: Vec<Unsized> = (0..20).map(|x| Unsized((0..x * 3).collect())).collect();
+        let nested = (
+            Unsized((0..100).collect()),
+            vec![Unsized((0..300).collect())],
+        );
+        let maps: Vec<HashMap<String, Vec<u64>>> = (0..20)
+            .map(|x| {
+                (0..x)
+                    .map(|y| (format!("key {y}"), (0..y as u64).collect()))
+                    .collect()
+            })
+            .collect();
+        let sorted: BTreeMap<u64, String> = (0..500).map(|x| (x, format!("value {x}"))).collect();
+        let values: [&dyn Serialize; 6] = [
+            &numbers,
+            &unsized_values,
+            &nested,
+            &maps,
+            &sorted,
+            &"scalar",
+        ];
+        for config in [
+            SerializerConfig::new(),
+            SerializerConfig::new().canonical(true),
+        ] {
+            for value in values {
+                let expected = config.to_vec(value).unwrap();
+                for limit in [1, 5, 64, 1000, usize::MAX] {
+                    assert_eq!(streamed(&config, value, limit).0, expected, "limit {limit}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pieces() {
+        let config = SerializerConfig::new();
+        let numbers: Vec<Vec<u64>> = (0..100).map(|x| (0..x).collect()).collect();
+        let (out, writes) = streamed(&config, &numbers, 64);
+        assert_eq!(out, config.to_vec(&numbers).unwrap());
+        assert!(writes > 20, "{writes}");
+
+        // containers of unknown length are held back until they are
+        // complete
+        let value = Unsized((0..1000).collect());
+        let (out, writes) = streamed(&config, &value, 64);
+        assert_eq!(out, config.to_vec(&value).unwrap());
+        assert_eq!(writes, 1);
+
+        // as are maps in canonical mode
+        let config = SerializerConfig::new().canonical(true);
+        let map: HashMap<u64, u64> = (0..1000).map(|x| (x, x)).collect();
+        let (out, writes) = streamed(&config, &map, 64);
+        assert_eq!(out, config.to_vec(&map).unwrap());
+        assert_eq!(writes, 1);
+    }
+
+    #[test]
+    fn test_stream() {
+        let config = SerializerConfig::new();
+        let mut writer = Writer::new(Vec::new(), &config);
+        writer.set_buffer_limit(3);
+        let mut expected = Vec::new();
+        for idx in 0..10u64 {
+            let value: Vec<u64> = (0..idx * 100).collect();
+            writer.write(&value).unwrap();
+            expected.extend(config.to_vec(&value).unwrap());
+        }
+        assert_eq!(writer.into_inner(), expected);
+    }
+}

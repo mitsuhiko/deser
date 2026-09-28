@@ -3,74 +3,26 @@
 //! The output matches what Core Foundation writes: elements are indented
 //! with tabs and data is written as base64 in lines.
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 
 use deser_core::__format::format_finite;
 use deser_core::{Error, ErrorKind};
 
 use crate::common::{encode_base64, format_xml_date};
-use crate::ser::{Node, Tree};
+use crate::ser::Node;
 
-const HEADER: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+/// What precedes the value.
+pub(crate) const HEADER: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
 <plist version=\"1.0\">\n";
 
-/// Writes the tree as XML property list.
-pub(crate) fn write(tree: &Tree) -> Result<String, Error> {
-    let mut out = String::with_capacity(256);
-    out.push_str(HEADER);
-    // the open containers with the index of the next child
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    if open(&mut out, tree, 0, 0)? {
-        stack.push((0, 0));
-    }
-    while let Some(&(id, idx)) = stack.last() {
-        let depth = stack.len();
-        let child = match tree.nodes[id] {
-            Node::Array(ref items) if idx < items.len() => items[idx],
-            Node::Dict(ref entries) if idx < entries.len() => {
-                let (ref key, value) = entries[idx];
-                indent(&mut out, depth);
-                out.push_str("<key>");
-                escape(&mut out, key);
-                out.push_str("</key>\n");
-                value
-            }
-            ref node => {
-                indent(&mut out, depth - 1);
-                out.push_str(if matches!(node, Node::Dict(_)) {
-                    "</dict>\n"
-                } else {
-                    "</array>\n"
-                });
-                stack.pop();
-                continue;
-            }
-        };
-        stack.last_mut().unwrap().1 += 1;
-        if open(&mut out, tree, child, depth)? {
-            stack.push((child, 0));
-        }
-    }
-    out.push_str("</plist>\n");
-    Ok(out)
-}
+/// What follows the value.
+pub(crate) const FOOTER: &str = "</plist>\n";
 
-/// Writes a value.  For containers that are not empty only the start tag
-/// is written and `true` is returned.
-fn open(out: &mut String, tree: &Tree, id: usize, depth: usize) -> Result<bool, Error> {
-    indent(out, depth);
-    match tree.nodes[id] {
-        Node::Array(ref items) if items.is_empty() => out.push_str("<array/>\n"),
-        Node::Array(_) => {
-            out.push_str("<array>\n");
-            return Ok(true);
-        }
-        Node::Dict(ref entries) if entries.is_empty() => out.push_str("<dict/>\n"),
-        Node::Dict(_) => {
-            out.push_str("<dict>\n");
-            return Ok(true);
-        }
+/// Writes a value that is not an array or dictionary at the given depth.
+///
+/// The indentation of the first line was written before.
+pub(crate) fn scalar(out: &mut String, node: &Node, depth: usize) -> Result<(), Error> {
+    match *node {
         Node::Bool(true) => out.push_str("<true/>\n"),
         Node::Bool(false) => out.push_str("<false/>\n"),
         Node::Int(value) => {
@@ -136,8 +88,9 @@ fn open(out: &mut String, tree: &Tree, id: usize, depth: usize) -> Result<bool, 
             indent(out, depth);
             out.push_str("</dict>\n");
         }
+        Node::Array(_) | Node::Dict(_) => unreachable!("containers are written by the writer"),
     }
-    Ok(false)
+    Ok(())
 }
 
 /// Formats a real like Core Foundation for the values that are not
@@ -154,14 +107,14 @@ fn format_real(value: f64) -> String {
     }
 }
 
-fn indent(out: &mut String, depth: usize) {
+pub(crate) fn indent(out: &mut String, depth: usize) {
     for _ in 0..depth {
         out.push('\t');
     }
 }
 
 /// Escapes text for XML.
-fn escape(out: &mut String, text: &str) {
+pub(crate) fn escape(out: &mut String, text: &str) {
     let mut last = 0;
     for (idx, c) in text.bytes().enumerate() {
         let escaped = match c {

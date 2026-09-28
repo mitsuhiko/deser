@@ -2,12 +2,13 @@
 use std::io::{Read, Write};
 
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::Encoder;
 use deser_core::io::{Decoder, Frame};
+use deser_core::io::{Encoded, Encoder};
 use deser_core::ser::{Serialize, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
+use crate::emit::Emitter;
 use crate::ser::SerializerConfig;
 
 /// The kind of a line for splitting documents.
@@ -160,20 +161,74 @@ impl Decoder for DeserializerConfig {
 /// writer.write(&vec![1, 2]).unwrap();
 /// assert_eq!(writer.into_inner(), b"a\n---\n- 1\n- 2\n");
 /// ```
+///
+/// Documents are written incrementally (see
+/// [`Encoder::encode_incremental`]): the output of large documents is
+/// written in pieces while they are serialized.
 impl Encoder for SerializerConfig {
-    /// The number of documents written.
-    type State = usize;
+    type State = WriterState;
 
     fn encode(
         &self,
-        written: &mut usize,
+        state: &mut WriterState,
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        let document = self.document(driver, *written)?;
-        out.extend_from_slice(document.as_bytes());
-        *written += 1;
-        Ok(())
+        self.encode_incremental(state, driver, out, usize::MAX)
+            .map(|_| ())
+    }
+
+    fn supports_incremental(&self) -> bool {
+        true
+    }
+
+    fn encode_incremental(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<Encoded, Error> {
+        if !self.document_part(state.written, &mut state.document, driver, out, limit)? {
+            return Ok(Encoded::Partial);
+        }
+        state.written += 1;
+        Ok(Encoded::Done)
+    }
+}
+
+/// The state of a stream of YAML documents that is written.
+///
+/// This holds the number of documents that were written and the progress
+/// of the document that is being written.  See [`Encoder::State`].
+#[derive(Default)]
+pub struct WriterState {
+    written: usize,
+    document: Option<Box<Emitter>>,
+}
+
+impl WriterState {
+    /// Creates the state of a stream that continues after the given number
+    /// of documents.
+    pub fn with_written(written: usize) -> WriterState {
+        WriterState {
+            written,
+            document: None,
+        }
+    }
+
+    /// Returns the number of documents that were written.
+    pub fn written(&self) -> usize {
+        self.written
+    }
+}
+
+impl std::fmt::Debug for WriterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriterState")
+            .field("written", &self.written)
+            .field("in_progress", &self.document.is_some())
+            .finish()
     }
 }
 
@@ -227,7 +282,9 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 
 /// Serializes a value to a writer.
 ///
-/// The document is written with a single write.
+/// The output of large documents is written in pieces while they are
+/// serialized (see [`deser::io`](deser_core::io)), the writer does not need to be
+/// buffered.
 ///
 /// ```
 /// let mut out = Vec::new();

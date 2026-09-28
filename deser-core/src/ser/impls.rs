@@ -18,7 +18,7 @@ use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ext::ExtValue;
 use crate::ser::{
     Begin, Chunk, Describe, IndexedSeq, MapEmitter, PlainSink, SeqEmitter, Serialize,
-    SerializeHandle, plain_atom,
+    SerializeHandle, atom_cost, plain_atom,
 };
 
 impl Serialize for bool {
@@ -227,6 +227,11 @@ macro_rules! serialize_slice {
                 ) -> Result<(), $crate::Error> {
                     $crate::ser::impls::emit_plain_slice(&self[..], self.container_shape(), sink)
                 }
+
+                #[inline]
+                fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+                    $crate::ser::impls::plain_cost_slice(&self[..], budget)
+                }
             }
 
             impl<$($gen)*> $crate::ser::IndexedSeq for $ty {
@@ -244,6 +249,20 @@ macro_rules! serialize_slice {
                     sink: &mut dyn $crate::ser::PlainSink,
                 ) -> Result<bool, $crate::Error> {
                     $crate::ser::impls::emit_plain_elements(self[..].iter(), sink)
+                }
+
+                fn emit_plain_chunk(
+                    &self,
+                    index: usize,
+                    budget: usize,
+                    sink: &mut dyn $crate::ser::PlainSink,
+                ) -> Result<usize, $crate::Error> {
+                    $crate::ser::impls::emit_plain_chunk(
+                        self[..].get(index..).unwrap_or_default().iter(),
+                        index,
+                        budget,
+                        sink,
+                    )
                 }
             }
         )*
@@ -274,6 +293,20 @@ impl<T: Serialize, const N: usize> IndexedSeq for [T; N] {
 
     fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
         emit_plain_elements(self.iter(), sink)
+    }
+
+    fn emit_plain_chunk(
+        &self,
+        index: usize,
+        budget: usize,
+        sink: &mut dyn PlainSink,
+    ) -> Result<usize, Error> {
+        emit_plain_chunk(
+            self.get(index..).unwrap_or_default().iter(),
+            index,
+            budget,
+            sink,
+        )
     }
 }
 
@@ -310,6 +343,60 @@ pub(crate) fn emit_plain_elements<'a, T: Serialize + 'a>(
         value.__private_emit_plain(sink)?;
     }
     Ok(true)
+}
+
+/// Returns the budget that is left after emitting a slice of plain values
+/// at once (see `Serialize::__private_plain_cost`).
+#[inline]
+pub(crate) fn plain_cost_slice<T: Serialize>(slice: &[T], budget: usize) -> Option<usize> {
+    if let Some(bytes) = T::__private_slice_as_bytes(slice) {
+        return budget.checked_sub(atom_cost(&Atom::Bytes(Bytes::new(bytes))));
+    }
+    plain_cost_values(slice.iter(), budget)
+}
+
+/// Returns the budget that is left after emitting a sequence of plain
+/// values at once.
+#[inline]
+pub(crate) fn plain_cost_values<'a, T: Serialize + 'a>(
+    values: impl Iterator<Item = &'a T>,
+    budget: usize,
+) -> Option<usize> {
+    let mut budget = budget.checked_sub(1)?;
+    // values that are not plain are driven on their own
+    if !T::__private_is_plain() {
+        return Some(budget);
+    }
+    for value in values {
+        budget = value.__private_plain_cost(budget)?;
+    }
+    Some(budget)
+}
+
+/// Emits plain elements as long as they fit into the budget (see
+/// `IndexedSeq::emit_plain_chunk`).
+///
+/// `index` is the index of the first element, the index of the first
+/// element that was not emitted is returned.
+#[inline]
+pub(crate) fn emit_plain_chunk<'a, T: Serialize + 'a>(
+    values: impl Iterator<Item = &'a T>,
+    mut index: usize,
+    mut budget: usize,
+    sink: &mut dyn PlainSink,
+) -> Result<usize, Error> {
+    if !T::__private_is_plain() {
+        return Ok(index);
+    }
+    for value in values {
+        match value.__private_plain_cost(budget) {
+            Some(left) => budget = left,
+            None => break,
+        }
+        value.__private_emit_plain(sink)?;
+        index += 1;
+    }
+    Ok(index)
 }
 
 pub(crate) struct SliceEmitter<'a, T>(pub(crate) core::slice::Iter<'a, T>);
@@ -377,6 +464,12 @@ impl<T: Serialize> Serialize for VecDeque<T> {
             }
         }
     }
+
+    #[inline]
+    fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+        let (front, back) = self.as_slices();
+        plain_cost_slice(back, plain_cost_slice(front, budget)?)
+    }
 }
 
 impl<T: Serialize> IndexedSeq for VecDeque<T> {
@@ -391,6 +484,15 @@ impl<T: Serialize> IndexedSeq for VecDeque<T> {
 
     fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
         emit_plain_elements(self.iter(), sink)
+    }
+
+    fn emit_plain_chunk(
+        &self,
+        index: usize,
+        budget: usize,
+        sink: &mut dyn PlainSink,
+    ) -> Result<usize, Error> {
+        emit_plain_chunk(self.iter().skip(index), index, budget, sink)
     }
 }
 
@@ -548,6 +650,16 @@ macro_rules! serialize_map {
                     }
                     sink.map_end()
                 }
+
+                #[inline]
+                fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+                    let mut budget = budget.checked_sub(1)?;
+                    for (key, value) in self.iter() {
+                        budget = key.__private_plain_cost(budget)?;
+                        budget = value.__private_plain_cost(budget)?;
+                    }
+                    Some(budget)
+                }
             }
         )*
     };
@@ -625,6 +737,11 @@ macro_rules! serialize_set {
                         value.__private_emit_plain(sink)?;
                     }
                     sink.seq_end()
+                }
+
+                #[inline]
+                fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+                    $crate::ser::impls::plain_cost_values(self.iter(), budget)
                 }
             }
         )*
@@ -715,6 +832,14 @@ where
             None => sink.atom(Atom::Null),
         }
     }
+
+    #[inline]
+    fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+        match self {
+            Some(value) => value.__private_plain_cost(budget),
+            None => budget.checked_sub(1),
+        }
+    }
 }
 
 /// Counts as one, used to count repetitions.
@@ -752,6 +877,15 @@ macro_rules! serialize_for_tuple {
                 sink.seq_start(self.container_shape())?;
                 $($name.__private_emit_plain(sink)?;)*
                 sink.seq_end()
+            }
+
+            #[allow(non_snake_case)]
+            #[inline]
+            fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+                let ($($name,)*) = self;
+                let budget = budget.checked_sub(1)?;
+                $(let budget = $name.__private_plain_cost(budget)?;)*
+                Some(budget)
             }
 
             #[allow(non_snake_case)]
@@ -859,6 +993,11 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
 
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         emit_plain_slice(self, self.container_shape(), sink)
+    }
+
+    #[inline]
+    fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+        plain_cost_slice(self, budget)
     }
 }
 

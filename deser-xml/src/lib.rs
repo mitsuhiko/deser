@@ -189,6 +189,39 @@
 //! );
 //! ```
 //!
+//! # Streams
+//!
+//! Documents are read from a [`Read`](std::io::Read) with
+//! [`from_reader`] and written to a [`Write`](std::io::Write) with
+//! [`to_writer`].  The configurations also work with
+//! [`deser::io`](deser_core::io) (or an adapter for an async runtime such as
+//! `deser-tokio`), a stream holds a single document.  The reader is read to
+//! the end before the document is parsed.  The output is written while the
+//! value is serialized: an element is only held back until no more
+//! attributes can come for it, which for structs is known from their fields
+//! and for maps is their end.
+//!
+//! ```rust
+//! # #[cfg(feature = "io")] {
+//! #[derive(deser::Serialize, deser::Deserialize)]
+//! #[deser(rename = "feed")]
+//! struct Feed {
+//!     entry: Vec<String>,
+//! }
+//!
+//! let feed = Feed { entry: (0..1000).map(|x| x.to_string()).collect() };
+//! let mut out = Vec::new();
+//! deser_xml::to_writer(&mut out, &feed).unwrap();
+//! let read: Feed = deser_xml::from_reader(&out[..]).unwrap();
+//! assert_eq!(read.entry.len(), 1000);
+//! # }
+//! ```
+//!
+//! # Features
+//!
+//! * `io` (enabled by default): reading and writing streams, see
+//!   [streams](#streams).
+//!
 //! # Limitations
 //!
 //! This crate is an early version.  The input has to be UTF-8.
@@ -196,10 +229,14 @@
 #![deny(missing_docs)]
 
 mod de;
+#[cfg(feature = "io")]
+mod io;
 mod mixed;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+#[cfg(feature = "io")]
+pub use self::io::{WriterState, from_reader, to_writer};
 pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
 pub use self::ser::{Indent, SerializerConfig, to_string};
 

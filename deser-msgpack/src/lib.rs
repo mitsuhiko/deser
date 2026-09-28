@@ -91,5 +91,5 @@ mod ser;
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
 pub use self::ext::Ext;
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader, to_writer};
+pub use self::io::{StreamState, WriterState, from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_vec};

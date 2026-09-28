@@ -9,7 +9,8 @@ use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::format::Format;
 use crate::uid::Uid;
-use crate::{write_ascii, write_binary, write_xml};
+use crate::write_binary;
+use crate::write_text::TextWriter;
 
 /// Configures how values are serialized to property lists.
 ///
@@ -83,14 +84,77 @@ impl SerializerConfig {
         &self,
         driver: &mut SerializeDriver<'_>,
     ) -> Result<Vec<u8>, Error> {
+        if self.format.is_text() {
+            let mut writer = TextWriter::new(self.format, String::with_capacity(256));
+            driver.drive_sink(&mut writer)?;
+            writer.finish()?;
+            return Ok(writer.out.into_bytes());
+        }
         let mut builder = Builder::default();
         driver.drive_sink(&mut builder)?;
         let tree = builder.finish()?;
-        Ok(match self.format {
-            Format::Xml => write_xml::write(&tree)?.into_bytes(),
-            Format::Ascii => write_ascii::write(&tree).into_bytes(),
-            Format::Binary => write_binary::write(&tree),
-        })
+        Ok(write_binary::write(&tree))
+    }
+
+    /// Returns `true` if the output can be written in pieces.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn is_text(&self) -> bool {
+        self.format.is_text()
+    }
+
+    /// Serializes (a part of) the value of a driver as text property list
+    /// and appends it to the output.
+    ///
+    /// The progress of the value is kept in `value` (see
+    /// `Encoder::encode_incremental`), `true` is returned once the value is
+    /// complete.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn serialize_part(
+        &self,
+        value: &mut Option<alloc::boxed::Box<TextWriter>>,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        // the writer writes into an empty output directly, otherwise its
+        // output is appended
+        let adopt = out.is_empty();
+        let mut writer = match value.take() {
+            Some(mut writer) => {
+                if adopt {
+                    writer.out = String::from_utf8(core::mem::take(out)).unwrap();
+                }
+                writer
+            }
+            None => {
+                let buffer = match adopt {
+                    true => String::from_utf8(core::mem::take(out)).unwrap(),
+                    false => String::new(),
+                };
+                alloc::boxed::Box::new(TextWriter::new(self.format, buffer))
+            }
+        };
+        // after an error the value is abandoned, its writer is dropped
+        let done = if limit == usize::MAX {
+            driver.drive_sink(&mut *writer)?;
+            true
+        } else {
+            writer.limit = limit;
+            driver.drive_until(&mut *writer)?
+        };
+        if done {
+            writer.finish()?;
+        }
+        let output = core::mem::take(&mut writer.out).into_bytes();
+        if adopt {
+            *out = output;
+        } else {
+            out.extend_from_slice(&output);
+        }
+        if !done {
+            *value = Some(writer);
+        }
+        Ok(done)
     }
 }
 
@@ -351,7 +415,7 @@ impl Builder {
 }
 
 /// Converts an atom into a node.  Returns `None` for null.
-fn convert_atom(atom: Atom) -> Result<Option<Node>, Error> {
+pub(crate) fn convert_atom(atom: Atom) -> Result<Option<Node>, Error> {
     Ok(Some(match atom {
         Atom::Null => return Ok(None),
         Atom::Bool(value) => Node::Bool(value),
@@ -413,7 +477,7 @@ fn convert_ext(ext: &ExtValue) -> Result<Option<Node>, Error> {
 }
 
 /// Converts a key into a string.
-fn key_to_string(atom: Atom) -> Result<String, Error> {
+pub(crate) fn key_to_string(atom: Atom) -> Result<String, Error> {
     Ok(match atom {
         Atom::Implicit(value) => return key_to_string(value.value().to_atom()),
         Atom::Str(value) | Atom::Lexical(value) => value.into_owned(),
@@ -438,7 +502,7 @@ fn key_to_string(atom: Atom) -> Result<String, Error> {
 }
 
 #[cold]
-fn unsupported_key() -> Error {
+pub(crate) fn unsupported_key() -> Error {
     Error::new(
         ErrorKind::UnsupportedType,
         "dictionary keys of property lists must be strings",

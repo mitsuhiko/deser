@@ -285,3 +285,39 @@ fn test_top_level() {
     serializer.serialize(&vec![("b", 2)]).unwrap();
     assert_eq!(serializer.finish(), "a=1&b=2");
 }
+
+#[cfg(feature = "io")]
+#[test]
+fn test_incremental_writer() {
+    use std::collections::BTreeMap;
+
+    use deser::io::Writer;
+    use deser_urlencoded::{ArrayFormat, SerializerConfig};
+
+    #[derive(deser::Serialize)]
+    struct Params {
+        name: String,
+        tags: Vec<String>,
+        nested: BTreeMap<String, u32>,
+    }
+
+    let params = Params {
+        name: "a b & c".into(),
+        tags: (0..200).map(|x| format!("tag {x}")).collect(),
+        nested: (0..50).map(|x| (format!("k{x}"), x)).collect(),
+    };
+    for config in [
+        SerializerConfig::new(),
+        SerializerConfig::new().arrays(ArrayFormat::Indices),
+    ] {
+        let expected = config.to_string(&params).unwrap();
+        for limit in [1, 10, 100, usize::MAX] {
+            let mut writer = Writer::new(Vec::new(), &config);
+            writer.set_buffer_limit(limit);
+            writer.write(&params).unwrap();
+            // a stream holds a single value
+            assert!(writer.write(&params).is_err());
+            assert_eq!(writer.into_inner(), expected.as_bytes());
+        }
+    }
+}

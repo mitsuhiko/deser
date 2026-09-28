@@ -418,7 +418,17 @@ impl SerializerConfig {
         driver: &mut SerializeDriver<'_>,
         index: usize,
     ) -> Result<String, Error> {
-        let mut out = String::new();
+        let mut emitter = self.emitter(index, String::new());
+        driver.drive(|event, state| emitter.event(event, state))?;
+        self.end_document(&mut emitter)?;
+        Ok(emitter.out)
+    }
+
+    /// Creates the emitter of a document which writes into the output.
+    ///
+    /// This writes what precedes the document, `index` is the number of
+    /// documents written before.
+    pub(crate) fn emitter(&self, index: usize, mut out: String) -> Emitter {
         if self.version_directive {
             // directives can only follow the end of a document
             if index > 0 && !self.end_documents {
@@ -428,13 +438,72 @@ impl SerializerConfig {
         } else if self.document_start || index > 0 {
             out.push_str("---\n");
         }
-        let mut emitter = Emitter::new(self, out);
-        driver.drive(|event, state| emitter.event(event, state))?;
-        let mut document = emitter.finish()?;
+        Emitter::new(self, out)
+    }
+
+    /// Writes the end of a document once its value was written.
+    pub(crate) fn end_document(&self, emitter: &mut Emitter) -> Result<(), Error> {
+        emitter.finish()?;
         if self.end_documents {
-            document.push_str("...\n");
+            emitter.out.push_str("...\n");
         }
-        Ok(document)
+        Ok(())
+    }
+
+    /// Serializes (a part of) the value of a driver as a document of a
+    /// stream and appends it to the output.
+    ///
+    /// The progress of the document is kept in `document` (see
+    /// `Encoder::encode_incremental`), `true` is returned once the document
+    /// is complete.  `index` is the number of documents written before.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn document_part(
+        &self,
+        index: usize,
+        document: &mut Option<Box<Emitter>>,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        // the emitter writes into an empty output directly, otherwise its
+        // output is appended
+        let adopt = out.is_empty();
+        let mut emitter = match document.take() {
+            Some(mut emitter) => {
+                if adopt {
+                    emitter.out = String::from_utf8(std::mem::take(out)).unwrap();
+                }
+                emitter
+            }
+            None => {
+                let buffer = match adopt {
+                    true => String::from_utf8(std::mem::take(out)).unwrap(),
+                    false => String::new(),
+                };
+                Box::new(self.emitter(index, buffer))
+            }
+        };
+        // after an error the document is abandoned, its emitter is dropped
+        let done = if limit == usize::MAX {
+            driver.drive(|event, state| emitter.event(event, state))?;
+            true
+        } else {
+            emitter.limit = limit;
+            driver.drive_until(&mut *emitter)?
+        };
+        if done {
+            self.end_document(&mut emitter)?;
+        }
+        let output = emitter.take_output().into_bytes();
+        if adopt {
+            *out = output;
+        } else {
+            out.extend_from_slice(&output);
+        }
+        if !done {
+            *document = Some(emitter);
+        }
+        Ok(done)
     }
 
     /// Serializes the given value.

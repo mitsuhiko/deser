@@ -50,6 +50,6 @@ mod scan;
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 #[cfg(feature = "io")]
 pub use self::io::{StreamState, from_reader};
-#[cfg(feature = "io")]
-pub use deser_json::to_writer;
 pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing, to_string};
+#[cfg(feature = "io")]
+pub use deser_json::{WriterState, to_writer};

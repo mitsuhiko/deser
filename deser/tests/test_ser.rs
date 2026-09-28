@@ -417,3 +417,174 @@ fn test_drive_like_next() {
         },
     ]);
 }
+
+mod pausing {
+    use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+
+    use deser::ser::{Layer, Next, PausableSink, SerializeDriver};
+    use deser::{Error, Event, Serialize, State};
+
+    /// Collects the events with the map key flags and pauses after every
+    /// value.
+    #[derive(Default)]
+    struct Collect {
+        events: Vec<(Event<'static>, bool)>,
+        since_pause: usize,
+        max_between_pauses: usize,
+    }
+
+    impl PausableSink for Collect {
+        fn event(
+            &mut self,
+            event: Event<'_>,
+            _value: &dyn Serialize,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            self.events.push((event.to_static(), state.is_map_key()));
+            self.since_pause += 1;
+            Ok(())
+        }
+
+        fn pause(&mut self) -> bool {
+            self.max_between_pauses = self.max_between_pauses.max(self.since_pause);
+            self.since_pause = 0;
+            true
+        }
+    }
+
+    fn driven(value: &dyn Serialize) -> Vec<(Event<'static>, bool)> {
+        let mut events = Vec::new();
+        SerializeDriver::new(value)
+            .drive(|event, state| {
+                events.push((event.to_static(), state.is_map_key()));
+                Ok(())
+            })
+            .unwrap();
+        events
+    }
+
+    /// Drives with pauses, returns the events, the number of calls and the
+    /// most events between two pauses.
+    fn paused(value: &dyn Serialize) -> (Vec<(Event<'static>, bool)>, usize, usize) {
+        let mut driver = SerializeDriver::new(value);
+        let mut sink = Collect::default();
+        let mut calls = 1;
+        while !driver.drive_until(&mut sink).unwrap() {
+            calls += 1;
+        }
+        (sink.events, calls, sink.max_between_pauses)
+    }
+
+    #[derive(Serialize)]
+    struct Item {
+        id: u64,
+        name: String,
+        tags: Vec<String>,
+        scores: BTreeMap<String, f64>,
+        point: (i32, i32),
+        maybe: Option<Vec<u8>>,
+        #[deser(skip_serializing_if = Option::is_none)]
+        skipped: Option<u32>,
+        big: Vec<u64>,
+    }
+
+    fn item(id: u64, big: usize) -> Item {
+        Item {
+            id,
+            name: format!("item {id}"),
+            tags: (0..id % 4).map(|x| format!("t{x}")).collect(),
+            scores: (0..id % 3).map(|x| (format!("s{x}"), x as f64)).collect(),
+            point: (id as i32, -(id as i32)),
+            maybe: id.is_multiple_of(2).then(|| vec![1, 2, 3]),
+            skipped: None,
+            big: (0..big as u64).collect(),
+        }
+    }
+
+    #[test]
+    fn test_same_events() {
+        // the values are large enough to be emitted in pieces, less so in
+        // miri where they are still larger than the budget
+        let n = if cfg!(miri) { 1 } else { 5 };
+        let items: Vec<Item> = (0..4 * n).map(|x| item(x, x as usize * 50)).collect();
+        let nested: Vec<Vec<Vec<u64>>> = (0..6 * n)
+            .map(|x| (0..x).map(|y| (0..y * 20).collect()).collect())
+            .collect();
+        let long_strings: Vec<String> =
+            (0..10 * n as usize).map(|x| "x".repeat(x * 1000)).collect();
+        let deque: VecDeque<u64> = (0..400 * n).collect();
+        let array = [[1u64; 100]; 6];
+        let map: BTreeMap<u64, Vec<u64>> = (0..60 * n).map(|x| (x, vec![x; 3])).collect();
+        let hash_map: HashMap<String, u32> =
+            (0..200 * n as u32).map(|x| (x.to_string(), x)).collect();
+        let set: BTreeSet<u64> = (0..300 * n).collect();
+        let tuples: Vec<(u64, String, Option<bool>)> = (0..200 * n)
+            .map(|x| (x, x.to_string(), (x % 2 == 0).then_some(true)))
+            .collect();
+        // sequences as keys
+        let seq_keys: BTreeMap<Vec<u64>, Vec<u64>> = (0..3)
+            .map(|x| ((0..300 * n + x).collect(), vec![x]))
+            .collect();
+        let values: [&dyn Serialize; 11] = [
+            &seq_keys,
+            &items,
+            &nested,
+            &long_strings,
+            &deque,
+            &array,
+            &map,
+            &hash_map,
+            &set,
+            &tuples,
+            &item(7, 1000 * n as usize),
+        ];
+        for value in values {
+            let (events, calls, max) = paused(value);
+            assert_eq!(events, driven(value));
+            assert!(calls > 1);
+            // plain values are emitted in pieces of a few hundred atoms
+            assert!(max < 1000, "{max}");
+        }
+    }
+
+    #[test]
+    fn test_layers() {
+        /// Doubles every atom.
+        struct Double;
+
+        impl Layer for Double {
+            fn event(&mut self, event: Event<'_>, next: &mut Next<'_>) -> Result<(), Error> {
+                if let Event::Atom(ref atom) = event
+                    && !next.state().is_map_key()
+                {
+                    let copy = Event::Atom(atom.clone());
+                    next.emit(event)?;
+                    return next.emit(copy);
+                }
+                next.emit(event)
+            }
+        }
+
+        let value: Vec<Vec<u64>> = (0..100).map(|x| (0..x).collect()).collect();
+        let mut expected = Vec::new();
+        let mut driver = SerializeDriver::new(&value);
+        driver.push_layer(Double);
+        driver
+            .drive(|event, _| {
+                expected.push(event.to_static());
+                Ok(())
+            })
+            .unwrap();
+
+        let mut driver = SerializeDriver::new(&value);
+        driver.push_layer(Double);
+        let mut sink = Collect::default();
+        let mut calls = 1;
+        while !driver.drive_until(&mut sink).unwrap() {
+            calls += 1;
+        }
+        let events: Vec<_> = sink.events.into_iter().map(|(event, _)| event).collect();
+        assert_eq!(events, expected);
+        assert!(calls > 1);
+    }
+}

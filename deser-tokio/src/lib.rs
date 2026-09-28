@@ -55,11 +55,16 @@
 //!
 //! # Multi-Threaded Runtimes
 //!
-//! Values are only deserialized once they are complete and serialized
-//! before they are written, so no deserialization or serialization is in
-//! progress while the futures of this crate wait for IO.  The futures are
-//! `Send` if the reader or writer and the decoder or encoder are, so they
-//! can be spawned on multi-threaded runtimes.
+//! The futures are `Send` if the reader or writer, the decoder or encoder
+//! and their states are, so they can be spawned on multi-threaded runtimes.
+//!
+//! # Large Values
+//!
+//! Formats which support it (like JSON and CBOR) serialize values
+//! incrementally: once the output of a value exceeds the
+//! [buffer limit](Writer::set_buffer_limit), what was serialized so far is
+//! written and the serialization continues after that.  The memory used for
+//! writing does not depend on the size of the values either.
 //!
 //! # Cancellation
 //!
@@ -67,7 +72,8 @@
 //! dropped, the data read so far stays in the buffer of the [`Reader`] and
 //! the next read continues with it.  This allows reading in
 //! `tokio::select!`.  Writing is not cancellation safe, a value might have
-//! been written partially.
+//! been written partially.  A [`Writer`] refuses to write more values after
+//! a value was abandoned after a part of it was written.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -78,7 +84,10 @@ use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver};
-use deser_core::io::{DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoder, Next, Status};
+use deser_core::io::{
+    DEFAULT_BUFFER_LIMIT, DecodeBuffer, Decoder, ElementReader, ElementStatus, Encoded, Encoder,
+    Next, Status, encode_part,
+};
 use deser_core::ser::{Serialize, SerializeDriver};
 use deser_core::{Error, ErrorKind};
 use futures_core::Stream;
@@ -472,16 +481,22 @@ where
 /// Writes values to an [`AsyncWrite`].
 ///
 /// The values are serialized with an [`Encoder`] (the serializer
-/// configuration of a data format).  Every
-/// value is written with a single
+/// configuration of a data format) into a buffer and written with
 /// [`write_all`](tokio::io::AsyncWriteExt::write_all), wrap the writer in a
 /// [`BufWriter`](tokio::io::BufWriter) when writing many small values (and
-/// [`flush`](Self::flush) it).
+/// [`flush`](Self::flush) it).  If the encoder supports it (see
+/// [`Encoder::supports_incremental`]), the output of large values is
+/// written in pieces while they are serialized, so the memory used does not
+/// depend on the size of the values (see
+/// [`set_buffer_limit`](Self::set_buffer_limit)).
 pub struct Writer<W, E: Encoder> {
     writer: W,
     encoder: E,
     state: E::State,
     buffer: Vec<u8>,
+    limit: usize,
+    // a value was abandoned after a part of it was written
+    broken: bool,
 }
 
 impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
@@ -498,13 +513,36 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
             encoder,
             state,
             buffer: Vec::new(),
+            limit: DEFAULT_BUFFER_LIMIT,
+            broken: false,
         }
+    }
+
+    /// Sets how much output of a value is buffered before it's written.
+    ///
+    /// If the encoder supports it, the output of a value is written once it
+    /// exceeds the limit, the serialization continues after that.  The
+    /// default is [`DEFAULT_BUFFER_LIMIT`] (8 KiB).  With `usize::MAX`
+    /// every value is serialized completely before it's written.  See
+    /// [`deser::io::Writer::set_buffer_limit`](deser_core::io::Writer::set_buffer_limit).
+    pub fn set_buffer_limit(&mut self, limit: usize) {
+        self.limit = limit;
+    }
+
+    /// Returns how much output of a value is buffered before it's written.
+    pub fn buffer_limit(&self) -> usize {
+        self.limit
     }
 
     /// Serializes a value and writes it.
     ///
-    /// The value is serialized before anything is written.  If it fails to
-    /// serialize, nothing is written.
+    /// If the value fails to serialize before any of it was written (which
+    /// is always the case for values whose output is below the
+    /// [buffer limit](Self::set_buffer_limit)), nothing is written and the
+    /// next value can be written.  If a value is abandoned after a part of
+    /// it was written, because it fails to serialize, a write fails or the
+    /// future is dropped, the stream holds an incomplete value and the
+    /// writer refuses to write more values.
     pub async fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
         self.write_with(value, |_| {}).await
     }
@@ -517,15 +555,35 @@ impl<W: AsyncWrite + Unpin, E: Encoder> Writer<W, E> {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        deser_core::io::encode(
-            &self.encoder,
-            &mut self.state,
-            value,
-            setup,
-            &mut self.buffer,
-        )?;
-        self.writer.write_all(&self.buffer).await?;
-        Ok(())
+        if self.broken {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "a value was only partially written, the stream cannot continue",
+            ));
+        }
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        loop {
+            let encoded = encode_part(
+                &self.encoder,
+                &mut self.state,
+                &mut driver,
+                self.limit,
+                &mut self.buffer,
+            )?;
+            if encoded == Encoded::Partial {
+                // cleared once the rest of the value was written, it stays
+                // set if the future is dropped
+                self.broken = true;
+            }
+            if !self.buffer.is_empty() {
+                self.writer.write_all(&self.buffer).await?;
+            }
+            if encoded == Encoded::Done {
+                self.broken = false;
+                return Ok(());
+            }
+        }
     }
 
     /// Flushes the underlying writer.

@@ -4,82 +4,15 @@
 //! dictionaries: numbers and dates are written as strings, booleans as
 //! `YES` and `NO`.  The output is ASCII, other characters are escaped.
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use core::fmt::Write;
 
 use deser_core::__format::format_finite;
 
-use crate::ser::{Node, Tree};
+use crate::ser::Node;
 
-/// Writes the tree as OpenStep property list.
-pub(crate) fn write(tree: &Tree) -> String {
-    let mut out = String::with_capacity(256);
-    // the open containers with the index of the next child
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    if open(&mut out, tree, 0) {
-        stack.push((0, 0));
-    } else {
-        out.push('\n');
-    }
-    while let Some(&(id, idx)) = stack.last() {
-        let depth = stack.len();
-        let child = match tree.nodes[id] {
-            Node::Array(ref items) if idx < items.len() => {
-                indent(&mut out, depth);
-                items[idx]
-            }
-            Node::Dict(ref entries) if idx < entries.len() => {
-                let (ref key, value) = entries[idx];
-                indent(&mut out, depth);
-                write_str(&mut out, key);
-                out.push_str(" = ");
-                value
-            }
-            ref node => {
-                stack.pop();
-                indent(&mut out, depth - 1);
-                out.push(if matches!(node, Node::Dict(_)) {
-                    '}'
-                } else {
-                    ')'
-                });
-                out.push_str(separator(tree, stack.last()));
-                continue;
-            }
-        };
-        stack.last_mut().unwrap().1 += 1;
-        if open(&mut out, tree, child) {
-            stack.push((child, 0));
-        } else {
-            out.push_str(separator(tree, stack.last()));
-        }
-    }
-    out
-}
-
-/// Returns what follows a value in its container.
-fn separator(tree: &Tree, parent: Option<&(usize, usize)>) -> &'static str {
-    match parent.map(|&(id, _)| &tree.nodes[id]) {
-        Some(Node::Dict(_)) => ";\n",
-        Some(_) => ",\n",
-        None => "\n",
-    }
-}
-
-/// Writes a value.  For containers that are not empty only the opening
-/// bracket is written and `true` is returned.
-fn open(out: &mut String, tree: &Tree, id: usize) -> bool {
-    match tree.nodes[id] {
-        Node::Array(ref items) if items.is_empty() => out.push_str("()"),
-        Node::Array(_) => {
-            out.push_str("(\n");
-            return true;
-        }
-        Node::Dict(ref entries) if entries.is_empty() => out.push_str("{}"),
-        Node::Dict(_) => {
-            out.push_str("{\n");
-            return true;
-        }
+/// Writes a value that is not an array or dictionary.
+pub(crate) fn scalar(out: &mut String, node: &Node) {
+    match *node {
         Node::Bool(value) => out.push_str(if value { "YES" } else { "NO" }),
         Node::Int(value) => out.push_str(&value.to_string()),
         Node::Real(value) => write_str(out, &format_real(value)),
@@ -100,8 +33,8 @@ fn open(out: &mut String, tree: &Tree, id: usize) -> bool {
         Node::Uid(value) => {
             write!(out, "{{CF$UID = {};}}", value).unwrap();
         }
+        Node::Array(_) | Node::Dict(_) => unreachable!("containers are written by the writer"),
     }
-    false
 }
 
 fn format_real(value: f64) -> String {
@@ -116,14 +49,8 @@ fn format_real(value: f64) -> String {
     }
 }
 
-fn indent(out: &mut String, depth: usize) {
-    for _ in 0..depth {
-        out.push('\t');
-    }
-}
-
 /// Writes a string, quoted if necessary.
-fn write_str(out: &mut String, value: &str) {
+pub(crate) fn write_str(out: &mut String, value: &str) {
     let unquoted = !value.is_empty()
         && value.bytes().all(|c| {
             c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'/' | b':' | b'.' | b'-')

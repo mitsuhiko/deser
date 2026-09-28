@@ -278,3 +278,89 @@ async fn test_streamed_elements() {
     assert!(stream.next().await.is_none());
     writer.await.unwrap();
 }
+
+/// A writer that counts the writes and the largest write.
+#[derive(Default)]
+struct CountingWriter {
+    out: Vec<u8>,
+    writes: usize,
+    largest: usize,
+}
+
+impl tokio::io::AsyncWrite for CountingWriter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        self.out.extend_from_slice(buf);
+        self.writes += 1;
+        self.largest = self.largest.max(buf.len());
+        std::task::Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+#[tokio::test]
+async fn test_large_values_are_written_in_pieces() {
+    let messages: Vec<Message> = (0..10_000).map(message).collect();
+    let mut writer = Writer::new(CountingWriter::default(), SerializerConfig::new());
+    writer.set_buffer_limit(4096);
+    writer.write(&messages).await.unwrap();
+    let out = writer.into_inner();
+    assert_eq!(
+        out.out,
+        deser_json::to_string(&messages).unwrap().as_bytes()
+    );
+    assert!(out.writes > 50, "{}", out.writes);
+    assert!(out.largest < 8192, "{}", out.largest);
+
+    // with to_writer and through a pipe the reader reads while it's written
+    let (client, server) = duplex(1024);
+    let reader = tokio::spawn(async move {
+        deser_tokio::from_reader::<Vec<Message>, _, _>(server, DeserializerConfig::new()).await
+    });
+    deser_tokio::to_writer(client, SerializerConfig::new(), &messages)
+        .await
+        .unwrap();
+    assert_eq!(reader.await.unwrap().unwrap(), messages);
+}
+
+#[tokio::test]
+async fn test_abandoned_value_breaks_the_stream() {
+    let messages: Vec<Message> = (0..10_000).map(message).collect();
+    let (client, mut server) = duplex(1024);
+    let mut writer = Writer::new(client, WRITE_LINES);
+    writer.set_buffer_limit(256);
+    // the pipe is full long before the value is written
+    let rv = tokio::time::timeout(Duration::from_millis(50), writer.write(&messages)).await;
+    assert!(rv.is_err());
+    let err = writer.write(&message(1)).await.unwrap_err();
+    assert!(err.message().contains("partially written"), "{err}");
+
+    // the part that was written is in the pipe
+    let mut out = vec![0; 15];
+    use tokio::io::AsyncReadExt;
+    server.read_exact(&mut out).await.unwrap();
+    assert_eq!(out, b"[{\"id\":0,\"text\"");
+
+    // values that fail before anything was written do not break it
+    let mut writer = Writer::new(Vec::new(), WRITE_LINES);
+    let bad = std::collections::BTreeMap::from([(vec![1], 1)]);
+    assert!(writer.write(&bad).await.is_err());
+    writer.write(&1).await.unwrap();
+    assert_eq!(writer.into_inner(), b"1\n");
+}

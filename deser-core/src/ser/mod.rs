@@ -119,11 +119,11 @@ pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
 
-pub use driver::{EventSink, SerializeDriver};
+pub use driver::{EventSink, PausableSink, SerializeDriver};
 
 pub(crate) use self::begin::{
-    Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PlainSink,
-    StructField, plain_atom,
+    Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PLAIN_BUDGET,
+    PlainSink, StructField, atom_cost, plain_atom,
 };
 
 /// A handle to a [`Serialize`] type.
@@ -333,6 +333,18 @@ pub trait Serialize: Sync {
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         let _ = sink;
         unreachable!("not a plain value")
+    }
+
+    /// Returns the budget that is left after emitting this plain value at
+    /// once, `None` if it does not fit.
+    ///
+    /// Atoms cost one (long text and bytes more, see `atom_cost`),
+    /// containers one plus the costs of their values.  Values that are not
+    /// plain are not emitted at once, they cost one.  See `PLAIN_BUDGET`.
+    #[doc(hidden)]
+    #[inline]
+    fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+        budget.checked_sub(1)
     }
 
     /// Hidden internal trait method to allow specializations of bytes.

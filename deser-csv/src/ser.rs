@@ -8,7 +8,7 @@ use core::fmt::{self, Write as _};
 use deser_core::__format::{Float, IntBuffer, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
@@ -260,21 +260,30 @@ impl SerializerConfig {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
         let mut out = Vec::new();
-        self.write(&mut WriterState::default(), &mut driver, true, &mut out)?;
+        self.write(
+            &mut WriterState::default(),
+            &mut driver,
+            true,
+            &mut out,
+            usize::MAX,
+        )?;
         Ok(into_string(out))
     }
 
     /// Serializes the records (or the record) of a driver and appends them
     /// to the output.
     ///
-    /// Only the output is changed if this fails.
+    /// Only the output is changed if this fails.  Between records, the
+    /// driver is paused once the output holds at least `limit` bytes and
+    /// `false` is returned (the next call continues with the next record).
     pub(crate) fn write(
         &self,
         state: &mut WriterState,
         driver: &mut SerializeDriver<'_>,
         document: bool,
         out: &mut Vec<u8>,
-    ) -> Result<(), Error> {
+        limit: usize,
+    ) -> Result<bool, Error> {
         let dialect = match state.dialect {
             Some(ref dialect) => dialect,
             None => state.dialect.insert(Dialect::new(
@@ -301,11 +310,20 @@ impl SerializerConfig {
             field_ends: core::mem::take(&mut state.buffers.field_ends),
             record: core::mem::take(&mut state.buffers.record),
             scratch: core::mem::take(&mut state.buffers.scratch),
+            open: false,
+            limit,
             out,
         };
         let had_names = writer.names.is_some();
-        let rv = driver.drive(|event, state| writer.event(event, state));
-        // the state only changes if the value was written
+        let rv = if limit == usize::MAX {
+            driver
+                .drive(|event, state| writer.event(event, state))
+                .map(|()| true)
+        } else {
+            driver.drive_until(&mut writer)
+        };
+        // the state only changes if the value was written (or a part of it,
+        // which cannot be taken back)
         if rv.is_ok() || had_names {
             state.names = writer.names;
         }
@@ -472,9 +490,9 @@ impl ser::Serializer for Serializer {
         let len = self.out.len();
         match self
             .config
-            .write(&mut self.state, driver, false, &mut self.out)
+            .write(&mut self.state, driver, false, &mut self.out, usize::MAX)
         {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err(err) => {
                 self.out.truncate(len);
                 Err(err)
@@ -585,7 +603,29 @@ struct RecordWriter<'a> {
     record: Record,
     /// The text of numbers and other atoms that are not text.
     scratch: Vec<u8>,
+    /// A record is being written.
+    open: bool,
+    /// The driver is paused between records once the output is this long.
+    limit: usize,
     out: &'a mut Vec<u8>,
+}
+
+impl PausableSink for RecordWriter<'_> {
+    #[inline]
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        RecordWriter::event(self, event, state)
+    }
+
+    #[inline]
+    fn pause(&mut self) -> bool {
+        // the fields of a record can still move (see `collect`)
+        !self.open && self.out.len() >= self.limit
+    }
 }
 
 impl RecordWriter<'_> {
@@ -628,13 +668,17 @@ impl RecordWriter<'_> {
                     self.names = Some(names);
                 }
                 self.is_map = matches!(event, Event::MapStart(_));
+                self.open = true;
                 self.direct = !self.is_map || self.names.is_some();
                 self.fields = 0;
                 self.record_start = self.out.len();
                 self.field_ends.clear();
                 self.record.clear();
             }
-            Event::MapEnd | Event::SeqEnd if depth == record_depth => self.finish_record()?,
+            Event::MapEnd | Event::SeqEnd if depth == record_depth => {
+                self.open = false;
+                self.finish_record()?
+            }
             _ if depth == record_depth => {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,

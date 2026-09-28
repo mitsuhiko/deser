@@ -375,7 +375,7 @@ fn derive_indexed_struct(
                 skip.push(quote! { __deser::ser::Serialize::is_optional(&self.#name) });
             }
             let emit = quote! {
-                __deser::__derive::emit_plain_field(&self.#name, #fieldstr, __sink)
+                __deser::__derive::emit_plain_field(&self.#name, #fieldstr, __sink, __bounded)
             };
             if skip.is_empty() {
                 quote! { #index => #emit, }
@@ -400,6 +400,7 @@ fn derive_indexed_struct(
             fn emit_plain_fields(
                 &self,
                 mut __index: usize,
+                __bounded: bool,
                 __sink: &mut dyn __deser::__derive::PlainSink,
             ) -> __deser::__derive::Result<usize> {
                 loop {

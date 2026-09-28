@@ -15,7 +15,8 @@ use deser_core::__format::IntBuffer;
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
-use deser_core::{Atom, Error, ErrorKind, Event, State};
+use deser_core::ser::PausableSink;
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::quote::{
     BlockScalar, MAX_SIMPLE_KEY_LEN, PushSmall, is_plain_safe, is_single_quote_safe, push_indent,
@@ -201,9 +202,9 @@ impl<'a> Scalar<'a> {
     }
 }
 
-pub(crate) struct Emitter<'c> {
-    config: &'c SerializerConfig,
-    out: String,
+pub(crate) struct Emitter {
+    config: SerializerConfig,
+    pub(crate) out: String,
     stack: Vec<Frame>,
     pending: Option<Pending>,
     attempt: Option<Attempt>,
@@ -220,15 +221,38 @@ pub(crate) struct Emitter<'c> {
     /// since it was last computed.
     column: usize,
     column_offset: usize,
+    /// The column at the start of the output (the output before it was
+    /// passed on, see `take_output`).
+    base_column: usize,
     /// The buffer for the events of the next attempt (reused to not
     /// allocate for every attempt).
     spare_events: Vec<(Event<'static>, Hints)>,
+    /// The driver is paused once the output is this long (see
+    /// `PausableSink`).
+    pub(crate) limit: usize,
 }
 
-impl<'c> Emitter<'c> {
-    pub fn new(config: &'c SerializerConfig, out: String) -> Emitter<'c> {
+impl PausableSink for Emitter {
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Emitter::event(self, event, state)
+    }
+
+    fn pause(&mut self) -> bool {
+        // the output of a collection that is written in flow style
+        // tentatively can still change
+        self.attempt.is_none() && self.out.len() >= self.limit
+    }
+}
+
+impl Emitter {
+    pub fn new(config: &SerializerConfig, out: String) -> Emitter {
         Emitter {
-            config,
+            config: config.clone(),
             out,
             stack: Vec::new(),
             pending: None,
@@ -238,19 +262,34 @@ impl<'c> Emitter<'c> {
             line_done: false,
             column: 0,
             column_offset: 0,
+            base_column: 0,
             spare_events: Vec::new(),
+            limit: usize::MAX,
         }
     }
 
-    /// Finishes the document and returns the output.
-    pub fn finish(mut self) -> Result<String, Error> {
+    /// Finishes the document, the output is complete afterwards.
+    pub fn finish(&mut self) -> Result<(), Error> {
         if !self.done || !self.stack.is_empty() || self.pending.is_some() {
             return Err(Error::new(ErrorKind::Unexpected, "incomplete document"));
         }
         if !self.line_done {
             self.out.push('\n');
         }
-        Ok(self.out)
+        Ok(())
+    }
+
+    /// Returns the output written so far and continues with an empty
+    /// output.
+    ///
+    /// This is only done while no collection is written in flow style
+    /// tentatively (see `pause`), the offsets of the attempt are not moved.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub fn take_output(&mut self) -> String {
+        debug_assert!(self.attempt.is_none());
+        self.base_column = self.column();
+        self.column_offset = 0;
+        std::mem::take(&mut self.out)
     }
 
     pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
@@ -344,8 +383,16 @@ impl<'c> Emitter<'c> {
         if self.column_offset > attempt.out_len {
             // the column was computed for output that is gone, count the
             // line again
-            self.column = 0;
-            self.column_offset = self.out.rfind('\n').map_or(0, |x| x + 1);
+            match self.out.rfind('\n') {
+                Some(idx) => {
+                    self.column = 0;
+                    self.column_offset = idx + 1;
+                }
+                None => {
+                    self.column = self.base_column;
+                    self.column_offset = 0;
+                }
+            }
         }
         self.stack.truncate(attempt.depth);
         self.space = attempt.space;

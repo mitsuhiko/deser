@@ -44,9 +44,14 @@ threads.
 
 ## Streaming
 
-XML does not support streams yet and only has `from_str`, `from_slice`,
-`to_string` and a `Deserializer`.  Property lists hold a single value and
+XML documents, TOML documents and property lists hold a single value and
 cannot be split, so `from_reader` reads the whole stream before it's parsed.
+When writing, the output of large values is written in pieces while they are
+serialized, except for TOML and binary property lists which need the complete
+value (the values of a table come before its subtables, the object table of a
+binary property list needs all objects).  Containers whose length is not known
+upfront are held back in CBOR and MessagePack until they are complete, as are
+XML elements whose attributes can still come.
 
 ## Runtime Performance
 

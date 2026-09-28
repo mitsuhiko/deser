@@ -114,7 +114,7 @@ pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader, to_writer};
+pub use self::io::{StreamState, WriterState, from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_vec};
 pub use self::simple::Simple;
 pub use self::tag::{Tagged, take_tag};

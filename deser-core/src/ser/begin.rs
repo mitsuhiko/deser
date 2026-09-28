@@ -9,6 +9,25 @@ use alloc::borrow::Cow;
 use crate::State;
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
+
+/// How much a driver that pauses emits at once with the plain fast paths.
+///
+/// The budget is counted in atoms and containers, long text and bytes
+/// count more (see [`atom_cost`]).  A driver that can pause (see
+/// [`SerializeDriver::drive_until`](crate::ser::SerializeDriver::drive_until))
+/// only emits plain values at once which fit into it, larger ones are
+/// emitted in pieces so that the driver can pause in between.
+pub(crate) const PLAIN_BUDGET: usize = 256;
+
+/// Returns what emitting an atom costs (see [`PLAIN_BUDGET`]).
+#[inline]
+pub(crate) fn atom_cost(atom: &Atom<'_>) -> usize {
+    match atom {
+        Atom::Str(text) | Atom::Lexical(text) => 1 + text.len() / 32,
+        Atom::Bytes(bytes) => 1 + bytes.len() / 32,
+        _ => 1,
+    }
+}
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
 use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
@@ -104,10 +123,16 @@ pub trait IndexedStruct: Sync {
     ///
     /// Returns the index of the first field that was not emitted or
     /// [`FIELDS_END`] if all fields were emitted.  Skipped fields count as
-    /// emitted.  See [`emit_plain_field`].
+    /// emitted.  If `bounded` is set, only values that fit into the budget
+    /// are emitted (see `PLAIN_BUDGET`).  See [`emit_plain_field`].
     #[inline]
-    fn emit_plain_fields(&self, index: usize, sink: &mut dyn PlainSink) -> Result<usize, Error> {
-        let _ = sink;
+    fn emit_plain_fields(
+        &self,
+        index: usize,
+        bounded: bool,
+        sink: &mut dyn PlainSink,
+    ) -> Result<usize, Error> {
+        let _ = (bounded, sink);
         Ok(index)
     }
 }
@@ -115,7 +140,8 @@ pub trait IndexedStruct: Sync {
 /// Emits a field of a struct if its value is plain.
 ///
 /// Returns `false` without emitting anything if the value is not plain.
-/// Derived structs implement
+/// If `bounded` is set, values which do not fit into the budget are not
+/// emitted either (see `PLAIN_BUDGET`).  Derived structs implement
 /// [`emit_plain_fields`](IndexedStruct::emit_plain_fields) with this, it
 /// exists once per type of field rather than once per field.
 #[cfg(feature = "derive")]
@@ -124,8 +150,13 @@ pub fn emit_plain_field<T: Serialize>(
     value: &T,
     name: &str,
     sink: &mut dyn PlainSink,
+    bounded: bool,
 ) -> Result<bool, Error> {
     if !value.__private_is_plain_value() {
+        return Ok(false);
+    }
+    // large values are emitted in pieces
+    if bounded && value.__private_plain_cost(PLAIN_BUDGET).is_none() {
         return Ok(false);
     }
     sink.field(name)?;
@@ -183,6 +214,23 @@ pub trait IndexedSeq: Sync {
     fn emit_plain(&self, sink: &mut dyn PlainSink) -> Result<bool, Error> {
         let _ = sink;
         Ok(false)
+    }
+
+    /// Emits the elements from `index` on as long as they are plain and
+    /// fit into the budget (see `PLAIN_BUDGET`).
+    ///
+    /// Returns the index of the first element that was not emitted.  This
+    /// is used by drivers that can pause to emit large sequences in
+    /// pieces, the elements that are not emitted are driven on their own.
+    #[inline]
+    fn emit_plain_chunk(
+        &self,
+        index: usize,
+        budget: usize,
+        sink: &mut dyn PlainSink,
+    ) -> Result<usize, Error> {
+        let _ = (budget, sink);
+        Ok(index)
     }
 }
 
@@ -250,6 +298,12 @@ macro_rules! plain_atom {
         ) -> Result<(), crate::Error> {
             let $this = self;
             sink.atom($atom)
+        }
+
+        #[inline]
+        fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+            let $this = self;
+            budget.checked_sub(crate::ser::atom_cost(&$atom))
         }
     };
 }

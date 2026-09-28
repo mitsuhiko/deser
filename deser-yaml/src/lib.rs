@@ -168,7 +168,7 @@ pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 #[cfg(feature = "io")]
-pub use self::io::{StreamState, from_reader, to_writer};
+pub use self::io::{StreamState, WriterState, from_reader, to_writer};
 pub use self::resolve::Version;
 pub use self::ser::{
     FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,

@@ -201,3 +201,72 @@ fn test_roundtrip_stream() {
     let back = reader.iter::<Row>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(back, rows);
 }
+
+#[test]
+fn test_to_writer_streams_records() {
+    use std::collections::BTreeMap;
+
+    /// Counts the writes.
+    struct Pieces(Vec<u8>, usize);
+
+    impl std::io::Write for Pieces {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(buf);
+            self.1 += 1;
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(deser::Serialize)]
+    struct Row {
+        name: String,
+        age: u32,
+        note: Option<&'static str>,
+    }
+
+    let rows: Vec<Row> = (0..5000)
+        .map(|idx| Row {
+            name: format!("person {idx}"),
+            age: idx % 100,
+            note: (idx % 3 == 0).then_some("with, comma"),
+        })
+        .collect();
+    let mut out = Pieces(Vec::new(), 0);
+    deser_csv::to_writer(&mut out, &rows).unwrap();
+    assert_eq!(out.0, deser_csv::to_string(&rows).unwrap().as_bytes());
+    assert!(out.1 > 5, "{}", out.1);
+
+    // maps whose keys come in another order than the columns
+    let maps: Vec<BTreeMap<String, u32>> = (0..3000)
+        .map(|idx| {
+            let mut map = BTreeMap::from([("b".to_string(), idx), ("a".to_string(), idx * 2)]);
+            if idx % 2 == 0 {
+                map.insert("c".into(), 1);
+            }
+            map
+        })
+        .collect();
+    const FLEXIBLE: SerializerConfig = SerializerConfig::new().flexible(true);
+    let expected = FLEXIBLE.to_string(&maps);
+    let mut out = Pieces(Vec::new(), 0);
+    let rv = FLEXIBLE.to_writer(&mut out, &maps);
+    match expected {
+        Ok(expected) => {
+            rv.unwrap();
+            assert_eq!(out.0, expected.as_bytes());
+        }
+        Err(err) => assert_eq!(rv.unwrap_err().message(), err.message()),
+    }
+
+    let maps: Vec<BTreeMap<String, u32>> = (0..3000)
+        .map(|idx| BTreeMap::from([("b".to_string(), idx), ("a".to_string(), idx * 2)]))
+        .collect();
+    let mut out = Pieces(Vec::new(), 0);
+    deser_csv::to_writer(&mut out, &maps).unwrap();
+    assert_eq!(out.0, deser_csv::to_string(&maps).unwrap().as_bytes());
+    assert!(out.1 > 1, "{}", out.1);
+}

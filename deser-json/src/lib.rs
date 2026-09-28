@@ -171,5 +171,5 @@ pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str}
 pub use self::io::{StreamState, from_reader};
 pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};
 #[cfg(feature = "io")]
-pub use self::ser_io::to_writer;
+pub use self::ser_io::{WriterState, to_writer};
 pub use self::trailing::Trailing;

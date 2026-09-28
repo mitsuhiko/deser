@@ -2,12 +2,13 @@
 use std::io::{Read, Write};
 
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::{Decoder, Encoder, Frame};
+use deser_core::io::{Decoder, Encoded, Encoder, Frame};
 use deser_core::ser::{Serialize, SerializeDriver};
 use deser_core::{Error, ErrorKind};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::ser::SerializerConfig;
+use crate::write_text::TextWriter;
 
 /// Reads a property list from a stream (see [`deser::io`](deser_core::io)).
 ///
@@ -63,25 +64,85 @@ impl Decoder for DeserializerConfig {
 /// Writes a property list to a stream (see [`deser::io`](deser_core::io)).
 ///
 /// A stream holds a single property list, writing a second value fails.
+/// XML and OpenStep property lists are written incrementally (see
+/// [`Encoder::encode_incremental`]): their output is written in pieces
+/// while the value is serialized.  Binary property lists are written once
+/// the value is complete as the object table needs all objects.
 impl Encoder for SerializerConfig {
-    /// `true` once the value was written.
-    type State = bool;
+    type State = WriterState;
 
     fn encode(
         &self,
-        written: &mut bool,
+        state: &mut WriterState,
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        if *written {
+        if !self.is_text() {
+            state.check_single()?;
+            out.extend_from_slice(&self.serialize_driver(driver)?);
+            state.written = true;
+            return Ok(());
+        }
+        self.encode_incremental(state, driver, out, usize::MAX)
+            .map(|_| ())
+    }
+
+    fn supports_incremental(&self) -> bool {
+        self.is_text()
+    }
+
+    fn encode_incremental(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<Encoded, Error> {
+        if state.value.is_none() {
+            state.check_single()?;
+        }
+        if !self.serialize_part(&mut state.value, driver, out, limit)? {
+            return Ok(Encoded::Partial);
+        }
+        state.written = true;
+        Ok(Encoded::Done)
+    }
+}
+
+/// The state of a property list stream that is written.
+///
+/// This holds if the value was written and the progress of the value while
+/// it's being written.  See [`Encoder::State`].
+#[derive(Default)]
+pub struct WriterState {
+    written: bool,
+    value: Option<Box<TextWriter>>,
+}
+
+impl WriterState {
+    /// Returns `true` once the value was written.
+    pub fn written(&self) -> bool {
+        self.written
+    }
+
+    /// Fails if the value was written.
+    fn check_single(&self) -> Result<(), Error> {
+        if self.written {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "a property list stream holds a single value",
             ));
         }
-        out.extend_from_slice(&self.serialize_driver(driver)?);
-        *written = true;
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for WriterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriterState")
+            .field("written", &self.written)
+            .field("in_progress", &self.value.is_some())
+            .finish()
     }
 }
 

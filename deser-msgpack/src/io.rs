@@ -2,15 +2,15 @@
 use std::io::{Read, Write};
 
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::Encoder;
 use deser_core::io::{Decoder, Frame, Progress};
+use deser_core::io::{Encoded, Encoder};
 use deser_core::ser::{Serialize, SerializeDriver};
 use deser_core::{Error, ErrorKind, State};
 
 use crate::de::{Deserializer, DeserializerConfig};
 use crate::head::{Head, HeadError, decode_head};
 use crate::parser::{Copying, Discard, Parser, Progress as ParseProgress};
-use crate::ser::SerializerConfig;
+use crate::ser::{SerializerConfig, Writer};
 
 /// The state of a MessagePack stream that is read.
 ///
@@ -265,18 +265,61 @@ impl Decoder for DeserializerConfig {
 /// writer.write(&"hi").unwrap();
 /// assert_eq!(writer.into_inner(), [0x01, 0xa2, b'h', b'i']);
 /// ```
+///
+/// Items are written incrementally (see [`Encoder::encode_incremental`]):
+/// the output of large items is written in pieces while they are
+/// serialized.  The output of arrays and maps whose length is not known
+/// upfront (and of maps in canonical mode) is held back until they are
+/// complete, as their header or the order of their entries is only known
+/// then.
 impl Encoder for SerializerConfig {
-    type State = ();
+    type State = WriterState;
 
     fn encode(
         &self,
-        _state: &mut (),
+        state: &mut WriterState,
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        let bytes = self.serialize_driver(driver)?;
-        out.extend_from_slice(&bytes);
-        Ok(())
+        self.serialize_part(&mut state.item, driver, out, usize::MAX)
+            .map(|_| ())
+    }
+
+    fn supports_incremental(&self) -> bool {
+        true
+    }
+
+    fn encode_incremental(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<Encoded, Error> {
+        Ok(
+            if self.serialize_part(&mut state.item, driver, out, limit)? {
+                Encoded::Done
+            } else {
+                Encoded::Partial
+            },
+        )
+    }
+}
+
+/// The state of a stream of MessagePack items that is written.
+///
+/// Items do not depend on each other, this only holds the progress of the
+/// item that is being written.  See [`Encoder::State`].
+#[derive(Default)]
+pub struct WriterState {
+    item: Option<Box<Writer>>,
+}
+
+impl std::fmt::Debug for WriterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriterState")
+            .field("in_progress", &self.item.is_some())
+            .finish()
     }
 }
 
@@ -314,7 +357,9 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 
 /// Serializes a value to a writer.
 ///
-/// The value is written with a single write.
+/// The output of large values is written in pieces while they are
+/// serialized (see [`deser::io`](deser_core::io)), the writer does not need to be
+/// buffered.
 ///
 /// ```
 /// let mut out = Vec::new();

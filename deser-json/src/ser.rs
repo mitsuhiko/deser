@@ -6,7 +6,7 @@ use core::mem::ManuallyDrop;
 use deser_core::__format::IntBuffer;
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
 use crate::Trailing;
@@ -324,28 +324,102 @@ impl SerializerConfig {
         &self,
         driver: &mut SerializeDriver<'_>,
     ) -> Result<String, Error> {
+        let mut writer = self.value_writer(Buffer::with_capacity(128));
+        writer.drive(driver, usize::MAX)?;
+        Ok(writer.finish())
+    }
+
+    /// Creates the writer for a value which writes into the buffer.
+    pub(crate) fn value_writer(&self, out: Buffer) -> ValueWriter {
         let ser = Output {
-            out: Buffer::with_capacity(128),
+            out,
             bytes: self.bytes,
         };
         if self.indent == Indent::None && self.compact {
-            let mut writer = Writer {
+            ValueWriter::Compact(Writer {
                 ser,
                 stack: Vec::new(),
                 container: Container::Top,
                 first: true,
                 is_key: false,
-            };
-            driver.drive_sink(&mut writer)?;
-            Ok(writer.ser.out.into_string())
+                limit: usize::MAX,
+            })
         } else {
             let inline_width = match self.inline {
                 InlinePolicy::Never => None,
                 InlinePolicy::LeafIfFits(width) => Some(width),
             };
-            let mut writer = PrettyWriter::new(ser, self.indent, self.compact, inline_width);
-            driver.drive(|event, state| writer.event(event, state))?;
-            Ok(writer.finish())
+            ValueWriter::Pretty(PrettyWriter::new(
+                ser,
+                self.indent,
+                self.compact,
+                inline_width,
+            ))
+        }
+    }
+}
+
+/// Writes the events of a value.
+pub(crate) enum ValueWriter {
+    /// Compact output (no indentation, no spaces).
+    Compact(Writer),
+    /// Everything else.
+    Pretty(PrettyWriter),
+}
+
+impl ValueWriter {
+    /// Writes the events of the driver.
+    ///
+    /// Returns `false` if the driver was paused as the output holds at
+    /// least `limit` bytes (see `take_output`).  With a limit of
+    /// `usize::MAX` the value is written at once.
+    pub(crate) fn drive(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        match self {
+            ValueWriter::Compact(writer) if limit == usize::MAX => {
+                driver.drive_sink(writer).map(|()| true)
+            }
+            ValueWriter::Compact(writer) => {
+                writer.limit = limit;
+                driver.drive_until(writer)
+            }
+            ValueWriter::Pretty(writer) if limit == usize::MAX => driver
+                .drive(|event, state| writer.event(event, state))
+                .map(|()| true),
+            ValueWriter::Pretty(writer) => {
+                writer.limit = limit;
+                driver.drive_until(writer)
+            }
+        }
+    }
+
+    /// Returns the output buffer.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn output(&mut self) -> &mut Buffer {
+        match self {
+            ValueWriter::Compact(writer) => &mut writer.ser.out,
+            ValueWriter::Pretty(writer) => writer.output(),
+        }
+    }
+
+    /// Takes the output written so far (which is final after `drive`
+    /// returned), the writer continues with an empty output.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn take_output(&mut self) -> Vec<u8> {
+        match self {
+            ValueWriter::Compact(writer) => writer.ser.out.take(),
+            ValueWriter::Pretty(writer) => writer.take_output(),
+        }
+    }
+
+    /// Returns the output.
+    pub(crate) fn finish(self) -> String {
+        match self {
+            ValueWriter::Compact(writer) => writer.ser.out.into_string(),
+            ValueWriter::Pretty(writer) => writer.finish(),
         }
     }
 }
@@ -494,7 +568,7 @@ enum Container {
 }
 
 /// Holds the state of the serializer while writing.
-struct Writer {
+pub(crate) struct Writer {
     ser: Output,
     // the state of the current container is held here, the state of the
     // outer containers is saved on the stack.
@@ -502,12 +576,31 @@ struct Writer {
     container: Container,
     first: bool,
     is_key: bool,
+    // the output is passed on once it's this long (see `PausableSink`)
+    limit: usize,
 }
 
 impl ser::EventSink for Writer {
     #[inline(always)]
     fn event(&mut self, event: Event, _state: &mut deser_core::State) -> Result<(), Error> {
         Writer::event(self, event)
+    }
+}
+
+impl PausableSink for Writer {
+    #[inline(always)]
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        _state: &mut deser_core::State,
+    ) -> Result<(), Error> {
+        Writer::event(self, event)
+    }
+
+    #[inline(always)]
+    fn pause(&mut self) -> bool {
+        self.ser.out.len() >= self.limit
     }
 }
 

@@ -199,6 +199,20 @@ every intermediate step.
   `Writer` for `std::io`, and `DecodeBuffer` for other kinds of IO.
   JSON (and its dialects), CBOR and MessagePack parse incrementally
   while input arrives.
+- Writers serialize values incrementally (`Encoder::encode_incremental`):
+  once the output of a value exceeds the buffer limit
+  (`Writer::set_buffer_limit`, 8 KiB by default) it's written and the
+  serialization continues, so the memory used for writing does not depend
+  on the size of the values.  All formats support this except TOML and
+  binary property lists, which need the complete value.  This also covers
+  `to_writer`, `deser-tokio` and CSV documents.  Values below the limit are
+  still written at once.  A writer refuses more values after one was
+  abandoned partway through.
+- Added `SerializeDriver::drive_until` and `PausableSink` to drive a
+  serialization until the sink pauses it.  Large plain sequences are
+  emitted in pieces so that the driver can pause in between.
+- `deser-xml` supports streams: `from_reader`, `to_writer` and `deser::io`
+  (the `io` feature).
 - `deser-json` reads from bytes, reads streams of values and JSON Lines
   (`Trailing`), can pretty print, keeps exact numbers
   (`deser::ext::Number`) and has source locations.

@@ -103,12 +103,13 @@ mod ser;
 mod uid;
 mod write_ascii;
 mod write_binary;
+mod write_text;
 mod write_xml;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice};
 pub use self::format::Format;
 #[cfg(feature = "io")]
-pub use self::io::{from_reader, to_writer};
+pub use self::io::{WriterState, from_reader, to_writer};
 pub use self::ser::{Serializer, SerializerConfig, to_string, to_vec};
 pub use self::uid::Uid;
 

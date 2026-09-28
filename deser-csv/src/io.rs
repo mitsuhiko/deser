@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 
 use deser_core::Error;
 use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned};
-use deser_core::io::{Decoder, Encoder, Frame};
+use deser_core::io::{Decoder, Encoded, Encoder, Frame};
 use deser_core::ser::{Serialize, SerializeDriver};
 
 use crate::de::{self, Deserializer, DeserializerConfig, StreamState};
@@ -128,7 +128,8 @@ impl Encoder for SerializerConfig {
         driver: &mut SerializeDriver<'_>,
         out: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        self.write(state, driver, false, out)
+        self.write(state, driver, false, out, usize::MAX)
+            .map(|_| ())
     }
 
     fn to_vec_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<Vec<u8>, Error>
@@ -158,10 +159,46 @@ impl SerializerConfig {
     /// Serializes the records of a value to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: Write>(&self, mut writer: W, value: &dyn Serialize) -> Result<(), Error> {
-        let output = self.to_string(value)?;
-        writer.write_all(output.as_bytes())?;
-        Ok(())
+    pub fn to_writer<W: Write>(&self, writer: W, value: &dyn Serialize) -> Result<(), Error> {
+        deser_core::io::to_writer(writer, Document(self), value)
+    }
+}
+
+/// Writes the records of a sequence as a single value.
+///
+/// The records are written while they are serialized.
+struct Document<'a>(&'a SerializerConfig);
+
+impl Encoder for Document<'_> {
+    type State = WriterState;
+
+    fn encode(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.0
+            .write(state, driver, true, out, usize::MAX)
+            .map(|_| ())
+    }
+
+    fn supports_incremental(&self) -> bool {
+        true
+    }
+
+    fn encode_incremental(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<Encoded, Error> {
+        Ok(if self.0.write(state, driver, true, out, limit)? {
+            Encoded::Done
+        } else {
+            Encoded::Partial
+        })
     }
 }
 
@@ -186,9 +223,11 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 
 /// Serializes the records of a value to a writer.
 ///
-/// The output is written with a single write.  To write one record at a
-/// time use a [`deser::io::Writer`](deser_core::io::Writer) with a
-/// [`SerializerConfig`].
+/// The records are written while they are serialized (in pieces of about
+/// 8 KiB, see [`deser::io`](deser_core::io)), so the writer does not need
+/// to be buffered and the records are not held in memory.  To write one
+/// record at a time use a [`deser::io::Writer`](deser_core::io::Writer)
+/// with a [`SerializerConfig`].
 ///
 /// ```
 /// let mut out = Vec::new();

@@ -5,7 +5,7 @@ use core::mem::ManuallyDrop;
 use deser_core::__format::extend;
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Timestamp, Uuid};
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::float::f32_to_f16;
@@ -92,8 +92,8 @@ struct CanonicalMap {
 }
 
 /// Holds the state of the serializer while writing.
-struct Writer {
-    out: Vec<u8>,
+pub(crate) struct Writer {
+    pub(crate) out: Vec<u8>,
     canonical: bool,
     // the frame of the current container is held here, the frames of the
     // outer containers are saved on the stack.
@@ -105,6 +105,10 @@ struct Writer {
     offsets: Vec<usize>,
     // bytes to be inserted into the output at the end, see `patch_length`.
     insertions: Vec<Insertion>,
+    // the number of open containers whose length is patched in at the end
+    open_unknown: usize,
+    // the output is passed on once it's this long (see `PausableSink`)
+    limit: usize,
 }
 
 /// The bytes of a container header that did not fit into the space
@@ -122,7 +126,77 @@ impl ser::EventSink for Writer {
     }
 }
 
+impl PausableSink for Writer {
+    #[inline(always)]
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Writer::event(self, event, state)
+    }
+
+    #[inline]
+    fn pause(&mut self) -> bool {
+        // the output is final once no length has to be patched in and no
+        // map has to be sorted
+        if self.out.len() < self.limit || self.open_unknown > 0 || !self.maps.is_empty() {
+            return false;
+        }
+        self.finish();
+        true
+    }
+}
+
 impl Writer {
+    /// Creates a writer that writes into the output.
+    pub(crate) fn new(canonical: bool, out: Vec<u8>) -> Writer {
+        Writer {
+            out,
+            canonical,
+            frame: Frame::TOP,
+            stack: Vec::new(),
+            maps: Vec::new(),
+            offsets: Vec::new(),
+            insertions: Vec::new(),
+            open_unknown: 0,
+            limit: usize::MAX,
+        }
+    }
+
+    /// Makes the output final once no container is open whose length is
+    /// patched in or which is sorted.
+    pub(crate) fn finish(&mut self) {
+        if !self.insertions.is_empty() {
+            self.apply_insertions();
+            self.insertions.clear();
+        }
+    }
+
+    /// Writes the events of the driver.
+    ///
+    /// Returns `false` if the driver was paused as the output holds at
+    /// least `limit` bytes that are final.  With a limit of `usize::MAX`
+    /// the value is written at once.
+    pub(crate) fn drive(
+        &mut self,
+        driver: &mut SerializeDriver<'_>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        let done = if limit == usize::MAX {
+            driver.drive_sink(self)?;
+            true
+        } else {
+            self.limit = limit;
+            driver.drive_until(self)?
+        };
+        if done {
+            self.finish();
+        }
+        Ok(done)
+    }
+
     #[inline(always)]
     fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match event {
@@ -173,6 +247,7 @@ impl Writer {
             None => {
                 self.out.push(major << 5);
                 info |= UNKNOWN_LEN;
+                self.open_unknown += 1;
                 u64::MAX
             }
         };
@@ -229,6 +304,7 @@ impl Writer {
             }
         }
         if unknown {
+            self.open_unknown -= 1;
             let count = if frame.is_map() { items / 2 } else { items };
             self.patch_length(frame.header(), count);
         }
@@ -605,24 +681,50 @@ impl SerializerConfig {
         self.serialize_driver(&mut driver)
     }
 
+    /// Serializes (a part of) the value of a driver and appends the output
+    /// that is final.
+    ///
+    /// The progress of the value is kept in `item` (see
+    /// `Encoder::encode_incremental`), `true` is returned once the value is
+    /// complete.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn serialize_part(
+        &self,
+        item: &mut Option<alloc::boxed::Box<Writer>>,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        // the writer writes into an empty output directly, otherwise its
+        // output is appended
+        let adopt = out.is_empty();
+        let mut writer = item
+            .take()
+            .unwrap_or_else(|| alloc::boxed::Box::new(Writer::new(self.canonical, Vec::new())));
+        if adopt {
+            writer.out = core::mem::take(out);
+        }
+        // after an error the value is abandoned, its writer is dropped
+        let done = writer.drive(driver, limit)?;
+        let output = core::mem::take(&mut writer.out);
+        if adopt {
+            *out = output;
+        } else {
+            out.extend_from_slice(&output);
+        }
+        if !done {
+            *item = Some(writer);
+        }
+        Ok(done)
+    }
+
     /// Serializes the value of a driver.
     pub(crate) fn serialize_driver(
         &self,
         driver: &mut SerializeDriver<'_>,
     ) -> Result<Vec<u8>, Error> {
-        let mut writer = Writer {
-            out: Vec::with_capacity(128),
-            canonical: self.canonical,
-            frame: Frame::TOP,
-            stack: Vec::new(),
-            maps: Vec::new(),
-            offsets: Vec::new(),
-            insertions: Vec::new(),
-        };
-        driver.drive_sink(&mut writer)?;
-        if !writer.insertions.is_empty() {
-            writer.apply_insertions();
-        }
+        let mut writer = Writer::new(self.canonical, Vec::with_capacity(128));
+        writer.drive(driver, usize::MAX)?;
         Ok(writer.out)
     }
 }

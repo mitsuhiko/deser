@@ -5,7 +5,7 @@ use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
-use deser_core::ser::{Describe, SerializeDriver};
+use deser_core::ser::{Describe, PausableSink, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
@@ -272,31 +272,48 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
-        let mut writer = Writer::new(self, None);
+        let mut writer = Writer::new(self);
         driver.drive_described(|event, value, state| writer.event(event, value, state))?;
-        writer.finish()
+        writer.finish()?;
+        Ok(writer.out)
     }
 
-    /// Serializes a value and passes the output on in pieces.
+    /// Serializes (a part of) the value of a driver and appends the output
+    /// that is final.
     ///
-    /// A piece is passed on as soon as it's final and at least `threshold`
-    /// bytes long, the rest at the end.  This is how output is streamed
-    /// (there is no public API for it yet).
-    #[allow(dead_code)]
-    pub(crate) fn to_pieces(
+    /// The progress of the value is kept in `value` (see
+    /// `Encoder::encode_incremental`), `true` is returned once the value is
+    /// complete.  The output of a value is final once its start tag is
+    /// complete, which is the case once no more attributes can come for
+    /// the element (see `final_until`).
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn serialize_part(
         &self,
-        value: &dyn Serialize,
-        threshold: usize,
-        write: &mut dyn FnMut(&str) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        let mut driver = SerializeDriver::new(value);
-        let mut writer = Writer::new(self, Some(Sink { write, threshold }));
-        driver.drive_described(|event, value, state| writer.event(event, value, state))?;
-        let rest = writer.finish()?;
-        if !rest.is_empty() {
-            write(&rest)?;
+        value: &mut Option<Box<Writer>>,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        let mut writer = value.take().unwrap_or_else(|| Box::new(Writer::new(self)));
+        // after an error the value is abandoned, its writer is dropped
+        let done = if limit == usize::MAX {
+            driver.drive_described(|event, value, state| writer.event(event, value, state))?;
+            true
+        } else {
+            writer.limit = limit;
+            driver.drive_until(&mut *writer)?
+        };
+        if let Some(err) = writer.error.take() {
+            return Err(err);
         }
-        Ok(())
+        if done {
+            writer.finish()?;
+            out.extend_from_slice(writer.out.as_bytes());
+            return Ok(true);
+        }
+        writer.pass_on(out);
+        *value = Some(writer);
+        Ok(false)
     }
 }
 
@@ -380,19 +397,18 @@ enum Key {
     Element(String),
 }
 
-/// Where final output goes.
-struct Sink<'o> {
-    write: &'o mut dyn FnMut(&str) -> Result<(), Error>,
-    threshold: usize,
-}
-
-struct Writer<'c, 'o> {
-    config: &'c SerializerConfig,
+/// Writes the events of a document.
+pub(crate) struct Writer {
+    config: SerializerConfig,
     /// The output that was not passed on yet, it starts at `base` in the
     /// document.
     out: String,
     base: usize,
-    sink: Option<Sink<'o>>,
+    /// The driver is paused once this much output is final (see
+    /// `PausableSink`).
+    limit: usize,
+    /// An error of `pause`, which cannot fail.
+    error: Option<Error>,
     stack: Vec<Frame>,
     /// The key of the next value of the element on top of the stack.
     key: Option<Key>,
@@ -457,8 +473,35 @@ impl Describe for Fields {
     }
 }
 
-impl<'c, 'o> Writer<'c, 'o> {
-    fn new(config: &'c SerializerConfig, sink: Option<Sink<'o>>) -> Writer<'c, 'o> {
+impl PausableSink for Writer {
+    const DESCRIBED: bool = true;
+
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Writer::event(self, event, value, state)
+    }
+
+    fn pause(&mut self) -> bool {
+        // the declarations of the root element are only written once the
+        // output is passed on, as namespaces found afterwards are declared
+        // on the elements that use them
+        if self.final_until() - self.base < self.limit {
+            return false;
+        }
+        if let Err(err) = self.final_len() {
+            // the error is returned once the driver stopped
+            self.error = Some(err);
+        }
+        true
+    }
+}
+
+impl Writer {
+    fn new(config: &SerializerConfig) -> Writer {
         let mut out = String::new();
         if config.declaration {
             out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -467,10 +510,11 @@ impl<'c, 'o> Writer<'c, 'o> {
             }
         }
         Writer {
-            config,
+            config: config.clone(),
             out,
             base: 0,
-            sink,
+            limit: usize::MAX,
+            error: None,
             stack: Vec::new(),
             key: None,
             root_bindings: std::iter::once(("xml", XML_NAMESPACE))
@@ -505,7 +549,7 @@ impl<'c, 'o> Writer<'c, 'o> {
                 Some(key) => self.entry(key, event, value, state)?,
             },
         }
-        self.flush()
+        Ok(())
     }
 
     fn root(
@@ -990,31 +1034,37 @@ impl<'c, 'o> Writer<'c, 'o> {
         self.base + self.out.len()
     }
 
-    /// Passes the output that is final on to the sink.
-    fn flush(&mut self) -> Result<(), Error> {
-        let Some(threshold) = self.sink.as_ref().map(|sink| sink.threshold) else {
-            return Ok(());
-        };
+    /// Returns how much of the output that was not passed on is final.
+    ///
+    /// Once the start tag of the root element is final, its namespace
+    /// declarations are written.  Namespaces that are found afterwards are
+    /// declared on the elements that use them.
+    fn final_len(&mut self) -> Result<usize, Error> {
         let mut until = self.final_until();
-        if until - self.base < threshold.max(1) {
-            return Ok(());
-        }
         // the declarations of the root element are final with it
         if !self.root_declared && self.root_declarations.is_some_and(|at| at < until) {
             self.declare_root()?;
             until = self.final_until();
         }
-        let len = until - self.base;
-        (self.sink.as_mut().unwrap().write)(&self.out[..len])?;
-        self.out.drain(..len);
-        self.base = until;
-        Ok(())
+        Ok(until - self.base)
     }
 
-    /// Returns the output that was not passed on.
-    fn finish(mut self) -> Result<String, Error> {
-        self.declare_root()?;
-        Ok(self.out)
+    /// Passes the output that is final on.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    fn pass_on(&mut self, out: &mut Vec<u8>) {
+        let len = self.final_until() - self.base;
+        out.extend_from_slice(&self.out.as_bytes()[..len]);
+        self.out.drain(..len);
+        self.base += len;
+    }
+
+    /// Completes the output once the document was written, the output
+    /// that was not passed on is final afterwards.
+    fn finish(&mut self) -> Result<(), Error> {
+        if !self.stack.is_empty() || self.depth > 0 {
+            return Err(Error::new(ErrorKind::Unexpected, "incomplete document"));
+        }
+        self.declare_root()
     }
 
     /// Ends the start tag of the element that contains the next content.
@@ -1244,14 +1294,20 @@ mod tests {
 
     use super::*;
 
-    /// Serializes a value in pieces that are passed on as early as possible.
+    /// Serializes a value in pieces that are passed on as early as possible
+    /// (the driver pauses between values).
     fn pieces(config: &SerializerConfig, value: &dyn Serialize) -> Result<Vec<String>, Error> {
         let mut pieces = Vec::new();
-        config.to_pieces(value, 0, &mut |piece| {
-            pieces.push(piece.to_string());
-            Ok(())
-        })?;
-        Ok(pieces)
+        let mut driver = SerializeDriver::new(value);
+        let mut progress = None;
+        loop {
+            let mut out = Vec::new();
+            let done = config.serialize_part(&mut progress, &mut driver, &mut out, 1)?;
+            pieces.push(String::from_utf8(out).unwrap());
+            if done {
+                return Ok(pieces);
+            }
+        }
     }
 
     #[derive(Serialize)]
@@ -1298,8 +1354,7 @@ mod tests {
         assert_eq!(
             pieces(&SerializerConfig::new(), &feed()).unwrap(),
             [
-                "<Feed",
-                " id=\"1\"",
+                "<Feed id=\"1\"",
                 "><title>t</title>",
                 "<entry",
                 " n=\"1\">a",
@@ -1367,8 +1422,7 @@ mod tests {
         assert_eq!(
             pieces(&config, &feed()).unwrap(),
             [
-                "<Feed",
-                " id=\"1\"",
+                "<Feed id=\"1\"",
                 ">\n  <title>t</title>",
                 "\n  <entry",
                 " n=\"1\">a",

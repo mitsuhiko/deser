@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use deser_core::__format::{Float, format_finite};
 use deser_core::adapters::BytesFormat;
 use deser_core::ext::Number;
-use deser_core::ser::{self, SerializeDriver};
+use deser_core::ser::{self, PausableSink, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Nesting;
@@ -136,19 +136,68 @@ impl SerializerConfig {
         Ok(out)
     }
 
+    /// Creates the writer of a value which writes into the output.
+    pub(crate) fn writer(&self, out: String) -> Writer {
+        Writer {
+            config: self.clone(),
+            separate: false,
+            out,
+            key: String::new(),
+            stack: Vec::new(),
+            limit: usize::MAX,
+        }
+    }
+
+    /// Serializes (a part of) the value of a driver and appends it to the
+    /// output.
+    ///
+    /// The progress of the value is kept in `value` (see
+    /// `Encoder::encode_incremental`), `true` is returned once the value is
+    /// complete.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub(crate) fn serialize_part(
+        &self,
+        value: &mut Option<Box<Writer>>,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<bool, Error> {
+        let mut writer = value
+            .take()
+            .unwrap_or_else(|| Box::new(self.writer(String::new())));
+        // the writer writes into an empty output directly, otherwise its
+        // output is appended
+        let adopt = out.is_empty();
+        if adopt {
+            writer.out = String::from_utf8(std::mem::take(out)).unwrap();
+        }
+        // after an error the value is abandoned, its writer is dropped
+        let done = if limit == usize::MAX {
+            driver.drive(|event, state| writer.event(event, state))?;
+            true
+        } else {
+            writer.limit = limit;
+            driver.drive_until(&mut *writer)?
+        };
+        let output = std::mem::take(&mut writer.out).into_bytes();
+        if adopt {
+            *out = output;
+        } else {
+            out.extend_from_slice(&output);
+        }
+        if !done {
+            *value = Some(writer);
+        }
+        Ok(done)
+    }
+
     /// Serializes the value of a driver and appends it to the output.
     pub(crate) fn serialize_driver(
         &self,
         driver: &mut SerializeDriver<'_>,
         out: &mut String,
     ) -> Result<(), Error> {
-        let mut writer = Writer {
-            config: self,
-            separate: false,
-            out: String::new(),
-            key: String::new(),
-            stack: Vec::new(),
-        };
+        let mut writer = self.writer(String::new());
         driver.drive(|event, state| writer.event(event, state))?;
         // the parameters of more than one value are joined
         if !out.is_empty() && !writer.out.is_empty() {
@@ -277,17 +326,35 @@ enum Frame {
 }
 
 /// Writes the events of a value.
-struct Writer<'c> {
-    config: &'c SerializerConfig,
+pub(crate) struct Writer {
+    config: SerializerConfig,
     /// `true` if the next parameter needs a separator.
     separate: bool,
     out: String,
     /// The key of the current value (not encoded).
     key: String,
     stack: Vec<Frame>,
+    /// The driver is paused once the output is this long.
+    limit: usize,
 }
 
-impl Writer<'_> {
+impl PausableSink for Writer {
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Writer::event(self, event, state)
+    }
+
+    fn pause(&mut self) -> bool {
+        // the output is only appended to
+        self.out.len() >= self.limit
+    }
+}
+
+impl Writer {
     fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         match (self.stack.last_mut(), event) {
             (None, Event::MapStart(_)) => self.stack.push(Frame::Map { prefix: 0 }),

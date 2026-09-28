@@ -92,6 +92,19 @@
 //! they are read with [`Reader::read_next`] (and behaves like a `Vec`
 //! otherwise).
 //!
+//! # Writing Large Values
+//!
+//! Encoders of formats whose output can be written before the value is
+//! complete (like JSON and CBOR) also serialize values incrementally (see
+//! [`Encoder::encode_incremental`]).  [`Writer::write`] uses this if
+//! possible: once the output of a value exceeds the
+//! [buffer limit](Writer::set_buffer_limit), what was serialized so far is
+//! written and the serialization continues, which means that the memory
+//! used does not depend on the size of the values.  Values below the limit
+//! are written at once.  Output that can still change (for instance the
+//! header of a container whose length is not known upfront) is held back
+//! until it's final.
+//!
 //! # Other IO
 //!
 //! The [`DecodeBuffer`] implements the framing without doing IO itself.  The
@@ -124,7 +137,7 @@ mod encoder;
 pub use self::buffer::{DecodeBuffer, Status};
 pub use self::decoder::{Decoder, Frame, Progress};
 pub use self::elements::{ElementReader, ElementStatus, Next};
-pub use self::encoder::Encoder;
+pub use self::encoder::{Encoded, Encoder};
 use crate::Position;
 
 /// Serializes a value into a buffer with an encoder.
@@ -163,6 +176,95 @@ where
     let mut driver = SerializeDriver::new(value);
     setup(&mut driver);
     encoder.encode(state, &mut driver, buffer)
+}
+
+/// The buffer limit of writers (see [`Writer::set_buffer_limit`]).
+pub const DEFAULT_BUFFER_LIMIT: usize = 8 * 1024;
+
+/// Serializes the next piece of a value into a buffer with an encoder.
+///
+/// The buffer is cleared first.  This is used by the writers of this module
+/// and of adapters for other kinds of IO to write values in pieces: the
+/// caller writes the buffer after every call and calls again with the same
+/// driver until the value is complete ([`Encoded::Done`]).  If the encoder
+/// does not support incremental encoding (see
+/// [`Encoder::supports_incremental`]) or the limit is `usize::MAX`, the
+/// whole value is serialized at once.
+///
+/// Once a part of a value was written, the value has to be completed:
+/// if serializing or writing it fails (or the caller gives up on the value
+/// for another reason), the stream cannot continue, the state holds the
+/// progress of the abandoned value.  See [`Writer::write`].
+///
+/// ```
+/// # use deser::io::{Encoded, Encoder};
+/// # use deser::ser::{PausableSink, SerializeDriver};
+/// # use deser::{Error, Event, Serialize, State};
+/// # /// Writes `x` for every event, can stop between values.
+/// # struct Xs;
+/// # struct Sink<'a>(&'a mut Vec<u8>, usize);
+/// # impl PausableSink for Sink<'_> {
+/// #     fn event(&mut self, _: Event<'_>, _: &dyn Serialize, _: &mut State) -> Result<(), Error> {
+/// #         self.0.push(b'x');
+/// #         Ok(())
+/// #     }
+/// #     fn pause(&mut self) -> bool {
+/// #         self.0.len() >= self.1
+/// #     }
+/// # }
+/// # impl Encoder for Xs {
+/// #     type State = ();
+/// #     fn encode(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>) -> Result<(), Error> {
+/// #         driver.drive(|_, _| Ok(out.push(b'x')))
+/// #     }
+/// #     fn supports_incremental(&self) -> bool {
+/// #         true
+/// #     }
+/// #     fn encode_incremental(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>, limit: usize) -> Result<Encoded, Error> {
+/// #         Ok(if driver.drive_until(&mut Sink(out, limit))? { Encoded::Done } else { Encoded::Partial })
+/// #     }
+/// # }
+/// // `Xs` is a format which writes an `x` for every event
+/// let value: Vec<u64> = (0..10_000).collect();
+/// let mut driver = SerializeDriver::new(&value);
+/// let mut buffer = Vec::new();
+/// let mut written = 0;
+/// loop {
+///     let encoded =
+///         deser::io::encode_part(&Xs, &mut (), &mut driver, 100, &mut buffer).unwrap();
+///     // the buffer is written here
+///     assert!(buffer.len() < 1000);
+///     written += buffer.len();
+///     if encoded == Encoded::Done {
+///         break;
+///     }
+/// }
+/// assert_eq!(written, 10_002);
+/// ```
+pub fn encode_part<E>(
+    encoder: &E,
+    state: &mut E::State,
+    driver: &mut SerializeDriver<'_>,
+    limit: usize,
+    buffer: &mut Vec<u8>,
+) -> Result<Encoded, Error>
+where
+    E: Encoder + ?Sized,
+{
+    buffer.clear();
+    if limit == usize::MAX || !encoder.supports_incremental() {
+        encoder.encode(state, driver, buffer)?;
+        return Ok(Encoded::Done);
+    }
+    encoder.encode_incremental(state, driver, buffer, limit.max(1))
+}
+
+/// The error for writes after a value was abandoned while it was written.
+pub(crate) fn broken_stream() -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        "a value was only partially written, the stream cannot continue",
+    )
 }
 
 /// Reads values from a [`Read`].
@@ -452,14 +554,20 @@ impl<R: Read, D: Decoder, T: DeserializeOwned> Iterator for Iter<'_, R, D, T> {
 /// Writes values to a [`Write`].
 ///
 /// The values are serialized with an [`Encoder`] (the serializer
-/// configuration of a format).  Every value is written with a single
-/// [`write_all`](Write::write_all), wrap the writer in a
-/// [`BufWriter`](std::io::BufWriter) when writing many small values.
+/// configuration of a format).  Values are serialized into a buffer and
+/// written with [`write_all`](Write::write_all), wrap the writer in a
+/// [`BufWriter`](std::io::BufWriter) when writing many small values.  If
+/// the encoder supports it, the output of large values is written in
+/// pieces while they are serialized (see
+/// [`set_buffer_limit`](Self::set_buffer_limit)).
 pub struct Writer<W, E: Encoder> {
     writer: W,
     encoder: E,
     state: E::State,
     buffer: Vec<u8>,
+    limit: usize,
+    // a value was abandoned after a part of it was written
+    broken: bool,
 }
 
 impl<W: Write, E: Encoder> Writer<W, E> {
@@ -477,12 +585,87 @@ impl<W: Write, E: Encoder> Writer<W, E> {
             encoder,
             state,
             buffer: Vec::new(),
+            limit: DEFAULT_BUFFER_LIMIT,
+            broken: false,
         }
+    }
+
+    /// Sets how much output of a value is buffered before it's written.
+    ///
+    /// If the encoder supports it (see [`Encoder::supports_incremental`]),
+    /// the output of a value is written once it exceeds the limit, the
+    /// serialization continues after that.  This way the memory used does
+    /// not depend on the size of the values.  The default is
+    /// [`DEFAULT_BUFFER_LIMIT`] (8 KiB).  With `usize::MAX` every value is
+    /// serialized completely before it's written.
+    ///
+    /// ```
+    /// use deser::io::Writer;
+    /// # use deser::io::{Encoded, Encoder};
+    /// # use deser::ser::{PausableSink, SerializeDriver};
+    /// # use deser::{Error, Event, Serialize, State};
+    /// # /// Writes `x` for every event, can stop between values.
+    /// # struct Xs;
+    /// # struct Sink<'a>(&'a mut Vec<u8>, usize);
+    /// # impl PausableSink for Sink<'_> {
+    /// #     fn event(&mut self, _: Event<'_>, _: &dyn Serialize, _: &mut State) -> Result<(), Error> {
+    /// #         self.0.push(b'x');
+    /// #         Ok(())
+    /// #     }
+    /// #     fn pause(&mut self) -> bool {
+    /// #         self.0.len() >= self.1
+    /// #     }
+    /// # }
+    /// # impl Encoder for Xs {
+    /// #     type State = ();
+    /// #     fn encode(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>) -> Result<(), Error> {
+    /// #         driver.drive(|_, _| Ok(out.push(b'x')))
+    /// #     }
+    /// #     fn supports_incremental(&self) -> bool {
+    /// #         true
+    /// #     }
+    /// #     fn encode_incremental(&self, _: &mut (), driver: &mut SerializeDriver<'_>, out: &mut Vec<u8>, limit: usize) -> Result<Encoded, Error> {
+    /// #         Ok(if driver.drive_until(&mut Sink(out, limit))? { Encoded::Done } else { Encoded::Partial })
+    /// #     }
+    /// # }
+    /// /// Counts the writes.
+    /// struct Counter(usize);
+    ///
+    /// impl std::io::Write for Counter {
+    ///     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    ///         self.0 += 1;
+    ///         Ok(buf.len())
+    ///     }
+    ///
+    ///     fn flush(&mut self) -> std::io::Result<()> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// // `Xs` is a format which writes an `x` for every event
+    /// let mut writer = Writer::new(Counter(0), Xs);
+    /// writer.set_buffer_limit(1000);
+    /// writer.write(&vec![0; 100_000]).unwrap();
+    /// assert!(writer.get_ref().0 > 50);
+    /// ```
+    pub fn set_buffer_limit(&mut self, limit: usize) {
+        self.limit = limit;
+    }
+
+    /// Returns how much output of a value is buffered before it's written.
+    pub fn buffer_limit(&self) -> usize {
+        self.limit
     }
 
     /// Serializes a value and writes it.
     ///
-    /// If the value fails to serialize nothing is written.
+    /// If the value fails to serialize before any of it was written (which
+    /// is always the case for values whose output is below the
+    /// [buffer limit](Self::set_buffer_limit)), nothing is written and the
+    /// next value can be written.  If a value is abandoned after a part of
+    /// it was written, because it fails to serialize or a write fails, the
+    /// stream holds an incomplete value and the writer refuses to write
+    /// more values.
     pub fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
         self.write_with(value, |_| {})
     }
@@ -495,17 +678,33 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        // the state is only updated if the value was serialized, if the write
-        // fails the stream is broken anyways
-        encode(
-            &self.encoder,
-            &mut self.state,
-            value,
-            setup,
-            &mut self.buffer,
-        )?;
-        self.writer.write_all(&self.buffer)?;
-        Ok(())
+        if self.broken {
+            return Err(broken_stream());
+        }
+        let mut driver = SerializeDriver::new(value);
+        setup(&mut driver);
+        loop {
+            // the state is only updated if the value was serialized, if the
+            // write fails the stream is broken anyways
+            let encoded = encode_part(
+                &self.encoder,
+                &mut self.state,
+                &mut driver,
+                self.limit,
+                &mut self.buffer,
+            )?;
+            if encoded == Encoded::Partial {
+                // cleared once the rest of the value was written
+                self.broken = true;
+            }
+            if !self.buffer.is_empty() {
+                self.writer.write_all(&self.buffer)?;
+            }
+            if encoded == Encoded::Done {
+                self.broken = false;
+                return Ok(());
+            }
+        }
     }
 
     /// Flushes the underlying writer.

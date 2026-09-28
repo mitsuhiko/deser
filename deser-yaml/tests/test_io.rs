@@ -148,3 +148,62 @@ fn test_writer() {
     deser_yaml::to_writer(&mut out, &"x").unwrap();
     assert_eq!(out, b"x\n");
 }
+
+#[test]
+fn test_incremental_writer() {
+    use std::collections::BTreeMap;
+
+    use deser_yaml::{FlowPolicy, Indent};
+
+    #[derive(deser::Serialize)]
+    struct Service {
+        image: String,
+        ports: Vec<u16>,
+        env: BTreeMap<String, String>,
+        command: Option<String>,
+        script: String,
+        empty: Vec<u32>,
+    }
+
+    let services: Vec<Service> = (0..40)
+        .map(|idx| Service {
+            image: format!("image-{idx}"),
+            ports: (0..idx as u16 % 7).map(|x| 8000 + x).collect(),
+            env: (0..idx % 4)
+                .map(|x| (format!("VAR_{x}"), format!("value {x}: with colon")))
+                .collect(),
+            command: (idx % 2 == 0).then(|| "run --fast".into()),
+            script: "line one\nline two\n".into(),
+            empty: vec![],
+        })
+        .collect();
+    let nested: Vec<Vec<Vec<u32>>> = (0..30)
+        .map(|x| (0..x % 5).map(|y| (0..y).collect()).collect())
+        .collect();
+    let values: [&dyn deser::Serialize; 3] = [&services, &nested, &"scalar"];
+    let configs = [
+        SerializerConfig::new(),
+        SerializerConfig::new().flow(FlowPolicy::LeafIfFits(30)),
+        SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80)),
+        SerializerConfig::new().indent(Indent::None),
+        SerializerConfig::new()
+            .end_documents(true)
+            .version_directive(true),
+    ];
+    for config in &configs {
+        for limit in [1, 7, 100, usize::MAX] {
+            let mut writer = Writer::new(Vec::new(), config);
+            writer.set_buffer_limit(limit);
+            let mut expected = deser_yaml::Serializer::with_config(config);
+            for value in values {
+                writer.write(value).unwrap();
+                expected.serialize(value).unwrap();
+            }
+            assert_eq!(
+                String::from_utf8(writer.into_inner()).unwrap(),
+                expected.finish(),
+                "limit {limit}"
+            );
+        }
+    }
+}

@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
     Begin, BeginKind, Boxed, Chunk, ContainerShape, FIELDS_END, IndexedSeq, IndexedStruct,
-    PlainSink, StructField,
+    PLAIN_BUDGET, PlainSink, StructField,
 };
 use crate::{Atom, Event, Serialize, State};
 
@@ -203,12 +203,34 @@ trait Callback {
     /// `true` if the callback receives the values of the events.
     const DESCRIBED: bool;
 
+    /// `true` if the callback can pause the driver (see
+    /// [`SerializeDriver::drive_until`]).
+    ///
+    /// Plain values are only emitted at once if they fit into the budget
+    /// (see `PLAIN_BUDGET`), large plain sequences are emitted in pieces
+    /// so that the driver can pause in between.
+    const PAUSABLE: bool = false;
+
+    /// `true` if the fast paths for plain values are used.
+    ///
+    /// Callbacks that describe values need to see every value.
+    const FAST: bool = !Self::DESCRIBED;
+
+    /// `true` if large plain sequences are emitted at once.
+    const UNBOUNDED: bool = Self::FAST && !Self::PAUSABLE;
+
     fn call(
         &mut self,
         event: Event<'_>,
         value: &dyn Serialize,
         state: &mut State,
     ) -> Result<(), Error>;
+
+    /// Returns `true` if the driver should pause before the next value.
+    #[inline(always)]
+    fn pause(&mut self) -> bool {
+        false
+    }
 }
 
 /// A callback that does not receive values.
@@ -252,6 +274,62 @@ impl<S: EventSink> Callback for Sink<'_, S> {
         state: &mut State,
     ) -> Result<(), Error> {
         self.0.event(event, state)
+    }
+}
+
+/// Receives the events of [`SerializeDriver::drive_until`].
+///
+/// This is like the callback of [`drive_described`](SerializeDriver::drive_described)
+/// but the sink can pause the driver: before the next value is serialized
+/// the driver asks the sink with [`pause`](Self::pause) if it should stop.
+/// This is used to write the output of large values in pieces, for
+/// instance to wait until the output that was produced so far was written
+/// to a socket.
+pub trait PausableSink {
+    /// `true` if the sink receives the values of the events.
+    ///
+    /// Otherwise the value passed to [`event`](Self::event) describes
+    /// nothing.  See [`drive_described`](SerializeDriver::drive_described).
+    const DESCRIBED: bool = false;
+
+    /// Receives an event.
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error>;
+
+    /// Returns `true` if the driver should pause.
+    ///
+    /// This is invoked between values: before the values in maps and
+    /// sequences (not the keys of structs) and between the pieces of large
+    /// values that only hold atoms.  After the first value of a call to
+    /// [`drive_until`](SerializeDriver::drive_until) returns `true`, the
+    /// call returns.
+    fn pause(&mut self) -> bool;
+}
+
+/// A callback that delivers to a pausable sink.
+struct Pausable<'s, S>(&'s mut S);
+
+impl<S: PausableSink> Callback for Pausable<'_, S> {
+    const DESCRIBED: bool = S::DESCRIBED;
+    const PAUSABLE: bool = true;
+
+    #[inline(always)]
+    fn call(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.0.event(event, value, state)
+    }
+
+    #[inline(always)]
+    fn pause(&mut self) -> bool {
+        self.0.pause()
     }
 }
 
@@ -449,7 +527,7 @@ impl<'a> SerializeDriver<'a> {
         F: FnMut(Event<'_>, &mut State) -> Result<(), Error>,
     {
         match self.drive_impl(Plain(f)) {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err(err) => Err(self.state.attach_error_context(err)),
         }
     }
@@ -459,7 +537,68 @@ impl<'a> SerializeDriver<'a> {
     #[inline]
     pub fn drive_sink<S: EventSink>(&mut self, sink: &mut S) -> Result<(), Error> {
         match self.drive_impl(Sink(sink)) {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
+            Err(err) => Err(self.state.attach_error_context(err)),
+        }
+    }
+
+    /// Drives the serialization until it's complete or the sink pauses it.
+    ///
+    /// Returns `true` once the serialization is complete.  If the sink
+    /// paused the driver (see [`PausableSink::pause`]), `false` is returned
+    /// and the next call continues where this one stopped.  At least one
+    /// value is serialized per call.
+    ///
+    /// Unlike [`drive`](Self::drive), which emits values that only hold
+    /// atoms (like a `Vec<u64>`) at once, the driver emits such values in
+    /// pieces of a few hundred atoms and can pause in between.  The amount
+    /// of events between two pauses only depends on the size of the atoms,
+    /// not on the size of the value.
+    ///
+    /// ```
+    /// # use deser::ser::{PausableSink, SerializeDriver};
+    /// # use deser::{Error, Event, Serialize, State};
+    /// /// Collects events and pauses once it holds 100.
+    /// struct Collect(Vec<Event<'static>>);
+    ///
+    /// impl PausableSink for Collect {
+    ///     fn event(
+    ///         &mut self,
+    ///         event: Event<'_>,
+    ///         _value: &dyn Serialize,
+    ///         _state: &mut State,
+    ///     ) -> Result<(), Error> {
+    ///         self.0.push(event.to_static());
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn pause(&mut self) -> bool {
+    ///         self.0.len() >= 100
+    ///     }
+    /// }
+    ///
+    /// # fn do_it() -> Result<(), deser::Error> {
+    /// let value: Vec<u64> = (0..10_000).collect();
+    /// let mut driver = SerializeDriver::new(&value);
+    /// let mut sink = Collect(Vec::new());
+    /// let mut events = 0;
+    /// loop {
+    ///     let done = driver.drive_until(&mut sink)?;
+    ///     // the events so far are processed while the driver is paused
+    ///     assert!(sink.0.len() < 1000);
+    ///     events += sink.0.len();
+    ///     sink.0.clear();
+    ///     if done {
+    ///         break;
+    ///     }
+    /// }
+    /// assert_eq!(events, 10_002);
+    /// # Ok(()) } do_it().unwrap();
+    /// ```
+    #[inline]
+    pub fn drive_until<S: PausableSink>(&mut self, sink: &mut S) -> Result<bool, Error> {
+        match self.drive_impl(Pausable(sink)) {
+            Ok(done) => Ok(done),
             Err(err) => Err(self.state.attach_error_context(err)),
         }
     }
@@ -499,7 +638,7 @@ impl<'a> SerializeDriver<'a> {
         F: FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error>,
     {
         match self.drive_impl(Described(f)) {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err(err) => Err(self.state.attach_error_context(err)),
         }
     }
@@ -539,8 +678,9 @@ impl<'a> SerializeDriver<'a> {
         Next::new(&mut self.layers, &mut self.state, f, value).emit(event)
     }
 
+    /// Drives the serialization, returns `false` if the callback paused it.
     #[inline(always)]
-    fn drive_impl<C: Callback>(&mut self, mut f: C) -> Result<(), Error> {
+    fn drive_impl<C: Callback>(&mut self, mut f: C) -> Result<bool, Error> {
         // `next` might have been used before.
         self.detach_delivered_event_data();
         if let Some((held, true)) = self.needs_finish.take() {
@@ -551,7 +691,17 @@ impl<'a> SerializeDriver<'a> {
             self.drive_value(value, false, &mut f)?;
         }
 
+        // at least one value is serialized per call
+        let mut first = true;
         while let Some(frame) = self.stack.last_mut() {
+            // the state is complete between the iterations, the driver can
+            // continue from here in the next call
+            if C::PAUSABLE {
+                if !first && f.pause() {
+                    return Ok(false);
+                }
+                first = false;
+            }
             // SAFETY: values produced by the emitter borrow from it.  The
             // frame stays on the stack until all of them are dropped.
             let emitter = unsafe { &mut *(&mut frame.emitter as *mut Emitter) };
@@ -561,9 +711,10 @@ impl<'a> SerializeDriver<'a> {
                     continue;
                 }
                 Emitter::IndexedStruct(fields, index) => {
-                    if !C::DESCRIBED {
+                    if C::FAST {
                         *index = fields.emit_plain_fields(
                             *index,
+                            C::PAUSABLE,
                             &mut PlainDelivery {
                                 driver: self,
                                 f: &mut f,
@@ -594,6 +745,23 @@ impl<'a> SerializeDriver<'a> {
                     }
                 }
                 Emitter::IndexedSeq(seq, index) => {
+                    // large plain sequences are emitted in pieces
+                    if C::FAST && C::PAUSABLE {
+                        // the sequence might be a key, its values are not
+                        self.state.is_map_key = false;
+                        let next = seq.emit_plain_chunk(
+                            *index,
+                            PLAIN_BUDGET,
+                            &mut PlainDelivery {
+                                driver: self,
+                                f: &mut f,
+                            },
+                        )?;
+                        if next != *index {
+                            *index = next;
+                            continue;
+                        }
+                    }
                     let element = seq.element(*index, &mut self.state)?;
                     *index += 1;
                     match element {
@@ -645,7 +813,7 @@ impl<'a> SerializeDriver<'a> {
             self.drive_value(unsafe { Held::new(value.0) }, value.1, &mut f)?;
         }
 
-        Ok(())
+        Ok(true)
     }
 
     /// Removes a forwarding frame from the top of the stack.
@@ -715,8 +883,13 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         } = serializable.__private_begin(&mut self.state)?;
         let kind = match kind {
-            // callbacks that describe values need to see every value
-            BeginKind::Plain(plain) if !C::DESCRIBED => {
+            // callbacks that describe values need to see every value,
+            // large plain values are driven on their own for callbacks that
+            // pause
+            BeginKind::Plain(plain)
+                if C::UNBOUNDED
+                    || (C::FAST && plain.__private_plain_cost(PLAIN_BUDGET).is_some()) =>
+            {
                 return plain.__private_emit_plain(&mut PlainDelivery { driver: self, f });
             }
             BeginKind::Plain(plain) => plain_chunk(plain, &mut self.state)?,
@@ -740,7 +913,7 @@ impl<'a> SerializeDriver<'a> {
                 (Emitter::Seq(emitter), Event::SeqStart(shape))
             }
             // callbacks that describe values need to see every value
-            BeginKind::Struct(fields) if !C::DESCRIBED => {
+            BeginKind::Struct(fields) if C::FAST => {
                 // an owned value is dropped here, not in the callee where
                 // `fields` (which borrows from it) is an argument.
                 let mut value = Some(value);
@@ -751,7 +924,11 @@ impl<'a> SerializeDriver<'a> {
             BeginKind::Struct(fields) => {
                 (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
             }
-            BeginKind::Seq(seq) if !C::DESCRIBED => {
+            // large sequences are emitted in pieces for callbacks that pause
+            BeginKind::Seq(seq)
+                if C::UNBOUNDED
+                    || (C::FAST && serializable.__private_plain_cost(PLAIN_BUDGET).is_some()) =>
+            {
                 // see above
                 let mut value = Some(value);
                 let rv = self.drive_indexed_seq(&mut value, seq, shape, f);
@@ -796,7 +973,8 @@ impl<'a> SerializeDriver<'a> {
         self.state.depth += 1;
         self.deliver(f, Event::MapStart(shape), serializable)?;
         self.state.is_map_key = false;
-        let index = fields.emit_plain_fields(0, &mut PlainDelivery { driver: self, f })?;
+        let index =
+            fields.emit_plain_fields(0, C::PAUSABLE, &mut PlainDelivery { driver: self, f })?;
         if index == FIELDS_END {
             self.state.depth -= 1;
             self.deliver(f, Event::MapEnd, serializable)

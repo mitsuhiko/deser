@@ -15,7 +15,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use deser_core::hints::Layout;
-use deser_core::{Atom, Error, ErrorKind, Event, State};
+use deser_core::ser::PausableSink;
+use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::ser::{Indent, Output};
 
@@ -49,11 +50,16 @@ pub(crate) struct PrettyWriter {
     is_key: bool,
     /// The offset of the start of the current line.
     line_start: usize,
+    /// The number of characters of the current line before `line_start`
+    /// that were passed on already (see `take_output`).
+    line_offset: usize,
     attempt: Option<Attempt>,
     /// The offsets of the entries of the attempt (after their separators).
     entries: Vec<usize>,
     /// A buffer for the text of aborted attempts.
     scratch: String,
+    /// The output is passed on once it's this long (see `PausableSink`).
+    pub(crate) limit: usize,
 }
 
 impl PrettyWriter {
@@ -71,14 +77,35 @@ impl PrettyWriter {
             stack: Vec::new(),
             is_key: false,
             line_start: 0,
+            line_offset: 0,
             attempt: None,
             entries: Vec::new(),
             scratch: String::new(),
+            limit: usize::MAX,
         }
     }
 
     pub fn finish(self) -> String {
         self.ser.out.into_string()
+    }
+
+    /// Returns the output written so far and continues with an empty
+    /// output.
+    ///
+    /// This is only done while no container is written on a single line
+    /// tentatively (see `pause`), the offsets of the attempt are not moved.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub fn take_output(&mut self) -> Vec<u8> {
+        debug_assert!(self.attempt.is_none());
+        self.line_offset += self.ser.out.as_str()[self.line_start..].chars().count();
+        self.line_start = 0;
+        self.ser.out.take()
+    }
+
+    /// Returns the output buffer.
+    #[cfg_attr(not(feature = "io"), allow(dead_code))]
+    pub fn output(&mut self) -> &mut crate::buf::Buffer {
+        &mut self.ser.out
     }
 
     pub fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
@@ -144,9 +171,10 @@ impl PrettyWriter {
             self.entries.clear();
             self.attempt = Some(Attempt {
                 start,
-                column: self.ser.out.as_str()[self.line_start..start]
-                    .chars()
-                    .count(),
+                column: self.line_offset
+                    + self.ser.out.as_str()[self.line_start..start]
+                        .chars()
+                        .count(),
                 checked: start,
             });
         }
@@ -248,6 +276,7 @@ impl PrettyWriter {
         const TABS: &str = "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
         self.ser.write_char('\n');
         self.line_start = self.ser.out.len();
+        self.line_offset = 0;
         let (chunk, mut len) = match self.indent {
             Indent::Spaces(width) => (SPACES, width * self.stack.len()),
             Indent::Tab => (TABS, self.stack.len()),
@@ -258,5 +287,23 @@ impl PrettyWriter {
             self.ser.write_str(&chunk[..n]);
             len -= n;
         }
+    }
+}
+
+impl PausableSink for PrettyWriter {
+    #[inline]
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        _value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        PrettyWriter::event(self, event, state)
+    }
+
+    #[inline]
+    fn pause(&mut self) -> bool {
+        // the output of an attempt can still change
+        self.attempt.is_none() && self.ser.out.len() >= self.limit
     }
 }

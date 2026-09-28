@@ -13,8 +13,13 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-xml"
 autotests = false
 
+[features]
+default = ["io"]
+# reading and writing documents from and to streams (with `deser::io`)
+io = ["deser-core/io"]
+
 [dependencies]
-deser-core = { version = "0.8.0", path = "../deser-core" }
+deser-core = { version = "0.8.0", path = "../deser-core", default-features = false, features = ["std"] }
 quick-xml = "0.42.0"
 
 [dev-dependencies]

@@ -161,7 +161,7 @@ mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig};
 #[cfg(feature = "io")]
-pub use self::io::{from_reader, to_writer};
+pub use self::io::{WriterState, from_reader, to_writer};
 pub use self::ser::{ArrayFormat, Serializer, SerializerConfig, to_string};
 
 use deser_core::Error;

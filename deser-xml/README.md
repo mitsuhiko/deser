@@ -42,5 +42,9 @@ let xml = deser_xml::to_string(&feed).unwrap();
 * Parsing is done by [quick-xml](https://crates.io/crates/quick-xml), the
   events are passed on while the document is parsed and text is borrowed
   from the input where possible.
+* With the `io` feature (enabled by default) documents are read with
+  `from_reader` and written with `to_writer` (or `deser::io`).  The output
+  is written while the value is serialized, elements are held back only
+  until no more attributes can come for them.
 
 This is an early version.
