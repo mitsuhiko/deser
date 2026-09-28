@@ -8,7 +8,7 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is a serialization library for Rust for self describing formats such as
-JSON, YAML, TOML, CBOR, MessagePack, CSV and query strings.  It takes the user experience of
+JSON, YAML, TOML, CBOR, MessagePack, XML, CSV and query strings.  It takes the user experience of
 serde, the problems that years of running serde in production turned up and the
 Rust of today, and tries to solve them with a different architecture.  If you
 know serde you will feel at home: you derive `Serialize` and `Deserialize` on
@@ -41,6 +41,7 @@ The same type works unchanged with
 [`deser-toml`](https://docs.rs/deser-toml),
 [`deser-cbor`](https://docs.rs/deser-cbor),
 [`deser-msgpack`](https://docs.rs/deser-msgpack),
+[`deser-xml`](https://docs.rs/deser-xml),
 [`deser-urlencoded`](https://docs.rs/deser-urlencoded) and (as long as it's
 flat) [`deser-csv`](https://docs.rs/deser-csv).  Deriving requires the `derive`
 feature, which is not enabled by default:
@@ -270,6 +271,8 @@ Every format has the same pieces:
   MessagePack are parsed while the input arrives, and a `deser::Streamed<T>` sequence
   hands out its elements one by one.
   [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
+  XML does not support streams yet and only has `from_str`, `from_slice`,
+  `to_string` and a `Deserializer`.
 * Without the `std` feature (enabled by default) deser and the JSON, JSONC,
   JSON5, CBOR, MessagePack and CSV crates only need `alloc` and work on
   targets without an operating system (see
@@ -318,7 +321,7 @@ while let Some(event) = events.read::<Event>()? {
   atom which the type it is deserialized into parses.  This keeps working
   in flattened structs and tagged enums.
 * **Multimaps:** formats whose keys can repeat (query strings, the
-  environment, CSV headers) emit multimaps.  Fields that are collections
+  environment, CSV headers, XML elements) emit multimaps.  Fields that are collections
   (`Vec<T>`, sets, ...) collect every occurrence of their key, also if
   other keys are between them, a key given once is a collection of one
   value and a missing key an empty collection.  Other fields follow the
@@ -350,12 +353,12 @@ source of a whole class of runtime failures and surprises in serde (see
 
 ## Known Limitations
 
-The current design of this system relies on dynamic dispatch and heap allocated
-sinks and emitters for many compound values.  This is the consequence of a
+The current design of this system relies on dynamic dispatch and separately
+allocated sinks and emitters for many compound values.  This is the consequence of a
 certain level of flexibility and the desire to not use the call stack for
 recursion.  Deser works around most of this overhead (for instance derived
-structs and vectors serialize without allocations, and sinks are allocated
-in an arena of the deserialization).  Compared to serde based libraries in the
+structs and vectors serialize without allocations, and sinks and emitters
+are allocated in an arena instead of one by one).  Compared to serde based libraries in the
 [included benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)
 YAML and TOML are two to four times as fast and CBOR deserializes faster
 but serializes slower.  JSON serializes faster but deserializes slower on
@@ -423,7 +426,8 @@ modelled after `miniserde`.
 
 Deser needs unsafe code internally, primarily to erase lifetimes in the drivers
 which keep the chain of borrowed sinks and emitters on the heap rather than the
-call stack.  The unsafe code is documented, has a dedicated test suite that
+call stack, and for the arena these sinks and emitters are allocated in.  The
+unsafe code is documented, has a dedicated test suite that
 exercises it (partial drops, errors, panics, deep nesting) and the test suites of
 all crates are run under [miri](https://github.com/rust-lang/miri) with both
 stacked and tree borrows (`make miri-test`).  This does not guarantee soundness

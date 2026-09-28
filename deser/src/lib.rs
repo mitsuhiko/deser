@@ -9,7 +9,7 @@
 //! self describing formats such as bincode.
 //!
 //! With the `derive` feature it supports deriving structures that can be
-//! serialized and derserialized automatically:
+//! serialized and deserialized automatically:
 //!
 #![cfg_attr(
     feature = "derive",
