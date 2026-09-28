@@ -118,6 +118,7 @@ pub trait IndexedStruct: Sync {
 /// Derived structs implement
 /// [`emit_plain_fields`](IndexedStruct::emit_plain_fields) with this, it
 /// exists once per type of field rather than once per field.
+#[cfg(feature = "derive")]
 #[inline]
 pub fn emit_plain_field<T: Serialize>(
     value: &T,
