@@ -1941,6 +1941,17 @@ impl VariantName {
         }
     }
 
+    /// Returns an expression for the name as `UnitName` (see
+    /// `UnitVariants`).
+    pub fn unit_name(&self) -> TokenStream {
+        match self {
+            VariantName::Str(name) => quote! { __deser::__derive::UnitName::Str(#name) },
+            VariantName::U64(value) => quote! { __deser::__derive::UnitName::U64(#value) },
+            VariantName::I64(value) => quote! { __deser::__derive::UnitName::I64(#value) },
+            VariantName::Bool(value) => quote! { __deser::__derive::UnitName::Bool(#value) },
+        }
+    }
+
     /// Returns an expression for a serialize handle of the name.
     pub fn ser_handle(&self) -> TokenStream {
         let value = match self {

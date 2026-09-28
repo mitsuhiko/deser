@@ -6,10 +6,15 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::vec::Vec;
 
-use crate::State;
 use crate::error::{Error, ErrorKind};
+use crate::event::{Atom, ContainerShape};
+use crate::ser::begin::Begin;
 use crate::ser::flatten::FlattenedStruct;
-use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter};
+use crate::ser::{
+    Chunk, Describe, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter, Variant,
+    VariantKind, VariantRepr,
+};
+use crate::{State, Text};
 
 /// Serializes a map with a single entry.
 ///
@@ -350,4 +355,60 @@ pub fn skipped_variant(type_name: &str, variant: &str) -> Error {
             variant, type_name
         ),
     )
+}
+
+/// The name of a variant of a unit enum (see [`UnitVariants`]).
+pub enum UnitName {
+    Str(&'static str),
+    U64(u64),
+    I64(i64),
+    Bool(bool),
+    /// The variant cannot be serialized, this is its name in Rust.
+    Skipped(&'static str),
+}
+
+/// The variants of a unit enum of the derive (an enum with only unit
+/// variants).
+///
+/// The derive generates this as a constant together with a function that
+/// returns the index of a variant, everything else exists once for all
+/// unit enums.
+pub struct UnitVariants {
+    /// The name of the enum.
+    pub type_name: &'static str,
+    /// The names of the variants as they are described.
+    pub names: &'static [&'static str],
+    /// The names of the variants as they are serialized.
+    pub atoms: &'static [UnitName],
+}
+
+/// Serializes the variant of a unit enum by index.
+#[inline]
+pub fn serialize_unit(variants: &UnitVariants, index: usize) -> Result<Chunk<'static>, Error> {
+    Ok(Chunk::Atom(match variants.atoms[index] {
+        UnitName::Str(name) => Atom::Str(Text::borrowed(name)),
+        UnitName::U64(value) => Atom::U64(value),
+        UnitName::I64(value) => Atom::I64(value),
+        UnitName::Bool(value) => Atom::Bool(value),
+        UnitName::Skipped(variant) => return Err(skipped_variant(variants.type_name, variant)),
+    }))
+}
+
+/// Begins the serialization of the variant of a unit enum by index.
+pub fn begin_unit(variants: &UnitVariants, index: usize) -> Result<Begin<'static>, Error> {
+    Ok(Begin::chunk(
+        serialize_unit(variants, index)?,
+        ContainerShape::new(),
+        false,
+    ))
+}
+
+/// Describes the variant of a unit enum by index.
+pub fn describe_unit(d: &mut dyn Describe, variants: &UnitVariants, index: usize) {
+    d.variant(&Variant::new(
+        variants.type_name,
+        variants.names[index],
+        VariantKind::Unit,
+        VariantRepr::External,
+    ));
 }

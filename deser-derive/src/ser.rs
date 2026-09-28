@@ -478,71 +478,56 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
     let (var_idents, attrs) = crate::enums::unit_variants(enumeration)?;
     let type_name = container_attrs.container_name();
     let mut names = Vec::with_capacity(attrs.len());
-    let mut chunks = Vec::with_capacity(attrs.len());
-    // if all variants are named by strings, the atom is built once and only
-    // the name is matched
-    let mut all_str = true;
-    for x in &attrs {
+    let mut atoms = Vec::with_capacity(attrs.len());
+    let mut index_arms = Vec::with_capacity(attrs.len());
+    for (index, x) in attrs.iter().enumerate() {
         let name = x.name(&container_attrs);
         names.push(name.str_expr());
-        all_str &= name.as_str().is_some() && !x.skip_serializing();
-        chunks.push(if x.skip_serializing() {
+        atoms.push(if x.skip_serializing() {
             let variant = x.variant().ident.to_string();
-            quote! {
-                return __deser::__derive::Err(
-                    __deser::__derive::skipped_variant(#type_name, #variant)
-                )
-            }
+            quote! { __deser::__derive::UnitName::Skipped(#variant) }
         } else {
-            let atom = name.atom();
-            quote! { __deser::ser::Chunk::Atom(#atom) }
+            name.unit_name()
         });
+        let var_ident = var_idents[index];
+        index_arms.push(quote! { #ident::#var_ident => #index, });
     }
-    let serialize_body = if all_str {
-        quote! {
-            __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Str(
-                __deser::Text::borrowed(match *self {
-                    #(
-                        #ident::#var_idents => #names,
-                    )*
-                })
-            )))
-        }
-    } else {
-        quote! {
-            __deser::__derive::Ok(match *self {
-                #(
-                    #ident::#var_idents => { #chunks }
-                )*
-            })
-        }
-    };
-    let begin_without_finish = begin_without_finish();
 
+    // Unit enums only generate the names and a function which returns the
+    // index of a variant, the rest exists once for all types.
     let ser_trait = crate::forward::serialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
+            const __VARIANTS: __deser::__derive::UnitVariants = __deser::__derive::UnitVariants {
+                type_name: #type_name,
+                names: &[#(#names),*],
+                atoms: &[#(#atoms),*],
+            };
+
+            fn __index(__value: &#ident) -> usize {
+                match *__value {
+                    #(#index_arms)*
+                }
+            }
+
             #[automatically_derived]
             impl #ser_trait for #ident {
-                #begin_without_finish
+                #[inline]
+                fn __private_begin(
+                    &self,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<__deser::__derive::Begin<'_>> {
+                    __deser::__derive::begin_unit(&__VARIANTS, __index(self))
+                }
 
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                    __d.variant(&__deser::ser::Variant::new(
-                        #type_name,
-                        match *self {
-                            #(
-                                #ident::#var_idents => #names,
-                            )*
-                        },
-                        __deser::ser::VariantKind::Unit,
-                        __deser::ser::VariantRepr::External,
-                    ));
+                    __deser::__derive::describe_unit(__d, &__VARIANTS, __index(self))
                 }
 
                 fn serialize(&self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
                 {
-                    #serialize_body
+                    __deser::__derive::serialize_unit(&__VARIANTS, __index(self))
                 }
             }
         };

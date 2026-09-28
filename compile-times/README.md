@@ -38,8 +38,9 @@ is a library, in a binary only the code that is used would be compiled.
   derive macros) and the program.
 * Release builds of derived code are twice as fast as with serde but
   still 2.4 times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 230k lines of LLVM IR
+  3.1s, with far fewer features).  deser generates 200k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
+  These times are from before unit enums became smaller (230k lines).
   The frontend (`check`) spends most of its time type and borrow checking
   the derived code, the expanded library has 48k lines (serde 71k,
   miniserde 22k).
@@ -50,10 +51,18 @@ is a library, in a binary only the code that is used would be compiled.
   by index and `finish`).  This costs an indirect call per field, which
   makes deserializing structs 2%-3% slower than with a sink per struct
   (up to 6% for Twitter in MessagePack) but made the derived code a
-  quarter smaller and release builds 1.4 times as fast.  Unit enums share
-  one sink too.  Plain fields are emitted by a helper that exists once
-  per type of field (`emit_plain_field`), emitting them through trait
-  objects instead makes serializing structs 6% slower.
+  quarter smaller and release builds 1.4 times as fast.  Plain fields are
+  emitted by a helper that exists once per type of field
+  (`emit_plain_field`), emitting them through trait objects instead makes
+  serializing structs 6% slower.
+* Unit enums only generate the lookup of their names, two functions
+  that set a variant by index and a function that returns the index of a
+  variant, with constant tables of the names (`UnitEnum`,
+  `UnitVariants`).  Everything else is in `deser-core`: 220 instead of
+  520 lines of IR for three variants, 60 of them `emit_plain_field`.
+  Helpers in `deser-core` that are `#[inline]` are inlined into the
+  derived code before LLVM sees it (MIR inlining) if they are small, so
+  those that are called from every type are not `#[inline]`.
 
 ## Areas of Interest
 
@@ -66,12 +75,13 @@ is a library, in a binary only the code that is used would be compiled.
   per struct, `derive_struct` builds it before it knows whether it's
   needed.
 * **`finish`** of derived structs is the largest function of the
-  derived code (17% of the IR, about 50 lines per field).  Taking the
+  derived code (20% of the IR, about 50 lines per field).  Taking the
   values with helpers, checking the required fields by reference first or
   computing the missing fields in a separate function all end up with
   about the same IR once the helpers are inlined.
-* **Unit enums** take 18% of the IR (410 lines for three variants), about
-  half of it serialization which is not generic.
+* **Unit enums** are not plain (see `PlainSink`) although they
+  serialize as an atom, `emit_plain_field` exists for them without ever
+  emitting anything.  Matching their names takes about 15 lines per name.
 * **Updates** (`deserialize_update`) are implemented by every struct even
   if they are not used, as `UpdateFields` (1.4% of the IR).
 * **Every type** costs something even if its derived code is small: its

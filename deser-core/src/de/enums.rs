@@ -1237,6 +1237,126 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
     }
 }
 
+/// A unit enum of the derive (an enum with only unit variants).
+///
+/// The derive generates this as a constant together with the lookup of
+/// the names and the functions that set a variant by its index, everything
+/// else exists once for all unit enums.
+pub struct UnitEnum {
+    /// Looks up the index of a variant by name.
+    pub lookup: fn(Tag<'_>) -> Option<usize>,
+    /// The names of the variants that can be deserialized (for errors).
+    pub names: &'static [&'static str],
+    /// What is expected in errors.
+    pub expecting: &'static str,
+    /// The index of the variant for unknown names.
+    pub other: Option<usize>,
+}
+
+/// Returns the index of the variant of a unit enum for an atom.
+///
+/// See [`unit_variant`].
+#[inline]
+pub fn unit_enum_index(atom: Atom<'_>, info: &UnitEnum) -> Result<usize, Error> {
+    unit_variant(&atom, info.lookup, info.names, info.expecting, info.other)
+}
+
+/// A function that sets a value to the variant of a unit enum by index.
+pub type VariantSetter<T> = fn(&mut T, usize);
+
+/// [`VariantSetter`] with the type of the value erased.
+type ErasedVariantSetter = fn(NonNull<()>, usize);
+
+/// Erases the type of the target of a [`VariantSetter`].
+#[inline]
+fn erase_setter<T>(target: &mut T, set: VariantSetter<T>) -> (NonNull<()>, ErasedVariantSetter) {
+    // SAFETY: `&mut T` and `NonNull<()>` are ABI compatible (both are
+    // pointers to sized types), and the setter is only ever called with
+    // the target which is a valid `&mut T`.
+    let set = unsafe { core::mem::transmute::<VariantSetter<T>, ErasedVariantSetter>(set) };
+    (NonNull::from(target).cast(), set)
+}
+
+/// Sets the target to the variant of a unit enum for an atom.
+///
+/// This is how the fields of structs deserialize atoms into unit enums
+/// (without a sink).
+#[inline]
+pub fn unit_enum_atom_into<T>(
+    target: &mut T,
+    set: VariantSetter<T>,
+    atom: Atom<'_>,
+    info: &UnitEnum,
+) -> Result<(), Error> {
+    let (target, set) = erase_setter(target, set);
+    unit_enum_set(target, set, atom, info)
+}
+
+/// Sets the target to the variant of a unit enum for an atom.
+#[inline]
+fn unit_enum_set(
+    target: NonNull<()>,
+    set: ErasedVariantSetter,
+    atom: Atom<'_>,
+    info: &UnitEnum,
+) -> Result<(), Error> {
+    let index = unit_enum_index(atom, info)?;
+    set(target, index);
+    Ok(())
+}
+
+/// The sink of unit enums.
+///
+/// Unit enums of the derive use this for their sinks (to deserialize and
+/// to update them), all they have to generate is the lookup and the
+/// function that sets a variant.  The sink exists once for all types.
+struct UnitEnumSink<'a> {
+    target: NonNull<()>,
+    set: ErasedVariantSetter,
+    info: &'static UnitEnum,
+    _marker: PhantomData<&'a mut ()>,
+}
+
+// SAFETY: the sink only allows the setter to mutate the target (a
+// `&'a mut T` with `T: Send`, see `unit_enum_sink`).
+unsafe impl Send for UnitEnumSink<'_> {}
+
+/// Creates the sink of a unit enum which sets the target with the setter.
+pub fn unit_enum_sink<'a, 'de, T: Send + 'a>(
+    target: &'a mut T,
+    set: VariantSetter<T>,
+    info: &'static UnitEnum,
+) -> SinkHandle<'a, 'de> {
+    // the setter is only ever called with the target which is a valid
+    // `&'a mut T` for the lifetime of the sink
+    let (target, set) = erase_setter(target, set);
+    unit_enum_handle(target, set, info)
+}
+
+/// Creates the sink of [`unit_enum_sink`], this exists once for all types.
+fn unit_enum_handle<'a, 'de>(
+    target: NonNull<()>,
+    set: ErasedVariantSetter,
+    info: &'static UnitEnum,
+) -> SinkHandle<'a, 'de> {
+    SinkHandle::boxed(UnitEnumSink {
+        target,
+        set,
+        info,
+        _marker: PhantomData,
+    })
+}
+
+impl<'de> Sink<'de> for UnitEnumSink<'_> {
+    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
+        unit_enum_set(self.target, self.set, atom, self.info)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.info.expecting)
+    }
+}
+
 /// A function that sets a value from an atom.
 pub type AtomSetter<T> = for<'x> fn(&mut T, Atom<'x>, &mut State) -> Result<(), Error>;
 

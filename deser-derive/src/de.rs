@@ -1481,9 +1481,7 @@ pub fn derive_enum(
             &variant_names,
             quote! { __deser::__derive::Some(#index) },
         ));
-        variant_arms.push(quote! {
-            #index => #ident::#var_ident,
-        });
+        variant_arms.push((index, var_ident));
     }
 
     if let Some(attrs) = deny_unknown_fields {
@@ -1514,8 +1512,26 @@ pub fn derive_enum(
         ));
     }
 
-    // Unit enums only generate the function which maps an atom to the value
-    // and two setters, the sink (`atom_sink`) exists once for all types.
+    // The variants are set by their index.  The last one is the fallback so
+    // that the match needs no arm that panics.
+    let variant = match variant_arms.split_last() {
+        Some(((_, last), rest)) => {
+            let mut arms = Vec::with_capacity(rest.len());
+            for (index, var_ident) in rest {
+                arms.push(quote! { #index => #ident::#var_ident, });
+            }
+            quote! {
+                match __index {
+                    #(#arms)*
+                    _ => #ident::#last,
+                }
+            }
+        }
+        None => quote! { __deser::__derive::unreachable!() },
+    };
+
+    // Unit enums only generate the lookup of the names and two setters, the
+    // sink (`unit_enum_sink`) exists once for all types.
     let de_trait = crate::forward::deserialize_trait(&container_attrs);
     Ok(quote! {
         const _: () = {
@@ -1526,39 +1542,19 @@ pub fn derive_enum(
                 }
             }
 
-            fn __from_atom(
-                __atom: __deser::Atom<'_>,
-                __state: &mut __deser::State,
-            ) -> __deser::__derive::Result<#ident> {
-                let value = match __deser::__derive::unit_variant(
-                    &__atom,
-                    __lookup,
-                    &[#(#names),*],
-                    #type_name,
-                    #other,
-                )? {
-                    #( #variant_arms )*
-                    _ => __deser::__derive::unreachable!(),
-                };
-                __deser::__derive::Ok(value)
+            const __UNIT: __deser::__derive::UnitEnum = __deser::__derive::UnitEnum {
+                lookup: __lookup,
+                names: &[#(#names),*],
+                expecting: #type_name,
+                other: #other,
+            };
+
+            fn __set_slot(__slot: &mut __deser::__derive::Option<#ident>, __index: usize) {
+                *__slot = __deser::__derive::Some(#variant);
             }
 
-            fn __set_slot(
-                __slot: &mut __deser::__derive::Option<#ident>,
-                __atom: __deser::Atom<'_>,
-                __state: &mut __deser::State,
-            ) -> __deser::__derive::Result<()> {
-                *__slot = __deser::__derive::Some(__from_atom(__atom, __state)?);
-                __deser::__derive::Ok(())
-            }
-
-            fn __set_value(
-                __value: &mut #ident,
-                __atom: __deser::Atom<'_>,
-                __state: &mut __deser::State,
-            ) -> __deser::__derive::Result<()> {
-                *__value = __from_atom(__atom, __state)?;
-                __deser::__derive::Ok(())
+            fn __set_value(__value: &mut #ident, __index: usize) {
+                *__value = #variant;
             }
 
             #[automatically_derived]
@@ -1566,11 +1562,11 @@ pub fn derive_enum(
                 fn deserialize_into(
                     __slot: &mut __deser::__derive::Option<Self>
                 ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::atom_sink(__slot, __set_slot, #type_name)
+                    __deser::__derive::unit_enum_sink(__slot, __set_slot, &__UNIT)
                 }
 
                 fn deserialize_update(__value: &mut Self) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::atom_sink(__value, __set_value, #type_name)
+                    __deser::__derive::unit_enum_sink(__value, __set_value, &__UNIT)
                 }
 
                 #[inline]
@@ -1579,7 +1575,7 @@ pub fn derive_enum(
                     __atom: __deser::Atom,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    __set_slot(__slot, __atom, __state)
+                    __deser::__derive::unit_enum_atom_into(__slot, __set_slot, __atom, &__UNIT)
                 }
 
                 #[inline]
@@ -1588,7 +1584,7 @@ pub fn derive_enum(
                     __atom: __deser::Atom<'de>,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    __set_slot(__slot, __atom, __state)
+                    __deser::__derive::unit_enum_atom_into(__slot, __set_slot, __atom, &__UNIT)
                 }
             }
         };

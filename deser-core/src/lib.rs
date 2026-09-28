@@ -86,10 +86,10 @@ pub mod __derive {
     pub use crate::de::duplicates::{duplicate_field, mark_seen};
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
-        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UntaggedTry, UntaggedVariants,
-        Variant, VariantMaker, Variants, atom_sink, lookup_atom, unit_variant,
-        unknown_variant_atom, untagged_atom, untagged_borrowed_atom, untagged_fallback,
-        untagged_handle,
+        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UnitEnum, UntaggedTry,
+        UntaggedVariants, Variant, VariantMaker, Variants, atom_sink, lookup_atom,
+        unit_enum_atom_into, unit_enum_index, unit_enum_sink, unit_variant, unknown_variant_atom,
+        untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{
         FieldKeySink, NextField, StructFields, StructFinish, StructInfo, StructSink,
@@ -105,7 +105,8 @@ pub mod __derive {
         PlainSink, StructField, emit_plain_field,
     };
     pub use crate::ser::enums::{
-        EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedNewtype, skipped_variant,
+        EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedNewtype, UnitName,
+        UnitVariants, begin_unit, describe_unit, serialize_unit, skipped_variant,
     };
     pub use crate::ser::flatten::FlattenedStruct;
 
