@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Read and write deser values with tokio"
 repository = "https://github.com/mitsuhiko/deser"
 keywords = ["serialization", "deserialization", "tokio", "async"]
+categories = ["encoding", "asynchronous"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-tokio"

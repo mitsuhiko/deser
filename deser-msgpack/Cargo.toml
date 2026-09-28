@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "MessagePack support for deser"
 repository = "https://github.com/mitsuhiko/deser"
 keywords = ["serialization", "deserialization", "msgpack", "messagepack"]
+categories = ["encoding", "parser-implementations", "no-std"]
 readme = "README.md"
 license = "Apache-2.0"
 documentation = "https://docs.rs/deser-msgpack"
