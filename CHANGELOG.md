@@ -2,7 +2,7 @@
 
 All notable changes to deser are documented here.
 
-## Unreleased
+## 0.9.0
 
 This release is close to a rewrite of deser.  Almost every public API
 changed, the list below summarizes the state of the release rather than

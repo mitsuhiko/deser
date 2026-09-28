@@ -19,19 +19,19 @@ io = ["std", "deser-core/io", "deser-json/io"]
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]
-deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
-deser-json = { version = "0.8.0", path = "../deser-json", default-features = false }
+deser-core = { path = "../deser-core", default-features = false }
+deser-json = { path = "../deser-json", default-features = false }
 simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 # the characters of identifiers (map keys without quotes)
 unicode-ident = "1.0.12"
 
 [dev-dependencies]
-deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser = { path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
-deser-json5 = { version = "0.8.0", path = "../deser-json5" }
-deser-hj = { version = "0.8.0", path = "../deser-hj" }
-deser-jsonc = { version = "0.8.0", path = "../deser-jsonc" }
-deser-location = { version = "0.8.0", path = "../deser-location" }
+deser-json5 = { path = "../deser-json5" }
+deser-hj = { path = "../deser-hj" }
+deser-jsonc = { path = "../deser-jsonc" }
+deser-location = { path = "../deser-location" }
 
 # the tests of reading JSON, JSONC, JSON5 and Hjson
 [[test]]

@@ -1,7 +1,7 @@
 [package]
 name = "deser-yaml"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.8.0"
+version = "0.9.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "YAML support for deser"
@@ -23,14 +23,14 @@ io = ["deser-core/io"]
 speedups = ["dep:simdutf8", "dep:zmij"]
 
 [dependencies]
-deser-core = { version = "0.8.0", path = "../deser-core", default-features = false }
+deser-core = { version = "0.9.0", path = "../deser-core", default-features = false }
 simdutf8 = { version = "0.1.5", optional = true }
 zmij = { version = "1.0.23", optional = true }
 
 [dev-dependencies]
-deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser = { version = "0.9.0", path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
-deser-location = { version = "0.8.0", path = "../deser-location" }
+deser-location = { version = "0.9.0", path = "../deser-location" }
 
 [[test]]
 name = "yaml_test_suite"
