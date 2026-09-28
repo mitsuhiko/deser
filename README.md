@@ -8,7 +8,7 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is a serialization library for Rust for self describing formats such as
-JSON, YAML, TOML, CBOR, MessagePack, XML, CSV and query strings.  It takes the user experience of
+JSON, YAML, TOML, CBOR, MessagePack, XML, property lists, CSV and query strings.  It takes the user experience of
 serde, the problems that years of running serde in production turned up and the
 Rust of today, and tries to solve them with a different architecture.  If you
 know serde you will feel at home: you derive `Serialize` and `Deserialize` on
@@ -270,7 +270,7 @@ of errors.  To see more practical examples have a look at the
 Every format has the same pieces:
 
 * Functions for single values: `from_str`, `from_slice` and `to_string`
-  (`to_vec` for CBOR and MessagePack).  Options are set on a `DeserializerConfig` or
+  (`to_vec` for CBOR, MessagePack and property lists).  Options are set on a `DeserializerConfig` or
   `SerializerConfig`, which have the same methods.
 * A `Deserializer` which reads one value after another from a slice, and a
   `Serializer` which writes more than one value (JSON Lines, CBOR
@@ -282,9 +282,11 @@ Every format has the same pieces:
   hands out its elements one by one.
   [`deser-tokio`](https://docs.rs/deser-tokio) does the same with tokio.
   XML does not support streams yet and only has `from_str`, `from_slice`,
-  `to_string` and a `Deserializer`.
+  `to_string` and a `Deserializer`.  Property lists hold a single value
+  and cannot be split, so `from_reader` reads the whole stream before
+  it's parsed (in any of the formats, which is detected).
 * Without the `std` feature (enabled by default) deser and the JSON, JSONC,
-  JSON5, Hjson, CBOR, MessagePack and CSV crates only need `alloc` and work on
+  JSON5, Hjson, CBOR, MessagePack, property list and CSV crates only need `alloc` and work on
   targets without an operating system (see
   [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 

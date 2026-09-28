@@ -37,6 +37,9 @@ Getting started:
 * [`xml-pretty`](xml-pretty): an SVG drawing written as indented XML
   with `deser-xml`, with namespaces declared on the root and mixed
   content that stays on a single line.
+* [`plist`](plist): an `Info.plist`, preferences with dates and data
+  in binary and XML, `.strings` files and OpenStep dictionaries with
+  `deser-plist`, with the format detected when reading.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.

@@ -49,6 +49,7 @@ members = [
   "examples/manual-struct",
   "examples/no-std",
   "examples/optionals",
+  "examples/plist",
   "examples/protocol",
   "examples/query-strings",
   "examples/renames",
