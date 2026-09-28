@@ -125,17 +125,17 @@ are buffered.
 * [serde#2576: ContentDeserializer does not support 128-bit integers](https://github.com/serde-rs/serde/issues/2576)
 * [serde#2748: Flattened nested structs throw deserialize error "invalid type: map, expected f64" when inner type contains a float](https://github.com/serde-rs/serde/issues/2748)
 * [serde#2903: Failed to deserialize tagged enum when inner struct has a number with trailing zeros](https://github.com/serde-rs/serde/issues/2903)
-* [serde_json#721: The `#[serde(flatten)]` syntax is not supported with the feature `arbitrary_precision`](https://github.com/serde-rs/json/issues/721)
-* [serde_json#1108: `arbitrary_precision` breaks float deserialisation in untagged enum](https://github.com/serde-rs/json/issues/1108)
-* [serde_json#625: u128 is not supported with `#[serde(flatten)]`](https://github.com/serde-rs/json/issues/625)
-* [serde_json#740: Deserialization of 128 bit integers fail when used with untagged variants](https://github.com/serde-rs/json/issues/740)
-* [serde_json#1157: Bug: f64 within flattened HashMap throws error on deserialization](https://github.com/serde-rs/json/issues/1157)
-* [serde_json#989: Flatten causes maps with integer keys to fail deserialization](https://github.com/serde-rs/json/issues/989)
-* [serde_json#1103: Bug: untagged union fails to deserialize hashmap with usize as keys](https://github.com/serde-rs/json/issues/1103)
-* [serde_json#622: Error message points to wrong line when using attribute flatten](https://github.com/serde-rs/json/issues/622)
-* [serde_json#870: Incorrect line/column info when using tag setting with nested enums](https://github.com/serde-rs/json/issues/870)
-* [serde_urlencoded#33: using `#[serde(flatten)]` breaks deserializing](https://github.com/nox/serde_urlencoded/issues/33)
-* [serde_qs#159: Improper deserialization for #[serde(flatten)] field](https://github.com/samscott89/serde_qs/issues/159)
+* [serde-json#721: The `#[serde(flatten)]` syntax is not supported with the feature `arbitrary_precision`](https://github.com/serde-rs/json/issues/721)
+* [serde-json#1108: `arbitrary_precision` breaks float deserialisation in untagged enum](https://github.com/serde-rs/json/issues/1108)
+* [serde-json#625: u128 is not supported with `#[serde(flatten)]`](https://github.com/serde-rs/json/issues/625)
+* [serde-json#740: Deserialization of 128 bit integers fail when used with untagged variants](https://github.com/serde-rs/json/issues/740)
+* [serde-json#1157: Bug: f64 within flattened HashMap throws error on deserialization](https://github.com/serde-rs/json/issues/1157)
+* [serde-json#989: Flatten causes maps with integer keys to fail deserialization](https://github.com/serde-rs/json/issues/989)
+* [serde-json#1103: Bug: untagged union fails to deserialize hashmap with usize as keys](https://github.com/serde-rs/json/issues/1103)
+* [serde-json#622: Error message points to wrong line when using attribute flatten](https://github.com/serde-rs/json/issues/622)
+* [serde-json#870: Incorrect line/column info when using tag setting with nested enums](https://github.com/serde-rs/json/issues/870)
+* [serde-urlencoded#33: using `#[serde(flatten)]` breaks deserializing](https://github.com/nox/serde_urlencoded/issues/33)
+* [serde-qs#159: Improper deserialization for #[serde(flatten)] field](https://github.com/samscott89/serde_qs/issues/159)
 
 ## Flattening
 
@@ -167,7 +167,7 @@ No buffering is required.  This also means:
 * [serde#2176: #[serde(flatten)] on BTreeMap<String, Value> does not capture unknown/remaining fields](https://github.com/serde-rs/serde/issues/2176)
 * [serde#2416: Unexpected interaction of Option/flatten with duplicate key checking](https://github.com/serde-rs/serde/issues/2416)
 * [serde#2793: Feature request: #[flatten] on Option<SomeStruct> should raise error when only some fields are set](https://github.com/serde-rs/serde/issues/2793)
-* [serde_json#644: A flattened Option masks parse errors inside the Option](https://github.com/serde-rs/json/issues/644)
+* [serde-json#644: A flattened Option masks parse errors inside the Option](https://github.com/serde-rs/json/issues/644)
 * [serde#2707: default is ignored with flatten](https://github.com/serde-rs/serde/issues/2707)
 
 ## XML
@@ -308,7 +308,7 @@ with the `Limits` layer, to any value.
 **Related issues:**
 
 * [serde#3023: stack overflow in IgnoredAny when deserializing deeply nested serde_json::Value](https://github.com/serde-rs/serde/issues/3023)
-* [serde_json#1262: Expose a setter for Deserializer::remaining_depth?](https://github.com/serde-rs/json/issues/1262)
+* [serde-json#1262: Expose a setter for Deserializer::remaining_depth?](https://github.com/serde-rs/json/issues/1262)
 
 ## Bytes
 
