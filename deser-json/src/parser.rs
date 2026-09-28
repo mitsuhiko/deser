@@ -651,8 +651,38 @@ impl<'a> Cursor<'a> {
     ///
     /// An incomplete string continues where it stopped.  If the string is
     /// incomplete, `partial` holds where it continues.
-    #[inline(never)]
+    ///
+    /// Most strings have no escapes, they are slices of the input.  These
+    /// are handled here, inlined into the parser, the others by
+    /// [`parse_str_slow`](Self::parse_str_slow).
+    #[inline(always)]
     fn parse_str<'b>(
+        &mut self,
+        buffer: &'b mut Vec<u8>,
+        start: usize,
+        resume: Option<PartialString>,
+    ) -> Result<Str<'a, 'b>, Error> {
+        let plain = resume.is_none();
+        if plain {
+            let end = skip_to_escape(self.input, self.pos);
+            if self.input.get(end) == Some(&b'"') {
+                let bytes = &self.input[self.pos..end];
+                if !self.validate_utf8 || is_ascii(bytes) || validate_utf8_slice(bytes) {
+                    self.pos = end + 1;
+                    // SAFETY: the input is valid UTF-8 as it comes from a
+                    // `&str` or was validated above.  The slice starts and
+                    // ends at ASCII characters (quotes).
+                    return Ok(Str::Borrowed(unsafe { str::from_utf8_unchecked(bytes) }));
+                }
+            }
+        }
+        self.parse_str_slow(buffer, start, resume)
+    }
+
+    /// Parses a string that is incomplete or has escapes (see
+    /// [`parse_str`](Self::parse_str)).
+    #[inline(never)]
+    fn parse_str_slow<'b>(
         &mut self,
         buffer: &'b mut Vec<u8>,
         start: usize,
@@ -766,27 +796,38 @@ impl<'a> Cursor<'a> {
         self.peek().unwrap_or(b'\0')
     }
 
-    /// Consumes the next eight bytes if they are digits and returns their
-    /// value.
+    /// Consumes up to eight digits and returns their value and how many
+    /// there were.
     ///
-    /// This does not look at the end of the input, the digits after these
-    /// are parsed one by one.
+    /// The next eight bytes are loaded as a word, the digits at its start
+    /// are combined at once.  If there are fewer than eight digits, the byte
+    /// after them is not a digit.  Returns `None` if fewer than eight bytes
+    /// are left, the digits at the end of the input are parsed one by one.
     #[inline(always)]
-    fn eight_digits(&mut self) -> Option<u64> {
+    fn digits(&mut self) -> Option<(u64, usize)> {
         let bytes = self.input.get(self.pos..self.pos + 8)?;
         let value = u64::from_le_bytes(bytes.try_into().unwrap());
-        // all bytes are between b'0' and b'9'
         let digits = value.wrapping_sub(0x3030_3030_3030_3030);
         let above = value.wrapping_add(0x4646_4646_4646_4646);
-        if (digits | above) & 0x8080_8080_8080_8080 != 0 {
-            return None;
+        // the high bit of bytes below b'0' or above b'9' is set.  Only the
+        // first of them is exact: the bytes before it are digits which do
+        // not borrow or carry into it.
+        let other = (digits | above) & 0x8080_8080_8080_8080;
+        // Eight digits and no digits are separate branches, so that the
+        // position after them does not depend on the data (a branch is
+        // predicted, the next load can start right away).
+        if other == 0 {
+            self.pos += 8;
+            return Some((combine_digits(digits), 8));
         }
-        self.pos += 8;
-        // combine pairs of digits, then pairs of those and so on
-        let pairs = digits.wrapping_mul(10).wrapping_add(digits >> 8);
-        let low = (pairs & 0x0000_00ff_0000_00ff).wrapping_mul(0x000f_4240_0000_0064);
-        let high = ((pairs >> 16) & 0x0000_00ff_0000_00ff).wrapping_mul(0x0000_2710_0000_0001);
-        Some(u64::from((low.wrapping_add(high) >> 32) as u32))
+        if other & 0x80 != 0 {
+            return Some((0, 0));
+        }
+        let count = (other.trailing_zeros() / 8) as usize;
+        self.pos += count;
+        // move the digits to the top of the word, the bytes below them are
+        // zeros (leading zeros of the number)
+        Some((combine_digits(digits << (64 - 8 * count)), count))
     }
 
     #[inline]
@@ -929,11 +970,14 @@ impl<'a> Cursor<'a> {
             },
             c @ b'1'..=b'9' => {
                 let mut res = u64::from(c - b'0');
-                // eight digits at a time while they cannot overflow
+                // up to eight digits at a time while they cannot overflow
                 while res < EIGHT_DIGITS_LIMIT
-                    && let Some(digits) = self.eight_digits()
+                    && let Some((digits, count)) = self.digits()
                 {
-                    res = res * 100_000_000 + digits;
+                    res = res * POW10_U64[count] + digits;
+                    if count < 8 {
+                        return self.parse_number(nonnegative, res);
+                    }
                 }
 
                 loop {
@@ -1079,13 +1123,16 @@ impl<'a> Cursor<'a> {
         let mut exponent = starting_exp;
         let mut at_least_one_digit = false;
         let mut overflowed = false;
-        // eight digits at a time while they cannot overflow
+        // up to eight digits at a time while they cannot overflow
         while significand < EIGHT_DIGITS_LIMIT
-            && let Some(digits) = self.eight_digits()
+            && let Some((digits, count)) = self.digits()
         {
-            significand = significand * 100_000_000 + digits;
-            exponent -= 8;
-            at_least_one_digit = true;
+            significand = significand * POW10_U64[count] + digits;
+            exponent -= count as i32;
+            at_least_one_digit |= count > 0;
+            if count < 8 {
+                break;
+            }
         }
         while let c @ b'0'..=b'9' = self.peek_or_nul() {
             self.bump();
@@ -1250,6 +1297,28 @@ impl<'a> Cursor<'a> {
 /// Eight more digits can be added to significands below this.
 const EIGHT_DIGITS_LIMIT: u64 = (u64::MAX - 99_999_999) / 100_000_000;
 
+/// Returns the value of eight digits (the values of the characters, the
+/// first one in the lowest byte).
+#[inline(always)]
+fn combine_digits(digits: u64) -> u64 {
+    // combine pairs of digits, then pairs of those and so on
+    let pairs = digits.wrapping_mul(10).wrapping_add(digits >> 8);
+    let low = (pairs & 0x0000_00ff_0000_00ff).wrapping_mul(0x000f_4240_0000_0064);
+    let high = ((pairs >> 16) & 0x0000_00ff_0000_00ff).wrapping_mul(0x0000_2710_0000_0001);
+    u64::from((low.wrapping_add(high) >> 32) as u32)
+}
+
+/// The powers of ten that fit into 64 bits.
+static POW10_U64: [u64; 20] = {
+    let mut table = [1; 20];
+    let mut idx = 1;
+    while idx < table.len() {
+        table[idx] = table[idx - 1] * 10;
+        idx += 1;
+    }
+    table
+};
+
 /// Powers of ten which are exact as `f64`.
 static POW10: [f64; 23] = [
     1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
@@ -1374,7 +1443,9 @@ fn is_shortest_repr(digits: u64, frac_len: u32) -> bool {
     const MAX: u64 = 1_000_000_000_000_000;
     digits < MAX
         && (frac_len == 1 || !digits.is_multiple_of(10))
-        && (frac_len <= 4 || digits == 0 || (frac_len <= 19 && digits >= 10u64.pow(frac_len - 4)))
+        && (frac_len <= 4
+            || digits == 0
+            || (frac_len <= 19 && digits >= POW10_U64[frac_len as usize - 4]))
 }
 
 /// Emits a number.
@@ -1561,6 +1632,52 @@ mod tests {
                     expected,
                     "{input} size {size}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_digit_runs() {
+        /// Parses the numbers of a sequence.
+        fn parse(text: &str) -> Vec<f64> {
+            let mut out = None::<Vec<f64>>;
+            let mut driver = DeserializeDriver::new(&mut out);
+            Parser::default()
+                .parse(
+                    text.as_bytes(),
+                    0,
+                    true,
+                    0,
+                    OPTIONS,
+                    &mut Borrowing(&mut driver),
+                )
+                .unwrap();
+            drop(driver);
+            out.unwrap()
+        }
+
+        // runs of digits of every length in the integer and the fraction,
+        // with and without eight bytes after them
+        let digits = "12345678901234567890123";
+        // miri is too slow for all combinations
+        let step = if cfg!(miri) { 4 } else { 1 };
+        for int_len in (1..=digits.len()).step_by(step) {
+            for frac_len in (0..=digits.len()).step_by(step) {
+                let mut number = digits[..int_len].to_string();
+                if frac_len > 0 {
+                    number.push('.');
+                    number.push_str(&digits[digits.len() - frac_len..]);
+                }
+                let value: f64 = number.parse().unwrap();
+                for text in [
+                    format!("[{number}]"),
+                    format!("[{number},-{number}e1 , {number}]"),
+                    format!("[{number}                ]"),
+                ] {
+                    let values = parse(&text);
+                    assert_eq!(values[0].to_bits(), value.to_bits(), "{text}");
+                    assert_eq!(values.last().unwrap().to_bits(), value.to_bits(), "{text}");
+                }
             }
         }
     }

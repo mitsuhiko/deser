@@ -326,10 +326,57 @@ sinks rather than assuming extensions are rare or cold.
 
 ### JSON Digits
 
-Numbers are parsed eight digits at a time (`Cursor::eight_digits`, the
-digits are checked and combined with a few multiplications in a `u64`)
-while the significand cannot overflow, the rest one by one.  Canada got
-18% faster, features 13%, others did not change.
+Numbers are parsed eight digits at a time (the digits are checked and
+combined with a few multiplications in a `u64`) while the significand
+cannot overflow, the rest one by one.  Canada got 18% faster, features
+13%, others did not change.
+
+`Cursor::digits` also takes runs of fewer than eight digits from the
+word: the first byte that is not a digit is found with the trailing
+zeros of the mask, the digits are shifted to the top of the word and
+combined like eight.  Only the digits at the end of the input (less than
+a word left) are parsed one by one.  Parsing alone (without the driver)
+got 16%-19% faster on floats with 5-9 digits (Canada as `f32`), the
+instructions of `canada`, `features` and `point-cloud` went down by 10%
+to 13%.  Deserializing is only faster for point-cloud (7%): for the
+others the parser was not the bottleneck.  Eight digits and no digits
+are separate branches: when the position after the digits was computed
+from the count (a data dependency instead of a predicted branch) nine
+digit integers (citm-catalog) were 8% slower to parse.
+
+### JSON Strings
+
+`Cursor::parse_str` handles strings without escapes (the string is a
+slice of the input) inlined into the parser, strings with escapes and
+incomplete strings are handled out of line by `parse_str_slow` (which
+scans the string again).  When everything was out of line, about a third
+of its samples were the call, saving registers and returning the result
+in memory.  Parsing alone took 17%-20% fewer instructions and time on
+Twitter and citm-catalog, deserializing got 4%-12% faster for all
+datasets except the ones that are mostly numbers.
+
+Scanning strings with NEON (16 bytes at a time after the first word)
+instead of words did not make a measurable difference: 43% of Twitter
+and 72% of Kubernetes are the contents of strings, mostly in strings of
+32 bytes and more, but it's 4%-7% fewer instructions for parsing alone
+and no difference in time.
+
+`Cursor::parse_whitespace` checks eight spaces before it looks at the
+next byte.  Checking the byte first (only looking for runs of spaces
+after a whitespace character) is fewer instructions for compact JSON but
+made parsing Twitter and citm-catalog 15%-20% slower.  Not understood.
+
+### Allocations and the Arena
+
+The JSON datasets allocate as often as serde_json (see `allocs`), most
+allocations are the strings of the values and the collections.  On
+Twitter malloc and free are 15% (the strings of the values half of it,
+dropping the result the other half), `Arena` 0.1%, copying 6% (mostly
+the strings).  Moving values into their slots and collections (`Status`
+into the `Vec`, the fields into the struct) is about 1.3%.  In
+cargo-manifest most copying is in inserting into the `BTreeMap`.  The
+key lookups of derived structs are compiled into a jump table on the
+length and word compares, which is as good as it gets.
 
 ### JSON Float Rounding
 
