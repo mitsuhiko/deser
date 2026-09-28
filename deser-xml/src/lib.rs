@@ -111,6 +111,39 @@
 //! assert_eq!(item.weight, 1.5);
 //! ```
 //!
+//! The order of text and child elements is kept by [`Mixed`], which is
+//! for mixed content (`<p>x <b>y</b> z</p>`): every text and child
+//! element is a value, typically of an enum whose variants are named after
+//! the elements:
+//!
+//! ```rust
+//! use deser::Deserialize;
+//! use deser_xml::Mixed;
+//!
+//! #[derive(Debug, Deserialize, PartialEq)]
+//! enum Inline {
+//!     #[deser(rename = "$text")]
+//!     Text(String),
+//!     #[deser(rename = "b")]
+//!     Bold(String),
+//! }
+//!
+//! #[derive(Deserialize)]
+//! struct Paragraph {
+//!     #[deser(rename = "@class")]
+//!     class: Option<String>,
+//!     #[deser(flatten)]
+//!     content: Mixed<Inline>,
+//! }
+//!
+//! let p: Paragraph = deser_xml::from_str(r#"<p class="x">x <b>y</b> z</p>"#).unwrap();
+//! assert_eq!(p.content.0, [
+//!     Inline::Text("x ".into()),
+//!     Inline::Bold("y".into()),
+//!     Inline::Text(" z".into()),
+//! ]);
+//! ```
+//!
 //! Enums work like elsewhere: an externally tagged enum is an element with
 //! one child (`<shape><circle r="1"/></shape>`), unit variants are text,
 //! internally tagged enums can use an attribute as tag
@@ -127,20 +160,22 @@
 //!
 //! # Limitations
 //!
-//! This crate is an early version.  Mixed content can be deserialized into
-//! maps, but not into sequences that keep the order of the text and
-//! elements.  The serializer writes attributes before the content of an
+//! This crate is an early version.  The serializer writes attributes before the content of an
 //! element, a map whose attributes come after other keys is an error.  The
 //! input has to be UTF-8.
 #![deny(missing_docs)]
 
 mod de;
+mod mixed;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+pub use self::mixed::Mixed;
 pub use self::ser::{SerializerConfig, to_string};
 
 /// The names of the special keys and the prefixes of namespaces.
+///
+/// The deserializer publishes them in the state for [`Mixed`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Names {
     pub(crate) attribute_prefix: &'static str,
@@ -155,5 +190,11 @@ impl Names {
             text_key: "$text",
             namespaces: &[],
         }
+    }
+}
+
+impl Default for Names {
+    fn default() -> Names {
+        Names::new()
     }
 }

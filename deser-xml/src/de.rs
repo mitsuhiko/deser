@@ -10,6 +10,7 @@ use quick_xml::name::{QName, ResolveResult};
 use quick_xml::reader::NsReader;
 
 use crate::Names;
+use crate::mixed::KeepWhitespace;
 
 /// Configures how XML documents are deserialized.
 ///
@@ -243,6 +244,7 @@ impl<'a> Deserializer<'a> {
         // elements with attributes are text for types that expect text,
         // text is an element for types that expect maps
         ContentKey(self.config.names.text_key).set(state);
+        *state.get_mut::<Names>() = self.config.names.clone();
         Parser {
             input: self.input,
             config: &self.config,
@@ -412,8 +414,11 @@ impl<'a> Parser<'a, '_> {
     /// Passes on the text of the element on top of the stack as entry.
     fn flush_text(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         let element = self.stack.last_mut().unwrap();
-        // whitespace between elements is not text
-        if element.text.is_blank() {
+        // whitespace between elements is not text, unless the content is
+        // mixed
+        if matches!(element.text, PendingText::None)
+            || (element.text.is_blank() && !KeepWhitespace::applies(driver.state()))
+        {
             element.text = PendingText::None;
             return Ok(());
         }
@@ -492,6 +497,7 @@ impl<'a> Parser<'a, '_> {
             self.flush_text(driver)?;
             self.stack.pop();
             emit_at(driver, Event::MapEnd, range)?;
+            KeepWhitespace::prune(driver.state_mut());
         } else {
             let element = self.stack.pop().unwrap();
             element.text.emit(driver, element.start)?;

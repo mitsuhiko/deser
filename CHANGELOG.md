@@ -9,6 +9,9 @@ All notable changes to deser are documented here.
   as `@name` entries, child elements under their names and text as
   `$text` entries.  `Vec<T>` fields collect repeated elements, namespaces
   can be given fixed prefixes, the serializer writes the same shape.
+  `deser_xml::Mixed<T>` keeps the order of mixed content (text and child
+  elements as values of `T`, typically an enum), also when flattened into
+  a struct whose fields take the attributes and the other elements.
 - Added `ContentKey`, the key under which maps hold their own content
   (set by formats in the state).  With it, a map is passed on as the value
   of that key to types that reject maps (`<count unit="m">3</count>` for a

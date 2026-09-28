@@ -25,7 +25,7 @@ endif
 # take, the slowest start first.  CI splits them across jobs.  The parsers
 # of deser-json, deser-jsonc and deser-json5 are tested by
 # deser-private-jsontemplate.
-MIRI_CRATES ?= deser-core deser deser-private-jsontemplate deser-json deser-cbor deser-msgpack deser-csv deser-path deser-location deser-debug
+MIRI_CRATES ?= deser-core deser deser-private-jsontemplate deser-json deser-cbor deser-msgpack deser-csv deser-xml deser-path deser-location deser-debug
 # Crates also tested with tree borrows.  Almost all unsafe code is in the
 # core crate (tested by its own tests and the integration tests of deser),
 # the formats only have simple byte copies.

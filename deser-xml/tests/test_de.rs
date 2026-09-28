@@ -504,18 +504,3 @@ fn test_elements_and_text() {
         }
     );
 }
-
-/// The cases the data model does not handle (yet).
-#[test]
-fn test_limitations() {
-    // mixed content in order
-    #[derive(Debug, Deserialize)]
-    #[allow(dead_code)]
-    enum Inline {
-        #[deser(rename = "$text")]
-        Text(String),
-        #[deser(rename = "b")]
-        Bold(String),
-    }
-    assert!(from_str::<Vec<Inline>>("<p>x <b>y</b> z</p>").is_err());
-}
