@@ -4,6 +4,17 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `deser-xml` for XML, built on quick-xml.  An element is its text
+  or, if it has attributes or child elements, a multimap with attributes
+  as `@name` entries, child elements under their names and text as
+  `$text` entries.  `Vec<T>` fields collect repeated elements, namespaces
+  can be given fixed prefixes, the serializer writes the same shape.
+- Added `ContentKey`, the key under which maps hold their own content
+  (set by formats in the state).  With it, a map is passed on as the value
+  of that key to types that reject maps (`<count unit="m">3</count>` for a
+  `u32`) and text is passed on as a map with the text under that key to
+  types that reject text (`<price>3</price>` for a struct with a `$text`
+  field).
 - **Breaking:** maps whose keys can repeat are multimaps
   (`ContainerShape::with_multimap`, `State::is_multimap`), which replace
   the sequences of repeated keys (`ContainerShape::with_repeated` was

@@ -1,0 +1,622 @@
+use std::borrow::Cow;
+
+use deser_core::de::{
+    self, ContentKey, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, Source,
+};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Text};
+use quick_xml::XmlVersion;
+use quick_xml::events::{BytesRef, BytesStart, Event as XmlEvent};
+use quick_xml::name::{QName, ResolveResult};
+use quick_xml::reader::NsReader;
+
+use crate::Names;
+
+/// Configures how XML documents are deserialized.
+///
+/// See the [crate documentation](crate) for how XML maps onto the data
+/// model of deser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeserializerConfig {
+    pub(crate) names: Names,
+    duplicate_keys: DuplicateKeys,
+    track_locations: bool,
+    max_depth: usize,
+}
+
+impl Default for DeserializerConfig {
+    fn default() -> DeserializerConfig {
+        DeserializerConfig::new()
+    }
+}
+
+impl DeserializerConfig {
+    /// Creates the default configuration.
+    pub const fn new() -> DeserializerConfig {
+        DeserializerConfig {
+            names: Names::new(),
+            duplicate_keys: DuplicateKeys::Error,
+            track_locations: true,
+            max_depth: 128,
+        }
+    }
+
+    /// Sets the prefix of the keys of attributes.
+    ///
+    /// The default is `@`: `<a href="x"/>` is `{"@href": "x"}`.
+    pub const fn attribute_prefix(mut self, prefix: &'static str) -> DeserializerConfig {
+        self.names.attribute_prefix = prefix;
+        self
+    }
+
+    /// Sets the key of the text of elements that are maps.
+    ///
+    /// The default is `$text`: `<a href="x">y</a>` is
+    /// `{"@href": "x", "$text": "y"}`.
+    pub const fn text_key(mut self, key: &'static str) -> DeserializerConfig {
+        self.names.text_key = key;
+        self
+    }
+
+    /// Sets the prefixes of namespaces.
+    ///
+    /// Names are passed on as written in the document (`atom:link`),
+    /// unless their namespace has a prefix here: then they are written
+    /// with this prefix, whichever prefix the document uses.  The empty
+    /// prefix leaves only the local name.
+    ///
+    /// ```
+    /// use deser_xml::DeserializerConfig;
+    ///
+    /// #[derive(deser::Deserialize)]
+    /// struct Feed {
+    ///     title: String,
+    ///     #[deser(rename = "dc:creator")]
+    ///     creator: String,
+    /// }
+    ///
+    /// const CONFIG: DeserializerConfig = DeserializerConfig::new().namespaces(&[
+    ///     ("", "http://www.w3.org/2005/Atom"),
+    ///     ("dc", "http://purl.org/dc/elements/1.1/"),
+    /// ]);
+    /// let feed: Feed = CONFIG.from_str(r#"
+    ///     <a:feed xmlns:a="http://www.w3.org/2005/Atom"
+    ///             xmlns:x="http://purl.org/dc/elements/1.1/">
+    ///       <a:title>Example</a:title>
+    ///       <x:creator>Jane</x:creator>
+    ///     </a:feed>
+    /// "#).unwrap();
+    /// assert_eq!(feed.title, "Example");
+    /// assert_eq!(feed.creator, "Jane");
+    /// ```
+    pub const fn namespaces(
+        mut self,
+        namespaces: &'static [(&'static str, &'static str)],
+    ) -> DeserializerConfig {
+        self.names.namespaces = namespaces;
+        self
+    }
+
+    /// Sets what happens if an element that stands for a single value is
+    /// given more than once.
+    ///
+    /// Elements are [multimaps](deser_core::ContainerShape::with_multimap):
+    /// collections (like `Vec<T>`) collect all child elements with their
+    /// name, for other types this decides.  The default is
+    /// [`DuplicateKeys::Error`].
+    pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
+        self.duplicate_keys = policy;
+        self
+    }
+
+    /// Sets how deeply elements can be nested.  The default is 128.
+    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
+        self.max_depth = depth;
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// The byte range of every event is always published into the state
+    /// (see [`State::input_range`](deser_core::State::input_range)), this
+    /// controls if the input is published as [`Source`] so that errors can
+    /// be resolved into lines and columns.  The default is `true`.
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+        self.track_locations = yes;
+        self
+    }
+
+    /// Deserializes a value from a string with this configuration.
+    pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
+        Deserializer::from_str_with_config(s, self).deserialize()
+    }
+
+    /// Deserializes a value from bytes with this configuration.
+    ///
+    /// The input must be UTF-8.
+    pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
+        Deserializer::from_slice_with_config(bytes, self).deserialize()
+    }
+}
+
+/// Deserializes a value from an XML string.
+///
+/// ```
+/// #[derive(deser::Deserialize)]
+/// struct Link {
+///     #[deser(rename = "@href")]
+///     href: String,
+/// }
+///
+/// let link: Link = deser_xml::from_str(r#"<a href="/x"/>"#).unwrap();
+/// assert_eq!(link.href, "/x");
+/// ```
+pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
+    Deserializer::from_str(s).deserialize()
+}
+
+/// Deserializes a value from UTF-8 encoded XML.
+pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
+    Deserializer::from_slice(bytes).deserialize()
+}
+
+/// Deserializes XML documents.
+pub struct Deserializer<'a> {
+    input: &'a str,
+    error: Option<Error>,
+    config: DeserializerConfig,
+}
+
+impl<'a> Deserializer<'a> {
+    /// Creates a deserializer for a string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(input: &'a str) -> Deserializer<'a> {
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a deserializer for a string with the given configuration.
+    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+        Deserializer {
+            input,
+            error: None,
+            config: config.clone(),
+        }
+    }
+
+    /// Creates a deserializer for UTF-8 encoded bytes.
+    pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
+        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+    }
+
+    /// Creates a deserializer for UTF-8 encoded bytes with the given
+    /// configuration.
+    pub fn from_slice_with_config(
+        input: &'a [u8],
+        config: &DeserializerConfig,
+    ) -> Deserializer<'a> {
+        // a byte order mark is not part of the document
+        let input = input.strip_prefix(b"\xef\xbb\xbf").unwrap_or(input);
+        match std::str::from_utf8(input) {
+            Ok(input) => Deserializer::from_str_with_config(input, config),
+            Err(err) => Deserializer {
+                input: "",
+                error: Some(
+                    Error::new(ErrorKind::Unexpected, "input is not valid UTF-8")
+                        .with_offset(err.valid_up_to()),
+                ),
+                config: config.clone(),
+            },
+        }
+    }
+
+    /// Deserializes the document.
+    pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
+        de::Deserializer::deserialize(self)
+    }
+
+    /// Deserializes the document with a configured driver.
+    ///
+    /// The callback is invoked with the driver before the value is
+    /// deserialized, for instance to add [`Layer`](deser_core::de::Layer)s.
+    pub fn deserialize_with<T, F>(&mut self, setup: F) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+        F: FnOnce(&mut DeserializeDriver<'_, 'a>),
+    {
+        de::Deserializer::deserialize_with(self, setup)
+    }
+
+    /// Parses the document and feeds the events into the driver.
+    ///
+    /// Events are emitted while the document is parsed.  Text is passed on
+    /// borrowed from the input unless it has references or line breaks
+    /// that are normalized.
+    pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if let Some(err) = self.error.take() {
+            return Err(err);
+        }
+        let state = driver.state_mut();
+        if self.config.track_locations {
+            Source::set(state, self.input);
+        }
+        *state.get_mut::<DuplicateKeys>() = self.config.duplicate_keys;
+        TEXT_RULES.set(state);
+        // elements with attributes are text for types that expect text,
+        // text is an element for types that expect maps
+        ContentKey(self.config.names.text_key).set(state);
+        Parser {
+            input: self.input,
+            config: &self.config,
+            reader: NsReader::from_str(self.input),
+            stack: Vec::new(),
+            root_done: false,
+        }
+        .run(driver)
+        .map_err(|err| err.resolve_position(self.input.as_bytes()))
+    }
+}
+
+impl<'a> de::Deserializer<'a> for Deserializer<'a> {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        Deserializer::drive(self, driver)
+    }
+}
+
+/// How the text of XML is interpreted.
+///
+/// Booleans are `true` and `false` (XML Schema also allows `1` and `0`,
+/// which are integers here), an empty element is a missing value for types
+/// that do not accept it (`<age/>` is `None` for an `Option<u32>`).
+const TEXT_RULES: LexicalRules = LexicalRules::STRICT.with_empty_is_null(true);
+
+/// A byte range in the input.
+type Range = (usize, usize);
+
+/// The text of an element that was not passed on yet.
+enum PendingText<'a> {
+    None,
+    Borrowed(&'a str, Range),
+    Owned(String, Range),
+}
+
+impl<'a> PendingText<'a> {
+    fn push(&mut self, text: Cow<'a, str>, range: Range) {
+        *self = match (std::mem::replace(self, PendingText::None), text) {
+            (PendingText::None, Cow::Borrowed(text)) => PendingText::Borrowed(text, range),
+            (PendingText::None, Cow::Owned(text)) => PendingText::Owned(text, range),
+            (PendingText::Borrowed(prev, (start, _)), text) => {
+                PendingText::Owned(prev.to_string() + &text, (start, range.1))
+            }
+            (PendingText::Owned(mut prev, (start, _)), text) => {
+                prev.push_str(&text);
+                PendingText::Owned(prev, (start, range.1))
+            }
+        };
+    }
+
+    fn is_blank(&self) -> bool {
+        match self {
+            PendingText::None => true,
+            PendingText::Borrowed(text, _) => is_blank(text),
+            PendingText::Owned(text, _) => is_blank(text),
+        }
+    }
+
+    /// Emits the text as lexical atom.
+    fn emit(self, driver: &mut DeserializeDriver<'_, 'a>, fallback: Range) -> Result<(), Error> {
+        match self {
+            PendingText::None => emit_at(driver, Atom::Lexical(Text::borrowed("")), fallback),
+            PendingText::Borrowed(text, range) => {
+                driver.state_mut().set_input_range(range.0, range.1);
+                driver.emit_borrowed(Atom::Lexical(Text::borrowed(text)))
+            }
+            PendingText::Owned(text, range) => {
+                emit_at(driver, Atom::Lexical(Text::owned(text)), range)
+            }
+        }
+    }
+}
+
+fn is_blank(text: &str) -> bool {
+    text.bytes()
+        .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'))
+}
+
+/// An open element.
+struct Element<'a> {
+    /// `true` once the element was passed on as map.
+    is_map: bool,
+    text: PendingText<'a>,
+    /// The range of the start tag.
+    start: Range,
+}
+
+struct Parser<'a, 'c> {
+    input: &'a str,
+    config: &'c DeserializerConfig,
+    reader: NsReader<&'a [u8]>,
+    stack: Vec<Element<'a>>,
+    root_done: bool,
+}
+
+impl<'a> Parser<'a, '_> {
+    fn run(mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        loop {
+            let start = self.position();
+            let event = self
+                .reader
+                .read_event()
+                .map_err(|err| xml_error(err, self.reader.error_position() as usize))?;
+            let range = (start, self.position());
+            match event {
+                XmlEvent::Start(ref tag) => self.start(driver, tag, range)?,
+                XmlEvent::Empty(ref tag) => {
+                    self.start(driver, tag, range)?;
+                    self.end(driver, range)?;
+                }
+                XmlEvent::End(_) => self.end(driver, range)?,
+                XmlEvent::Text(text) => {
+                    self.text(text.xml_content(XmlVersion::Implicit1_0), range)?
+                }
+                XmlEvent::CData(text) => {
+                    self.text(text.xml_content(XmlVersion::Implicit1_0), range)?
+                }
+                XmlEvent::GeneralRef(reference) => {
+                    let text = resolve_reference(&reference, start)?;
+                    self.text(Cow::Owned(text.to_string()), range)?
+                }
+                XmlEvent::Decl(_)
+                | XmlEvent::PI(_)
+                | XmlEvent::Comment(_)
+                | XmlEvent::DocType(_) => {}
+                XmlEvent::Eof => {
+                    if !self.stack.is_empty() {
+                        return Err(Error::new(
+                            ErrorKind::EndOfFile,
+                            "unexpected end of input, an element is not closed",
+                        )
+                        .with_offset(start));
+                    }
+                    if !self.root_done {
+                        return Err(
+                            Error::new(ErrorKind::EndOfFile, "no root element").with_offset(start)
+                        );
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    fn position(&self) -> usize {
+        self.reader.buffer_position() as usize
+    }
+
+    /// Passes on the element on top of the stack as map if it's not yet.
+    fn make_map(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        let element = self.stack.last_mut().unwrap();
+        if !element.is_map {
+            element.is_map = true;
+            emit_at(
+                driver,
+                Event::MapStart(
+                    ContainerShape::new()
+                        .with_order(Order::Significant)
+                        .with_multimap(true),
+                ),
+                element.start,
+            )?;
+        }
+        self.flush_text(driver)
+    }
+
+    /// Passes on the text of the element on top of the stack as entry.
+    fn flush_text(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        let element = self.stack.last_mut().unwrap();
+        // whitespace between elements is not text
+        if element.text.is_blank() {
+            element.text = PendingText::None;
+            return Ok(());
+        }
+        let text = std::mem::replace(&mut element.text, PendingText::None);
+        let range = match text {
+            PendingText::Borrowed(_, range) | PendingText::Owned(_, range) => range,
+            PendingText::None => unreachable!(),
+        };
+        emit_at(
+            driver,
+            Atom::Lexical(Text::borrowed(self.config.names.text_key)),
+            range,
+        )?;
+        text.emit(driver, range)
+    }
+
+    fn start(
+        &mut self,
+        driver: &mut DeserializeDriver<'_, 'a>,
+        tag: &BytesStart<'a>,
+        range: Range,
+    ) -> Result<(), Error> {
+        if self.stack.is_empty() {
+            if self.root_done {
+                return Err(
+                    Error::new(ErrorKind::Unexpected, "more than one root element")
+                        .with_offset(range.0),
+                );
+            }
+        } else {
+            if self.stack.len() >= self.config.max_depth {
+                return Err(
+                    Error::new(ErrorKind::Unexpected, "elements are nested too deeply")
+                        .with_offset(range.0),
+                );
+            }
+            self.make_map(driver)?;
+            let name = self.name(tag.name(), false)?;
+            emit_key(driver, name, range)?;
+        }
+        self.stack.push(Element {
+            is_map: false,
+            text: PendingText::None,
+            start: range,
+        });
+
+        for attr in tag.attributes() {
+            let attr = attr.map_err(|err| {
+                Error::new(ErrorKind::Unexpected, format!("invalid attribute: {err}"))
+                    .with_offset(range.0)
+            })?;
+            let raw = attr.key.as_ref();
+            // namespace declarations are not data
+            if raw == "xmlns" || raw.starts_with("xmlns:") {
+                continue;
+            }
+            self.make_map(driver)?;
+            let name = self.name(attr.key, true)?;
+            emit_key(driver, name, range)?;
+            let value = attr
+                .normalized_value(XmlVersion::Implicit1_0)
+                .map_err(|err| xml_error(err, range.0))?;
+            match reborrow(self.input, &value) {
+                Some(value) => {
+                    driver.state_mut().set_input_range(range.0, range.1);
+                    driver.emit_borrowed(Atom::Lexical(Text::borrowed(value)))?;
+                }
+                None => emit_at(driver, Atom::Lexical(Text::borrowed(&value)), range)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn end(&mut self, driver: &mut DeserializeDriver<'_, 'a>, range: Range) -> Result<(), Error> {
+        if self.stack.last().unwrap().is_map {
+            self.flush_text(driver)?;
+            self.stack.pop();
+            emit_at(driver, Event::MapEnd, range)?;
+        } else {
+            let element = self.stack.pop().unwrap();
+            element.text.emit(driver, element.start)?;
+        }
+        if self.stack.is_empty() {
+            self.root_done = true;
+        }
+        Ok(())
+    }
+
+    fn text(&mut self, text: Cow<'a, str>, range: Range) -> Result<(), Error> {
+        match self.stack.last_mut() {
+            Some(element) => {
+                element.text.push(text, range);
+                Ok(())
+            }
+            None if is_blank(&text) => Ok(()),
+            None => Err(
+                Error::new(ErrorKind::Unexpected, "text outside of the root element")
+                    .with_offset(range.0),
+            ),
+        }
+    }
+
+    /// Returns the key of an element or attribute.
+    fn name(&self, name: QName<'_>, is_attribute: bool) -> Result<Cow<'a, str>, Error> {
+        let names = &self.config.names;
+        let written: &str = name.as_ref();
+        let mut key = match self.alias(name, is_attribute) {
+            Some(alias) => {
+                let local_name = name.local_name();
+                let local: &str = local_name.as_ref();
+                Cow::Owned(if alias.is_empty() {
+                    local.to_string()
+                } else {
+                    format!("{alias}:{local}")
+                })
+            }
+            None => match reborrow(self.input, written) {
+                Some(written) => Cow::Borrowed(written),
+                None => Cow::Owned(written.to_string()),
+            },
+        };
+        if is_attribute && !names.attribute_prefix.is_empty() {
+            key = Cow::Owned(format!("{}{}", names.attribute_prefix, key));
+        }
+        Ok(key)
+    }
+
+    /// Returns the configured prefix of the namespace of a name.
+    fn alias(&self, name: QName<'_>, is_attribute: bool) -> Option<&'static str> {
+        let namespaces = self.config.names.namespaces;
+        if namespaces.is_empty() {
+            return None;
+        }
+        let resolver = self.reader.resolver();
+        let (ns, _) = if is_attribute {
+            resolver.resolve_attribute(name)
+        } else {
+            resolver.resolve_element(name)
+        };
+        match ns {
+            ResolveResult::Bound(ns) => namespaces
+                .iter()
+                .find(|(_, uri)| *uri == ns.as_ref())
+                .map(|(alias, _)| *alias),
+            _ => None,
+        }
+    }
+}
+
+/// Returns the text as a slice of the input if it is one.
+fn reborrow<'a>(input: &'a str, text: &str) -> Option<&'a str> {
+    let start = (text.as_ptr() as usize).checked_sub(input.as_ptr() as usize)?;
+    let end = start.checked_add(text.len())?;
+    input
+        .get(start..end)
+        .filter(|x| x.as_ptr() == text.as_ptr())
+}
+
+/// Resolves a character or entity reference.
+///
+/// Only the predefined entities are supported, the entities of document
+/// types are never expanded.
+fn resolve_reference(reference: &BytesRef<'_>, offset: usize) -> Result<char, Error> {
+    if let Some(c) = reference
+        .resolve_char_ref()
+        .map_err(|err| xml_error(err, offset))?
+    {
+        return Ok(c);
+    }
+    match &*reference.xml_content(XmlVersion::Implicit1_0) {
+        "lt" => Ok('<'),
+        "gt" => Ok('>'),
+        "amp" => Ok('&'),
+        "apos" => Ok('\''),
+        "quot" => Ok('"'),
+        name => Err(
+            Error::new(ErrorKind::Unexpected, format!("unknown entity `&{name};`"))
+                .with_offset(offset),
+        ),
+    }
+}
+
+fn xml_error(err: quick_xml::Error, offset: usize) -> Error {
+    Error::new(ErrorKind::Unexpected, format!("invalid XML: {err}")).with_offset(offset)
+}
+
+fn emit_key<'a>(
+    driver: &mut DeserializeDriver<'_, 'a>,
+    key: Cow<'a, str>,
+    range: Range,
+) -> Result<(), Error> {
+    driver.state_mut().set_input_range(range.0, range.1);
+    match key {
+        Cow::Borrowed(key) => driver.emit_borrowed(Atom::Lexical(Text::borrowed(key))),
+        Cow::Owned(key) => driver.emit(Atom::Lexical(Text::owned(key))),
+    }
+}
+
+fn emit_at<'e, E: Into<Event<'e>>>(
+    driver: &mut DeserializeDriver<'_, '_>,
+    event: E,
+    range: Range,
+) -> Result<(), Error> {
+    driver.state_mut().set_input_range(range.0, range.1);
+    driver.emit(event)
+}

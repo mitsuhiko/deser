@@ -394,6 +394,7 @@ Formats:
 * [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack): MessagePack
 * [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv): CSV and TSV
 * [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded): query strings and forms
+* [deser-xml](https://github.com/mitsuhiko/deser/tree/main/deser-xml): XML
 * [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env): environment variables
 * [deser-debug](https://github.com/mitsuhiko/deser/tree/main/deser-debug): debug formatting
 

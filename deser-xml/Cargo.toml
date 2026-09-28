@@ -1,0 +1,27 @@
+[package]
+name = "deser-xml"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.8.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "XML support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "xml"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-xml"
+autotests = false
+
+[dependencies]
+deser-core = { version = "0.8.0", path = "../deser-core" }
+quick-xml = "0.42.0"
+
+[dev-dependencies]
+deser = { version = "0.8.0", path = "../deser", features = ["derive"] }
+deser-json = { version = "0.8.0", path = "../deser-json" }
+deser-path = { version = "0.8.0", path = "../deser-path" }
+deser-value = { version = "0.8.0", path = "../deser-value" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

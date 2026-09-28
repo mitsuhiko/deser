@@ -49,6 +49,8 @@ pub struct Account {
 //! * [`deser-urlencoded`](https://docs.rs/deser-urlencoded): implements query string
 //!   and form data (`application/x-www-form-urlencoded`) serialization and
 //!   deserialization.
+//! * [`deser-xml`](https://docs.rs/deser-xml): implements XML serialization and
+//!   deserialization.
 //! * [`deser-csv`](https://docs.rs/deser-csv): implements CSV, TSV and other
 //!   delimited text serialization and deserialization.
 //! * [`deser-env`](https://docs.rs/deser-env): implements reading
