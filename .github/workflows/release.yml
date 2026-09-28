@@ -1,0 +1,56 @@
+name: Release
+
+# Publishes all crates to crates.io when a version tag (like 0.9.0) is
+# pushed.  Running the workflow by hand continues a release that failed
+# half way, crates that are already published are skipped.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # trusted publishing to crates.io
+      id-token: write
+    env:
+      # crates.io only allows trusted publishing for crates that already
+      # exist.  New crates are published locally with `scripts/publish.sh`
+      # (or with a token in this secret), otherwise the workflow
+      # authenticates with trusted publishing.
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Check that the tag matches the version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "deser") | .version')
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the version $version of deser"
+            exit 1
+          fi
+      - name: Authenticate with crates.io
+        id: auth
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+        run: ./scripts/publish.sh

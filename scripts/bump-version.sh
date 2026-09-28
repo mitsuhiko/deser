@@ -8,6 +8,7 @@ NEW_VERSION="${1}"
 
 echo "Bumping version: ${NEW_VERSION}"
 
-for path in */Cargo.toml; do
+# only the crates, the benchmark and the examples keep their versions
+for path in deser*/Cargo.toml; do
   perl -pi -e "s/^(deser.*)?version = \".*?\"/\$1version = \"$NEW_VERSION\"/" $path
 done
