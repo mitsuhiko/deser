@@ -385,7 +385,11 @@ impl<D: Decoder> DecodeBuffer<D> {
             }
             if self.data.len() - self.end < READ_SIZE {
                 let len = (self.end + READ_SIZE).max(self.data.len() * 2);
-                self.data.resize(len, 0);
+                // a zeroed allocation instead of resizing, which writes the
+                // zeroes one by one without optimizations (and in miri)
+                let mut data = vec![0; len];
+                data[..self.end].copy_from_slice(&self.data[..self.end]);
+                self.data = data;
             }
         }
         &mut self.data[self.end..]
