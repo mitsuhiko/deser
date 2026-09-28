@@ -88,8 +88,11 @@ for a comparison with serde and miniserde.
 Deser needs unsafe code internally, primarily to erase lifetimes in the drivers
 which keep the chain of borrowed sinks and emitters on the heap rather than the
 call stack, and for the arena these sinks and emitters are allocated in.  The
-unsafe code is documented, has a dedicated test suite that exercises it
-(partial drops, errors, panics, deep nesting) and the test suites of all crates
-are run under [miri](https://github.com/rust-lang/miri) with both stacked and
-tree borrows (`make miri-test`).  This does not guarantee soundness but if you
-find a soundness issue, please report it.
+unsafe code is documented and has a dedicated test suite that exercises it
+(partial drops, errors, panics, deep nesting).  The test suites of the core
+crate and of most formats run under [miri](https://github.com/rust-lang/miri)
+with stacked borrows, the core crate and the soundness tests also with tree
+borrows (`make miri-test`).  The formats use unsafe code to skip the UTF-8
+validation of input that is known to be valid, for SIMD scanning and to write
+into buffers with reserved capacity.  This does not guarantee soundness but
+if you find a soundness issue, please report it.
