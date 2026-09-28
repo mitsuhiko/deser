@@ -196,6 +196,7 @@ fn vectors() -> Vec<Vector> {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn decode() {
     for vector in vectors() {
         let bytes = hex(vector.hex);
@@ -205,6 +206,7 @@ fn decode() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn encode_preferred() {
     for vector in vectors().into_iter().filter(|x| x.preferred) {
         let bytes = deser_cbor::to_vec(&vector.value).unwrap();
@@ -213,6 +215,7 @@ fn encode_preferred() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn reencode_is_preferred() {
     // Decoding and encoding again always yields the preferred form, which
     // is a fixed point.
@@ -229,6 +232,7 @@ fn reencode_is_preferred() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn nan() {
     for s in ["f97e00", "fa7fc00000", "fb7ff8000000000000"] {
         let decoded: Value = deser_cbor::from_slice(&hex(s)).unwrap();
@@ -243,12 +247,14 @@ fn nan() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn undefined_decodes_as_null() {
     let decoded: Value = deser_cbor::from_slice(&[0xf7]).unwrap();
     assert_eq!(decoded, Value::Null);
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn simple_values() {
     // Unassigned simple values are preserved.
     assert_eq!(

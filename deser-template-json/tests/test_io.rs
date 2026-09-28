@@ -222,7 +222,7 @@ fn test_feeding_bounds_the_buffer() {
     let long = "x".repeat(50);
     let mut input = String::from("[");
     // many chunks, fewer under miri which is slow
-    let count = if cfg!(miri) { 300 } else { 10_000 };
+    let count = if cfg!(miri) { 150 } else { 10_000 };
     for idx in 0..count {
         if idx > 0 {
             input.push(',');
@@ -453,7 +453,7 @@ mod streamed {
         use deser::io::{DecodeBuffer, ElementReader, ElementStatus};
 
         // many chunks, fewer under miri which is slow
-        let total = if cfg!(miri) { 300 } else { 10_000 };
+        let total = if cfg!(miri) { 150 } else { 10_000 };
         let page = Page {
             total,
             items: (0..total).map(item).collect(),

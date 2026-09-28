@@ -107,7 +107,10 @@ fn test_incremental_same_output() {
         text: &'static str,
     }
 
-    let items: Vec<Item> = (0..20)
+    // miri is slow, it checks smaller values, fewer configurations and
+    // limits (small limits pause at every value)
+    let miri = cfg!(miri);
+    let items: Vec<Item> = (0..if miri { 4 } else { 20 })
         .map(|idx| Item {
             name: format!("item {idx}"),
             tags: vec!["a", "b"],
@@ -116,7 +119,9 @@ fn test_incremental_same_output() {
             text: "\u{e4}\u{f6}\u{fc} with \"quotes\"",
         })
         .collect();
-    let numbers: Vec<Vec<u64>> = (0..50).map(|x| (0..x).collect()).collect();
+    let numbers: Vec<Vec<u64>> = (0..if miri { 12 } else { 50 })
+        .map(|x| (0..x).collect())
+        .collect();
     let values: [&dyn deser::Serialize; 4] = [&items, &numbers, &"scalar", &Vec::<u32>::new()];
     let configs = [
         SerializerConfig::new(),
@@ -129,10 +134,16 @@ fn test_incremental_same_output() {
             .indent(Indent::Spaces(4))
             .inline(InlinePolicy::LeafIfFits(20)),
     ];
-    for config in &configs {
+    let configs = if miri { &configs[3..] } else { &configs[..] };
+    let limits: &[usize] = if miri {
+        &[1, 16, usize::MAX]
+    } else {
+        &[1, 3, 16, 100, usize::MAX]
+    };
+    for config in configs {
         for value in values {
             let expected = config.to_string(value).unwrap();
-            for limit in [1, 3, 16, 100, usize::MAX] {
+            for &limit in limits {
                 let (out, _) = streamed(config, value, limit);
                 assert_eq!(out, expected, "limit {limit}");
             }
@@ -141,17 +152,21 @@ fn test_incremental_same_output() {
 
     // large values are written in pieces (plain values in pieces of a few
     // hundred atoms)
-    let numbers: Vec<Vec<u64>> = (0..200).map(|x| (0..x).collect()).collect();
-    let (out, writes) = streamed(&SerializerConfig::new(), &numbers, 1024);
-    assert!(writes > 20, "{writes}");
+    let numbers: Vec<Vec<u64>> = (0..if miri { 60 } else { 200 })
+        .map(|x| (0..x).collect())
+        .collect();
+    let limit = if miri { 128 } else { 1024 };
+    let (out, writes) = streamed(&SerializerConfig::new(), &numbers, limit);
+    assert!(writes > if miri { 5 } else { 20 }, "{writes}");
     assert_eq!(out, deser_json::to_string(&numbers).unwrap());
     let (_, writes) = streamed(&SerializerConfig::new(), &numbers, usize::MAX);
     assert_eq!(writes, 1);
 
     // also a single large plain sequence
-    let numbers: Vec<u64> = (0..100_000).collect();
+    let (len, min_writes) = if miri { (3_000, 10) } else { (100_000, 100) };
+    let numbers: Vec<u64> = (0..len).collect();
     let (out, writes) = streamed(&SerializerConfig::new(), &numbers, 1024);
-    assert!(writes > 100, "{writes}");
+    assert!(writes > min_writes, "{writes}");
     assert_eq!(out, deser_json::to_string(&numbers).unwrap());
 
     // and one in a struct
@@ -162,10 +177,12 @@ fn test_incremental_same_output() {
     }
     let wrapper = Wrapper {
         name: "x",
-        items: (0..10_000).map(|x| x.to_string()).collect(),
+        items: (0..if miri { 2_000 } else { 10_000 })
+            .map(|x| x.to_string())
+            .collect(),
     };
     let (out, writes) = streamed(&SerializerConfig::new(), &wrapper, 1024);
-    assert!(writes > 20, "{writes}");
+    assert!(writes > if miri { 5 } else { 20 }, "{writes}");
     assert_eq!(out, deser_json::to_string(&wrapper).unwrap());
 }
 

@@ -565,7 +565,11 @@ mod pausing {
             }
         }
 
-        let value: Vec<Vec<u64>> = (0..100).map(|x| (0..x).collect()).collect();
+        // plain values pause every few hundred atoms, miri (which is slow)
+        // checks fewer of them
+        let value: Vec<Vec<u64>> = (0..if cfg!(miri) { 40 } else { 100 })
+            .map(|x| (0..x).collect())
+            .collect();
         let mut expected = Vec::new();
         let mut driver = SerializeDriver::new(&value);
         driver.push_layer(Double);

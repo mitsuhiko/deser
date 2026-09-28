@@ -644,8 +644,8 @@ impl<W: Write, E: Encoder> Writer<W, E> {
     ///
     /// // `Xs` is a format which writes an `x` for every event
     /// let mut writer = Writer::new(Counter(0), Xs);
-    /// writer.set_buffer_limit(1000);
-    /// writer.write(&vec![0; 100_000]).unwrap();
+    /// writer.set_buffer_limit(100);
+    /// writer.write(&vec![0; 20_000]).unwrap();
     /// assert!(writer.get_ref().0 > 50);
     /// ```
     pub fn set_buffer_limit(&mut self, limit: usize) {

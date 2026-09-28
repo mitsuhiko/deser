@@ -34,7 +34,8 @@ fn assert_eof<T: DeserializeOwned + std::fmt::Debug>(s: &str) {
 
 #[test]
 fn recursion_limit() {
-    let depth = if cfg!(miri) { 1000 } else { 65536 };
+    // beyond the limit that is checked, miri is slow
+    let depth = if cfg!(miri) { 300 } else { 65536 };
     // Deeply nested arrays do not exhaust the stack by default...
     let bomb = [vec![0x81u8; depth], vec![0x01]].concat();
     let value: Value = deser_cbor::from_slice(&bomb).unwrap();
@@ -66,7 +67,7 @@ fn recursion_limit() {
 
 #[test]
 fn deeply_tagged_input() {
-    let depth = if cfg!(miri) { 1000 } else { 65536 };
+    let depth = if cfg!(miri) { 150 } else { 65536 };
     // Tags are not processed recursively, a tag bomb is harmless.
     let bomb = [vec![0xc1u8; depth], vec![0x01]].concat();
     assert_eq!(deser_cbor::from_slice::<u64>(&bomb).unwrap(), 1);

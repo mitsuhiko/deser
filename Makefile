@@ -26,16 +26,18 @@ endif
 # of deser-json, deser-jsonc, deser-json5 and deser-hjson are tested by
 # deser-template-json.
 MIRI_CRATES ?= deser deser-template-json deser-msgpack deser-cbor deser-core deser-xml deser-json deser-csv deser-transcode deser-debug deser-path deser-location
-# Crates also tested with tree borrows.  Almost all unsafe code is in the
-# core crate (tested by its own tests and the integration tests of deser),
-# the formats only have simple byte copies.
-MIRI_TREE_BORROWS_CRATES ?= deser-core deser
+# Crates also tested with tree borrows (which is twice as slow as stacked
+# borrows), a crate can be limited to the tests matching a filter
+# (`crate:filter`).  Almost all unsafe code is in the core crate, tested by
+# its own tests and the soundness tests of deser, the formats only have
+# simple byte copies.
+MIRI_TREE_BORROWS_CRATES ?= deser-core deser:test_soundness
 # every miri run is single threaded, they all run at once where there are
 # enough cores (a run is as slow as the slowest crate)
 MIRI_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-# A run should take a few minutes at most (about 3 with enough cores), or
-# it's not run.  Tests that are slow in miri and do not test unsafe code opt
-# out with
+# A run has to stay below three minutes, or it's not run (`make
+# miri-slowest` finds the tests to blame).  Tests that are slow in miri and
+# do not test unsafe code opt out with
 # `#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]`.  Tests
 # with unsafe code under test should rather do less work in miri (see the
 # uses of `cfg!(miri)`).  `make miri-test-full` also runs the ignored tests.
@@ -71,10 +73,14 @@ test:
 miri-test:
 	@$(RUN) "miri:setup" "cargo +nightly miri setup"
 	@$(RUN) -j $(MIRI_JOBS) \
-		$(foreach crate,$(MIRI_TREE_BORROWS_CRATES), \
-			"miri:$(crate):tree-borrows" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)") \
+		$(foreach entry,$(MIRI_TREE_BORROWS_CRATES), \
+			"miri:$(entry):tree-borrows" "cd $(firstword $(subst :, ,$(entry))) && MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-tree-borrows' cargo +nightly miri test --all-features -- $(word 2,$(subst :, ,$(entry))) $(MIRI_TEST_ARGS)") \
 		$(foreach crate,$(MIRI_CRATES), \
 			"miri:$(crate)" "cd $(crate) && MIRIFLAGS='-Zmiri-strict-provenance' cargo +nightly miri test --all-features -- $(MIRI_TEST_ARGS)")
+
+# lists the tests that take the most time in miri (see the script)
+miri-slowest:
+	@python3 scripts/miri-slowest $(MIRI_CRATES)
 
 miri-test-full:
 	@$(MAKE) --no-print-directory miri-test MIRI_TEST_ARGS=--include-ignored
@@ -135,4 +141,4 @@ bench-versus:
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times
+.PHONY: all test miri-test miri-slowest miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times

@@ -228,7 +228,10 @@ fn test_to_writer_streams_records() {
         note: Option<&'static str>,
     }
 
-    let rows: Vec<Row> = (0..5000)
+    // the output is written in pieces of 8 KiB.  Miri is slow, it writes
+    // fewer of them.
+    let miri = cfg!(miri);
+    let rows: Vec<Row> = (0..if miri { 700 } else { 5000 })
         .map(|idx| Row {
             name: format!("person {idx}"),
             age: idx % 100,
@@ -238,10 +241,10 @@ fn test_to_writer_streams_records() {
     let mut out = Pieces(Vec::new(), 0);
     deser_csv::to_writer(&mut out, &rows).unwrap();
     assert_eq!(out.0, deser_csv::to_string(&rows).unwrap().as_bytes());
-    assert!(out.1 > 5, "{}", out.1);
+    assert!(out.1 > if miri { 1 } else { 5 }, "{}", out.1);
 
     // maps whose keys come in another order than the columns
-    let maps: Vec<BTreeMap<String, u32>> = (0..3000)
+    let maps: Vec<BTreeMap<String, u32>> = (0..if miri { 300 } else { 3000 })
         .map(|idx| {
             let mut map = BTreeMap::from([("b".to_string(), idx), ("a".to_string(), idx * 2)]);
             if idx % 2 == 0 {
@@ -262,7 +265,7 @@ fn test_to_writer_streams_records() {
         Err(err) => assert_eq!(rv.unwrap_err().message(), err.message()),
     }
 
-    let maps: Vec<BTreeMap<String, u32>> = (0..3000)
+    let maps: Vec<BTreeMap<String, u32>> = (0..if miri { 1200 } else { 3000 })
         .map(|idx| BTreeMap::from([("b".to_string(), idx), ("a".to_string(), idx * 2)]))
         .collect();
     let mut out = Pieces(Vec::new(), 0);

@@ -54,7 +54,7 @@ jobs:
           - name: deser
             crates: deser-core deser
           - name: deser, tree borrows
-            tree-borrows-crates: deser-core deser
+            tree-borrows-crates: deser-core deser:test_soundness
           - name: deser-json
             crates: deser-template-json deser-json
           - name: other crates

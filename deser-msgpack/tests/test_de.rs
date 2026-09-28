@@ -32,7 +32,8 @@ fn assert_eof<T: DeserializeOwned + std::fmt::Debug>(s: &str) {
 
 #[test]
 fn recursion_limit() {
-    let depth = if cfg!(miri) { 1000 } else { 65536 };
+    // beyond the limit that is checked, miri is slow
+    let depth = if cfg!(miri) { 300 } else { 65536 };
     // Deeply nested arrays do not exhaust the stack by default...
     let bomb = [vec![0x91u8; depth], vec![0x01]].concat();
     let value: Value = deser_msgpack::from_slice(&bomb).unwrap();

@@ -214,11 +214,11 @@
 //!     entry: Vec<String>,
 //! }
 //!
-//! let feed = Feed { entry: (0..1000).map(|x| x.to_string()).collect() };
+//! let feed = Feed { entry: (0..100).map(|x| x.to_string()).collect() };
 //! let mut out = Vec::new();
 //! deser_xml::to_writer(&mut out, &feed).unwrap();
 //! let read: Feed = deser_xml::from_reader(&out[..]).unwrap();
-//! assert_eq!(read.entry.len(), 1000);
+//! assert_eq!(read.entry.len(), 100);
 //! # }
 //! ```
 //!

@@ -119,6 +119,7 @@ fn is_float(value: &Value) -> bool {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_suite() {
     let suite = load();
     assert_eq!(suite.len(), 15);
@@ -186,6 +187,7 @@ fn test_suite() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_suite_typed() {
     // the encodings also decode into typed values
     for (group, cases) in load() {
@@ -287,6 +289,7 @@ fn test_suite_typed() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_suite_as_stream() {
     // all encodings after each other are a stream of items
     let mut bytes = Vec::new();

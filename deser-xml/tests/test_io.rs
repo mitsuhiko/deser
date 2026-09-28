@@ -65,25 +65,34 @@ fn feed(entries: u32) -> Feed {
 
 #[test]
 fn test_writer_same_output() {
-    let feed = feed(50);
+    // miri is slow, it checks a smaller document, fewer configurations and
+    // limits (small limits pause at every value)
+    let miri = cfg!(miri);
+    let feed = feed(if miri { 8 } else { 50 });
     let map = BTreeMap::from([
         ("@a", "1".to_string()),
         ("b", "2".to_string()),
         ("$text", "x".to_string()),
     ]);
     let values: [&dyn Serialize; 3] = [&feed, &map, &Some(42)];
-    for config in [
+    let configs = [
         SerializerConfig::new().root("root"),
-        SerializerConfig::new().root("root").declaration(true),
         SerializerConfig::new()
             .root("root")
             .indent(Indent::Spaces(2)),
+        SerializerConfig::new().root("root").declaration(true),
         SerializerConfig::new().root("root").indent(Indent::Tab),
-    ] {
+    ];
+    let limits: &[usize] = if miri {
+        &[1, 100, usize::MAX]
+    } else {
+        &[1, 10, 100, usize::MAX]
+    };
+    for config in &configs[..if miri { 2 } else { 4 }] {
         for value in values {
             let expected = config.to_string(value).unwrap();
-            for limit in [1, 10, 100, usize::MAX] {
-                assert_eq!(streamed(&config, value, limit).0, expected, "limit {limit}");
+            for &limit in limits {
+                assert_eq!(streamed(config, value, limit).0, expected, "limit {limit}");
             }
         }
     }
@@ -91,7 +100,9 @@ fn test_writer_same_output() {
 
 #[test]
 fn test_writer_pieces() {
-    let feed = feed(500);
+    // miri is slow, it writes fewer pieces
+    let miri = cfg!(miri);
+    let feed = feed(if miri { 60 } else { 500 });
     let config = SerializerConfig::new();
     let (out, writes) = streamed(&config, &feed, 256);
     assert_eq!(out, config.to_string(&feed).unwrap());
@@ -108,8 +119,9 @@ fn test_writer_pieces() {
 
     // maps are held back until they are complete as attributes can come
     // until their end
-    let map: BTreeMap<String, String> =
-        (0..500).map(|x| (format!("k{x}"), x.to_string())).collect();
+    let map: BTreeMap<String, String> = (0..if miri { 60 } else { 500 })
+        .map(|x| (format!("k{x}"), x.to_string()))
+        .collect();
     let config = SerializerConfig::new().root("map");
     let (out, writes) = streamed(&config, &map, 64);
     assert_eq!(out, config.to_string(&map).unwrap());
@@ -134,7 +146,9 @@ fn test_writer_namespaces() {
     }
 
     let root = Root {
-        a: (0..20).map(|x| Child { b: x, c: x * 2 }).collect(),
+        a: (0..if cfg!(miri) { 5 } else { 20 })
+            .map(|x| Child { b: x, c: x * 2 })
+            .collect(),
     };
     let config = SerializerConfig::new();
 

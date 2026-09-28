@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Lists the tests that take the most time in miri.
+
+`make miri-test` has to stay below three minutes, or it's not run.  When it
+gets slower this finds the tests to blame: it runs the tests of the crates
+under miri (in parallel, like `make miri-test`) with the time of every test
+and prints the slowest tests and the time per crate.
+
+Usage:
+
+    scripts/miri-slowest [-n COUNT] [CRATE ...]
+
+The times are miri's clock, which (with isolation) counts the work that was
+interpreted rather than wall time: compare them with each other, not with
+the time of a run.  Doctests are not timed, they are cheap.
+
+Tests are slow in miri because every function call and typed copy is
+checked, so their time grows with the events they serialize or parse.
+Tests that only need large inputs to exercise pieces or pauses (buffer
+limits, chunks, nesting beyond the preallocated stacks) should use smaller
+ones in miri (see the uses of `cfg!(miri)`), tests without unsafe code
+under test can opt out with
+`#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]`.
+
+To see where the time of a single test goes:
+
+* Functions of the program: run the test with
+  `MIRIFLAGS='-Zmiri-measureme=/tmp/prof'` and summarize the profile with
+  `summarize summarize /tmp/prof/<binary>.mm_profdata` (install with
+  `cargo install --git https://github.com/rust-lang/measureme summarize`).
+* The interpreter itself (validation, borrow tracking, data race
+  detection): record miri with samply, for instance
+  `MIRIFLAGS=... samply record -- cargo +nightly miri test ...`.
+"""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_CRATES = [
+    "deser",
+    "deser-template-json",
+    "deser-msgpack",
+    "deser-cbor",
+    "deser-core",
+    "deser-xml",
+    "deser-json",
+    "deser-csv",
+    "deser-transcode",
+    "deser-debug",
+    "deser-path",
+    "deser-location",
+]
+TIMED = re.compile(r"^test (.+?) \.\.\. (ok|FAILED|ignored)(?: <([0-9.]+)s>)?$")
+
+
+def run(crate):
+    """Runs the tests of a crate and returns the times and the wall time."""
+    env = dict(os.environ)
+    env.setdefault("MIRIFLAGS", "-Zmiri-strict-provenance")
+    start = time.monotonic()
+    proc = subprocess.run(
+        [
+            "cargo", "+nightly", "miri", "test", "--all-features", "--",
+            "-Zunstable-options", "--report-time", "--test-threads=1",
+        ],
+        cwd=os.path.join(ROOT, crate),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    wall = time.monotonic() - start
+    tests = []
+    for line in proc.stdout.splitlines():
+        match = TIMED.match(line.strip())
+        if match and match.group(3):
+            tests.append((float(match.group(3)), crate, match.group(1), match.group(2)))
+    return crate, tests, wall, proc.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("-n", type=int, default=25, help="number of tests to list")
+    parser.add_argument("crates", nargs="*", default=DEFAULT_CRATES)
+    args = parser.parse_args()
+
+    subprocess.run(["cargo", "+nightly", "miri", "setup"], cwd=ROOT, capture_output=True)
+    with ThreadPoolExecutor(max_workers=len(args.crates)) as pool:
+        results = list(pool.map(run, args.crates))
+
+    everything = sorted((t for _, tests, _, _ in results for t in tests), reverse=True)
+    print(f"slowest tests (miri clock):")
+    for secs, crate, name, status in everything[: args.n]:
+        mark = "" if status == "ok" else f" [{status}]"
+        print(f"  {secs:8.1f}s  {crate}: {name}{mark}")
+    print("\ncrates (sum of the tests, wall time with the others running):")
+    for crate, tests, wall, code in sorted(results, key=lambda r: -sum(t[0] for t in r[1])):
+        mark = "" if code == 0 else f" [exit {code}]"
+        print(f"  {sum(t[0] for t in tests):8.1f}s  {wall:6.0f}s  {crate}{mark}")
+    return 0 if all(code == 0 for _, _, _, code in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

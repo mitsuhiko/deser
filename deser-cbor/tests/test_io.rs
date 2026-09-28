@@ -209,7 +209,7 @@ fn test_feeding_bounds_the_buffer() {
     use deser::io::{DecodeBuffer, Status};
 
     // many chunks, fewer under miri which is slow
-    let count = if cfg!(miri) { 300 } else { 10_000 };
+    let count = if cfg!(miri) { 150 } else { 10_000 };
     let value = (0..count)
         .map(|idx| (idx, "x".repeat(50)))
         .collect::<Vec<_>>();
@@ -285,20 +285,29 @@ mod incremental {
 
     #[test]
     fn test_same_output() {
-        let numbers: Vec<Vec<u64>> = (0..40).map(|x| (0..x * 10).collect()).collect();
-        let unsized_values: Vec<Unsized> = (0..20).map(|x| Unsized((0..x * 3).collect())).collect();
+        // miri is slow, it checks smaller values and fewer limits (small
+        // limits pause at every value)
+        let miri = cfg!(miri);
+        let numbers: Vec<Vec<u64>> = (0..if miri { 10 } else { 40 })
+            .map(|x| (0..x * 10).collect())
+            .collect();
+        let unsized_values: Vec<Unsized> = (0..if miri { 6 } else { 20 })
+            .map(|x| Unsized((0..x * 3).collect()))
+            .collect();
         let nested = (
-            Unsized((0..100).collect()),
-            vec![Unsized((0..300).collect())],
+            Unsized((0..if miri { 20 } else { 100 }).collect()),
+            vec![Unsized((0..if miri { 50 } else { 300 }).collect())],
         );
-        let maps: Vec<HashMap<String, Vec<u64>>> = (0..20)
+        let maps: Vec<HashMap<String, Vec<u64>>> = (0..if miri { 6 } else { 20 })
             .map(|x| {
                 (0..x)
                     .map(|y| (format!("key {y}"), (0..y as u64).collect()))
                     .collect()
             })
             .collect();
-        let sorted: BTreeMap<u64, String> = (0..500).map(|x| (x, format!("value {x}"))).collect();
+        let sorted: BTreeMap<u64, String> = (0..if miri { 60 } else { 500 })
+            .map(|x| (x, format!("value {x}")))
+            .collect();
         let values: [&dyn Serialize; 6] = [
             &numbers,
             &unsized_values,
@@ -313,7 +322,12 @@ mod incremental {
         ] {
             for value in values {
                 let expected = config.to_vec(value).unwrap();
-                for limit in [1, 5, 64, 1000, usize::MAX] {
+                let limits: &[usize] = if miri {
+                    &[1, 64, usize::MAX]
+                } else {
+                    &[1, 5, 64, 1000, usize::MAX]
+                };
+                for &limit in limits {
                     assert_eq!(streamed(&config, value, limit).0, expected, "limit {limit}");
                 }
             }
@@ -322,22 +336,27 @@ mod incremental {
 
     #[test]
     fn test_pieces() {
+        // miri is slow, it writes fewer pieces
+        let miri = cfg!(miri);
         let config = SerializerConfig::new();
-        let numbers: Vec<Vec<u64>> = (0..100).map(|x| (0..x).collect()).collect();
+        let numbers: Vec<Vec<u64>> = (0..if miri { 40 } else { 100 })
+            .map(|x| (0..x).collect())
+            .collect();
         let (out, writes) = streamed(&config, &numbers, 64);
         assert_eq!(out, config.to_vec(&numbers).unwrap());
-        assert!(writes > 20, "{writes}");
+        // plain values are written in pieces of a few hundred atoms
+        assert!(writes > if miri { 2 } else { 20 }, "{writes}");
 
         // containers of unknown length are held back until they are
         // complete
-        let value = Unsized((0..1000).collect());
+        let value = Unsized((0..if miri { 100 } else { 1000 }).collect());
         let (out, writes) = streamed(&config, &value, 64);
         assert_eq!(out, config.to_vec(&value).unwrap());
         assert_eq!(writes, 1);
 
         // as are maps in canonical mode
         let config = SerializerConfig::new().canonical(true);
-        let map: HashMap<u64, u64> = (0..1000).map(|x| (x, x)).collect();
+        let map: HashMap<u64, u64> = (0..if miri { 100 } else { 1000 }).map(|x| (x, x)).collect();
         let (out, writes) = streamed(&config, &map, 64);
         assert_eq!(out, config.to_vec(&map).unwrap());
         assert_eq!(writes, 1);
@@ -350,7 +369,7 @@ mod incremental {
         writer.set_buffer_limit(3);
         let mut expected = Vec::new();
         for idx in 0..10u64 {
-            let value: Vec<u64> = (0..idx * 100).collect();
+            let value: Vec<u64> = (0..idx * if cfg!(miri) { 10 } else { 100 }).collect();
             writer.write(&value).unwrap();
             expected.extend(config.to_vec(&value).unwrap());
         }
