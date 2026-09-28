@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use deser_core::Text;
-use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, Source};
-use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event};
+use deser_core::de::{self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules};
+use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::Nesting;
 use crate::encoding::{Decoded, decode};
@@ -130,7 +130,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::de::Source)).  This copies the input.
+    /// [`Source`](deser_core::Source)).  This copies the input.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self

@@ -26,7 +26,8 @@
 //! a consumer asks for a location for the first time:
 //!
 //! ```
-//! use deser::de::{DeserializeDriver, Source};
+//! use deser::de::DeserializeDriver;
+//! use deser::Source;
 //! use deser::Event;
 //! use deser_location::Spanned;
 //!
@@ -58,9 +59,9 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use deser_core::State;
-use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle, Source};
+use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use deser_core::ser::{Chunk, Describe, Serialize};
-use deser_core::{Atom, ContainerShape, Error};
+use deser_core::{Atom, ContainerShape, Error, Source};
 
 /// Re-exported from deser, which counts positions the same way for errors.
 pub use deser_core::Position;

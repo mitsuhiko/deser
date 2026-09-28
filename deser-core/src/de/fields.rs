@@ -5,6 +5,7 @@
 //! of the public API, it's used by the derive through `deser::__derive`.
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -17,7 +18,7 @@ use crate::de::duplicates::{duplicate_field, is_seen, mark_seen};
 use crate::de::sinkbox::StructBox;
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
 use crate::de::{Sink, SinkHandle};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::Atom;
 
 /// The index of a key that is not a field.
@@ -362,12 +363,12 @@ impl StructFinish<'_> {
     #[inline(never)]
     pub fn missing(&mut self, missing: &[bool], state: &State) -> Error {
         if self.errors.is_empty() {
-            return crate::__derive::missing_field(missing, self.fields, state);
+            return missing_field(missing, self.fields, state);
         }
         for (index, (missing, name)) in missing.iter().zip(self.fields).enumerate() {
             if *missing && !self.seen.contains(index) {
                 self.errors
-                    .push(crate::__derive::new_missing_field_error(name, state), state);
+                    .push(new_missing_field_error(name, state), state);
             }
         }
         match self.errors.take() {
@@ -720,4 +721,59 @@ impl<'a, 'de> Sink<'de> for StructUpdateSink<'a, 'de> {
             None => Ok(None),
         }
     }
+}
+
+/// Returns the errors a struct collected together with the fields that
+/// are missing.
+///
+/// `missing` tells for the required fields (with the indexes and names
+/// given) if they have no value.  Fields that were seen but have no
+/// value failed, they are not missing.
+#[cold]
+#[inline(never)]
+pub fn collected_errors(
+    errors: &mut CollectedErrors,
+    seen: &[u64],
+    missing: &[bool],
+    indexes: &[usize],
+    names: &[&str],
+    state: &State,
+) -> Error {
+    for ((missing, index), name) in missing.iter().zip(indexes).zip(names) {
+        if *missing && !is_seen(seen, *index) {
+            errors.push(new_missing_field_error(name, state), state);
+        }
+    }
+    match errors.take() {
+        Some(err) => err,
+        None => unreachable!(),
+    }
+}
+
+/// Creates the error for the first missing field.
+///
+/// If errors are collected, the error holds all missing fields.
+#[cold]
+pub fn missing_field(missing: &[bool], names: &[&str], state: &State) -> Error {
+    if state.collects_errors() {
+        let errors = missing
+            .iter()
+            .zip(names)
+            .filter(|(missing, _)| **missing)
+            .map(|(_, name)| state.attach_error_context(new_missing_field_error(name, state)));
+        if let Some(err) = Error::from_errors(errors) {
+            return err;
+        }
+    }
+    let index = missing.iter().position(|x| *x).unwrap_or_default();
+    new_missing_field_error(names[index], state)
+}
+
+/// Creates the error for a missing field.
+#[cold]
+pub fn new_missing_field_error(name: &str, state: &State) -> Error {
+    if state.discards_errors {
+        return discarded_error(ErrorKind::MissingField);
+    }
+    Error::new(ErrorKind::MissingField, format!("missing field `{}`", name))
 }

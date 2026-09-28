@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
 use deser_core::de::{
-    self, ContentKey, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, Source,
+    self, ContentKey, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules,
 };
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Text};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
 use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, BytesStart, Event as XmlEvent};
 use quick_xml::name::{QName, ResolveResult};

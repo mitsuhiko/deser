@@ -175,7 +175,7 @@ impl Meta {
 /// The location of a value in its input.
 ///
 /// Spans are captured when values are deserialized from a format that
-/// tracks locations (see [`deser::de::Source`](deser_core::de::Source)), for instance with
+/// tracks locations (see [`deser::Source`](deser_core::Source)), for instance with
 /// the `track_locations` option of `deser-json`.
 #[derive(Clone)]
 pub struct Span {

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use deser_core::Text;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver};
 use deser_core::ser::{self, Serialize, SerializeDriver};
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::value::{Kind, Value};
 

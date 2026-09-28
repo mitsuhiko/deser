@@ -36,7 +36,7 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// Some extension values are well-known: the policy for keys that are
 /// given more than once ([`DuplicateKeys`]), the policy for keys that no
 /// field of a struct takes ([`UnknownFields`](crate::de::UnknownFields))
-/// and the source the input ranges refer to ([`Source`](crate::de::Source)).
+/// and the source the input ranges refer to ([`Source`](crate::Source)).
 ///
 /// Additionally formats can publish the byte range in the input of every
 /// event (see [`input_range`](Self::input_range)) and extensions can
@@ -485,7 +485,7 @@ impl State {
     ///
     /// This is only available if the format provides it (see
     /// [`set_input_range`](Self::set_input_range)).  The range refers to
-    /// the [`Source`](crate::de::Source) and can be resolved into lines and columns for
+    /// the [`Source`](crate::Source) and can be resolved into lines and columns for
     /// instance with the `deser-location` crate.
     #[inline]
     pub fn input_range(&self) -> Option<core::ops::Range<usize>> {

@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
 use deser_core::Text;
-use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
+use deser_core::de::{self, Deserialize, DeserializeDriver};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
-use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};
@@ -83,7 +83,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::de::Source)) which allows resolving the
+    /// [`Source`](deser_core::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.

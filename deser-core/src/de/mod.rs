@@ -251,7 +251,6 @@ pub(crate) mod mapped;
 mod owned;
 pub(crate) mod recording;
 mod sinkbox;
-mod source;
 mod stream;
 pub(crate) mod unknown;
 pub(crate) mod update;
@@ -272,7 +271,6 @@ pub use self::recording::{RecordBuf, Recording};
 #[cfg(feature = "derive")]
 use self::sinkbox::StructBox;
 use self::sinkbox::{ArenaSink, HeapSink, arena_sink};
-pub use self::source::Source;
 pub use self::stream::{Frame, Progress, StreamDeserializer};
 pub use self::unknown::{IgnoredFields, UnknownFields};
 pub use self::update::checked_update;

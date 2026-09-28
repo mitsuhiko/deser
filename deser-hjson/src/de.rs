@@ -5,8 +5,8 @@ use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::str;
 
-use deser_core::de::{self, Deserialize, DeserializeDriver, Source};
-use deser_core::{BytesFormat, Error, ErrorKind};
+use deser_core::de::{self, Deserialize, DeserializeDriver};
+use deser_core::{BytesFormat, Error, ErrorKind, Source};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -149,7 +149,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::de::Source)) which allows resolving the
+    /// [`Source`](deser_core::Source)) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.

@@ -7,14 +7,16 @@ use crate::State;
 ///
 /// Formats can publish the byte range in the input of every event (see
 /// [`State::input_range`](crate::State::input_range)).  This is cheap, but
-/// resolving the ranges into lines and columns requires the source.  As
+/// resolving the ranges into lines and columns (see
+/// [`Position::of`](crate::Position::of)) requires the source.  As
 /// this requires a copy of the input, formats only provide it when asked to
 /// (for instance with their `track_locations` option).  They store it in
 /// the [`State`] as an extension value with [`set`](Self::set) before they
 /// emit the first event:
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, Source};
+/// use deser::de::DeserializeDriver;
+/// use deser::Source;
 ///
 /// let mut out = None::<bool>;
 /// let mut driver = DeserializeDriver::new(&mut out);
