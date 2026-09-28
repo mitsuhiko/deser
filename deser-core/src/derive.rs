@@ -378,6 +378,10 @@
 //!   or deserializable.
 //! * `#[deser(skip_serializing)]` and `#[deser(skip_deserializing)]`: skip
 //!   the variant in one direction only.
+//! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
+//!   `#[deser(deserialize_as = Adapter)]`: serializes and deserializes the
+//!   content of the variant with an adapter.  See [variant
+//!   adapters](#variant-adapters).
 //!
 //! The fields of struct variants support the same attributes as struct
 //! fields, including `flatten`:
@@ -435,6 +439,71 @@
 //! regular one.  Nothing checks that the two directions agree: values that
 //! are written with one representation and read with another might not
 //! round trip.
+//!
+//! ### Variant Adapters
+//!
+//! Adapters on variants serialize and deserialize the content of the
+//! variant, the tag is written as usual.  The adapter receives the fields
+//! of the variant (in the order they are declared, for tuple and struct
+//! variants alike):
+//!
+//! * `()` if the variant has no fields.  Unlike other unit variants, the
+//!   variant then has content, for instance `{"Variant": content}` for
+//!   externally tagged enums.
+//! * the value of the field if it has one field (like `as` on the field).
+//! * a tuple of the fields if it has more than one field.  When serializing
+//!   the tuple holds references to the fields (`(&A, &B)`) and when
+//!   deserializing the values (`(A, B)`).
+//!
+//! Fields that are skipped in a direction are not given to the adapter in
+//! that direction.  When deserializing they are filled in with their
+//! `default` (or [`Default`]).  The field that receives the tag of [other
+//! variants](#other-variants) is not part of the content either.
+//!
+//! ```
+//! use deser::{Deserialize, Serialize};
+//! use deser::adapters::{DisplayFromStr, FromInto};
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Coords {
+//!     x: f64,
+//!     y: f64,
+//! }
+//!
+//! impl From<(&f64, &f64)> for Coords {
+//!     fn from((x, y): (&f64, &f64)) -> Coords {
+//!         Coords { x: *x, y: *y }
+//!     }
+//! }
+//!
+//! impl From<Coords> for (f64, f64) {
+//!     fn from(value: Coords) -> (f64, f64) {
+//!         (value.x, value.y)
+//!     }
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! #[deser(tag = "type")]
+//! pub enum Shape {
+//!     // {"type": "Point", "x": 1.0, "y": 2.0}
+//!     #[deser(as = FromInto<Coords>)]
+//!     Point(f64, f64),
+//!     // {"type": "Circle", "x": 1.0, "y": 2.0, "radius": 3.0}
+//!     Circle { x: f64, y: f64, radius: f64 },
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub enum Port {
+//!     // {"Tcp": "80"}
+//!     #[deser(as = DisplayFromStr)]
+//!     Tcp(u16),
+//! }
+//! ```
+//!
+//! The attributes of the variant and its fields that only affect the
+//! directions which use the adapter have no effect and are rejected (for
+//! instance `rename` on fields or `deny_unknown_fields` on the variant).
+//! The skips, the bounds and the tag field are fine.
 //!
 //! ## Container Adapters
 //!
@@ -569,8 +638,8 @@
 //! | `#[serde(from = "U", into = "U")]` | `#[deser(as = FromInto<U>)]` |
 //! | `#[serde(transparent)]` | `#[deser(transparent)]` (not needed for newtype structs) |
 //!
-//! The field attributes `serialize_with` and `deserialize_with` correspond
-//! to `serialize_as` and `deserialize_as` with an adapter.
+//! The field and variant attributes `serialize_with` and `deserialize_with`
+//! correspond to `serialize_as` and `deserialize_as` with an adapter.
 //!
 //! ## Other Variants
 //!

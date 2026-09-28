@@ -113,6 +113,7 @@ impl<'a> UnnamedStruct<'a> {
                 adapter: field.attrs.adapters().get(direction),
                 skipped: field.attrs.skipped(direction),
                 bound: field.attrs.bounds().get(direction),
+                higher_ranked: false,
             });
         }
         rv

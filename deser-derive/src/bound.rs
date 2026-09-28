@@ -193,6 +193,9 @@ pub struct BoundField<'a> {
     pub skipped: bool,
     /// The custom bounds of the field which replace the inferred ones.
     pub bound: Option<&'a [syn::WherePredicate]>,
+    /// The type refers to the lifetime `'__x`, the bound of the adapter is
+    /// higher-ranked over it (`for<'__x> A: SerializeAs<(&'__x T, &'__x U)>`).
+    pub higher_ranked: bool,
 }
 
 /// Returns the where clause of the generics with bounds inferred from fields.
@@ -264,9 +267,16 @@ pub fn where_clause_for_fields(
         };
         let ty = field.ty;
         if mentions_any(quote::quote! { #ty #adapter }, &params) {
+            let for_lifetimes = if field.higher_ranked {
+                Some(quote::quote! { for<'__x> })
+            } else {
+                None
+            };
             new_predicates.push(match adapter_lifetime {
-                Some(ref lifetime) => syn::parse_quote!(#adapter : #adapter_trait<#lifetime, #ty>),
-                None => syn::parse_quote!(#adapter : #adapter_trait<#ty>),
+                Some(ref lifetime) => {
+                    syn::parse_quote!(#for_lifetimes #adapter : #adapter_trait<#lifetime, #ty>)
+                }
+                None => syn::parse_quote!(#for_lifetimes #adapter : #adapter_trait<#ty>),
             });
         }
     }

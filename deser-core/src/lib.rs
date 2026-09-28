@@ -106,8 +106,8 @@ pub mod __derive {
         PlainSink, StructField, emit_plain_field,
     };
     pub use crate::ser::enums::{
-        EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedNewtype, UnitName,
-        UnitVariants, begin_unit, describe_unit, serialize_unit, skipped_variant,
+        EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedContent, TaggedNewtype,
+        UnitName, UnitVariants, begin_unit, describe_unit, serialize_unit, skipped_variant,
     };
     pub use crate::ser::flatten::FlattenedStruct;
 

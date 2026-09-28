@@ -312,6 +312,43 @@ impl<'a> TaggedNewtype<'a> {
     }
 }
 
+/// Serializes a variant of an internally tagged enum whose content is
+/// owned (like [`TaggedNewtype`] which borrows it).
+///
+/// This is used for the content of variants with adapters, which is a
+/// tuple of references to the fields.  It's serialized by forwarding to it
+/// (see [`Chunk::Forward`]) as the content cannot be borrowed otherwise.
+pub struct TaggedContent<'a, S> {
+    tag: &'static str,
+    name: SerializeHandle<'a>,
+    inner: S,
+}
+
+impl<'a, S: Serialize + Send + 'a> TaggedContent<'a, S> {
+    /// Creates the tagged content.
+    ///
+    /// `name` is the value of the tag.
+    pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: S) -> Self {
+        TaggedContent { tag, name, inner }
+    }
+
+    /// Converts the value into a chunk that forwards to it.
+    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
+        Chunk::Forward(SerializeHandle::arena(self, state))
+    }
+}
+
+impl<S: Serialize> Serialize for TaggedContent<'_, S> {
+    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        Ok(TaggedNewtype::new(
+            self.tag,
+            SerializeHandle::Borrowed(&*self.name),
+            &self.inner,
+        )
+        .into_chunk(state))
+    }
+}
+
 struct TaggedNewtypeEmitter<'a> {
     value: TaggedNewtype<'a>,
     // the fields of the inner value, once the tag was emitted

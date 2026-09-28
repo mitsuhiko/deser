@@ -491,6 +491,60 @@
 /// );
 /// ```
 ///
+/// The attributes of the fields of variants with adapters have no effect in
+/// the directions that use the adapter.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// enum Test {
+///     #[deser(as = deser::adapters::DisplayFromStr)]
+///     A {
+///         #[deser(rename = "b")]
+///         a: u32,
+///     },
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(deserialize_as = deser::adapters::DisplayFromStr)]
+///     A {
+///         #[deser(default)]
+///         a: u32,
+///     },
+/// }
+/// ```
+///
+/// ```compile_fail
+/// #[derive(deser::Deserialize)]
+/// enum Test {
+///     #[deser(as = deser::adapters::DisplayFromStr, deny_unknown_fields)]
+///     A { a: u32 },
+/// }
+/// ```
+///
+/// Skipped variants have no content to adapt.
+///
+/// ```compile_fail
+/// #[derive(deser::Serialize)]
+/// enum Test {
+///     #[deser(skip, as = deser::adapters::DisplayFromStr)]
+///     A(u32),
+/// }
+/// ```
+///
+/// The adapter of the content of variants with more than one field is
+/// given a tuple (of references when serializing).
+///
+/// ```compile_fail,E0277
+/// #[derive(deser::Serialize)]
+/// enum Test {
+///     #[deser(as = deser::adapters::DisplayFromStr)]
+///     A(u32, u32),
+/// }
+/// ```
+///
 /// `rename_all_fields` is for enums, `rename_all` on variants for struct
 /// variants.
 ///

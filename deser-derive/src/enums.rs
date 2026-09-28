@@ -17,7 +17,8 @@
 use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 
 use crate::attr::{
     Adapters, ContainerAttrs, Direction, EnumVariantAttrs, FieldAttrs, FieldBounds, Name,
@@ -49,6 +50,26 @@ enum Content {
     Newtype(usize),
     Tuple(Vec<usize>),
     Struct(Vec<usize>),
+    /// The content is serialized or deserialized with the adapter of the
+    /// variant.  It's a single value like the content of newtype variants.
+    /// The indexes are the fields which are not skipped in the direction
+    /// (except for the tag field).
+    Adapted(Vec<usize>),
+}
+
+/// The adapter of a variant for the direction of the derive.
+///
+/// The adapter adapts the fields of the content: `()` if there are none,
+/// the type of the field if there is one and a tuple of the fields
+/// otherwise.  When serializing the tuple holds references to the fields
+/// (`(&A, &B)`) as the fields are not stored as a tuple.
+struct Adapted {
+    adapter: syn::Type,
+    /// The type the adapter adapts.
+    ty: syn::Type,
+    /// `ty` refers to the lifetime `'__x` (of the references to the fields),
+    /// bounds are higher-ranked over it.
+    higher_ranked: bool,
 }
 
 struct FieldInfo<'a> {
@@ -60,8 +81,8 @@ struct FieldInfo<'a> {
     skip_deserializing: bool,
     // skipped when deserializing and filled in with `Default`
     needs_default: bool,
-    // the value of unnamed fields that are skipped when deserializing (the
-    // helper structs of struct variants fill in named fields)
+    // the value of the field if it's skipped when deserializing (the helper
+    // structs of struct variants fill in named fields themselves)
     default: Option<TypeDefault>,
     binding: syn::Ident,
 }
@@ -131,6 +152,8 @@ struct VariantInfo<'a> {
     fields: Vec<FieldInfo<'a>>,
     tag_field: Option<usize>,
     content: Content,
+    // the adapter of the content (`Content::Adapted`)
+    adapted: Option<Adapted>,
     // the name style of the fields of struct variants
     fields_rename_all: Option<RenameAll>,
 }
@@ -180,7 +203,7 @@ impl<'a> VariantInfo<'a> {
         match self.content {
             Content::Unit => Vec::new(),
             Content::Newtype(idx) => vec![&self.fields[idx]],
-            Content::Tuple(ref idxs) | Content::Struct(ref idxs) => {
+            Content::Tuple(ref idxs) | Content::Struct(ref idxs) | Content::Adapted(ref idxs) => {
                 let mut rv = Vec::with_capacity(idxs.len());
                 for &idx in idxs {
                     rv.push(&self.fields[idx]);
@@ -188,6 +211,49 @@ impl<'a> VariantInfo<'a> {
                 rv
             }
         }
+    }
+
+    /// Returns the content of a variant with an adapter for serialization.
+    ///
+    /// Returns an expression for the value that serializes with the adapter
+    /// and whether it's owned.  Values are references to the bound fields
+    /// unless the content is a tuple of the fields, which is owned.
+    fn adapted_value(&self) -> Option<(TokenStream, bool)> {
+        let (Content::Adapted(idxs), Some(adapted)) = (&self.content, &self.adapted) else {
+            return None;
+        };
+        let adapter = &adapted.adapter;
+        let ty = &adapted.ty;
+        // spanned so that errors about unsupported types point to the adapter
+        Some(match idxs[..] {
+            [] => (
+                quote_spanned! { adapter.span()=>
+                    __deser::__derive::SerializeAsRef::<#adapter, ()>::new(&())
+                },
+                false,
+            ),
+            [idx] => {
+                let binding = &self.fields[idx].binding;
+                (
+                    quote_spanned! { adapter.span()=>
+                        __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#binding)
+                    },
+                    false,
+                )
+            }
+            _ => {
+                let mut bindings = Vec::with_capacity(idxs.len());
+                for &idx in idxs {
+                    bindings.push(&self.fields[idx].binding);
+                }
+                (
+                    quote_spanned! { adapter.span()=>
+                        __deser::adapters::As::<_, #adapter>::new((#(#bindings,)*))
+                    },
+                    true,
+                )
+            }
+        })
     }
 
     /// Returns serialize handles for the fields of the content.
@@ -434,7 +500,7 @@ pub fn is_data_enum(
     }
     for variant in &enumeration.variants {
         if !matches!(variant.fields, syn::Fields::Unit)
-            || EnumVariantAttrs::of(variant).is_ok_and(|x| x.untagged())
+            || EnumVariantAttrs::of(variant).is_ok_and(|x| x.untagged() || x.adapters().any())
         {
             return true;
         }
@@ -485,7 +551,7 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
                     skip_deserializing: attrs.skip_deserializing(),
                     needs_default: attrs.skip_deserializing()
                         && matches!(attrs.default(), None | Some(TypeDefault::Implicit)),
-                    default: None,
+                    default: attrs.default().cloned(),
                     binding: syn::Ident::new(
                         &format!("__field_{}", ident_name(field.ident.as_ref().unwrap())),
                         Span::call_site(),
@@ -496,6 +562,92 @@ fn collect_fields(variant: &syn::Variant) -> syn::Result<(Shape, Vec<FieldInfo<'
         }
     };
     Ok((shape, fields))
+}
+
+/// Rejects the attributes of a variant with an adapter (and of its fields)
+/// which have no effect as the content is handled by the adapter.
+///
+/// An attribute has no effect if all directions it affects use the adapter.
+/// Every derive only reports the attributes that affect its own direction.
+/// The skips, the bounds, the tag field and the defaults of fields that
+/// are skipped when deserializing still apply.
+fn check_adapted_variant(attrs: &EnumVariantAttrs, direction: Direction) -> syn::Result<()> {
+    const SER: (bool, bool) = (true, false);
+    const DE: (bool, bool) = (false, true);
+    const BOTH: (bool, bool) = (true, true);
+
+    let adapters = attrs.adapters();
+    let adapted = (adapters.ser().is_some(), adapters.de().is_some());
+    let mut used = Vec::new();
+    for seen in attrs.seen() {
+        let directions = match seen.name.as_str() {
+            "rename_all" => BOTH,
+            "deny_unknown_fields" => DE,
+            _ => continue,
+        };
+        used.push((seen.name.clone(), seen.span, directions, "variant"));
+    }
+    for field in &attrs.variant().fields {
+        let (seen, skip_deserializing) = match field.ident {
+            Some(_) => {
+                let attrs = FieldAttrs::of(field)?;
+                let skip = attrs.skip_deserializing();
+                (attrs.into_seen(), skip)
+            }
+            None => {
+                let attrs = UnnamedFieldAttrs::of(field)?;
+                let skip = attrs.skip_deserializing();
+                (attrs.into_seen(), skip)
+            }
+        };
+        for seen in seen {
+            let directions = match seen.name.as_str() {
+                // the value of the field if it's skipped
+                "default" if skip_deserializing => continue,
+                "alias" | "default" | "required" | "deserialize_as" => DE,
+                "skip_serializing_if" | "serialize_as" => SER,
+                "rename" | "flatten" | "as" => BOTH,
+                _ => continue,
+            };
+            used.push((seen.name, seen.span, directions, "field"));
+        }
+    }
+
+    let mut errors: Option<syn::Error> = None;
+    for (name, span, (ser, de), level) in used {
+        let ignored = (!ser || adapted.0) && (!de || adapted.1);
+        let relevant = match direction {
+            Direction::Serialize => ser,
+            Direction::Deserialize => de,
+        };
+        if !ignored || !relevant {
+            continue;
+        }
+        let what = match (ser, de) {
+            (true, true) => "serialized and deserialized",
+            (true, false) => "serialized",
+            _ => "deserialized",
+        };
+        let target = match level {
+            "field" => " (the adapter receives the values of the fields)",
+            _ => "",
+        };
+        let error = syn::Error::new(
+            span,
+            format!(
+                "`{}` has no effect as the variant is {} with an adapter{}",
+                name, what, target
+            ),
+        );
+        match errors {
+            Some(ref mut errors) => errors.combine(error),
+            None => errors = Some(error),
+        }
+    }
+    match errors {
+        Some(errors) => Err(errors),
+        None => Ok(()),
+    }
 }
 
 /// Collects the variants of an enum.
@@ -647,6 +799,39 @@ fn collect_variants<'a>(
             Shape::Named => Content::Struct(content_idxs),
         };
 
+        // the adapter of the variant replaces the content
+        let mut adapted = None;
+        let content = match attrs.adapters().get(direction) {
+            Some(adapter) => {
+                check_adapted_variant(&attrs, direction)?;
+                let mut idxs = Vec::new();
+                let mut types = Vec::new();
+                for (idx, field) in fields.iter().enumerate() {
+                    let skipped = match direction {
+                        Direction::Serialize => field.skip_serializing,
+                        Direction::Deserialize => field.skip_deserializing,
+                    };
+                    if Some(idx) != tag_field && !skipped {
+                        idxs.push(idx);
+                        types.push(field.ty());
+                    }
+                }
+                let higher_ranked = direction == Direction::Serialize && types.len() > 1;
+                let ty: syn::Type = match types.len() {
+                    1 => types[0].clone(),
+                    _ if higher_ranked => syn::parse_quote! { (#(&'__x #types,)*) },
+                    _ => syn::parse_quote! { (#(#types,)*) },
+                };
+                adapted = Some(Adapted {
+                    adapter: adapter.clone(),
+                    ty,
+                    higher_ranked,
+                });
+                Content::Adapted(idxs)
+            }
+            None => content,
+        };
+
         if matches!(content, Content::Tuple(_)) && matches!(repr, Repr::Internal { .. }) {
             return Err(syn::Error::new_spanned(
                 variant,
@@ -669,6 +854,7 @@ fn collect_variants<'a>(
             fields,
             tag_field,
             content,
+            adapted,
             fields_rename_all: attrs.fields_rename_all(container_attrs),
         });
     }
@@ -701,15 +887,37 @@ fn type_name_const(container_attrs: &ContainerAttrs) -> TokenStream {
 fn bound_fields<'b>(variants: &'b [VariantInfo], direction: Direction) -> Vec<BoundField<'b>> {
     let mut rv = Vec::new();
     for info in variants {
-        for field in &info.fields {
+        let skipped = match direction {
+            Direction::Serialize => info.skip_serializing,
+            Direction::Deserialize => info.skip_deserializing,
+        };
+        // the fields of the content of variants with adapters are handled
+        // by the adapter, they are like fields that are skipped
+        let content = match (&info.content, &info.adapted) {
+            (Content::Adapted(idxs), Some(adapted)) => {
+                rv.push(BoundField {
+                    ty: &adapted.ty,
+                    adapter: Some(&adapted.adapter),
+                    skipped,
+                    bound: None,
+                    higher_ranked: adapted.higher_ranked,
+                });
+                &idxs[..]
+            }
+            _ => &[],
+        };
+        for (idx, field) in info.fields.iter().enumerate() {
             rv.push(BoundField {
                 ty: field.ty(),
                 adapter: field.adapters.get(direction),
-                skipped: match direction {
-                    Direction::Serialize => info.skip_serializing || field.skip_serializing,
-                    Direction::Deserialize => info.skip_deserializing || field.skip_deserializing,
-                },
+                skipped: skipped
+                    || content.contains(&idx)
+                    || match direction {
+                        Direction::Serialize => field.skip_serializing,
+                        Direction::Deserialize => field.skip_deserializing,
+                    },
                 bound: field.bounds.get(direction),
+                higher_ranked: false,
             });
         }
     }
@@ -876,7 +1084,37 @@ pub fn derive_deserialize(
         // the content is deserialized as a single value which is bound to a
         // pattern that makes the values of the content fields available.
         let mut values = vec![TokenStream::new(); info.fields.len()];
+        // the bindings of the fields that the tuple of the content of
+        // variants with adapters is destructured into
+        let mut destructure = None;
         let (content_ty, content_pattern) = match info.content {
+            Content::Adapted(ref idxs) => {
+                let adapted = info.adapted.as_ref().unwrap();
+                let ty = &adapted.ty;
+                let adapter = &adapted.adapter;
+                let content_ty = quote_spanned! { adapter.span()=>
+                    __deser::adapters::As<#ty, #adapter>
+                };
+                match idxs[..] {
+                    [] => (content_ty, quote! { _ }),
+                    [idx] => {
+                        values[idx] = quote! { __content.into_inner() };
+                        (content_ty, quote! { __content })
+                    }
+                    _ => {
+                        let mut bindings = Vec::with_capacity(idxs.len());
+                        for &idx in idxs {
+                            let binding = &info.fields[idx].binding;
+                            values[idx] = quote! { #binding };
+                            bindings.push(binding);
+                        }
+                        destructure = Some(quote! {
+                            let (#(#bindings,)*) = __content.into_inner();
+                        });
+                        (content_ty, quote! { __content })
+                    }
+                }
+            }
             Content::Unit if needs_helper => {
                 // fields of unit variants are `()` (see `collect_variants`)
                 for (idx, field) in info.fields.iter().enumerate() {
@@ -916,8 +1154,9 @@ pub fn derive_deserialize(
             }
         };
 
-        // skipped unnamed fields are filled in with their default
-        if matches!(info.shape, Shape::Tuple) {
+        // skipped unnamed fields (and all skipped fields of variants with
+        // adapters) are filled in with their default
+        if matches!(info.shape, Shape::Tuple) || matches!(info.content, Content::Adapted(_)) {
             for (idx, field) in info.fields.iter().enumerate() {
                 if field.skip_deserializing {
                     values[idx] = crate::unnamed::skipped_value(field.ty(), field.default.as_ref());
@@ -925,11 +1164,18 @@ pub fn derive_deserialize(
             }
         }
 
+        let construct = |values: &[TokenStream]| {
+            let construct = info.construct(ident, values);
+            match destructure {
+                Some(ref destructure) => quote! { { #destructure #construct } },
+                None => construct,
+            }
+        };
         let builder = match info.tag_field() {
             Some(tag_field) => {
                 let tag_ty = tag_field.de_ty();
                 values[info.tag_field.unwrap()] = tag_field.unwrap(quote! { __tag });
-                let construct = info.construct(ident, &values);
+                let construct = construct(&values);
                 untagged_tries.push(None);
                 quote! {
                     __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::boxed(
@@ -937,12 +1183,12 @@ pub fn derive_deserialize(
                 }
             }
             None if info.other && matches!(info.content, Content::Unit) => {
-                let construct = info.construct(ident, &values);
+                let construct = construct(&values);
                 untagged_tries.push(None);
                 quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct, __state) }
             }
             None => {
-                let construct = info.construct(ident, &values);
+                let construct = construct(&values);
                 untagged_tries.push(Some(quote! {
                     __try.variant::<#content_ty>(|#content_pattern: #content_ty| #construct)
                 }));
@@ -1342,6 +1588,10 @@ fn content_handle(
             let fields = fields_ser(info, container_attrs, None)?;
             quote! { __deser::ser::SerializeHandle::arena(#fields, __state) }
         }
+        Content::Adapted(_) => match info.adapted_value().unwrap() {
+            (value, true) => quote! { __deser::ser::SerializeHandle::arena(#value, __state) },
+            (value, false) => quote! { __deser::ser::SerializeHandle::to(#value) },
+        },
     })
 }
 
@@ -1392,6 +1642,8 @@ pub fn derive_serialize(
             Content::Newtype(_) => quote! { __deser::ser::VariantKind::Newtype },
             Content::Tuple(_) => quote! { __deser::ser::VariantKind::Tuple },
             Content::Struct(_) => quote! { __deser::ser::VariantKind::Struct },
+            // the content is a single value
+            Content::Adapted(_) => quote! { __deser::ser::VariantKind::Newtype },
         };
         let describe_variant = quote! {
             __d.variant(&__deser::ser::Variant::new(#type_name, #name, #kind, #repr_tokens));
@@ -1403,6 +1655,19 @@ pub fn derive_serialize(
             (Repr::Untagged | Repr::Internal { .. }, Content::Newtype(idx)) => {
                 let pattern = info.pattern(ident);
                 let value = info.fields[*idx].ser_value();
+                quote! {
+                    #pattern => {
+                        #describe_variant
+                        __deser::ser::Serialize::describe(#value, __d);
+                    }
+                }
+            }
+            (Repr::Untagged | Repr::Internal { .. }, Content::Adapted(_)) => {
+                let pattern = info.pattern(ident);
+                let value = match info.adapted_value().unwrap() {
+                    (value, true) => quote! { &#value },
+                    (value, false) => value,
+                };
                 quote! {
                     #pattern => {
                         #describe_variant
@@ -1504,6 +1769,14 @@ pub fn derive_serialize(
                         __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_chunk(__state)
                     }
                 }
+                Content::Adapted(_) => match info.adapted_value().unwrap() {
+                    (value, true) => quote! {
+                        __deser::__derive::TaggedContent::new(#tag, #tag_handle, #value).into_chunk(__state)
+                    },
+                    (value, false) => quote! {
+                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #value).into_chunk(__state)
+                    },
+                },
                 Content::Tuple(_) => unreachable!(),
             },
             Repr::Adjacent { tag, .. } if is_unit => quote! {
@@ -1526,6 +1799,14 @@ pub fn derive_serialize(
                     let value = info.fields[idx].ser_value();
                     quote! { __deser::ser::Serialize::serialize(#value, __state)? }
                 }
+                Content::Adapted(_) => match info.adapted_value().unwrap() {
+                    (value, true) => quote! {
+                        __deser::ser::Chunk::Forward(__deser::ser::SerializeHandle::arena(#value, __state))
+                    },
+                    (value, false) => {
+                        quote! { __deser::ser::Serialize::serialize(#value, __state)? }
+                    }
+                },
                 Content::Tuple(_) => {
                     let handles = info.content_handles();
                     quote! {

@@ -581,6 +581,9 @@ impl AttrLevel {
                 "skip",
                 "skip_serializing",
                 "skip_deserializing",
+                "as",
+                "serialize_as",
+                "deserialize_as",
             ],
             AttrLevel::NamedField => &[
                 "rename",
@@ -1768,6 +1771,7 @@ impl<'a> FieldAttrs<'a> {
             adapter: self.adapters.get(direction),
             skipped: self.skipped(direction),
             bound: self.bounds.get(direction),
+            higher_ranked: false,
         }
     }
 
@@ -2066,6 +2070,7 @@ pub struct EnumVariantAttrs<'a> {
     deny_unknown_fields: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
+    adapters: Adapters,
 }
 
 impl<'a> EnumVariantAttrs<'a> {
@@ -2082,10 +2087,16 @@ impl<'a> EnumVariantAttrs<'a> {
             deny_unknown_fields: false,
             skip_serializing: false,
             skip_deserializing: false,
+            adapters: Adapters::default(),
         };
 
         let mut skip = false;
+        let mut adapters = AdapterAttrs::default();
         let seen = parse_deser_attrs(&variant.attrs, &mut |name, meta| match name {
+            "as" | "serialize_as" | "deserialize_as" => {
+                adapters.parse(name, meta, &parse_adapter)?;
+                Ok(())
+            }
             "rename" => rv.rename.parse(meta, name, VariantName::parse),
             "rename_all" => {
                 rv.rename_all.parse(meta, name, RenameAll::parse_meta)?;
@@ -2110,6 +2121,7 @@ impl<'a> EnumVariantAttrs<'a> {
             _ => Err(unsupported_attr(meta, name, AttrLevel::Variant)),
         })?;
         rv.seen = seen;
+        rv.adapters = adapters.finish(&rv.seen)?;
 
         let conflict = |name: &str, others: &[&str]| check_conflict(&rv.seen, name, others);
         if skip {
@@ -2129,15 +2141,29 @@ impl<'a> EnumVariantAttrs<'a> {
                     "default",
                     "deny_unknown_fields",
                     "untagged",
+                    "as",
+                    "serialize_as",
+                    "deserialize_as",
                 ],
             )?;
             rv.skip_serializing = true;
             rv.skip_deserializing = true;
-        } else if rv.skip_deserializing {
-            conflict(
-                "skip_deserializing",
-                &["alias", "other", "default", "deny_unknown_fields"],
-            )?;
+        } else {
+            if rv.skip_deserializing {
+                conflict(
+                    "skip_deserializing",
+                    &[
+                        "alias",
+                        "other",
+                        "default",
+                        "deny_unknown_fields",
+                        "deserialize_as",
+                    ],
+                )?;
+            }
+            if rv.skip_serializing {
+                conflict("skip_serializing", &["serialize_as"])?;
+            }
         }
 
         if rv.untagged {
@@ -2146,6 +2172,16 @@ impl<'a> EnumVariantAttrs<'a> {
         }
 
         Ok(rv)
+    }
+
+    /// Returns the adapters of the content of the variant.
+    pub fn adapters(&self) -> &Adapters {
+        &self.adapters
+    }
+
+    /// Returns the attributes that were used on the variant.
+    pub fn seen(&self) -> &[SeenAttr] {
+        &self.seen
     }
 
     /// Returns `true` if the variant is not tagged (in an enum which is).

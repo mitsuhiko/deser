@@ -18,6 +18,14 @@ All notable changes to deser are documented here.
   recording is serialized.
 - Serializing a recording no longer takes quadratic time for deeply
   nested values.
+- Added `#[deser(as = ...)]`, `#[deser(serialize_as = ...)]` and
+  `#[deser(deserialize_as = ...)]` for enum variants (serde's `with`,
+  `serialize_with` and `deserialize_with` on variants).  The adapter
+  serializes and deserializes the content of the variant: `()` for
+  variants without fields, the field for variants with one field and a
+  tuple of the fields otherwise (of references to them when serializing).
+  Attributes of the variant and its fields that have no effect with the
+  adapter are rejected.
 - `#[deser(default)]` on enums is an error.  It was accepted and had no
   effect, defaults go on variants (the variant for missing tags) and on
   the fields of struct variants.
