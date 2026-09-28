@@ -805,13 +805,13 @@ impl<'de> Drop for DriverCore<'de> {
 }
 
 #[test]
-fn test_arena_is_not_leaked() {
+fn test_arena_is_not_orphaned() {
     use crate::de::Recording;
-    use crate::de::arena::LEAKED;
+    use crate::de::arena::ORPHANED;
     use alloc::collections::BTreeMap;
     use alloc::string::String;
 
-    let leaked = LEAKED.with(|x| x.get());
+    let orphaned = ORPHANED.with(|x| x.get());
     // nested containers
     let mut out = None::<Vec<BTreeMap<String, Vec<u32>>>>;
     let mut driver = DeserializeDriver::new(&mut out);
@@ -855,7 +855,52 @@ fn test_arena_is_not_leaked() {
     assert!(driver.emit("not a number").is_err());
     drop(driver);
 
-    assert_eq!(LEAKED.with(|x| x.get()), leaked);
+    assert_eq!(ORPHANED.with(|x| x.get()), orphaned);
+}
+
+#[test]
+fn test_sink_outlives_state() {
+    use crate::de::OwnedSink;
+    use crate::de::arena::ORPHANED;
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    // the sink is in the arena of a temporary state, the arena is orphaned
+    // and freed with the sink (miri checks that nothing leaks)
+    let orphaned = ORPHANED.with(|x| x.get());
+    let mut out = None::<Vec<BTreeMap<String, u32>>>;
+    let mut driver = DeserializeDriver::from_sink(Vec::<BTreeMap<String, u32>>::deserialize_into(
+        &mut out,
+        &mut State::new(),
+    ));
+    assert_eq!(ORPHANED.with(|x| x.get()), orphaned + 1);
+    for event in [
+        Event::seq_start(),
+        Event::map_start(),
+        "a".into(),
+        1u64.into(),
+        Event::MapEnd,
+        Event::SeqEnd,
+    ] {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(out.unwrap()[0]["a"], 1);
+
+    // an owned sink that is kept after its driver
+    let mut driver_out = None::<()>;
+    let mut driver = DeserializeDriver::new(&mut driver_out);
+    let mut owned = OwnedSink::<Vec<u32>>::deserialize(driver.state_mut());
+    drop(driver);
+    assert_eq!(ORPHANED.with(|x| x.get()), orphaned + 2);
+    let mut driver = DeserializeDriver::from_sink(SinkHandle::to(owned.borrow_mut()));
+    for event in [Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd] {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(owned.take().unwrap(), [1, 2]);
+    // dropped on another thread
+    std::thread::spawn(move || drop(owned)).join().unwrap();
 }
 
 #[test]

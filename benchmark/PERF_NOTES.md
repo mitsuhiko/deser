@@ -147,7 +147,7 @@ only improvements that survive repeated comparisons.
    releases the sinks it's done with (`SinkHandle::release`), so the top
    block is popped right away instead of being marked as dead in its
    footer and popped by the next allocation (that cost up to 8%), the
-   root sink is dropped before the state (otherwise the arena is leaked
+   root sink is dropped before the state (otherwise the arena is orphaned
    and every document allocates a chunk, logs was 50% slower), the
    chunk of a finished deserialization is parked for the next one and
    the state stays small (nested replays move it, keeping the buffers of

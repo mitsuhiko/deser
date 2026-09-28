@@ -58,7 +58,9 @@ All notable changes to deser are documented here.
   arena belongs to the `State`, the sinks of the open containers are on
   top of each other in it: allocating a sink bumps a pointer and the space
   is reused once the sink is dropped.  The arena of a finished
-  deserialization is kept for the next one.
+  deserialization is kept for the next one.  A sink that outlives its
+  state does not leak the arena: the rest of the arena is freed with the
+  state, the chunk the sink is in when the sink is dropped.
   - `Deserialize::deserialize_into`, `Deserialize::deserialize_update`,
     `DeserializeAs::deserialize_into_as` and
     `DeserializeAs::deserialize_update_as` take the `State`.

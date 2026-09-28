@@ -17,8 +17,10 @@ use crate::de::arena::ArenaBox;
 /// it) or on the heap (`Box::new(value).into()`).  The arena belongs to the
 /// state, the emitters of the open containers are on top of each other in
 /// it, allocating one bumps a pointer and the space is reused once it's
-/// dropped.  A value that is kept after the serialization should be on
-/// the heap, otherwise the arena cannot free its memory.
+/// dropped.  A value in the arena can be kept after the serialization, the
+/// chunk of the arena it's in is then freed when it's dropped (the rest of
+/// the arena right away).  A value that is meant to be kept should rather
+/// be on the heap.
 pub struct Boxed<T: ?Sized> {
     ptr: NonNull<T>,
     in_arena: bool,

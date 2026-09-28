@@ -311,10 +311,11 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// more than bumping a pointer.  Its space is reused once the handle is
     /// dropped (and the sinks allocated after it are dropped too).
     ///
-    /// A sink should not outlive the deserialization it was created for
-    /// (the state), otherwise the arena cannot free its memory.  A sink
-    /// that is kept for longer should be created with
-    /// [`heap`](Self::heap).
+    /// A sink can outlive the deserialization it was created for (the
+    /// state).  The arena then frees its memory except for the chunk the
+    /// sink is in, which is freed when the sink is dropped (and the other
+    /// sinks in it).  A sink that is meant to be kept for longer should
+    /// rather be created with [`heap`](Self::heap).
     ///
     /// ```
     /// use deser::de::{Deserialize, Sink, SinkHandle};

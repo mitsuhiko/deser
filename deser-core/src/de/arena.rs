@@ -14,18 +14,29 @@
 //! arena pops the dead blocks on its top.  A block that is dropped out of
 //! order stays until the blocks above it are dropped too.
 //!
-//! Chunks never move, so sinks can borrow from each other.  Chunks are only
-//! freed (or parked for the next deserialization) when the arena is dropped
-//! without live blocks.  If blocks are still alive (a sink was kept after
-//! the deserialization it was created for), the chunks are leaked instead:
-//! the blocks stay valid and their footers can still be written when they
-//! are dropped, also on other threads (the footers are atomic).
+//! Chunks never move, so sinks can borrow from each other.  When the arena
+//! is dropped without live blocks its chunks are freed (or parked for the
+//! next deserialization).
+//!
+//! If blocks are still alive (a sink was kept after the deserialization it
+//! was created for), the arena is orphaned: the chunks without live blocks
+//! are freed right away, every other chunk counts its live blocks and is
+//! freed when the last of them is dropped (also on other threads).  To find
+//! their chunk, the footers of the live blocks are rewritten to point to the
+//! header of the chunk (tagged with [`ORPHAN`]) as nothing pops them
+//! anymore.  Dropping a block marks the footer as dead with an atomic
+//! read-modify-write, which tells whether the block was orphaned.  The
+//! owner of a live arena pops its blocks without atomics (see
+//! [`Arena::pop`]), orphaning is only for blocks that outlive their arena.
+//!
+//! A block that is never dropped (a sink that is forgotten) keeps its chunk
+//! alive, like a leaked `Box`.
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 use core::ptr::{self, NonNull};
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
 /// The size of the first chunk (including its header).
 const FIRST_CHUNK_SIZE: usize = 8 * 1024;
@@ -35,11 +46,18 @@ const MAX_PARKED_CHUNK_SIZE: usize = 1024 * 1024;
 const CHUNK_ALIGN: usize = 16;
 
 /// The footer of a block: the top of the arena before the block, the lowest
-/// bit is set once the block was dropped.
+/// bit is set once the block was dropped.  Once the arena is orphaned it's
+/// the header of the chunk of the block, tagged with [`ORPHAN`].
 type Footer = AtomicPtr<u8>;
 const FOOTER_SIZE: usize = size_of::<Footer>();
 const FOOTER_ALIGN: usize = align_of::<Footer>();
+/// The tag of a footer whose block was dropped.
 const DEAD: usize = 1;
+/// The tag of a footer that points to the header of its chunk (the arena
+/// was dropped while the block was alive).  Footers and chunk headers are
+/// at least 4-aligned, the tags do not overlap addresses.
+const ORPHAN: usize = 2;
+const _: () = assert!(FOOTER_ALIGN > (ORPHAN | DEAD) && align_of::<Chunk>() > (ORPHAN | DEAD));
 
 /// The header of a chunk, the data follows it.
 struct Chunk {
@@ -52,6 +70,9 @@ struct Chunk {
     /// The buffers of the arena (in the first chunk of the arena, they are
     /// parked with it).
     bufs: Buffers,
+    /// The number of live blocks (and walkers) once the arena is orphaned,
+    /// the chunk is freed when it reaches zero.
+    live: AtomicUsize,
 }
 
 /// The buffers of the vectors that are kept for the next driver (see
@@ -139,6 +160,7 @@ impl Chunk {
                 next: ptr::null_mut(),
                 layout,
                 bufs: [RawBuf::EMPTY; 2],
+                live: AtomicUsize::new(0),
             })
         };
         chunk
@@ -431,11 +453,10 @@ impl Drop for Arena {
             }
             if self.top != self.base {
                 // blocks are still alive, their chunks must stay valid
-                #[cfg(test)]
-                LEAKED.with(|leaked| leaked.set(leaked.get() + 1));
                 if let Some(bufs) = self.bufs() {
                     free_buffers(bufs);
                 }
+                self.orphan();
                 return;
             }
             // the arena is empty, the largest chunk (the current one) is
@@ -466,10 +487,106 @@ impl Drop for Arena {
     }
 }
 
+impl Arena {
+    /// Orphans the arena (it's dropped while blocks are alive).
+    ///
+    /// Every chunk counts its live blocks, the footers of the live blocks
+    /// point to their chunk.  The chunks are freed when their last block is
+    /// dropped, the chunks without live blocks right away.
+    ///
+    /// # Safety
+    ///
+    /// The arena must not be used after.  The chunks after the current one
+    /// must have been freed.
+    #[cold]
+    #[inline(never)]
+    #[cfg(target_has_atomic = "ptr")]
+    unsafe fn orphan(&mut self) {
+        #[cfg(test)]
+        ORPHANED.with(|orphaned| orphaned.set(orphaned.get() + 1));
+        // SAFETY: the chunks of the arena are valid until their counts
+        // reach zero.  This holds a reference on every chunk while it walks
+        // the blocks (they could be dropped on other threads meanwhile).
+        unsafe {
+            let mut chunk = self.chunk;
+            while !chunk.is_null() {
+                (*chunk).live.store(1, Ordering::Relaxed);
+                chunk = (*chunk).prev;
+            }
+            let mut top = self.top;
+            let mut chunk = self.chunk;
+            while top != self.base {
+                let footer = footer_of_top(top);
+                let live = &(*chunk).live;
+                let orphan = chunk.cast::<u8>().map_addr(|addr| addr | ORPHAN);
+                let mut prev = footer.load(Ordering::Acquire);
+                while prev.addr() & DEAD == 0 {
+                    // counted before the footer points to the chunk, a drop
+                    // of the block decrements it right after
+                    live.fetch_add(1, Ordering::Relaxed);
+                    match footer.compare_exchange(prev, orphan, Ordering::AcqRel, Ordering::Acquire)
+                    {
+                        Ok(_) => break,
+                        Err(current) => {
+                            // the block was dropped meanwhile (this holds a
+                            // reference, the count stays above zero)
+                            live.fetch_sub(1, Ordering::Relaxed);
+                            prev = current;
+                        }
+                    }
+                }
+                top = prev.map_addr(|addr| addr & !DEAD);
+                // the block was the first in its chunk, continue in the
+                // chunk before it
+                while top < Chunk::start(chunk) || top > Chunk::end(chunk) {
+                    chunk = (*chunk).prev;
+                }
+            }
+            let mut chunk = self.chunk;
+            while !chunk.is_null() {
+                // the chunk can be freed by its last block after this
+                let prev = (*chunk).prev;
+                release_orphaned_chunk(chunk);
+                chunk = prev;
+            }
+        }
+        self.chunk = ptr::null_mut();
+        self.top = ptr::null_mut();
+        self.base = ptr::null_mut();
+        self.end = ptr::null_mut();
+    }
+
+    /// Without atomic read-modify-writes the blocks cannot count
+    /// themselves, the chunks are leaked (the blocks stay valid).
+    #[cfg(not(target_has_atomic = "ptr"))]
+    unsafe fn orphan(&mut self) {
+        #[cfg(test)]
+        ORPHANED.with(|orphaned| orphaned.set(orphaned.get() + 1));
+    }
+}
+
+/// Drops a reference to an orphaned chunk, frees it if it was the last.
+///
+/// # Safety
+///
+/// The chunk must be orphaned, the caller must hold a reference on it (a
+/// live block or the walker in [`Arena::orphan`]) and not use it after.
+#[cfg(target_has_atomic = "ptr")]
+unsafe fn release_orphaned_chunk(chunk: *mut Chunk) {
+    // SAFETY: see above, the reference keeps the chunk valid
+    unsafe {
+        if (*chunk).live.fetch_sub(1, Ordering::Release) == 1 {
+            // the drops of all blocks happen before the chunk is freed
+            core::sync::atomic::fence(Ordering::Acquire);
+            Chunk::free(chunk);
+        }
+    }
+}
+
 #[cfg(test)]
 std::thread_local! {
-    /// The number of arenas that were leaked on this thread (for tests).
-    pub(crate) static LEAKED: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+    /// The number of arenas that were orphaned on this thread (for tests).
+    pub(crate) static ORPHANED: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
 /// Frees a chunk and the chunks after it.
@@ -535,7 +652,8 @@ fn is_dead(top: *mut u8) -> bool {
 }
 
 /// Marks a block as dead, its space is reused once the blocks above it are
-/// dead too.
+/// dead too.  If the arena was orphaned, the chunk of the block is freed
+/// when this was its last live block.
 ///
 /// # Safety
 ///
@@ -544,13 +662,50 @@ fn is_dead(top: *mut u8) -> bool {
 #[inline]
 pub(crate) unsafe fn release(block: *mut u8, size: usize) {
     // SAFETY: the footer follows the block, see `place`
-    unsafe {
-        let footer = &*footer_of(block, size).cast::<Footer>();
-        let prev = footer.load(Ordering::Relaxed);
+    let footer = unsafe { &*footer_of(block, size).cast::<Footer>() };
+    #[cfg(target_has_atomic = "ptr")]
+    {
+        // the arena can be orphaned concurrently, which rewrites the footer
+        let mut prev = footer.load(Ordering::Relaxed);
         // the release orders the drop of the value before the reuse of the
-        // block (which loads with acquire)
+        // block (which loads with acquire) or the free of its chunk
+        while let Err(current) = footer.compare_exchange_weak(
+            prev,
+            prev.map_addr(|addr| addr | DEAD),
+            Ordering::Release,
+            Ordering::Relaxed,
+        ) {
+            prev = current;
+        }
+        if prev.addr() & ORPHAN != 0 {
+            // SAFETY: the footer of an orphaned block points to its chunk,
+            // the block held a reference on it
+            unsafe { release_orphaned_block(prev) };
+        }
+    }
+    #[cfg(not(target_has_atomic = "ptr"))]
+    {
+        let prev = footer.load(Ordering::Relaxed);
         footer.store(prev.map_addr(|addr| addr | DEAD), Ordering::Release);
     }
+}
+
+/// Releases the reference of an orphaned block on its chunk.
+///
+/// # Safety
+///
+/// `footer` must be the value of the footer of an orphaned block before it
+/// was marked as dead (by the caller, which does not use the block after).
+#[cold]
+#[inline(never)]
+#[cfg(target_has_atomic = "ptr")]
+unsafe fn release_orphaned_block(footer: *mut u8) {
+    // the footer was read with relaxed, this synchronizes with the
+    // orphaning (which initialized the count of the chunk)
+    core::sync::atomic::fence(Ordering::Acquire);
+    let chunk = footer.map_addr(|addr| addr & !ORPHAN).cast::<Chunk>();
+    // SAFETY: see above
+    unsafe { release_orphaned_chunk(chunk) };
 }
 
 /// A value in an arena, like a `Box`.
@@ -913,15 +1068,121 @@ mod tests {
         }
     }
 
+    fn orphaned() -> usize {
+        ORPHANED.with(|orphaned| orphaned.get())
+    }
+
     #[test]
-    // the chunk is leaked on purpose
-    #[cfg_attr(miri, ignore)]
     fn test_leaked_arena() {
-        // a block that outlives its arena stays valid
+        // a block that outlives its arena stays valid, the chunk is freed
+        // when it's dropped (miri checks that nothing leaks)
+        let orphaned_before = orphaned();
         let mut arena = Arena::new();
+        let dead = ArenaBox::new(1u64, &mut arena);
         let a = ArenaBox::new(alloc::string::String::from("alive"), &mut arena);
+        let b = ArenaBox::new(2u64, &mut arena);
+        drop(dead);
+        drop(b);
         drop(arena);
+        assert_eq!(orphaned(), orphaned_before + 1);
         assert_eq!(a.get(), "alive");
         drop(a);
+    }
+
+    #[test]
+    fn test_orphaned_block_on_other_thread() {
+        let mut arena = Arena::new();
+        let a = ArenaBox::new(alloc::string::String::from("a"), &mut arena);
+        let b = ArenaBox::new(alloc::string::String::from("b"), &mut arena);
+        drop(arena);
+        std::thread::spawn(move || {
+            assert_eq!(a.get(), "a");
+            drop(a);
+            // the last block frees the chunk on this thread
+            assert_eq!(b.get(), "b");
+            drop(b);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_orphaned_chunks() {
+        let rc = Arc::new(());
+        let mut arena = Arena::new();
+        // several chunks, only some of them keep live blocks
+        let mut kept = Vec::new();
+        let mut boxes = Vec::new();
+        for idx in 0..1200 {
+            let b = ArenaBox::new((rc.clone(), [idx as u8; 32]), &mut arena);
+            if idx == 10 || idx == 900 || idx == 901 {
+                kept.push(b);
+            } else {
+                boxes.push(b);
+            }
+        }
+        // a block larger than the chunks, popped by the owner: its chunk is
+        // a spare chunk after the current one
+        let big = ArenaBox::new([7u8; 40000], &mut arena);
+        ArenaBox::release_in(big, &mut arena);
+        drop(boxes);
+        let orphaned_before = orphaned();
+        drop(arena);
+        assert_eq!(orphaned(), orphaned_before + 1);
+        assert_eq!(Arc::strong_count(&rc), 4);
+        for b in &kept {
+            assert_eq!(b.get().1[0], b.get().1[31]);
+        }
+        // the blocks of the same chunk in both orders
+        kept.swap(1, 2);
+        drop(kept);
+        assert_eq!(Arc::strong_count(&rc), 1);
+    }
+
+    #[test]
+    fn test_orphaned_in_other_arena() {
+        // a block of an orphaned arena that is released into another arena
+        // is not popped from it
+        let mut arena = Arena::new();
+        let a = ArenaBox::new(1u64, &mut arena);
+        drop(arena);
+        let mut arena = Arena::new();
+        let b = ArenaBox::new(2u64, &mut arena);
+        ArenaBox::release_in(a, &mut arena);
+        assert!(!arena.is_empty());
+        assert_eq!(*b.get(), 2);
+        ArenaBox::release_in(b, &mut arena);
+        assert!(arena.is_empty());
+    }
+
+    #[test]
+    fn test_orphaned_concurrently() {
+        // blocks are dropped on other threads while the arena is orphaned
+        let rounds = if cfg!(miri) { 4 } else { 200 };
+        for _ in 0..rounds {
+            let rc = Arc::new(());
+            let mut arena = Arena::new();
+            let barrier = Arc::new(std::sync::Barrier::new(4));
+            let mut threads = Vec::new();
+            for thread in 0..3 {
+                let boxes = (0..if cfg!(miri) { 20 } else { 300 })
+                    .map(|idx| ArenaBox::new((rc.clone(), [(thread + idx) as u8; 24]), &mut arena))
+                    .collect::<Vec<_>>();
+                let barrier = barrier.clone();
+                threads.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    for (idx, b) in boxes.into_iter().enumerate() {
+                        assert_eq!(b.get().1[0], (thread + idx) as u8);
+                        drop(b);
+                    }
+                }));
+            }
+            barrier.wait();
+            drop(arena);
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            assert_eq!(Arc::strong_count(&rc), 1);
+        }
     }
 }

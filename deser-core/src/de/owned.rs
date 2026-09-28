@@ -117,8 +117,9 @@ impl<'de, T: Deserialize<'de>> OwnedSink<'de, T> {
     /// value use [`take`](Self::take).
     ///
     /// The sink is allocated in the arena of the state (see
-    /// [`SinkHandle::arena`]), the owned sink should not outlive the
-    /// deserialization.
+    /// [`SinkHandle::arena`]).  If the owned sink outlives the
+    /// deserialization, the chunk of the arena it's in is freed when it's
+    /// dropped.
     pub fn deserialize(state: &mut State) -> OwnedSink<'de, T> {
         OwnedSink::with(T::deserialize_into, state)
     }
