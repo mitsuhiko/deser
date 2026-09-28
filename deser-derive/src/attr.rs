@@ -258,10 +258,13 @@ pub enum RenameAll {
 
 impl RenameAll {
     /// Converts the name of a field (in snake case) to the style.
+    ///
+    /// Letters are converted with the case mappings of Unicode, names are
+    /// not required to be ASCII.
     fn apply_to_field(self, name: &str) -> String {
         match self {
             RenameAll::LowerCase | RenameAll::SnakeCase => name.to_string(),
-            RenameAll::UpperCase | RenameAll::ScreamingSnakeCase => name.to_ascii_uppercase(),
+            RenameAll::UpperCase | RenameAll::ScreamingSnakeCase => name.to_uppercase(),
             RenameAll::PascalCase | RenameAll::CamelCase => {
                 let mut rv = String::new();
                 let mut capitalize = matches!(self, RenameAll::PascalCase);
@@ -269,7 +272,7 @@ impl RenameAll {
                     if ch == '_' {
                         capitalize = true;
                     } else if capitalize {
-                        rv.push(ch.to_ascii_uppercase());
+                        rv.extend(ch.to_uppercase());
                         capitalize = false;
                     } else {
                         rv.push(ch);
@@ -278,17 +281,28 @@ impl RenameAll {
                 rv
             }
             RenameAll::KebabCase => name.replace("_", "-"),
-            RenameAll::ScreamingKebabCase => name.replace("_", "-").to_ascii_uppercase(),
+            RenameAll::ScreamingKebabCase => name.replace("_", "-").to_uppercase(),
         }
     }
 
     /// Converts the name of a variant (in pascal case) to the style.
+    ///
+    /// Letters are converted with the case mappings of Unicode, names are
+    /// not required to be ASCII.
     fn apply_to_variant(self, name: &str) -> String {
         match self {
             RenameAll::PascalCase => name.to_string(),
-            RenameAll::LowerCase => name.to_ascii_lowercase(),
-            RenameAll::UpperCase => name.to_ascii_uppercase(),
-            RenameAll::CamelCase => name[..1].to_ascii_lowercase() + &name[1..],
+            RenameAll::LowerCase => name.to_lowercase(),
+            RenameAll::UpperCase => name.to_uppercase(),
+            RenameAll::CamelCase => {
+                let mut chars = name.chars();
+                let mut rv = String::with_capacity(name.len());
+                if let Some(first) = chars.next() {
+                    rv.extend(first.to_lowercase());
+                }
+                rv.push_str(chars.as_str());
+                rv
+            }
             RenameAll::SnakeCase
             | RenameAll::ScreamingSnakeCase
             | RenameAll::KebabCase
@@ -307,11 +321,11 @@ impl RenameAll {
                     if i > 0 && ch.is_uppercase() {
                         rv.push(sep);
                     }
-                    rv.push(if upper {
-                        ch.to_ascii_uppercase()
+                    if upper {
+                        rv.extend(ch.to_uppercase());
                     } else {
-                        ch.to_ascii_lowercase()
-                    });
+                        rv.extend(ch.to_lowercase());
+                    }
                 }
                 rv
             }

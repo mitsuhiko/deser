@@ -18,6 +18,10 @@ All notable changes to deser are documented here.
   recording is serialized.
 - Serializing a recording no longer takes quadratic time for deeply
   nested values.
+- `rename_all` and `alias_all` convert the case of letters that are not
+  ASCII: `rename_all = "camelCase"` no longer panics for variants that
+  start with such a letter (like `Ärger`) and `rename_all = "snake_case"`
+  names `GroßÄrger` `groß_ärger` instead of `groß_Ärger`.
 - The derive names fields, variants and types with raw identifiers
   (`r#type`) without the `r#` prefix, like serde.  Previously the prefix
   was part of the name and deriving `Deserialize` for such structs (and

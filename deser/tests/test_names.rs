@@ -618,3 +618,60 @@ fn test_raw_identifiers() {
         RawTagged::Unit
     );
 }
+
+#[test]
+fn test_non_ascii_names() {
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename_all = "camelCase")]
+    enum Camel {
+        Ärger,
+        ÜberWeg,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename_all = "snake_case")]
+    enum Snake {
+        GroßÄrger,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename_all = "SCREAMING-KEBAB-CASE")]
+    enum Screaming {
+        GroßÄrger,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename_all = "PascalCase")]
+    struct Pascal {
+        über_größe: u32,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    #[deser(rename_all = "UPPERCASE")]
+    struct Upper {
+        über_größe: u32,
+    }
+
+    for (value, name) in [(Camel::Ärger, "ärger"), (Camel::ÜberWeg, "überWeg")] {
+        assert_eq!(serialize(&value), vec![Event::from(name)]);
+        assert_eq!(deserialize::<Camel>(vec![name.into()]).unwrap(), value);
+    }
+    assert_eq!(
+        serialize(&Snake::GroßÄrger),
+        vec![Event::from("groß_ärger")]
+    );
+    assert_eq!(
+        serialize(&Screaming::GroßÄrger),
+        vec![Event::from("GROSS-ÄRGER")]
+    );
+    let events = map(&[("ÜberGröße", 1u64.into())]);
+    assert_eq!(serialize(&Pascal { über_größe: 1 }), events);
+    assert_eq!(
+        deserialize::<Pascal>(events).unwrap(),
+        Pascal { über_größe: 1 }
+    );
+    assert_eq!(
+        serialize(&Upper { über_größe: 1 }),
+        map(&[("ÜBER_GRÖSSE", 1u64.into())])
+    );
+}
