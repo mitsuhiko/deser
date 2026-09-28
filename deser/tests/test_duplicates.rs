@@ -242,3 +242,104 @@ fn test_map_skip_error() {
         assert_eq!(rv.weights, BTreeMap::from([("a".into(), expected)]));
     }
 }
+
+/// A struct with more fields than are tracked inline.
+#[derive(Debug, Deserialize, PartialEq)]
+struct Wide {
+    f0: u32,
+    f1: u32,
+    f2: u32,
+    f3: u32,
+    f4: u32,
+    f5: u32,
+    f6: u32,
+    f7: u32,
+    f8: u32,
+    f9: u32,
+    f10: u32,
+    f11: u32,
+    f12: u32,
+    f13: u32,
+    f14: u32,
+    f15: u32,
+    f16: u32,
+    f17: u32,
+    f18: u32,
+    f19: u32,
+    f20: u32,
+    f21: u32,
+    f22: u32,
+    f23: u32,
+    f24: u32,
+    f25: u32,
+    f26: u32,
+    f27: u32,
+    f28: u32,
+    f29: u32,
+    f30: u32,
+    f31: u32,
+    f32: u32,
+    f33: u32,
+    f34: u32,
+    f35: u32,
+    f36: u32,
+    f37: u32,
+    f38: u32,
+    f39: u32,
+    f40: u32,
+    f41: u32,
+    f42: u32,
+    f43: u32,
+    f44: u32,
+    f45: u32,
+    f46: u32,
+    f47: u32,
+    f48: u32,
+    f49: u32,
+    f50: u32,
+    f51: u32,
+    f52: u32,
+    f53: u32,
+    f54: u32,
+    f55: u32,
+    f56: u32,
+    f57: u32,
+    f58: u32,
+    f59: u32,
+    f60: u32,
+    f61: u32,
+    f62: u32,
+    f63: u32,
+    f64: u32,
+    f65: u32,
+    f66: u32,
+    f67: u32,
+    f68: u32,
+    f69: u32,
+}
+
+#[test]
+fn test_wide_struct() {
+    let names = (0..70).map(|i| format!("f{i}")).collect::<Vec<_>>();
+    let pairs = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str(), Event::from(i as u64)))
+        .collect::<Vec<_>>();
+    let value = deserialize::<Wide>(None, map(&pairs)).unwrap();
+    assert_eq!((value.f0, value.f63, value.f64, value.f69), (0, 63, 64, 69));
+
+    // duplicates of the fields beyond the first 64 are detected too
+    let mut duplicated = pairs.clone();
+    duplicated.push(("f65", Event::from(100u64)));
+    let err = deserialize::<Wide>(None, map(&duplicated)).unwrap_err();
+    assert_eq!(err.message(), "duplicate field `f65`");
+    let value = deserialize::<Wide>(Some(DuplicateKeys::Last), map(&duplicated)).unwrap();
+    assert_eq!(value.f65, 100);
+    let value = deserialize::<Wide>(Some(DuplicateKeys::First), map(&duplicated)).unwrap();
+    assert_eq!(value.f65, 65);
+
+    // missing fields beyond the first 64 are reported
+    let err = deserialize::<Wide>(None, map(&pairs[..68])).unwrap_err();
+    assert_eq!(err.message(), "missing field `f68`");
+}

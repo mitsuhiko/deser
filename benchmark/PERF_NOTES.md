@@ -204,6 +204,37 @@ layout with `RUSTC_BOOTSTRAP=1 cargo rustc -p deser-core --lib --release
 -- -Zprint-type-sizes` and compare `point-cloud`, `canada` and `features`
 in MessagePack and CBOR against a baseline binary.
 
+## Derived Structs
+
+All derived structs without flattened fields share one sink
+(`StructSink`), the derive implements `StructFields` for a struct with the
+slot and the values of the fields.  Compared to a sink per struct this
+made the derived code a quarter smaller (see `compile-times`) at the cost
+of an indirect call per field (the lookup of keys by function pointer and
+the dispatch of values through `StructFields`).  Deserializing is 2%-3%
+slower (geometric mean for JSON, CBOR and MessagePack, up to 6% for
+Twitter in MessagePack), serializing is unchanged.
+
+Findings while getting there, measured against a baseline binary:
+
+* A separate allocation for the fields cost 4%-8% on small structs (tree,
+  blobs), the sink and its fields share one block now (`StructBox`, a
+  handle variant with the same representation as boxed sinks).
+* Borrowed atoms went through `field_borrowed_atom` which forwarded to
+  `field_atom`, structs that cannot borrow (`StructInfo::borrows`) call
+  `field_atom` directly.
+* Tracking the seen fields in a `u64` with the words of larger structs
+  allocated out of line, and not dropping the fields after `finish` (they
+  are empty then) brought it from 4%-7% to 2%-3%.
+* The key lookup is not the problem: scanning the names in the core
+  (instead of calling the function pointer) is slower for large structs,
+  and predicting that keys come in the order of the fields gained
+  nothing.
+* Serializing through trait objects (a generic loop over `field` with a
+  plainness check on `dyn Serialize`) was 6% slower, going through the
+  driver for every field 10% slower.  `emit_plain_field` keeps the static
+  dispatch but exists once per type of field.
+
 ## Other Profiling Findings and Experiments
 
 These observations were previously in the benchmark README.  Timings refer

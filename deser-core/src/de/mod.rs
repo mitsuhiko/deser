@@ -252,6 +252,8 @@ pub use self::lexical::LexicalRules;
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::Recording;
 use self::sinkbox::SinkBox;
+#[cfg(feature = "derive")]
+use self::sinkbox::StructBox;
 pub use self::source::Source;
 pub use self::unknown::{IgnoredFields, UnknownFields};
 pub use self::update::checked_update;
@@ -277,12 +279,16 @@ pub struct SinkHandle<'a, 'de: 'a>(HandleInner<'a, 'de>);
 enum HandleInner<'a, 'de> {
     Borrowed(&'a mut dyn Sink<'de>),
     Owned(SinkBox<'a, 'de>),
+    #[cfg(feature = "derive")]
+    Struct(StructBox<'a, 'de>),
     Null(ignore::Ignore),
     // The optional variants are used to implement `Option<T>` without an
     // extra allocation: a null atom is not forwarded but turns the handle
     // into a null handle so that `finish` is not forwarded either.
     OptionalBorrowed(&'a mut dyn Sink<'de>),
     OptionalOwned(SinkBox<'a, 'de>),
+    #[cfg(feature = "derive")]
+    OptionalStruct(StructBox<'a, 'de>),
 }
 
 impl<'a, 'de> SinkHandle<'a, 'de> {
@@ -294,6 +300,13 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Create an owned handle to a heap allocated [`Sink`].
     pub fn boxed<S: Sink<'de> + 'a>(val: S) -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Owned(SinkBox::new(val)))
+    }
+
+    /// Creates an owned handle to the sink of a derived struct.
+    #[cfg(feature = "derive")]
+    #[inline]
+    pub(crate) fn from_struct_box(val: StructBox<'a, 'de>) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Struct(val))
     }
 
     /// Creates a sink handle that drops all values.
@@ -320,6 +333,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             HandleInner::Null(sink) => HandleInner::Null(sink),
             HandleInner::OptionalBorrowed(sink) => HandleInner::OptionalBorrowed(sink),
             HandleInner::OptionalOwned(sink) => HandleInner::OptionalOwned(sink),
+            #[cfg(feature = "derive")]
+            HandleInner::Struct(sink) => HandleInner::Struct(sink),
+            #[cfg(feature = "derive")]
+            HandleInner::OptionalStruct(sink) => HandleInner::OptionalStruct(sink),
         })
     }
 
@@ -355,6 +372,8 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         SinkHandle(match self.0 {
             HandleInner::Borrowed(sink) => HandleInner::OptionalBorrowed(sink),
             HandleInner::Owned(sink) => HandleInner::OptionalOwned(sink),
+            #[cfg(feature = "derive")]
+            HandleInner::Struct(sink) => HandleInner::OptionalStruct(sink),
             other => other,
         })
     }
@@ -364,9 +383,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// In that case the handle turned into a null handle.
     #[inline(always)]
     fn skip_null(&mut self, atom: &Atom) -> bool {
-        if let HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) = self.0
-            && is_null_atom(atom)
-        {
+        if self.is_optional() && is_null_atom(atom) {
             *self = SinkHandle::null();
             return true;
         }
@@ -378,6 +395,8 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         match self.0 {
             HandleInner::Borrowed(ref sink) | HandleInner::OptionalBorrowed(ref sink) => &**sink,
             HandleInner::Owned(ref sink) | HandleInner::OptionalOwned(ref sink) => sink.get(),
+            #[cfg(feature = "derive")]
+            HandleInner::Struct(ref sink) | HandleInner::OptionalStruct(ref sink) => sink.get(),
             HandleInner::Null(ref sink) => sink,
         }
     }
@@ -389,6 +408,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
                 &mut **sink
             }
             HandleInner::Owned(ref mut sink) | HandleInner::OptionalOwned(ref mut sink) => {
+                sink.get_mut()
+            }
+            #[cfg(feature = "derive")]
+            HandleInner::Struct(ref mut sink) | HandleInner::OptionalStruct(ref mut sink) => {
                 sink.get_mut()
             }
             HandleInner::Null(ref mut sink) => sink,
@@ -487,10 +510,12 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// [`ignore_null`](Self::ignore_null)).
     #[inline(always)]
     fn is_optional(&self) -> bool {
-        matches!(
-            self.0,
-            HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_)
-        )
+        match self.0 {
+            HandleInner::OptionalBorrowed(_) | HandleInner::OptionalOwned(_) => true,
+            #[cfg(feature = "derive")]
+            HandleInner::OptionalStruct(_) => true,
+            _ => false,
+        }
     }
 
     /// Forwards to [`Sink::unexpected_atom`].

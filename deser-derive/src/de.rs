@@ -409,11 +409,21 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             // structs without flattened fields implement `UpdateFields`
             quote! { &mut self.#field_ident }
         };
-        update_dispatch.push(quote! {
-            #index => {
-                let __field = #field_ref;
-                #update
+        update_dispatch.push(if update_through_ptr {
+            quote! {
+                #index => {
+                    let __field = #field_ref;
+                    #update
+                }
             }
+        } else {
+            let update = match x.adapters().de() {
+                None => quote! { __deser::__derive::field_update(#field_ref) },
+                Some(adapter) => quote_spanned! { adapter.span()=>
+                    <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(#field_ref)
+                },
+            };
+            quote! { #index => #update, }
         });
         key_matcher.push(Name::str_arms(
             &names,
@@ -852,14 +862,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn deserialize_update(
                     __value: &mut Self,
                 ) -> __deser::de::SinkHandle<'_, 'de> {
-                    __deser::__derive::StructUpdateSink::handle(
-                        __value,
-                        __field_index,
-                        #retain_unknown,
-                        __FIELDS,
-                        #type_name,
-                        #deny,
-                    )
+                    __deser::__derive::StructUpdateSink::handle(__value, &__INFO)
                 }
             },
             items: quote! {
@@ -979,6 +982,23 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
     };
 
     let de_trait = crate::forward::deserialize_trait(&container_attrs);
+    if !has_flatten {
+        let compact = CompactStruct {
+            input,
+            container_attrs: &container_attrs,
+            attrs: &attrs,
+            bindings: &sink_fieldname,
+            defaults: &sink_defaults,
+            skipped_name: &skipped_name,
+            skipped_value: &skipped_value,
+            key_matcher: &key_matcher,
+            field_names: &field_names,
+            update_method: &update_method,
+            update_items: &update_items,
+            bounded_where_clause: &bounded_where_clause,
+        };
+        return Ok(compact.derive());
+    }
     Ok(quote! {
         const _: () = {
             fn __field_index(__key: &__deser::__derive::str) -> __deser::__derive::Option<usize> {
@@ -1211,6 +1231,252 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
         };
     })
+}
+
+/// A struct without flattened fields.
+///
+/// Everything that does not depend on the types of the fields is done by
+/// `StructSink` which exists once for all structs.  The derive only
+/// implements `StructFields` for a struct that holds the slot and the
+/// values of the fields.
+struct CompactStruct<'a> {
+    input: &'a syn::DeriveInput,
+    container_attrs: &'a ContainerAttrs<'a>,
+    attrs: &'a [&'a FieldAttrs<'a>],
+    /// The names of the bindings of the values of the fields.
+    bindings: &'a [syn::Ident],
+    /// The initial values of the fields.
+    defaults: &'a [TokenStream],
+    skipped_name: &'a [&'a Option<syn::Ident>],
+    skipped_value: &'a [TokenStream],
+    key_matcher: &'a [TokenStream],
+    field_names: &'a [TokenStream],
+    update_method: &'a TokenStream,
+    update_items: &'a TokenStream,
+    bounded_where_clause: &'a syn::WhereClause,
+}
+
+impl CompactStruct<'_> {
+    fn derive(&self) -> TokenStream {
+        let input = self.input;
+        let container_attrs = self.container_attrs;
+        let ident = &input.ident;
+        let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+        let de_generics = with_de_lifetime(&input.generics).unwrap();
+        let (impl_generics, _, _) = de_generics.split_for_impl();
+        let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
+        let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
+        let bounded_where_clause = self.bounded_where_clause;
+        let type_name = container_attrs.expecting();
+        let deny = container_attrs.deny_unknown_fields();
+        let de_trait = crate::forward::deserialize_trait(container_attrs);
+
+        let index = (0..self.attrs.len())
+            .map(syn::Index::from)
+            .collect::<Vec<_>>();
+        let types = self.attrs.iter().map(|x| &x.field().ty).collect::<Vec<_>>();
+        let defaults = self.defaults;
+        let slot = |index: &syn::Index| quote! { &mut self.values.#index };
+        let field_sinks = self
+            .attrs
+            .iter()
+            .zip(&index)
+            .map(|(x, index)| field_sink(&x.field().ty, x.adapters().de(), slot(index)));
+        let field_atoms = self
+            .attrs
+            .iter()
+            .zip(&index)
+            .map(|(x, index)| atom_into(&x.field().ty, x.adapters().de(), slot(index)));
+        // Without generics no field can borrow from the data, so borrowed
+        // atoms are deserialized like other atoms.
+        let borrows = !input.generics.params.is_empty();
+        let borrowed_atom_fn = if !borrows {
+            None
+        } else {
+            let atoms = self.attrs.iter().zip(&index).map(|(x, index)| {
+                borrowed_atom_into(&x.field().ty, x.adapters().de(), slot(index))
+            });
+            Some(quote! {
+                fn field_borrowed_atom(
+                    &mut self,
+                    __index: usize,
+                    __atom: __deser::Atom<'de>,
+                    __state: &mut __deser::State,
+                ) -> __deser::__derive::Result<()> {
+                    match __index {
+                        #(#index => #atoms,)*
+                        _ => __deser::__derive::Ok(()),
+                    }
+                }
+            })
+        };
+
+        // Required fields (without defaults) are matched as `Some`, the
+        // struct is only built if all of them have a value and no errors
+        // were collected.  Otherwise `StructFinish::missing` creates the
+        // error.
+        let has_container_default = container_attrs.default().is_some();
+        let is_checked = |x: &FieldAttrs| !has_container_default && x.default().is_none();
+        let mut patterns = Vec::new();
+        let mut takes = Vec::new();
+        let mut fail_bindings = Vec::new();
+        let mut missing = Vec::new();
+        for (x, binding) in self.attrs.iter().zip(self.bindings) {
+            if is_checked(x) {
+                patterns.push(quote! { __deser::__derive::Some(#binding) });
+                takes.push(quote! { #binding });
+                fail_bindings.push(quote! { #binding });
+                missing.push(quote! { #binding.is_none() });
+                continue;
+            }
+            patterns.push(if has_container_default {
+                quote! { mut #binding }
+            } else {
+                quote! { #binding }
+            });
+            takes.push(match x.default() {
+                Some(TypeDefault::Implicit) => {
+                    quote! { #binding.unwrap_or_else(__deser::__derive::Default::default) }
+                }
+                Some(TypeDefault::Explicit(expr)) => {
+                    quote! { #binding.unwrap_or_else(|| #expr) }
+                }
+                None => quote! { #binding.unwrap() },
+            });
+            fail_bindings.push(quote! { _ });
+            missing.push(quote! { false });
+        }
+        // with a container default the fields without a default of their
+        // own take the value of the default of the container
+        let container_default = container_attrs.default().and_then(|default| {
+            let (binding, name): (Vec<_>, Vec<_>) = self
+                .attrs
+                .iter()
+                .zip(self.bindings)
+                .filter(|(x, _)| x.default().is_none())
+                .map(|(x, binding)| (binding, &x.field().ident))
+                .unzip();
+            if binding.is_empty() {
+                return None;
+            }
+            let type_default = match default {
+                TypeDefault::Implicit => quote! {
+                    <#ident #ty_generics as __deser::__derive::Default>::default()
+                },
+                TypeDefault::Explicit(expr) => expr.clone(),
+            };
+            Some(quote! {
+                if #(#binding.is_none())||* {
+                    let __default = #type_default;
+                    #(
+                        #binding = #binding.or(__deser::__derive::Some(__default.#name));
+                    )*
+                }
+            })
+        });
+        let nones = self
+            .attrs
+            .iter()
+            .map(|_| quote! { __deser::__derive::None });
+        let fieldname = self.attrs.iter().map(|x| &x.field().ident);
+        let skipped_name = self.skipped_name;
+        let skipped_value = self.skipped_value;
+        let key_matcher = self.key_matcher;
+        let field_names = self.field_names;
+        let update_method = self.update_method;
+        let update_items = self.update_items;
+
+        quote! {
+            const _: () = {
+                fn __field_index(__key: &__deser::__derive::str) -> __deser::__derive::Option<usize> {
+                    match __key {
+                        #(#key_matcher)*
+                        _ => __deser::__derive::None,
+                    }
+                }
+
+                const __FIELDS: &[&__deser::__derive::str] = &[#(#field_names),*];
+
+                const __INFO: __deser::__derive::StructInfo = __deser::__derive::StructInfo {
+                    name: #type_name,
+                    fields: __FIELDS,
+                    lookup: __field_index,
+                    deny: #deny,
+                    borrows: #borrows,
+                };
+
+                struct __Fields #wrapper_impl_generics #where_clause {
+                    slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
+                    values: (#(__deser::__derive::Option<#types>,)*),
+                    _marker: __deser::__derive::PhantomData<&'de ()>,
+                }
+
+                #[automatically_derived]
+                impl #impl_generics #de_trait for #ident #ty_generics #bounded_where_clause {
+                    fn deserialize_into(
+                        __slot: &mut __deser::__derive::Option<Self>,
+                    ) -> __deser::de::SinkHandle<'_, 'de> {
+                        __deser::__derive::StructSink::handle(
+                            __Fields {
+                                slot: __slot,
+                                values: (#(#defaults,)*),
+                                _marker: __deser::__derive::PhantomData,
+                            },
+                            &__INFO,
+                        )
+                    }
+
+                    #update_method
+                }
+
+                #update_items
+
+                #[automatically_derived]
+                impl #wrapper_impl_generics __deser::__derive::StructFields<'de> for __Fields #wrapper_ty_generics #bounded_where_clause {
+                    fn field_sink(&mut self, __index: usize) -> __deser::de::SinkHandle<'_, 'de> {
+                        match __index {
+                            #(#index => #field_sinks,)*
+                            _ => __deser::de::SinkHandle::null(),
+                        }
+                    }
+
+                    fn field_atom(
+                        &mut self,
+                        __index: usize,
+                        __atom: __deser::Atom,
+                        __state: &mut __deser::State,
+                    ) -> __deser::__derive::Result<()> {
+                        match __index {
+                            #(#index => #field_atoms,)*
+                            _ => __deser::__derive::Ok(()),
+                        }
+                    }
+
+                    #borrowed_atom_fn
+
+                    fn finish(
+                        &mut self,
+                        __finish: &mut __deser::__derive::StructFinish<'_>,
+                        __state: &mut __deser::State,
+                    ) -> __deser::__derive::Result<()> {
+                        match __deser::__derive::replace(&mut self.values, (#(#nones,)*)) {
+                            (#(#patterns,)*) if __finish.ok() => {
+                                #container_default
+                                *self.slot = __deser::__derive::Some(#ident {
+                                    #(#fieldname: #takes,)*
+                                    #(#skipped_name: #skipped_value,)*
+                                });
+                                __deser::__derive::Ok(())
+                            }
+                            (#(#fail_bindings,)*) => __deser::__derive::Err(
+                                __finish.missing(&[#(#missing),*], __state),
+                            ),
+                        }
+                    }
+                }
+            };
+        }
+    }
 }
 
 pub fn derive_enum(

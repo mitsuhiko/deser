@@ -12,9 +12,9 @@ Clean builds of a small program with one struct and one enum
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.74s | 2.98s | 2.91s           |
-| miniserde | 2.01s | 2.10s | 2.28s           |
-| deser     | 2.37s | 2.77s | 2.75s           |
+| serde     | 2.59s | 2.72s | 2.83s           |
+| miniserde | 1.86s | 1.99s | 2.18s           |
+| deser     | 2.55s | 2.60s | 2.62s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -23,49 +23,54 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.38s | 0.46s | 8.55s           |
-| miniserde | 0.16s | 0.21s | 1.67s           |
-| deser     | 0.38s | 0.46s | 5.28s           |
+| serde     | 0.34s | 0.41s | 7.85s           |
+| miniserde | 0.15s | 0.19s | 1.52s           |
+| deser     | 0.29s | 0.37s | 3.72s           |
 
 * Clean builds are 0.4s-0.7s slower than with miniserde.  The crates of
   the data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
-  `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.8s
-  to 0.9s, miniserde's derive takes 0.15s), `deser` (which re-exports the
+  `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s
+  to 1.0s, miniserde's derive takes 0.15s), `deser` (which re-exports the
   derive macros) and the program.
-* Release builds of derived code are 1.6 times as fast as with serde but
-  still three times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 296k lines of LLVM IR
-  (`cargo llvm-lines`) for the 100 types, most of it is deserialization.
-  Everything that does not depend on the types of the fields is in
-  `deser-core`: the key handling and updates of structs, the sinks of
-  unit enums and the default methods of `Sink`.  Where this costs
-  runtime performance it's not done (for instance the sinks of fields
-  are created inline).
+* Release builds of derived code are twice as fast as with serde but
+  still 2.4 times slower than with miniserde (deser 0.8 from 2023 took
+  3.1s, with far fewer features).  deser generates 230k lines of LLVM IR
+  (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
+  The frontend (`check`) spends most of its time type and borrow checking
+  the derived code, the expanded library has 48k lines (serde 71k,
+  miniserde 22k).
+* Everything that does not depend on the types of the fields is in
+  `deser-core`.  All structs without flattened fields share one sink
+  (`StructSink`) which holds the fields in the same block, the derive
+  only implements `StructFields` (the sinks of the fields by index, atoms
+  by index and `finish`).  This costs an indirect call per field, which
+  makes deserializing structs 2%-3% slower than with a sink per struct
+  (up to 6% for Twitter in MessagePack) but made the derived code a
+  quarter smaller and release builds 1.4 times as fast.  Unit enums share
+  one sink too.  Plain fields are emitted by a helper that exists once
+  per type of field (`emit_plain_field`), emitting them through trait
+  objects instead makes serializing structs 6% slower.
 
 ## Areas of Interest
 
 * **`deser-derive` itself** is on the critical path of clean builds.  A
   third of its code is iterator adapters (`map`, `filter`, `collect`)
   which are instantiated for every closure, a third the `quote!`
-  templates.
-* **Fast paths** are the largest parts of the derived code that remain.
-  Removing the atom shortcuts of structs (`__private_value_atom`) builds
-  0.26s faster but deserializes structs 5%-11% slower, emitting plain
-  fields out of line (`emit_plain_fields`) builds 0.3s faster but
-  serializes structs 3%-8% slower.
-* **Updates** (`deserialize_update`) cost 0.35s for the 100 types even if
-  they are not used, as every struct implements them.
+  templates.  Structs with flattened fields still use the old template
+  with a sink per struct.
 * **`finish`** of derived structs is the largest function of the
-  deserialization (12% of the IR).  Checking the required fields on the
-  sink before they are taken (instead of matching the taken values) makes
-  it a quarter larger.  Passing atoms by reference to the setters of unit
-  enums (so that the derived code does not drop them) saves 0.7% of the IR
-  but costs an indirect call per value.
+  derived code (17% of the IR, about 50 lines per field).  Taking the
+  values with helpers, checking the required fields by reference first or
+  computing the missing fields in a separate function all end up with
+  about the same IR once the helpers are inlined.
+* **Unit enums** take 18% of the IR (410 lines for three variants), about
+  half of it serialization which is not generic.
+* **Updates** (`deserialize_update`) are implemented by every struct even
+  if they are not used, as `UpdateFields` (1.4% of the IR).
 * **Every type** costs something even if its derived code is small: its
-  sink is boxed, dropped and has a vtable, and each field type is
-  instantiated for the generic helpers of the derive.  The unit enums
-  alone take 0.4s.
+  fields are boxed, dropped and have a vtable, and each field type is
+  instantiated for the generic helpers of the derive.
 
 ## Running
 

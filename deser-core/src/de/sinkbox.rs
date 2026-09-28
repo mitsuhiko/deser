@@ -12,6 +12,8 @@ use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
 use crate::de::Sink;
+#[cfg(feature = "derive")]
+use crate::de::fields::{StructFields, StructInfo, StructSink};
 
 /// The granularity of the size classes.
 const CLASS_SIZE: usize = 16;
@@ -246,6 +248,117 @@ impl<'a, 'de> Drop for SinkBox<'a, 'de> {
             }
             let _free = Free(self.ptr.cast(), layout);
             ptr::drop_in_place(self.ptr.as_ptr());
+        }
+    }
+}
+
+/// The sink of a derived struct together with its fields in one block.
+///
+/// The block holds the [`StructSink`] followed by the fields, the sink
+/// points to the fields.  This behaves like a [`SinkBox`] of the struct
+/// sink which owns the fields.
+#[cfg(feature = "derive")]
+pub(crate) struct StructBox<'a, 'de> {
+    // a pointer to the `StructSink` at the start of the block, it's a
+    // `dyn Sink` so that the handle can use it like the one of a `SinkBox`
+    ptr: NonNull<dyn Sink<'de> + 'a>,
+    _marker: PhantomData<Box<dyn Sink<'de> + 'a>>,
+}
+
+// SAFETY: see `SinkBox`, the sink and the fields are `Send`.
+#[cfg(feature = "derive")]
+unsafe impl Send for StructBox<'_, '_> {}
+
+/// Returns the layout of the block of a struct sink and the offset of the
+/// fields in it.
+#[cfg(feature = "derive")]
+#[inline(always)]
+fn struct_block_layout(fields: Layout) -> (Layout, usize) {
+    match Layout::new::<StructSink<'_, '_>>().extend(fields) {
+        Ok((layout, offset)) => (layout.pad_to_align(), offset),
+        Err(_) => panic!("struct too large"),
+    }
+}
+
+#[cfg(feature = "derive")]
+impl<'a, 'de: 'a> StructBox<'a, 'de> {
+    /// Moves the fields to the heap together with a sink for them.
+    #[inline]
+    pub fn new<F: StructFields<'de> + 'a>(
+        fields: F,
+        info: &'static StructInfo,
+    ) -> StructBox<'a, 'de> {
+        let (layout, offset) = struct_block_layout(Layout::new::<F>());
+        let block = alloc_block(layout);
+        // SAFETY: the block is valid for writes of the sink and the fields
+        // at their offsets.
+        unsafe {
+            let raw_fields = block.as_ptr().add(offset).cast::<F>();
+            raw_fields.write(fields);
+            let raw_fields =
+                NonNull::new_unchecked(raw_fields as *mut (dyn StructFields<'de> + 'a));
+            StructBox::init(block, raw_fields, info)
+        }
+    }
+
+    /// Writes the sink into the block (before the fields).
+    ///
+    /// # Safety
+    ///
+    /// The block must be valid for writes of the sink and hold the fields.
+    #[inline(never)]
+    unsafe fn init(
+        block: NonNull<u8>,
+        fields: NonNull<dyn StructFields<'de> + 'a>,
+        info: &'static StructInfo,
+    ) -> StructBox<'a, 'de> {
+        let ptr = block.cast::<StructSink<'a, 'de>>();
+        // SAFETY: the block is valid for writes of the sink, the sink owns
+        // the fields
+        unsafe { ptr.as_ptr().write(StructSink::new(fields, info)) };
+        StructBox {
+            ptr: ptr as NonNull<dyn Sink<'de> + 'a>,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Returns a reference to the sink.
+    #[inline(always)]
+    pub fn get(&self) -> &(dyn Sink<'de> + 'a) {
+        // SAFETY: the sink is valid while the box exists
+        unsafe { self.ptr.as_ref() }
+    }
+
+    /// Returns a mutable reference to the sink.
+    #[inline(always)]
+    pub fn get_mut(&mut self) -> &mut (dyn Sink<'de> + 'a) {
+        // SAFETY: the sink is valid while the box exists
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+#[cfg(feature = "derive")]
+impl<'a, 'de> Drop for StructBox<'a, 'de> {
+    fn drop(&mut self) {
+        // SAFETY: the sink and the fields are valid, the block was
+        // allocated with the layout of both.
+        unsafe {
+            let sink = self.ptr.cast::<StructSink<'a, 'de>>();
+            let (fields, drop_fields) = sink.as_ref().fields_ptr();
+            let (layout, _) = struct_block_layout(Layout::for_value(fields.as_ref()));
+            // the block is freed even if a drop panics
+            struct Free(NonNull<u8>, Layout);
+            impl Drop for Free {
+                fn drop(&mut self) {
+                    // SAFETY: see above
+                    unsafe { free_block(self.0, self.1) };
+                }
+            }
+            let _free = Free(sink.cast(), layout);
+            ptr::drop_in_place(sink.as_ptr());
+            if drop_fields {
+                ptr::drop_in_place(fields.as_ptr());
+            }
         }
     }
 }

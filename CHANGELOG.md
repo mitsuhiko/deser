@@ -953,6 +953,13 @@ All notable changes to deser are documented here.
   support the bytes adapters.  Byte strings of `bstr` are strings if they
   are valid UTF-8 and bytes otherwise (written as sequences of integers in
   JSON), strings are deserialized as their UTF-8 bytes like serde does.
+- Derived structs generate a quarter less code.  All structs without
+  flattened fields share one sink which holds their fields in the same
+  heap block, the derive only implements the parts that depend on the
+  types of the fields.  Plain fields are serialized by a helper that
+  exists once per type of field.  100 derived structs and enums build 1.4
+  times as fast in release mode and type check 17% faster.
+  Deserializing structs is 2%-3% slower.
 
 ## 0.8.0
 

@@ -91,7 +91,10 @@ pub mod __derive {
         unknown_variant_atom, untagged_atom, untagged_borrowed_atom, untagged_fallback,
         untagged_handle,
     };
-    pub use crate::de::fields::{FieldKeySink, NextField, StructUpdateSink, UpdateFields};
+    pub use crate::de::fields::{
+        FieldKeySink, NextField, StructFields, StructFinish, StructInfo, StructSink,
+        StructUpdateSink, UpdateFields,
+    };
     pub use crate::de::mapped::mapped;
     pub use crate::de::recording::RecordBuf;
     pub use crate::de::unknown::{unclaimed_keys, unknown_field, wants_unknown_fields};
