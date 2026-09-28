@@ -4,7 +4,7 @@ use core::any::TypeId;
 use core::fmt;
 
 use crate::de::DuplicateKeys;
-use crate::de::arena::Arena;
+use crate::de::arena::{Arena, Buffer};
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::extensions::{EventData, Extensions};
@@ -252,6 +252,29 @@ impl State {
         let rv = f(self);
         self.discards_errors = outer;
         rv
+    }
+
+    /// Takes the scratch space of a format that was kept from the last
+    /// deserialization (see
+    /// [`__private_put_scratch`](Self::__private_put_scratch)).
+    ///
+    /// This is not public API.
+    #[doc(hidden)]
+    #[inline]
+    pub fn __private_take_scratch(&mut self) -> Vec<u8> {
+        self.arena.take_vec(Buffer::Scratch).unwrap_or_default()
+    }
+
+    /// Keeps the scratch space of a format for the next deserialization.
+    ///
+    /// Formats that unescape strings into a buffer would otherwise grow it
+    /// again for every document.  The buffer is cleared.
+    ///
+    /// This is not public API.
+    #[doc(hidden)]
+    #[inline]
+    pub fn __private_put_scratch(&mut self, buffer: Vec<u8>) {
+        self.arena.put_vec(Buffer::Scratch, buffer);
     }
 
     /// Takes the state out, leaving an empty state that does not allocate.

@@ -13,7 +13,7 @@ The geometric mean over the 15 datasets, with the best and the worst one:
 
 | format      | de    | de range    | ser   | ser range   |
 |-------------|-------|-------------|-------|-------------|
-| JSON        | 1.24x | 0.75x-1.79x | 0.85x | 0.35x-1.45x |
+| JSON        | 1.10x | 0.69x-1.67x | 0.93x | 0.38x-1.65x |
 | CBOR        | 0.82x | 0.53x-1.31x | 1.37x | 1.00x-1.93x |
 | MessagePack | 1.44x | 0.87x-2.69x | 1.33x | 0.95x-1.80x |
 | YAML        | 0.31x | 0.24x-0.44x | 0.56x | 0.24x-0.98x |
@@ -22,12 +22,13 @@ The geometric mean over the 15 datasets, with the best and the worst one:
 * **YAML and TOML** deserialize two to four times as fast as serde-saphyr
   and toml.  Serializing is faster or on par, except for the large table
   of web-sys-manifest in TOML (1.41x).
-* **JSON** serializes faster than serde_json, except for tree (1.45x),
-  logs (1.27x) and cargo-manifest (1.12x).  Deserializing is faster for
-  manifests and logs and 1.04x-1.13x slower for other string heavy data
-  (twitter, citm-catalog, saphyr, web-sys-manifest) but 1.32x-1.79x
-  slower for floats and nesting (canada, features, point-cloud, tree,
-  kubernetes).
+* **JSON** serializes faster than serde_json or on par, except for tree
+  (1.65x), cargo-manifest (1.32x), logs (1.31x), citm-catalog (1.28x)
+  and manifests (1.19x).  Deserializing is faster for twitter,
+  citm-catalog, manifests and logs, 1.04x-1.11x slower for other string
+  heavy data (saphyr, cargo-lock, github, web-sys-manifest) and
+  1.15x-1.34x slower for floats and nesting (canada, registry,
+  kubernetes, point-cloud, features), 1.67x for tree.
 * **CBOR** deserializes faster than ciborium, serializing is 1.4x slower.
 * **MessagePack** is on par with rmp-serde for string heavy data but
   deserializes 2.1x-2.7x slower for floats, nesting and integer keyed
@@ -35,7 +36,7 @@ The geometric mean over the 15 datasets, with the best and the worst one:
   is a bit faster than deser-cbor there, the gap comes from rmp-serde
   being two to three times as fast as ciborium on this data.
   Serializing is 1.3x slower.
-* **Untagged enums** (cargo-manifest) are 1.43x slower in JSON and 1.54x
+* **Untagged enums** (cargo-manifest) are 1.34x slower in JSON and 1.54x
   in MessagePack, in the other formats they are faster.
 
 The two sessions of the pi coding agent are only benchmarked with JSON
@@ -44,8 +45,8 @@ geometric means above:
 
 | benchmark              | input    | de       | serde    | ratio | ser     | serde   | ratio |
 |------------------------|----------|----------|----------|-------|---------|---------|-------|
-| session-openai/json    | 18.9 MiB | 11.17 ms | 12.56 ms | 0.89x | 7.07 ms | 9.93 ms | 0.71x |
-| session-anthropic/json | 25.5 MiB | 4.09 ms  | 4.38 ms  | 0.93x | 3.14 ms | 8.43 ms | 0.37x |
+| session-openai/json    | 18.9 MiB | 9.09 ms  | 12.52 ms | 0.73x | 7.03 ms | 9.88 ms | 0.71x |
+| session-anthropic/json | 25.5 MiB | 3.07 ms  | 4.37 ms  | 0.70x | 2.97 ms | 8.33 ms | 0.36x |
 
 The OpenAI session is mostly text with many escapes (code, diffs, tool
 output and signatures which are JSON in strings), the Anthropic session
@@ -66,21 +67,21 @@ in [PERF_NOTES.md](PERF_NOTES.md).
 
 | benchmark                | de       | serde    | ratio | ser      | serde    | ratio |
 |--------------------------|----------|----------|-------|----------|----------|-------|
-| twitter/json             | 480.9 us | 429.4 us | 1.12x | 157.7 us | 279.9 us | 0.56x |
-| canada/json              | 3.25 ms  | 2.11 ms  | 1.54x | 1.24 ms  | 1.25 ms  | 1.00x |
-| citm-catalog/json        | 995.7 us | 957.9 us | 1.04x | 317.9 us | 306.1 us | 1.04x |
-| cargo-manifest/json      | 13.9 us  | 9.7 us   | 1.43x | 2.9 us   | 2.6 us   | 1.12x |
-| web-sys-manifest/json    | 214.8 us | 189.8 us | 1.13x | 23.4 us  | 31.3 us  | 0.75x |
-| cargo-lock/json          | 46.2 us  | 38.0 us  | 1.22x | 13.1 us  | 20.1 us  | 0.65x |
-| saphyr/json              | 403.7 us | 358.9 us | 1.12x | 98.3 us  | 278.5 us | 0.35x |
-| github/json              | 1.20 ms  | 964.6 us | 1.25x | 366.8 us | 618.8 us | 0.59x |
-| kubernetes/json          | 5.79 ms  | 4.39 ms  | 1.32x | 1.61 ms  | 1.69 ms  | 0.95x |
-| manifests/json           | 811.0 us | 872.4 us | 0.93x | 250.0 us | 251.3 us | 0.99x |
-| logs/json                | 4.13 ms  | 5.51 ms  | 0.75x | 1.88 ms  | 1.48 ms  | 1.27x |
-| features/json            | 3.45 ms  | 2.13 ms  | 1.62x | 1.61 ms  | 1.77 ms  | 0.91x |
-| point-cloud/json         | 1.86 ms  | 1.22 ms  | 1.52x | 1.07 ms  | 1.32 ms  | 0.81x |
-| registry/json            | 1.36 ms  | 1.10 ms  | 1.23x | 246.9 us | 237.7 us | 1.04x |
-| tree/json                | 2.41 ms  | 1.35 ms  | 1.79x | 954.5 us | 656.8 us | 1.45x |
+| twitter/json             | 418.4 us | 430.8 us | 0.97x | 166.1 us | 222.5 us | 0.75x |
+| canada/json              | 2.44 ms  | 2.12 ms  | 1.15x | 1.26 ms  | 1.25 ms  | 1.01x |
+| citm-catalog/json        | 898.6 us | 966.5 us | 0.93x | 322.5 us | 252.0 us | 1.28x |
+| cargo-manifest/json      | 12.9 us  | 9.6 us   | 1.34x | 2.9 us   | 2.2 us   | 1.32x |
+| web-sys-manifest/json    | 204.3 us | 184.0 us | 1.11x | 23.7 us  | 29.0 us  | 0.82x |
+| cargo-lock/json          | 40.7 us  | 38.2 us  | 1.07x | 13.6 us  | 20.1 us  | 0.68x |
+| saphyr/json              | 374.0 us | 357.9 us | 1.04x | 112.6 us | 292.6 us | 0.38x |
+| github/json              | 1.06 ms  | 975.0 us | 1.08x | 391.1 us | 624.7 us | 0.63x |
+| kubernetes/json          | 5.55 ms  | 4.46 ms  | 1.24x | 1.62 ms  | 1.70 ms  | 0.96x |
+| manifests/json           | 729.3 us | 889.4 us | 0.82x | 256.2 us | 215.3 us | 1.19x |
+| logs/json                | 3.82 ms  | 5.50 ms  | 0.69x | 1.91 ms  | 1.45 ms  | 1.31x |
+| features/json            | 2.88 ms  | 2.15 ms  | 1.34x | 1.64 ms  | 1.76 ms  | 0.93x |
+| point-cloud/json         | 1.54 ms  | 1.22 ms  | 1.26x | 1.09 ms  | 1.32 ms  | 0.82x |
+| registry/json            | 1.30 ms  | 1.10 ms  | 1.19x | 251.2 us | 242.9 us | 1.03x |
+| tree/json                | 2.25 ms  | 1.35 ms  | 1.67x | 953.7 us | 579.3 us | 1.65x |
 | twitter/cbor             | 426.5 us | 507.7 us | 0.84x | 124.6 us | 111.9 us | 1.11x |
 | canada/cbor              | 1.39 ms  | 1.50 ms  | 0.93x | 609.0 us | 412.4 us | 1.48x |
 | citm-catalog/cbor        | 763.5 us | 619.7 us | 1.23x | 265.6 us | 139.1 us | 1.91x |
@@ -144,9 +145,9 @@ in [PERF_NOTES.md](PERF_NOTES.md).
 | table/csv                | 6.14 ms  | 3.70 ms  | 1.66x | 4.59 ms  | 1.72 ms  | 2.67x |
 
 `blobs` has no serde counterpart (serde has no bytes for `Vec<u8>`):
-de/ser take 759/504 us in JSON, 507/175 us in CBOR, 457/173 us in
+de/ser take 700/512 us in JSON, 507/175 us in CBOR, 457/173 us in
 MessagePack, 4.54/1.24 ms in YAML and 1.18/2.02 ms in TOML.  Ignoring the
-Twitter JSON document (`twitter/json/ignore`) takes 292 us, 1.13x of
+Twitter JSON document (`twitter/json/ignore`) takes 241 us, 0.94x of
 serde_json.
 
 ## Datasets

@@ -355,11 +355,41 @@ in memory.  Parsing alone took 17%-20% fewer instructions and time on
 Twitter and citm-catalog, deserializing got 4%-12% faster for all
 datasets except the ones that are mostly numbers.
 
-Scanning strings with NEON (16 bytes at a time after the first word)
-instead of words did not make a measurable difference: 43% of Twitter
-and 72% of Kubernetes are the contents of strings, mostly in strings of
-32 bytes and more, but it's 4%-7% fewer instructions for parsing alone
-and no difference in time.
+`skip_to_escape` checks the first 32 bytes a word at a time (inlined),
+longer strings continue out of line with SIMD (NEON or SSE2): two blocks
+of 16 bytes, then 64 bytes at once until one has a byte that needs
+escaping.  For Twitter and Kubernetes (43% and 72% the contents of
+strings, mostly of 32 bytes and more) SIMD made no difference in time.
+It matters for really long strings: the base64 images of
+session-anthropic (24.5 MB in 179 strings) are parsed 38% faster,
+deserializing is 22% faster.  With only two words inlined Twitter got
+6% slower to parse, without the blocks of 16 bytes GitHub 2%-3%.
+
+Strings with escapes (`parse_str_slow`) are what session-openai is made
+of: 16 MB of its 19.8 MB are in strings with escapes (code, diffs, JSON
+in strings), 460,000 escapes with a median of 13 bytes between them.
+What helped (parsing alone, in order):
+
+* copying the pieces between escapes with `extend` (word sized copies)
+  instead of `extend_from_slice` which calls `memcpy`: 11%
+* finding the escapes with `EscapeScanner`, which computes a bit for each
+  of 64 bytes once and takes the following escapes of the block from the
+  bits: 6%
+* unescaping the escapes that stand for a byte with a table before
+  calling `parse_escape`: 1%-2%
+
+Copying 16 bytes at a time into the buffer while checking them (without
+scanning first) was 3% slower.
+
+The buffer for the unescaped strings is kept with the state (see
+`State::__private_take_scratch`, a buffer of the arena which is parked
+with its first chunk) between values and deserializations, up to 256 KiB.
+Growing it for every line of a JSON Lines file cost 8% of deserializing
+session-openai and 6% of session-anthropic.  Together session-openai
+deserializes 16% faster, session-anthropic 29%.
+
+Using `EscapeScanner` for writing strings with escapes did not help
+serialization (`write_escaped_str_slow`).
 
 `Cursor::parse_whitespace` checks eight spaces before it looks at the
 next byte.  Checking the byte first (only looking for runs of spaces

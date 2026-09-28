@@ -5,9 +5,9 @@
 /// Returns the index of the first byte at or after `pos` which needs special
 /// handling within a string (a quote, a backslash or a control character).
 ///
-/// This processes a word at a time and falls back to a byte-wise scan for the
-/// tail of the input.  This is used by the parser where strings are typically
-/// short, so this does not use SIMD which has a higher latency.
+/// Most strings are short, the first 33 bytes are checked a byte and then
+/// a word at a time (inlined into the parser).  Longer strings continue
+/// with SIMD in [`skip_to_escape_long`], out of line.
 #[inline]
 pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     if pos >= input.len() || ESCAPE[usize::from(input[pos])] {
@@ -15,6 +15,47 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
     }
     pos += 1;
 
+    for _ in 0..4 {
+        if pos + 8 > input.len() {
+            break;
+        }
+        let masked = escape_mask(load_u64(input, pos));
+        if masked != 0 {
+            return pos + masked.trailing_zeros() as usize / 8;
+        }
+        pos += 8;
+    }
+    skip_to_escape_long(input, pos)
+}
+
+/// Continues [`skip_to_escape`] for long strings.
+///
+/// After two blocks of 16 bytes (strings of medium length), blocks of 64
+/// bytes are checked at once, the block with the byte is searched 16
+/// bytes at a time.
+#[inline(never)]
+fn skip_to_escape_long(input: &[u8], mut pos: usize) -> usize {
+    for _ in 0..2 {
+        if pos + 16 > input.len() {
+            break;
+        }
+        if let Some(offset) = block_escape(input, pos) {
+            return pos + offset;
+        }
+        pos += 16;
+    }
+    while pos + 64 <= input.len() {
+        if block64_has_escape(input, pos) {
+            break;
+        }
+        pos += 64;
+    }
+    while pos + 16 <= input.len() {
+        if let Some(offset) = block_escape(input, pos) {
+            return pos + offset;
+        }
+        pos += 16;
+    }
     while pos + 8 <= input.len() {
         let masked = escape_mask(load_u64(input, pos));
         if masked != 0 {
@@ -22,11 +63,250 @@ pub fn skip_to_escape(input: &[u8], mut pos: usize) -> usize {
         }
         pos += 8;
     }
-
     while pos < input.len() && !ESCAPE[usize::from(input[pos])] {
         pos += 1;
     }
     pos
+}
+
+/// Finds the bytes which need special handling within a string, for
+/// strings which have many of them (like code with its line breaks and
+/// quotes).
+///
+/// The bytes are found in blocks of 64 bytes: a bit per byte is computed
+/// once per block, the following bytes of the block are found by the bits
+/// that remain.
+pub struct EscapeScanner {
+    /// The end of the block (0 before the first one).
+    end: usize,
+    /// The bytes of the block that need escaping, bit 0 is the first one.
+    bits: u64,
+}
+
+impl EscapeScanner {
+    pub fn new() -> EscapeScanner {
+        EscapeScanner { end: 0, bits: 0 }
+    }
+
+    /// Returns the index of the first byte at or after `pos` which needs
+    /// special handling, like [`skip_to_escape`].
+    ///
+    /// The positions must not go backwards.
+    #[inline(always)]
+    pub fn next(&mut self, input: &[u8], mut pos: usize) -> usize {
+        loop {
+            if pos < self.end {
+                let start = self.end - 64;
+                let bits = self.bits & (u64::MAX << (pos - start));
+                if bits != 0 {
+                    return start + bits.trailing_zeros() as usize;
+                }
+                pos = self.end;
+            }
+            if pos + 64 > input.len() {
+                return skip_to_escape(input, pos);
+            }
+            self.bits = escape_bits(input, pos);
+            self.end = pos + 64;
+        }
+    }
+}
+
+/// Returns a bit for each of the 64 bytes starting at `pos` which is set if
+/// the byte needs escaping (bit 0 for the first byte).
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+#[inline(always)]
+fn escape_bits(input: &[u8], pos: usize) -> u64 {
+    use core::arch::aarch64::*;
+    const BITS: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+    let block: &[u8; 64] = input[pos..pos + 64].try_into().unwrap();
+    // SAFETY: neon is available
+    unsafe {
+        let bits = vld1q_u8(BITS.as_ptr());
+        let a = vandq_u8(escape_flags(block[..16].try_into().unwrap()), bits);
+        let b = vandq_u8(escape_flags(block[16..32].try_into().unwrap()), bits);
+        let c = vandq_u8(escape_flags(block[32..48].try_into().unwrap()), bits);
+        let d = vandq_u8(escape_flags(block[48..].try_into().unwrap()), bits);
+        // adding neighbors three times combines the bits of 8 bytes into one
+        let ab = vpaddq_u8(a, b);
+        let cd = vpaddq_u8(c, d);
+        let abcd = vpaddq_u8(ab, cd);
+        vgetq_lane_u64::<0>(vreinterpretq_u64_u8(vpaddq_u8(abcd, abcd)))
+    }
+}
+
+/// Returns a bit for each of the 64 bytes starting at `pos` which is set if
+/// the byte needs escaping (bit 0 for the first byte).
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+#[inline(always)]
+fn escape_bits(input: &[u8], pos: usize) -> u64 {
+    use core::arch::x86_64::*;
+    let block: &[u8; 64] = input[pos..pos + 64].try_into().unwrap();
+    // SAFETY: sse2 is available
+    unsafe {
+        let a = _mm_movemask_epi8(escape_flags(block[..16].try_into().unwrap())) as u16;
+        let b = _mm_movemask_epi8(escape_flags(block[16..32].try_into().unwrap())) as u16;
+        let c = _mm_movemask_epi8(escape_flags(block[32..48].try_into().unwrap())) as u16;
+        let d = _mm_movemask_epi8(escape_flags(block[48..].try_into().unwrap())) as u16;
+        u64::from(a) | u64::from(b) << 16 | u64::from(c) << 32 | u64::from(d) << 48
+    }
+}
+
+/// Returns a bit for each of the 64 bytes starting at `pos` which is set if
+/// the byte needs escaping (bit 0 for the first byte).
+#[cfg(not(any(
+    all(target_arch = "aarch64", target_feature = "neon", not(miri)),
+    all(target_arch = "x86_64", target_feature = "sse2", not(miri))
+)))]
+#[inline(always)]
+fn escape_bits(input: &[u8], pos: usize) -> u64 {
+    input[pos..pos + 64]
+        .iter()
+        .enumerate()
+        .fold(0, |bits, (idx, &byte)| {
+            bits | u64::from(ESCAPE[usize::from(byte)]) << idx
+        })
+}
+
+/// Returns the flags of the 16 bytes (`0xff` for a byte that needs
+/// escaping).
+///
+/// # Safety
+///
+/// neon must be available.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+#[inline(always)]
+unsafe fn escape_flags(block: &[u8; 16]) -> core::arch::aarch64::uint8x16_t {
+    use core::arch::aarch64::*;
+    // SAFETY: neon is available and the block is 16 bytes long
+    unsafe {
+        let chars = vld1q_u8(block.as_ptr());
+        let ctrl = vcltq_u8(chars, vdupq_n_u8(0x20));
+        let quote = vceqq_u8(chars, vdupq_n_u8(b'"'));
+        let backslash = vceqq_u8(chars, vdupq_n_u8(b'\\'));
+        vorrq_u8(ctrl, vorrq_u8(quote, backslash))
+    }
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+#[inline(always)]
+pub fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    use core::arch::aarch64::*;
+    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
+    // SAFETY: neon is available
+    let nibbles = unsafe {
+        let flagged = escape_flags(block);
+        // narrow every byte into a nibble of a 64 bit mask
+        let narrowed = vshrn_n_u16::<4>(vreinterpretq_u16_u8(flagged));
+        vget_lane_u64::<0>(vreinterpret_u64_u8(narrowed))
+    };
+    if nibbles != 0 {
+        Some(nibbles.trailing_zeros() as usize / 4)
+    } else {
+        None
+    }
+}
+
+/// Returns `true` if one of the 64 bytes starting at `pos` needs escaping.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+#[inline(always)]
+fn block64_has_escape(input: &[u8], pos: usize) -> bool {
+    use core::arch::aarch64::*;
+    let block: &[u8; 64] = input[pos..pos + 64].try_into().unwrap();
+    // SAFETY: neon is available
+    unsafe {
+        let a = escape_flags(block[..16].try_into().unwrap());
+        let b = escape_flags(block[16..32].try_into().unwrap());
+        let c = escape_flags(block[32..48].try_into().unwrap());
+        let d = escape_flags(block[48..].try_into().unwrap());
+        vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) != 0
+    }
+}
+
+/// Returns the flags of the 16 bytes (`0xff` for a byte that needs
+/// escaping).
+///
+/// # Safety
+///
+/// sse2 must be available.
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+#[inline(always)]
+unsafe fn escape_flags(block: &[u8; 16]) -> core::arch::x86_64::__m128i {
+    use core::arch::x86_64::*;
+    // SAFETY: sse2 is available and the block is 16 bytes long
+    unsafe {
+        let chars = _mm_loadu_si128(block.as_ptr().cast::<__m128i>());
+        // unsigned `chars <= 0x1f` is `min(chars, 0x1f) == chars`
+        let ctrl = _mm_cmpeq_epi8(_mm_min_epu8(chars, _mm_set1_epi8(0x1f)), chars);
+        let quote = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'"' as i8));
+        let backslash = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'\\' as i8));
+        _mm_or_si128(ctrl, _mm_or_si128(quote, backslash))
+    }
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+#[inline(always)]
+pub fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    use core::arch::x86_64::*;
+    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
+    // SAFETY: sse2 is available
+    let mask = unsafe { _mm_movemask_epi8(escape_flags(block)) as u32 };
+    if mask != 0 {
+        Some(mask.trailing_zeros() as usize)
+    } else {
+        None
+    }
+}
+
+/// Returns `true` if one of the 64 bytes starting at `pos` needs escaping.
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+#[inline(always)]
+fn block64_has_escape(input: &[u8], pos: usize) -> bool {
+    use core::arch::x86_64::*;
+    let block: &[u8; 64] = input[pos..pos + 64].try_into().unwrap();
+    // SAFETY: sse2 is available
+    unsafe {
+        let a = escape_flags(block[..16].try_into().unwrap());
+        let b = escape_flags(block[16..32].try_into().unwrap());
+        let c = escape_flags(block[32..48].try_into().unwrap());
+        let d = escape_flags(block[48..].try_into().unwrap());
+        _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d))) != 0
+    }
+}
+
+/// Returns the offset of the first byte in the 16 bytes starting at `pos`
+/// which needs escaping.
+#[cfg(not(any(
+    all(target_arch = "aarch64", target_feature = "neon", not(miri)),
+    all(target_arch = "x86_64", target_feature = "sse2", not(miri))
+)))]
+#[inline(always)]
+pub fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
+    let masked = escape_mask(load_u64(input, pos));
+    if masked != 0 {
+        return Some(masked.trailing_zeros() as usize / 8);
+    }
+    let masked = escape_mask(load_u64(input, pos + 8));
+    if masked != 0 {
+        return Some(8 + masked.trailing_zeros() as usize / 8);
+    }
+    None
+}
+
+/// Returns `true` if one of the 64 bytes starting at `pos` needs escaping.
+#[cfg(not(any(
+    all(target_arch = "aarch64", target_feature = "neon", not(miri)),
+    all(target_arch = "x86_64", target_feature = "sse2", not(miri))
+)))]
+#[inline(always)]
+fn block64_has_escape(input: &[u8], pos: usize) -> bool {
+    (0..8).fold(0, |acc, idx| {
+        acc | escape_mask(load_u64(input, pos + idx * 8))
+    }) != 0
 }
 
 /// Returns the index of the first byte at or after `pos` which needs special
@@ -219,6 +499,37 @@ fn test_is_ascii() {
 }
 
 #[test]
+fn test_escape_scanner() {
+    let mut state = 0x2545f4914f6cdd1du64;
+    let rounds = if cfg!(miri) { 5 } else { 2000 };
+    for _ in 0..rounds {
+        let len = (state % 300) as usize;
+        let input: Vec<u8> = (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                match state % 16 {
+                    0 => b'"',
+                    1 => b'\\',
+                    2 => b'\n',
+                    3 => 0x80,
+                    _ => b'x',
+                }
+            })
+            .collect();
+        let mut scanner = EscapeScanner::new();
+        let mut pos = 0;
+        while pos < len {
+            let expected = skip_to_escape(&input, pos);
+            assert_eq!(scanner.next(&input, pos), expected);
+            // continue after the byte, sometimes further
+            pos = expected + 1 + (state % 3) as usize;
+        }
+    }
+}
+
+#[test]
 fn test_skip_to_escape() {
     fn naive(input: &[u8], mut pos: usize) -> usize {
         while pos < input.len() && !ESCAPE[usize::from(input[pos])] {
@@ -230,15 +541,19 @@ fn test_skip_to_escape() {
     let alphabet: &[u8] = b"a\"\\\x00\x1f\x20\x7f\x80\xff\xe3";
     let mut state = 0x2545f4914f6cdd1du64;
     let rounds = if cfg!(miri) { 2 } else { 200 };
-    for len in 0..80 {
+    // short strings of every length and long ones around the blocks of 64
+    // bytes
+    for len in (0..80).chain([127, 128, 129, 200, 300]) {
+        // bias towards plain bytes, long strings have blocks without
+        // bytes that need escaping
+        let bias = if len < 80 { 4 } else { 128 };
         for _ in 0..rounds {
             let input: Vec<u8> = (0..len)
                 .map(|_| {
                     state ^= state << 13;
                     state ^= state >> 7;
                     state ^= state << 17;
-                    // bias towards plain bytes
-                    if state.is_multiple_of(4) {
+                    if state.is_multiple_of(bias) {
                         alphabet[(state >> 8) as usize % alphabet.len()]
                     } else {
                         b'x'

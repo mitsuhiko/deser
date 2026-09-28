@@ -77,7 +77,9 @@ struct Chunk {
 
 /// The buffers of the vectors that are kept for the next driver (see
 /// [`Arena::take_vec`]), by [`Buffer`].
-type Buffers = [RawBuf; 2];
+type Buffers = [RawBuf; 3];
+
+const NO_BUFFERS: Buffers = [RawBuf::EMPTY; 3];
 
 /// The kinds of vectors whose buffers are kept.
 #[derive(Copy, Clone)]
@@ -86,10 +88,16 @@ pub(crate) enum Buffer {
     SinkStack = 0,
     /// The frames of a serialization.
     SerializeStack = 1,
+    /// The scratch space of a format (for instance to unescape strings).
+    Scratch = 2,
 }
 
-/// Buffers larger than this are not kept.
-const MAX_BUFFER_SIZE: usize = 64 * 1024;
+/// Buffers larger than this are not kept (by [`Buffer`]).
+///
+/// The scratch space of formats holds strings with escapes, which can be
+/// large (code, documents).  Without keeping it every document grows it
+/// again.
+const MAX_BUFFER_SIZE: [usize; 3] = [64 * 1024, 64 * 1024, 256 * 1024];
 
 /// The buffer of a vector.
 #[derive(Copy, Clone)]
@@ -159,7 +167,7 @@ impl Chunk {
                 prev: ptr::null_mut(),
                 next: ptr::null_mut(),
                 layout,
-                bufs: [RawBuf::EMPTY; 2],
+                bufs: NO_BUFFERS,
                 live: AtomicUsize::new(0),
             })
         };
@@ -269,7 +277,10 @@ impl Arena {
     #[inline]
     pub fn put_vec<T>(&mut self, kind: Buffer, vec: Vec<T>) {
         let size = size_of::<T>();
-        if vec.capacity() == 0 || size == 0 || vec.capacity() * size > MAX_BUFFER_SIZE {
+        if vec.capacity() == 0
+            || size == 0
+            || vec.capacity() * size > MAX_BUFFER_SIZE[kind as usize]
+        {
             return;
         }
         let Some(bufs) = self.bufs() else {
@@ -466,7 +477,7 @@ impl Drop for Arena {
             // chunk that is parked (before the other chunks are freed)
             let first = self.base.wrapping_sub(CHUNK_HEADER).cast::<Chunk>();
             if first != chunk {
-                (*chunk).bufs = core::mem::replace(&mut (*first).bufs, [RawBuf::EMPTY; 2]);
+                (*chunk).bufs = core::mem::replace(&mut (*first).bufs, NO_BUFFERS);
             }
             let prev = (*chunk).prev;
             if !prev.is_null() {

@@ -1,5 +1,5 @@
 //! Finds the bytes of strings that need escaping when serializing.
-use crate::scan::{ONE_BYTES, escape_mask, load_u32, load_u64};
+use crate::scan::{ONE_BYTES, block_escape, escape_mask, load_u32, load_u64};
 
 const SPACES: u64 = ONE_BYTES * 0x20;
 
@@ -62,73 +62,6 @@ pub fn find_escape(input: &[u8]) -> usize {
         }
     }
     len
-}
-
-/// Returns the offset of the first byte in the 16 bytes starting at `pos`
-/// which needs escaping.
-#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
-#[inline(always)]
-fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
-    use core::arch::aarch64::*;
-    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
-    // SAFETY: neon is available and the block is 16 bytes long
-    let nibbles = unsafe {
-        let chars = vld1q_u8(block.as_ptr());
-        let ctrl = vcltq_u8(chars, vdupq_n_u8(0x20));
-        let quote = vceqq_u8(chars, vdupq_n_u8(b'"'));
-        let backslash = vceqq_u8(chars, vdupq_n_u8(b'\\'));
-        let flagged = vorrq_u8(ctrl, vorrq_u8(quote, backslash));
-        // narrow every byte into a nibble of a 64 bit mask
-        let narrowed = vshrn_n_u16::<4>(vreinterpretq_u16_u8(flagged));
-        vget_lane_u64::<0>(vreinterpret_u64_u8(narrowed))
-    };
-    if nibbles != 0 {
-        Some(nibbles.trailing_zeros() as usize / 4)
-    } else {
-        None
-    }
-}
-
-/// Returns the offset of the first byte in the 16 bytes starting at `pos`
-/// which needs escaping.
-#[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
-#[inline(always)]
-fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
-    use core::arch::x86_64::*;
-    let block: &[u8; 16] = input[pos..pos + 16].try_into().unwrap();
-    // SAFETY: sse2 is available and the block is 16 bytes long
-    let mask = unsafe {
-        let chars = _mm_loadu_si128(block.as_ptr().cast::<__m128i>());
-        // unsigned `chars <= 0x1f` is `min(chars, 0x1f) == chars`
-        let ctrl = _mm_cmpeq_epi8(_mm_min_epu8(chars, _mm_set1_epi8(0x1f)), chars);
-        let quote = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'"' as i8));
-        let backslash = _mm_cmpeq_epi8(chars, _mm_set1_epi8(b'\\' as i8));
-        _mm_movemask_epi8(_mm_or_si128(ctrl, _mm_or_si128(quote, backslash))) as u32
-    };
-    if mask != 0 {
-        Some(mask.trailing_zeros() as usize)
-    } else {
-        None
-    }
-}
-
-/// Returns the offset of the first byte in the 16 bytes starting at `pos`
-/// which needs escaping.
-#[cfg(not(any(
-    all(target_arch = "aarch64", target_feature = "neon", not(miri)),
-    all(target_arch = "x86_64", target_feature = "sse2", not(miri))
-)))]
-#[inline(always)]
-fn block_escape(input: &[u8], pos: usize) -> Option<usize> {
-    let masked = escape_mask(load_u64(input, pos));
-    if masked != 0 {
-        return Some(masked.trailing_zeros() as usize / 8);
-    }
-    let masked = escape_mask(load_u64(input, pos + 8));
-    if masked != 0 {
-        return Some(8 + masked.trailing_zeros() as usize / 8);
-    }
-    None
 }
 
 #[cfg(test)]

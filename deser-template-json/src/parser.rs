@@ -14,6 +14,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::str;
 
+use deser_core::__format::extend;
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
@@ -23,7 +24,7 @@ use deser_core::{Implicit, ImplicitValue};
 
 #[cfg(single_quotes)]
 use crate::scan::skip_to_escape_single;
-use crate::scan::{is_ascii, skip_to_escape, validate_utf8_slice};
+use crate::scan::{EscapeScanner, is_ascii, skip_to_escape, validate_utf8_slice};
 
 /// A parsed string.
 pub(crate) enum Str<'a, 'b> {
@@ -326,11 +327,21 @@ impl Parser {
             #[cfg(hjson)]
             column: self.column,
         };
-        match self.run(&mut cur, eof, base, options.exact_numbers, out) {
+        // the scratch space is kept with the state between values (and
+        // deserializations), unless it holds a string which continues with
+        // more input
+        if self.scratch.capacity() == 0 {
+            take_scratch(&mut self.scratch, out.state_mut());
+        }
+        let rv = match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
             Err(err) if err.offset().is_none() => Err(err.with_offset(base + cur.pos)),
             Err(err) => Err(err),
+        };
+        if self.partial.is_none() && self.scratch.capacity() != 0 {
+            put_scratch(&mut self.scratch, out.state_mut());
         }
+        rv
     }
 
     #[inline(always)]
@@ -838,6 +849,18 @@ impl Parser {
     }
 }
 
+/// Takes the scratch space that was kept with the state.
+#[inline(never)]
+fn take_scratch(scratch: &mut Vec<u8>, state: &mut State) {
+    *scratch = state.__private_take_scratch();
+}
+
+/// Keeps the scratch space with the state.
+#[inline(never)]
+fn put_scratch(scratch: &mut Vec<u8>, state: &mut State) {
+    state.__private_put_scratch(core::mem::take(scratch));
+}
+
 #[cold]
 fn eof_error() -> Error {
     Error::new(ErrorKind::EndOfFile, "unexpected end of file")
@@ -986,17 +1009,18 @@ impl<'a> Cursor<'a> {
         #[cfg(single_quotes)]
         let single = self.input[start] == b'\'';
 
+        let mut escapes = EscapeScanner::new();
         loop {
             #[cfg(not(single_quotes))]
             {
-                self.pos = skip_to_escape(self.input, self.pos);
+                self.pos = escapes.next(self.input, self.pos);
             }
             #[cfg(single_quotes)]
             {
                 self.pos = if single {
                     skip_to_escape_single(self.input, self.pos)
                 } else {
-                    skip_to_escape(self.input, self.pos)
+                    escapes.next(self.input, self.pos)
                 };
             }
             if self.pos == self.input.len() {
@@ -1021,13 +1045,22 @@ impl<'a> Cursor<'a> {
                         self.pos += 1;
                         return result(validate_utf8, borrowed).map(Str::Borrowed);
                     } else {
-                        buffer.extend_from_slice(&self.input[copied..self.pos]);
+                        extend(buffer, &self.input[copied..self.pos]);
                         self.pos += 1;
                         return result(validate_utf8, buffer).map(Str::Scratch);
                     }
                 }
                 b'\\' => {
-                    buffer.extend_from_slice(&self.input[copied..self.pos]);
+                    extend(buffer, &self.input[copied..self.pos]);
+                    // the common escapes stand for a single byte
+                    if let Some(&byte) = self.input.get(self.pos + 1)
+                        && let unescaped @ 1.. = UNESCAPE[usize::from(byte)]
+                    {
+                        buffer.push(unescaped);
+                        self.pos += 2;
+                        copied = self.pos;
+                        continue;
+                    }
                     let escape = self.pos;
                     self.pos += 1;
                     if let Err(err) = self.parse_escape(buffer) {
@@ -2098,6 +2131,21 @@ fn combine_digits(digits: u64) -> u64 {
     let high = ((pairs >> 16) & 0x0000_00ff_0000_00ff).wrapping_mul(0x0000_2710_0000_0001);
     u64::from((low.wrapping_add(high) >> 32) as u32)
 }
+
+/// The bytes of the escapes that stand for a single byte (`\\n` and so
+/// on), zero for the others.
+static UNESCAPE: [u8; 256] = {
+    let mut table = [0; 256];
+    table[b'"' as usize] = b'"';
+    table[b'\\' as usize] = b'\\';
+    table[b'/' as usize] = b'/';
+    table[b'b' as usize] = b'\x08';
+    table[b'f' as usize] = b'\x0c';
+    table[b'n' as usize] = b'\n';
+    table[b'r' as usize] = b'\r';
+    table[b't' as usize] = b'\t';
+    table
+};
 
 /// The powers of ten that fit into 64 bits.
 static POW10_U64: [u64; 20] = {
