@@ -11,7 +11,7 @@ use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 use crate::Names;
 use crate::de::XML_NAMESPACE;
 use crate::mixed::KeepsWhitespace;
-use crate::root::RootData;
+use crate::root::{Declarations, RootData};
 
 /// How the output is indented.
 ///
@@ -689,7 +689,7 @@ impl Writer {
         check_element_name(&name)?;
         match event {
             Event::MapStart(_) => self.open_element(&name, value, state),
-            Event::Atom(atom) => self.atom_element(&name, &atom, true),
+            Event::Atom(atom) => self.atom_element(&name, &atom, true, state),
             _ => Err(Error::new(
                 ErrorKind::UnsupportedType,
                 "the root element must be a map or a single value",
@@ -704,15 +704,7 @@ impl Writer {
     fn bind_root(&mut self, namespaces: &[(String, String)]) -> Result<(), Error> {
         let mut bindings = vec![self.root_bindings[0].clone()];
         for (prefix, uri) in namespaces {
-            if !prefix.is_empty() {
-                check_name(prefix)?;
-                if prefix.contains(':') {
-                    return Err(Error::new(
-                        ErrorKind::UnsupportedType,
-                        format!("`{prefix}` is not a prefix in XML"),
-                    ));
-                }
-            }
+            check_prefix(prefix)?;
             if !bindings.iter().any(|(x, _)| x == prefix) {
                 bindings.push((prefix.clone(), uri.clone()));
             }
@@ -813,7 +805,9 @@ impl Writer {
                 }
                 Ok(())
             }
-            (Key::Element(name), Event::Atom(atom)) => self.atom_element(&name, &atom, false),
+            (Key::Element(name), Event::Atom(atom)) => {
+                self.atom_element(&name, &atom, false, state)
+            }
             (Key::Element(name), Event::MapStart(_)) => {
                 self.before_child();
                 self.open_element(&name, value, state)
@@ -857,12 +851,12 @@ impl Writer {
             Event::Atom(Atom::Null) => {
                 self.before_child();
                 let bindings = self.local_bindings.len();
-                self.start_tag(&name, false)?;
+                self.start_tag(&name, false, state)?;
                 self.out.push_str("/>");
                 self.local_bindings.truncate(bindings);
                 Ok(())
             }
-            Event::Atom(atom) => self.atom_element(&name, &atom, false),
+            Event::Atom(atom) => self.atom_element(&name, &atom, false, state),
             Event::MapStart(_) => {
                 self.before_child();
                 self.open_element(&name, value, state)
@@ -938,7 +932,13 @@ impl Writer {
     /// Writes an element whose content is a single value.
     ///
     /// Nulls are left out unless they are the root.
-    fn atom_element(&mut self, name: &str, atom: &Atom<'_>, is_root: bool) -> Result<(), Error> {
+    fn atom_element(
+        &mut self,
+        name: &str,
+        atom: &Atom<'_>,
+        is_root: bool,
+        state: &State,
+    ) -> Result<(), Error> {
         let text = match self.text(atom)? {
             Some(text) => text.into_owned(),
             None if is_root => String::new(),
@@ -946,7 +946,7 @@ impl Writer {
         };
         self.before_child();
         let bindings = self.local_bindings.len();
-        let name = self.start_tag(name, is_root)?;
+        let name = self.start_tag(name, is_root, state)?;
         if text.is_empty() {
             self.out.push_str("/>");
         } else {
@@ -966,7 +966,7 @@ impl Writer {
         state: &State,
     ) -> Result<(), Error> {
         let bindings = self.local_bindings.len();
-        let name = self.start_tag(name, self.stack.is_empty())?;
+        let name = self.start_tag(name, self.stack.is_empty(), state)?;
         let (fields, attrs) = self.fields_of(value);
         let layout = Layout::of(state);
         let lines = if self.config.indent == Indent::None
@@ -1081,8 +1081,22 @@ impl Writer {
     }
 
     /// Writes the start of a start tag and returns the name as written.
-    fn start_tag(&mut self, name: &str, is_root: bool) -> Result<String, Error> {
+    ///
+    /// The namespaces declared on an element (other than the root, see
+    /// `bind_root`) are declared first, they are bound until the bindings
+    /// are truncated to the ones before the element.
+    fn start_tag(&mut self, name: &str, is_root: bool, state: &State) -> Result<String, Error> {
         let mut declarations = String::new();
+        if !is_root && let Some(Declarations(namespaces)) = state.event::<Declarations>() {
+            for (prefix, uri) in namespaces {
+                check_prefix(prefix)?;
+                if prefix == "xml" {
+                    continue;
+                }
+                declare(prefix, uri, &mut declarations)?;
+                self.local_bindings.push((prefix.clone(), uri.clone()));
+            }
+        }
         let name = self.qualify(name, false, &mut declarations)?;
         self.out.push('<');
         self.out.push_str(&name);
@@ -1113,12 +1127,22 @@ impl Writer {
         let usable = |(prefix, bound): &&(String, String)| {
             bound == uri && !(is_attribute && prefix.is_empty())
         };
-        let bound = self
-            .local_bindings
+        // a binding is only in effect if its prefix is not bound again
+        // closer to the element
+        let scoped = &self.local_bindings;
+        let bound = scoped
             .iter()
+            .enumerate()
             .rev()
-            .find(usable)
-            .or_else(|| self.root_bindings.iter().find(usable));
+            .find(|(index, binding)| {
+                usable(binding) && !scoped[index + 1..].iter().any(|(x, _)| *x == binding.0)
+            })
+            .map(|(_, binding)| binding)
+            .or_else(|| {
+                self.root_bindings
+                    .iter()
+                    .find(|binding| usable(binding) && !scoped.iter().any(|(x, _)| *x == binding.0))
+            });
         let prefix = match bound {
             Some((prefix, _)) => prefix,
             None => {
@@ -1403,6 +1427,22 @@ fn check_element_name(name: &str) -> Result<(), Error> {
     }
 }
 
+/// Checks that a prefix of a namespace is a prefix in XML (the empty
+/// prefix is the default namespace).
+fn check_prefix(prefix: &str) -> Result<(), Error> {
+    if prefix.is_empty() {
+        return Ok(());
+    }
+    check_name(prefix)?;
+    if prefix.contains(':') {
+        return Err(Error::new(
+            ErrorKind::UnsupportedType,
+            format!("`{prefix}` is not a prefix in XML"),
+        ));
+    }
+    Ok(())
+}
+
 /// Checks that a name is a name in XML.
 fn check_name(name: &str) -> Result<(), Error> {
     let mut chars = name.chars();
@@ -1628,6 +1668,27 @@ mod tests {
              <a:a xmlns:ns0=\"urn:b\" ns0:b=\"1\"><a:c>2</a:c></a:a>\
              <a:a xmlns:ns0=\"urn:b\" ns0:b=\"3\"><a:c>4</a:c></a:a></r:root>"
         );
+    }
+
+    #[test]
+    fn test_nested_declarations_stream() {
+        const RESOLVE: crate::DeserializerConfig =
+            crate::DeserializerConfig::new().resolve_namespaces(true);
+        let input = r#"<a:r xmlns:a="urn:a"><b xmlns:a="urn:b"><x>1</x></b><a:y>2</a:y></a:r>"#;
+        let mut value: deser_value::Value = RESOLVE.from_str(input).unwrap();
+        let config = SerializerConfig::new();
+        assert_eq!(pieces(&config, &value).unwrap().concat(), input);
+
+        // a namespace whose prefix is bound again gets another one
+        let b = value.as_map_mut().unwrap().get_mut("b").unwrap();
+        b.as_map_mut().unwrap().insert("{urn:a}z", "3");
+        let xml = config.to_string(&value).unwrap();
+        assert_eq!(
+            xml,
+            "<a:r xmlns:a=\"urn:a\" xmlns:ns0=\"urn:a\"><b xmlns:a=\"urn:b\"><x>1</x>\
+             <ns0:z>3</ns0:z></b><a:y>2</a:y></a:r>"
+        );
+        assert_eq!(pieces(&config, &value).unwrap().concat(), xml);
     }
 
     #[test]

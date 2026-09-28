@@ -153,8 +153,10 @@
 //! Names are passed on as written (`atom:link`), namespace declarations
 //! (`xmlns` attributes) are not data.  The name of the root element and
 //! the namespaces declared on it are not part of the value either, they are
-//! captured by [`Root`] (and kept by values that capture event data such as
-//! [`Recording`](deser_core::de::Recording), so they are written again).  Namespaces can be given prefixes
+//! captured by [`Root`].  Values that capture event data (such as
+//! [`Recording`](deser_core::de::Recording)) keep the root element and the
+//! namespace declarations of all elements, so they are written again where
+//! they were.  Namespaces can be given prefixes
 //! that are used regardless of the prefixes of the document (see
 //! [`DeserializerConfig::namespaces`]) or be
 //! [resolved](DeserializerConfig::resolve_namespaces) into names like

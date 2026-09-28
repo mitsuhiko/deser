@@ -36,6 +36,25 @@ impl Clone for RootData {
     }
 }
 
+/// The namespaces declared on an element other than the root, attached as
+/// event data to its first event.
+///
+/// Like [`RootData`] it's published by the deserializer and written by the
+/// serializer, so values that capture event data keep the declarations.
+/// An empty URI undeclares the default namespace (`xmlns=""`).
+#[derive(Debug, Default)]
+pub(crate) struct Declarations(pub(crate) Vec<(String, String)>);
+
+impl Clone for Declarations {
+    fn clone(&self) -> Declarations {
+        Declarations(self.0.clone())
+    }
+
+    fn clone_from(&mut self, source: &Declarations) {
+        self.0.clone_from(&source.0);
+    }
+}
+
 /// A document: the value of the root element with its name and the
 /// namespaces declared on it.
 ///

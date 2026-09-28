@@ -64,11 +64,40 @@ fn test_namespaces_of_values() {
         ),
         r#"<x:feed xmlns:x="urn:a"><x:t>x</x:t></x:feed>"#
     );
+}
 
-    // only the declarations on the root are kept
+#[test]
+fn test_nested_namespaces() {
+    // declarations on other elements are kept where they are, for maps,
+    // text, repeated and empty elements
+    for input in [
+        r#"<r><a:t xmlns:a="urn:a">x</a:t></r>"#,
+        r#"<r><a:t xmlns:a="urn:a" a:x="1"><a:u>y</a:u></a:t></r>"#,
+        r#"<r><t xmlns="urn:a">1</t><t xmlns="urn:b">2</t></r>"#,
+        r#"<r><a:t xmlns:a="urn:a"/><a:t xmlns:a="urn:a"/></r>"#,
+        r#"<r xmlns:a="urn:a"><a:t><b xmlns:a="urn:b"><a:u>x</a:u></b></a:t></r>"#,
+    ] {
+        assert_eq!(round_trip(&DeserializerConfig::new(), input), input);
+        assert_eq!(round_trip(&RESOLVE, input), input);
+        let value: Value = from_str(input).unwrap();
+        assert_eq!(to_string(&value).unwrap(), input);
+    }
+
+    // undeclaring the default namespace keeps names out of it
+    let input = r#"<feed xmlns="urn:atom"><title>x</title><x xmlns="">1</x></feed>"#;
+    assert_eq!(round_trip(&DeserializerConfig::new(), input), input);
+    assert_eq!(round_trip(&RESOLVE, input), input);
+
+    // a prefix that is bound again is not used for the outer namespace
+    let input = r#"<a:r xmlns:a="urn:a"><b xmlns:a="urn:b"><x>1</x></b></a:r>"#;
+    let recording: Recording = RESOLVE.from_str(input).unwrap();
+    let mut value: Value = RESOLVE.from_str(input).unwrap();
+    let b = value.as_map_mut().unwrap().get_mut("b").unwrap();
+    b.as_map_mut().unwrap().insert("{urn:a}y", "2");
+    assert_eq!(to_string(&recording).unwrap(), input);
     assert_eq!(
-        round_trip(&RESOLVE, r#"<r><a:t xmlns:a="urn:a">x</a:t></r>"#),
-        r#"<r xmlns:ns0="urn:a"><ns0:t>x</ns0:t></r>"#
+        to_string(&value).unwrap(),
+        r#"<a:r xmlns:a="urn:a" xmlns:ns0="urn:a"><b xmlns:a="urn:b"><x>1</x><ns0:y>2</ns0:y></b></a:r>"#
     );
 }
 

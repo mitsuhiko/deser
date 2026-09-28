@@ -167,8 +167,9 @@ every intermediate step.
 - `deser-msgpack`: MessagePack with timestamps and extensions, passes the
   msgpack-test-suite.
 - `deser-xml`: XML with attributes, repeated elements, namespaces,
-  mixed content (`Mixed<T>`), the root element (`Root<T>`, also kept by
-  recordings and values) and pretty printing.
+  mixed content (`Mixed<T>`), the root element (`Root<T>`) and pretty
+  printing.  Recordings and values keep the root element and the
+  namespace declarations of all elements.
 - `deser-plist`: property lists in the XML, binary and OpenStep formats
   with format detection, dates as `Timestamp` and keyed archive UIDs.
 - `deser-jsonc`, `deser-json5` and `deser-hjson`: the JSON dialects, with

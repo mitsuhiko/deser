@@ -11,7 +11,7 @@ use quick_xml::reader::NsReader;
 
 use crate::Names;
 use crate::mixed::WhitespaceDepths;
-use crate::root::RootData;
+use crate::root::{Declarations, RootData};
 
 /// Configures how XML documents are deserialized.
 ///
@@ -300,6 +300,7 @@ impl<'a> Deserializer<'a> {
             stack: Vec::new(),
             root_done: false,
             root: None,
+            declarations: None,
         }
         .run(driver)
         .map_err(|err| err.resolve_position(self.input.as_bytes()))
@@ -390,6 +391,9 @@ struct Parser<'a, 'c> {
     /// The name and the namespaces of the root element until they are
     /// attached to its first event.
     root: Option<RootData>,
+    /// The namespaces declared on the last element that was started until
+    /// they are attached to its first event.
+    declarations: Option<Vec<(String, String)>>,
 }
 
 impl<'a> Parser<'a, '_> {
@@ -448,7 +452,7 @@ impl<'a> Parser<'a, '_> {
     /// Passes on the element on top of the stack as map if it's not yet.
     fn make_map(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.stack.last().unwrap().is_map {
-            self.attach_root(driver);
+            self.attach_element(driver);
             let element = self.stack.last_mut().unwrap();
             element.is_map = true;
             emit_at(
@@ -506,6 +510,14 @@ impl<'a> Parser<'a, '_> {
             self.make_map(driver)?;
             let name = self.name(tag.name(), false, range.0)?;
             emit_key(driver, name, range)?;
+            // most elements declare nothing, the attributes are only
+            // looked at if they might
+            if tag.attributes_raw().contains("xmlns") {
+                let declarations = self.declarations(tag, false, range.0)?;
+                if !declarations.is_empty() {
+                    self.declarations = Some(declarations);
+                }
+            }
         }
         self.stack.push(Element {
             is_map: false,
@@ -546,6 +558,24 @@ impl<'a> Parser<'a, '_> {
     /// Namespaces with a configured prefix are declared with it as that's
     /// how names in them are passed on.
     fn root_data(&self, tag: &BytesStart<'a>, offset: usize) -> Result<RootData, Error> {
+        Ok(RootData {
+            name: Some(self.name(tag.name(), false, offset)?.into_owned()),
+            namespaces: self.declarations(tag, true, offset)?,
+        })
+    }
+
+    /// Returns the namespaces declared on an element.
+    ///
+    /// Namespaces with a configured prefix are declared with it as that's
+    /// how names in them are passed on.  Undeclaring the default namespace
+    /// (`xmlns=""`) is a declaration with an empty URI, except on the root
+    /// where there is nothing to undeclare.
+    fn declarations(
+        &self,
+        tag: &BytesStart<'a>,
+        is_root: bool,
+        offset: usize,
+    ) -> Result<Vec<(String, String)>, Error> {
         let mut namespaces: Vec<(String, String)> = Vec::new();
         // invalid attributes are reported when the attributes are passed on
         for attr in tag.attributes().flatten() {
@@ -561,8 +591,7 @@ impl<'a> Parser<'a, '_> {
             let uri = attr
                 .normalized_value(XmlVersion::Implicit1_0)
                 .map_err(|err| xml_error(err, offset))?;
-            // undeclaring namespaces is not a declaration
-            if uri.is_empty() {
+            if uri.is_empty() && (is_root || !prefix.is_empty()) {
                 continue;
             }
             let prefix = match self.config.names.namespaces.iter().find(|(_, x)| *x == uri) {
@@ -573,17 +602,21 @@ impl<'a> Parser<'a, '_> {
                 namespaces.push((prefix.to_string(), uri.into_owned()));
             }
         }
-        Ok(RootData {
-            name: Some(self.name(tag.name(), false, offset)?.into_owned()),
-            namespaces,
-        })
+        Ok(namespaces)
     }
 
-    /// Attaches the name and the namespaces of the root element to the next
-    /// event if it's the first event of the root element.
-    fn attach_root(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
+    /// Attaches the name and the namespaces of the root element or the
+    /// namespaces declared on another element to its first event.
+    ///
+    /// The first event of an element comes before the events of the
+    /// elements in it, so the element they are for is the last one that was
+    /// started.
+    fn attach_element(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
         if let Some(root) = self.root.take() {
             *driver.state_mut().event_mut::<RootData>() = root;
+        }
+        if let Some(declarations) = self.declarations.take() {
+            driver.state_mut().event_mut::<Declarations>().0 = declarations;
         }
     }
 
@@ -594,7 +627,7 @@ impl<'a> Parser<'a, '_> {
             emit_at(driver, Event::MapEnd, range)?;
             WhitespaceDepths::prune(driver.state_mut());
         } else {
-            self.attach_root(driver);
+            self.attach_element(driver);
             let element = self.stack.pop().unwrap();
             element.text.emit(driver, element.start)?;
         }
