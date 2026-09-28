@@ -22,7 +22,8 @@ use crate::de::mapped::MappedSink;
 use crate::de::update::Collection;
 use crate::de::{CollectedErrors, DuplicateKeys};
 use crate::de::{
-    Deserialize, OwnedSink, Sink, SinkHandle, empty_lexical_or_none, is_empty_lexical, is_null_atom,
+    Deserialize, InlineEvent, InlineSeq, OwnedSink, Sink, SinkHandle, empty_lexical_or_none,
+    is_empty_lexical, is_null_atom,
 };
 use crate::de::{atom_into_handle, borrowed_atom_into_handle};
 use crate::error::{Error, ErrorKind};
@@ -32,7 +33,7 @@ use crate::ext::Number;
 make_slot_wrapper!(SlotWrapper);
 
 macro_rules! deserialize {
-    ($ty:ty) => {
+    ($ty:ty $(, $default:expr)?) => {
         impl<'de> Deserialize<'de> for $ty {
             fn deserialize_into<'out>(
                 out: &'out mut Option<Self>,
@@ -42,6 +43,13 @@ macro_rules! deserialize {
             }
 
             __slot_wrapper_atom_into!();
+
+            $(
+                #[inline]
+                fn __private_atom_default() -> Option<Self> {
+                    Some($default)
+                }
+            )?
         }
     };
 }
@@ -120,7 +128,7 @@ impl<'de> Sink<'de> for SlotWrapper<bool> {
         }
     }
 }
-deserialize!(bool);
+deserialize!(bool, false);
 
 impl<'de> Sink<'de> for SlotWrapper<String> {
     fn expecting(&self) -> Cow<'_, str> {
@@ -245,6 +253,11 @@ impl<'de> Deserialize<'de> for u8 {
 
     __slot_wrapper_atom_into!();
 
+    #[inline]
+    fn __private_atom_default() -> Option<Self> {
+        Some(0)
+    }
+
     fn __private_is_bytes() -> bool {
         true
     }
@@ -259,27 +272,27 @@ impl<'de> Deserialize<'de> for u8 {
 }
 
 int_sink!(u16);
-deserialize!(u16);
+deserialize!(u16, 0);
 int_sink!(u32);
-deserialize!(u32);
+deserialize!(u32, 0);
 int_sink!(u64);
-deserialize!(u64);
+deserialize!(u64, 0);
 int_sink!(i8);
-deserialize!(i8);
+deserialize!(i8, 0);
 int_sink!(i16);
-deserialize!(i16);
+deserialize!(i16, 0);
 int_sink!(i32);
-deserialize!(i32);
+deserialize!(i32, 0);
 int_sink!(i64);
-deserialize!(i64);
+deserialize!(i64, 0);
 int_sink!(isize);
-deserialize!(isize);
+deserialize!(isize, 0);
 int_sink!(usize);
-deserialize!(usize);
+deserialize!(usize, 0);
 int_sink!(u128);
-deserialize!(u128);
+deserialize!(u128, 0);
 int_sink!(i128);
-deserialize!(i128);
+deserialize!(i128, 0);
 
 impl<'de> Sink<'de> for SlotWrapper<char> {
     fn expecting(&self) -> Cow<'_, str> {
@@ -373,10 +386,10 @@ fn number_value(ext: &crate::ext::ExtValue) -> Option<f64> {
 }
 
 float_sink!(f32);
-deserialize!(f32);
+deserialize!(f32, 0.0);
 
 float_sink!(f64);
-deserialize!(f64);
+deserialize!(f64, 0.0);
 
 // The containers are implemented as adapters (see `crate::adapters`) that
 // are generic over the adapters of their elements.  The `Deserialize`
@@ -520,6 +533,44 @@ where
             self.is_seq = true;
             self.vec.reserve(cautious_capacity::<T>(state));
             Ok(())
+        }
+
+        fn __private_seq(&mut self, state: &mut State) -> Result<bool, Error> {
+            self.seq(state)?;
+            Ok(A::__private_inline_seq_as().is_some())
+        }
+
+        fn __private_inline_atom(
+            &mut self,
+            index: usize,
+            atom: Atom,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            match A::__private_inline_seq_as() {
+                Some(inline) => (inline.atom)(&mut self.element, index, atom, state),
+                None => unreachable!(),
+            }
+        }
+
+        fn __private_inline_event(
+            &mut self,
+            event: InlineEvent,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            let Some(inline) = A::__private_inline_seq_as() else {
+                unreachable!()
+            };
+            match event {
+                InlineEvent::Start => {
+                    self.flush();
+                    (inline.start)(&mut self.element);
+                    Ok(())
+                }
+                InlineEvent::End(len) => (inline.end)(&mut self.element, len),
+                InlineEvent::Container(index, is_map) => {
+                    Err((inline.container)(index, is_map, state))
+                }
+            }
         }
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -1512,9 +1563,67 @@ macro_rules! deserialize_for_tuple {
             fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut State) -> SinkHandle<'out, 'de> {
                 <($(same_adapter!($name),)*) as DeserializeAs<'de, ($($name,)*)>>::deserialize_into_as(out, state)
             }
+
+            #[inline]
+            fn __private_inline_seq() -> Option<InlineSeq<Self>> {
+                <($(same_adapter!($name),)*) as DeserializeAs<'de, ($($name,)*)>>::__private_inline_seq_as()
+            }
         }
 
         impl<'de, $($name: Send,)* $($adapter: DeserializeAs<'de, $name>),*> DeserializeAs<'de, ($($name,)*)> for ($($adapter,)*) {
+            // tuples of atoms are built inline, this behaves like the sink
+            // below
+            #[inline]
+            fn __private_inline_seq_as() -> Option<InlineSeq<($($name,)*)>> {
+                #![allow(non_snake_case)]
+                $(
+                    $adapter::__private_atom_default_as()?;
+                )*
+                Some(InlineSeq {
+                    start: |out| {
+                        *out = Some(($($adapter::__private_atom_default_as().unwrap(),)*));
+                    },
+                    atom: |out, index, atom, state| {
+                        let Some(($($name,)*)) = out else {
+                            unreachable!()
+                        };
+                        let mut __counter = 0;
+                        $(
+                            if index == __counter {
+                                let mut value = None;
+                                $adapter::__private_atom_into_as(&mut value, atom, state)?;
+                                if let Some(value) = value {
+                                    *$name = value;
+                                }
+                                return Ok(());
+                            }
+                            __counter += 1;
+                        )*
+                        Err(Error::new(ErrorKind::WrongLength, "too many elements in tuple"))
+                    },
+                    end: |_, len| {
+                        if len == [$(stringify!($name)),*].len() {
+                            Ok(())
+                        } else {
+                            Err(Error::new(ErrorKind::WrongLength, "not enough elements in tuple"))
+                        }
+                    },
+                    container: |index, is_map, state| {
+                        let mut __counter = 0;
+                        $(
+                            if index == __counter {
+                                let mut value = None;
+                                let mut sink = $adapter::deserialize_into_as(&mut value, state);
+                                let rv = if is_map { sink.map(state) } else { sink.seq(state) };
+                                return rv.expect_err("atoms do not accept containers");
+                            }
+                            __counter += 1;
+                        )*
+                        Error::new(ErrorKind::WrongLength, "too many elements in tuple")
+                    },
+                })
+            }
+
             fn deserialize_into_as<'out>(out: &'out mut Option<($($name,)*)>, state: &mut State) -> SinkHandle<'out, 'de> {
                 #![allow(non_snake_case)]
 
@@ -1617,9 +1726,64 @@ impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
     ) -> SinkHandle<'out, 'de> {
         <[Same; N] as DeserializeAs<'de, [T; N]>>::deserialize_into_as(out, state)
     }
+
+    #[inline]
+    fn __private_inline_seq() -> Option<InlineSeq<Self>> {
+        <[Same; N] as DeserializeAs<'de, [T; N]>>::__private_inline_seq_as()
+    }
 }
 
 impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, [T; N]> for [A; N] {
+    // arrays of atoms are built inline, this behaves like the sink below
+    #[inline]
+    fn __private_inline_seq_as() -> Option<InlineSeq<[T; N]>> {
+        A::__private_atom_default_as()?;
+        Some(InlineSeq {
+            start: |out| {
+                *out = Some(core::array::from_fn(|_| {
+                    A::__private_atom_default_as().unwrap()
+                }));
+            },
+            atom: |out, index, atom, state| {
+                if index >= N {
+                    return Err(Error::new(
+                        ErrorKind::WrongLength,
+                        "too many elements in array",
+                    ));
+                }
+                let mut value = None;
+                A::__private_atom_into_as(&mut value, atom, state)?;
+                if let (Some(array), Some(value)) = (out, value) {
+                    array[index] = value;
+                }
+                Ok(())
+            },
+            end: |_, len| {
+                if len == N {
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::WrongLength,
+                        "not enough elements in array",
+                    ))
+                }
+            },
+            container: |index, is_map, state| {
+                if index >= N {
+                    return Error::new(ErrorKind::WrongLength, "too many elements in array");
+                }
+                let mut value = None;
+                let mut sink = A::deserialize_into_as(&mut value, state);
+                let rv = if is_map {
+                    sink.map(state)
+                } else {
+                    sink.seq(state)
+                };
+                rv.expect_err("atoms do not accept containers")
+            },
+        })
+    }
+
     fn deserialize_into_as<'out>(
         out: &'out mut Option<[T; N]>,
         state: &mut State,

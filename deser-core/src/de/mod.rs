@@ -276,6 +276,46 @@ pub use self::unknown::{IgnoredFields, UnknownFields};
 pub use self::update::checked_update;
 use crate::State;
 
+/// Builds a sequence of atoms in the sink of the sequence it's an element
+/// of.
+///
+/// Sequences of a fixed number of atoms (like `[f32; 2]` or `(u8, u8)`)
+/// are small containers that appear in large numbers.  Instead of creating
+/// a sink for every one of them, the sink of the sequence they are
+/// elements of (see [`Sink::__private_seq`]) builds them in its slot for
+/// the element, the driver passes their events to it.  This has to behave
+/// exactly like the sink of the element.
+#[doc(hidden)]
+pub struct InlineSeq<T> {
+    /// Starts the sequence in the slot.
+    pub start: fn(&mut Option<T>),
+    /// Deserializes the atom at the index.
+    pub atom: fn(&mut Option<T>, usize, Atom, &mut State) -> Result<(), Error>,
+    /// Ends the sequence with the given length.
+    pub end: fn(&mut Option<T>, usize) -> Result<(), Error>,
+    /// Returns the error for a map (`true`) or sequence at the index.
+    pub container: fn(usize, bool, &mut State) -> Error,
+}
+
+/// An event of a sequence that is built inline (see [`InlineSeq`]).
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum InlineEvent {
+    /// The sequence starts.
+    Start,
+    /// The sequence ends with the given length.
+    End(usize),
+    /// A map (`true`) or sequence starts at the index.
+    Container(usize, bool),
+}
+
+/// Panics as the sink does not build sequences inline.
+#[cold]
+#[inline(never)]
+fn no_inline_seq() -> ! {
+    panic!("the sink does not build sequences inline")
+}
+
 __make_slot_wrapper!((pub), SlotWrapper);
 
 /// A handle to a [`Sink`].
@@ -746,6 +786,30 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
         self.sink_mut().__private_borrowed_value_atom(atom, state)
     }
 
+    #[inline]
+    fn __private_seq(&mut self, state: &mut State) -> Result<bool, Error> {
+        self.sink_mut().__private_seq(state)
+    }
+
+    #[inline]
+    fn __private_inline_atom(
+        &mut self,
+        index: usize,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink_mut().__private_inline_atom(index, atom, state)
+    }
+
+    #[inline]
+    fn __private_inline_event(
+        &mut self,
+        event: InlineEvent,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.sink_mut().__private_inline_event(event, state)
+    }
+
     fn value_for_key(
         &mut self,
         key: &str,
@@ -898,6 +962,22 @@ pub trait Deserialize<'de>: Sized + Send {
     #[doc(hidden)]
     fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
         let _ = bytes;
+        None
+    }
+
+    /// Returns the value of a type that is only deserialized from atoms.
+    ///
+    /// This is implemented for numbers and booleans, sequences of them are
+    /// built inline (see [`InlineSeq`]).  The value is a placeholder, it's
+    /// overwritten.
+    #[doc(hidden)]
+    fn __private_atom_default() -> Option<Self> {
+        None
+    }
+
+    /// Returns how the type is built inline if it's a sequence of atoms.
+    #[doc(hidden)]
+    fn __private_inline_seq() -> Option<InlineSeq<Self>> {
         None
     }
 
@@ -1110,6 +1190,43 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
         state: &mut State,
     ) -> Result<(), Error> {
         default_borrowed_value_atom(self.__private_as_dyn(), atom, state)
+    }
+
+    /// Begins a sequence like [`seq`](Self::seq).
+    ///
+    /// Returns `true` if the sink builds sequences that are its elements
+    /// inline (see [`InlineSeq`]): the driver then passes their events to
+    /// [`__private_inline_atom`](Self::__private_inline_atom) and
+    /// [`__private_inline_event`](Self::__private_inline_event) instead of
+    /// asking for a sink for them.  Wrappers that forward this have to
+    /// forward those as well.
+    #[doc(hidden)]
+    fn __private_seq(&mut self, state: &mut State) -> Result<bool, Error> {
+        self.seq(state)?;
+        Ok(false)
+    }
+
+    /// Receives the atom at the index of an element that is built inline.
+    #[doc(hidden)]
+    fn __private_inline_atom(
+        &mut self,
+        index: usize,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let _ = (index, atom, state);
+        no_inline_seq()
+    }
+
+    /// Receives the other events of an element that is built inline.
+    #[doc(hidden)]
+    fn __private_inline_event(
+        &mut self,
+        event: InlineEvent,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let _ = (event, state);
+        no_inline_seq()
     }
 
     /// Returns a value sink for a specific struct field.

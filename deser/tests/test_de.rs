@@ -334,3 +334,132 @@ fn test_string_lengths() {
         }
     }
 }
+
+/// Runs events through a driver, stops at the first error.
+///
+/// If `plain` is set, the root sink is wrapped in a sink that only forwards
+/// the public methods, the elements of the sequence are then not built
+/// inline.
+fn run_events<T: DeserializeOwned + std::fmt::Debug>(
+    events: &[Event<'static>],
+    plain: bool,
+    collect: bool,
+) -> String {
+    struct Plain<'a, 'de>(SinkHandle<'a, 'de>);
+
+    impl<'de> Sink<'de> for Plain<'_, 'de> {
+        fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), deser::Error> {
+            self.0.atom(atom, state)
+        }
+        fn seq(&mut self, state: &mut State) -> Result<(), deser::Error> {
+            self.0.seq(state)
+        }
+        fn map(&mut self, state: &mut State) -> Result<(), deser::Error> {
+            self.0.map(state)
+        }
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, deser::Error> {
+            self.0.next_value(state)
+        }
+        fn finish(&mut self, state: &mut State) -> Result<(), deser::Error> {
+            self.0.finish(state)
+        }
+        fn recover(&mut self, err: deser::Error, state: &mut State) -> Result<(), deser::Error> {
+            self.0.recover(err, state)
+        }
+        fn expecting(&self) -> Cow<'_, str> {
+            self.0.expecting()
+        }
+    }
+
+    let mut out = None::<T>;
+    let mut log = Vec::new();
+    {
+        let mut driver = DeserializeDriver::new(&mut out);
+        driver.state_mut().set_collect_errors(collect);
+        if plain {
+            driver.wrap_sink(|sink, _| SinkHandle::heap(Plain(sink)));
+        }
+        for (idx, event) in events.iter().enumerate() {
+            driver.state_mut().set_input_range(idx, idx + 1);
+            if let Err(err) = driver.emit(event.clone()) {
+                log.push(format!("{idx}: {:?} {err:#}", err.kind()));
+                break;
+            }
+        }
+    }
+    log.push(format!("{out:?}"));
+    log.join("\n")
+}
+
+#[test]
+fn test_inline_elements() {
+    fn seq(items: Vec<Event<'static>>) -> Vec<Event<'static>> {
+        let mut rv = vec![Event::seq_start()];
+        rv.extend(items);
+        rv.push(Event::SeqEnd);
+        rv
+    }
+    let pair = |a: Event<'static>, b: Event<'static>| seq(vec![a, b]);
+    let ok = pair(1u64.into(), 2u64.into());
+    let cases: Vec<Vec<Event<'static>>> = vec![
+        vec![],
+        ok.clone(),
+        [ok.clone(), ok.clone()].concat(),
+        // too many and not enough elements
+        seq(vec![1u64.into(), 2u64.into(), 3u64.into()]),
+        seq(vec![1u64.into()]),
+        seq(vec![]),
+        // atoms of the wrong type or out of range
+        pair("x".into(), 2u64.into()),
+        pair(1u64.into(), 300u64.into()),
+        pair(Atom::Null.into(), 2u64.into()),
+        pair(Atom::Lexical(Text::borrowed("7")).into(), 2u64.into()),
+        // containers as items
+        pair(seq(vec![1u64.into()])[0].clone(), 2u64.into()),
+        seq(vec![
+            Event::seq_start(),
+            1u64.into(),
+            Event::SeqEnd,
+            2u64.into(),
+        ]),
+        seq(vec![
+            Event::map_start(),
+            "a".into(),
+            1u64.into(),
+            Event::MapEnd,
+            2u64.into(),
+        ]),
+        seq(vec![
+            1u64.into(),
+            2u64.into(),
+            Event::seq_start(),
+            Event::SeqEnd,
+        ]),
+        // elements that are not sequences
+        vec![Event::map_start(), Event::MapEnd],
+        vec![Event::from(42u64)],
+        vec![Event::from("x")],
+        vec![Event::Atom(Atom::Null)],
+    ];
+    for case in cases {
+        // the element is followed by a valid one
+        for events in [
+            seq(case.clone()),
+            seq([case.clone(), ok.clone()].concat()),
+            seq([ok.clone(), case.clone(), ok.clone()].concat()),
+        ] {
+            for collect in [false, true] {
+                let inline = run_events::<Vec<[u32; 2]>>(&events, false, collect);
+                let plain = run_events::<Vec<[u32; 2]>>(&events, true, collect);
+                assert_eq!(inline, plain, "{events:?}");
+                let inline = run_events::<Vec<(u32, u8)>>(&events, false, collect);
+                let plain = run_events::<Vec<(u32, u8)>>(&events, true, collect);
+                assert_eq!(inline, plain, "{events:?}");
+            }
+        }
+    }
+    assert_eq!(
+        run_events::<Vec<(u32, u8)>>(&seq([ok.clone(), ok.clone()].concat()), false, false),
+        "Some([(1, 2), (1, 2)])"
+    );
+}

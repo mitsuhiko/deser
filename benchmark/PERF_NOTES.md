@@ -93,6 +93,56 @@ Experiments that did not explain or solve the gap:
 * Allocation is only part of the problem: the null-sink measurements are
   already expensive without constructing any typed sinks.
 
+### Sequences of Atoms Built Inline
+
+Sequences of a fixed number of numbers or booleans (`[f32; 2]`,
+`(u8, u8)`, `[f64; 3]`) that are elements of a sequence (`Vec`,
+`VecDeque`, ...) have no sink of their own.  The sink of the sequence
+says so when it's started (`Sink::__private_seq`), the driver then turns
+its frame into `Container::Inline` while such an element is open and
+passes the element's atoms and end to the sink of the sequence
+(`__private_inline_atom`, `__private_inline_event`), which builds the
+element in its slot with the functions of `InlineSeq` (from
+`Deserialize::__private_inline_seq`).  They produce the same values and
+errors as the sinks of arrays and tuples, `test_inline_elements` checks
+this against the same events with the inlining disabled (including error
+collection).  An error in an element gives it a null frame like a failed
+sink so recovery is unchanged.  Wrappers that only forward `seq` do not
+inline (the default of `__private_seq` returns `false`).
+
+Canada, features and point-cloud got 12%-19% faster in CBOR and
+MessagePack (point-cloud MessagePack 6%) and 3.5%-5% in JSON, nothing
+else changed.  Derived structs don't do this for their fields (the weight
+of tree), that would need code in every derived struct.
+
+### Container Overhead and the Limits of Push
+
+Measured with a scratch example (50,000 `[f32; 2]` in MessagePack, before
+the inlining above): rmp-serde 427 us, deser 1059 us.  A hand written
+automaton for exactly this type behind one dynamic call per event (the
+ideal push design, with a minimal parser) took 578 us, statically
+composed typed state machines per type (checking every level for every
+event) 715 us, and 1133 us for `Vec<Vec<[u32; 2]>>` where deser took
+1285 us.  So dispatching events to the sink on top of a stack is the
+right push design and container heavy binary data cannot reach serde
+without pulling (which serde's recursive typed code does).  Buffering
+events (a tape) and consuming it with typed code doesn't help either,
+writing the events costs about as much as dispatching them.
+
+Of the remaining overhead the driver's bookkeeping for a container is
+about 6 ns even with null sinks, typed child sinks add about 3.5 ns.
+Tried and not worth it:
+
+* Calling the methods of `StructSink` without dynamic dispatch for the
+  `Struct` handle variant (all derived structs share it): no change (the
+  indirect calls are predicted well).  This is also why opening a
+  container with one call instead of `next_value` and `map`/`seq` was not
+  pursued further, it would only save one of them.
+* Handling integers in range inline in the integer sinks without calling
+  the drop glue of the atom (like the float sinks do): under 1%.
+* Inlining the event functions of the driver into the parser (again):
+  4%-18% slower.
+
 ### Ideas to Try Next
 
 These are hypotheses, not measured wins.  Prefer small experiments and keep
@@ -107,18 +157,10 @@ only improvements that survive repeated comparisons.
    error collection and alternating atom/container elements carefully.
 
 2. **Audit other primitive sinks for the same code-generation issue.**
-   Integer pairs are still slow.  Inspect integer sink assembly and profile
-   `citm-catalog/msgpack/de` and `tree/msgpack/de` before extending the float
-   optimization.  A smaller numeric path may help, but wide integers,
-   lexical keys, range checking and extension fallbacks must remain intact.
+   Done for integers, it made no difference (see above).
 
-3. **Reduce the cost of starting and ending tiny containers.**  This is
-   about 45% of the Canada profile.  Investigate a way for a parent sink to
-   accept a small fixed-size sequence without creating, pushing, finishing
-   and recycling a separate sink for every pair/triple.  A private optional
-   sink capability or a batch interface is worth prototyping.  Preserve a
-   general fallback for arbitrary types and incremental input.  This is
-   more promising for a large gain than just a faster allocator.
+3. **Reduce the cost of starting and ending tiny containers.**  Done for
+   sequences of atoms in sequences (see above).
 
 4. **Amortize primitive event dispatch.**  Prototype delivering a run of
    numeric atoms to a sequence sink rather than repeating the complete

@@ -7,7 +7,7 @@ use crate::Text;
 use crate::de::arena::Buffer;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::lexical::ContentKey;
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, InlineEvent, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 
@@ -85,7 +85,12 @@ enum Container {
     /// A map, the first flag is `true` if a key is expected next, the
     /// second if it's a multimap (see [`ContainerShape::with_multimap`]).
     Map(bool, bool),
-    Seq,
+    /// A sequence, the flag is `true` if the sink builds sequences that
+    /// are its elements inline (see [`Sink::__private_seq`]).
+    Seq(bool),
+    /// A sequence whose sink builds an element inline and is within it.
+    /// The number is the index of the next item of the element.
+    Inline(u32),
     /// A map for a sink that rejected it: the value of the key of the
     /// content is delivered to the sink, the other entries are skipped (see
     /// [`ContentKey`]).  The flags are `true` if a key is expected next, if
@@ -104,7 +109,7 @@ impl Container {
         if is_map {
             Container::Map(true, false)
         } else {
-            Container::Seq
+            Container::Seq(false)
         }
     }
 
@@ -527,6 +532,13 @@ impl<'de> DriverCore<'de> {
         } else {
             self.state.attach_error_context(err)
         };
+        // an element that is built inline failed, it gets a null sink for
+        // its remaining events like the sink of an element
+        if let Some((_, container @ Container::Inline(_))) = self.sink_stack.last_mut() {
+            *container = Container::Seq(true);
+            self.sink_stack
+                .push((SinkHandle::null(), Container::Seq(false)));
+        }
         for idx in (0..self.sink_stack.len()).rev() {
             // the sinks above were replaced, nothing borrows from this one
             let (sink, container) = &mut self.sink_stack[idx];
@@ -548,6 +560,10 @@ impl<'de> DriverCore<'de> {
                 Err(err) => err,
             };
             *sink = SinkHandle::null();
+            *container = match *container {
+                Container::Seq(_) => Container::Seq(false),
+                other => other,
+            };
         }
         // nothing recovered, the deserialization failed
         self.sink_stack.clear();
@@ -575,9 +591,15 @@ impl<'de> DriverCore<'de> {
                     sink.__private_borrowed_value_atom(atom, &mut self.state)
                 }
             }
-            Some((sink, Container::Seq)) => {
+            Some((sink, Container::Seq(_))) => {
                 self.state.is_map_key = false;
                 sink.__private_borrowed_value_atom(atom, &mut self.state)
+            }
+            Some((sink, Container::Inline(index))) => {
+                let item = *index;
+                *index = item.saturating_add(1);
+                self.state.is_map_key = false;
+                sink.__private_inline_atom(item as usize, atom, &mut self.state)
             }
             Some((sink, Container::Content(is_key, take, found))) => {
                 match content_atom(&self.state, is_key, take, found, &atom)? {
@@ -610,9 +632,15 @@ impl<'de> DriverCore<'de> {
                     sink.__private_value_atom(atom, &mut self.state)
                 }
             }
-            Some((sink, Container::Seq)) => {
+            Some((sink, Container::Seq(_))) => {
                 self.state.is_map_key = false;
                 sink.__private_value_atom(atom, &mut self.state)
+            }
+            Some((sink, Container::Inline(index))) => {
+                let item = *index;
+                *index = item.saturating_add(1);
+                self.state.is_map_key = false;
+                sink.__private_inline_atom(item as usize, atom, &mut self.state)
             }
             Some((sink, Container::Content(is_key, take, found))) => {
                 match content_atom(&self.state, is_key, take, found, &atom)? {
@@ -649,11 +677,30 @@ impl<'de> DriverCore<'de> {
                 // before it.
                 unsafe { erase_lifetime(sink) }
             }
-            Some((parent, Container::Seq)) => {
+            Some((parent, container @ Container::Seq(_))) => {
                 self.state.is_map_key = false;
+                if let (Container::Seq(true), false) = (*container, is_map) {
+                    // the element is built inline by the parent
+                    self.state.container_shape = shape;
+                    parent.__private_inline_event(InlineEvent::Start, &mut self.state)?;
+                    *container = Container::Inline(0);
+                    self.state.is_multimap = false;
+                    self.state.depth += 1;
+                    return Ok(());
+                }
                 let sink = parent.next_value(&mut self.state)?;
                 // SAFETY: see above
                 unsafe { erase_lifetime(sink) }
+            }
+            // a container in an element that is built inline, its items
+            // are atoms and this fails
+            Some((parent, Container::Inline(index))) => {
+                let item = *index;
+                *index = item.saturating_add(1);
+                self.state.is_map_key = false;
+                self.state.container_shape = shape;
+                let event = InlineEvent::Container(item as usize, is_map);
+                return parent.__private_inline_event(event, &mut self.state);
             }
             // entries of a map that is not the content are skipped
             Some((_, Container::Content(is_key, take, _))) => {
@@ -690,8 +737,7 @@ impl<'de> DriverCore<'de> {
                 Err(err) => return Err(err),
             }
         } else {
-            sink.seq(&mut self.state)?;
-            Container::Seq
+            Container::Seq(sink.__private_seq(&mut self.state)?)
         };
         self.state.is_multimap = container.is_multimap();
         self.state.depth += 1;
@@ -703,7 +749,8 @@ impl<'de> DriverCore<'de> {
     fn emit_end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.sink_stack.last() {
             Some((_, Container::Map(..) | Container::Content(..))) if is_map => {}
-            Some((_, Container::Seq)) if !is_map => {}
+            Some((_, Container::Seq(_))) if !is_map => {}
+            Some((_, Container::Inline(_))) if !is_map => return self.end_inline(),
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
         }
         let (mut sink, container) = self.sink_stack.pop().unwrap();
@@ -737,6 +784,23 @@ impl<'de> DriverCore<'de> {
         } else {
             sink.release(&mut self.state);
         }
+        rv
+    }
+
+    /// Ends an element that is built inline by the sink on top of the
+    /// stack.
+    ///
+    /// This behaves like ending the container of an element.
+    #[inline(always)]
+    fn end_inline(&mut self) -> Result<(), Error> {
+        let (sink, container) = self.sink_stack.last_mut().unwrap();
+        let Container::Inline(len) = *container else {
+            unreachable!()
+        };
+        *container = Container::Seq(true);
+        self.state.is_multimap = false;
+        let rv = sink.__private_inline_event(InlineEvent::End(len as usize), &mut self.state);
+        self.state.depth -= 1;
         rv
     }
 }

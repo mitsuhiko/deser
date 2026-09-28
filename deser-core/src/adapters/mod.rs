@@ -224,7 +224,9 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
 use crate::State;
-use crate::de::{Deserialize, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle};
+use crate::de::{
+    Deserialize, InlineSeq, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle,
+};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize};
@@ -318,6 +320,18 @@ pub trait DeserializeAs<'de, T>: 'static {
     #[doc(hidden)]
     fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         let _ = bytes;
+        None
+    }
+
+    /// See [`Deserialize::__private_atom_default`].
+    #[doc(hidden)]
+    fn __private_atom_default_as() -> Option<T> {
+        None
+    }
+
+    /// See [`Deserialize::__private_inline_seq`].
+    #[doc(hidden)]
+    fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
         None
     }
 
@@ -490,6 +504,16 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
     fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         T::__private_array_from_bytes(bytes)
+    }
+
+    #[inline]
+    fn __private_atom_default_as() -> Option<T> {
+        T::__private_atom_default()
+    }
+
+    #[inline]
+    fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
+        T::__private_inline_seq()
     }
 
     #[inline]
