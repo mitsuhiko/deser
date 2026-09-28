@@ -4,8 +4,9 @@ This folder compares every format of deser with a serde based library on
 the same data and types: `deser-json` with `serde_json`, `deser-cbor` with
 `ciborium`, `deser-msgpack` with `rmp-serde`, `deser-yaml` with
 `serde-saphyr`, `deser-toml` with `toml` and `deser-csv` with `csv`.  The results below are from
-`make bench-versus` on an Apple M5 Max with Rust 1.98.  Ratios are
-deser/serde, below 1 deser is faster.
+`cargo run --release -- time "" 10` (`make bench-versus` with 10 rounds)
+on an Apple M5 Max with Rust 1.98.  Ratios are deser/serde, below 1 deser
+is faster.
 
 ## Where deser Stands
 
@@ -13,30 +14,31 @@ The geometric mean over the 15 datasets, with the best and the worst one:
 
 | format      | de    | de range    | ser   | ser range   |
 |-------------|-------|-------------|-------|-------------|
-| JSON        | 1.10x | 0.69x-1.67x | 0.93x | 0.38x-1.65x |
-| CBOR        | 0.82x | 0.53x-1.31x | 1.37x | 1.00x-1.93x |
-| MessagePack | 1.44x | 0.87x-2.69x | 1.33x | 0.95x-1.80x |
-| YAML        | 0.31x | 0.24x-0.44x | 0.56x | 0.24x-0.98x |
-| TOML        | 0.51x | 0.42x-0.81x | 0.94x | 0.70x-1.41x |
+| JSON        | 1.11x | 0.70x-1.65x | 0.94x | 0.37x-1.69x |
+| CBOR        | 0.79x | 0.53x-1.33x | 1.35x | 0.98x-1.90x |
+| MessagePack | 1.41x | 0.89x-2.77x | 1.25x | 0.90x-1.73x |
+| YAML        | 0.31x | 0.24x-0.44x | 0.55x | 0.25x-1.01x |
+| TOML        | 0.50x | 0.42x-0.80x | 0.92x | 0.70x-1.34x |
 
 * **YAML and TOML** deserialize two to four times as fast as serde-saphyr
   and toml.  Serializing is faster or on par, except for the large table
-  of web-sys-manifest in TOML (1.41x).
+  of web-sys-manifest in TOML (1.34x).
 * **JSON** serializes faster than serde_json or on par, except for tree
-  (1.65x), cargo-manifest (1.32x), logs (1.31x), citm-catalog (1.28x)
-  and manifests (1.19x).  Deserializing is faster for twitter,
-  citm-catalog, manifests and logs, 1.04x-1.11x slower for other string
-  heavy data (saphyr, cargo-lock, github, web-sys-manifest) and
+  (1.69x), cargo-manifest (1.32x), logs (1.32x), citm-catalog (1.29x)
+  and manifests (1.24x).  Deserializing is faster for citm-catalog,
+  manifests and logs, on par for github, 1.03x-1.13x slower for other
+  string heavy data (saphyr, twitter, cargo-lock, web-sys-manifest) and
   1.15x-1.34x slower for floats and nesting (canada, registry,
-  kubernetes, point-cloud, features), 1.67x for tree.
-* **CBOR** deserializes faster than ciborium, serializing is 1.4x slower.
+  kubernetes, point-cloud, features), 1.65x for tree.
+* **CBOR** deserializes faster than ciborium except for citm-catalog
+  (1.25x) and tree (1.33x), serializing is 1.35x slower.
 * **MessagePack** is on par with rmp-serde for string heavy data but
-  deserializes 2.1x-2.7x slower for floats, nesting and integer keyed
-  maps (canada, features, point-cloud, tree, citm-catalog).  deser-msgpack
+  deserializes 1.9x-2.8x slower for floats, nesting and integer keyed
+  maps (canada, point-cloud, features, citm-catalog, tree).  deser-msgpack
   is a bit faster than deser-cbor there, the gap comes from rmp-serde
   being two to three times as fast as ciborium on this data.
-  Serializing is 1.3x slower.
-* **Untagged enums** (cargo-manifest) are 1.34x slower in JSON and 1.54x
+  Serializing is 1.25x slower.
+* **Untagged enums** (cargo-manifest) are 1.33x slower in JSON and 1.58x
   in MessagePack, in the other formats they are faster.
 
 The two sessions of the pi coding agent are only benchmarked with JSON
@@ -45,8 +47,8 @@ geometric means above:
 
 | benchmark              | input    | de       | serde    | ratio | ser     | serde   | ratio |
 |------------------------|----------|----------|----------|-------|---------|---------|-------|
-| session-openai/json    | 18.9 MiB | 9.09 ms  | 12.52 ms | 0.73x | 7.03 ms | 9.88 ms | 0.71x |
-| session-anthropic/json | 25.5 MiB | 3.07 ms  | 4.37 ms  | 0.70x | 2.97 ms | 8.33 ms | 0.36x |
+| session-openai/json    | 18.9 MiB | 8.90 ms  | 12.35 ms | 0.72x | 6.99 ms | 9.70 ms | 0.72x |
+| session-anthropic/json | 25.5 MiB | 3.03 ms  | 4.34 ms  | 0.70x | 3.05 ms | 8.14 ms | 0.37x |
 
 The OpenAI session is mostly text with many escapes (code, diffs, tool
 output and signatures which are JSON in strings), the Anthropic session
@@ -56,9 +58,9 @@ For the Twitter JSON document `cargo bench` also compares with miniserde:
 
 | library    | de       | ser      |
 |------------|----------|----------|
-| deser-json | 473.0 us | 161.6 us |
-| serde_json | 396.7 us | 217.3 us |
-| miniserde  | 439.5 us | 317.7 us |
+| deser-json | 417.5 us | 158.9 us |
+| serde_json | 396.2 us | 217.0 us |
+| miniserde  | 432.1 us | 312.4 us |
 
 Profiling findings, attempted optimizations and follow-up ideas are tracked
 in [PERF_NOTES.md](PERF_NOTES.md).
@@ -67,87 +69,87 @@ in [PERF_NOTES.md](PERF_NOTES.md).
 
 | benchmark                | de       | serde    | ratio | ser      | serde    | ratio |
 |--------------------------|----------|----------|-------|----------|----------|-------|
-| twitter/json             | 418.4 us | 430.8 us | 0.97x | 166.1 us | 222.5 us | 0.75x |
-| canada/json              | 2.44 ms  | 2.12 ms  | 1.15x | 1.26 ms  | 1.25 ms  | 1.01x |
-| citm-catalog/json        | 898.6 us | 966.5 us | 0.93x | 322.5 us | 252.0 us | 1.28x |
-| cargo-manifest/json      | 12.9 us  | 9.6 us   | 1.34x | 2.9 us   | 2.2 us   | 1.32x |
-| web-sys-manifest/json    | 204.3 us | 184.0 us | 1.11x | 23.7 us  | 29.0 us  | 0.82x |
-| cargo-lock/json          | 40.7 us  | 38.2 us  | 1.07x | 13.6 us  | 20.1 us  | 0.68x |
-| saphyr/json              | 374.0 us | 357.9 us | 1.04x | 112.6 us | 292.6 us | 0.38x |
-| github/json              | 1.06 ms  | 975.0 us | 1.08x | 391.1 us | 624.7 us | 0.63x |
-| kubernetes/json          | 5.55 ms  | 4.46 ms  | 1.24x | 1.62 ms  | 1.70 ms  | 0.96x |
-| manifests/json           | 729.3 us | 889.4 us | 0.82x | 256.2 us | 215.3 us | 1.19x |
-| logs/json                | 3.82 ms  | 5.50 ms  | 0.69x | 1.91 ms  | 1.45 ms  | 1.31x |
-| features/json            | 2.88 ms  | 2.15 ms  | 1.34x | 1.64 ms  | 1.76 ms  | 0.93x |
-| point-cloud/json         | 1.54 ms  | 1.22 ms  | 1.26x | 1.09 ms  | 1.32 ms  | 0.82x |
-| registry/json            | 1.30 ms  | 1.10 ms  | 1.19x | 251.2 us | 242.9 us | 1.03x |
-| tree/json                | 2.25 ms  | 1.35 ms  | 1.67x | 953.7 us | 579.3 us | 1.65x |
-| twitter/cbor             | 426.5 us | 507.7 us | 0.84x | 124.6 us | 111.9 us | 1.11x |
-| canada/cbor              | 1.39 ms  | 1.50 ms  | 0.93x | 609.0 us | 412.4 us | 1.48x |
-| citm-catalog/cbor        | 763.5 us | 619.7 us | 1.23x | 265.6 us | 139.1 us | 1.91x |
-| cargo-manifest/cbor      | 13.1 us  | 15.3 us  | 0.86x | 2.7 us   | 1.5 us   | 1.80x |
-| web-sys-manifest/cbor    | 206.2 us | 245.4 us | 0.84x | 20.4 us  | 19.0 us  | 1.07x |
-| cargo-lock/cbor          | 40.1 us  | 63.0 us  | 0.64x | 11.3 us  | 9.7 us   | 1.16x |
-| saphyr/cbor              | 333.5 us | 555.0 us | 0.60x | 93.0 us  | 59.0 us  | 1.58x |
-| github/cbor              | 1.08 ms  | 1.44 ms  | 0.75x | 304.8 us | 287.7 us | 1.06x |
-| kubernetes/cbor          | 5.27 ms  | 5.74 ms  | 0.92x | 1.44 ms  | 744.1 us | 1.93x |
-| manifests/cbor           | 737.9 us | 1.40 ms  | 0.53x | 221.5 us | 135.4 us | 1.64x |
-| logs/cbor                | 3.78 ms  | 6.06 ms  | 0.62x | 1.63 ms  | 1.22 ms  | 1.34x |
-| features/cbor            | 1.35 ms  | 1.13 ms  | 1.19x | 564.7 us | 453.4 us | 1.25x |
-| point-cloud/cbor         | 970.4 us | 1.14 ms  | 0.85x | 438.1 us | 407.0 us | 1.08x |
-| registry/cbor            | 994.4 us | 1.45 ms  | 0.69x | 239.8 us | 239.3 us | 1.00x |
-| tree/cbor                | 2.21 ms  | 1.68 ms  | 1.31x | 787.3 us | 474.2 us | 1.66x |
-| twitter/msgpack          | 357.5 us | 315.9 us | 1.13x | 123.0 us | 111.8 us | 1.10x |
-| canada/msgpack           | 1.14 ms  | 490.0 us | 2.33x | 566.2 us | 313.7 us | 1.80x |
-| citm-catalog/msgpack     | 673.8 us | 298.0 us | 2.26x | 279.4 us | 208.1 us | 1.34x |
-| cargo-manifest/msgpack   | 12.0 us  | 7.8 us   | 1.54x | 2.7 us   | 1.7 us   | 1.59x |
-| web-sys-manifest/msgpack | 194.3 us | 182.5 us | 1.06x | 21.4 us  | 22.1 us  | 0.97x |
-| cargo-lock/msgpack       | 35.4 us  | 30.6 us  | 1.16x | 11.3 us  | 11.9 us  | 0.95x |
-| saphyr/msgpack           | 288.1 us | 276.5 us | 1.04x | 87.8 us  | 69.5 us  | 1.26x |
-| github/msgpack           | 936.4 us | 934.5 us | 1.00x | 296.3 us | 289.0 us | 1.03x |
-| kubernetes/msgpack       | 4.89 ms  | 3.27 ms  | 1.50x | 1.46 ms  | 807.3 us | 1.80x |
-| manifests/msgpack        | 671.7 us | 770.6 us | 0.87x | 221.6 us | 148.5 us | 1.49x |
-| logs/msgpack             | 3.47 ms  | 3.74 ms  | 0.93x | 1.65 ms  | 1.30 ms  | 1.26x |
-| features/msgpack         | 1.10 ms  | 454.1 us | 2.43x | 544.1 us | 307.9 us | 1.77x |
-| point-cloud/msgpack      | 749.6 us | 362.5 us | 2.07x | 398.0 us | 234.0 us | 1.70x |
-| registry/msgpack         | 957.0 us | 790.1 us | 1.21x | 226.9 us | 220.6 us | 1.03x |
-| tree/msgpack             | 1.94 ms  | 720.9 us | 2.69x | 808.3 us | 566.2 us | 1.43x |
-| twitter/yaml             | 2.63 ms  | 9.10 ms  | 0.29x | 1.38 ms  | 3.31 ms  | 0.42x |
-| canada/yaml              | 15.11 ms | 46.41 ms | 0.33x | 3.41 ms  | 3.47 ms  | 0.98x |
-| citm-catalog/yaml        | 5.28 ms  | 18.78 ms | 0.28x | 1.89 ms  | 3.09 ms  | 0.61x |
-| cargo-manifest/yaml      | 37.6 us  | 126.2 us | 0.30x | 19.7 us  | 29.2 us  | 0.67x |
-| web-sys-manifest/yaml    | 509.9 us | 1.52 ms  | 0.34x | 198.9 us | 445.9 us | 0.45x |
-| cargo-lock/yaml          | 198.3 us | 642.3 us | 0.31x | 133.8 us | 319.8 us | 0.42x |
-| saphyr/yaml              | 2.35 ms  | 5.30 ms  | 0.44x | 1.38 ms  | 5.76 ms  | 0.24x |
-| github/yaml              | 5.69 ms  | 18.41 ms | 0.31x | 3.88 ms  | 11.40 ms | 0.34x |
-| kubernetes/yaml          | 18.07 ms | 51.13 ms | 0.35x | 10.28 ms | 20.02 ms | 0.51x |
-| manifests/yaml           | 3.06 ms  | 12.86 ms | 0.24x | 1.74 ms  | 3.18 ms  | 0.55x |
-| logs/yaml                | 14.79 ms | 53.32 ms | 0.28x | 9.65 ms  | 15.51 ms | 0.62x |
-| features/yaml            | 15.82 ms | 44.31 ms | 0.36x | 3.88 ms  | 4.01 ms  | 0.97x |
-| point-cloud/yaml         | 10.28 ms | 32.29 ms | 0.32x | 2.65 ms  | 2.87 ms  | 0.92x |
-| registry/yaml            | 4.37 ms  | 14.05 ms | 0.31x | 1.29 ms  | 2.18 ms  | 0.59x |
-| tree/yaml                | 17.59 ms | 59.19 ms | 0.30x | 4.67 ms  | 7.05 ms  | 0.66x |
-| twitter/toml             | 837.0 us | 1.77 ms  | 0.47x | 1.11 ms  | 1.05 ms  | 1.06x |
-| canada/toml              | 5.06 ms  | 10.38 ms | 0.49x | 3.87 ms  | 3.95 ms  | 0.98x |
-| citm-catalog/toml        | 2.06 ms  | 4.47 ms  | 0.46x | 2.22 ms  | 2.67 ms  | 0.83x |
-| cargo-manifest/toml      | 16.7 us  | 20.7 us  | 0.81x | 14.0 us  | 13.0 us  | 1.08x |
-| web-sys-manifest/toml    | 302.9 us | 471.2 us | 0.64x | 205.5 us | 146.0 us | 1.41x |
-| cargo-lock/toml          | 78.4 us  | 144.5 us | 0.54x | 117.4 us | 116.0 us | 1.01x |
-| saphyr/toml              | 644.8 us | 1.47 ms  | 0.44x | 1.73 ms  | 1.78 ms  | 0.97x |
-| github/toml              | 2.35 ms  | 4.47 ms  | 0.52x | 3.52 ms  | 3.39 ms  | 1.04x |
-| kubernetes/toml          | 10.10 ms | 20.72 ms | 0.49x | 11.74 ms | 13.57 ms | 0.86x |
-| manifests/toml           | 1.35 ms  | 2.82 ms  | 0.48x | 1.48 ms  | 2.12 ms  | 0.70x |
-| logs/toml                | 6.37 ms  | 12.06 ms | 0.53x | 7.17 ms  | 6.77 ms  | 1.06x |
-| features/toml            | 6.04 ms  | 12.49 ms | 0.48x | 4.07 ms  | 5.34 ms  | 0.76x |
-| point-cloud/toml         | 3.72 ms  | 7.84 ms  | 0.47x | 2.72 ms  | 3.29 ms  | 0.83x |
-| registry/toml            | 2.02 ms  | 3.64 ms  | 0.56x | 1.39 ms  | 1.49 ms  | 0.93x |
-| tree/toml                | 6.33 ms  | 15.02 ms | 0.42x | 6.28 ms  | 7.71 ms  | 0.81x |
-| table/csv                | 6.14 ms  | 3.70 ms  | 1.66x | 4.59 ms  | 1.72 ms  | 2.67x |
+| twitter/json             | 412.6 us | 393.5 us | 1.05x | 163.6 us | 218.4 us | 0.75x |
+| canada/json              | 2.42 ms  | 2.11 ms  | 1.15x | 1.26 ms  | 1.25 ms  | 1.01x |
+| citm-catalog/json        | 901.0 us | 954.6 us | 0.94x | 320.5 us | 248.7 us | 1.29x |
+| cargo-manifest/json      | 12.8 us  | 9.6 us   | 1.33x | 2.9 us   | 2.2 us   | 1.32x |
+| web-sys-manifest/json    | 200.8 us | 177.1 us | 1.13x | 23.5 us  | 27.6 us  | 0.85x |
+| cargo-lock/json          | 40.4 us  | 37.3 us  | 1.08x | 13.4 us  | 19.5 us  | 0.69x |
+| saphyr/json              | 360.9 us | 351.7 us | 1.03x | 101.9 us | 274.0 us | 0.37x |
+| github/json              | 1.02 ms  | 1.03 ms  | 0.99x | 392.6 us | 594.9 us | 0.66x |
+| kubernetes/json          | 5.43 ms  | 4.35 ms  | 1.25x | 1.62 ms  | 1.68 ms  | 0.97x |
+| manifests/json           | 713.4 us | 865.8 us | 0.82x | 254.5 us | 206.0 us | 1.24x |
+| logs/json                | 3.77 ms  | 5.36 ms  | 0.70x | 1.89 ms  | 1.43 ms  | 1.32x |
+| features/json            | 2.86 ms  | 2.13 ms  | 1.34x | 1.64 ms  | 1.78 ms  | 0.92x |
+| point-cloud/json         | 1.59 ms  | 1.22 ms  | 1.31x | 1.07 ms  | 1.31 ms  | 0.82x |
+| registry/json            | 1.31 ms  | 1.08 ms  | 1.21x | 249.2 us | 234.3 us | 1.06x |
+| tree/json                | 2.22 ms  | 1.34 ms  | 1.65x | 940.6 us | 557.5 us | 1.69x |
+| twitter/cbor             | 396.6 us | 508.1 us | 0.78x | 129.4 us | 113.1 us | 1.14x |
+| canada/cbor              | 1.15 ms  | 1.50 ms  | 0.76x | 614.8 us | 425.2 us | 1.45x |
+| citm-catalog/cbor        | 769.0 us | 616.6 us | 1.25x | 271.4 us | 180.2 us | 1.51x |
+| cargo-manifest/cbor      | 12.7 us  | 15.3 us  | 0.83x | 2.6 us   | 1.5 us   | 1.73x |
+| web-sys-manifest/cbor    | 201.9 us | 251.9 us | 0.80x | 19.9 us  | 19.5 us  | 1.02x |
+| cargo-lock/cbor          | 39.3 us  | 60.4 us  | 0.65x | 11.6 us  | 9.6 us   | 1.21x |
+| saphyr/cbor              | 326.0 us | 542.0 us | 0.60x | 94.9 us  | 66.0 us  | 1.44x |
+| github/cbor              | 1.02 ms  | 1.43 ms  | 0.71x | 327.7 us | 300.8 us | 1.09x |
+| kubernetes/cbor          | 5.14 ms  | 5.69 ms  | 0.90x | 1.45 ms  | 764.9 us | 1.90x |
+| manifests/cbor           | 730.4 us | 1.37 ms  | 0.53x | 231.7 us | 123.0 us | 1.88x |
+| logs/cbor                | 3.71 ms  | 6.12 ms  | 0.61x | 1.68 ms  | 1.21 ms  | 1.38x |
+| features/cbor            | 1.13 ms  | 1.13 ms  | 1.00x | 566.5 us | 444.1 us | 1.28x |
+| point-cloud/cbor         | 848.8 us | 1.13 ms  | 0.75x | 443.9 us | 416.5 us | 1.07x |
+| registry/cbor            | 992.1 us | 1.44 ms  | 0.69x | 232.8 us | 237.4 us | 0.98x |
+| tree/cbor                | 2.24 ms  | 1.68 ms  | 1.33x | 795.6 us | 471.5 us | 1.69x |
+| twitter/msgpack          | 352.9 us | 313.2 us | 1.13x | 124.7 us | 116.8 us | 1.07x |
+| canada/msgpack           | 904.9 us | 485.5 us | 1.86x | 569.1 us | 397.7 us | 1.43x |
+| citm-catalog/msgpack     | 680.3 us | 290.7 us | 2.34x | 283.9 us | 214.4 us | 1.32x |
+| cargo-manifest/msgpack   | 12.0 us  | 7.6 us   | 1.58x | 2.6 us   | 1.7 us   | 1.53x |
+| web-sys-manifest/msgpack | 194.7 us | 169.2 us | 1.15x | 20.7 us  | 21.8 us  | 0.95x |
+| cargo-lock/msgpack       | 34.9 us  | 30.0 us  | 1.16x | 11.2 us  | 12.4 us  | 0.90x |
+| saphyr/msgpack           | 288.7 us | 265.2 us | 1.09x | 86.5 us  | 71.1 us  | 1.22x |
+| github/msgpack           | 904.0 us | 910.2 us | 0.99x | 315.2 us | 304.4 us | 1.04x |
+| kubernetes/msgpack       | 4.85 ms  | 3.32 ms  | 1.46x | 1.46 ms  | 841.6 us | 1.73x |
+| manifests/msgpack        | 671.6 us | 757.8 us | 0.89x | 225.9 us | 148.3 us | 1.52x |
+| logs/msgpack             | 3.39 ms  | 3.74 ms  | 0.91x | 1.64 ms  | 1.30 ms  | 1.27x |
+| features/msgpack         | 901.3 us | 451.0 us | 2.00x | 531.1 us | 403.7 us | 1.32x |
+| point-cloud/msgpack      | 676.6 us | 362.2 us | 1.87x | 401.7 us | 293.6 us | 1.37x |
+| registry/msgpack         | 945.1 us | 772.5 us | 1.22x | 219.9 us | 218.9 us | 1.00x |
+| tree/msgpack             | 1.98 ms  | 713.4 us | 2.77x | 803.5 us | 565.1 us | 1.42x |
+| twitter/yaml             | 2.51 ms  | 8.97 ms  | 0.28x | 1.37 ms  | 3.42 ms  | 0.40x |
+| canada/yaml              | 15.17 ms | 45.86 ms | 0.33x | 3.45 ms  | 3.42 ms  | 1.01x |
+| citm-catalog/yaml        | 5.28 ms  | 18.62 ms | 0.28x | 1.92 ms  | 3.21 ms  | 0.60x |
+| cargo-manifest/yaml      | 37.5 us  | 124.8 us | 0.30x | 19.7 us  | 30.3 us  | 0.65x |
+| web-sys-manifest/yaml    | 495.3 us | 1.51 ms  | 0.33x | 196.0 us | 451.3 us | 0.43x |
+| cargo-lock/yaml          | 196.0 us | 639.7 us | 0.31x | 131.0 us | 320.3 us | 0.41x |
+| saphyr/yaml              | 2.33 ms  | 5.27 ms  | 0.44x | 1.36 ms  | 5.50 ms  | 0.25x |
+| github/yaml              | 5.59 ms  | 18.24 ms | 0.31x | 3.80 ms  | 11.47 ms | 0.33x |
+| kubernetes/yaml          | 17.89 ms | 50.74 ms | 0.35x | 10.26 ms | 20.19 ms | 0.51x |
+| manifests/yaml           | 3.05 ms  | 12.95 ms | 0.24x | 1.73 ms  | 3.28 ms  | 0.53x |
+| logs/yaml                | 14.77 ms | 53.05 ms | 0.28x | 9.82 ms  | 15.71 ms | 0.63x |
+| features/yaml            | 15.68 ms | 44.18 ms | 0.36x | 3.87 ms  | 3.97 ms  | 0.97x |
+| point-cloud/yaml         | 10.48 ms | 32.03 ms | 0.33x | 2.67 ms  | 2.80 ms  | 0.95x |
+| registry/yaml            | 4.37 ms  | 13.86 ms | 0.32x | 1.31 ms  | 2.23 ms  | 0.59x |
+| tree/yaml                | 17.55 ms | 58.68 ms | 0.30x | 4.70 ms  | 7.21 ms  | 0.65x |
+| twitter/toml             | 833.8 us | 1.77 ms  | 0.47x | 1.12 ms  | 1.06 ms  | 1.06x |
+| canada/toml              | 4.71 ms  | 10.31 ms | 0.46x | 3.82 ms  | 3.90 ms  | 0.98x |
+| citm-catalog/toml        | 2.05 ms  | 4.18 ms  | 0.49x | 2.19 ms  | 2.66 ms  | 0.82x |
+| cargo-manifest/toml      | 16.5 us  | 20.6 us  | 0.80x | 13.8 us  | 13.1 us  | 1.05x |
+| web-sys-manifest/toml    | 305.4 us | 461.2 us | 0.66x | 197.8 us | 148.0 us | 1.34x |
+| cargo-lock/toml          | 77.9 us  | 143.2 us | 0.54x | 108.8 us | 115.9 us | 0.94x |
+| saphyr/toml              | 631.6 us | 1.46 ms  | 0.43x | 1.56 ms  | 1.74 ms  | 0.89x |
+| github/toml              | 2.28 ms  | 4.43 ms  | 0.51x | 3.50 ms  | 3.43 ms  | 1.02x |
+| kubernetes/toml          | 9.97 ms  | 19.96 ms | 0.50x | 11.64 ms | 13.81 ms | 0.84x |
+| manifests/toml           | 1.35 ms  | 3.23 ms  | 0.42x | 1.48 ms  | 2.12 ms  | 0.70x |
+| logs/toml                | 6.31 ms  | 11.89 ms | 0.53x | 6.99 ms  | 6.65 ms  | 1.05x |
+| features/toml            | 5.67 ms  | 12.46 ms | 0.45x | 4.06 ms  | 5.21 ms  | 0.78x |
+| point-cloud/toml         | 3.53 ms  | 8.46 ms  | 0.42x | 2.75 ms  | 3.27 ms  | 0.84x |
+| registry/toml            | 1.98 ms  | 3.62 ms  | 0.55x | 1.36 ms  | 1.52 ms  | 0.90x |
+| tree/toml                | 6.43 ms  | 14.34 ms | 0.45x | 5.98 ms  | 7.95 ms  | 0.75x |
+| table/csv                | 6.20 ms  | 3.80 ms  | 1.63x | 5.24 ms  | 1.72 ms  | 3.06x |
 
 `blobs` has no serde counterpart (serde has no bytes for `Vec<u8>`):
-de/ser take 700/512 us in JSON, 507/175 us in CBOR, 457/173 us in
-MessagePack, 4.54/1.24 ms in YAML and 1.18/2.02 ms in TOML.  Ignoring the
-Twitter JSON document (`twitter/json/ignore`) takes 241 us, 0.94x of
+de/ser take 693/510 us in JSON, 511/179 us in CBOR, 456/175 us in
+MessagePack, 4.55/1.23 ms in YAML and 1.18/2.18 ms in TOML.  Ignoring the
+Twitter JSON document (`twitter/json/ignore`) takes 240 us, 0.95x of
 serde_json.
 
 ## Datasets

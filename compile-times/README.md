@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.74s | 2.64s | 3.11s           |
-| miniserde | 1.96s | 2.04s | 2.26s           |
-| deser     | 2.37s | 2.41s | 2.74s           |
+| serde     | 2.63s | 2.80s | 2.83s           |
+| miniserde | 1.94s | 2.05s | 2.19s           |
+| deser     | 2.27s | 2.41s | 2.63s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -26,11 +26,11 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.34s | 0.53s | 8.00s           |
-| miniserde | 0.16s | 0.20s | 1.58s           |
-| deser     | 0.40s | 0.52s | 4.55s           |
+| serde     | 0.34s | 0.42s | 8.04s           |
+| miniserde | 0.16s | 0.20s | 1.55s           |
+| deser     | 0.39s | 0.50s | 4.56s           |
 
-* Clean builds are 0.4s-0.5s slower than with miniserde.  The crates of the
+* Clean builds are 0.3s-0.4s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
@@ -38,10 +38,10 @@ is a library, in a binary only the code that is used would be compiled.
   derive macros) and the program.
 * Release builds of derived code are 1.8 times as fast as with serde
   but 2.9 times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 261k lines of LLVM IR
+  3.1s, with far fewer features).  deser generates 286k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
   The frontend (`check`) spends most of its time type and borrow checking
-  the derived code, the expanded library has 80k lines (serde 71k,
+  the derived code, the expanded library has 82k lines (serde 71k,
   miniserde 22k, formatted like `cargo expand`).
 * Multimaps (fields that are collections collect repeated keys) made
   the derived code larger: every field got a branch for collecting in
@@ -83,8 +83,8 @@ is a library, in a binary only the code that is used would be compiled.
   per struct, `derive_struct` builds it before it knows whether it's
   needed.
 * **`finish`** of derived structs is the largest function of the
-  derived code (21% of the IR, about 70 lines per field).  Next are
-  `field_atom` (12%) and `field_sink` (8%), both of which grew with the
+  derived code (19% of the IR, about 70 lines per field).  Next are
+  `field_atom` (11%) and `field_sink` (8%), both of which grew with the
   multimap branches.  Taking the values with helpers, checking the
   required fields by reference first or computing the missing fields in
   a separate function all end up with about the same IR once the helpers
@@ -93,7 +93,7 @@ is a library, in a binary only the code that is used would be compiled.
   serialize as an atom, `emit_plain_field` exists for them without ever
   emitting anything.  Matching their names takes about 15 lines per name.
 * **Updates** (`deserialize_update`) are implemented by every struct even
-  if they are not used, as `UpdateFields` (1.4% of the IR).
+  if they are not used, as `UpdateFields` (2.2% of the IR).
 * **Every type** costs something even if its derived code is small: its
   fields are boxed, dropped and have a vtable, and each field type is
   instantiated for the generic helpers of the derive.
