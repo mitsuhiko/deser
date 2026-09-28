@@ -396,6 +396,40 @@ fn test_implicit_text() {
     assert_eq!(write("1.10", ImplicitValue::F64(2.0)), "2.0");
 }
 
+#[test]
+fn test_recording() {
+    use deser::de::Recording;
+
+    let roundtrip = |json: &str| {
+        let recording: Recording = deser_json::from_str(json).unwrap();
+        assert_eq!(to_string(&recording).unwrap(), json);
+    };
+    roundtrip("1");
+    roundtrip("[]");
+    roundtrip("[1,2,3]");
+    roundtrip(r#"{"a":1,"b":[]}"#);
+    roundtrip(r#"[[],[1],{},{"a":[1,[2,{}]]},3]"#);
+    roundtrip(r#"{"a":{"b":{"c":[1,{"d":null}]},"e":[[[]]]},"f":true}"#);
+
+    // deeply nested values take time linear in the number of events (it
+    // used to be quadratic in the depth, which took minutes here)
+    let depth = if cfg!(miri) { 20 } else { 100_000 };
+    roundtrip(&(r#"{"a":["#.repeat(depth) + &"]}".repeat(depth)));
+    // nested values of all kinds, in and after deeply nested ones
+    let depths: &[usize] = if cfg!(miri) { &[9] } else { &[9, 20] };
+    for &depth in depths {
+        let open = r#"{"a":[1,"s",{},[],{"b":[null]},"#;
+        let close = r#",true],"c":{"d":[[]]}}"#;
+        roundtrip(&format!(
+            "[{}0{},[{}0{}],2]",
+            open.repeat(depth),
+            close.repeat(depth),
+            open.repeat(depth / 2),
+            close.repeat(depth / 2)
+        ));
+    }
+}
+
 /// Records a single atom.
 fn record(atom: deser::Atom<'static>) -> deser::de::Recording {
     let mut out = None;
