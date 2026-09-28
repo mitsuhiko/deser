@@ -307,20 +307,67 @@ fn test_resolved_names() {
 }
 
 #[test]
-fn test_errors() {
-    // attributes after content
+fn test_attribute_order() {
+    // attributes after content go into the start tag
     #[derive(Serialize)]
     struct Late {
         a: u32,
         #[deser(rename = "@b")]
         b: u32,
+        c: Inner,
+        #[deser(rename = "@d")]
+        d: Option<u32>,
+        #[deser(rename = "@e")]
+        e: &'static str,
     }
-    let err = to_string(&Late { a: 1, b: 2 }).unwrap_err();
+    #[derive(Serialize)]
+    struct Inner {
+        #[deser(rename = "$text")]
+        text: &'static str,
+        #[deser(rename = "@x")]
+        x: &'static str,
+    }
+    let late = Late {
+        a: 1,
+        b: 2,
+        c: Inner { text: "t", x: "<" },
+        d: None,
+        e: "\"",
+    };
     assert_eq!(
-        err.message(),
-        "attribute `b` comes after the content of the element"
+        to_string(&late).unwrap(),
+        r#"<Late b="2" e="&quot;"><a>1</a><c x="&lt;">t</c></Late>"#
     );
 
+    // maps: the text key sorts before the attribute prefix
+    let map = BTreeMap::from([("$text", "x"), ("@a", "1"), ("@b", "2")]);
+    assert_eq!(
+        SerializerConfig::new().root("m").to_string(&map).unwrap(),
+        r#"<m a="1" b="2">x</m>"#
+    );
+
+    // the prefixes of late attributes are declared on the root
+    let map = BTreeMap::from([("$text", "x"), ("@{urn:a}a", "1")]);
+    assert_eq!(
+        SerializerConfig::new().root("m").to_string(&map).unwrap(),
+        r#"<m xmlns:ns0="urn:a" ns0:a="1">x</m>"#
+    );
+
+    // values read from documents
+    let mut value: deser_value::Value =
+        from_str(r#"<doc><a>1</a><b x="y"><c/></b></doc>"#).unwrap();
+    value.as_map_mut().unwrap().insert("@late", "1");
+    assert_eq!(
+        SerializerConfig::new()
+            .root("doc")
+            .to_string(&value)
+            .unwrap(),
+        r#"<doc late="1"><a>1</a><b x="y"><c/></b></doc>"#
+    );
+}
+
+#[test]
+fn test_errors() {
     // attributes that are not values
     #[derive(Serialize)]
     struct Nested {

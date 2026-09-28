@@ -55,6 +55,46 @@ pub trait Describe {
         let _ = name;
     }
 
+    /// The names of the fields of the struct that was just described with
+    /// [`structure`](Self::structure), in the order they are serialized.
+    ///
+    /// The keys of the map the struct is serialized as are a subsequence
+    /// of these names: fields can be skipped but no other keys are
+    /// emitted.  This lets formats know which keys can still come, for
+    /// instance to write parts of the output before the struct ends.
+    /// Structs whose keys are not known upfront (like derived structs with
+    /// flattened fields) do not describe their fields.
+    ///
+    /// ```
+    /// use deser::ser::Describe;
+    ///
+    /// #[derive(deser::Serialize)]
+    /// struct Link {
+    ///     #[deser(rename = "@href")]
+    ///     href: String,
+    ///     #[deser(skip_serializing)]
+    ///     cache: u32,
+    ///     title: String,
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// struct Fields(&'static [&'static str]);
+    ///
+    /// impl Describe for Fields {
+    ///     fn fields(&mut self, names: &'static [&'static str]) {
+    ///         self.0 = names;
+    ///     }
+    /// }
+    ///
+    /// let mut fields = Fields::default();
+    /// let link = Link { href: "/".into(), cache: 0, title: "x".into() };
+    /// deser::Serialize::describe(&link, &mut fields);
+    /// assert_eq!(fields.0, ["@href", "title"]);
+    /// ```
+    fn fields(&mut self, names: &'static [&'static str]) {
+        let _ = names;
+    }
+
     /// The value is a newtype struct.
     ///
     /// It's serialized as the value it wraps, the description of that value

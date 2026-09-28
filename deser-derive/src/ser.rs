@@ -313,6 +313,7 @@ fn derive_indexed_struct(
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
 
+    let field_names = attrs.iter().map(|x| x.name(container_attrs));
     let mut field_arms = Vec::with_capacity(attrs.len());
     let mut plain_arms = Vec::with_capacity(attrs.len());
     let mut has_plain = false;
@@ -430,7 +431,9 @@ fn derive_indexed_struct(
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                    const __FIELDS: &[&str] = &[#(#field_names),*];
                     __d.structure(#type_name);
+                    __d.fields(__FIELDS);
                 }
 
                 fn container_shape(&self) -> __deser::ContainerShape {

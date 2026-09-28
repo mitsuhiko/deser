@@ -164,9 +164,7 @@
 //!
 //! # Limitations
 //!
-//! This crate is an early version.  The serializer writes attributes before the content of an
-//! element, a map whose attributes come after other keys is an error.  The
-//! input has to be UTF-8.
+//! This crate is an early version.  The input has to be UTF-8.
 #![deny(missing_docs)]
 
 mod de;

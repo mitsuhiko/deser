@@ -16,6 +16,11 @@ All notable changes to deser are documented here.
   elements as values of `T`, typically an enum), also when flattened into
   a struct whose fields take the attributes and the other elements.  It
   keeps whitespace between elements, `Mixed<T, SkipWhitespace>` does not.
+  Attributes can come after other keys of a map, they are still written
+  into the start tag.
+- Added `Describe::fields`, which derived structs without flattened fields
+  call with the names of their fields.  Formats can use it to know which
+  keys of a struct can still come.
 - Added the `SkipBlank` adapter which leaves no value for strings that are
   empty or only whitespace, so sequences and collections leave them out
   (`Vec<SkipBlank>`, `Separated<',', SkipBlank<TrimWhitespace>>`).
