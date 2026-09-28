@@ -10,7 +10,7 @@ use quick_xml::name::{QName, ResolveResult};
 use quick_xml::reader::NsReader;
 
 use crate::Names;
-use crate::mixed::KeepWhitespace;
+use crate::mixed::WhitespaceDepths;
 
 /// Configures how XML documents are deserialized.
 ///
@@ -417,7 +417,7 @@ impl<'a> Parser<'a, '_> {
         // whitespace between elements is not text, unless the content is
         // mixed
         if matches!(element.text, PendingText::None)
-            || (element.text.is_blank() && !KeepWhitespace::applies(driver.state()))
+            || (element.text.is_blank() && !WhitespaceDepths::applies(driver.state()))
         {
             element.text = PendingText::None;
             return Ok(());
@@ -497,7 +497,7 @@ impl<'a> Parser<'a, '_> {
             self.flush_text(driver)?;
             self.stack.pop();
             emit_at(driver, Event::MapEnd, range)?;
-            KeepWhitespace::prune(driver.state_mut());
+            WhitespaceDepths::prune(driver.state_mut());
         } else {
             let element = self.stack.pop().unwrap();
             element.text.emit(driver, element.start)?;

@@ -170,7 +170,7 @@ mod mixed;
 mod ser;
 
 pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
-pub use self::mixed::Mixed;
+pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
 pub use self::ser::{SerializerConfig, to_string};
 
 /// The names of the special keys and the prefixes of namespaces.

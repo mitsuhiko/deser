@@ -11,7 +11,8 @@ All notable changes to deser are documented here.
   can be given fixed prefixes, the serializer writes the same shape.
   `deser_xml::Mixed<T>` keeps the order of mixed content (text and child
   elements as values of `T`, typically an enum), also when flattened into
-  a struct whose fields take the attributes and the other elements.
+  a struct whose fields take the attributes and the other elements.  It
+  keeps whitespace between elements, `Mixed<T, SkipWhitespace>` does not.
 - Added the `SkipBlank` adapter which leaves no value for strings that are
   empty or only whitespace, so sequences and collections leave them out
   (`Vec<SkipBlank>`, `Separated<',', SkipBlank<TrimWhitespace>>`).

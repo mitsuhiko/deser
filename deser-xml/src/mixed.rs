@@ -1,4 +1,8 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
@@ -75,17 +79,81 @@ use crate::Names;
 /// the space between the elements.  If `Mixed` is flattened into a
 /// struct, this starts with the first value it takes.  Texts that are
 /// separated by values that are skipped or taken by the fields of the
-/// struct are separate values.
+/// struct are separate values.  For content where whitespace is only
+/// indentation, [`SkipWhitespace`] leaves it out:
+///
+/// ```
+/// use deser::Deserialize;
+/// use deser::adapters::TrimWhitespace;
+/// use deser_xml::{Mixed, SkipWhitespace};
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// enum Block {
+///     #[deser(rename = "$text")]
+///     Text(#[deser(as = TrimWhitespace)] String),
+///     #[deser(rename = "p")]
+///     Paragraph(String),
+/// }
+///
+/// let doc: Mixed<Block, SkipWhitespace> = deser_xml::from_str("
+///     <doc>
+///       <p>a</p>
+///       text
+///       <p>b</p>
+///     </doc>
+/// ").unwrap();
+/// assert_eq!(doc.0, [
+///     Block::Paragraph("a".into()),
+///     Block::Text("text".into()),
+///     Block::Paragraph("b".into()),
+/// ]);
+/// ```
+///
+/// Values that are left out by `T` (that leave no value like
+/// [`SkipBlank`](deser_core::adapters::SkipBlank) does) are not content.
 ///
 /// When serialized, each value becomes the entries of the element it
 /// serializes as (unit variants are empty elements).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Mixed<T>(pub Vec<T>);
+pub struct Mixed<T, W = KeepWhitespace>(pub Vec<T>, PhantomData<fn() -> W>);
 
-impl<T> Mixed<T> {
+/// What [`Mixed`] does with text that is only whitespace.
+///
+/// This is [`KeepWhitespace`] or [`SkipWhitespace`].
+pub trait Whitespace: sealed::Sealed + 'static {
+    #[doc(hidden)]
+    const KEEP: bool;
+}
+
+/// [`Mixed`] keeps text that is only whitespace (the default).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeepWhitespace;
+
+/// [`Mixed`] leaves out text that is only whitespace.
+///
+/// Whitespace between child elements is not text, as it's not for other
+/// types than `Mixed`.  An element that is only whitespace has no
+/// content.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SkipWhitespace;
+
+impl Whitespace for KeepWhitespace {
+    const KEEP: bool = true;
+}
+
+impl Whitespace for SkipWhitespace {
+    const KEEP: bool = false;
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::KeepWhitespace {}
+    impl Sealed for super::SkipWhitespace {}
+}
+
+impl<T, W> Mixed<T, W> {
     /// Creates empty content.
-    pub const fn new() -> Mixed<T> {
-        Mixed(Vec::new())
+    pub const fn new() -> Mixed<T, W> {
+        Mixed(Vec::new(), PhantomData)
     }
 
     /// Returns the values.
@@ -94,13 +162,51 @@ impl<T> Mixed<T> {
     }
 }
 
-impl<T> Default for Mixed<T> {
-    fn default() -> Mixed<T> {
+impl<T: fmt::Debug, W> fmt::Debug for Mixed<T, W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Mixed").field(&self.0).finish()
+    }
+}
+
+impl<T: Clone, W> Clone for Mixed<T, W> {
+    fn clone(&self) -> Mixed<T, W> {
+        Mixed(self.0.clone(), PhantomData)
+    }
+}
+
+impl<T: PartialEq, W> PartialEq for Mixed<T, W> {
+    fn eq(&self, other: &Mixed<T, W>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Eq, W> Eq for Mixed<T, W> {}
+
+impl<T: PartialOrd, W> PartialOrd for Mixed<T, W> {
+    fn partial_cmp(&self, other: &Mixed<T, W>) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<T: Ord, W> Ord for Mixed<T, W> {
+    fn cmp(&self, other: &Mixed<T, W>) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<T: Hash, W> Hash for Mixed<T, W> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+impl<T, W> Default for Mixed<T, W> {
+    fn default() -> Mixed<T, W> {
         Mixed::new()
     }
 }
 
-impl<T> Deref for Mixed<T> {
+impl<T, W> Deref for Mixed<T, W> {
     type Target = Vec<T>;
 
     fn deref(&self) -> &Vec<T> {
@@ -108,25 +214,25 @@ impl<T> Deref for Mixed<T> {
     }
 }
 
-impl<T> DerefMut for Mixed<T> {
+impl<T, W> DerefMut for Mixed<T, W> {
     fn deref_mut(&mut self) -> &mut Vec<T> {
         &mut self.0
     }
 }
 
-impl<T> From<Vec<T>> for Mixed<T> {
-    fn from(values: Vec<T>) -> Mixed<T> {
-        Mixed(values)
+impl<T, W> From<Vec<T>> for Mixed<T, W> {
+    fn from(values: Vec<T>) -> Mixed<T, W> {
+        Mixed(values, PhantomData)
     }
 }
 
-impl<T> FromIterator<T> for Mixed<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Mixed<T> {
-        Mixed(iter.into_iter().collect())
+impl<T, W> FromIterator<T> for Mixed<T, W> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Mixed<T, W> {
+        Mixed(iter.into_iter().collect(), PhantomData)
     }
 }
 
-impl<T> IntoIterator for Mixed<T> {
+impl<T, W> IntoIterator for Mixed<T, W> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
 
@@ -135,7 +241,7 @@ impl<T> IntoIterator for Mixed<T> {
     }
 }
 
-impl<'a, T> IntoIterator for &'a Mixed<T> {
+impl<'a, T, W> IntoIterator for &'a Mixed<T, W> {
     type Item = &'a T;
     type IntoIter = std::slice::Iter<'a, T>;
 
@@ -147,16 +253,17 @@ impl<'a, T> IntoIterator for &'a Mixed<T> {
 /// The depths of the elements whose whitespace is text.
 ///
 /// Whitespace between child elements is not text, unless the content of
-/// the element is [`Mixed`].  Its sink registers the depth within the
-/// element here, the parser checks it before it drops whitespace.
+/// the element is [`Mixed`] (with [`KeepWhitespace`]).  Its sink registers
+/// the depth within the element here, the parser checks it before it
+/// drops whitespace.
 #[derive(Debug, Default)]
-pub(crate) struct KeepWhitespace(pub(crate) Vec<usize>);
+pub(crate) struct WhitespaceDepths(pub(crate) Vec<usize>);
 
-impl KeepWhitespace {
+impl WhitespaceDepths {
     /// Returns `true` if whitespace is text at the current depth.
     pub(crate) fn applies(state: &State) -> bool {
         state
-            .get::<KeepWhitespace>()
+            .get::<WhitespaceDepths>()
             .and_then(|keep| keep.0.last())
             .is_some_and(|&depth| depth == state.depth())
     }
@@ -168,16 +275,16 @@ impl KeepWhitespace {
     /// not.
     pub(crate) fn prune(state: &mut State) {
         let depth = state.depth();
-        if state.get::<KeepWhitespace>().is_some() {
+        if state.get::<WhitespaceDepths>().is_some() {
             state
-                .get_mut::<KeepWhitespace>()
+                .get_mut::<WhitespaceDepths>()
                 .0
                 .retain(|&keep| keep <= depth);
         }
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Mixed<T> {
+impl<'de, T: Deserialize<'de>, W: Whitespace> Deserialize<'de> for Mixed<T, W> {
     fn deserialize_into(out: &mut Option<Self>) -> SinkHandle<'_, 'de> {
         SinkHandle::boxed(MixedSink {
             out,
@@ -194,22 +301,31 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Mixed<T> {
     }
 }
 
-struct MixedSink<'a, 'de, T> {
-    out: &'a mut Option<Mixed<T>>,
+struct MixedSink<'a, 'de, T, W> {
+    out: &'a mut Option<Mixed<T, W>>,
     values: Vec<T>,
     key: Option<String>,
     /// The value that receives the value of the last key.
     pending: Option<OwnedSink<'de, T>>,
-    /// The depth registered in [`KeepWhitespace`].
+    /// The depth registered in [`WhitespaceDepths`].
     depth: Option<usize>,
 }
 
-impl<'de, T: Deserialize<'de>> MixedSink<'_, 'de, T> {
+impl<'de, T: Deserialize<'de>, W: Whitespace> MixedSink<'_, 'de, T, W> {
     /// Keeps whitespace in the element at the depth.
     fn keep_whitespace(&mut self, depth: usize, state: &mut State) {
-        if self.depth.is_none() {
+        if W::KEEP && self.depth.is_none() {
             self.depth = Some(depth);
-            state.get_mut::<KeepWhitespace>().0.push(depth);
+            state.get_mut::<WhitespaceDepths>().0.push(depth);
+        }
+    }
+
+    /// Returns `true` if the text is content.
+    fn is_content(text: &str) -> bool {
+        if W::KEEP {
+            !text.is_empty()
+        } else {
+            !text.trim().is_empty()
         }
     }
 
@@ -227,24 +343,24 @@ impl<'de, T: Deserialize<'de>> MixedSink<'_, 'de, T> {
     }
 
     /// Ends the pending value.
+    ///
+    /// Values that leave no value are left out.
     fn end(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(mut pending) = self.pending.take() {
             pending.borrow_mut().finish(state)?;
-            self.values.push(pending.take().ok_or_else(|| {
-                Error::new(ErrorKind::Unexpected, "value of mixed content is missing")
-            })?);
+            self.values.extend(pending.take());
         }
         Ok(())
     }
 }
 
-impl<'de, T: Deserialize<'de>> Sink<'de> for MixedSink<'_, 'de, T> {
+impl<'de, T: Deserialize<'de>, W: Whitespace> Sink<'de> for MixedSink<'_, 'de, T, W> {
     /// Text is an element without attributes and child elements, empty
-    /// text has no content.
+    /// text (and blank text with [`SkipWhitespace`]) has no content.
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Null => Ok(()),
-            Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_empty() => Ok(()),
+            Atom::Str(ref text) | Atom::Lexical(ref text) if !Self::is_content(text) => Ok(()),
             Atom::Str(_) | Atom::Lexical(_) => {
                 let mut sink = self.begin(text_key(state), state)?;
                 sink.atom(atom, state)?;
@@ -256,7 +372,7 @@ impl<'de, T: Deserialize<'de>> Sink<'de> for MixedSink<'_, 'de, T> {
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         match atom {
-            Atom::Str(ref text) | Atom::Lexical(ref text) if !text.is_empty() => {
+            Atom::Str(ref text) | Atom::Lexical(ref text) if Self::is_content(text) => {
                 let mut sink = self.begin(text_key(state), state)?;
                 sink.borrowed_atom(atom, state)?;
                 sink.finish(state)
@@ -301,12 +417,12 @@ impl<'de, T: Deserialize<'de>> Sink<'de> for MixedSink<'_, 'de, T> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.end(state)?;
         if let Some(depth) = self.depth.take() {
-            let keep = &mut state.get_mut::<KeepWhitespace>().0;
+            let keep = &mut state.get_mut::<WhitespaceDepths>().0;
             if keep.last() == Some(&depth) {
                 keep.pop();
             }
         }
-        *self.out = Some(Mixed(std::mem::take(&mut self.values)));
+        *self.out = Some(Mixed(std::mem::take(&mut self.values), PhantomData));
         Ok(())
     }
 
@@ -332,7 +448,7 @@ fn text_key(state: &State) -> &'static str {
     names(state).text_key
 }
 
-impl<T: Serialize> Serialize for Mixed<T> {
+impl<T: Serialize, W: Whitespace> Serialize for Mixed<T, W> {
     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
         Ok(Chunk::Struct(Box::new(MixedEmitter {
             values: self.0.iter(),

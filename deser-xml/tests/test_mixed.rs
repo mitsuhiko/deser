@@ -62,7 +62,7 @@ fn test_in_order() {
             }),
             Inline::Break,
             text("for "),
-            Inline::Emphasis(Mixed(vec![text("very "), bold("much")])),
+            Inline::Emphasis(Mixed::from(vec![text("very "), bold("much")])),
             text(" more"),
         ]
     );
@@ -159,7 +159,7 @@ fn test_flattened() {
     let section = Section {
         id: "s1".into(),
         title: "T".into(),
-        content: Mixed(vec![text("a & "), bold("b"), Inline::Break, text("c")]),
+        content: Mixed::from(vec![text("a & "), bold("b"), Inline::Break, text("c")]),
     };
     let xml = to_string(&section).unwrap();
     assert_eq!(
@@ -175,14 +175,14 @@ fn test_serialize() {
     #[deser(rename = "p")]
     struct Paragraph(Mixed<Inline>);
 
-    let p = Paragraph(Mixed(vec![
+    let p = Paragraph(Mixed::from(vec![
         text("see "),
         Inline::Link(Link {
             href: "/x".into(),
             text: "here".into(),
         }),
         text(" and "),
-        Inline::Emphasis(Mixed(vec![bold("this")])),
+        Inline::Emphasis(Mixed::from(vec![bold("this")])),
     ]));
     let xml = to_string(&p).unwrap();
     assert_eq!(
@@ -232,9 +232,93 @@ fn test_serialize_errors() {
     #[derive(Serialize)]
     #[deser(rename = "p")]
     struct Strings(Mixed<String>);
-    let err = to_string(&Strings(Mixed(vec!["x".into()]))).unwrap_err();
+    let err = to_string(&Strings(Mixed::from(vec!["x".into()]))).unwrap_err();
     assert_eq!(
         err.message(),
         "the values of mixed content must be structs or externally tagged enums"
     );
+}
+
+#[test]
+fn test_skip_whitespace() {
+    use deser::adapters::TrimWhitespace;
+    use deser_xml::SkipWhitespace;
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    enum Block {
+        #[deser(rename = "$text")]
+        Text(#[deser(as = TrimWhitespace)] String),
+        #[deser(rename = "p")]
+        Paragraph(Mixed<Inline>),
+    }
+
+    let doc: Mixed<Block, SkipWhitespace> =
+        from_str("<doc>\n  <p>x <b>y</b> <b>z</b></p>\n  some text\n  <p>w</p>\n</doc>").unwrap();
+    assert_eq!(
+        doc.0,
+        [
+            // the paragraphs keep their whitespace
+            Block::Paragraph(Mixed::from(vec![
+                text("x "),
+                bold("y"),
+                text(" "),
+                bold("z")
+            ])),
+            Block::Text("some text".into()),
+            Block::Paragraph(Mixed::from(vec![text("w")])),
+        ]
+    );
+
+    // elements that are only whitespace are empty
+    let doc: Mixed<Block, SkipWhitespace> = from_str("<doc> \n </doc>").unwrap();
+    assert_eq!(doc.0, []);
+    let doc: Mixed<Block> = from_str("<doc> \n </doc>").unwrap();
+    assert_eq!(doc.0, [Block::Text("".into())]);
+
+    // and in reverse: paragraphs without whitespace in a document with it
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Loose {
+        #[deser(rename = "$text")]
+        Text(String),
+        #[deser(rename = "p")]
+        Paragraph(Mixed<Inline, SkipWhitespace>),
+    }
+    let doc: Mixed<Loose> = from_str("<doc><p><b>y</b> <b>z</b></p> </doc>").unwrap();
+    assert_eq!(
+        doc.0,
+        [
+            Loose::Paragraph(Mixed::from(vec![bold("y"), bold("z")])),
+            Loose::Text(" ".into())
+        ]
+    );
+}
+
+#[test]
+fn test_text_field() {
+    use deser::adapters::SkipBlank;
+
+    // whitespace between elements is text in elements with mixed content,
+    // also for a field of the text
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Element {
+        #[deser(rename = "$text")]
+        text: Vec<String>,
+        #[deser(flatten)]
+        content: Mixed<Inline>,
+    }
+    let element: Element = from_str("<e>a <b>x</b> <b>y</b> c</e>").unwrap();
+    assert_eq!(element.text, ["a ", " ", " c"]);
+    assert_eq!(element.content.0, [bold("x"), bold("y")]);
+
+    // which `SkipBlank` leaves out
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct NonBlank {
+        #[deser(rename = "$text", as = Vec<SkipBlank>)]
+        text: Vec<String>,
+        #[deser(flatten)]
+        content: Mixed<Inline>,
+    }
+    let element: NonBlank = from_str("<e>a <b>x</b> <b>y</b> c</e>").unwrap();
+    assert_eq!(element.text, ["a ", " c"]);
+    assert_eq!(element.content.0, [bold("x"), bold("y")]);
 }
