@@ -2,6 +2,14 @@
 
 All notable changes to deser are documented here.
 
+## Unreleased
+
+- `deser-json`, `deser-toml` and `deser-yaml` format floats with `zmij`
+  by default (the new `zmij` feature, which `deser-jsonc`, `deser-json5`
+  and `deser-hj` forward).  This is faster and makes binaries smaller,
+  the output is the same.  The `speedups` feature implies `zmij` and
+  only adds `simdutf8`.
+
 ## 0.9.0
 
 This release is close to a rewrite of deser.  Almost every public API
