@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.70s | 2.65s | 3.10s           |
-| miniserde | 1.96s | 2.09s | 2.17s           |
-| deser     | 2.27s | 2.38s | 2.63s           |
+| serde     | 2.65s | 2.78s | 3.02s           |
+| miniserde | 1.97s | 2.18s | 2.22s           |
+| deser     | 2.46s | 2.61s | 2.82s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -30,12 +30,15 @@ is a library, in a binary only the code that is used would be compiled.
 | miniserde | 0.15s | 0.20s | 1.54s           |
 | deser     | 0.37s | 0.47s | 3.46s           |
 
-* Clean builds are 0.3s-0.5s slower than with miniserde.  The crates of the
+* Clean builds are 0.4s-0.6s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
   miniserde's derive takes 0.15s), `deser` (which re-exports the
-  derive macros) and the program.
+  derive macros) and the program.  The build script of `zmij` (the
+  float formatting of `deser-json`) costs 0.15s: it runs at the same
+  time as the one of `proc-macro2` at the start of the critical path
+  and slows it down.
 * Release builds of derived code are 2.3 times as fast as with serde
   but 2.2 times slower than with miniserde (deser 0.8 from 2023 took
   3.1s, with far fewer features).  deser generates 240k lines of LLVM IR
@@ -115,29 +118,29 @@ written as JSON (the library with a `main`).  They are built with the
 default release profile and a profile optimized for size (`lto = "fat"`,
 `codegen-units = 1`, `opt-level = "s"`, `panic = "abort"`).  In
 parentheses is how much larger they are than hello world (in KiB).
-`deser (speedups)` enables the `speedups` feature of `deser-json`.
+`deser (without zmij)` turns off the `zmij` feature of `deser-json`.
 
-| program                     | release          | size optimized  |
-|-----------------------------|------------------|-----------------|
-| hello world                 | 334 KiB          | 279 KiB         |
-| serde                       | 418 KiB (+84)    | 311 KiB (+32)   |
-| miniserde                   | 383 KiB (+49)    | 295 KiB (+16)   |
-| deser                       | 619 KiB (+285)   | 425 KiB (+145)  |
-| deser (speedups)            | 586 KiB (+252)   | 409 KiB (+129)  |
-| serde, 100 types            | 1226 KiB (+892)  | 860 KiB (+581)  |
-| miniserde, 100 types        | 644 KiB (+310)   | 491 KiB (+211)  |
-| deser, 100 types            | 979 KiB (+645)   | 687 KiB (+408)  |
-| deser (speedups), 100 types | 963 KiB (+629)   | 655 KiB (+375)  |
+| program                         | release          | size optimized  |
+|---------------------------------|------------------|-----------------|
+| hello world                     | 334 KiB          | 279 KiB         |
+| serde                           | 418 KiB (+84)    | 311 KiB (+32)   |
+| miniserde                       | 383 KiB (+49)    | 295 KiB (+16)   |
+| deser                           | 586 KiB (+252)   | 409 KiB (+129)  |
+| deser (without zmij)            | 619 KiB (+285)   | 425 KiB (+146)  |
+| serde, 100 types                | 1226 KiB (+892)  | 860 KiB (+581)  |
+| miniserde, 100 types            | 644 KiB (+310)   | 491 KiB (+211)  |
+| deser, 100 types                | 963 KiB (+629)   | 655 KiB (+375)  |
+| deser (without zmij), 100 types | 979 KiB (+645)   | 687 KiB (+408)  |
 
-* The fixed cost of deser is high: the small program is 200 KiB larger
-  than with serde (110 KiB optimized for size).  The derived code of
+* The fixed cost of deser is high: the small program is 170 KiB larger
+  than with serde (100 KiB optimized for size).  The derived code of
   the small program is only 3.5 KiB, the rest is the runtime (the
   drivers, the JSON reader and writer, errors, extension values like big
   integers and base64 bytes) and the parts of the standard library it
   uses.
-* A type costs less than with serde: 3.6 KiB per struct and enum
-  against 8.1 KiB with serde (2.6 KiB against 5.5 KiB optimized for
-  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 20%
+* A type costs less than with serde: 3.8 KiB per struct and enum
+  against 8.1 KiB with serde (2.5 KiB against 5.5 KiB optimized for
+  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 21%
   smaller than serde.  It was 6.5 KiB (3.9 KiB): the fields are
   deserialized by slots that exist once per type of field (see above),
   functions like `from_str` only create the sink of the value for every
@@ -151,11 +154,12 @@ parentheses is how much larger they are than hello world (in KiB).
   another 16 KiB was the pretty printer of JSON that constant compact
   configurations do not refer to anymore.  Layers of the deserializer
   are only linked into programs that add layers (16 KiB).
-* **Floats** without `speedups` are formatted with the standard
-  library's `{:e}` and parsed again to pick the even digits of ties
-  (`format_finite`).  This links the float formatting and parsing of
-  the standard library, with `zmij` the program is 32 KiB smaller
-  (16 KiB optimized for size).
+* **Floats** are formatted with `zmij` (the `zmij` feature of the
+  formats, enabled by default).  Without it they are formatted with the
+  standard library's `{:e}` and parsed again to pick the even digits of
+  ties (`format_finite`).  This links the float formatting and parsing
+  of the standard library, the program is 33 KiB larger (16 KiB
+  optimized for size).
 * **Profiles** matter more than with serde: on their own
   `codegen-units = 1` and `panic = "abort"` each make the small program
   64 KiB smaller, serde does not change.  Functions that are `#[inline]`

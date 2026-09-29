@@ -145,18 +145,19 @@ size_row() {
   label=$1; dir=$2
   release=$(binary_size $dir release)
   small=$(binary_size $dir small)
-  printf "  %-28s %6d KiB (+%4d)  %6d KiB (+%4d)\n" "$label" \
+  printf "  %-32s %6d KiB (+%4d)  %6d KiB (+%4d)\n" "$label" \
     $((release / 1024)) $(((release - hello_release) / 1024)) \
     $((small / 1024)) $(((small - hello_small) / 1024))
 }
 
-# Enables the speedups of deser-json in a copy of a deser crate.
-with_speedups() {
+# Turns off the zmij feature of deser-json (the float formatting falls
+# back to the standard library) in a copy of a deser crate.
+without_zmij() {
   rm -rf $2
   mkdir -p $2
   cp -R $1/Cargo.toml $1/Cargo.lock $1/src $2/
-  sed -i.bak -e "s/^name = \"\(.*\)\"/name = \"\1-speedups\"/" \
-    -e 's|^\(deser-json = { path = "[^"]*"\) }|\1, features = ["speedups"] }|' $2/Cargo.toml
+  sed -i.bak -e "s/^name = \"\(.*\)\"/name = \"\1-no-zmij\"/" \
+    -e 's|^\(deser-json = { path = "[^"]*"\) }|\1, default-features = false, features = ["std"] }|' $2/Cargo.toml
   rm $2/Cargo.toml.bak
 }
 
@@ -169,22 +170,22 @@ binary_sizes() {
   hello_small=$(binary_size target/size/hello small)
 
   echo "binary sizes, stripped (in parentheses: KiB more than hello world)"
-  printf "  %-28s %-19s %s\n" "" "   release" "   size optimized"
-  printf "  %-28s %6d KiB          %6d KiB\n" "hello world" \
+  printf "  %-32s %-19s %s\n" "" "   release" "   size optimized"
+  printf "  %-32s %6d KiB          %6d KiB\n" "hello world" \
     $((hello_release / 1024)) $((hello_small / 1024))
   for lib in $LIBS; do
     copy_manifest $lib target/size/one-$lib one-$lib
     cp $lib-version/src/main.rs target/size/one-$lib/src/main.rs
     size_row "$lib" target/size/one-$lib
   done
-  with_speedups target/size/one-deser target/size/one-deser-speedups
-  size_row "deser (speedups)" target/size/one-deser-speedups
+  without_zmij target/size/one-deser target/size/one-deser-no-zmij
+  size_row "deser (without zmij)" target/size/one-deser-no-zmij
   for lib in $LIBS; do
     generate_many $lib bin
     size_row "$lib, 100 types" target/size/many-$lib
   done
-  with_speedups target/size/many-deser target/size/many-deser-speedups
-  size_row "deser (speedups), 100 types" target/size/many-deser-speedups
+  without_zmij target/size/many-deser target/size/many-deser-no-zmij
+  size_row "deser (without zmij), 100 types" target/size/many-deser-no-zmij
 }
 
 if [ "$WHAT" != sizes ]; then

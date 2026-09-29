@@ -1091,11 +1091,11 @@ impl Output {
     #[inline]
     fn write_float<F: Float>(&mut self, val: F) {
         if val.is_finite() {
-            #[cfg(feature = "speedups")]
+            #[cfg(feature = "zmij")]
             {
                 self.write_str(zmij::Buffer::new().format_finite(val))
             }
-            #[cfg(not(feature = "speedups"))]
+            #[cfg(not(feature = "zmij"))]
             {
                 self.write_str(&deser_core::__format::format_finite(val))
             }
@@ -1290,17 +1290,17 @@ static ESCAPE: [u8; 256] = [
 ];
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 trait Float: zmij::Float + deser_core::__format::Float {}
 
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 trait Float: deser_core::__format::Float {}
 
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 impl<F: deser_core::__format::Float> Float for F {}
 
 /// Serializes a value to JSON.

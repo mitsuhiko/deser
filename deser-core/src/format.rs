@@ -2,9 +2,10 @@
 //!
 //! This is not public API.
 //!
-//! * The text formats format floats with `zmij` when their `speedups`
-//!   feature is enabled.  Without it they use [`format_finite`] which
-//!   produces the same text, so the output does not depend on the feature.
+//! * JSON, TOML and YAML format floats with `zmij` when their `zmij`
+//!   feature is enabled (the default), the other text formats and those
+//!   without the feature use [`format_finite`] which produces the same
+//!   text, so the output does not depend on the feature.
 //! * [`extend`] and [`push_str`] append short bytes and strings without
 //!   calling into `memcpy`.
 //! * [`deserialize_value`] and [`drive_value`] implement functions like

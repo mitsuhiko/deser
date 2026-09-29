@@ -16,11 +16,14 @@ exclude = ["tests/data"]
 autotests = false
 
 [features]
-default = ["io"]
+default = ["io", "zmij"]
 # reading and writing values from and to streams (with `deser::io`)
 io = ["deser-core/io"]
-# faster float formatting (zmij) and UTF-8 validation (simdutf8)
-speedups = ["dep:simdutf8", "dep:zmij"]
+# formats floats with zmij, which is faster and makes binaries smaller than
+# the fallback (the text is the same)
+zmij = ["dep:zmij"]
+# faster UTF-8 validation (simdutf8), implies `zmij`
+speedups = ["dep:simdutf8", "zmij"]
 
 [dependencies]
 deser-core = { version = "0.9.0", path = "../deser-core", default-features = false }

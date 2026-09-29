@@ -47,9 +47,11 @@
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library (with `DeserializerConfig::reader`).  Requires
 //!   `std`.
-//! * `speedups`: faster UTF-8 validation and serialization.
+//! * `speedups`: faster UTF-8 validation.  Implies `zmij`.
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
+//! * `zmij` (enabled by default): formats floats with
+//!   [`zmij`](https://docs.rs/zmij) when serializing (see `deser-json`).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 

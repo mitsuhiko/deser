@@ -16,12 +16,15 @@ exclude = ["tests/data"]
 autotests = false
 
 [features]
-default = ["std", "io"]
+default = ["std", "io", "zmij"]
 # the standard library, without it only `alloc` is needed
 std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
 # reading and writing values from and to streams (with `deser::io`)
 io = ["std", "deser-core/io", "deser-json/io"]
-# faster UTF-8 validation (simdutf8) and faster serialization (see deser-json)
+# formats floats with zmij, which is faster and makes binaries smaller than
+# the fallback (the text is the same)
+zmij = ["deser-json/zmij"]
+# faster UTF-8 validation (simdutf8), implies `zmij`
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]

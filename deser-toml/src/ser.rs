@@ -745,17 +745,17 @@ impl<'d> Writer<'d> {
 }
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 trait Float: zmij::Float + deser_core::__format::Float {}
 
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 trait Float: deser_core::__format::Float {}
 
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 impl<F: deser_core::__format::Float> Float for F {}
 
 /// Writes a float with the shortest text that reads back as the same value
@@ -768,9 +768,9 @@ fn write_float<F: Float>(out: &mut String, value: F) {
     } else if wide.is_infinite() {
         out.push_small(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
-        #[cfg(feature = "speedups")]
+        #[cfg(feature = "zmij")]
         out.push_small(zmij::Buffer::new().format_finite(value));
-        #[cfg(not(feature = "speedups"))]
+        #[cfg(not(feature = "zmij"))]
         out.push_small(&deser_core::__format::format_finite(value));
     }
 }

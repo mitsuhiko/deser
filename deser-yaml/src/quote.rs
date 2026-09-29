@@ -313,17 +313,17 @@ pub(crate) fn push_indent(out: &mut String, indent: usize) {
 }
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 pub(crate) trait Float: zmij::Float + deser_core::__format::Float {}
 
-#[cfg(feature = "speedups")]
+#[cfg(feature = "zmij")]
 impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 pub(crate) trait Float: deser_core::__format::Float {}
 
-#[cfg(not(feature = "speedups"))]
+#[cfg(not(feature = "zmij"))]
 impl<F: deser_core::__format::Float> Float for F {}
 
 /// Writes a float so that readers of YAML 1.1 and 1.2 read it as float.
@@ -339,11 +339,11 @@ pub(crate) fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
         out.write_str(if wide > 0.0 { ".inf" } else { "-.inf" })
             .unwrap();
     } else {
-        #[cfg(feature = "speedups")]
+        #[cfg(feature = "zmij")]
         let mut buffer = zmij::Buffer::new();
-        #[cfg(feature = "speedups")]
+        #[cfg(feature = "zmij")]
         let formatted = buffer.format_finite(value);
-        #[cfg(not(feature = "speedups"))]
+        #[cfg(not(feature = "zmij"))]
         let formatted = &deser_core::__format::format_finite(value);
         // the exponent always has a sign, the mantissa needs a `.`.  The
         // exponent is at most `e-324`, so only the last five bytes can be

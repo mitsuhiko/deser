@@ -99,6 +99,11 @@
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library, see [streams](#streams).
 //! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
+//!   Implies `zmij`.
+//! * `zmij` (enabled by default): formats floats with
+//!   [`zmij`](https://docs.rs/zmij), which is faster and makes binaries
+//!   smaller.  Without it floats are formatted with the same text by a
+//!   fallback on top of the float formatting of `core`.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod datetime;

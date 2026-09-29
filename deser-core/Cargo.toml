@@ -57,5 +57,5 @@ smallvec = { version = "1.6", optional = true, default-features = false, feature
 # the examples in the documentation use deser (with derive)
 deser = { path = "../deser", features = ["derive"] }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }
-# the float formatting of the formats without speedups is tested against it
+# the float formatting of the formats without zmij is tested against it
 zmij = "1.0.23"
