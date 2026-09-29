@@ -71,16 +71,14 @@ pub trait Deserializer<'de> {
     {
         // only creating the sink and taking the value depend on the type,
         // the driver is created and run by a function that exists once.
-        let mut out = None;
         let mut setup = Some(setup);
-        let mut state = State::new();
-        let sink = T::deserialize_into(&mut out, &mut state);
-        drive_sink(self, state, sink, &mut |driver| {
-            if let Some(setup) = setup.take() {
-                setup(driver);
-            }
-        })?;
-        out.ok_or_else(empty_input)
+        deserialize_value(|make_sink| {
+            drive_new(self, make_sink, &mut |driver| {
+                if let Some(setup) = setup.take() {
+                    setup(driver);
+                }
+            })
+        })
     }
 
     /// Updates an existing value with the next value.
@@ -112,14 +110,53 @@ pub trait Deserializer<'de> {
     }
 }
 
-/// Drives a deserializer into a sink.
+/// Creates the sink of the value that is deserialized.
+///
+/// See [`deserialize_value`], it's called once.
+pub type MakeSink<'m, 'out, 'de> = dyn FnMut(&mut State) -> SinkHandle<'out, 'de> + 'm;
+
+/// Deserializes a value with a function that drives a deserializer into
+/// its sink.
+///
+/// `drive` receives the function that creates the sink and passes it to
+/// [`drive_value`] (or does what it does).  This keeps everything that does
+/// not depend on the type of the value out of the code that exists once per
+/// type: formats implement functions like `from_str` with it and a function
+/// that creates their deserializer and is not generic.
+#[inline]
+pub fn deserialize_value<'de, T: Deserialize<'de>>(
+    drive: impl for<'out> FnOnce(&mut MakeSink<'_, 'out, 'de>) -> Result<(), Error>,
+) -> Result<T, Error> {
+    let mut out = None;
+    {
+        let mut slot = Some(&mut out);
+        drive(&mut |state| match slot.take() {
+            Some(slot) => T::deserialize_into(slot, state),
+            None => panic!("the sink of a value was created twice"),
+        })?;
+    }
+    out.ok_or_else(empty_input)
+}
+
+/// Drives a deserializer into the sink of a value (see
+/// [`deserialize_value`]).
 #[inline(never)]
-fn drive_sink<'de>(
+pub fn drive_value<'out, 'de>(
     de: &mut dyn Deserializer<'de>,
-    state: State,
-    sink: SinkHandle<'_, 'de>,
+    make_sink: &mut MakeSink<'_, 'out, 'de>,
+) -> Result<(), Error> {
+    drive_new(de, make_sink, &mut |_| {})
+}
+
+/// Creates the state and the sink and drives a deserializer into it.
+#[inline(never)]
+fn drive_new<'out, 'de>(
+    de: &mut dyn Deserializer<'de>,
+    make_sink: &mut MakeSink<'_, 'out, 'de>,
     setup: &mut dyn FnMut(&mut DeserializeDriver<'_, 'de>),
 ) -> Result<(), Error> {
+    let mut state = State::new();
+    let sink = make_sink(&mut state);
     let mut driver = DeserializeDriver::from_state(state, sink);
     setup(&mut driver);
     de.drive(&mut driver)

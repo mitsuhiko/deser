@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 
+use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules};
 use deser_core::{Error, ErrorKind, Source};
 
@@ -51,7 +52,20 @@ impl DeserializerConfig {
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
-        Deserializer::from_slice_with_config(input, self).deserialize()
+        deserialize_value(|make_sink| self.drive_slice(input, make_sink))
+    }
+
+    /// The part of [`from_slice`](Self::from_slice) that does not depend on the type
+    /// of the value, it exists once.
+    fn drive_slice<'de>(
+        &self,
+        input: &'de [u8],
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
+        drive_value(
+            &mut Deserializer::from_slice_with_config(input, self),
+            make_sink,
+        )
     }
 }
 

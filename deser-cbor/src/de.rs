@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
 
+use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::Error;
 use deser_core::de::{self, Deserialize, DeserializeDriver};
 
@@ -35,10 +36,19 @@ impl DeserializerConfig {
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
+        deserialize_value(|make_sink| self.drive_slice(input, make_sink))
+    }
+
+    /// The part of [`from_slice`](Self::from_slice) that does not depend on
+    /// the type of the value, it exists once.
+    fn drive_slice<'de>(
+        &self,
+        input: &'de [u8],
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
         let mut de = Deserializer::from_slice_with_config(input, self);
-        let rv = de.deserialize()?;
-        de.end()?;
-        Ok(rv)
+        drive_value(&mut de, make_sink)?;
+        de.end()
     }
 }
 

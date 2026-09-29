@@ -9,11 +9,14 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
 use crate::Text;
+use crate::adapters::{DeserializeAs, Same};
 use crate::de::CollectedErrors;
+use crate::de::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use crate::de::duplicates::{duplicate_field, is_seen, mark_seen};
 use crate::de::sinkbox::StructBox;
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
@@ -284,51 +287,22 @@ pub struct StructInfo {
     /// Rejects keys that are not fields.
     pub deny: bool,
     /// The fields can borrow from the data (the struct has generics), see
-    /// [`StructFields::field_borrowed_atom`].
+    /// [`FieldSlot::borrowed_atom`].
     pub borrows: bool,
 }
 
-/// The fields of a derived struct while it's deserialized.
+/// The fields of a derived struct without flattened fields.
 ///
 /// The derive implements this for a struct that holds the slot of the
-/// struct and a slot for every field.  [`StructSink`] does everything that
-/// does not depend on the types of the fields, it exists once for all
-/// structs.
+/// struct and a [`Slot`] for every field.  [`StructSink`] does everything
+/// that does not depend on the types of the fields, it exists once for all
+/// structs, and what depends on the type of a field is done by the
+/// [`FieldSlot`] of the field which exists once per type of field.  The
+/// derive only returns the slot of a field by its index and builds the
+/// struct.
 pub trait StructFields<'de>: Send {
-    /// Returns the sink of the field with the index.
-    fn collects(&self, index: usize) -> bool;
-
-    /// Returns the sink of the field, optionally collecting its value.
-    fn field_sink(
-        &mut self,
-        index: usize,
-        collect: Collect,
-        state: &mut State,
-    ) -> SinkHandle<'_, 'de>;
-
-    /// Deserializes an atom into the field with the index.
-    fn field_atom(
-        &mut self,
-        index: usize,
-        collect: Collect,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error>;
-
-    /// Deserializes a borrowed atom into the field with the index.
-    ///
-    /// This is only invoked if [`StructInfo::borrows`] is set, otherwise
-    /// borrowed atoms are passed to [`field_atom`](Self::field_atom).
-    fn field_borrowed_atom(
-        &mut self,
-        index: usize,
-        collect: Collect,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let _ = (index, collect, atom, state);
-        unreachable!()
-    }
+    /// Returns the slot of the field with the index.
+    fn field(&mut self, index: usize) -> &mut dyn FieldSlot<'de>;
 
     /// Builds the struct from the fields and places it in the slot.
     ///
@@ -336,6 +310,150 @@ pub trait StructFields<'de>: Send {
     /// missing, this fails with [`StructFinish::missing`].  The fields are
     /// not dropped afterwards, so all values have to be taken out.
     fn finish(&mut self, finish: &mut StructFinish<'_>, state: &mut State) -> Result<(), Error>;
+}
+
+/// The value of a field of a derived struct while it's deserialized.
+///
+/// This is implemented by [`Slot`] for all types of fields (and adapters),
+/// so the code exists once per type of field instead of once per struct
+/// (see [`StructFields`]).
+pub trait FieldSlot<'de>: Send {
+    /// Returns `true` if the field collects the values of a repeated key
+    /// (see [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
+    fn collects(&self) -> bool;
+
+    /// Returns the sink of the field, optionally collecting its value.
+    fn sink(&mut self, collect: Collect, state: &mut State) -> SinkHandle<'_, 'de>;
+
+    /// Deserializes an atom into the field.
+    fn atom(&mut self, collect: Collect, atom: Atom, state: &mut State) -> Result<(), Error>;
+
+    /// Deserializes a borrowed atom into the field.
+    ///
+    /// This is only invoked if [`StructInfo::borrows`] is set, otherwise
+    /// borrowed atoms are passed to [`atom`](Self::atom).
+    fn borrowed_atom(
+        &mut self,
+        collect: Collect,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error>;
+}
+
+/// The slot of a field of type `T` that is deserialized with the adapter
+/// `A` (see [`FieldSlot`]).
+pub struct Slot<T, A = Same> {
+    value: Option<T>,
+    _adapter: PhantomData<fn() -> A>,
+}
+
+impl<T, A> Slot<T, A> {
+    /// Creates the slot with an initial value.
+    #[inline(always)]
+    pub fn new(value: Option<T>) -> Slot<T, A> {
+        Slot {
+            value,
+            _adapter: PhantomData,
+        }
+    }
+
+    /// Returns `true` if the field has no value.
+    #[inline(always)]
+    pub fn is_none(&self) -> bool {
+        self.value.is_none()
+    }
+
+    /// Sets the value of the field.
+    #[inline(always)]
+    pub fn set(&mut self, value: Option<T>) {
+        self.value = value;
+    }
+
+    /// Takes the value of the field.
+    #[inline(always)]
+    pub fn take(&mut self) -> Option<T> {
+        self.value.take()
+    }
+}
+
+/// The slot of a struct without fields, it's never used.
+struct NoField;
+
+impl<'de> FieldSlot<'de> for NoField {
+    fn collects(&self) -> bool {
+        false
+    }
+
+    fn sink(&mut self, _collect: Collect, _state: &mut State) -> SinkHandle<'_, 'de> {
+        SinkHandle::null()
+    }
+
+    fn atom(&mut self, _collect: Collect, _atom: Atom, _state: &mut State) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn borrowed_atom(
+        &mut self,
+        _collect: Collect,
+        _atom: Atom<'de>,
+        _state: &mut State,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+/// Returns the slot of a field of a struct without fields.
+///
+/// The fields of a struct are only looked up by the index of a field, so
+/// this is never used.
+pub fn no_field_slot<'x, 'de>() -> &'x mut dyn FieldSlot<'de> {
+    // boxes of zero sized types do not allocate
+    Box::leak(Box::new(NoField))
+}
+
+impl<'de, T: Send, A: DeserializeAs<'de, T>> FieldSlot<'de> for Slot<T, A> {
+    fn collects(&self) -> bool {
+        A::__private_collects_as()
+    }
+
+    fn sink(&mut self, collect: Collect, state: &mut State) -> SinkHandle<'_, 'de> {
+        // `collect` is only set for fields that collect, the check of the
+        // type removes the branch for the others
+        if A::__private_collects_as() && collect != Collect::No {
+            A::__private_collect_into_as(&mut self.value, state)
+        } else {
+            A::deserialize_into_as(&mut self.value, state)
+        }
+    }
+
+    fn atom(&mut self, collect: Collect, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if A::__private_collects_as() && collect != Collect::No {
+            atom_into_handle(
+                A::__private_collect_into_as(&mut self.value, state),
+                atom,
+                state,
+            )
+        } else {
+            A::__private_atom_into_as(&mut self.value, atom, state)
+        }
+    }
+
+    fn borrowed_atom(
+        &mut self,
+        collect: Collect,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if A::__private_collects_as() && collect != Collect::No {
+            borrowed_atom_into_handle(
+                A::__private_collect_into_as(&mut self.value, state),
+                atom,
+                state,
+            )
+        } else {
+            A::__private_borrowed_atom_into_as(&mut self.value, atom, state)
+        }
+    }
 }
 
 /// Passed to [`StructFields::finish`].
@@ -465,7 +583,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
 
     /// Returns how this occurrence of a field is deserialized.
     fn collect(&mut self, index: usize, state: &State) -> Collect {
-        let collects = state.is_multimap() && self.fields().collects(index);
+        let collects = state.is_multimap() && self.fields().field(index).collects();
         match (collects, core::mem::replace(&mut self.key.repeated, false)) {
             (false, _) => Collect::No,
             (true, false) => Collect::First,
@@ -508,7 +626,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
                 .get_or_insert_with(|| vec![0; words].into_boxed_slice());
             mark_seen(large, index)
         };
-        if !seen_before || (state.is_multimap() && self.fields().collects(index)) {
+        if !seen_before || (state.is_multimap() && self.fields().field(index).collects()) {
             if seen_before {
                 self.key.repeated = true;
             }
@@ -539,7 +657,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
         Ok(match self.next_index(state)? {
             Some(index) => {
                 let collect = self.collect(index, state);
-                self.fields().field_sink(index, collect, state)
+                self.fields().field(index).sink(collect, state)
             }
             None => SinkHandle::null(),
         })
@@ -553,7 +671,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
         match self.next_index(state)? {
             Some(index) => {
                 let collect = self.collect(index, state);
-                self.fields().field_atom(index, collect, atom, state)
+                self.fields().field(index).atom(collect, atom, state)
             }
             None => Ok(()),
         }
@@ -577,11 +695,12 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
             Some(index) if self.info.borrows => {
                 let collect = self.collect(index, state);
                 self.fields()
-                    .field_borrowed_atom(index, collect, atom, state)
+                    .field(index)
+                    .borrowed_atom(collect, atom, state)
             }
             Some(index) => {
                 let collect = self.collect(index, state);
-                self.fields().field_atom(index, collect, atom, state)
+                self.fields().field(index).atom(collect, atom, state)
             }
             None => Ok(()),
         }

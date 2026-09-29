@@ -236,7 +236,7 @@ use crate::event::Atom;
 pub(crate) mod arena;
 pub(crate) mod atoms;
 mod collect;
-mod deserializer;
+pub(crate) mod deserializer;
 mod driver;
 pub(crate) mod duplicates;
 #[cfg(feature = "derive")]
@@ -668,9 +668,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         }
     }
 
-    /// Forwards to [`Sink::unexpected_atom`].
+    /// Handles an atom the sink does not accept (see
+    /// [`Sink::unexpected_atom`]).
     pub fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().unexpected_atom(atom, state)
+        default_unexpected_atom(self.sink_mut(), atom, state)
     }
 
     /// Forwards to [`Sink::map`].
@@ -732,10 +733,6 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     #[inline]
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         SinkHandle::borrowed_atom(self, atom, state)
-    }
-
-    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        SinkHandle::unexpected_atom(self, atom, state)
     }
 
     #[inline]
@@ -1083,7 +1080,7 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// implementation of `unexpected_atom` will retry with the fallback atom
     /// of the extension value.
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.unexpected_atom(atom, state)
+        default_unexpected_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Receives an [`Atom`] that borrows from the data being deserialized.
@@ -1102,7 +1099,14 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// only need to handle `F64`.  [`Atom::Lexical`] is passed on as
     /// [`Atom::Str`], so sinks that accept strings accept lexical atoms
     /// too.  For all other atoms an error is returned.
-    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    ///
+    /// This is a helper for implementations of [`atom`](Self::atom), it's
+    /// not invoked by the driver (and not part of the vtable of sinks, so
+    /// that it does not exist once per sink).
+    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
         default_unexpected_atom(self.__private_as_dyn(), atom, state)
     }
 

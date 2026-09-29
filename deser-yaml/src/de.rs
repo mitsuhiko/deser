@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::de::{self, Deserialize, DeserializeDriver};
 use deser_core::hints::Layout;
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Source};
@@ -166,14 +167,34 @@ impl DeserializerConfig {
     ///
     /// See [`from_str`](crate::from_str).
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
-        deserialize_single(Deserializer::from_str_with_config(s, self), |_| {})
+        deserialize_value(|make_sink| self.drive_str(s, make_sink))
+    }
+
+    /// The part of [`from_str`](Self::from_str) that does not depend on the
+    /// type of the value, it exists once.
+    fn drive_str<'de>(
+        &self,
+        s: &'de str,
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
+        drive_single(Deserializer::from_str_with_config(s, self), make_sink)
     }
 
     /// Deserializes a value from YAML in a byte slice.
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
-        deserialize_single(Deserializer::from_slice_with_config(bytes, self), |_| {})
+        deserialize_value(|make_sink| self.drive_slice(bytes, make_sink))
+    }
+
+    /// The part of [`from_slice`](Self::from_slice) that does not depend on
+    /// the type of the value, it exists once.
+    fn drive_slice<'de>(
+        &self,
+        bytes: &'de [u8],
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
+        drive_single(Deserializer::from_slice_with_config(bytes, self), make_sink)
     }
 }
 
@@ -1094,7 +1115,7 @@ impl<'a> de::Deserializer<'a> for Deserializer<'a> {
 /// document at all, for instance an empty file) is deserialized as null.
 /// This uses the default [`DeserializerConfig`].
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    deserialize_single(Deserializer::from_str(s), |_| {})
+    DeserializerConfig::new().from_str(s)
 }
 
 /// Deserializes a value from YAML in a byte slice.
@@ -1102,26 +1123,27 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// The input must be UTF-8.  Otherwise this works like [`from_str`].  This
 /// uses the default [`DeserializerConfig`].
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    deserialize_single(Deserializer::from_slice(bytes), |_| {})
+    DeserializerConfig::new().from_slice(bytes)
 }
 
-/// Deserializes the only document (or null for an empty stream).
-pub(crate) fn deserialize_single<'de, T, F>(mut de: Deserializer<'de>, setup: F) -> Result<T, Error>
-where
-    T: Deserialize<'de>,
-    F: FnOnce(&mut DeserializeDriver<'_, 'de>),
-{
+/// Deserializes the single document of a stream into the sink of a value
+/// and checks that no other document follows.
+fn drive_single<'de>(
+    mut de: Deserializer<'de>,
+    make_sink: &mut MakeSink<'_, '_, 'de>,
+) -> Result<(), Error> {
     if de.is_end() {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            setup(&mut driver);
-            // an empty document is an empty plain scalar
-            driver.emit(Atom::Implicit(Implicit::new("", ImplicitValue::Null)))?;
-        }
-        return out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty document"));
+        return drive_value(&mut EmptyDocument, make_sink);
     }
-    let rv = de.deserialize_with(setup)?;
-    de.end()?;
-    Ok(rv)
+    drive_value(&mut de, make_sink)?;
+    de.end()
+}
+
+/// The deserializer of an empty document, which is an empty plain scalar.
+struct EmptyDocument;
+
+impl<'de> de::Deserializer<'de> for EmptyDocument {
+    fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+        driver.emit(Atom::Implicit(Implicit::new("", ImplicitValue::Null)))
+    }
 }

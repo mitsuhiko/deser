@@ -178,6 +178,31 @@ impl<'a> IndexedStructEmitter<'a> {
     }
 }
 
+/// Serializes a derived struct into a chunk (see
+/// [`Serialize::serialize`]).
+///
+/// This exists once for all structs, the derived code only calls it.
+#[cfg(feature = "derive")]
+#[inline(never)]
+pub fn serialize_indexed<'a>(
+    fields: &'a dyn IndexedStruct,
+    state: &mut State,
+) -> Result<Chunk<'a>, Error> {
+    Ok(Chunk::structure(IndexedStructEmitter::new(fields), state))
+}
+
+/// Describes a derived struct (see [`Serialize::describe`]).
+#[cfg(feature = "derive")]
+#[inline(never)]
+pub fn describe_struct(
+    d: &mut dyn crate::ser::Describe,
+    name: &str,
+    fields: &'static [&'static str],
+) {
+    d.structure(name);
+    d.fields(fields);
+}
+
 #[cfg(feature = "derive")]
 impl<'a> StructEmitter for IndexedStructEmitter<'a> {
     fn next(

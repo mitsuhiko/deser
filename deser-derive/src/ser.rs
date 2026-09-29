@@ -437,8 +437,7 @@ fn derive_indexed_struct(
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
                     const __FIELDS: &[&str] = &[#(#field_names),*];
-                    __d.structure(#type_name);
-                    __d.fields(__FIELDS);
+                    __deser::__derive::describe_struct(__d, #type_name, __FIELDS);
                 }
 
                 fn container_shape(&self) -> __deser::ContainerShape {
@@ -446,7 +445,7 @@ fn derive_indexed_struct(
                 }
 
                 fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::structure(__deser::__derive::IndexedStructEmitter::new(self), __state))
+                    __deser::__derive::serialize_indexed(self, __state)
                 }
 
                 #[inline]

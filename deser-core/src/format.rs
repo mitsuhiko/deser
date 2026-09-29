@@ -7,9 +7,14 @@
 //!   produces the same text, so the output does not depend on the feature.
 //! * [`extend`] and [`push_str`] append short bytes and strings without
 //!   calling into `memcpy`.
+//! * [`deserialize_value`] and [`drive_value`] implement functions like
+//!   `from_str` so that only creating the sink of the value exists once
+//!   per type.
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, LowerExp, Write};
+
+pub use crate::de::deserializer::{MakeSink, deserialize_value, drive_value};
 use core::str::FromStr;
 
 /// The floats that can be formatted (`f32` and `f64`).

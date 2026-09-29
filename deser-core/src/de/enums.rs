@@ -1367,7 +1367,9 @@ pub fn unit_enum_atom_into<T>(
 }
 
 /// Sets the target to the variant of a unit enum for an atom.
-#[inline]
+///
+/// This is not inlined so that it exists once for all unit enums.
+#[inline(never)]
 fn unit_enum_set(
     target: NonNull<()>,
     set: ErasedVariantSetter,

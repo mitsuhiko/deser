@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Frame, LexicalRules};
 use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
@@ -284,14 +285,37 @@ impl DeserializerConfig {
     ///
     /// See [`from_str`](crate::from_str).
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
-        Deserializer::from_str_with_config(s, self).deserialize()
+        deserialize_value(|make_sink| self.drive_str(s, make_sink))
+    }
+
+    /// The part of [`from_str`](Self::from_str) that does not depend on the type
+    /// of the value, it exists once.
+    fn drive_str<'de>(
+        &self,
+        s: &'de str,
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
+        drive_value(&mut Deserializer::from_str_with_config(s, self), make_sink)
     }
 
     /// Deserializes the records of a byte slice.
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
-        Deserializer::from_slice_with_config(bytes, self).deserialize()
+        deserialize_value(|make_sink| self.drive_slice(bytes, make_sink))
+    }
+
+    /// The part of [`from_slice`](Self::from_slice) that does not depend on the type
+    /// of the value, it exists once.
+    fn drive_slice<'de>(
+        &self,
+        bytes: &'de [u8],
+        make_sink: &mut MakeSink<'_, '_, 'de>,
+    ) -> Result<(), Error> {
+        drive_value(
+            &mut Deserializer::from_slice_with_config(bytes, self),
+            make_sink,
+        )
     }
 
     /// Returns how records are scanned.

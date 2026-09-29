@@ -28,7 +28,7 @@ is a library, in a binary only the code that is used would be compiled.
 |-----------|-------|-------|-----------------|
 | serde     | 0.34s | 0.42s | 7.85s           |
 | miniserde | 0.15s | 0.19s | 1.53s           |
-| deser     | 0.39s | 0.50s | 4.59s           |
+| deser     | 0.38s | 0.48s | 3.63s           |
 
 * Clean builds are 0.3s-0.4s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
@@ -36,37 +36,45 @@ is a library, in a binary only the code that is used would be compiled.
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
   miniserde's derive takes 0.15s), `deser` (which re-exports the
   derive macros) and the program.
-* Release builds of derived code are 1.7 times as fast as with serde
-  but 3.0 times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 286k lines of LLVM IR
+* Release builds of derived code are 2.2 times as fast as with serde
+  but 2.4 times slower than with miniserde (deser 0.8 from 2023 took
+  3.1s, with far fewer features).  deser generates 240k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
   The frontend (`check`) spends most of its time type and borrow checking
-  the derived code, the expanded library has 82k lines (serde 71k,
+  the derived code, the expanded library has 61k lines (serde 71k,
   miniserde 22k, formatted like `cargo expand`).
 * Multimaps (fields that are collections collect repeated keys) made
   the derived code larger: every field got a branch for collecting in
-  `field_sink`, `field_atom`, `field_borrowed_atom` and the updates, and
-  `finish` fills in the empty collections of missing keys.  That took
-  the IR from 200k to 254k lines, the expanded library from 43k to 76k
-  lines and release builds from 3.4s to 4.3s, `check` from 0.3s to
-  0.4s.  The branches are generated for fields of all types although
-  most types never collect (`__private_collects()` is `false`).
+  the sinks of the fields, atoms and the updates, and `finish` fills in
+  the empty collections of missing keys.  That took the IR from 200k to
+  254k lines, the expanded library from 43k to 76k lines and release
+  builds from 3.4s to 4.3s, `check` from 0.3s to 0.4s.  Since fields are
+  deserialized by their slots (see below) the branches exist once per
+  type of field and are removed for types that never collect.
 * Everything that does not depend on the types of the fields is in
   `deser-core`.  All structs without flattened fields share one sink
-  (`StructSink`) which holds the fields in the same block, the derive
-  only implements `StructFields` (the sinks of the fields by index, atoms
-  by index and `finish`).  This costs an indirect call per field, which
-  makes deserializing structs 2%-3% slower than with a sink per struct
-  (up to 6% for Twitter in MessagePack) but made the derived code a
-  quarter smaller and release builds 1.4 times as fast.  Plain fields are
-  emitted by a helper that exists once per type of field
-  (`emit_plain_field`), emitting them through trait objects instead makes
-  serializing structs 6% slower.
+  (`StructSink`) which holds the fields in the same block.  What depends
+  on the type of a field (its sink, atoms, borrowed atoms and if it
+  collects) is done by its `Slot<T, A>` which implements `FieldSlot` once
+  per type of field and adapter, not once per struct.  The derive only
+  implements `StructFields`: the slot of a field by index and `finish`.
+  The shared sink costs an indirect call per field, which makes
+  deserializing structs 2%-3% slower than with a sink per struct (up to
+  6% for Twitter in MessagePack) but made the derived code a quarter
+  smaller and release builds 1.4 times as fast.  The slots cost another
+  one: deserializing is as fast overall and 2%-4% slower for Twitter,
+  but the IR is 17% smaller (from 288k lines), the expanded library 25%
+  (from 82k lines), release builds 22% faster (from 4.6s) and the binary
+  with 100 types 16% smaller.  Plain fields are emitted by a helper that
+  exists once per type of field (`emit_plain_field`), emitting them
+  through trait objects instead makes serializing structs 6% slower.
 * Unit enums only generate the lookup of their names, two functions
   that set a variant by index and a function that returns the index of a
   variant, with constant tables of the names (`UnitEnum`,
   `UnitVariants`).  Everything else is in `deser-core`: 220 instead of
   520 lines of IR for three variants, 60 of them `emit_plain_field`.
+  Looking up the name of an atom (`unit_enum_set`) is not inlined, it
+  would otherwise exist for every unit enum.
   Helpers in `deser-core` that are `#[inline]` are inlined into the
   derived code before LLVM sees it (MIR inlining) if they are small, so
   those that are called from every type are not `#[inline]`.
@@ -83,9 +91,8 @@ is a library, in a binary only the code that is used would be compiled.
   per struct, `derive_struct` builds it before it knows whether it's
   needed.
 * **`finish`** of derived structs is the largest function of the
-  derived code (19% of the IR, about 70 lines per field).  Next are
-  `field_atom` (11%) and `field_sink` (8%), both of which grew with the
-  multimap branches.  Taking the values with helpers, checking the
+  derived code (25% of the IR, about 75 lines per field), it builds the
+  struct from the slots.  Taking the values with helpers, checking the
   required fields by reference first or computing the missing fields in
   a separate function all end up with about the same IR once the helpers
   are inlined.
@@ -93,7 +100,9 @@ is a library, in a binary only the code that is used would be compiled.
   serialize as an atom, `emit_plain_field` exists for them without ever
   emitting anything.  Matching their names takes about 15 lines per name.
 * **Updates** (`deserialize_update`) are implemented by every struct even
-  if they are not used, as `UpdateFields` (2.2% of the IR).
+  if they are not used, as `UpdateFields` (2.2% of the IR).  They could
+  use slots like the fields of `StructFields`, but they update the
+  fields of the struct in place (`&mut T`, not a `Slot`).
 * **Every type** costs something even if its derived code is small: its
   fields are boxed, dropped and have a vtable, and each field type is
   instantiated for the generic helpers of the derive.
@@ -113,12 +122,12 @@ parentheses is how much larger they are than hello world (in KiB).
 | hello world                 | 334 KiB          | 279 KiB         |
 | serde                       | 418 KiB (+84)    | 311 KiB (+32)   |
 | miniserde                   | 383 KiB (+49)    | 295 KiB (+16)   |
-| deser                       | 618 KiB (+284)   | 425 KiB (+145)  |
+| deser                       | 619 KiB (+285)   | 425 KiB (+145)  |
 | deser (speedups)            | 586 KiB (+252)   | 409 KiB (+129)  |
 | serde, 100 types            | 1226 KiB (+892)  | 860 KiB (+581)  |
 | miniserde, 100 types        | 644 KiB (+310)   | 491 KiB (+211)  |
-| deser, 100 types            | 1269 KiB (+935)  | 816 KiB (+536)  |
-| deser (speedups), 100 types | 1252 KiB (+918)  | 799 KiB (+520)  |
+| deser, 100 types            | 979 KiB (+645)   | 687 KiB (+408)  |
+| deser (speedups), 100 types | 963 KiB (+629)   | 655 KiB (+375)  |
 
 * The fixed cost of deser is high: the small program is 200 KiB larger
   than with serde (110 KiB optimized for size).  The derived code of
@@ -126,10 +135,14 @@ parentheses is how much larger they are than hello world (in KiB).
   drivers, the JSON reader and writer, errors, extension values like big
   integers and base64 bytes) and the parts of the standard library it
   uses.
-* A type costs less than with serde: 6.5 KiB per struct and enum
-  against 8.1 KiB with serde (3.9 KiB against 5.5 KiB optimized for
-  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is about as
-  large as serde, smaller when optimized for size.
+* A type costs less than with serde: 3.6 KiB per struct and enum
+  against 8.1 KiB with serde (2.6 KiB against 5.5 KiB optimized for
+  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 20%
+  smaller than serde.  It was 6.5 KiB (3.9 KiB): the fields are
+  deserialized by slots that exist once per type of field (see above),
+  functions like `from_str` only create the sink of the value for every
+  type (`deserialize_value`) and the helpers that serialize, describe
+  and look up unit enums are not inlined into every type.
 * The serialize driver is specialized for every writer it drives (the
   writers' event handlers are inlined into it for speed), every writer a
   program can reach costs a copy of it.  The formats keep the pausable

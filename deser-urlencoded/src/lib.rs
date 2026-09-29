@@ -221,7 +221,7 @@ pub enum Nesting {
 /// ```
 #[allow(clippy::should_implement_trait)]
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
-    Deserializer::from_str(s).deserialize()
+    DeserializerConfig::new().from_str(s)
 }
 
 /// Deserializes a value from a query string in a byte slice.
@@ -236,5 +236,5 @@ pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
 /// assert_eq!(value["a"], "\u{e4}");
 /// ```
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    Deserializer::from_slice(bytes).deserialize()
+    DeserializerConfig::new().from_slice(bytes)
 }

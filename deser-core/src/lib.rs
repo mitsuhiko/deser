@@ -94,8 +94,9 @@ pub mod __derive {
         untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{
-        Collect, FieldKeySink, NextField, StructFields, StructFinish, StructInfo, StructSink,
-        StructUpdateSink, UpdateFields, collected_errors, missing_field, new_missing_field_error,
+        Collect, FieldKeySink, FieldSlot, NextField, Slot, StructFields, StructFinish, StructInfo,
+        StructSink, StructUpdateSink, UpdateFields, collected_errors, missing_field,
+        new_missing_field_error, no_field_slot,
     };
     pub use crate::de::mapped::mapped;
     pub use crate::de::recording::RecordBuf;
@@ -104,7 +105,7 @@ pub mod __derive {
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
         Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,
-        PlainSink, StructField, emit_plain_field,
+        PlainSink, StructField, describe_struct, emit_plain_field, serialize_indexed,
     };
     pub use crate::ser::enums::{
         EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedContent, TaggedNewtype,

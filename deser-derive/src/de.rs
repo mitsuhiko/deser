@@ -1358,18 +1358,13 @@ impl CompactStruct<'_> {
         let has_container_default = container_attrs.default().is_some();
         let len = self.attrs.len();
         let mut index = Vec::with_capacity(len);
-        let mut types = Vec::with_capacity(len);
-        let mut field_sinks = Vec::with_capacity(len);
-        let mut field_atoms = Vec::with_capacity(len);
-        let mut borrowed_atoms = Vec::new();
-        let mut collects_arms = Vec::with_capacity(len);
+        let mut slot_types = Vec::with_capacity(len);
         let mut empty_fields = Vec::new();
         let mut empty_values = Vec::new();
         let mut patterns = Vec::with_capacity(len);
         let mut takes = Vec::with_capacity(len);
         let mut fail_bindings = Vec::with_capacity(len);
         let mut missing = Vec::with_capacity(len);
-        let mut nones = Vec::with_capacity(len);
         let mut fieldname = Vec::with_capacity(len);
         // the fields that take the value of the default of the container
         let mut default_binding = Vec::new();
@@ -1379,42 +1374,19 @@ impl CompactStruct<'_> {
             let ty = &x.field().ty;
             let adapter = x.adapters().de();
             let member = syn::Index::from(idx);
-            let slot = quote! { &mut self.values.#member };
-            let collect_into = field_collect_into(ty, adapter, slot.clone());
-            let sink = field_sink(ty, adapter, slot.clone());
-            field_sinks.push(quote! {
-                if __collect != __deser::__derive::Collect::No {
-                    #collect_into
-                } else {
-                    #sink
-                }
+            // what depends on the type of the field is done by its slot
+            // (`FieldSlot`), which exists once per type and adapter
+            slot_types.push(match adapter {
+                Some(adapter) => quote_spanned! { adapter.span()=>
+                    __deser::__derive::Slot<#ty, #adapter>
+                },
+                None => quote! { __deser::__derive::Slot<#ty> },
             });
-            let atom = atom_into(ty, adapter, slot.clone());
-            field_atoms.push(quote! {
-                if __collect != __deser::__derive::Collect::No {
-                    __deser::__derive::atom_into_handle(#collect_into, __atom, __state)
-                } else {
-                    #atom
-                }
-            });
-            if borrows {
-                let borrowed = borrowed_atom_into(ty, adapter, slot.clone());
-                borrowed_atoms.push(quote! {
-                    if __collect != __deser::__derive::Collect::No {
-                        __deser::__derive::borrowed_atom_into_handle(#collect_into, __atom, __state)
-                    } else {
-                        #borrowed
-                    }
-                });
-            }
-            collects_arms.push(field_collects(ty, adapter));
             if !has_container_default && x.default().is_none() && !x.required() {
                 empty_fields.push(member.clone());
                 empty_values.push(field_collect_empty(ty, adapter));
             }
             index.push(member);
-            types.push(ty);
-            nones.push(quote! { __deser::__derive::None });
             fieldname.push(&x.field().ident);
             if x.default().is_none() {
                 default_binding.push(binding);
@@ -1445,23 +1417,16 @@ impl CompactStruct<'_> {
             missing.push(quote! { false });
         }
         let defaults = self.defaults;
-        let borrowed_atom_fn = if !borrows {
-            None
-        } else {
-            Some(quote! {
-                fn field_borrowed_atom(
-                    &mut self,
-                    __index: usize,
-                    __collect: __deser::__derive::Collect,
-                    __atom: __deser::Atom<'de>,
-                    __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<()> {
-                    match __index {
-                        #(#index => #borrowed_atoms,)*
-                        _ => __deser::__derive::Ok(()),
-                    }
+        // the last field is the fallback so that the match needs no arm
+        // that panics (the index is always the one of a field)
+        let field_fn_body = match index.split_last() {
+            Some((last, rest)) => quote! {
+                match __index {
+                    #(#rest => &mut self.values.#rest,)*
+                    _ => &mut self.values.#last,
                 }
-            })
+            },
+            None => quote! { __deser::__derive::no_field_slot() },
         };
 
         // with a container default the fields without a default of their
@@ -1515,7 +1480,7 @@ impl CompactStruct<'_> {
 
                 struct __Fields #wrapper_impl_generics #where_clause {
                     slot: &'__a mut __deser::__derive::Option<#ident #ty_generics>,
-                    values: (#(__deser::__derive::Option<#types>,)*),
+                    values: (#(#slot_types,)*),
                     _marker: __deser::__derive::PhantomData<&'de ()>,
                 }
 
@@ -1525,7 +1490,7 @@ impl CompactStruct<'_> {
                         __deser::__derive::StructSink::handle(
                             __Fields {
                                 slot: __slot,
-                                values: (#(#defaults,)*),
+                                values: (#(__deser::__derive::Slot::new(#defaults),)*),
                                 _marker: __deser::__derive::PhantomData,
                             },
                             &__INFO, __state)
@@ -1538,39 +1503,9 @@ impl CompactStruct<'_> {
 
                 #[automatically_derived]
                 impl #wrapper_impl_generics __deser::__derive::StructFields<'de> for __Fields #wrapper_ty_generics #bounded_where_clause {
-                    fn collects(&self, __index: usize) -> bool {
-                        match __index {
-                            #(#index => #collects_arms,)*
-                            _ => false,
-                        }
+                    fn field(&mut self, __index: usize) -> &mut dyn __deser::__derive::FieldSlot<'de> {
+                        #field_fn_body
                     }
-
-                    fn field_sink(
-                        &mut self,
-                        __index: usize,
-                        __collect: __deser::__derive::Collect,
-                        __state: &mut __deser::State,
-                    ) -> __deser::de::SinkHandle<'_, 'de> {
-                        match __index {
-                            #(#index => #field_sinks,)*
-                            _ => __deser::de::SinkHandle::null(),
-                        }
-                    }
-
-                    fn field_atom(
-                        &mut self,
-                        __index: usize,
-                        __collect: __deser::__derive::Collect,
-                        __atom: __deser::Atom,
-                        __state: &mut __deser::State,
-                    ) -> __deser::__derive::Result<()> {
-                        match __index {
-                            #(#index => #field_atoms,)*
-                            _ => __deser::__derive::Ok(()),
-                        }
-                    }
-
-                    #borrowed_atom_fn
 
                     fn finish(
                         &mut self,
@@ -1580,11 +1515,11 @@ impl CompactStruct<'_> {
                         if __state.is_multimap() {
                             #(
                                 if self.values.#empty_fields.is_none() {
-                                    self.values.#empty_fields = #empty_values;
+                                    self.values.#empty_fields.set(#empty_values);
                                 }
                             )*
                         }
-                        match __deser::__derive::replace(&mut self.values, (#(#nones,)*)) {
+                        match (#(self.values.#index.take(),)*) {
                             (#(#patterns,)*) if __finish.ok() => {
                                 #container_default
                                 *self.slot = __deser::__derive::Some(#ident {
