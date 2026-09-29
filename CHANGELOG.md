@@ -2,13 +2,22 @@
 
 All notable changes to deser are documented here.
 
-## Unreleased
+## 0.9.1
 
 - `deser-json`, `deser-toml` and `deser-yaml` format floats with `zmij`
   by default (the new `zmij` feature, which `deser-jsonc`, `deser-json5`
   and `deser-hj` forward).  This is faster and makes binaries smaller,
   the output is the same.  The `speedups` feature implies `zmij` and
   only adds `simdutf8`.
+- Moved code that exists once per derived type into `deser-core`.
+  Fields of derived structs are deserialized through slots that exist
+  once per field type and the helpers for unit enums are no longer
+  inlined into every type.  A program with 100 derived types is 23%
+  smaller and release builds of derived code are 22% faster.
+- Kept unused driver instances and layers out of binaries.  Serializing
+  a value at once no longer links the pausable stream driver, constant
+  compact JSON configurations no longer link the pretty printer and
+  deserializer layers are only linked when layers are added.
 
 ## 0.9.0
 
