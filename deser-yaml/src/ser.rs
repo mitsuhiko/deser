@@ -436,6 +436,31 @@ impl SerializerConfig {
         Ok(())
     }
 
+    /// Serializes the value of a driver as a document of a stream at once
+    /// and appends it to the output.
+    ///
+    /// Unlike `document_part` this does not refer to the pausable instance
+    /// of the driver which is only needed by stream serializers.  `index` is
+    /// the number of documents written before.  If this fails, what was
+    /// appended by the call is removed from the output.
+    pub(crate) fn document_whole(
+        &self,
+        index: usize,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut String,
+    ) -> Result<(), Error> {
+        let len = out.len();
+        let mut emitter = self.emitter(index, std::mem::take(out));
+        let rv = driver
+            .drive(|event, state| emitter.event(event, state))
+            .and_then(|()| self.end_document(&mut emitter));
+        *out = emitter.out;
+        if rv.is_err() {
+            out.truncate(len);
+        }
+        rv
+    }
+
     /// Serializes (a part of) the value of a driver as a document of a
     /// stream and appends it to the output.
     ///
@@ -452,21 +477,12 @@ impl SerializerConfig {
         out: &mut String,
         limit: usize,
     ) -> Result<bool, Error> {
-        let len = out.len();
         // a document that is written at once is written into the output
         // directly without boxing the emitter
         if document.is_none() && limit == usize::MAX {
-            let mut emitter = self.emitter(index, std::mem::take(out));
-            let rv = driver
-                .drive(|event, state| emitter.event(event, state))
-                .and_then(|()| self.end_document(&mut emitter));
-            *out = emitter.out;
-            if let Err(err) = rv {
-                out.truncate(len);
-                return Err(err);
-            }
-            return Ok(true);
+            return self.document_whole(index, driver, out).map(|()| true);
         }
+        let len = out.len();
         // the emitter writes into an empty output directly, otherwise its
         // output is appended
         let adopt = out.is_empty();
@@ -531,7 +547,7 @@ impl SerializerConfig {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
         let mut out = String::new();
-        self.document_part(0, &mut None, &mut driver, &mut out, usize::MAX)?;
+        self.document_whole(0, &mut driver, &mut out)?;
         Ok(out)
     }
 }

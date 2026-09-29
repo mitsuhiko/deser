@@ -272,6 +272,9 @@ impl SerializerConfig {
     }
 
     /// Serializes the given value.
+    // inlined so that the pretty writer is not linked for constant compact
+    // configurations (see `serialize_driver`)
+    #[inline]
     pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
         self.to_string_with(value, |_| {})
     }
@@ -321,41 +324,77 @@ impl SerializerConfig {
     }
 
     /// Serializes the value of a driver.
+    ///
+    /// This is inlined: if the configuration is a constant (like the one
+    /// of `to_string`) only the writer that is used ends up in the binary.
+    #[inline]
     pub(crate) fn serialize_driver(
         &self,
         driver: &mut SerializeDriver<'_>,
     ) -> Result<String, Error> {
-        let mut writer = self.value_writer(Buffer::with_capacity(128));
-        writer.drive(driver, usize::MAX)?;
+        if self.is_compact() {
+            self.serialize_compact(driver)
+        } else {
+            self.serialize_pretty(driver)
+        }
+    }
+
+    /// Returns `true` if the output is written by `Writer`.
+    #[inline(always)]
+    fn is_compact(&self) -> bool {
+        self.indent == Indent::None && self.compact
+    }
+
+    /// Serializes the value of a driver without indentation.
+    #[inline(never)]
+    fn serialize_compact(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
+        let mut writer = self.compact_writer(Buffer::with_capacity(128));
+        driver.drive_sink(&mut writer)?;
+        Ok(writer.ser.out.into_string())
+    }
+
+    /// Serializes the value of a driver with the pretty writer.
+    #[inline(never)]
+    fn serialize_pretty(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
+        let mut writer = self.pretty_writer(Buffer::with_capacity(128));
+        driver.drive(|event, state| writer.event(event, state))?;
         Ok(writer.finish())
     }
 
-    /// Creates the writer for a value which writes into the buffer.
-    pub(crate) fn value_writer(&self, out: Buffer) -> ValueWriter {
+    /// Creates the writer for compact output.
+    fn compact_writer(&self, out: Buffer) -> Writer {
+        Writer {
+            ser: Output {
+                out,
+                bytes: self.bytes,
+            },
+            stack: Vec::new(),
+            container: Container::Top,
+            first: true,
+            is_key: false,
+            limit: usize::MAX,
+        }
+    }
+
+    /// Creates the writer for everything but compact output.
+    fn pretty_writer(&self, out: Buffer) -> PrettyWriter {
         let ser = Output {
             out,
             bytes: self.bytes,
         };
-        if self.indent == Indent::None && self.compact {
-            ValueWriter::Compact(Writer {
-                ser,
-                stack: Vec::new(),
-                container: Container::Top,
-                first: true,
-                is_key: false,
-                limit: usize::MAX,
-            })
+        let inline_width = match self.inline {
+            InlinePolicy::Never => None,
+            InlinePolicy::LeafIfFits(width) => Some(width),
+        };
+        PrettyWriter::new(ser, self.indent, self.compact, inline_width)
+    }
+
+    /// Creates the writer for a value which writes into the buffer.
+    pub(crate) fn value_writer(&self, out: Buffer) -> ValueWriter {
+        if self.is_compact() {
+            ValueWriter::Compact(self.compact_writer(out))
         } else {
-            let inline_width = match self.inline {
-                InlinePolicy::Never => None,
-                InlinePolicy::LeafIfFits(width) => Some(width),
-            };
-            ValueWriter::Pretty(PrettyWriter::new(
-                ser,
-                self.indent,
-                self.compact,
-                inline_width,
-            ))
+            ValueWriter::Pretty(self.pretty_writer(out))
         }
     }
 }
@@ -379,21 +418,29 @@ impl ValueWriter {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
+        if limit == usize::MAX {
+            return self.drive_whole(driver).map(|()| true);
+        }
         match self {
-            ValueWriter::Compact(writer) if limit == usize::MAX => {
-                driver.drive_sink(writer).map(|()| true)
-            }
             ValueWriter::Compact(writer) => {
                 writer.limit = limit;
                 driver.drive_until(writer)
             }
-            ValueWriter::Pretty(writer) if limit == usize::MAX => driver
-                .drive(|event, state| writer.event(event, state))
-                .map(|()| true),
             ValueWriter::Pretty(writer) => {
                 writer.limit = limit;
                 driver.drive_until(writer)
             }
+        }
+    }
+
+    /// Writes the events of the driver at once.
+    ///
+    /// Unlike `drive` this does not refer to the pausable instances of the
+    /// driver which are only needed by stream serializers.
+    pub(crate) fn drive_whole(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        match self {
+            ValueWriter::Compact(writer) => driver.drive_sink(writer),
+            ValueWriter::Pretty(writer) => driver.drive(|event, state| writer.event(event, state)),
         }
     }
 
@@ -411,14 +458,6 @@ impl ValueWriter {
         match self {
             ValueWriter::Compact(writer) => writer.ser.out.take(),
             ValueWriter::Pretty(writer) => writer.take_output(),
-        }
-    }
-
-    /// Returns the output.
-    pub(crate) fn finish(self) -> String {
-        match self {
-            ValueWriter::Compact(writer) => writer.ser.out.into_string(),
-            ValueWriter::Pretty(writer) => writer.finish(),
         }
     }
 }
@@ -691,7 +730,7 @@ impl Serializer {
         driver: &mut SerializeDriver<'_>,
         rollback: usize,
     ) -> Result<Written, Error> {
-        let rv = writer.drive(driver, usize::MAX);
+        let rv = writer.drive_whole(driver);
         self.out = writer.output().take();
         match rv {
             Ok(_) => {
@@ -1267,6 +1306,7 @@ impl<F: deser_core::__format::Float> Float for F {}
 /// Serializes a value to JSON.
 ///
 /// This uses the default [`SerializerConfig`].
+#[inline]
 pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
 }

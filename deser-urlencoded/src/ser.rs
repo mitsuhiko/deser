@@ -163,21 +163,12 @@ impl SerializerConfig {
         separate: &mut bool,
         limit: usize,
     ) -> Result<bool, Error> {
-        let len = out.len();
         // a value that is written at once is written into the output
         // directly without boxing the writer
         if value.is_none() && limit == usize::MAX {
-            let mut writer = self.value_writer(std::mem::take(out));
-            writer.separate = *separate;
-            let rv = driver.drive(|event, state| writer.event(event, state));
-            *out = writer.out;
-            if let Err(err) = rv {
-                out.truncate(len);
-                return Err(err);
-            }
-            *separate = writer.separate;
-            return Ok(true);
+            return self.serialize_whole(driver, out, separate).map(|()| true);
         }
+        let len = out.len();
         let mut writer = value.take().unwrap_or_else(|| {
             let mut writer = self.value_writer(String::new());
             writer.separate = *separate;
@@ -216,15 +207,38 @@ impl SerializerConfig {
         Ok(done)
     }
 
+    /// Serializes the value of a driver at once and appends it to the
+    /// output.
+    ///
+    /// Unlike `serialize_part` this does not refer to the pausable instance
+    /// of the driver which is only needed by stream serializers.  If this
+    /// fails, what was appended by the call is removed from the output.
+    fn serialize_whole(
+        &self,
+        driver: &mut SerializeDriver<'_>,
+        out: &mut String,
+        separate: &mut bool,
+    ) -> Result<(), Error> {
+        let len = out.len();
+        let mut writer = self.value_writer(std::mem::take(out));
+        writer.separate = *separate;
+        let rv = driver.drive(|event, state| writer.event(event, state));
+        *out = writer.out;
+        if let Err(err) = rv {
+            out.truncate(len);
+            return Err(err);
+        }
+        *separate = writer.separate;
+        Ok(())
+    }
+
     /// Serializes the value of a driver and appends it to the output.
     pub(crate) fn serialize_driver(
         &self,
         driver: &mut SerializeDriver<'_>,
         out: &mut String,
     ) -> Result<(), Error> {
-        let mut separate = false;
-        self.serialize_part(&mut None, driver, out, &mut separate, usize::MAX)
-            .map(|_| ())
+        self.serialize_whole(driver, out, &mut false)
     }
 }
 

@@ -52,9 +52,16 @@ use crate::event::{Atom, ContainerShape, Event};
 pub struct DeserializeDriver<'a, 'de: 'a> {
     core: DriverCore<'de>,
     layers: Vec<Box<dyn Layer>>,
+    // passes events through the layers, set by `push_layer`.  The code of
+    // the layers is only linked into programs that add layers.
+    emit_layered: Option<EmitLayered<'de>>,
     // the sinks borrow for 'a
     _marker: PhantomData<&'a mut ()>,
 }
+
+/// Passes an event through the layers (see `DeserializeDriver::emit_layered`).
+type EmitLayered<'de> =
+    fn(&mut Vec<Box<dyn Layer>>, &mut DriverCore<'de>, LayerEvent<'_, 'de>) -> Result<(), Error>;
 
 /// The state and the sinks of a driver.
 pub(crate) struct DriverCore<'de> {
@@ -325,6 +332,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
                 transient: 0,
             },
             layers: Vec::new(),
+            emit_layered: None,
             _marker: PhantomData,
         }
     }
@@ -350,6 +358,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// information.
     pub fn push_layer<L: Layer + 'static>(&mut self, layer: L) {
         self.layers.push(Box::new(layer));
+        self.emit_layered = Some(emit_layered);
     }
 
     /// Wraps the sink the driver deserializes into.
@@ -543,9 +552,22 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     #[cold]
     #[inline(never)]
     fn emit_layered(&mut self, event: LayerEvent<'_, 'de>) -> Result<(), Error> {
-        let rv = Next::new(&mut self.layers, &mut self.core).emit(event);
+        let emit = self.emit_layered.expect("layers without push_layer");
+        let rv = emit(&mut self.layers, &mut self.core, event);
         self.core.finish_event(rv)
     }
+}
+
+/// Passes an event through the layers.
+///
+/// This is only referred to by `push_layer`, programs that do not use
+/// layers do not contain it.
+fn emit_layered<'de>(
+    layers: &mut Vec<Box<dyn Layer>>,
+    core: &mut DriverCore<'de>,
+    event: LayerEvent<'_, 'de>,
+) -> Result<(), Error> {
+    Next::new(layers, core).emit(event)
 }
 
 impl<'de> DriverCore<'de> {

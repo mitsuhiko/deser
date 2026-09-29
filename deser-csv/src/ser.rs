@@ -259,13 +259,7 @@ impl SerializerConfig {
         let mut driver = SerializeDriver::new(value);
         setup(&mut driver);
         let mut out = Vec::new();
-        self.write(
-            &mut WriterState::default(),
-            &mut driver,
-            true,
-            &mut out,
-            usize::MAX,
-        )?;
+        self.write_whole(&mut WriterState::default(), &mut driver, true, &mut out)?;
         Ok(into_string(out))
     }
 
@@ -282,6 +276,40 @@ impl SerializerConfig {
         document: bool,
         out: &mut Vec<u8>,
         limit: usize,
+    ) -> Result<bool, Error> {
+        let drive: DriveFn = if limit == usize::MAX {
+            drive_whole
+        } else {
+            drive_partial
+        };
+        self.write_with(state, driver, document, out, limit, drive)
+    }
+
+    /// Serializes the records of a driver at once and appends them to the
+    /// output (see `write`).
+    ///
+    /// Unlike `write` this does not refer to the pausable instance of the
+    /// driver which is only needed by stream serializers.
+    pub(crate) fn write_whole(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        document: bool,
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.write_with(state, driver, document, out, usize::MAX, drive_whole)
+            .map(|_| ())
+    }
+
+    /// Implements `write` with the function that drives the driver.
+    fn write_with(
+        &self,
+        state: &mut WriterState,
+        driver: &mut SerializeDriver<'_>,
+        document: bool,
+        out: &mut Vec<u8>,
+        limit: usize,
+        drive: DriveFn,
     ) -> Result<bool, Error> {
         let dialect = match state.dialect {
             Some(ref dialect) => dialect,
@@ -314,13 +342,7 @@ impl SerializerConfig {
             out,
         };
         let had_names = writer.names.is_some();
-        let rv = if limit == usize::MAX {
-            driver
-                .drive(|event, state| writer.event(event, state))
-                .map(|()| true)
-        } else {
-            driver.drive_until(&mut writer)
-        };
+        let rv = drive(driver, &mut writer);
         // the state only changes if the value was written (or a part of it,
         // which cannot be taken back)
         if rv.is_ok() || had_names {
@@ -337,6 +359,27 @@ impl SerializerConfig {
         };
         rv
     }
+}
+
+/// Drives a driver into a record writer (see `SerializerConfig::write_with`).
+type DriveFn = fn(&mut SerializeDriver<'_>, &mut RecordWriter<'_>) -> Result<bool, Error>;
+
+/// Writes the records of a driver at once.
+fn drive_whole(
+    driver: &mut SerializeDriver<'_>,
+    writer: &mut RecordWriter<'_>,
+) -> Result<bool, Error> {
+    driver
+        .drive(|event, state| writer.event(event, state))
+        .map(|()| true)
+}
+
+/// Writes the records of a driver until the writer pauses it.
+fn drive_partial(
+    driver: &mut SerializeDriver<'_>,
+    writer: &mut RecordWriter<'_>,
+) -> Result<bool, Error> {
+    driver.drive_until(writer)
 }
 
 /// Buffers that are reused for the records of a stream.
@@ -537,14 +580,11 @@ impl ser::Serializer for Serializer {
             return Err(Error::in_progress());
         }
         let len = self.out.len();
-        match self.config.write(
-            &mut self.state,
-            driver,
-            self.document,
-            &mut self.out,
-            usize::MAX,
-        ) {
-            Ok(_) => Ok(()),
+        match self
+            .config
+            .write_whole(&mut self.state, driver, self.document, &mut self.out)
+        {
+            Ok(()) => Ok(()),
             Err(err) => {
                 self.out.truncate(len);
                 Err(err)

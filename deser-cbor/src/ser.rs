@@ -185,17 +185,25 @@ impl Writer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
-        let done = if limit == usize::MAX {
-            driver.drive_sink(self)?;
-            true
-        } else {
-            self.limit = limit;
-            driver.drive_until(self)?
-        };
+        if limit == usize::MAX {
+            return self.drive_whole(driver).map(|()| true);
+        }
+        self.limit = limit;
+        let done = driver.drive_until(self)?;
         if done {
             self.finish();
         }
         Ok(done)
+    }
+
+    /// Writes the events of the driver at once.
+    ///
+    /// Unlike `drive` this does not refer to the pausable instance of the
+    /// driver which is only needed by stream serializers.
+    pub(crate) fn drive_whole(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        driver.drive_sink(self)?;
+        self.finish();
+        Ok(())
     }
 
     #[inline(always)]
@@ -744,7 +752,7 @@ impl SerializerConfig {
         driver: &mut SerializeDriver<'_>,
     ) -> Result<Vec<u8>, Error> {
         let mut writer = Writer::new(self.canonical, Vec::with_capacity(128));
-        writer.drive(driver, usize::MAX)?;
+        writer.drive_whole(driver)?;
         Ok(writer.out)
     }
 }
