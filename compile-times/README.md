@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.67s | 2.69s | 3.02s           |
-| miniserde | 1.91s | 2.05s | 2.12s           |
-| deser     | 2.22s | 2.36s | 2.56s           |
+| serde     | 2.70s | 2.65s | 3.10s           |
+| miniserde | 1.96s | 2.09s | 2.17s           |
+| deser     | 2.27s | 2.38s | 2.63s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -26,18 +26,18 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.34s | 0.42s | 7.85s           |
-| miniserde | 0.15s | 0.19s | 1.53s           |
-| deser     | 0.38s | 0.48s | 3.63s           |
+| serde     | 0.34s | 0.42s | 7.96s           |
+| miniserde | 0.15s | 0.20s | 1.54s           |
+| deser     | 0.37s | 0.47s | 3.46s           |
 
-* Clean builds are 0.3s-0.4s slower than with miniserde.  The crates of the
+* Clean builds are 0.3s-0.5s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
   miniserde's derive takes 0.15s), `deser` (which re-exports the
   derive macros) and the program.
-* Release builds of derived code are 2.2 times as fast as with serde
-  but 2.4 times slower than with miniserde (deser 0.8 from 2023 took
+* Release builds of derived code are 2.3 times as fast as with serde
+  but 2.2 times slower than with miniserde (deser 0.8 from 2023 took
   3.1s, with far fewer features).  deser generates 240k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
   The frontend (`check`) spends most of its time type and borrow checking
@@ -64,7 +64,7 @@ is a library, in a binary only the code that is used would be compiled.
   smaller and release builds 1.4 times as fast.  The slots cost another
   one: deserializing is as fast overall and 2%-4% slower for Twitter,
   but the IR is 17% smaller (from 288k lines), the expanded library 25%
-  (from 82k lines), release builds 22% faster (from 4.6s) and the binary
+  (from 82k lines), release builds 25% faster (from 4.6s) and the binary
   with 100 types 16% smaller.  Plain fields are emitted by a helper that
   exists once per type of field (`emit_plain_field`), emitting them
   through trait objects instead makes serializing structs 6% slower.

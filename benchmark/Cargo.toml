@@ -31,10 +31,16 @@ toml = "1.1.6"
 miniserde = "0.1.21"
 rmp-serde = "1.3.0"
 
+# One codegen unit: this crate holds the derived code of both libraries,
+# with more units a change to the derived code of one can move the code of
+# the other into other units which changes what is inlined (serde_json
+# serialized up to 25% slower after the derived code of deser changed).
 [profile.bench]
 debug = true
 split-debuginfo = "packed"
+codegen-units = 1
 
 [profile.release]
 debug = true
 split-debuginfo = "packed"
+codegen-units = 1
