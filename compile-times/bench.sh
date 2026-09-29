@@ -1,5 +1,6 @@
 #!/bin/sh
-# Compares the compile times of serde, miniserde and deser.
+# Compares the compile times and binary sizes of serde, miniserde and
+# deser.
 #
 # 1. Clean builds of a small program (`LIB-version`), including all
 #    dependencies.  The best of three runs is reported.  deser is used
@@ -9,10 +10,21 @@
 #    `target/many`), without the dependencies.  This is the cost of the
 #    derived code.  It's a library as in a binary only the code that is
 #    used is compiled.  The best of three runs is reported.
+# 3. The sizes of the stripped binaries of the small program and of a
+#    program that reads and writes the 100 structs of the library, built
+#    with the default release profile and one optimized for size (see
+#    `SMALL`).  The binaries are generated into `target/size`.
+#
+# `./bench.sh compile` only measures the compile times, `./bench.sh sizes`
+# only the binary sizes.
 set -e
 cd "$(dirname "$0")"
 
 LIBS="serde miniserde deser"
+WHAT=${1:-all}
+
+# the profile optimized for size (on top of the release profile)
+SMALL="CARGO_PROFILE_RELEASE_LTO=fat CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_OPT_LEVEL=s CARGO_PROFILE_RELEASE_PANIC=abort"
 
 # Prints the best of three runs of a command in a directory.  `prepare`
 # runs before every run, `incremental` is the value of `CARGO_INCREMENTAL`
@@ -39,15 +51,28 @@ clean_builds() {
   done
 }
 
-# Generates a library with 100 structs and enums for a library.
-generate_many() {
-  lib=$1
-  dir=target/many/$lib
+# Copies the manifest of `LIB-version` into a directory two levels below
+# `target` with a new name.
+copy_manifest() {
+  lib=$1; dir=$2; name=$3
   mkdir -p $dir/src
-  sed -e "s/^name = .*/name = \"many-$lib\"/" \
+  sed -e "s/^name = .*/name = \"$name\"/" \
     -e 's|path = "\.\./\.\./|path = "../../../../|' \
     $lib-version/Cargo.toml > $dir/Cargo.toml
   cp $lib-version/Cargo.lock $dir/Cargo.lock
+}
+
+# Generates a crate with 100 structs and enums for a library.  With `bin`
+# as the second argument it's a program, otherwise a library in
+# `target/many`.
+generate_many() {
+  lib=$1
+  if [ "$2" = bin ]; then
+    dir=target/size/many-$lib; file=main.rs
+  else
+    dir=target/many/$lib; file=lib.rs
+  fi
+  copy_manifest $lib $dir many-$lib
   case $lib in
     serde)
       attr='#[serde(rename_all = "camelCase")]'
@@ -86,7 +111,10 @@ generate_many() {
       i=$((i + 1))
     done
     echo "}"
-  } > $dir/src/lib.rs
+    if [ $file = main.rs ]; then
+      echo "fn main() { run(); }"
+    fi
+  } > $dir/src/$file
 }
 
 # Prints the best of three builds of the generated program (without the
@@ -101,14 +129,79 @@ many_builds() {
   done
 }
 
-echo "clean builds (best of three)"
-for lib in $LIBS; do
-  clean_builds $lib
-done
+# Prints the size of the stripped binary of a crate in bytes, built with
+# a profile (`release` or `small`).
+binary_size() {
+  dir=$1; profile=$2
+  name=$(awk -F '"' '/^name = / { print $2; exit }' $dir/Cargo.toml)
+  env CARGO_PROFILE_RELEASE_STRIP=symbols $([ $profile = small ] && echo $SMALL) \
+    cargo build -q --release --manifest-path $dir/Cargo.toml --target-dir $dir/target/$profile
+  wc -c < $dir/target/$profile/release/$name | tr -d ' '
+}
 
-echo
-echo "library with 100 structs and enums, without dependencies (best of three)"
-for lib in $LIBS; do
-  generate_many $lib
-  many_builds $lib
-done
+# Prints the sizes of a binary in KiB with both profiles, and how much
+# larger they are than hello world.
+size_row() {
+  label=$1; dir=$2
+  release=$(binary_size $dir release)
+  small=$(binary_size $dir small)
+  printf "  %-28s %6d KiB (+%4d)  %6d KiB (+%4d)\n" "$label" \
+    $((release / 1024)) $(((release - hello_release) / 1024)) \
+    $((small / 1024)) $(((small - hello_small) / 1024))
+}
+
+# Enables the speedups of deser-json in a copy of a deser crate.
+with_speedups() {
+  rm -rf $2
+  mkdir -p $2
+  cp -R $1/Cargo.toml $1/Cargo.lock $1/src $2/
+  sed -i.bak -e "s/^name = \"\(.*\)\"/name = \"\1-speedups\"/" \
+    -e 's|^\(deser-json = { path = "[^"]*"\) }|\1, features = ["speedups"] }|' $2/Cargo.toml
+  rm $2/Cargo.toml.bak
+}
+
+binary_sizes() {
+  mkdir -p target/size/hello/src
+  printf '[package]\nname = "hello"\nversion = "0.1.0"\nedition = "2024"\n\n[workspace]\n' \
+    > target/size/hello/Cargo.toml
+  echo 'fn main() { println!("Hello, world!"); }' > target/size/hello/src/main.rs
+  hello_release=$(binary_size target/size/hello release)
+  hello_small=$(binary_size target/size/hello small)
+
+  echo "binary sizes, stripped (in parentheses: KiB more than hello world)"
+  printf "  %-28s %-19s %s\n" "" "   release" "   size optimized"
+  printf "  %-28s %6d KiB          %6d KiB\n" "hello world" \
+    $((hello_release / 1024)) $((hello_small / 1024))
+  for lib in $LIBS; do
+    copy_manifest $lib target/size/one-$lib one-$lib
+    cp $lib-version/src/main.rs target/size/one-$lib/src/main.rs
+    size_row "$lib" target/size/one-$lib
+  done
+  with_speedups target/size/one-deser target/size/one-deser-speedups
+  size_row "deser (speedups)" target/size/one-deser-speedups
+  for lib in $LIBS; do
+    generate_many $lib bin
+    size_row "$lib, 100 types" target/size/many-$lib
+  done
+  with_speedups target/size/many-deser target/size/many-deser-speedups
+  size_row "deser (speedups), 100 types" target/size/many-deser-speedups
+}
+
+if [ "$WHAT" != sizes ]; then
+  echo "clean builds (best of three)"
+  for lib in $LIBS; do
+    clean_builds $lib
+  done
+
+  echo
+  echo "library with 100 structs and enums, without dependencies (best of three)"
+  for lib in $LIBS; do
+    generate_many $lib
+    many_builds $lib
+  done
+fi
+
+if [ "$WHAT" != compile ]; then
+  [ "$WHAT" = sizes ] || echo
+  binary_sizes
+fi

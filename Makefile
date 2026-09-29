@@ -141,4 +141,7 @@ bench-versus:
 bench-compile-times:
 	@$(RUN) "bench-compile-times" --show-on-output "cd compile-times && ./bench.sh"
 
-.PHONY: all test miri-test miri-slowest miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times
+bench-binary-sizes:
+	@$(RUN) "bench-binary-sizes" --show-on-output "cd compile-times && ./bench.sh sizes"
+
+.PHONY: all test miri-test miri-slowest miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times bench-binary-sizes

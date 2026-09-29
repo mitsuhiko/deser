@@ -1,9 +1,9 @@
-# Compile Times
+# Compile Times and Binary Sizes
 
-This folder compares the compile times of serde, miniserde and deser with
-JSON and derived `Serialize` and `Deserialize`.  The results are from
-`make bench-compile-times` on an Apple M5 Max with Rust 1.98, the best of
-three runs.
+This folder compares the compile times and binary sizes of serde,
+miniserde and deser with JSON and derived `Serialize` and `Deserialize`.
+The results are from `make bench-compile-times` on an Apple M5 Max with
+Rust 1.98, compile times are the best of three runs.
 
 ## Where deser Stands
 
@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.63s | 2.80s | 2.83s           |
-| miniserde | 1.94s | 2.05s | 2.19s           |
-| deser     | 2.27s | 2.41s | 2.63s           |
+| serde     | 2.67s | 2.69s | 3.02s           |
+| miniserde | 1.91s | 2.05s | 2.12s           |
+| deser     | 2.22s | 2.36s | 2.56s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -26,9 +26,9 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.34s | 0.42s | 8.04s           |
-| miniserde | 0.16s | 0.20s | 1.55s           |
-| deser     | 0.39s | 0.50s | 4.56s           |
+| serde     | 0.34s | 0.42s | 7.85s           |
+| miniserde | 0.15s | 0.19s | 1.53s           |
+| deser     | 0.39s | 0.50s | 4.59s           |
 
 * Clean builds are 0.3s-0.4s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
@@ -36,8 +36,8 @@ is a library, in a binary only the code that is used would be compiled.
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
   miniserde's derive takes 0.15s), `deser` (which re-exports the
   derive macros) and the program.
-* Release builds of derived code are 1.8 times as fast as with serde
-  but 2.9 times slower than with miniserde (deser 0.8 from 2023 took
+* Release builds of derived code are 1.7 times as fast as with serde
+  but 3.0 times slower than with miniserde (deser 0.8 from 2023 took
   3.1s, with far fewer features).  deser generates 286k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
   The frontend (`check`) spends most of its time type and borrow checking
@@ -98,8 +98,63 @@ is a library, in a binary only the code that is used would be compiled.
   fields are boxed, dropped and have a vtable, and each field type is
   instantiated for the generic helpers of the derive.
 
+## Binary Sizes
+
+The stripped binaries of the small program and of a program with the
+100 structs and enums of the library above, each of which is read and
+written as JSON (the library with a `main`).  They are built with the
+default release profile and a profile optimized for size (`lto = "fat"`,
+`codegen-units = 1`, `opt-level = "s"`, `panic = "abort"`).  In
+parentheses is how much larger they are than hello world (in KiB).
+`deser (speedups)` enables the `speedups` feature of `deser-json`.
+
+| program                     | release          | size optimized  |
+|-----------------------------|------------------|-----------------|
+| hello world                 | 334 KiB          | 279 KiB         |
+| serde                       | 418 KiB (+84)    | 311 KiB (+32)   |
+| miniserde                   | 383 KiB (+49)    | 295 KiB (+16)   |
+| deser                       | 618 KiB (+284)   | 425 KiB (+145)  |
+| deser (speedups)            | 586 KiB (+252)   | 409 KiB (+129)  |
+| serde, 100 types            | 1226 KiB (+892)  | 860 KiB (+581)  |
+| miniserde, 100 types        | 644 KiB (+310)   | 491 KiB (+211)  |
+| deser, 100 types            | 1269 KiB (+935)  | 816 KiB (+536)  |
+| deser (speedups), 100 types | 1252 KiB (+918)  | 799 KiB (+520)  |
+
+* The fixed cost of deser is high: the small program is 200 KiB larger
+  than with serde (110 KiB optimized for size).  The derived code of
+  the small program is only 3.5 KiB, the rest is the runtime (the
+  drivers, the JSON reader and writer, errors, extension values like big
+  integers and base64 bytes) and the parts of the standard library it
+  uses.
+* A type costs less than with serde: 6.5 KiB per struct and enum
+  against 8.1 KiB with serde (3.9 KiB against 5.5 KiB optimized for
+  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is about as
+  large as serde, smaller when optimized for size.
+* The serialize driver is specialized for every writer it drives (the
+  writers' event handlers are inlined into it for speed), every writer a
+  program can reach costs a copy of it.  The formats keep the pausable
+  drivers of the stream serializers out of `to_string` and `to_vec`
+  (`drive_whole` and friends): that was 49 KiB in the small program,
+  another 16 KiB was the pretty printer of JSON that constant compact
+  configurations do not refer to anymore.  Layers of the deserializer
+  are only linked into programs that add layers (16 KiB).
+* **Floats** without `speedups` are formatted with the standard
+  library's `{:e}` and parsed again to pick the even digits of ties
+  (`format_finite`).  This links the float formatting and parsing of
+  the standard library, with `zmij` the program is 32 KiB smaller
+  (16 KiB optimized for size).
+* **Profiles** matter more than with serde: on their own
+  `codegen-units = 1` and `panic = "abort"` each make the small program
+  64 KiB smaller, serde does not change.  Functions that are `#[inline]`
+  (and drop glue) are copied into every codegen unit that uses them
+  (`Error` is dropped by ten copies of its drop glue) and the drivers
+  hold values that have to be dropped when unwinding.
+
 ## Running
 
 `make bench-compile-times` runs `bench.sh` which prints the results of all
-three libraries.  The generated libraries remain in `target/many` to
-inspect them, for instance with `cargo llvm-lines --release --lib`.
+three libraries, `make bench-binary-sizes` only measures the binary sizes
+(`./bench.sh compile` only the compile times).  The generated libraries
+remain in `target/many` to inspect them, for instance with
+`cargo llvm-lines --release --lib`, the programs of the binary sizes in
+`target/size` (for instance for `cargo bloat`).
