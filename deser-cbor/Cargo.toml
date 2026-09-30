@@ -29,6 +29,7 @@ simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 [dev-dependencies]
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
+deser-json = { path = "../deser-json" }
 
 [[test]]
 name = "integration"

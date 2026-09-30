@@ -58,6 +58,36 @@
 //! [`Uuid`]: deser_core::ext::Uuid
 //! [`Decimal`]: deser_core::ext::Decimal
 //!
+//! # Raw Values
+//!
+//! [`RawCbor`] holds the CBOR encoding of a value.  The encoding of values
+//! that are deserialized from CBOR is kept as it is (including tags and
+//! how lengths and integers were encoded): it's validated but not
+//! deserialized, and written out again unchanged unless canonical output is
+//! requested.  Values of other formats are encoded as CBOR.
+//!
+//! ```rust
+//! use deser_cbor::RawCbor;
+//!
+//! #[derive(deser::Deserialize, deser::Serialize)]
+//! struct Record {
+//!     id: u32,
+//!     payload: RawCbor<'static>,
+//! }
+//!
+//! // {"id": 1, "payload": [_ 1, 2]}
+//! let input = [
+//!     0xa2, 0x62, b'i', b'd', 0x01, 0x67, b'p', b'a', b'y', b'l', b'o',
+//!     b'a', b'd', 0x9f, 0x01, 0x02, 0xff,
+//! ];
+//! let record: Record = deser_cbor::from_slice(&input).unwrap();
+//! assert_eq!(record.payload.as_bytes(), [0x9f, 0x01, 0x02, 0xff]);
+//! assert_eq!(record.payload.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
+//! assert_eq!(deser_cbor::to_vec(&record).unwrap(), input);
+//! ```
+//!
+//! See [`Raw`](deser_core::ext::Raw) for more information.
+//!
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams of the
@@ -113,12 +143,14 @@ extern crate alloc;
 mod de;
 mod float;
 mod parser;
+mod raw;
 mod ser;
 mod simple;
 mod stream;
 pub mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
+pub use self::raw::{Cbor, RawCbor};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_vec};
