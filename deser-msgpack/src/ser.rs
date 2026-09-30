@@ -5,7 +5,7 @@ use core::mem::ManuallyDrop;
 
 use deser_core::__format::extend;
 use deser_core::State;
-use deser_core::ext::{BigInt, ExtValue, Timestamp};
+use deser_core::ext::{BigInt, ExtValue, RawInput, Timestamp};
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
@@ -165,6 +165,16 @@ impl Writer {
         }
     }
 
+    /// Declares that raw MessagePack values are written as they are.
+    ///
+    /// Canonical output encodes them again, their encoding might not be
+    /// canonical.
+    fn accept_raw(&self, driver: &mut SerializeDriver<'_>) {
+        if !self.canonical {
+            driver.state_mut().__private_accept_raw(&crate::raw::FORMAT);
+        }
+    }
+
     /// Writes the events of the driver.
     ///
     /// Returns `false` if the driver was paused as the output holds at
@@ -175,6 +185,7 @@ impl Writer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
+        self.accept_raw(driver);
         if limit == usize::MAX {
             return self.drive_whole(driver).map(|()| true);
         }
@@ -191,6 +202,7 @@ impl Writer {
     /// Unlike `drive` this does not refer to the pausable instance of the
     /// driver which is only needed by stream serializers.
     pub(crate) fn drive_whole(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        self.accept_raw(driver);
         driver.drive_sink(self)?;
         self.finish();
         Ok(())
@@ -522,7 +534,14 @@ impl Writer {
 
     #[cold]
     fn write_ext(&mut self, ext: &ExtValue) -> Result<(), Error> {
-        if let Some(val) = ext.downcast_ref::<Ext>() {
+        // raw MessagePack is written as it is, the serialization only
+        // passes it on if it is (see `accept_raw`)
+        if let Some(raw) = ext.downcast_value_ref::<RawInput>()
+            && core::ptr::eq(raw.format(), &crate::raw::FORMAT)
+        {
+            extend(&mut self.out, raw.as_bytes());
+            Ok(())
+        } else if let Some(val) = ext.downcast_ref::<Ext>() {
             self.write_ext_data(val.kind, &val.data)
         } else if let Some(val) = ext.downcast_ref::<Timestamp>() {
             let mut buf = [0; 12];

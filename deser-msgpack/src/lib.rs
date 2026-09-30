@@ -42,6 +42,36 @@
 //!
 //! [`Timestamp`]: deser_core::ext::Timestamp
 //!
+//! # Raw Values
+//!
+//! [`RawMsgpack`] holds the MessagePack encoding of a value.  The encoding
+//! of values that are deserialized from MessagePack is kept as it is: it's
+//! validated but not deserialized, and written out again unchanged unless
+//! canonical output is requested.  Values of other formats are encoded as
+//! MessagePack.
+//!
+//! ```rust
+//! use deser_msgpack::RawMsgpack;
+//!
+//! #[derive(deser::Deserialize, deser::Serialize)]
+//! struct Record {
+//!     id: u32,
+//!     payload: RawMsgpack<'static>,
+//! }
+//!
+//! // {"id": 1, "payload": [1, 2]} with 1 encoded as uint 8
+//! let input = [
+//!     0x82, 0xa2, b'i', b'd', 0x01, 0xa7, b'p', b'a', b'y', b'l', b'o',
+//!     b'a', b'd', 0x92, 0xcc, 0x01, 0x02,
+//! ];
+//! let record: Record = deser_msgpack::from_slice(&input).unwrap();
+//! assert_eq!(record.payload.as_bytes(), [0x92, 0xcc, 0x01, 0x02]);
+//! assert_eq!(record.payload.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
+//! assert_eq!(deser_msgpack::to_vec(&record).unwrap(), input);
+//! ```
+//!
+//! See [`Raw`](deser_core::ext::Raw) for more information.
+//!
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams of the
@@ -90,11 +120,13 @@ mod de;
 mod ext;
 mod head;
 mod parser;
+mod raw;
 mod ser;
 mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
 pub use self::ext::Ext;
+pub use self::raw::{Msgpack, RawMsgpack};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_vec};

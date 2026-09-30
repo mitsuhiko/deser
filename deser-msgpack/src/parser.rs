@@ -11,7 +11,7 @@ use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
-use deser_core::ext::ExtValue;
+use deser_core::ext::{ExtValue, RawInput};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
 
 use crate::ext::{Ext, TIMESTAMP, decode_timestamp};
@@ -36,6 +36,26 @@ pub(crate) trait Out<'i> {
     fn state_mut(&mut self) -> &mut State;
     fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error>;
     fn emit_input(&mut self, event: Event<'i>) -> Result<(), Error>;
+}
+
+/// Passes events on to another output (see `Parser::parse_items`).
+pub(crate) struct Reborrow<'a, O>(&'a mut O);
+
+impl<'i, O: Out<'i>> Out<'i> for Reborrow<'_, O> {
+    #[inline(always)]
+    fn state_mut(&mut self) -> &mut State {
+        self.0.state_mut()
+    }
+
+    #[inline(always)]
+    fn emit<'e, E: Into<Event<'e>>>(&mut self, event: E) -> Result<(), Error> {
+        self.0.emit(event)
+    }
+
+    #[inline(always)]
+    fn emit_input(&mut self, event: Event<'i>) -> Result<(), Error> {
+        self.0.emit_input(event)
+    }
 }
 
 /// Passes events of the input on borrowed.
@@ -123,6 +143,9 @@ pub(crate) struct Parser {
     recoverable: Option<usize>,
     // where the last call stopped
     position: usize,
+    // the next item (or the items of the current array) is requested as
+    // raw value (see `Parser::raw_values`)
+    raw: bool,
 }
 
 impl Parser {
@@ -134,6 +157,7 @@ impl Parser {
         self.frame = None;
         self.complete = false;
         self.recoverable = None;
+        self.raw = false;
     }
 
     /// Returns where the last call stopped (also after an error).
@@ -157,6 +181,12 @@ impl Parser {
     /// input in the stream: the input ranges of the events and the offsets
     /// of errors refer to the stream.  After an error the parser has to be
     /// [reset](Self::reset).
+    ///
+    /// Items requested as raw values (see `raw_values`) are handled here,
+    /// around `parse_items` which parses the other items.  This keeps them
+    /// out of its code: sinks request raw values with the result of the
+    /// event before the item (see `State::__private_request_raw`), which
+    /// `run` handles like the error of a sink.
     #[inline(always)]
     pub(crate) fn parse<'i, O: Out<'i>>(
         &mut self,
@@ -166,6 +196,38 @@ impl Parser {
         base: usize,
         out: &mut O,
     ) -> Result<Progress, Error> {
+        let mut pos = match self.prepare_raw(input, pos, base, eof, out) {
+            Ok(pos) => pos,
+            Err(rv) => return rv,
+        };
+        loop {
+            match self.parse_items(input, pos, eof, base, Reborrow(out)) {
+                Err(err) if err.__private_is_raw_request() => {
+                    match self.raw_requested(input, base, eof, out) {
+                        Ok(next) => pos = next,
+                        Err(rv) => return rv,
+                    }
+                }
+                rv => return rv,
+            }
+        }
+    }
+
+    /// Parses the items that are not requested as raw values (see
+    /// `parse`).
+    ///
+    /// This is not inlined so that the code for raw values does not affect
+    /// it.  The output is passed by value, so that it's kept in registers.
+    #[inline(never)]
+    fn parse_items<'i, O: Out<'i>>(
+        &mut self,
+        input: &'i [u8],
+        pos: usize,
+        eof: bool,
+        base: usize,
+        mut out: O,
+    ) -> Result<Progress, Error> {
+        let out = &mut out;
         self.recoverable = None;
         let mut cur = Cursor {
             input,
@@ -290,6 +352,139 @@ impl Parser {
     }
 }
 
+/// Where parsing continues (the position and the frame), or the result of
+/// `Parser::parse`.
+type Continue = Result<(usize, Option<Frame>), Result<Progress, Error>>;
+
+impl Parser {
+    /// Declares the raw values that are passed on and parses the items
+    /// that are requested as raw values before the other items.
+    ///
+    /// This is the top-level item or an item that was incomplete.  Returns
+    /// where parsing continues.
+    #[inline(never)]
+    fn prepare_raw<'i, O: Out<'i>>(
+        &mut self,
+        input: &'i [u8],
+        pos: usize,
+        base: usize,
+        eof: bool,
+        out: &mut O,
+    ) -> Result<usize, Result<Progress, Error>> {
+        let state = out.state_mut();
+        state.__private_capture_raw(&crate::raw::FORMAT);
+        if self.frame.is_none()
+            && !self.complete
+            && state.__private_take_raw_request(&crate::raw::FORMAT)
+        {
+            self.raw = true;
+        }
+        if !self.raw {
+            return Ok(pos);
+        }
+        self.raw = false;
+        let (pos, frame) = self.raw_values(input, pos, base, eof, self.frame, out)?;
+        self.frame = frame;
+        Ok(pos)
+    }
+
+    /// Parses the items requested as raw values after the event that
+    /// requested them (see `parse`).
+    ///
+    /// `run` stored the state as if a sink failed.  Returns where parsing
+    /// continues.
+    #[cold]
+    #[inline(never)]
+    fn raw_requested<'i, O: Out<'i>>(
+        &mut self,
+        input: &'i [u8],
+        base: usize,
+        eof: bool,
+        out: &mut O,
+    ) -> Result<usize, Result<Progress, Error>> {
+        self.complete = false;
+        self.recoverable = None;
+        let (pos, frame) = self.raw_values(input, self.position, base, eof, self.frame, out)?;
+        self.frame = frame;
+        self.position = pos;
+        Ok(pos)
+    }
+
+    /// Parses the item at `pos` which is requested as raw value.
+    ///
+    /// The item is skipped while validating it and its input is emitted.
+    /// If the sink requests the next item too (the items of arrays of raw
+    /// values) that is parsed too, up to the end of the container.
+    fn raw_values<'i, O: Out<'i>>(
+        &mut self,
+        input: &'i [u8],
+        pos: usize,
+        base: usize,
+        eof: bool,
+        mut frame: Option<Frame>,
+        out: &mut O,
+    ) -> Continue {
+        let mut cur = Cursor {
+            input,
+            pos,
+            base,
+            hit_end: false,
+            sink_failed: false,
+            opened: None,
+        };
+        loop {
+            // the item after the last one of the array is not requested
+            if frame.is_some_and(|frame| frame.remaining == 0 && !frame.in_value) {
+                return Ok((cur.pos, frame));
+            }
+            let start = cur.pos;
+            self.position = start;
+            if let Err(err) = cur.skip_item() {
+                if cur.hit_end && !eof {
+                    // the item is parsed again with more input
+                    self.frame = frame;
+                    self.raw = true;
+                    return Err(Ok(Progress::NeedMore(start)));
+                }
+                self.position = cur.pos;
+                return Err(Err(err));
+            }
+            // the item is one of its container
+            if let Some(ref mut current) = frame {
+                if !current.in_value {
+                    current.remaining -= 1;
+                }
+                if current.is_map {
+                    current.in_value = !current.in_value;
+                }
+            }
+            // SAFETY: the item was validated
+            let value = unsafe { RawInput::new(&input[start..cur.pos], &crate::raw::FORMAT) };
+            let event = Event::Atom(Atom::Ext(ExtValue::owned_value::<RawInput>(value)));
+            self.position = cur.pos;
+            let more = match cur.emit_borrowed(out, start, event) {
+                Ok(()) => false,
+                // the next item is requested too
+                Err(err) if err.__private_is_raw_request() => true,
+                Err(err) => {
+                    // as if the item was accepted, the rest is skipped
+                    self.frame = frame;
+                    self.complete = frame.is_none();
+                    self.recoverable = Some(cur.pos);
+                    return Err(Err(err));
+                }
+            };
+            if frame.is_none() {
+                self.frame = None;
+                return Err(Ok(Progress::Done(cur.pos)));
+            }
+            if !more {
+                return Ok((cur.pos, frame));
+            }
+        }
+    }
+}
+
 /// Reads items from the input.
 pub(crate) struct Cursor<'a> {
     input: &'a [u8],
@@ -386,6 +581,45 @@ impl<'a> Cursor<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// Skips an item while validating it.
+    fn skip_item(&mut self) -> Result<(), Error> {
+        // the number of items that are left, containers add their items
+        let mut remaining: u64 = 1;
+        while remaining > 0 {
+            remaining -= 1;
+            let start = self.pos;
+            let (head, len) = match decode_head(&self.input[start..]) {
+                Ok(rv) => rv,
+                Err(HeadError::Incomplete) => {
+                    self.hit_end = true;
+                    return Err(eof_error(self.base + self.input.len()));
+                }
+                Err(HeadError::Reserved) => {
+                    return Err(syntax_error(self.base + start, "reserved byte 0xc1"));
+                }
+            };
+            self.pos += len;
+            match head {
+                Head::Str(len) => {
+                    let bytes = self.read_body(len)?;
+                    if !is_ascii(bytes) && !is_utf8(bytes) {
+                        return Err(syntax_error(
+                            self.base + self.pos - bytes.len(),
+                            "invalid UTF-8 in string",
+                        ));
+                    }
+                }
+                Head::Bin(len) | Head::Ext(_, len) => {
+                    self.read_body(len)?;
+                }
+                Head::Array(len) => remaining += u64::from(len),
+                Head::Map(len) => remaining += 2 * u64::from(len),
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Emits an event of the item at `start`.
