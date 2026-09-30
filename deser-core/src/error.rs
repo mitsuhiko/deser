@@ -136,7 +136,7 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// ])
 /// .unwrap()
 /// .resolve_position(b"{\n  \"b\": \"x\"}");
-/// assert_eq!(err.error_count(), 2);
+/// assert_eq!(err.errors().count(), 2);
 /// assert_eq!(err.kind(), ErrorKind::MissingField);
 /// assert_eq!(
 ///     err.to_string(),
@@ -269,14 +269,6 @@ impl Error {
         match *self.inner {
             ErrorInner::Single(_) => core::slice::from_ref(self).iter(),
             ErrorInner::Multiple(ref errors) => errors.iter(),
-        }
-    }
-
-    /// Returns the number of errors this error holds.
-    pub fn error_count(&self) -> usize {
-        match *self.inner {
-            ErrorInner::Single(_) => 1,
-            ErrorInner::Multiple(ref errors) => errors.len(),
         }
     }
 

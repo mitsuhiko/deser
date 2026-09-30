@@ -308,11 +308,6 @@ impl<'de, T> OwnedDriver<'de, T> {
         f(&mut self.driver)
     }
 
-    /// Returns a reference to the driver.
-    pub fn driver(&self) -> &DeserializeDriver<'_, 'de> {
-        &self.driver
-    }
-
     /// Finishes the deserialization and returns the value.
     ///
     /// Fails with [`ErrorKind::EndOfFile`] if the value is incomplete.

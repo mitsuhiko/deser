@@ -95,11 +95,6 @@ impl BytesFormat {
         }
     }
 
-    /// Returns `true` if bytes are sequences of integers.
-    pub fn is_seq(&self) -> bool {
-        matches!(self.0, Repr::Seq)
-    }
-
     /// Encodes bytes as string.
     ///
     /// Returns `None` if bytes are sequences of integers.

@@ -183,8 +183,8 @@ fn api() {
     }
     let lenient: Lenient = deser_json::from_str(request).unwrap();
     let err = lenient.shipping.error().unwrap();
-    println!("shipping has {} problems", err.error_count());
-    assert_eq!(err.error_count(), 3);
+    println!("shipping has {} problems", err.errors().count());
+    assert_eq!(err.errors().count(), 3);
 }
 
 fn main() {

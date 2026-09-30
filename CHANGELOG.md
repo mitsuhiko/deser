@@ -27,6 +27,11 @@ All notable changes to deser are documented here.
 - **Breaking:** removed `InputBuffer::drive_transient` (use
   `driver.transient(|driver| buffer.drive(driver))`) and
   `Error::push_error` (use `Error::from_errors`).
+- **Breaking:** removed `BytesFormat::is_seq` (compare with
+  `BytesFormat::SEQ`), `Error::error_count` (use `errors().count()`),
+  `Atom::widen_float` (sinks receive floats as `F64` through
+  `Sink::unexpected_atom`) and `OwnedDriver::driver` (use
+  `OwnedDriver::with`).
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and

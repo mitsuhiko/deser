@@ -30,8 +30,10 @@ use crate::text::{Slice, Text};
 /// Floats are [`F32`](Atom::F32) or [`F64`](Atom::F64) depending on their
 /// precision.  A single precision float is a value of its own as its
 /// shortest text differs from the one of the same value as `f64` (`0.1f32`
-/// is `0.1`, as `f64` it's `0.10000000149011612`).  Consumers that do not
-/// care about the precision can [widen](Atom::widen_float) it.
+/// is `0.1`, as `f64` it's `0.10000000149011612`).  Sinks that do not care
+/// about the precision only need to handle `F64`: the default handling of
+/// atoms widens `F32` (see
+/// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).
 ///
 /// Text whose type the format cannot express is [`Lexical`](Atom::Lexical).
 /// It's a string for everybody who does not care, see there for more
@@ -134,25 +136,6 @@ impl<'a> Atom<'a> {
             Atom::F64(v) => Atom::F64(v),
             Atom::Ext(ref v) => Atom::Ext(v.as_borrowed()),
             Atom::Implicit(ref v) => Atom::Implicit(v.as_borrowed()),
-        }
-    }
-
-    /// Widens an [`F32`](Atom::F32) into an [`F64`](Atom::F64).
-    ///
-    /// Other atoms are returned unchanged.  This is useful for consumers
-    /// which do not distinguish the precision of floats.
-    ///
-    /// ```
-    /// use deser::Atom;
-    ///
-    /// assert_eq!(Atom::F32(1.5).widen_float(), Atom::F64(1.5));
-    /// assert_eq!(Atom::U64(1).widen_float(), Atom::U64(1));
-    /// ```
-    #[inline]
-    pub fn widen_float(self) -> Atom<'a> {
-        match self {
-            Atom::F32(v) => Atom::F64(f64::from(v)),
-            other => other,
         }
     }
 

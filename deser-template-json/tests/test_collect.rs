@@ -68,7 +68,7 @@ fn test_collect_errors() {
 #[test]
 fn test_collect_errors_display() {
     let err = collect::<Vec<u32>>(r#"[1, "a", 2, "b"]"#).unwrap_err();
-    assert_eq!(err.error_count(), 2);
+    assert_eq!(err.errors().count(), 2);
     assert_eq!(
         err.to_string(),
         "Unexpected: unexpected string, expected u32 at line 1 column 5 (and 1 more error)"
@@ -89,7 +89,7 @@ fn test_collect_without_errors() {
 #[test]
 fn test_collect_is_off_by_default() {
     let err = dialect::from_str::<Vec<u32>>(r#"[1, "a", 2, "b"]"#).unwrap_err();
-    assert_eq!(err.error_count(), 1);
+    assert_eq!(err.errors().count(), 1);
 }
 
 #[test]
@@ -127,7 +127,8 @@ fn test_collect_duplicate_fields() {
     assert_eq!(
         dialect::from_str::<Server>(input)
             .unwrap_err()
-            .error_count(),
+            .errors()
+            .count(),
         1
     );
     assert_eq!(

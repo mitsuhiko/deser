@@ -185,7 +185,7 @@ fn test_validated_collects_errors() {
     // ends the deserialization
     let err = deser_json::from_str::<Order>(r#"{"id": 1, "shipping": {}, "lines": [1, "a", "b"]}"#)
         .unwrap_err();
-    assert_eq!(err.error_count(), 1);
+    assert_eq!(err.errors().count(), 1);
 }
 
 #[test]
