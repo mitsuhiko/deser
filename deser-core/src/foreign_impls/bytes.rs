@@ -21,8 +21,8 @@ macro_rules! byte_buffer {
                 begin_without_finish!();
                 plain_atom!(|v| Atom::Bytes(crate::Bytes::new(&v[..])));
 
-                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-                    Ok(Chunk::Atom(Atom::Bytes(crate::Bytes::new(&self[..]))))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                    Ok(Chunk::Atom(Atom::Bytes(crate::Bytes::new(&value[..]))))
                 }
             }
 
@@ -50,7 +50,7 @@ macro_rules! byte_buffer {
 
                 #[inline]
                 fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>, state: &mut State) -> SinkHandle<'a, 'de> {
-                    Deserialize::deserialize_into(out, state)
+                    <Self as Deserialize<'de>>::deserialize_into(out, state)
                 }
             }
 

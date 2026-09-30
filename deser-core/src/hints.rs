@@ -32,11 +32,11 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::State;
-use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::SinkHandle;
+use crate::adapters::Same;
+use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe};
+use crate::ser::{Begin, Chunk, Describe, Serialize};
 
 /// How a map or sequence is laid out by formats that have a choice.
 ///
@@ -72,7 +72,7 @@ impl Layout {
     /// Sets the layout of the current event.
     ///
     /// This is intended to be called from
-    /// [`Serialize::serialize`](crate::ser::Serialize::serialize) or a
+    /// [`Serialize::serialize`] or a
     /// [`Layer`](crate::ser::Layer), the layout applies to the value that is
     /// serialized.
     #[inline]
@@ -116,120 +116,120 @@ pub trait Hint: 'static {
 ///
 /// This is an adapter (see [`adapters`](crate::adapters)) for all types
 /// that the adapter `A` supports, by default ([`Same`]) the value is
-/// serialized with its own [`Serialize`](crate::Serialize) implementation.
+/// serialized with its own [`Serialize`] implementation.
 /// It's transparent when deserializing.  [`Compact`] and [`Expanded`] are
 /// such adapters: `Compact<Vec<Base64>>` serializes a `Vec<Vec<u8>>` as
 /// base64 strings with [`Layout::Compact`].
 pub struct Hinted<H, A = Same>(PhantomData<fn() -> (H, A)>);
 
-impl<T: ?Sized, H: Hint, A: SerializeAs<T>> SerializeAs<T> for Hinted<H, A> {
+impl<T: ?Sized, H: Hint, A: Serialize<T>> Serialize<T> for Hinted<H, A> {
     #[inline]
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
         H::set(state);
-        A::serialize_as(value, state)
+        A::serialize(value, state)
     }
 
     #[inline]
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        A::finish_as(value, state)
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish(value, state)
     }
 
     #[inline]
-    fn is_optional_as(value: &T) -> bool {
-        A::is_optional_as(value)
+    fn is_optional(value: &T) -> bool {
+        A::is_optional(value)
     }
 
     #[inline]
-    fn container_shape_as(value: &T) -> ContainerShape {
-        A::container_shape_as(value)
+    fn container_shape(value: &T) -> ContainerShape {
+        A::container_shape(value)
     }
 
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        A::describe_as(value, d)
+    fn describe(value: &T, d: &mut dyn Describe) {
+        A::describe(value, d)
     }
 
     #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         H::set(state);
-        A::__private_begin_as(value, state)
+        A::__private_begin(value, state)
     }
 
     #[inline]
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
     where
         T: Sized,
     {
-        A::__private_slice_as_bytes_as(val)
+        A::__private_slice_as_bytes(val)
     }
 }
 
-impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted<H, A> {
+impl<'de, T, H: Hint, A: Deserialize<'de, T>> Deserialize<'de, T> for Hinted<H, A> {
     #[inline]
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        A::deserialize_into_as(out, state)
+        A::deserialize_into(out, state)
     }
 
     #[inline]
-    fn initial_value_as() -> Option<T> {
-        A::initial_value_as()
+    fn initial_value() -> Option<T> {
+        A::initial_value()
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_atom_into_as(out, atom, state)
+        A::__private_atom_into(out, atom, state)
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_borrowed_atom_into_as(out, atom, state)
+        A::__private_borrowed_atom_into(out, atom, state)
     }
 
     #[inline]
-    fn __private_is_bytes_as() -> bool {
-        A::__private_is_bytes_as()
+    fn __private_is_bytes() -> bool {
+        A::__private_is_bytes()
     }
 
     #[inline]
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
-        A::__private_vec_from_bytes_as(bytes)
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes(bytes)
     }
 
     #[inline]
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
-        A::__private_array_from_bytes_as(bytes)
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes(bytes)
     }
 
     #[inline(always)]
-    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
-        A::__private_raw_as()
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw()
     }
 
     #[inline]
-    fn __private_collects_as() -> bool {
-        A::__private_collects_as()
+    fn __private_collects() -> bool {
+        A::__private_collects()
     }
 
     #[inline]
-    fn __private_collect_into_as<'out>(
+    fn __private_collect_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        A::__private_collect_into_as(out, state)
+        A::__private_collect_into(out, state)
     }
 
     #[inline]
-    fn __private_collect_update_as<'out>(
+    fn __private_collect_update<'out>(
         value: &'out mut T,
         first: bool,
         state: &mut State,
@@ -237,12 +237,12 @@ impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted
     where
         T: Send,
     {
-        A::__private_collect_update_as(value, first, state)
+        A::__private_collect_update(value, first, state)
     }
 
     #[inline]
-    fn __private_collect_empty_as() -> Option<T> {
-        A::__private_collect_empty_as()
+    fn __private_collect_empty() -> Option<T> {
+        A::__private_collect_empty()
     }
 }
 

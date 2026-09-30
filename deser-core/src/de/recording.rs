@@ -45,7 +45,7 @@ use alloc::vec::Vec;
 ///     let mut driver = DeserializeDriver::new(&mut driver_out);
 ///     let state = driver.state_mut();
 ///     recording
-///         .replay(Deserialize::deserialize_into(&mut out, state), state)
+///         .replay(Vec::<u32>::deserialize_into(&mut out, state), state)
 ///         .unwrap();
 /// }
 /// assert_eq!(out, Some(vec![1, 2]));
@@ -1116,12 +1116,12 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
 }
 
 impl Serialize for RecordedValue<'_, '_> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        value.chunk(state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        RecordedValue::container_shape(self)
+    fn container_shape(value: &Self) -> ContainerShape {
+        RecordedValue::container_shape(value)
     }
 }
 
@@ -1162,32 +1162,32 @@ impl MapEmitter for RecordedEmitter<'_, '_> {
 }
 
 impl Serialize for Recording {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        RecordedValue(self.0.events.as_slice()).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        RecordedValue(value.0.events.as_slice()).chunk(state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        RecordedValue(self.0.events.as_slice()).container_shape()
+    fn container_shape(value: &Self) -> ContainerShape {
+        RecordedValue(value.0.events.as_slice()).container_shape()
     }
 
-    fn is_optional(&self) -> bool {
-        RecordedValue(self.0.events.as_slice()).is_optional()
+    fn is_optional(value: &Self) -> bool {
+        RecordedValue(value.0.events.as_slice()).is_optional()
     }
 }
 
 /// Record buffers serialize like [`Recording`]s, borrowed atoms are
 /// serialized without copying them.
 impl Serialize for RecordBuf<'_> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        RecordedValue(self.events.as_slice()).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        RecordedValue(value.events.as_slice()).chunk(state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        RecordedValue(self.events.as_slice()).container_shape()
+    fn container_shape(value: &Self) -> ContainerShape {
+        RecordedValue(value.events.as_slice()).container_shape()
     }
 
-    fn is_optional(&self) -> bool {
-        RecordedValue(self.events.as_slice()).is_optional()
+    fn is_optional(value: &Self) -> bool {
+        RecordedValue(value.events.as_slice()).is_optional()
     }
 }
 

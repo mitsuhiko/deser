@@ -116,16 +116,10 @@ impl<'a> FieldInfo<'a> {
         crate::ser::serialize_handle(self.ty(), self.adapters.ser(), quote! { #binding })
     }
 
-    /// Returns a reference to a serializable for the bound field.
+    /// Returns a reference to the bound field (a `SerializeRef`).
     fn ser_value(&self) -> TokenStream {
         let binding = &self.binding;
-        let ty = self.ty();
-        match self.adapters.ser() {
-            Some(adapter) => quote! {
-                __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#binding)
-            },
-            None => quote! { #binding },
-        }
+        crate::ser::serialize_ref(self.ty(), self.adapters.ser(), quote! { #binding })
     }
 
     /// Returns an expression that checks if the bound field is optional.
@@ -219,7 +213,8 @@ impl<'a> VariantInfo<'a> {
     ///
     /// Returns an expression for the value that serializes with the adapter
     /// and whether it's owned.  Values are references to the bound fields
-    /// unless the content is a tuple of the fields, which is owned.
+    /// (`SerializeRef`) unless the content is a tuple of the fields, which
+    /// is owned.
     fn adapted_value(&self) -> Option<(TokenStream, bool)> {
         let (Content::Adapted(idxs), Some(adapted)) = (&self.content, &self.adapted) else {
             return None;
@@ -230,7 +225,7 @@ impl<'a> VariantInfo<'a> {
         Some(match idxs[..] {
             [] => (
                 quote_spanned! { adapter.span()=>
-                    __deser::__derive::SerializeAsRef::<#adapter, ()>::new(&())
+                    __deser::ser::SerializeRef::with_adapter::<#adapter, ()>(&())
                 },
                 false,
             ),
@@ -238,7 +233,7 @@ impl<'a> VariantInfo<'a> {
                 let binding = &self.fields[idx].binding;
                 (
                     quote_spanned! { adapter.span()=>
-                        __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#binding)
+                        __deser::ser::SerializeRef::with_adapter::<#adapter, #ty>(#binding)
                     },
                     false,
                 )
@@ -966,7 +961,7 @@ pub(crate) fn derive_deserialize(
         &input.generics,
         quote!(__deser::Deserialize<'de>),
         Some(quote!(__deser::__derive::Send)),
-        quote!(__deser::adapters::DeserializeAs),
+        quote!(__deser::Deserialize),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &bound_fields(&all_variants, Direction::Deserialize),
@@ -1570,7 +1565,9 @@ fn fields_ser(
         let push = if attrs.flatten() {
             // the fields of flattened values are checked by `FlatFieldsSer`
             quote! {
-                __fields.push(__deser::__derive::FieldSer::Flatten(#binding));
+                __fields.push(__deser::__derive::FieldSer::Flatten(
+                    __deser::ser::SerializeRef::new(#binding)
+                ));
             }
         } else {
             if container_attrs.skip_serializing_optionals() {
@@ -1635,7 +1632,7 @@ fn content_handle(
         }
         Content::Adapted(_) => match info.adapted_value().unwrap() {
             (value, true) => quote! { __deser::ser::SerializeHandle::arena(#value, __state) },
-            (value, false) => quote! { __deser::ser::SerializeHandle::to(#value) },
+            (value, false) => quote! { __deser::ser::SerializeHandle::from(#value) },
         },
     })
 }
@@ -1653,7 +1650,7 @@ pub(crate) fn derive_serialize(
         &input.generics,
         quote!(__deser::Serialize),
         Some(quote!(__deser::__derive::Sync)),
-        quote!(__deser::adapters::SerializeAs),
+        quote!(__deser::Serialize),
         None,
         container_attrs.serialize_bound(),
         &bound_fields(&variants, Direction::Serialize),
@@ -1704,20 +1701,20 @@ pub(crate) fn derive_serialize(
                 quote! {
                     #pattern => {
                         #describe_variant
-                        __deser::ser::Serialize::describe(#value, __d);
+                        #value.describe(__d);
                     }
                 }
             }
             (Repr::Untagged | Repr::Internal { .. }, Content::Adapted(_)) => {
                 let pattern = info.pattern(ident);
                 let value = match info.adapted_value().unwrap() {
-                    (value, true) => quote! { &#value },
+                    (value, true) => quote! { __deser::ser::SerializeRef::new(&#value) },
                     (value, false) => value,
                 };
                 quote! {
                     #pattern => {
                         #describe_variant
-                        __deser::ser::Serialize::describe(#value, __d);
+                        #value.describe(__d);
                     }
                 }
             }
@@ -1755,7 +1752,7 @@ pub(crate) fn derive_serialize(
                 None => quote! { #pattern => __deser::ContainerShape::new(), },
             });
         }
-        quote! { match *self { #(#arms)* } }
+        quote! { match *__value { #(#arms)* } }
     };
 
     let mut arms = Vec::new();
@@ -1843,14 +1840,14 @@ pub(crate) fn derive_serialize(
                 Content::Unit => quote! { __deser::ser::Chunk::Atom(__deser::Atom::Null) },
                 Content::Newtype(idx) => {
                     let value = info.fields[idx].ser_value();
-                    quote! { __deser::ser::Serialize::serialize(#value, __state)? }
+                    quote! { #value.serialize(__state)? }
                 }
                 Content::Adapted(_) => match info.adapted_value().unwrap() {
                     (value, true) => quote! {
                         __deser::ser::Chunk::Forward(__deser::ser::SerializeHandle::arena(#value, __state))
                     },
                     (value, false) => {
-                        quote! { __deser::ser::Serialize::serialize(#value, __state)? }
+                        quote! { #value.serialize(__state)? }
                     }
                 },
                 Content::Tuple(_) => {
@@ -1874,21 +1871,21 @@ pub(crate) fn derive_serialize(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #where_clause {
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                    match *self {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
+                    match *__value {
                         #(#describe_arms)*
                     }
                 }
 
-                fn container_shape(&self) -> __deser::ContainerShape {
+                fn container_shape(__value: &Self) -> __deser::ContainerShape {
                     #container_shape
                 }
 
-                fn serialize(
-                    &self,
+                fn serialize<'__a>(
+                    __value: &'__a Self,
                     __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(match *self {
+                ) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                    __deser::__derive::Ok(match *__value {
                         #(#arms)*
                     })
                 }

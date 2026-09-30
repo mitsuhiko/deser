@@ -14,12 +14,12 @@ use std::collections::HashSet;
 
 use crate::State;
 use crate::Text;
-use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::{Sink, SinkHandle};
+use crate::adapters::Same;
+use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape};
 use crate::ext::Number;
-use crate::ser::{Begin, Chunk, Describe};
+use crate::ser::{Begin, Chunk, Describe, Serialize};
 
 /// A sequence that is written as text with a separator, like `a,b,c`.
 ///
@@ -342,14 +342,14 @@ enum SkipBlankSink<'a, 'de, T, A> {
     Active(SinkHandle<'a, 'de>),
 }
 
-impl<'a, 'de, T, A: DeserializeAs<'de, T>> SkipBlankSink<'a, 'de, T, A> {
+impl<'a, 'de, T, A: Deserialize<'de, T>> SkipBlankSink<'a, 'de, T, A> {
     /// Returns the sink of the value, creates it if needed.
     fn active(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
         if let SkipBlankSink::Pending(..) = self
             && let SkipBlankSink::Pending(out, _) =
                 core::mem::replace(self, SkipBlankSink::Active(SinkHandle::null()))
         {
-            *self = SkipBlankSink::Active(A::deserialize_into_as(out, state));
+            *self = SkipBlankSink::Active(A::deserialize_into(out, state));
         }
         match self {
             SkipBlankSink::Active(sink) => sink,
@@ -367,7 +367,7 @@ impl<'a, 'de, T, A: DeserializeAs<'de, T>> SkipBlankSink<'a, 'de, T, A> {
     }
 }
 
-impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a, 'de, T, A> {
+impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, 'de, T, A> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.skip(&atom) {
             return Ok(());
@@ -447,7 +447,7 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
                 let mut slot = None;
                 let mut state = State::new();
                 Cow::Owned(
-                    A::deserialize_into_as(&mut slot, &mut state)
+                    A::deserialize_into(&mut slot, &mut state)
                         .expecting()
                         .into_owned(),
                 )
@@ -456,20 +456,23 @@ impl<'a, 'de, T: Send, A: DeserializeAs<'de, T>> Sink<'de> for SkipBlankSink<'a,
     }
 }
 
-impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank<A> {
-    fn deserialize_into_as<'out>(
+impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for SkipBlank<A> {
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        SinkHandle::arena(SkipBlankSink::<T, A>::Pending(out, PhantomData), state)
+        // SAFETY: `A` is an adapter, the sink only holds a marker of it
+        unsafe {
+            SinkHandle::arena_unbounded(SkipBlankSink::<T, A>::Pending(out, PhantomData), state)
+        }
     }
 
-    fn initial_value_as() -> Option<T> {
-        A::initial_value_as()
+    fn initial_value() -> Option<T> {
+        A::initial_value()
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
@@ -477,11 +480,11 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank
         if is_blank(&atom) {
             return Ok(());
         }
-        A::__private_atom_into_as(out, atom, state)
+        A::__private_atom_into(out, atom, state)
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
@@ -489,130 +492,130 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for SkipBlank
         if is_blank(&atom) {
             return Ok(());
         }
-        A::__private_borrowed_atom_into_as(out, atom, state)
+        A::__private_borrowed_atom_into(out, atom, state)
     }
 
-    fn __private_is_bytes_as() -> bool {
-        A::__private_is_bytes_as()
+    fn __private_is_bytes() -> bool {
+        A::__private_is_bytes()
     }
 
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
-        A::__private_vec_from_bytes_as(bytes)
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes(bytes)
     }
 
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
-        A::__private_array_from_bytes_as::<N>(bytes)
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes::<N>(bytes)
     }
 }
 
-impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for TrimWhitespace<A> {
-    fn deserialize_into_as<'out>(
+impl<'de, T, A: Deserialize<'de, T>> Deserialize<'de, T> for TrimWhitespace<A> {
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        TextSink::handle(A::deserialize_into_as(out, state), TextOp::Trim, state)
+        TextSink::handle(A::deserialize_into(out, state), TextOp::Trim, state)
     }
 
-    fn initial_value_as() -> Option<T> {
-        A::initial_value_as()
+    fn initial_value() -> Option<T> {
+        A::initial_value()
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_atom_into_as(out, trim_atom(atom), state)
+        A::__private_atom_into(out, trim_atom(atom), state)
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_borrowed_atom_into_as(out, trim_atom(atom), state)
+        A::__private_borrowed_atom_into(out, trim_atom(atom), state)
     }
 
-    fn __private_is_bytes_as() -> bool {
-        A::__private_is_bytes_as()
+    fn __private_is_bytes() -> bool {
+        A::__private_is_bytes()
     }
 
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
-        A::__private_vec_from_bytes_as(bytes)
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes(bytes)
     }
 
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
-        A::__private_array_from_bytes_as::<N>(bytes)
-    }
-}
-
-impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for TrimWhitespace<A> {
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        A::serialize_as(value, state)
-    }
-
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        A::finish_as(value, state)
-    }
-
-    fn is_optional_as(value: &T) -> bool {
-        A::is_optional_as(value)
-    }
-
-    fn container_shape_as(value: &T) -> ContainerShape {
-        A::container_shape_as(value)
-    }
-
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        A::describe_as(value, d)
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        A::__private_begin_as(value, state)
-    }
-
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
-    where
-        T: Sized,
-    {
-        A::__private_slice_as_bytes_as(val)
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes::<N>(bytes)
     }
 }
 
-impl<T: ?Sized, A: SerializeAs<T>> SerializeAs<T> for SkipBlank<A> {
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        A::serialize_as(value, state)
+impl<T: ?Sized, A: Serialize<T>> Serialize<T> for TrimWhitespace<A> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        A::serialize(value, state)
     }
 
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        A::finish_as(value, state)
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish(value, state)
     }
 
-    fn is_optional_as(value: &T) -> bool {
-        A::is_optional_as(value)
+    fn is_optional(value: &T) -> bool {
+        A::is_optional(value)
     }
 
-    fn container_shape_as(value: &T) -> ContainerShape {
-        A::container_shape_as(value)
+    fn container_shape(value: &T) -> ContainerShape {
+        A::container_shape(value)
     }
 
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        A::describe_as(value, d)
+    fn describe(value: &T, d: &mut dyn Describe) {
+        A::describe(value, d)
     }
 
     #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        A::__private_begin_as(value, state)
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        A::__private_begin(value, state)
     }
 
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
     where
         T: Sized,
     {
-        A::__private_slice_as_bytes_as(val)
+        A::__private_slice_as_bytes(val)
+    }
+}
+
+impl<T: ?Sized, A: Serialize<T>> Serialize<T> for SkipBlank<A> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        A::serialize(value, state)
+    }
+
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish(value, state)
+    }
+
+    fn is_optional(value: &T) -> bool {
+        A::is_optional(value)
+    }
+
+    fn container_shape(value: &T) -> ContainerShape {
+        A::container_shape(value)
+    }
+
+    fn describe(value: &T, d: &mut dyn Describe) {
+        A::describe(value, d)
+    }
+
+    #[inline]
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        A::__private_begin(value, state)
+    }
+
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
+    where
+        T: Sized,
+    {
+        A::__private_slice_as_bytes(val)
     }
 }
 
@@ -661,8 +664,8 @@ fn push_chunk(chunk: Chunk<'_>, state: &mut State, out: &mut String) -> Result<(
     match chunk {
         Chunk::Atom(ref atom) => out.push_str(&atom_text(atom)?),
         Chunk::Forward(handle) => {
-            push_chunk(handle.serialize(state)?, state, out)?;
-            handle.finish(state)?;
+            push_chunk(handle.get().serialize(state)?, state, out)?;
+            handle.get().finish(state)?;
         }
         Chunk::Struct(_) | Chunk::Map(_) => return Err(unsupported_element("map")),
         Chunk::Seq(_) => return Err(unsupported_element("sequence")),
@@ -671,7 +674,7 @@ fn push_chunk(chunk: Chunk<'_>, state: &mut State, out: &mut String) -> Result<(
 }
 
 /// Joins the elements of a sequence into a string.
-fn join<'v, T: 'v, A: SerializeAs<T>>(
+fn join<'v, T: 'v, A: Serialize<T>>(
     values: impl Iterator<Item = &'v T>,
     sep: char,
     state: &mut State,
@@ -684,8 +687,8 @@ fn join<'v, T: 'v, A: SerializeAs<T>>(
         }
         count += 1;
         let start = out.len();
-        push_chunk(A::serialize_as(value, state)?, state, &mut out)?;
-        A::finish_as(value, state)?;
+        push_chunk(A::serialize(value, state)?, state, &mut out)?;
+        A::finish(value, state)?;
         if out[start..].contains(sep) {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -710,20 +713,20 @@ fn join<'v, T: 'v, A: SerializeAs<T>>(
 macro_rules! separated_impls {
     ($([$($bound:tt)*] [$($ser_bound:tt)*] $target:ty => $adapter:ty;)*) => {
         $(
-            impl<'de, $($bound)*, A: DeserializeAs<'de, T>, const SEP: char>
-                DeserializeAs<'de, $target> for Separated<SEP, A>
+            impl<'de, $($bound)*, A: Deserialize<'de, T>, const SEP: char>
+                Deserialize<'de, $target> for Separated<SEP, A>
             {
-                fn deserialize_into_as<'out>(out: &'out mut Option<$target>, state: &mut State) -> SinkHandle<'out, 'de> {
+                fn deserialize_into<'out>(out: &'out mut Option<$target>, state: &mut State) -> SinkHandle<'out, 'de> {
                     TextSink::handle(
-                        <$adapter as DeserializeAs<'de, $target>>::deserialize_into_as(out, state),
+                        <$adapter as Deserialize<'de, $target>>::deserialize_into(out, state),
                         TextOp::Split(SEP), state)
                 }
             }
 
-            impl<$($ser_bound)*, A: SerializeAs<T>, const SEP: char> SerializeAs<$target>
+            impl<$($ser_bound)*, A: Serialize<T>, const SEP: char> Serialize<$target>
                 for Separated<SEP, A>
             {
-                fn serialize_as<'a>(
+                fn serialize<'a>(
                     value: &'a $target,
                     state: &mut State,
                 ) -> Result<Chunk<'a>, Error> {
@@ -732,12 +735,12 @@ macro_rules! separated_impls {
                 }
 
                 #[inline]
-                fn __private_begin_as<'a>(
+                fn __private_begin<'a>(
                     value: &'a $target,
                     state: &mut State,
                 ) -> Result<Begin<'a>, Error> {
                     Ok(Begin::chunk(
-                        Self::serialize_as(value, state)?,
+                        Self::serialize(value, state)?,
                         ContainerShape::new(),
                         false,
                     ))

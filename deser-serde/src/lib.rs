@@ -77,8 +77,9 @@
 //! `IpAddr`) there is no buffering.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
+use deser_core::Deserialize;
+use deser_core::Serialize;
 use deser_core::State;
-use deser_core::adapters::{DeserializeAs, SerializeAs};
 use deser_core::de::SinkHandle;
 use deser_core::ser::Chunk;
 
@@ -113,25 +114,25 @@ fn missing_value<'de, T: serde::Deserialize<'de>>() -> Option<T> {
 /// ```
 pub struct Serde;
 
-impl<T: serde::Serialize + ?Sized> SerializeAs<T> for Serde {
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+impl<T: serde::Serialize + ?Sized> Serialize<T> for Serde {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
         buffered::serialize(value, state)
     }
 
-    fn is_optional_as(value: &T) -> bool {
+    fn is_optional(value: &T) -> bool {
         ser::is_none(value)
     }
 }
 
-impl<'de, T: serde::Deserialize<'de> + Send> DeserializeAs<'de, T> for Serde {
-    fn deserialize_into_as<'out>(
+impl<'de, T: serde::Deserialize<'de> + Send> Deserialize<'de, T> for Serde {
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         SinkHandle::arena(RootSink::new(out, buffered::Buffer::default()), state)
     }
 
-    fn initial_value_as() -> Option<T> {
+    fn initial_value() -> Option<T> {
         missing_value()
     }
 }

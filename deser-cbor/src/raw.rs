@@ -3,7 +3,8 @@ use alloc::vec::Vec;
 
 use deser_core::de::{self, DeserializeDriver};
 use deser_core::ext::{Raw, RawFormat, RawFormatInfo};
-use deser_core::{Atom, Bytes, Error, Serialize};
+use deser_core::ser::SerializeRef;
+use deser_core::{Atom, Bytes, Error};
 
 use crate::de::Deserializer;
 
@@ -36,8 +37,8 @@ fn replay<'de>(input: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Res
 }
 
 /// Encodes a value.
-fn encode(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
-    crate::to_vec(value)
+fn encode(value: SerializeRef<'_>) -> Result<Vec<u8>, Error> {
+    crate::to_vec(&value)
 }
 
 /// Returns the fallback atom of a raw value.

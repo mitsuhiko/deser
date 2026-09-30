@@ -194,7 +194,7 @@ pub(crate) struct BoundField<'a> {
     /// The custom bounds of the field which replace the inferred ones.
     pub bound: Option<&'a [syn::WherePredicate]>,
     /// The type refers to the lifetime `'__x`, the bound of the adapter is
-    /// higher-ranked over it (`for<'__x> A: SerializeAs<(&'__x T, &'__x U)>`).
+    /// higher-ranked over it (`for<'__x> A: Serialize<(&'__x T, &'__x U)>`).
     pub higher_ranked: bool,
 }
 

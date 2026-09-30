@@ -21,7 +21,7 @@
 /// description of its own).
 ///
 /// ```
-/// use deser::ser::{Describe, Serialize, SerializeDriver};
+/// use deser::ser::{Describe, SerializeRef};
 ///
 /// #[derive(Default)]
 /// struct Names(Vec<String>);
@@ -37,7 +37,7 @@
 /// }
 ///
 /// let mut names = Names::default();
-/// Some(Some(42)).describe(&mut names);
+/// SerializeRef::new(&Some(Some(42))).describe(&mut names);
 /// assert_eq!(names.0, ["some", "some"]);
 /// ```
 ///
@@ -88,7 +88,7 @@ pub trait Describe {
     ///
     /// let mut fields = Fields::default();
     /// let link = Link { href: "/".into(), cache: 0, title: "x".into() };
-    /// deser::Serialize::describe(&link, &mut fields);
+    /// deser::ser::SerializeRef::new(&link).describe(&mut fields);
     /// assert_eq!(fields.0, ["@href", "title"]);
     /// ```
     fn fields(&mut self, names: &'static [&'static str]) {

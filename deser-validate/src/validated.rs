@@ -404,37 +404,37 @@ fn report_error(err: Error, state: &mut State) -> Error {
 }
 
 impl<T: Serialize, V> Serialize for Validated<T, V> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        match self.value {
-            Some(ref value) => value.serialize(state),
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        match this.value {
+            Some(ref value) => T::serialize(value, state),
             None => Ok(Chunk::Atom(Atom::Null)),
         }
     }
 
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        match self.value {
-            Some(ref value) => value.finish(state),
+    fn finish(this: &Self, state: &mut State) -> Result<(), Error> {
+        match this.value {
+            Some(ref value) => T::finish(value, state),
             None => Ok(()),
         }
     }
 
-    fn is_optional(&self) -> bool {
-        match self.value {
-            Some(ref value) => value.is_optional(),
+    fn is_optional(this: &Self) -> bool {
+        match this.value {
+            Some(ref value) => T::is_optional(value),
             None => true,
         }
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        match self.value {
-            Some(ref value) => value.container_shape(),
+    fn container_shape(this: &Self) -> ContainerShape {
+        match this.value {
+            Some(ref value) => T::container_shape(value),
             None => ContainerShape::new(),
         }
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        if let Some(ref value) = self.value {
-            value.describe(d)
+    fn describe(this: &Self, d: &mut dyn Describe) {
+        if let Some(ref value) = this.value {
+            T::describe(value, d)
         }
     }
 }

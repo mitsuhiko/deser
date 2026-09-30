@@ -5,9 +5,7 @@ use std::fmt::{self, Debug, Display};
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use deser::adapters::{
-    As, DeserializeAs, DisplayFromStr, FromInto, Same, SerializeAs, TryFromInto,
-};
+use deser::adapters::{As, DisplayFromStr, FromInto, Same, TryFromInto};
 use deser::de::{DeserializeDriver, DeserializeOwned, SinkHandle};
 use deser::ser::{Chunk, Describe, SerializeDriver};
 use deser::{Deserialize, Error, ErrorKind, Event, Serialize, State};
@@ -36,18 +34,18 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     Ok(out.unwrap())
 }
 
-fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(without_len(event.to_static()));
     }
     events
 }
 
-fn serialize_drive(value: &dyn Serialize) -> Result<Vec<Event<'static>>, Error> {
+fn serialize_drive<T: Serialize + ?Sized>(value: &T) -> Result<Vec<Event<'static>>, Error> {
     let mut events = Vec::new();
-    SerializeDriver::new(value).drive(|event, _| {
+    SerializeDriver::new(&value).drive(|event, _| {
         events.push(without_len(event.to_static()));
         Ok(())
     })?;
@@ -820,21 +818,23 @@ impl From<Described> for Option<u32> {
 #[test]
 fn test_describe() {
     let mut names = Names::default();
-    Email {
-        user: "jane".into(),
-        domain: "example.com".into(),
-    }
-    .describe(&mut names);
+    Email::describe(
+        &Email {
+            user: "jane".into(),
+            domain: "example.com".into(),
+        },
+        &mut names,
+    );
     assert_eq!(names.0, ["newtype Email"]);
 
     // the name can be changed with rename and the adapter describes itself
     // (FromInto does not describe the value it converts to)
     let mut names = Names::default();
-    Described(Some(1)).describe(&mut names);
+    Described::describe(&Described(Some(1)), &mut names);
     assert_eq!(names.0, ["newtype Renamed"]);
 
     let mut names = Names::default();
-    Version { major: 1, minor: 0 }.describe(&mut names);
+    Version::describe(&Version { major: 1, minor: 0 }, &mut names);
     assert_eq!(names.0, ["newtype Version"]);
 }
 
@@ -847,12 +847,12 @@ struct Byte(u8);
 
 struct ViaU8;
 
-impl SerializeAs<Byte> for ViaU8 {
-    fn serialize_as<'a>(value: &'a Byte, state: &mut State) -> Result<Chunk<'a>, Error> {
-        value.0.serialize(state)
+impl Serialize<Byte> for ViaU8 {
+    fn serialize<'a>(value: &'a Byte, state: &mut State) -> Result<Chunk<'a>, Error> {
+        u8::serialize(&value.0, state)
     }
 
-    fn __private_slice_as_bytes_as(val: &[Byte]) -> Option<Cow<'_, [u8]>> {
+    fn __private_slice_as_bytes(val: &[Byte]) -> Option<Cow<'_, [u8]>> {
         // SAFETY: `Byte` is transparent over `u8`
         Some(Cow::Borrowed(unsafe {
             &*(val as *const [Byte] as *const [u8])
@@ -860,23 +860,23 @@ impl SerializeAs<Byte> for ViaU8 {
     }
 }
 
-impl<'de> DeserializeAs<'de, Byte> for ViaU8 {
-    fn deserialize_into_as<'out>(
+impl<'de> Deserialize<'de, Byte> for ViaU8 {
+    fn deserialize_into<'out>(
         out: &'out mut Option<Byte>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        <FromInto<u8> as DeserializeAs<'de, Byte>>::deserialize_into_as(out, state)
+        <FromInto<u8> as Deserialize<'de, Byte>>::deserialize_into(out, state)
     }
 
-    fn __private_is_bytes_as() -> bool {
+    fn __private_is_bytes() -> bool {
         true
     }
 
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<Byte>> {
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Byte>> {
         Some(bytes.into_iter().map(Byte).collect())
     }
 
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[Byte; N]> {
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Byte; N]> {
         <[u8; N]>::try_from(bytes).ok().map(|x| x.map(Byte))
     }
 }

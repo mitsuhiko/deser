@@ -15,7 +15,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         // the shapes are not compared
         events.push(match event {

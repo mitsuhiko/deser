@@ -41,8 +41,8 @@ fn bstr_atom(bytes: &[u8]) -> Atom<'_> {
 impl Serialize for BStr {
     begin_without_finish!();
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(bstr_atom(self)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(bstr_atom(value)))
     }
 }
 
@@ -50,8 +50,8 @@ impl Serialize for BString {
     begin_without_finish!();
     plain_atom!(|v| bstr_atom(v));
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(bstr_atom(self)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(bstr_atom(value)))
     }
 }
 
@@ -202,7 +202,7 @@ impl BytesBufImpl for BString {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 

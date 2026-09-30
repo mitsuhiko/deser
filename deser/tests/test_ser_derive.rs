@@ -3,7 +3,7 @@ use deser::{Event, Serialize};
 
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut rv = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         rv.push(event.to_static());
     }

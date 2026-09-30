@@ -825,7 +825,7 @@
 //! Some things to be aware of:
 //!
 //! * Fields with adapters are updated by the adapter (see
-//!   [`DeserializeAs::deserialize_update_as`](crate::adapters::DeserializeAs::deserialize_update_as)),
+//!   [`Deserialize::deserialize_update`](crate::Deserialize::deserialize_update)),
 //!   most adapters replace the value.  Types with adapters forward updates
 //!   to the adapter too.
 //! * Flattened fields are updated with the keys they take, flattened fields

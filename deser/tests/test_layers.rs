@@ -485,11 +485,11 @@ impl ser::Layer for SkipNulls {
     }
 }
 
-fn serialize_with_layers<F: FnOnce(&mut SerializeDriver)>(
-    value: &dyn Serialize,
+fn serialize_with_layers<T: Serialize + ?Sized, F: FnOnce(&mut SerializeDriver)>(
+    value: &T,
     setup: F,
 ) -> Vec<Event<'static>> {
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     setup(&mut driver);
     let mut events = Vec::new();
     driver
@@ -526,7 +526,10 @@ fn test_ser_error_context() {
     struct Fails;
 
     impl Serialize for Fails {
-        fn serialize(&self, _state: &mut State) -> Result<deser::ser::Chunk<'_>, Error> {
+        fn serialize<'a>(
+            _value: &'a Self,
+            _state: &mut State,
+        ) -> Result<deser::ser::Chunk<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "nope"))
         }
     }

@@ -4,7 +4,6 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::adapters::DeserializeAs;
 use crate::de::arena::ArenaBox;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
@@ -137,9 +136,9 @@ impl<'de, T> OwnedSink<'de, T> {
     ///
     /// This is like [`deserialize`](Self::deserialize) but begins the
     /// deserialization with
-    /// [`DeserializeAs::deserialize_into_as`] of the adapter `A`.
-    pub fn deserialize_as<A: DeserializeAs<'de, T>>(state: &mut State) -> OwnedSink<'de, T> {
-        OwnedSink::with(A::deserialize_into_as, state)
+    /// [`Deserialize::deserialize_into`] of the adapter `A`.
+    pub fn deserialize_as<A: Deserialize<'de, T>>(state: &mut State) -> OwnedSink<'de, T> {
+        OwnedSink::with(A::deserialize_into, state)
     }
 
     /// Creates an owned sink whose slot starts out with a value.
@@ -185,12 +184,13 @@ impl<'de, T> OwnedSink<'de, T> {
     /// Creates an owned sink that updates a value.
     ///
     /// The value is moved into the owned sink and updated with
-    /// [`Deserialize::deserialize_update`].  It can be taken out again with
-    /// [`take`](Self::take), also if the update failed.
-    pub(crate) fn update(value: T, state: &mut State) -> OwnedSink<'de, T>
-    where
-        T: Deserialize<'de>,
-    {
+    /// `update` (like [`Deserialize::deserialize_update`]).  It can be taken
+    /// out again with [`take`](Self::take), also if the update failed.
+    pub(crate) fn update(
+        value: T,
+        update: for<'x> fn(&'x mut T, &mut State) -> SinkHandle<'x, 'de>,
+        state: &mut State,
+    ) -> OwnedSink<'de, T> {
         let storage = ArenaBox::new(Some(value), &mut state.arena);
         // SAFETY: like in `with`, the storage is in the arena and not
         // moved.  The value in it is not replaced while the sink exists, the
@@ -198,9 +198,7 @@ impl<'de, T> OwnedSink<'de, T> {
         let sink = unsafe {
             let slot = unbounded(storage.ptr().as_ptr());
             let value = slot.as_mut().unwrap_unchecked();
-            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(
-                T::deserialize_update(value, state),
-            )
+            core::mem::transmute::<SinkHandle<'_, 'de>, SinkHandle<'de, 'de>>(update(value, state))
         };
         OwnedSink {
             storage,

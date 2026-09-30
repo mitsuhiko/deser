@@ -2,10 +2,10 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use deser_core::adapters::{DeserializeAs, Same, SerializeAs};
+use deser_core::adapters::Same;
 use deser_core::de::{OwnedSink, Sink, SinkHandle, checked_update};
 use deser_core::ser::{Chunk, Describe};
-use deser_core::{Atom, ContainerShape, Error, State};
+use deser_core::{Atom, ContainerShape, Deserialize, Error, Serialize, State};
 
 use crate::{Validator, Violation};
 
@@ -53,7 +53,7 @@ use crate::{Validator, Violation};
 /// );
 /// ```
 ///
-/// Values that are missing (see [`DeserializeAs::initial_value_as`]) are
+/// Values that are missing (see [`Deserialize::initial_value`]) are
 /// only used if they are valid, otherwise the value is required.
 /// Serialization uses the inner adapter.
 ///
@@ -97,13 +97,13 @@ use crate::{Validator, Violation};
 /// before it failed.
 pub struct Check<V, A = Same>(PhantomData<fn() -> (V, A)>);
 
-impl<'de, T, V, A> DeserializeAs<'de, T> for Check<V, A>
+impl<'de, T, V, A> Deserialize<'de, T> for Check<V, A>
 where
     T: Send,
     V: Validator<T> + 'static,
-    A: DeserializeAs<'de, T>,
+    A: Deserialize<'de, T>,
 {
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -118,41 +118,41 @@ where
         )
     }
 
-    fn initial_value_as() -> Option<T> {
-        A::initial_value_as().filter(|value| V::validate(value).is_ok())
+    fn initial_value() -> Option<T> {
+        A::initial_value().filter(|value| V::validate(value).is_ok())
     }
 
     /// Updates the value with `A` and validates it once the update is
     /// complete.
-    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
         checked_update(
             value,
-            A::deserialize_update_as,
+            A::deserialize_update,
             |value| V::validate(value).map_err(Violation::into_error),
             state,
         )
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_atom_into_as(out, atom, state)?;
+        A::__private_atom_into(out, atom, state)?;
         validate_slot::<T, V>(out)
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        A::__private_borrowed_atom_into_as(out, atom, state)?;
+        A::__private_borrowed_atom_into(out, atom, state)?;
         validate_slot::<T, V>(out)
     }
 }
@@ -170,25 +170,25 @@ fn validate_slot<T, V: Validator<T>>(slot: &mut Option<T>) -> Result<(), Error> 
     Ok(())
 }
 
-impl<T: ?Sized, V: 'static, A: SerializeAs<T>> SerializeAs<T> for Check<V, A> {
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        A::serialize_as(value, state)
+impl<T: ?Sized, V: 'static, A: Serialize<T>> Serialize<T> for Check<V, A> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        A::serialize(value, state)
     }
 
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        A::finish_as(value, state)
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish(value, state)
     }
 
-    fn is_optional_as(value: &T) -> bool {
-        A::is_optional_as(value)
+    fn is_optional(value: &T) -> bool {
+        A::is_optional(value)
     }
 
-    fn container_shape_as(value: &T) -> ContainerShape {
-        A::container_shape_as(value)
+    fn container_shape(value: &T) -> ContainerShape {
+        A::container_shape(value)
     }
 
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        A::describe_as(value, d)
+    fn describe(value: &T, d: &mut dyn Describe) {
+        A::describe(value, d)
     }
 }
 

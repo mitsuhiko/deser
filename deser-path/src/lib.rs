@@ -45,11 +45,11 @@
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
 //!         // for as long as the `PathLayer` is added we can at any point
 //!         // request the current path from the state.
 //!         println!("{}", state.get::<Path>().unwrap());
-//!         self.0.serialize(state)
+//!         u32::serialize(&value.0, state)
 //!     }
 //! }
 //!

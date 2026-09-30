@@ -37,9 +37,9 @@
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-//!         // one can also just do `self.0.serialize(state)`
-//!         Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
+//!     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+//!         // one can also just do `u32::serialize(&value.0, state)`
+//!         Ok(Chunk::Atom(Atom::U64(value.0 as u64)))
 //!     }
 //! }
 //! ```
@@ -48,7 +48,7 @@
 //!
 //! To serialize compounds like structs you return a chunk containing an emitter.
 //! Note that the emitter returns a [`SerializeHandle`].  If want you want to
-//! serialize is not already available the handle can hold a boxed [`Serialize`].
+//! serialize is not already available the handle can own it.
 //!
 //! ```rust
 //! use std::borrow::Cow;
@@ -62,9 +62,9 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
 //!         // the emitter is allocated in the arena of the serialization
-//!         Ok(Chunk::structure(UserEmitter { user: self, index: 0 }, state))
+//!         Ok(Chunk::structure(UserEmitter { user: value, index: 0 }, state))
 //!     }
 //! }
 //!
@@ -93,8 +93,6 @@
 //! }
 //! ```
 use alloc::borrow::Cow;
-use alloc::boxed::Box;
-use core::ops::Deref;
 
 use crate::State;
 use crate::error::Error;
@@ -109,6 +107,7 @@ mod driver;
 pub(crate) mod enums;
 #[cfg(feature = "derive")]
 pub(crate) mod flatten;
+mod handle;
 pub(crate) mod impls;
 mod layer;
 mod serializer;
@@ -117,6 +116,8 @@ mod stream;
 pub use self::boxed::Boxed;
 pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
+pub(crate) use self::handle::{Adapted, Erased, HandleInner};
+pub use self::handle::{SerializeHandle, SerializeRef};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
 pub use self::stream::StreamSerializer;
@@ -127,62 +128,6 @@ pub(crate) use self::begin::{
     Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PLAIN_BUDGET,
     PlainSink, StructField, atom_cost, plain_atom,
 };
-
-/// A handle to a [`Serialize`] type.
-///
-/// During serialization it common to be in a situation where one needs to
-/// return locally constructed [`Serialize`].  This is where
-/// [`SerializeHandle`] comes in.  In cases where the [`Serialize`] cannot
-/// be borrowed it can be boxed up inside the handle.
-///
-/// The equivalent for deserialization is the
-/// [`SinkHandle`](crate::de::SinkHandle).
-pub enum SerializeHandle<'a> {
-    /// A borrowed reference to a [`Serialize`].
-    Borrowed(&'a dyn Serialize),
-    /// A [`Serialize`] owned by the handle (see [`Boxed`]).
-    ///
-    /// Owned values must be `Send` so that the serialization can move
-    /// between threads.
-    Owned(Boxed<dyn Serialize + Send + 'a>),
-}
-
-impl<'a> Deref for SerializeHandle<'a> {
-    type Target = dyn Serialize + 'a;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            SerializeHandle::Borrowed(val) => *val,
-            SerializeHandle::Owned(val) => &**val,
-        }
-    }
-}
-
-impl<'a> SerializeHandle<'a> {
-    /// Create a borrowed handle to a [`Serialize`].
-    pub fn to<S: Serialize + 'a>(val: &'a S) -> SerializeHandle<'a> {
-        SerializeHandle::Borrowed(val as &dyn Serialize)
-    }
-
-    /// Creates an owned handle to a value in the arena of the serialization.
-    ///
-    /// This is how owned values are typically created (for instance for
-    /// [`Chunk::Forward`]), see [`Boxed`].
-    #[inline(always)]
-    pub fn arena<S: Serialize + Send + 'a>(val: S, state: &mut State) -> SerializeHandle<'a> {
-        SerializeHandle::Owned(boxed::unsize(Boxed::arena(val, state), |x| {
-            x as *mut (dyn Serialize + Send + 'a)
-        }))
-    }
-
-    /// Creates an owned handle to a value on the heap.
-    ///
-    /// Unlike [`arena`](Self::arena) the value does not need a state and is
-    /// independent of any serialization.
-    pub fn heap<S: Serialize + Send + 'a>(val: S) -> SerializeHandle<'a> {
-        SerializeHandle::Owned(Boxed::from(Box::new(val) as Box<dyn Serialize + Send + 'a>))
-    }
-}
 
 /// A struct emitter.
 ///
@@ -229,6 +174,32 @@ pub trait SeqEmitter: Send {
 /// [`container_shape`](Self::container_shape) of such values is passed on
 /// with the start event of the container.
 ///
+/// # Adapters
+///
+/// The type parameter `T` is the type of the value that is serialized.  It
+/// defaults to `Self`: `impl Serialize for Foo` serializes `Foo` values.  A
+/// type that implements `Serialize` for another type is an adapter, it
+/// serializes values of that type on their behalf (see
+/// [`adapters`](crate::adapters)):
+///
+/// ```
+/// use deser::ser::{Chunk, Serialize};
+/// use deser::{Atom, Error, State};
+///
+/// /// Serializes a `u32` as string.
+/// pub struct AsString;
+///
+/// impl Serialize<u32> for AsString {
+///     fn serialize<'a>(value: &'a u32, _state: &mut State) -> Result<Chunk<'a>, Error> {
+///         Ok(Chunk::Atom(Atom::Str(value.to_string().into())))
+///     }
+/// }
+/// ```
+///
+/// Adapters are never instantiated, only their functions are used.  The
+/// serializers of the data formats receive the values as [`SerializeRef`],
+/// a reference to the value with its type (and adapter) erased.
+///
 /// # Thread Safety
 ///
 /// Serializables are `Sync` and the emitters they create are `Send`.  This
@@ -238,50 +209,52 @@ pub trait SeqEmitter: Send {
 /// is not thread safe (such as `Rc` or `RefCell`) cannot be serialized.
 /// `Mutex` and `RwLock` cannot be serialized either as the lock guard would
 /// have to be held while the serialization moves between threads.
-pub trait Serialize: Sync {
-    /// Serializes this serializable.
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
+pub trait Serialize<T: ?Sized = Self>: Sync {
+    /// Serializes the value.
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error>;
 
     /// Invoked after the serialization finished.
     ///
     /// This is primarily useful to undo some state change in the serializer
     /// state at the end of the processing.
-    fn finish(&self, _state: &mut State) -> Result<(), Error> {
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        let _ = (value, state);
         Ok(())
     }
 
-    /// Checks if the current value that would be serialized represents an
-    /// optional value.
+    /// Checks if the value represents an optional value.
     ///
     /// This can be used by an emitter to skip over values that are currently
     /// in the optional state.  For instance `Option<T>` returns `true` here if
     /// the value is `None` and the struct emitter created by the `derive` feature
     /// will skip over these if `#[deser(skip_serializing_optionals)]` is set on
     /// the struct.
-    fn is_optional(&self) -> bool {
+    fn is_optional(value: &T) -> bool {
+        let _ = value;
         false
     }
 
-    /// Describes the Rust shape of this value.
+    /// Describes the Rust shape of the value.
     ///
     /// This is only invoked by formats which want to reflect the Rust shape
     /// of values, see [`Describe`].  The default implementation describes
     /// nothing.  Wrappers which serialize as the value they wrap should
     /// describe themselves and then delegate to the wrapped value.
-    fn describe(&self, d: &mut dyn Describe) {
-        let _ = d;
+    fn describe(value: &T, d: &mut dyn Describe) {
+        let _ = (value, d);
     }
 
-    /// Returns the shape of this value if it's a map or sequence.
+    /// Returns the shape of the value if it's a map or sequence.
     ///
     /// The shape is passed on with the [`MapStart`](crate::Event::MapStart)
     /// or [`SeqStart`](crate::Event::SeqStart) event, it's ignored for other
     /// values.  The default is [`ContainerShape::new`].
-    fn container_shape(&self) -> ContainerShape {
+    fn container_shape(value: &T) -> ContainerShape {
+        let _ = value;
         ContainerShape::new()
     }
 
-    /// Begins the serialization of this value.
+    /// Begins the serialization of the value.
     ///
     /// Returns the [`container_shape`](Self::container_shape), the result of
     /// [`serialize`](Self::serialize) and a flag that indicates if
@@ -293,12 +266,16 @@ pub trait Serialize: Sync {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        let shape = self.container_shape();
-        Ok(Begin::chunk(self.serialize(state)?, shape, true))
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        let shape = <Self as Serialize<T>>::container_shape(value);
+        Ok(Begin::chunk(
+            <Self as Serialize<T>>::serialize(value, state)?,
+            shape,
+            true,
+        ))
     }
 
-    /// Returns `true` if the values of this type are plain.
+    /// Returns `true` if the values are plain.
     ///
     /// Plain values serialize as an atom or a sequence of plain values,
     /// independent of the state and without `finish`.  The driver emits
@@ -310,14 +287,11 @@ pub trait Serialize: Sync {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
-    fn __private_is_plain() -> bool
-    where
-        Self: Sized,
-    {
+    fn __private_is_plain() -> bool {
         false
     }
 
-    /// Returns `true` if this value is plain.
+    /// Returns `true` if the value is plain.
     ///
     /// This is `true` for all values of plain types and for some values
     /// of other types, like empty sequences and maps or `None`.
@@ -325,11 +299,9 @@ pub trait Serialize: Sync {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
-    fn __private_is_plain_value(&self) -> bool
-    where
-        Self: Sized,
-    {
-        Self::__private_is_plain()
+    fn __private_is_plain_value(value: &T) -> bool {
+        let _ = value;
+        <Self as Serialize<T>>::__private_is_plain()
     }
 
     /// Emits the events of a plain value.
@@ -340,12 +312,12 @@ pub trait Serialize: Sync {
     ///
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        let _ = sink;
+    fn __private_emit_plain(value: &T, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        let _ = (value, sink);
         unreachable!("not a plain value")
     }
 
-    /// Returns the budget that is left after emitting this plain value at
+    /// Returns the budget that is left after emitting the plain value at
     /// once, `None` if it does not fit.
     ///
     /// Atoms cost one (long text and bytes more, see `atom_cost`),
@@ -355,7 +327,8 @@ pub trait Serialize: Sync {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
-    fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
+    fn __private_plain_cost(value: &T, budget: usize) -> Option<usize> {
+        let _ = value;
         budget.checked_sub(1)
     }
 
@@ -367,10 +340,11 @@ pub trait Serialize: Sync {
     ///
     /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_slice_as_bytes(_val: &[Self]) -> Option<Cow<'_, [u8]>>
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
     where
-        Self: Sized,
+        T: Sized,
     {
+        let _ = val;
         None
     }
 }

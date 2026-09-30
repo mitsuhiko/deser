@@ -23,36 +23,36 @@ make_slot_wrapper!(SlotWrapper);
 
 /// Serializes like an `Option`: as the value if it's set, as null if not.
 impl<T: Serialize + Send> Serialize for OnceLock<T> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        match self.get() {
-            Some(value) => value.serialize(state),
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        match this.get() {
+            Some(value) => T::serialize(value, state),
             None => Ok(Chunk::Atom(Atom::Null)),
         }
     }
 
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        match self.get() {
-            Some(value) => value.finish(state),
+    fn finish(this: &Self, state: &mut State) -> Result<(), Error> {
+        match this.get() {
+            Some(value) => T::finish(value, state),
             None => Ok(()),
         }
     }
 
-    fn is_optional(&self) -> bool {
-        self.get().is_none()
+    fn is_optional(value: &Self) -> bool {
+        value.get().is_none()
     }
 
-    fn container_shape(&self) -> crate::ContainerShape {
-        match self.get() {
-            Some(value) => value.container_shape(),
+    fn container_shape(this: &Self) -> crate::ContainerShape {
+        match this.get() {
+            Some(value) => T::container_shape(value),
             None => crate::ContainerShape::new(),
         }
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        match self.get() {
+    fn describe(this: &Self, d: &mut dyn Describe) {
+        match this.get() {
             Some(value) => {
                 d.some();
-                value.describe(d);
+                T::describe(value, d);
             }
             None => d.none(),
         }
@@ -90,8 +90,8 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OnceLock<T> {
 impl Serialize for Path {
     begin_without_finish!();
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        match self.to_str() {
+    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        match this.to_str() {
             Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
@@ -104,8 +104,8 @@ impl Serialize for Path {
 impl Serialize for PathBuf {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.as_path().serialize(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Path::serialize(value.as_path(), state)
     }
 }
 
@@ -172,8 +172,8 @@ deserialize_via! {
 impl Serialize for OsStr {
     begin_without_finish!();
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        match self.to_str() {
+    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        match this.to_str() {
             Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
@@ -186,8 +186,8 @@ impl Serialize for OsStr {
 impl Serialize for OsString {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.as_os_str().serialize(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        OsStr::serialize(value.as_os_str(), state)
     }
 }
 

@@ -215,7 +215,7 @@ fn test_recordings_do_not_borrow() {
         let mut driver = DeserializeDriver::new(&mut driver_out);
         recording
             .replay(
-                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                Cow::<str>::deserialize_into(&mut out, driver.state_mut()),
                 driver.state_mut(),
             )
             .unwrap();
@@ -228,7 +228,7 @@ fn test_recordings_do_not_borrow() {
     assert!(
         recording
             .replay(
-                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                <&str>::deserialize_into(&mut out, driver.state_mut()),
                 driver.state_mut()
             )
             .is_err()

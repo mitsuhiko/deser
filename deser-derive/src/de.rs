@@ -19,9 +19,9 @@ use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 fn field_sink(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_into_as(#slot, __state)
+            <#adapter as __deser::Deserialize<'de, #ty>>::deserialize_into(#slot, __state)
         },
-        None => quote! { __deser::Deserialize::deserialize_into(#slot, __state) },
+        None => quote! { <#ty as __deser::Deserialize<'de>>::deserialize_into(#slot, __state) },
     }
 }
 
@@ -29,7 +29,7 @@ fn field_sink(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) ->
 fn atom_into(ty: &syn::Type, adapter: Option<&syn::Type>, slot: TokenStream) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_atom_into_as(#slot, __atom, __state)
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_atom_into(#slot, __atom, __state)
         },
         None => quote! { __deser::__derive::atom_into(#slot, __atom, __state) },
     }
@@ -43,7 +43,7 @@ fn borrowed_atom_into(
 ) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_borrowed_atom_into_as(#slot, __atom, __state)
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_borrowed_atom_into(#slot, __atom, __state)
         },
         None => quote! { __deser::__derive::borrowed_atom_into(#slot, __atom, __state) },
     }
@@ -54,7 +54,7 @@ fn borrowed_atom_into(
 fn field_collects(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collects_as()
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_collects()
         },
         None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collects() },
     }
@@ -65,7 +65,7 @@ fn field_collects(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
 fn field_raw(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_raw_as()
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_raw()
         },
         None => quote! { <#ty as __deser::Deserialize<'de>>::__private_raw() },
     }
@@ -80,7 +80,7 @@ fn field_collect_into(
 ) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_into_as(#slot, __state)
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_collect_into(#slot, __state)
         },
         None => {
             quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_into(#slot, __state) }
@@ -98,7 +98,7 @@ fn field_collect_update(
 ) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_update_as(#field, #first, __state)
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_collect_update(#field, #first, __state)
         },
         None => {
             quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_update(#field, #first, __state) }
@@ -111,7 +111,7 @@ fn field_collect_update(
 fn field_collect_empty(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_collect_empty_as()
+            <#adapter as __deser::Deserialize<'de, #ty>>::__private_collect_empty()
         },
         None => quote! { <#ty as __deser::Deserialize<'de>>::__private_collect_empty() },
     }
@@ -174,7 +174,7 @@ fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::R
         &input.generics,
         quote!(__deser::Deserialize<'de>),
         Some(quote!(__deser::__derive::Send)),
-        quote!(__deser::adapters::DeserializeAs),
+        quote!(__deser::Deserialize),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &st.bound_fields(Direction::Deserialize),
@@ -416,11 +416,11 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             }
         } else if let Some(adapter) = f.adapters().de() {
             quote! {
-                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::initial_value_as()
+                <#adapter as __deser::Deserialize<'de, #ty>>::initial_value()
             }
         } else {
             quote! {
-                __deser::de::Deserialize::initial_value()
+                <#ty as __deser::Deserialize<'de>>::initial_value()
             }
         });
         has_flatten_fields |= f.flatten();
@@ -494,7 +494,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         let update = match x.adapters().de() {
             None => quote! { __deser::__derive::field_update(__field, __state) },
             Some(adapter) => quote_spanned! { adapter.span()=>
-                <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::deserialize_update_as(__field, __state)
+                <#adapter as __deser::Deserialize<'de, #ty>>::deserialize_update(__field, __state)
             },
         };
         let field_ref = if update_through_ptr {
@@ -556,7 +556,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
         &input.generics,
         quote!(__deser::Deserialize<'de>),
         Some(quote!(__deser::__derive::Send)),
-        quote!(__deser::adapters::DeserializeAs),
+        quote!(__deser::Deserialize),
         Some(quote!('de)),
         container_attrs.deserialize_bound(),
         &bound_fields,
@@ -1764,12 +1764,12 @@ pub(crate) fn derive_newtype_struct(
     let newtype_update = match adapter {
         None => quote! {
             fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
-                __deser::Deserialize::deserialize_update(&mut __value.#member, __state)
+                <#field_type as __deser::Deserialize<'de>>::deserialize_update(&mut __value.#member, __state)
             }
         },
         Some(adapter) => quote_spanned! { adapter.span()=>
             fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
-                <#adapter as __deser::adapters::DeserializeAs<'de, #field_type>>::deserialize_update_as(
+                <#adapter as __deser::Deserialize<'de, #field_type>>::deserialize_update(
                     &mut __value.#member, __state)
             }
         },

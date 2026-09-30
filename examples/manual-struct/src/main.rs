@@ -20,14 +20,14 @@ pub struct User {
 }
 
 impl Serialize for User {
-    fn describe(&self, d: &mut dyn Describe) {
+    fn describe(_value: &Self, d: &mut dyn Describe) {
         d.structure("User");
     }
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::structure(
             UserEmitter {
-                user: self,
+                user: value,
                 index: 0,
             },
             state,
@@ -92,16 +92,13 @@ impl<'a, 'de> Sink<'de> for UserSink<'a> {
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        Ok(Deserialize::deserialize_into(&mut self.key, state))
+        Ok(String::deserialize_into(&mut self.key, state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         match self.key.take().as_deref() {
-            Some("id") => Ok(Deserialize::deserialize_into(&mut self.id, state)),
-            Some("emailAddress") => Ok(Deserialize::deserialize_into(
-                &mut self.email_address,
-                state,
-            )),
+            Some("id") => Ok(usize::deserialize_into(&mut self.id, state)),
+            Some("emailAddress") => Ok(String::deserialize_into(&mut self.email_address, state)),
             _ => Ok(SinkHandle::null()),
         }
     }

@@ -4,11 +4,10 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use deser::adapters::{
-    As, DefaultOnError, DeserializeAs, DisplayFromStr, FromInto, MapSkipError, SerializeAs,
-    TryFromInto, VecSkipError,
+    As, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
 };
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording, SinkHandle};
-use deser::ser::{Chunk, SerializeDriver, SerializeHandle};
+use deser::ser::{Chunk, SerializeDriver, SerializeHandle, SerializeRef};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -49,18 +48,18 @@ fn deserialize_lenient<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T,
     Ok(out.unwrap())
 }
 
-fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(without_len(event.to_static()));
     }
     events
 }
 
-fn serialize_drive(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize_drive<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    SerializeDriver::new(value)
+    SerializeDriver::new(&value)
         .drive(|event, _| {
             events.push(without_len(event.to_static()));
             Ok(())
@@ -499,8 +498,8 @@ fn test_error_recovery() {
 /// A custom adapter that represents bytes as hex strings.
 struct Hex;
 
-impl SerializeAs<Vec<u8>> for Hex {
-    fn serialize_as<'a>(value: &'a Vec<u8>, _state: &mut State) -> Result<Chunk<'a>, Error> {
+impl Serialize<Vec<u8>> for Hex {
+    fn serialize<'a>(value: &'a Vec<u8>, _state: &mut State) -> Result<Chunk<'a>, Error> {
         let hex: String = value.iter().map(|x| format!("{:02x}", x)).collect();
         Ok(Chunk::Atom(Atom::Str(hex.into())))
     }
@@ -525,8 +524,8 @@ impl<'de> deser::de::Sink<'de> for HexSlot<Vec<u8>> {
     }
 }
 
-impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-    fn deserialize_into_as<'out>(
+impl<'de> Deserialize<'de, Vec<u8>> for Hex {
+    fn deserialize_into<'out>(
         out: &'out mut Option<Vec<u8>>,
         _state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -814,17 +813,17 @@ fn test_as_wrapper() {
 
 /// A value that serializes by forwarding to another value.
 struct Forwarding<'a> {
-    inner: &'a dyn Serialize,
+    inner: SerializeRef<'a>,
     log: &'a std::sync::Mutex<Vec<&'static str>>,
 }
 
 impl<'a> Serialize for Forwarding<'a> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Forward(SerializeHandle::Borrowed(self.inner)))
+    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Chunk<'b>, Error> {
+        Ok(Chunk::Forward(SerializeHandle::from(value.inner)))
     }
 
-    fn finish(&self, _state: &mut State) -> Result<(), Error> {
-        self.log.lock().unwrap().push("outer");
+    fn finish(value: &Self, _state: &mut State) -> Result<(), Error> {
+        value.log.lock().unwrap().push("outer");
         Ok(())
     }
 }
@@ -835,12 +834,12 @@ struct Logged<'a, T> {
 }
 
 impl<'a, T: Serialize> Serialize for Logged<'a, T> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.value.serialize(state)
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
+        T::serialize(&this.value, state)
     }
 
-    fn finish(&self, _state: &mut State) -> Result<(), Error> {
-        self.log.lock().unwrap().push("inner");
+    fn finish(value: &Self, _state: &mut State) -> Result<(), Error> {
+        value.log.lock().unwrap().push("inner");
         Ok(())
     }
 }
@@ -849,21 +848,21 @@ impl<'a, T: Serialize> Serialize for Logged<'a, T> {
 fn test_forward() {
     let log = std::sync::Mutex::new(Vec::new());
     for value in [
-        &1u32 as &dyn Serialize,
-        &vec![1u32, 2] as &dyn Serialize,
-        &(1u32, "x") as &dyn Serialize,
+        SerializeRef::new(&1u32),
+        SerializeRef::new(&vec![1u32, 2]),
+        SerializeRef::new(&(1u32, "x")),
     ] {
         let inner = Logged { value, log: &log };
         let forwarding = Forwarding {
-            inner: &inner,
+            inner: SerializeRef::new(&inner),
             log: &log,
         };
         // forwarding twice
         let outer = Forwarding {
-            inner: &forwarding,
+            inner: SerializeRef::new(&forwarding),
             log: &log,
         };
-        let expected = serialize(value);
+        let expected = serialize(&value);
         assert_eq!(serialize(&outer), expected);
         assert_eq!(&log.lock().unwrap()[..], ["inner", "outer", "outer"]);
         log.lock().unwrap().clear();
@@ -872,7 +871,7 @@ fn test_forward() {
         log.lock().unwrap().clear();
 
         // within containers
-        let values = vec![&outer as &dyn Serialize, &outer];
+        let values = vec![SerializeRef::new(&outer), SerializeRef::new(&outer)];
         let mut expected_seq = vec![Event::seq_start()];
         expected_seq.extend(expected.iter().cloned());
         expected_seq.extend(expected.iter().cloned());
@@ -1111,39 +1110,54 @@ fn test_separated() {
             Event::MapEnd,
         ],
     );
-    let joined = |value: &dyn Serialize| serialize(value);
+    let joined = |value: SerializeRef<'_>| serialize(&value);
     assert_eq!(
-        joined(&As::<_, Separated<';'>>::new(vec![1.5f64, 2.0])),
+        joined(SerializeRef::new(&As::<_, Separated<';'>>::new(vec![
+            1.5f64, 2.0
+        ]))),
         [Event::from("1.5;2")]
     );
     assert_eq!(
-        joined(&As::<HashSet<bool>, Separated>::new(HashSet::from([true]))),
+        joined(SerializeRef::new(&As::<HashSet<bool>, Separated>::new(
+            HashSet::from([true])
+        ))),
         [Event::from("true")]
     );
     assert_eq!(
-        joined(&As::<Vec<String>, Separated>::new(vec![])),
+        joined(SerializeRef::new(&As::<Vec<String>, Separated>::new(
+            vec![]
+        ))),
         [Event::from("")]
     );
 
     // values that would not read back are errors
-    let fails = |value: &dyn Serialize| SerializeDriver::new(value).drive(|_, _| Ok(()));
-    let err = fails(&As::<_, Separated>::new(vec!["a", "b,c"])).unwrap_err();
+    let fails = |value: SerializeRef<'_>| SerializeDriver::from_ref(value).drive(|_, _| Ok(()));
+    let err = fails(SerializeRef::new(&As::<_, Separated>::new(vec![
+        "a", "b,c",
+    ])))
+    .unwrap_err();
     assert_eq!(
         err.message(),
         "cannot join \"b,c\", it contains the separator ','"
     );
-    let err = fails(&As::<_, Separated>::new(vec![""])).unwrap_err();
+    let err = fails(SerializeRef::new(&As::<_, Separated>::new(vec![""]))).unwrap_err();
     assert_eq!(
         err.message(),
         "cannot join a single empty string, it would read back as no elements"
     );
-    assert!(fails(&As::<_, Separated>::new(vec!["", ""])).is_ok());
-    let err = fails(&As::<_, Separated>::new(vec![vec![1u32]])).unwrap_err();
+    assert!(fails(SerializeRef::new(&As::<_, Separated>::new(vec!["", ""]))).is_ok());
+    let err = fails(SerializeRef::new(&As::<_, Separated>::new(vec![vec![
+        1u32,
+    ]])))
+    .unwrap_err();
     assert_eq!(
         err.message(),
         "cannot join sequence, elements must be strings, numbers, booleans or chars"
     );
-    let err = fails(&As::<_, Separated>::new(vec![None::<u32>])).unwrap_err();
+    let err = fails(SerializeRef::new(&As::<_, Separated>::new(vec![
+        None::<u32>,
+    ])))
+    .unwrap_err();
     assert_eq!(
         err.message(),
         "cannot join null, elements must be strings, numbers, booleans or chars"

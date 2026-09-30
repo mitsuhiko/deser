@@ -441,13 +441,13 @@ fn test_serializer() {
 #[test]
 fn test_serializer_trait() {
     // the serializer can be used where the format is not known
-    fn write(ser: &mut dyn deser::ser::Serializer, value: &dyn deser::Serialize) {
-        ser.serialize(value).unwrap();
+    fn write(ser: &mut dyn deser::ser::Serializer, value: deser::ser::SerializeRef<'_>) {
+        ser.serialize_ref(value).unwrap();
     }
     let mut serializer = deser_xml::Serializer::with_config(&SerializerConfig::new().root("r"));
     write(
         &mut serializer,
-        &vec![("a", 1)].into_iter().collect::<BTreeMap<_, _>>(),
+        deser::ser::SerializeRef::new(&vec![("a", 1)].into_iter().collect::<BTreeMap<_, _>>()),
     );
     assert_eq!(serializer.finish(), "<r><a>1</a></r>");
 }

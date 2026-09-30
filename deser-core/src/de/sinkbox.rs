@@ -30,6 +30,29 @@ pub(crate) fn arena_sink<'a, 'de, S: Sink<'de> + 'a>(
     unsafe { ArenaBox::from_raw(sink.as_ptr() as *mut (dyn Sink<'de> + 'a)) }
 }
 
+/// Moves a sink into an arena without requiring it to outlive `'a`.
+///
+/// # Safety
+///
+/// See [`SinkHandle::arena_unbounded`](super::SinkHandle::arena_unbounded).
+#[inline(always)]
+pub(crate) unsafe fn arena_sink_unbounded<'a, 'de, S: Sink<'de>>(
+    sink: S,
+    arena: &mut Arena,
+) -> ArenaSink<'a, 'de> {
+    let sink = ArenaBox::into_raw(ArenaBox::new(sink, arena));
+    // the sink outlives this function (like every type parameter)
+    let sink: *mut (dyn Sink<'de> + '_) = sink.as_ptr();
+    // SAFETY: the pointer comes from the box, the caller guarantees that
+    // the sink can be used for 'a.
+    unsafe {
+        ArenaBox::from_raw(core::mem::transmute::<
+            *mut (dyn Sink<'de> + '_),
+            *mut (dyn Sink<'de> + 'a),
+        >(sink))
+    }
+}
+
 /// An owned sink on the heap.
 ///
 /// This behaves like a `Box<dyn Sink>`.  As it's based on a raw pointer,

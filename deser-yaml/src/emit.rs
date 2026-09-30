@@ -15,7 +15,8 @@ use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
 use deser_core::ser::EventSink;
-use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
+use deser_core::ser::SerializeRef;
+use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, State};
 
 use crate::quote::{
     BlockScalar, MAX_SIMPLE_KEY_LEN, PushSmall, is_plain_safe, is_single_quote_safe, push_indent,
@@ -235,7 +236,7 @@ impl EventSink for Emitter {
     fn event(
         &mut self,
         event: Event<'_>,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         Emitter::event(self, event, state)

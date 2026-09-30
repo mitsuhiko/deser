@@ -14,13 +14,13 @@ use core::ptr::NonNull;
 
 use crate::State;
 use crate::Text;
-use crate::adapters::{DeserializeAs, Same};
+use crate::adapters::Same;
 use crate::de::CollectedErrors;
 use crate::de::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use crate::de::duplicates::{duplicate_field, is_seen, mark_seen};
 use crate::de::sinkbox::StructBox;
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
-use crate::de::{Sink, SinkHandle};
+use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::Atom;
 
@@ -432,34 +432,34 @@ pub fn no_field_slot<'x, 'de>() -> &'x mut dyn FieldSlot<'de> {
     Box::leak(Box::new(NoField))
 }
 
-impl<'de, T: Send, A: DeserializeAs<'de, T>> FieldSlot<'de> for Slot<T, A> {
+impl<'de, T: Send, A: Deserialize<'de, T>> FieldSlot<'de> for Slot<T, A> {
     fn collects(&self) -> bool {
-        A::__private_collects_as()
+        A::__private_collects()
     }
 
     fn raw(&self) -> Option<&'static crate::ext::RawFormatInfo> {
-        A::__private_raw_as()
+        A::__private_raw()
     }
 
     fn sink(&mut self, collect: Collect, state: &mut State) -> SinkHandle<'_, 'de> {
         // `collect` is only set for fields that collect, the check of the
         // type removes the branch for the others
-        if A::__private_collects_as() && collect != Collect::No {
-            A::__private_collect_into_as(&mut self.value, state)
+        if A::__private_collects() && collect != Collect::No {
+            A::__private_collect_into(&mut self.value, state)
         } else {
-            A::deserialize_into_as(&mut self.value, state)
+            A::deserialize_into(&mut self.value, state)
         }
     }
 
     fn atom(&mut self, collect: Collect, atom: Atom, state: &mut State) -> Result<(), Error> {
-        if A::__private_collects_as() && collect != Collect::No {
+        if A::__private_collects() && collect != Collect::No {
             atom_into_handle(
-                A::__private_collect_into_as(&mut self.value, state),
+                A::__private_collect_into(&mut self.value, state),
                 atom,
                 state,
             )
         } else {
-            A::__private_atom_into_as(&mut self.value, atom, state)
+            A::__private_atom_into(&mut self.value, atom, state)
         }
     }
 
@@ -469,14 +469,14 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> FieldSlot<'de> for Slot<T, A> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        if A::__private_collects_as() && collect != Collect::No {
+        if A::__private_collects() && collect != Collect::No {
             borrowed_atom_into_handle(
-                A::__private_collect_into_as(&mut self.value, state),
+                A::__private_collect_into(&mut self.value, state),
                 atom,
                 state,
             )
         } else {
-            A::__private_borrowed_atom_into_as(&mut self.value, atom, state)
+            A::__private_borrowed_atom_into(&mut self.value, atom, state)
         }
     }
 }

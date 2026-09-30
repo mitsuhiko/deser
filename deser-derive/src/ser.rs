@@ -6,20 +6,20 @@ use crate::attr::{ContainerAttrs, Direction, FieldAttrs, ident_name};
 use crate::bound::{where_clause_for_fields, with_lifetime_bound};
 use crate::unnamed::{NewtypeField, UnnamedField, UnnamedStruct};
 
-/// Returns an expression that creates a serialize handle for a value.
 /// Implements `__private_begin` for types which do not implement `finish`.
 ///
-/// This is the same as the `begin_without_finish!` macro of deser.
-fn begin_without_finish() -> TokenStream {
+/// This is the same as the `begin_without_finish!` macro of deser.  The
+/// trait is `Serialize` or `DerivedSerialize` (see `forward.rs`).
+fn begin_without_finish(ser_trait: &TokenStream) -> TokenStream {
     quote! {
         #[inline]
-        fn __private_begin(
-            &self,
+        fn __private_begin<'__a>(
+            __value: &'__a Self,
             __state: &mut __deser::State,
-        ) -> __deser::__derive::Result<__deser::__derive::Begin<'_>> {
-            let __shape = __deser::ser::Serialize::container_shape(self);
+        ) -> __deser::__derive::Result<__deser::__derive::Begin<'__a>> {
+            let __shape = <Self as #ser_trait>::container_shape(__value);
             __deser::__derive::Ok(__deser::__derive::Begin::chunk(
-                __deser::ser::Serialize::serialize(self, __state)?,
+                <Self as #ser_trait>::serialize(__value, __state)?,
                 __shape,
                 false,
             ))
@@ -27,7 +27,21 @@ fn begin_without_finish() -> TokenStream {
     }
 }
 
-pub(crate) fn serialize_handle(
+/// Returns the path of the `Serialize` implementation of a value, which is
+/// the one of its adapter if it has one.
+pub(crate) fn serialize_impl(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
+    match adapter {
+        // spanned so that errors about unsupported types point to the adapter
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::Serialize<#ty>>
+        },
+        None => quote! { <#ty as __deser::Serialize> },
+    }
+}
+
+/// Returns an expression that creates a reference to a value (see
+/// `SerializeRef`).
+pub(crate) fn serialize_ref(
     ty: &syn::Type,
     adapter: Option<&syn::Type>,
     value: TokenStream,
@@ -35,10 +49,23 @@ pub(crate) fn serialize_handle(
     match adapter {
         // spanned so that errors about unsupported types point to the adapter
         Some(adapter) => quote_spanned! { adapter.span()=>
-            __deser::ser::SerializeHandle::to(
-                __deser::__derive::SerializeAsRef::<#adapter, #ty>::new(#value)
-            )
+            __deser::ser::SerializeRef::with_adapter::<#adapter, #ty>(#value)
         },
+        None => quote! { __deser::ser::SerializeRef::new(#value) },
+    }
+}
+
+/// Returns an expression that creates a serialize handle for a value.
+pub(crate) fn serialize_handle(
+    ty: &syn::Type,
+    adapter: Option<&syn::Type>,
+    value: TokenStream,
+) -> TokenStream {
+    match adapter {
+        Some(_) => {
+            let value = serialize_ref(ty, adapter, value);
+            quote! { __deser::ser::SerializeHandle::from(#value) }
+        }
         None => quote! { __deser::ser::SerializeHandle::to(#value) },
     }
 }
@@ -49,12 +76,8 @@ pub(crate) fn is_optional(
     adapter: Option<&syn::Type>,
     value: TokenStream,
 ) -> TokenStream {
-    match adapter {
-        Some(adapter) => quote_spanned! { adapter.span()=>
-            <#adapter as __deser::adapters::SerializeAs<#ty>>::is_optional_as(#value)
-        },
-        None => quote! { __deser::ser::Serialize::is_optional(#value) },
-    }
+    let ser = serialize_impl(ty, adapter);
+    quote! { #ser::is_optional(#value) }
 }
 
 /// Returns the where clause for the fields of a struct.
@@ -73,7 +96,7 @@ fn struct_where_clause(
         &input.generics,
         quote!(__deser::Serialize),
         Some(quote!(__deser::__derive::Sync)),
-        quote!(__deser::adapters::SerializeAs),
+        quote!(__deser::Serialize),
         None,
         container_attrs.serialize_bound(),
         &bound_fields,
@@ -163,7 +186,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             let name = &attrs.field().ident;
             let optional_skip = if container_attrs.skip_serializing_optionals() {
                 quote! {
-                    if __handle.is_optional() {
+                    if __handle.get().is_optional() {
                         continue;
                     }
                 }
@@ -196,6 +219,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }
                 }
             } else {
+                let field_ty = &attrs.field().ty;
                 let field_skip = if let Some(path) = attrs.skip_serializing_if() {
                     quote! {
                         if #path(&self.data.#name) {
@@ -213,7 +237,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             // values that forward (for instance because of
                             // an adapter on their type) are followed
                             self.nested_emitter = __deser::__derive::Some(
-                                __deser::__derive::FlattenedStruct::new(&self.data.#name, __state)?
+                                __deser::__derive::FlattenedStruct::new(
+                                    __deser::ser::SerializeRef::new(&self.data.#name),
+                                    __state,
+                                )?
                             );
                             self.nested_emitter_exhausted = false;
                         }
@@ -223,7 +250,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                                 self.nested_emitter_exhausted = true;
                                 // the values it forwarded to were finished
                                 // with the last field, now the value itself
-                                __deser::ser::Serialize::finish(&self.data.#name, __state)?;
+                                <#field_ty as __deser::Serialize>::finish(&self.data.#name, __state)?;
                                 continue;
                             }
                             // we need this transmute here because of limitations in the borrow
@@ -253,22 +280,22 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
 
     let wrapper_generics = with_lifetime_bound(&input.generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
-    let begin_without_finish = begin_without_finish();
-
     let ser_trait = crate::forward::serialize_trait(&container_attrs);
+    let begin_without_finish = begin_without_finish(&ser_trait);
+
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
                 #begin_without_finish
 
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                     __d.structure(#type_name);
                 }
 
-                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
                     __deser::__derive::Ok(__deser::ser::Chunk::structure(__StructEmitter {
-                        data: self,
+                        data: __value,
                         index: 0,
                         #temp_emitter_init
                     }, __state))
@@ -376,7 +403,8 @@ fn derive_indexed_struct(
                 skip.push(quote! { #path(&self.#name) });
             }
             if container_attrs.skip_serializing_optionals() {
-                skip.push(quote! { __deser::ser::Serialize::is_optional(&self.#name) });
+                let ty = &attrs.field().ty;
+                skip.push(quote! { <#ty as __deser::Serialize>::is_optional(&self.#name) });
             }
             let emit = quote! {
                 __deser::__derive::emit_plain_field(&self.#name, #fieldstr, __sink, __bounded)
@@ -435,24 +463,24 @@ fn derive_indexed_struct(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                     const __FIELDS: &[&str] = &[#(#field_names),*];
                     __deser::__derive::describe_struct(__d, #type_name, __FIELDS);
                 }
 
-                fn container_shape(&self) -> __deser::ContainerShape {
+                fn container_shape(__value: &Self) -> __deser::ContainerShape {
                     #shape
                 }
 
-                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::serialize_indexed(self, __state)
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                    __deser::__derive::serialize_indexed(__value, __state)
                 }
 
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                fn __private_begin<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'__a>>
                 {
-                    __deser::__derive::Ok(__deser::__derive::Begin::indexed_struct(self, #shape))
+                    __deser::__derive::Ok(__deser::__derive::Begin::indexed_struct(__value, #shape))
                 }
             }
 
@@ -518,21 +546,21 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
             #[automatically_derived]
             impl #ser_trait for #ident {
                 #[inline]
-                fn __private_begin(
-                    &self,
+                fn __private_begin<'__a>(
+                    __value: &'__a Self,
                     __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<__deser::__derive::Begin<'_>> {
-                    __deser::__derive::begin_unit(&__VARIANTS, __index(self))
+                ) -> __deser::__derive::Result<__deser::__derive::Begin<'__a>> {
+                    __deser::__derive::begin_unit(&__VARIANTS, __index(__value))
                 }
 
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
-                    __deser::__derive::describe_unit(__d, &__VARIANTS, __index(self))
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
+                    __deser::__derive::describe_unit(__d, &__VARIANTS, __index(__value))
                 }
 
-                fn serialize(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::ser::Chunk<'__a>>
                 {
-                    __deser::__derive::serialize_unit(&__VARIANTS, __index(self))
+                    __deser::__derive::serialize_unit(&__VARIANTS, __index(__value))
                 }
             }
         };
@@ -551,7 +579,7 @@ fn derive_unnamed_struct(input: &syn::DeriveInput, st: &UnnamedStruct) -> syn::R
         &input.generics,
         quote!(__deser::Serialize),
         Some(quote!(__deser::__derive::Sync)),
-        quote!(__deser::adapters::SerializeAs),
+        quote!(__deser::Serialize),
         None,
         container_attrs.serialize_bound(),
         &st.bound_fields(Direction::Serialize),
@@ -608,24 +636,24 @@ fn derive_tuple_struct(
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                     __d.tuple_struct(#type_name);
                 }
 
-                fn container_shape(&self) -> __deser::ContainerShape {
+                fn container_shape(__value: &Self) -> __deser::ContainerShape {
                     __deser::ContainerShape::new().with_len(#len)
                 }
 
-                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::seq(__deser::__derive::IndexedSeqEmitter::new(self), __state))
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                    __deser::__derive::Ok(__deser::ser::Chunk::seq(__deser::__derive::IndexedSeqEmitter::new(__value), __state))
                 }
 
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                fn __private_begin<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'__a>>
                 {
                     __deser::__derive::Ok(__deser::__derive::Begin::indexed_seq(
-                        self,
+                        __value,
                         __deser::ContainerShape::new().with_len(#len),
                     ))
                 }
@@ -656,19 +684,19 @@ fn derive_unit_struct(
     let ident = &input.ident;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_name = container_attrs.container_name();
-    let begin_without_finish = begin_without_finish();
-
     let ser_trait = crate::forward::serialize_trait(container_attrs);
+    let begin_without_finish = begin_without_finish(&ser_trait);
+
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #ser_trait for #ident #ty_generics #where_clause {
             #begin_without_finish
 
-            fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+            fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                 __d.unit_struct(#type_name);
             }
 
-            fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
+            fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
                 __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Null))
             }
         }
@@ -691,39 +719,35 @@ pub(crate) fn derive_newtype_struct(
     let field_type = field.ty;
     let member = &field.member;
     // the value serializes through the adapter or the regular implementation
-    let value = match adapter {
-        Some(adapter) => quote! {
-            __deser::__derive::SerializeAsRef::<#adapter, #field_type>::new(&self.#member)
-        },
-        None => quote! { &self.#member },
-    };
+    let ser = serialize_impl(field_type, adapter);
+    let value = quote! { &__value.#member };
 
     let ser_trait = crate::forward::serialize_trait(container_attrs);
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #ser_trait for #ident #ty_generics #bounded_where_clause {
-                fn container_shape(&self) -> __deser::ContainerShape {
-                    __deser::ser::Serialize::container_shape(#value)
+                fn container_shape(__value: &Self) -> __deser::ContainerShape {
+                    #ser::container_shape(#value)
                 }
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                     __d.newtype(#type_name);
-                    __deser::ser::Serialize::describe(#value, __d)
+                    #ser::describe(#value, __d)
                 }
-                fn serialize(&self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'_>> {
-                    __deser::ser::Serialize::serialize(#value, __state)
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                    #ser::serialize(#value, __state)
                 }
-                fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                    __deser::ser::Serialize::finish(#value, __state)
+                fn finish(__value: &Self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
+                    #ser::finish(#value, __state)
                 }
-                fn is_optional(&self) -> bool {
-                    __deser::ser::Serialize::is_optional(#value)
+                fn is_optional(__value: &Self) -> bool {
+                    #ser::is_optional(#value)
                 }
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                fn __private_begin<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'__a>>
                 {
-                    __deser::ser::Serialize::__private_begin(#value, __state)
+                    #ser::__private_begin(#value, __state)
                 }
             }
         };

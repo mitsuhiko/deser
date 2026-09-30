@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser_core::ser::SerializeRef;
 use deser_core::ser::{
     Boxed, Chunk, Describe, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
 };
@@ -472,13 +473,13 @@ fn text_key(state: &State) -> &'static str {
 pub(crate) struct KeepsWhitespace(pub(crate) bool);
 
 impl<T: Serialize, W: Whitespace> Serialize for Mixed<T, W> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         if W::KEEP {
             state.event_mut::<KeepsWhitespace>().0 = true;
         }
         Ok(Chunk::structure(
             MixedEmitter {
-                values: self.0.iter(),
+                values: value.0.iter(),
                 current: None,
             },
             state,
@@ -525,14 +526,16 @@ impl<'a, T: Serialize> StructEmitter for MixedEmitter<'a, T> {
                 }
                 let (value, entries) = self.current.take().unwrap();
                 drop(entries);
-                value.finish(state)?;
+                T::finish(value, state)?;
             }
             let Some(value) = self.values.next() else {
                 return Ok(None);
             };
-            let entries = match value.serialize(state)? {
+            let entries = match T::serialize(value, state)? {
                 Chunk::Struct(emitter) => Entries::Struct(emitter),
-                Chunk::Atom(Atom::Str(name) | Atom::Lexical(name)) if is_unit_variant(value) => {
+                Chunk::Atom(Atom::Str(name) | Atom::Lexical(name))
+                    if is_unit_variant(SerializeRef::new(value)) =>
+                {
                     Entries::Unit(Some(name.into_cow()))
                 }
                 Chunk::Atom(Atom::Null) => Entries::Unit(None),
@@ -549,7 +552,7 @@ impl<'a, T: Serialize> StructEmitter for MixedEmitter<'a, T> {
 }
 
 /// Returns `true` if the value is a unit variant that is its name.
-fn is_unit_variant(value: &dyn Serialize) -> bool {
+fn is_unit_variant(value: SerializeRef<'_>) -> bool {
     struct Check(bool);
 
     impl Describe for Check {

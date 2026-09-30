@@ -18,7 +18,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
 
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(match event {
             Event::MapStart(_) => Event::map_start(),
@@ -181,7 +181,7 @@ fn test_skip_generics_in_variants() {
 }
 
 fn try_serialize<T: Serialize>(value: &T) -> Result<(), Error> {
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while driver.next()?.is_some() {}
     Ok(())
 }

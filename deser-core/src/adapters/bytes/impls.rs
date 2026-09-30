@@ -7,11 +7,10 @@ use core::marker::PhantomData;
 use crate::BytesFormat;
 use crate::State;
 use crate::adapters::bytes::BytesEncoding;
-use crate::adapters::{DeserializeAs, SerializeAs};
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes, ContainerShape};
-use crate::ser::{Begin, Chunk};
+use crate::ser::{Begin, Chunk, Serialize};
 
 mod sealed {
     use super::*;
@@ -25,7 +24,7 @@ mod sealed {
         ) -> SinkHandle<'a, 'de>;
     }
 
-    pub trait BytesFallbackFormatImpl: 'static {
+    pub trait BytesFallbackFormatImpl: Send + Sync + 'static {
         const FORMAT: BytesFormat;
         fn deserialize_into<'a, 'de, T: BytesBufImpl>(
             out: &'a mut Option<T>,
@@ -64,7 +63,7 @@ impl BytesBufImpl for Vec<u8> {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 
@@ -85,7 +84,7 @@ impl<const N: usize> BytesBufImpl for [u8; N] {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 
@@ -105,7 +104,7 @@ impl<'c> BytesBufImpl for Cow<'c, [u8]> {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 
@@ -194,8 +193,8 @@ pub(crate) fn encoded_handle<'a, 'de, T: BytesBufImpl, E: BytesEncoding>(
 macro_rules! encoding_adapter {
     ($([$($gen:tt)*] $ty:ty),* $(,)?) => {
         $(
-            impl<$($gen)* E: $crate::adapters::BytesEncoding> $crate::adapters::SerializeAs<$ty> for E {
-                fn serialize_as<'a>(
+            impl<$($gen)* E: $crate::adapters::BytesEncoding> $crate::ser::Serialize<$ty> for E {
+                fn serialize<'a>(
                     value: &'a $ty,
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
@@ -208,12 +207,12 @@ macro_rules! encoding_adapter {
                 }
 
                 #[inline]
-                fn __private_begin_as<'a>(
+                fn __private_begin<'a>(
                     value: &'a $ty,
                     state: &mut $crate::State,
                 ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
                     Ok($crate::ser::Begin::chunk(
-                        Self::serialize_as(value, state)?,
+                        Self::serialize(value, state)?,
                         $crate::ContainerShape::new(),
                         false,
                     ))
@@ -221,10 +220,10 @@ macro_rules! encoding_adapter {
             }
 
             impl<'de, $($gen)* E: $crate::adapters::BytesEncoding>
-                $crate::adapters::DeserializeAs<'de, $ty> for E
+                $crate::de::Deserialize<'de, $ty> for E
             {
                 #[inline]
-                fn deserialize_into_as<'a>(
+                fn deserialize_into<'a>(
                     out: &'a mut Option<$ty>, state: &mut $crate::State) -> $crate::de::SinkHandle<'a, 'de> {
                     $crate::adapters::bytes::encoded_handle::<$ty, E>(out, state)
                 }
@@ -275,27 +274,27 @@ encoding_adapter!(
 /// bytes, configure the format instead.
 pub struct BytesFallback<F>(PhantomData<fn() -> F>);
 
-impl<T: BytesBuf, F: BytesFallbackFormat> SerializeAs<T> for BytesFallback<F> {
+impl<T: BytesBuf, F: BytesFallbackFormat> Serialize<T> for BytesFallback<F> {
     #[inline]
-    fn serialize_as<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Atom(Atom::Bytes(
             Bytes::borrowed(value.bytes()).with_fallback(const { &F::FORMAT }),
         )))
     }
 
     #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
+            Self::serialize(value, state)?,
             ContainerShape::new(),
             false,
         ))
     }
 }
 
-impl<'de, T: BytesBuf, F: BytesFallbackFormat> DeserializeAs<'de, T> for BytesFallback<F> {
+impl<'de, T: BytesBuf, F: BytesFallbackFormat> Deserialize<'de, T> for BytesFallback<F> {
     #[inline]
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {

@@ -42,9 +42,9 @@ fn deserialize_with<T: DeserializeOwned>(
 }
 
 /// Serializes a value into events with the requested bytes formats.
-fn serialize(value: &dyn Serialize) -> Vec<(Event<'static>, Option<BytesFormat>)> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<(Event<'static>, Option<BytesFormat>)> {
     let mut events = Vec::new();
-    SerializeDriver::new(value)
+    SerializeDriver::new(&value)
         .drive(|event, _| {
             // the fallback is reported separately
             let (event, format) = match event {

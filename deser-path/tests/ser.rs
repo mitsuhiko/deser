@@ -21,17 +21,17 @@ fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
 struct MyBool(bool);
 
 impl Serialize for MyBool {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         let path = state.get::<Path>().unwrap();
         assert_eq!(path.segments().len(), 2);
-        Ok(Chunk::Atom(Atom::Bool(self.0)))
+        Ok(Chunk::Atom(Atom::Bool(value.0)))
     }
 }
 
 /// Serializes and returns the events with the path the format sees.
-fn events(value: &dyn Serialize) -> Vec<String> {
+fn events<T: Serialize + ?Sized>(value: &T) -> Vec<String> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     driver.push_layer(PathLayer::new());
     driver
         .drive(|event, state| {
@@ -123,7 +123,7 @@ fn test_error_path() {
     struct Fails;
 
     impl Serialize for Fails {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "cannot serialize"))
         }
     }

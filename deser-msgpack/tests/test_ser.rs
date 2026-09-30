@@ -135,15 +135,37 @@ fn test_string_lengths() {
         assert_eq!(deser_msgpack::from_slice::<Vec<u8>>(&bytes).unwrap(), b);
     }
     // (the prefixes are compared as bytes, hex is slow in miri)
-    let prefix =
-        |value: &dyn Serialize, len: usize| deser_msgpack::to_vec(value).unwrap()[..len].to_vec();
-    assert_eq!(prefix(&"x".repeat(31), 1), hex("bf"));
-    assert_eq!(prefix(&"x".repeat(32), 2), hex("d920"));
-    assert_eq!(prefix(&"x".repeat(256), 3), hex("da0100"));
-    assert_eq!(prefix(&"x".repeat(65536), 5), hex("db00010000"));
-    assert_eq!(prefix(&vec![0u8; 0], 2), hex("c400"));
-    assert_eq!(prefix(&vec![0u8; 256], 3), hex("c50100"));
-    assert_eq!(prefix(&vec![0u8; 65536], 5), hex("c600010000"));
+    let prefix = |value: deser::ser::SerializeRef<'_>, len: usize| {
+        deser_msgpack::to_vec(&value).unwrap()[..len].to_vec()
+    };
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&"x".repeat(31)), 1),
+        hex("bf")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&"x".repeat(32)), 2),
+        hex("d920")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&"x".repeat(256)), 3),
+        hex("da0100")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&"x".repeat(65536)), 5),
+        hex("db00010000")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&vec![0u8; 0]), 2),
+        hex("c400")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&vec![0u8; 256]), 3),
+        hex("c50100")
+    );
+    assert_eq!(
+        prefix(deser::ser::SerializeRef::new(&vec![0u8; 65536]), 5),
+        hex("c600010000")
+    );
 }
 
 #[test]
@@ -184,8 +206,8 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
         }
     }
 
@@ -409,7 +431,10 @@ fn big_integers_are_out_of_range() {
 struct Liar(usize);
 
 impl Serialize for Liar {
-    fn serialize(&self, state: &mut deser::State) -> Result<deser::ser::Chunk<'_>, deser::Error> {
+    fn serialize<'a>(
+        _value: &'a Self,
+        state: &mut deser::State,
+    ) -> Result<deser::ser::Chunk<'a>, deser::Error> {
         struct Emitter(usize);
         impl deser::ser::SeqEmitter for Emitter {
             fn next(
@@ -427,8 +452,8 @@ impl Serialize for Liar {
         Ok(deser::ser::Chunk::seq(Emitter(2), state))
     }
 
-    fn container_shape(&self) -> deser::ContainerShape {
-        deser::ContainerShape::new().with_len(self.0)
+    fn container_shape(value: &Self) -> deser::ContainerShape {
+        deser::ContainerShape::new().with_len(value.0)
     }
 }
 

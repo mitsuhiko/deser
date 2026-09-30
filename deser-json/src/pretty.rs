@@ -16,7 +16,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use deser_core::hints::Layout;
 use deser_core::ser::EventSink;
-use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
+use deser_core::ser::SerializeRef;
+use deser_core::{Atom, Error, ErrorKind, Event, State};
 
 use crate::ser::{Indent, Output};
 
@@ -294,7 +295,7 @@ impl EventSink for PrettyWriter {
     fn event(
         &mut self,
         event: Event<'_>,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         PrettyWriter::event(self, event, state)

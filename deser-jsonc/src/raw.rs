@@ -7,7 +7,8 @@ use core::str;
 
 use deser_core::de::{self, DeserializeDriver};
 use deser_core::ext::{Raw, RawFormat, RawFormatInfo, TextRawFormat};
-use deser_core::{Atom, Error, Serialize, Text};
+use deser_core::ser::SerializeRef;
+use deser_core::{Atom, Error, Text};
 
 use crate::de::Deserializer;
 
@@ -47,8 +48,8 @@ fn replay<'de>(input: &'de [u8], driver: &mut DeserializeDriver<'_, 'de>) -> Res
 }
 
 /// Encodes a value as JSON, which all dialects can read.
-fn encode(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
-    crate::to_string(value).map(|text| text.into_bytes())
+fn encode(value: SerializeRef<'_>) -> Result<Vec<u8>, Error> {
+    crate::to_string(&value).map(|text| text.into_bytes())
 }
 
 /// Returns the fallback atom of a raw value.

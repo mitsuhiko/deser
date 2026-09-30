@@ -65,9 +65,9 @@ fn test_writer_strict_and_layers() {
 
 /// Writes a value with a writer that passes on output once it's `limit`
 /// bytes long, returns the output and the number of writes.
-fn streamed(
+fn streamed<T: deser::Serialize + ?Sized>(
     config: &SerializerConfig,
-    value: &dyn deser::Serialize,
+    value: &T,
     limit: usize,
 ) -> (String, usize) {
     struct Pieces(Vec<u8>, usize);
@@ -121,7 +121,13 @@ fn test_partial_same_output() {
     let numbers: Vec<Vec<u64>> = (0..if miri { 12 } else { 50 })
         .map(|x| (0..x).collect())
         .collect();
-    let values: [&dyn deser::Serialize; 4] = [&items, &numbers, &"scalar", &Vec::<u32>::new()];
+    let empty = Vec::<u32>::new();
+    let values: [deser::ser::SerializeRef<'_>; 4] = [
+        deser::ser::SerializeRef::new(&items),
+        deser::ser::SerializeRef::new(&numbers),
+        deser::ser::SerializeRef::new(&"scalar"),
+        deser::ser::SerializeRef::new(&empty),
+    ];
     let configs = [
         SerializerConfig::new(),
         SerializerConfig::new().pretty(Indent::Spaces(2)),
@@ -141,9 +147,9 @@ fn test_partial_same_output() {
     };
     for config in configs {
         for value in values {
-            let expected = config.to_string(value).unwrap();
+            let expected = config.to_string(&value).unwrap();
             for &limit in limits {
-                let (out, _) = streamed(config, value, limit);
+                let (out, _) = streamed(config, &value, limit);
                 assert_eq!(out, expected, "limit {limit}");
             }
         }
@@ -212,7 +218,7 @@ fn test_partial_errors() {
     struct Fail;
 
     impl deser::Serialize for Fail {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "fail"))
         }
     }

@@ -5,7 +5,6 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::adapters::DeserializeAs;
 use crate::de::arena::ArenaBox;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::{Error, ErrorKind};
@@ -114,19 +113,11 @@ struct ReplaceSink<'a, 'de> {
     inner: ArenaBox<dyn Replace<'de> + 'a>,
 }
 
-/// Creates a sink handle that replaces a value.
+/// Creates a sink handle that replaces a value with a value that is
+/// deserialized with a sink the function creates.
 ///
 /// This is the default implementation of
 /// [`Deserialize::deserialize_update`].
-pub(crate) fn replace_handle<'a, 'de, T: Deserialize<'de>>(
-    out: &'a mut T,
-    state: &mut State,
-) -> SinkHandle<'a, 'de> {
-    replace_with(out, OwnedSink::deserialize(state), state)
-}
-
-/// Creates a sink handle that replaces a value with a value that is
-/// deserialized with a sink the function creates.
 pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
     out: &'a mut T,
     make: for<'x> fn(&'x mut Option<T>, &mut State) -> SinkHandle<'x, 'de>,
@@ -139,9 +130,8 @@ pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
 /// is complete.
 ///
 /// `update` creates the sink that updates the value (for instance
-/// [`Deserialize::deserialize_update`] or
-/// [`DeserializeAs::deserialize_update_as`](crate::adapters::DeserializeAs::deserialize_update_as)).
-/// Once the update is complete, `check` is invoked with the updated value.
+/// [`Deserialize::deserialize_update`] of the type or an adapter).  Once
+/// the update is complete, `check` is invoked with the updated value.
 /// Errors it returns point at the start of the value in the input.  The
 /// value is updated in place, if the check fails it's updated anyway (like
 /// when an update fails, see [`Deserialize::deserialize_update`]).  This is
@@ -416,7 +406,8 @@ struct OptionUpdateSink<'a, 'de, T> {
 ///
 /// If the option is set, the value in it is updated, otherwise a new value
 /// is deserialized.  Null clears the option.
-pub(crate) fn update_option<'a, 'de, T: Deserialize<'de>>(
+/// The value is updated with the adapter `A`.
+pub(crate) fn update_option<'a, 'de, T: Send + 'a, A: Deserialize<'de, T>>(
     out: &'a mut Option<T>,
     state: &mut State,
 ) -> SinkHandle<'a, 'de> {
@@ -424,15 +415,19 @@ pub(crate) fn update_option<'a, 'de, T: Deserialize<'de>>(
         Some(value) => SinkHandle::arena(
             OptionUpdateSink {
                 out,
-                sink: OwnedSink::update(value, state),
+                sink: OwnedSink::update(value, A::deserialize_update, state),
             },
             state,
         ),
-        None => replace_handle(out, state),
+        None => replace_handle_with(
+            out,
+            <Option<A> as Deserialize<'de, Option<T>>>::deserialize_into,
+            state,
+        ),
     }
 }
 
-impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for OptionUpdateSink<'a, 'de, T> {
+impl<'a, 'de, T: Send> Sink<'de> for OptionUpdateSink<'a, 'de, T> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if is_null_atom(&atom) {
             // the value is dropped, the option remains empty
@@ -577,7 +572,7 @@ impl<'a, 'de, C, T, A> Sink<'de> for CollectSink<'a, 'de, C, T, A>
 where
     C: Collection<T>,
     T: Send,
-    A: DeserializeAs<'de, T>,
+    A: Deserialize<'de, T>,
 {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         self.element.borrow_mut().atom(atom, state)
@@ -692,18 +687,21 @@ pub(crate) fn collect_into<'a, 'de, C, T, A>(
 where
     C: Collection<T> + 'a,
     T: Send + 'a,
-    A: DeserializeAs<'de, T>,
+    A: Deserialize<'de, T>,
 {
     let element = OwnedSink::deserialize_as::<A>(state);
-    SinkHandle::arena(
-        CollectSink {
-            target: CollectTarget::Slot(out),
-            element,
-            extend: false,
-            _marker: PhantomData::<fn() -> A>,
-        },
-        state,
-    )
+    // SAFETY: `A` is an adapter, the sink only holds a marker of it
+    unsafe {
+        SinkHandle::arena_unbounded(
+            CollectSink {
+                target: CollectTarget::Slot(out),
+                element,
+                extend: false,
+                _marker: PhantomData::<fn() -> A>,
+            },
+            state,
+        )
+    }
 }
 
 /// Creates the sink of a value that is added to a collection that is
@@ -719,19 +717,22 @@ pub(crate) fn collect_update<'a, 'de, C, T, A>(
 where
     C: Collection<T> + 'a,
     T: Send + 'a,
-    A: DeserializeAs<'de, T>,
+    A: Deserialize<'de, T>,
 {
     if first {
         *value = C::empty();
     }
     let element = OwnedSink::deserialize_as::<A>(state);
-    SinkHandle::arena(
-        CollectSink {
-            target: CollectTarget::Value(value),
-            element,
-            extend: false,
-            _marker: PhantomData::<fn() -> A>,
-        },
-        state,
-    )
+    // SAFETY: `A` is an adapter, the sink only holds a marker of it
+    unsafe {
+        SinkHandle::arena_unbounded(
+            CollectSink {
+                target: CollectTarget::Value(value),
+                element,
+                extend: false,
+                _marker: PhantomData::<fn() -> A>,
+            },
+            state,
+        )
+    }
 }

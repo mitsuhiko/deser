@@ -45,9 +45,9 @@ fn deserialize_lenient<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T,
     Ok(out.unwrap())
 }
 
-fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(without_len(event.to_static()));
     }
@@ -76,9 +76,9 @@ impl Describe for Names {
     }
 }
 
-fn describe(value: &dyn Serialize) -> Vec<String> {
+fn describe<T: Serialize + ?Sized>(value: &T) -> Vec<String> {
     let mut names = Names::default();
-    value.describe(&mut names);
+    T::describe(value, &mut names);
     names.0
 }
 

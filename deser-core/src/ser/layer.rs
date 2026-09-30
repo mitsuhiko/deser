@@ -1,12 +1,12 @@
 use crate::State;
 use crate::error::Error;
 use crate::event::Event;
-use crate::ser::Serialize;
+use crate::ser::SerializeRef;
 use alloc::boxed::Box;
 
 /// The function that receives the events of a [`SerializeDriver`](crate::ser::SerializeDriver).
 pub(crate) type EventFn<'f> =
-    dyn FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error> + 'f;
+    dyn FnMut(Event<'_>, SerializeRef<'_>, &mut State) -> Result<(), Error> + 'f;
 
 /// A layer between the serialization and a format.
 ///
@@ -85,7 +85,7 @@ pub struct Next<'n> {
     layers: &'n mut [Box<dyn Layer>],
     state: &'n mut State,
     f: &'n mut EventFn<'n>,
-    value: &'n dyn Serialize,
+    value: SerializeRef<'n>,
 }
 
 impl<'n> Next<'n> {
@@ -94,7 +94,7 @@ impl<'n> Next<'n> {
         layers: &'n mut [Box<dyn Layer>],
         state: &'n mut State,
         f: &'n mut EventFn<'n>,
-        value: &'n dyn Serialize,
+        value: SerializeRef<'n>,
     ) -> Next<'n> {
         Next {
             layers,
@@ -110,7 +110,7 @@ impl<'n> Next<'n> {
     /// If the driver does not pass on values (see
     /// [`EventSink::DESCRIBED`](crate::ser::EventSink::DESCRIBED)), this is
     /// a value that describes nothing.
-    pub fn value(&self) -> &dyn Serialize {
+    pub fn value(&self) -> SerializeRef<'_> {
         self.value
     }
 

@@ -108,7 +108,7 @@ impl fmt::Debug for Drawing {
 pub struct Anonymous;
 
 impl Serialize for Anonymous {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(_value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::structure(AnonymousEmitter(0), state))
     }
 }

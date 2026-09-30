@@ -11,7 +11,7 @@ use crate::State;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::driver::Held;
-use crate::ser::{Boxed, Chunk, MapEmitter, Serialize, SerializeHandle, StructEmitter};
+use crate::ser::{Boxed, Chunk, MapEmitter, SerializeHandle, SerializeRef, StructEmitter};
 
 /// Holds the values a value forwarded to (see [`Chunk::Forward`]).
 ///
@@ -35,7 +35,7 @@ impl Forwarded {
     /// the values held here and must be dropped before `self`.
     pub(crate) unsafe fn serialize<'a>(
         &mut self,
-        value: &'a dyn Serialize,
+        value: SerializeRef<'a>,
         state: &mut State,
     ) -> Result<Chunk<'a>, Error> {
         let mut chunk = value.serialize(state)?;
@@ -45,7 +45,7 @@ impl Forwarded {
                     // SAFETY: the caller guarantees that the chunk which
                     // borrows from the held value is dropped first.
                     let held = unsafe { Held::new(handle) };
-                    let value: &'a dyn Serialize = unsafe { held.get() };
+                    let value: SerializeRef<'a> = unsafe { held.get() };
                     self.0.push(held);
                     chunk = value.serialize(state)?;
                 }
@@ -54,7 +54,7 @@ impl Forwarded {
         }
     }
 
-    /// Invokes [`finish`](Serialize::finish) on the forwarded values.
+    /// Invokes [`finish`](crate::ser::Serialize::finish) on the forwarded values.
     ///
     /// The values are finished in the inverse order, the innermost first.
     /// The value that forwarded is not finished.
@@ -95,7 +95,7 @@ pub struct FlattenedStruct<'a> {
 
 impl<'a> FlattenedStruct<'a> {
     /// Serializes the value that is flattened.
-    pub fn new(value: &'a dyn Serialize, state: &mut State) -> Result<FlattenedStruct<'a>, Error> {
+    pub fn new(value: SerializeRef<'a>, state: &mut State) -> Result<FlattenedStruct<'a>, Error> {
         let mut forwarded = Forwarded::new();
         // SAFETY: the chunk is declared after `forwarded` and dropped before
         // it, the emitter is moved into a struct which drops it first.
@@ -143,7 +143,7 @@ impl<'a> FlattenedStruct<'a> {
             }
             Content::Map(ref mut emitter) => {
                 let key = match emitter.next_key(state)? {
-                    Some(key) => Some(map_key_string(&*key, state)?),
+                    Some(key) => Some(map_key_string(key.get(), state)?),
                     None => None,
                 };
                 if let Some(key) = key {
@@ -159,7 +159,7 @@ impl<'a> FlattenedStruct<'a> {
 }
 
 /// Returns the field name for the key of a flattened map.
-fn map_key_string(key: &dyn Serialize, state: &mut State) -> Result<String, Error> {
+fn map_key_string(key: SerializeRef<'_>, state: &mut State) -> Result<String, Error> {
     let rv = match key.serialize(state)? {
         Chunk::Atom(Atom::Str(key) | Atom::Lexical(key)) => key.into_owned(),
         Chunk::Atom(Atom::U64(value)) => value.to_string(),

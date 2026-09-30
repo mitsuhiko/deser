@@ -17,9 +17,9 @@ fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     }
 }
 
-fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
+fn capture_events<T: Serialize + ?Sized>(s: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(s);
+    let mut driver = SerializeDriver::new(&s);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(without_len(event.to_static()));
     }
@@ -52,8 +52,8 @@ impl Extension for Timestamp {
 }
 
 impl Serialize for Timestamp {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
     }
 }
 

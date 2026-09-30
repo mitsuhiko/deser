@@ -15,9 +15,9 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     Ok(out.unwrap())
 }
 
-fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(event.to_static());
     }
@@ -318,7 +318,7 @@ fn test_recording() {
         let mut out = None::<BTreeMap<String, Vec<u32>>>;
         recording
             .replay(
-                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                BTreeMap::<String, Vec<u32>>::deserialize_into(&mut out, driver.state_mut()),
                 driver.state_mut(),
             )
             .unwrap();

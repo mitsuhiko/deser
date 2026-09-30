@@ -478,12 +478,12 @@ impl Events {
 }
 
 impl Serialize for Events {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
-        EventsValue(&self.0).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+        EventsValue(&value.0).chunk(state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        EventsValue(&self.0).container_shape()
+    fn container_shape(value: &Self) -> ContainerShape {
+        EventsValue(&value.0).container_shape()
     }
 }
 
@@ -533,12 +533,12 @@ impl<'a> EventsValue<'a> {
 }
 
 impl Serialize for EventsValue<'_> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, deser_core::Error> {
-        self.chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+        value.chunk(state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        EventsValue::container_shape(self)
+    fn container_shape(value: &Self) -> ContainerShape {
+        EventsValue::container_shape(value)
     }
 }
 

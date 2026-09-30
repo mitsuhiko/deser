@@ -58,7 +58,7 @@ pub(crate) use self::encodings::decode_base64;
 ///     }
 /// }
 /// ```
-pub trait BytesEncoding: 'static {
+pub trait BytesEncoding: Send + Sync + 'static {
     /// The name of the encoding.
     ///
     /// The name is used in error messages and to compare [`BytesFormat`]s.

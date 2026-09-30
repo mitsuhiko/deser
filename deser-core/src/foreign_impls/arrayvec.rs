@@ -13,9 +13,7 @@ use ::arrayvec::{ArrayString, ArrayVec};
 use crate::State;
 use crate::Text;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
-use crate::adapters::ser_impls::serialize_as_slice;
-use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::impls::{SeqTarget, collection_methods, collection_methods_as, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, seq_sink};
 use crate::de::update::Collection;
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
@@ -25,12 +23,8 @@ use crate::ser::{Chunk, Serialize, plain_atom};
 
 make_slot_wrapper!(SlotWrapper);
 
-serialize_slice!(
-    [T: Serialize, const CAP: usize] ArrayVec<T, CAP>,
-);
-
-serialize_as_slice! {
-    [T: Sync, A: SerializeAs<T>, const CAP: usize] ArrayVec<T, CAP> => ArrayVec<A, CAP>;
+serialize_slice! {
+    [T: Sync, A: Serialize<T>, const CAP: usize] ArrayVec<T, CAP> => ArrayVec<A, CAP>, A;
 }
 
 /// Creates the error for values that exceed the capacity.
@@ -61,29 +55,17 @@ impl<T: Send, const CAP: usize> SeqTarget<T> for ArrayVec<T, CAP> {
     }
 }
 
-impl<'de, T: Deserialize<'de>, const CAP: usize> Deserialize<'de> for ArrayVec<T, CAP> {
-    #[inline]
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        seq_sink::<Self, T, Same>(out, state)
-    }
-
-    collection_methods!(Same);
-}
-
-impl<'de, T: Send, A: DeserializeAs<'de, T>, const CAP: usize> DeserializeAs<'de, ArrayVec<T, CAP>>
+impl<'de, T: Send, A: Deserialize<'de, T>, const CAP: usize> Deserialize<'de, ArrayVec<T, CAP>>
     for ArrayVec<A, CAP>
 {
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<ArrayVec<T, CAP>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         seq_sink::<ArrayVec<T, CAP>, T, A>(out, state)
     }
 
-    collection_methods_as!(ArrayVec<T, CAP>);
+    collection_methods!(ArrayVec<T, CAP>);
 }
 
 impl<T: Send, const CAP: usize> Collection<T> for ArrayVec<T, CAP> {
@@ -113,7 +95,7 @@ impl<const CAP: usize> BytesBufImpl for ArrayVec<u8, CAP> {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 
@@ -125,8 +107,8 @@ impl<const CAP: usize> Serialize for ArrayString<CAP> {
     begin_without_finish!();
     plain_atom!(|v| Atom::Str(Text::borrowed(v.as_str())));
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Text::borrowed(self.as_str()))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(Atom::Str(Text::borrowed(value.as_str()))))
     }
 }
 

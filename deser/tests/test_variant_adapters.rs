@@ -2,7 +2,7 @@
 use std::fmt::{self, Debug, Display};
 use std::str::FromStr;
 
-use deser::adapters::{DeserializeAs, DisplayFromStr, FromInto, SerializeAs};
+use deser::adapters::{DisplayFromStr, FromInto};
 use deser::de::{DeserializeOwned, SinkHandle};
 use deser::ser::{Chunk, SerializeDriver};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
@@ -18,9 +18,9 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> 
     Ok(out.unwrap())
 }
 
-fn serialize(value: &dyn Serialize) -> Vec<Event<'static>> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         // the shapes are not compared
         events.push(match event {
@@ -55,8 +55,8 @@ fn map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
 /// references when serializing.
 struct Joined;
 
-impl SerializeAs<(&u32, &u32)> for Joined {
-    fn serialize_as<'a>(value: &'a (&u32, &u32), _state: &mut State) -> Result<Chunk<'a>, Error> {
+impl Serialize<(&u32, &u32)> for Joined {
+    fn serialize<'a>(value: &'a (&u32, &u32), _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Atom(Atom::Str(
             format!("{},{}", value.0, value.1).into(),
         )))
@@ -82,8 +82,8 @@ impl<'de> deser::de::Sink<'de> for JoinedSlot<(u32, u32)> {
     }
 }
 
-impl<'de> DeserializeAs<'de, (u32, u32)> for Joined {
-    fn deserialize_into_as<'out>(
+impl<'de> Deserialize<'de, (u32, u32)> for Joined {
+    fn deserialize_into<'out>(
         out: &'out mut Option<(u32, u32)>,
         _state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -94,8 +94,8 @@ impl<'de> DeserializeAs<'de, (u32, u32)> for Joined {
 /// Writes `()` as `true`.
 struct Marker;
 
-impl SerializeAs<()> for Marker {
-    fn serialize_as<'a>(_value: &'a (), _state: &mut State) -> Result<Chunk<'a>, Error> {
+impl Serialize<()> for Marker {
+    fn serialize<'a>(_value: &'a (), _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Atom(Atom::Bool(true)))
     }
 }
@@ -114,8 +114,8 @@ impl<'de> deser::de::Sink<'de> for MarkerSlot<()> {
     }
 }
 
-impl<'de> DeserializeAs<'de, ()> for Marker {
-    fn deserialize_into_as<'out>(
+impl<'de> Deserialize<'de, ()> for Marker {
+    fn deserialize_into<'out>(
         out: &'out mut Option<()>,
         _state: &mut State,
     ) -> SinkHandle<'out, 'de> {

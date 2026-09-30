@@ -130,30 +130,30 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 }
 
 impl<T: Serialize> Serialize for Tagged<T> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         // the tag is set after the value attached its data (like the tag of
         // a recorded value), it replaces it
-        let chunk = self.value.serialize(state)?;
-        if let Some(ref tag) = self.tag {
+        let chunk = T::serialize(&this.value, state)?;
+        if let Some(ref tag) = this.tag {
             set_tag(state, tag.as_str());
         }
         Ok(chunk)
     }
 
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        self.value.finish(state)
+    fn finish(this: &Self, state: &mut State) -> Result<(), Error> {
+        T::finish(&this.value, state)
     }
 
-    fn is_optional(&self) -> bool {
-        self.value.is_optional()
+    fn is_optional(this: &Self) -> bool {
+        T::is_optional(&this.value)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        self.value.container_shape()
+    fn container_shape(this: &Self) -> ContainerShape {
+        T::container_shape(&this.value)
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        self.value.describe(d)
+    fn describe(this: &Self, d: &mut dyn Describe) {
+        T::describe(&this.value, d)
     }
 }
 

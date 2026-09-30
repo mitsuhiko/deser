@@ -323,8 +323,8 @@ fn test_implicit() {
     struct Plain(&'static str, ImplicitValue);
 
     impl Serialize for Plain {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-            Ok(Chunk::Atom(Atom::Implicit(Implicit::new(self.0, self.1))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+            Ok(Chunk::Atom(Atom::Implicit(Implicit::new(value.0, value.1))))
         }
     }
 

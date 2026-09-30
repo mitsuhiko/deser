@@ -10,7 +10,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use deser_core::ser::EventSink;
-use deser_core::{Error, ErrorKind, Event, Serialize, State};
+use deser_core::ser::SerializeRef;
+use deser_core::{Error, ErrorKind, Event, State};
 
 use crate::format::Format;
 use crate::ser::{Node, convert_atom, key_to_string, unsupported_key};
@@ -50,7 +51,7 @@ impl EventSink for TextWriter {
     fn event(
         &mut self,
         event: Event<'_>,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         _state: &mut State,
     ) -> Result<(), Error> {
         TextWriter::event(self, event)

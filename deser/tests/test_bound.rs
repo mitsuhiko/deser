@@ -28,7 +28,7 @@ fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
 
 fn serialize<T: Serialize>(value: &T) -> Vec<Event<'static>> {
     let mut rv = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next().unwrap() {
         rv.push(without_len(event.to_static()));
     }

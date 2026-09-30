@@ -534,14 +534,14 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     ///
     /// ```
     /// use deser::io::Writer;
-    /// # use deser::ser::{EventSink, SerializeDriver, Serializer, StreamSerializer};
-    /// # use deser::{Error, Event, Serialize, State};
+    /// # use deser::ser::{EventSink, SerializeDriver, SerializeRef, Serializer, StreamSerializer};
+    /// # use deser::{Error, Event, State};
     /// # /// Writes `x` for every event, can stop between values.
     /// # #[derive(Default)]
     /// # struct Xs { out: Vec<u8>, partial: bool }
     /// # struct Sink<'a>(&'a mut Vec<u8>, usize);
     /// # impl EventSink for Sink<'_> {
-    /// #     fn event(&mut self, _: Event<'_>, _: &dyn Serialize, _: &mut State) -> Result<(), Error> {
+    /// #     fn event(&mut self, _: Event<'_>, _: SerializeRef<'_>, _: &mut State) -> Result<(), Error> {
     /// #         self.0.push(b'x');
     /// #         Ok(())
     /// #     }
@@ -603,19 +603,20 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// it was written, because it fails to serialize or a write fails, the
     /// stream holds an incomplete value and the writer refuses to write
     /// more values (see [`StreamSerializer::in_progress`]).
-    pub fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
-        self.write_with(value, |_| {})
+    pub fn write<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
+        self.write_driver(&mut SerializeDriver::new(&value))
     }
 
     /// Serializes a value with a configured driver and writes it.
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](crate::ser::Layer)s.
-    pub fn write_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn write_with<T, F>(&mut self, value: &T, setup: F) -> Result<(), Error>
     where
+        T: Serialize + ?Sized,
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.write_driver(&mut driver)
     }
@@ -717,10 +718,11 @@ where
 }
 
 /// Writes a single value to a [`Write`].
-pub fn to_writer<W, S>(writer: W, serializer: S, value: &dyn Serialize) -> Result<(), Error>
+pub fn to_writer<W, S, T>(writer: W, serializer: S, value: &T) -> Result<(), Error>
 where
     W: Write,
     S: StreamSerializer,
+    T: Serialize + ?Sized,
 {
     Writer::new(writer, serializer).write(value)
 }

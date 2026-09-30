@@ -329,7 +329,7 @@ impl Serializer {
     /// Serializes a value.
     ///
     /// If the value fails to serialize, nothing is added.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::Serializer::serialize(self, value)
     }
 
@@ -337,7 +337,11 @@ impl Serializer {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn serialize_with<F, T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        setup: F,
+    ) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {

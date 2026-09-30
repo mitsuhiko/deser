@@ -162,9 +162,9 @@ impl BorrowedExtension for Number<'static> {
 }
 
 impl<'a> Serialize for Number<'a> {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Chunk<'b>, Error> {
         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed_value::<Number>(
-            self,
+            value,
         ))))
     }
 }

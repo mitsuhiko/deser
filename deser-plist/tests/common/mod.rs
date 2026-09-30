@@ -146,8 +146,8 @@ macro_rules! map {
 }
 
 impl Serialize for Value {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(match *self {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(match *this {
             Value::Null => Atom::Null,
             Value::Bool(value) => Atom::Bool(value),
             Value::U64(value) => Atom::U64(value),
@@ -269,14 +269,14 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.key, state))
+        Ok(String::deserialize_into(&mut self.key, state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(Compound::Array(_)) = self.compound {
             self.flush();
         }
-        Ok(Deserialize::deserialize_into(&mut self.value, state))
+        Ok(Value::deserialize_into(&mut self.value, state))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {

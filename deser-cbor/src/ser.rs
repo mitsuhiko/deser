@@ -5,6 +5,7 @@ use core::mem::ManuallyDrop;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, RawInput, Timestamp, Uuid};
+use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
@@ -125,7 +126,7 @@ impl EventSink for Writer {
     fn event(
         &mut self,
         event: Event<'_>,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         Writer::event(self, event, state)
@@ -684,7 +685,7 @@ impl SerializerConfig {
     }
 
     /// Serializes the given value.
-    pub fn to_vec(&self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+    pub fn to_vec<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, Error> {
         self.to_vec_with(value, |_| {})
     }
 
@@ -692,11 +693,15 @@ impl SerializerConfig {
     ///
     /// The callback is invoked with the driver before the serialization
     /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn to_vec_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<Vec<u8>, Error>
+    pub fn to_vec_with<F, T: Serialize + ?Sized>(
+        &self,
+        value: &T,
+        setup: F,
+    ) -> Result<Vec<u8>, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.serialize_driver(&mut driver)
     }
@@ -864,7 +869,7 @@ impl Serializer {
     /// Serializes a value.
     ///
     /// If the value fails to serialize, nothing is written.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::Serializer::serialize(self, value)
     }
 
@@ -872,7 +877,11 @@ impl Serializer {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn serialize_with<F, T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        setup: F,
+    ) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
@@ -963,10 +972,10 @@ impl SerializerConfig {
     /// Serializes a value to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: std::io::Write>(
+    pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,
-        value: &dyn Serialize,
+        value: &T,
     ) -> Result<(), Error> {
         self.writer(writer).write(value)
     }
@@ -984,13 +993,16 @@ impl SerializerConfig {
 /// assert_eq!(out, [0x82, 0x01, 0x02]);
 /// ```
 #[cfg(feature = "io")]
-pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to CBOR.
 ///
 /// This uses the default [`SerializerConfig`].
-pub fn to_vec(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
     SerializerConfig::new().to_vec(value)
 }

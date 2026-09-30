@@ -399,13 +399,13 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::structure(
             BufferEmitter {
-                depth: self.0,
+                depth: value.0,
                 index: 0,
                 buffer: String::new(),
-                child: self,
+                child: value,
             },
             state,
         ))
@@ -453,7 +453,7 @@ fn test_borrowed_keys_across_reallocation() {
 struct Panicking;
 
 impl Serialize for Panicking {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
         panic!("serialize panicked");
     }
 }
@@ -619,13 +619,13 @@ fn test_enum_representations_drop_and_errors_at_every_point() {
 
 /// Collects the events of a serializable with `drive`, optionally starting
 /// with `next` for the first `skip` events and aborting after `abort` events.
-fn drive_events(
-    value: &dyn Serialize,
+fn drive_events<T: Serialize + ?Sized>(
+    value: &T,
     skip: usize,
     abort: Option<usize>,
 ) -> Result<Vec<Event<'static>>, Error> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     for _ in 0..skip {
         match driver.next()? {
             Some((event, _, _)) => events.push(event.to_static()),
@@ -670,12 +670,16 @@ fn test_drive() {
         list: vec![None, Some(Box::new(Inner::default()))],
     };
     let nested = Nested(if cfg!(miri) { 20 } else { 100 });
-    let values: [&dyn Serialize; 3] = [&value, &tagged, &nested];
+    let values: [deser::ser::SerializeRef<'_>; 3] = [
+        deser::ser::SerializeRef::new(&value),
+        deser::ser::SerializeRef::new(&tagged),
+        deser::ser::SerializeRef::new(&nested),
+    ];
 
     for value in values {
         let mut expected = Vec::new();
         {
-            let mut driver = SerializeDriver::new(value);
+            let mut driver = SerializeDriver::new(&value);
             while let Some((event, _, _)) = driver.next().unwrap() {
                 expected.push(event.to_static());
             }
@@ -683,11 +687,11 @@ fn test_drive() {
         let step = step();
         for skip in (0..=expected.len()).step_by(step) {
             // drive produces the same events, even after next was used
-            assert_eq!(drive_events(value, skip, None).unwrap(), expected);
+            assert_eq!(drive_events(&value, skip, None).unwrap(), expected);
         }
         for abort in (0..expected.len()).step_by(step) {
             // errors from the callback abort and leave the driver droppable
-            assert!(drive_events(value, 0, Some(abort)).is_err());
+            assert!(drive_events(&value, 0, Some(abort)).is_err());
         }
     }
 

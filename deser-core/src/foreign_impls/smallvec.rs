@@ -9,21 +9,15 @@ use alloc::vec::Vec;
 
 use crate::State;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
-use crate::adapters::ser_impls::serialize_as_slice;
-use crate::adapters::{DeserializeAs, Same, SerializeAs};
-use crate::de::impls::{SeqTarget, collection_methods, collection_methods_as, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, seq_sink};
 use crate::de::update::Collection;
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::ser::Serialize;
 use crate::ser::impls::serialize_slice;
 
-serialize_slice!(
-    [T: Serialize, const N: usize] SmallVec<[T; N]>,
-);
-
-serialize_as_slice! {
-    [T: Sync, A: SerializeAs<T>, const N: usize] SmallVec<[T; N]> => SmallVec<[A; N]>;
+serialize_slice! {
+    [T: Sync, A: Serialize<T>, const N: usize] SmallVec<[T; N]> => SmallVec<[A; N]>, A;
 }
 
 impl<T: Send, const N: usize> SeqTarget<T> for SmallVec<[T; N]> {
@@ -35,29 +29,17 @@ impl<T: Send, const N: usize> SeqTarget<T> for SmallVec<[T; N]> {
     }
 }
 
-impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for SmallVec<[T; N]> {
-    #[inline]
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        seq_sink::<Self, T, Same>(out, state)
-    }
-
-    collection_methods!(Same);
-}
-
-impl<'de, T: Send, A: DeserializeAs<'de, T>, const N: usize> DeserializeAs<'de, SmallVec<[T; N]>>
+impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, SmallVec<[T; N]>>
     for SmallVec<[A; N]>
 {
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<SmallVec<[T; N]>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         seq_sink::<SmallVec<[T; N]>, T, A>(out, state)
     }
 
-    collection_methods_as!(SmallVec<[T; N]>);
+    collection_methods!(SmallVec<[T; N]>);
 }
 
 impl<T: Send, const N: usize> Collection<T> for SmallVec<[T; N]> {
@@ -87,7 +69,7 @@ impl<const N: usize> BytesBufImpl for SmallVec<[u8; N]> {
         out: &'a mut Option<Self>,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        Deserialize::deserialize_into(out, state)
+        <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
 }
 

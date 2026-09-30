@@ -41,6 +41,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use deser_core::ser::SerializeRef;
 use deser_core::ser::{
     Describe, EventSink, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr,
 };
@@ -69,9 +70,9 @@ impl ToDebug {
     /// # Panics
     ///
     /// Panics if the value fails to serialize.
-    pub fn new(value: &dyn Serialize) -> ToDebug {
+    pub fn new<T: Serialize + ?Sized>(value: &T) -> ToDebug {
         let mut builder = Builder::default();
-        SerializeDriver::new(value)
+        SerializeDriver::new(&value)
             .drive_sink(&mut builder)
             .unwrap();
         ToDebug {
@@ -210,7 +211,7 @@ impl EventSink for Builder {
     fn event(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         Builder::event(self, event, value, state.is_map_key());
@@ -219,8 +220,8 @@ impl EventSink for Builder {
 }
 
 impl Builder {
-    fn event(&mut self, event: Event<'_>, value: &dyn Serialize, is_key: bool) {
-        let describe = |value: &dyn Serialize| {
+    fn event(&mut self, event: Event<'_>, value: SerializeRef<'_>, is_key: bool) {
+        let describe = |value: SerializeRef<'_>| {
             // keys are not described, the parent describes them
             let mut collector = Collector::default();
             if !is_key {

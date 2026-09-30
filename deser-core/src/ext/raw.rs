@@ -4,13 +4,13 @@ use core::fmt;
 use core::marker::PhantomData;
 
 use crate::State;
-use crate::adapters::{Borrowed, DeserializeAs, SerializeAs};
+use crate::adapters::Borrowed;
 use crate::de::recording::Capture;
 use crate::de::{Deserialize, DeserializeDriver, RecordBuf, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{BorrowedExtension, ExtValue};
-use crate::ser::{Chunk, Serialize, SerializeHandle};
+use crate::ser::{Chunk, Serialize, SerializeHandle, SerializeRef};
 
 /// A data format whose encoded values can be held by [`Raw`].
 ///
@@ -64,7 +64,7 @@ pub struct RawFormatInfo {
     name: &'static str,
     is_text: bool,
     replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
-    encode: fn(&dyn Serialize) -> Result<Vec<u8>, Error>,
+    encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
     fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
 }
 
@@ -84,7 +84,7 @@ impl RawFormatInfo {
         name: &'static str,
         is_text: bool,
         replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
-        encode: fn(&dyn Serialize) -> Result<Vec<u8>, Error>,
+        encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
         fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
     ) -> RawFormatInfo {
         RawFormatInfo {
@@ -427,9 +427,9 @@ impl<'a, F: RawFormat> Raw<'a, F> {
     }
 
     /// Encodes a value.
-    pub fn encode(value: &dyn Serialize) -> Result<Raw<'static, F>, Error> {
+    pub fn encode<T: Serialize + ?Sized>(value: &T) -> Result<Raw<'static, F>, Error> {
         let info = F::info();
-        let bytes = (info.encode)(value)?;
+        let bytes = (info.encode)(SerializeRef::new(&value))?;
         if info.is_text && core::str::from_utf8(&bytes).is_err() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -555,8 +555,8 @@ impl<F: RawFormat> core::hash::Hash for Raw<'_, F> {
 /// Serialized with the format `F`, the encoded value is written as it is.
 /// Other formats serialize the value it holds.
 impl<F: RawFormat> Serialize for Raw<'_, F> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        serialize_input(&self.input, state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        serialize_input(&value.input, state)
     }
 }
 
@@ -598,8 +598,8 @@ impl<'de, 'a, F: RawFormat> Deserialize<'de> for Raw<'a, F> {
 }
 
 /// Borrows raw values from the data if the format passes it on borrowed.
-impl<'de: 'a, 'a, F: RawFormat> DeserializeAs<'de, Raw<'a, F>> for Borrowed {
-    fn deserialize_into_as<'out>(
+impl<'de: 'a, 'a, F: RawFormat> Deserialize<'de, Raw<'a, F>> for Borrowed {
+    fn deserialize_into<'out>(
         out: &'out mut Option<Raw<'a, F>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -607,7 +607,7 @@ impl<'de: 'a, 'a, F: RawFormat> DeserializeAs<'de, Raw<'a, F>> for Borrowed {
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<Raw<'a, F>>,
         atom: Atom,
         state: &mut State,
@@ -617,7 +617,7 @@ impl<'de: 'a, 'a, F: RawFormat> DeserializeAs<'de, Raw<'a, F>> for Borrowed {
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<Raw<'a, F>>,
         atom: Atom<'de>,
         state: &mut State,
@@ -627,14 +627,14 @@ impl<'de: 'a, 'a, F: RawFormat> DeserializeAs<'de, Raw<'a, F>> for Borrowed {
     }
 
     #[inline(always)]
-    fn __private_raw_as() -> Option<&'static RawFormatInfo> {
+    fn __private_raw() -> Option<&'static RawFormatInfo> {
         Some(F::info())
     }
 }
 
-impl<'a, F: RawFormat> SerializeAs<Raw<'a, F>> for Borrowed {
-    fn serialize_as<'x>(value: &'x Raw<'a, F>, state: &mut State) -> Result<Chunk<'x>, Error> {
-        value.serialize(state)
+impl<'a, F: RawFormat> Serialize<Raw<'a, F>> for Borrowed {
+    fn serialize<'x>(value: &'x Raw<'a, F>, state: &mut State) -> Result<Chunk<'x>, Error> {
+        <Raw<'a, F>>::serialize(value, state)
     }
 }
 

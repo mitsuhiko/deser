@@ -70,14 +70,17 @@ macro_rules! make_slot_wrapper {
 /// The derive generates the same code.
 macro_rules! begin_without_finish {
     () => {
+        begin_without_finish!(Self);
+    };
+    ($ty:ty) => {
         #[inline]
-        fn __private_begin(
-            &self,
+        fn __private_begin<'a>(
+            value: &'a $ty,
             state: &mut crate::State,
-        ) -> Result<crate::ser::Begin<'_>, crate::Error> {
-            let shape = crate::ser::Serialize::container_shape(self);
+        ) -> Result<crate::ser::Begin<'a>, crate::Error> {
+            let shape = Self::container_shape(value);
             Ok(crate::ser::Begin::chunk(
-                crate::ser::Serialize::serialize(self, state)?,
+                Self::serialize(value, state)?,
                 shape,
                 false,
             ))

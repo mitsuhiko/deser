@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use deser::ser::SerializeDriver;
+use deser::ser::{SerializeDriver, SerializeRef};
 use deser::{Atom, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -17,9 +17,9 @@ fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     }
 }
 
-fn capture_events(s: &dyn Serialize) -> Vec<Event<'static>> {
+fn capture_events<T: Serialize + ?Sized>(s: &T) -> Vec<Event<'static>> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(s);
+    let mut driver = SerializeDriver::new(&s);
     while let Some((event, _, _)) = driver.next().unwrap() {
         events.push(without_len(event.to_static()));
     }
@@ -133,8 +133,8 @@ fn test_set() {
 
 #[test]
 fn test_shape_forwarding() {
-    fn top_shape(s: &dyn Serialize) -> Option<deser::ContainerShape> {
-        let mut driver = SerializeDriver::new(s);
+    fn top_shape<T: Serialize + ?Sized>(s: &T) -> Option<deser::ContainerShape> {
+        let mut driver = SerializeDriver::new(&s);
         match driver.next().unwrap() {
             Some((Event::MapStart(shape) | Event::SeqStart(shape), _, _)) => Some(shape),
             _ => None,
@@ -173,9 +173,9 @@ fn test_shape_forwarding() {
         Some(deser::ContainerShape::new())
     );
 
-    assert!(Serialize::is_optional(&&None::<u32>));
-    assert!(Serialize::is_optional(&Box::new(None::<u32>)));
-    assert!(!Serialize::is_optional(&Box::new(Some(1u32))));
+    assert!(<&Option<u32>>::is_optional(&&None::<u32>));
+    assert!(Box::<Option<u32>>::is_optional(&Box::new(None::<u32>)));
+    assert!(!Box::<Option<u32>>::is_optional(&Box::new(Some(1u32))));
 }
 
 #[test]
@@ -227,8 +227,8 @@ fn test_is_map_key() {
 
 #[test]
 fn test_describe_through_layers() {
+    use deser::State;
     use deser::ser::{Describe, EventSink, Layer, Next};
-    use deser::{Serialize, State};
 
     struct Passthrough;
 
@@ -257,7 +257,7 @@ fn test_describe_through_layers() {
         fn event(
             &mut self,
             _event: Event<'_>,
-            value: &dyn Serialize,
+            value: SerializeRef<'_>,
             state: &mut State,
         ) -> Result<(), deser::Error> {
             if !state.is_map_key() {
@@ -298,15 +298,15 @@ fn test_describe_through_layers() {
 fn test_drive_like_next() {
     use std::collections::{BTreeMap, VecDeque};
 
-    fn check(value: &dyn Serialize) {
+    fn check<T: Serialize + ?Sized>(value: &T) {
         type Seen = (Event<'static>, bool, usize);
         let mut expected: Vec<Seen> = Vec::new();
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         while let Some((event, _, state)) = driver.next().unwrap() {
             expected.push((event.to_static(), state.is_map_key(), state.depth()));
         }
         let mut events: Vec<Seen> = Vec::new();
-        SerializeDriver::new(value)
+        SerializeDriver::new(&value)
             .drive(|event, state| {
                 events.push((event.to_static(), state.is_map_key(), state.depth()));
                 Ok(())
@@ -431,7 +431,7 @@ fn test_drive_like_next() {
 mod pausing {
     use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-    use deser::ser::{EventSink, Layer, Next, SerializeDriver};
+    use deser::ser::{EventSink, Layer, Next, SerializeDriver, SerializeRef};
     use deser::{Error, Event, Serialize, State};
 
     /// Collects the events with the map key flags and pauses after every
@@ -447,7 +447,7 @@ mod pausing {
         fn event(
             &mut self,
             event: Event<'_>,
-            _value: &dyn Serialize,
+            _value: SerializeRef<'_>,
             state: &mut State,
         ) -> Result<(), Error> {
             self.events.push((event.to_static(), state.is_map_key()));
@@ -462,9 +462,9 @@ mod pausing {
         }
     }
 
-    fn driven(value: &dyn Serialize) -> Vec<(Event<'static>, bool)> {
+    fn driven<T: Serialize + ?Sized>(value: &T) -> Vec<(Event<'static>, bool)> {
         let mut events = Vec::new();
-        SerializeDriver::new(value)
+        SerializeDriver::new(&value)
             .drive(|event, state| {
                 events.push((event.to_static(), state.is_map_key()));
                 Ok(())
@@ -475,8 +475,8 @@ mod pausing {
 
     /// Drives with pauses, returns the events, the number of calls and the
     /// most events between two pauses.
-    fn paused(value: &dyn Serialize) -> (Vec<(Event<'static>, bool)>, usize, usize) {
-        let mut driver = SerializeDriver::new(value);
+    fn paused<T: Serialize + ?Sized>(value: &T) -> (Vec<(Event<'static>, bool)>, usize, usize) {
+        let mut driver = SerializeDriver::new(&value);
         let mut sink = Collect::default();
         let mut calls = 1;
         while !driver.drive_until(&mut sink).unwrap() {
@@ -535,22 +535,23 @@ mod pausing {
         let seq_keys: BTreeMap<Vec<u64>, Vec<u64>> = (0..3)
             .map(|x| ((0..300 * n + x).collect(), vec![x]))
             .collect();
-        let values: [&dyn Serialize; 11] = [
-            &seq_keys,
-            &items,
-            &nested,
-            &long_strings,
-            &deque,
-            &array,
-            &map,
-            &hash_map,
-            &set,
-            &tuples,
-            &item(7, 1000 * n as usize),
+        let long_item = item(7, 1000 * n as usize);
+        let values: [SerializeRef<'_>; 11] = [
+            SerializeRef::new(&seq_keys),
+            SerializeRef::new(&items),
+            SerializeRef::new(&nested),
+            SerializeRef::new(&long_strings),
+            SerializeRef::new(&deque),
+            SerializeRef::new(&array),
+            SerializeRef::new(&map),
+            SerializeRef::new(&hash_map),
+            SerializeRef::new(&set),
+            SerializeRef::new(&tuples),
+            SerializeRef::new(&long_item),
         ];
         for value in values {
-            let (events, calls, max) = paused(value);
-            assert_eq!(events, driven(value));
+            let (events, calls, max) = paused(&value);
+            assert_eq!(events, driven(&value));
             assert!(calls > 1);
             // plain values are emitted in pieces of a few hundred atoms
             assert!(max < 1000, "{max}");

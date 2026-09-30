@@ -657,8 +657,8 @@ fn serde_hint(name: &str) -> Option<&'static str> {
              `#[deser(as = deser::adapters::Borrowed)]`"
         }
         "remote" | "getter" => {
-            "it's not supported, implement `SerializeAs` and `DeserializeAs` (see \
-             `deser::adapters`) for a local type and use it with `as` instead"
+            "it's not supported, implement `Serialize` and `Deserialize` of the type for a \
+             local adapter type (see `deser::adapters`) and use it with `as` instead"
         }
         "field_identifier" | "variant_identifier" => "it's not supported",
         _ => return None,

@@ -30,7 +30,7 @@ pub(crate) fn atom_cost(atom: &Atom<'_>) -> usize {
 }
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
-use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
+use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle, SerializeRef};
 
 /// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
 pub struct Begin<'a> {
@@ -45,7 +45,7 @@ pub(crate) enum BeginKind<'a> {
     Seq(&'a dyn IndexedSeq),
     /// A plain value (see [`PlainSink`]), the driver either emits it or
     /// serializes it into a chunk.
-    Plain(&'a dyn Serialize),
+    Plain(SerializeRef<'a>),
 }
 
 impl<'a> Begin<'a> {
@@ -79,7 +79,7 @@ impl<'a> Begin<'a> {
     /// needs to drive every value on its own, with
     /// [`serialize`](Serialize::serialize).  `finish` is not invoked.
     #[inline]
-    pub fn plain(value: &'a dyn Serialize, shape: ContainerShape) -> Begin<'a> {
+    pub fn plain(value: SerializeRef<'a>, shape: ContainerShape) -> Begin<'a> {
         Begin {
             kind: BeginKind::Plain(value),
             shape,
@@ -98,6 +98,45 @@ impl<'a> Begin<'a> {
             shape,
             needs_finish: false,
         }
+    }
+
+    /// Like [`indexed_seq`](Self::indexed_seq) but the sequence does not
+    /// need to outlive `'a`.
+    ///
+    /// This is for the sequences which are generic over adapters (see
+    /// [`erase_unbounded`](crate::ser::erase_unbounded)).
+    ///
+    /// # Safety
+    ///
+    /// The pointer must be valid for `'a`.  The parts of `S` that do not
+    /// outlive `'a` must be adapters that are only used for their
+    /// functions, `S` holds no values of them.
+    #[inline]
+    pub(crate) unsafe fn indexed_seq_unbounded<S: IndexedSeq>(
+        value: *const S,
+        shape: ContainerShape,
+    ) -> Begin<'a> {
+        // SAFETY: guaranteed by the caller
+        Begin::indexed_seq(unsafe { indexed_unbounded(value) }, shape)
+    }
+}
+
+/// Converts a reference to a sequence into a trait object without
+/// requiring the sequence to outlive `'a`.
+///
+/// # Safety
+///
+/// The pointer must be valid for `'a`.  See
+/// [`Begin::indexed_seq_unbounded`].
+#[inline(always)]
+pub(crate) unsafe fn indexed_unbounded<'a, S: IndexedSeq>(
+    value: *const S,
+) -> &'a (dyn IndexedSeq + 'a) {
+    // like every type parameter, `S` outlives this function
+    let value: *const (dyn IndexedSeq + '_) = value;
+    // SAFETY: guaranteed by the caller
+    unsafe {
+        &*core::mem::transmute::<*const (dyn IndexedSeq + '_), *const (dyn IndexedSeq + 'a)>(value)
     }
 }
 
@@ -152,15 +191,15 @@ pub fn emit_plain_field<T: Serialize>(
     sink: &mut dyn PlainSink,
     bounded: bool,
 ) -> Result<bool, Error> {
-    if !value.__private_is_plain_value() {
+    if !T::__private_is_plain_value(value) {
         return Ok(false);
     }
     // large values are emitted in pieces
-    if bounded && value.__private_plain_cost(PLAIN_BUDGET).is_none() {
+    if bounded && T::__private_plain_cost(value, PLAIN_BUDGET).is_none() {
         return Ok(false);
     }
     sink.field(name)?;
-    value.__private_emit_plain(sink)?;
+    T::__private_emit_plain(value, sink)?;
     Ok(true)
 }
 
@@ -307,29 +346,27 @@ pub trait PlainSink {
 /// Implements the plain methods of `Serialize` for a value that serializes
 /// as a single atom.
 macro_rules! plain_atom {
-    (|$this:ident| $atom:expr) => {
+    (|$this:ident: $ty:ty| $atom:expr) => {
         #[inline]
-        fn __private_is_plain() -> bool
-        where
-            Self: Sized,
-        {
+        fn __private_is_plain() -> bool {
             true
         }
 
         #[inline]
         fn __private_emit_plain(
-            &self,
+            $this: &$ty,
             sink: &mut dyn crate::ser::PlainSink,
         ) -> Result<(), crate::Error> {
-            let $this = self;
             sink.atom($atom)
         }
 
         #[inline]
-        fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
-            let $this = self;
+        fn __private_plain_cost($this: &$ty, budget: usize) -> Option<usize> {
             budget.checked_sub(crate::ser::atom_cost(&$atom))
         }
+    };
+    (|$this:ident| $atom:expr) => {
+        plain_atom!(|$this: Self| $atom);
     };
 }
 

@@ -4,6 +4,34 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** merged `DeserializeAs` into `Deserialize`, which has a
+  type parameter for the type of the value: `Deserialize<'de, T = Self>`.
+  Adapters implement `Deserialize<'de, T>` with the methods of
+  `Deserialize` (`deserialize_into_as`, `initial_value_as` and
+  `deserialize_update_as` lost their suffix).  The containers implement it
+  once for their adapters (`Vec<A>` for `Vec<T>`, which includes `Vec<T>`
+  itself), so containers with adapters now update in place like the ones
+  without.  As a type can deserialize other types,
+  `Deserialize::deserialize_into(&mut slot, state)` needs the type
+  (`String::deserialize_into(&mut slot, state)`).  The map and set
+  adapters (like `HashMap<KA, VA>`) accept maps with any hasher.
+- **Breaking:** merged `SerializeAs` into `Serialize`, which has a type
+  parameter for the type of the value as well: `Serialize<T: ?Sized =
+  Self>`.  Its methods take the value instead of `self`:
+  `fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error>`
+  (and `value.serialize(state)` is `T::serialize(value, state)`).
+- **Breaking:** as `Serialize` cannot be a trait object anymore, values
+  are passed on as `deser::ser::SerializeRef` instead of
+  `&dyn Serialize` (created with `SerializeRef::new(&value)` or
+  `SerializeRef::with_adapter::<A, _>(&value)`), for instance to
+  `EventSink::event`, `Next::value`, `SerializeDriver::next` and
+  `FlattenedStruct::new`.  `SerializeHandle` is opaque (convert from a
+  `SerializeRef` and back with `SerializeHandle::get`).  The functions
+  which took `&dyn Serialize` (like `to_string`, `to_writer`,
+  `Serializer::serialize` and `Writer::write`) are generic, which also
+  allows unsized values (`to_string("x")`).  `Serializer::serialize_ref`
+  and `SerializeDriver::from_ref` take a `SerializeRef`.
+- **Breaking:** `BytesEncoding` requires `Send + Sync`.
 - **Breaking:** merged `deser::ser::PausableSink` into `EventSink`.  An
   event sink receives the value of every event (if it sets
   `EventSink::DESCRIBED`) and can pause the driver with

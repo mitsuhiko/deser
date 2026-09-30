@@ -156,25 +156,25 @@ impl<T> DerefMut for Streamed<T> {
 }
 
 impl<T: Serialize> Serialize for Streamed<T> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.items.serialize(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Vec::<T>::serialize(&value.items, state)
     }
 
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        self.items.finish(state)
+    fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
+        Vec::<T>::finish(&value.items, state)
     }
 
     #[inline]
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        self.items.__private_begin(state)
+    fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
+        Vec::<T>::__private_begin(&value.items, state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        self.items.container_shape()
+    fn container_shape(value: &Self) -> ContainerShape {
+        Vec::<T>::container_shape(&value.items)
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        self.items.describe(d)
+    fn describe(value: &Self, d: &mut dyn Describe) {
+        Vec::<T>::describe(&value.items, d)
     }
 }
 

@@ -242,13 +242,13 @@ pub(crate) fn derive_serialize(
         vec![
             // spanned so that errors about unsupported types point to the adapter
             syn::parse_quote_spanned! { adapter.span()=>
-                #adapter: __deser::adapters::SerializeAs<#ident #ty_generics>
+                #adapter: __deser::Serialize<#ident #ty_generics>
             },
             syn::parse_quote! { #ident #ty_generics: __deser::__derive::Sync },
         ],
     );
     let adapter = quote_spanned! { adapter.span()=>
-        <#adapter as __deser::adapters::SerializeAs<Self>>
+        <#adapter as __deser::Serialize<Self>>
     };
 
     Ok(Some((
@@ -256,44 +256,66 @@ pub(crate) fn derive_serialize(
             #[automatically_derived]
             impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
                 #[inline]
-                fn serialize(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Chunk<'_>>
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::ser::Chunk<'__a>>
                 {
-                    #adapter::serialize_as(self, __state)
+                    #adapter::serialize(__value, __state)
                 }
 
                 #[inline]
-                fn finish(&self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                    #adapter::finish_as(self, __state)
+                fn finish(__value: &Self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
+                    #adapter::finish(__value, __state)
                 }
 
                 #[inline]
-                fn is_optional(&self) -> bool {
-                    #adapter::is_optional_as(self)
+                fn is_optional(__value: &Self) -> bool {
+                    #adapter::is_optional(__value)
                 }
 
                 #[inline]
-                fn container_shape(&self) -> __deser::ContainerShape {
-                    #adapter::container_shape_as(self)
+                fn container_shape(__value: &Self) -> __deser::ContainerShape {
+                    #adapter::container_shape(__value)
                 }
 
-                fn describe(&self, __d: &mut dyn __deser::ser::Describe) {
+                fn describe(__value: &Self, __d: &mut dyn __deser::ser::Describe) {
                     __d.newtype(#type_name);
-                    #adapter::describe_as(self, __d)
+                    #adapter::describe(__value, __d)
                 }
 
                 #[inline]
-                fn __private_begin(&self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::__derive::Begin<'_>>
+                fn __private_begin<'__a>(__value: &'__a Self, __state: &mut __deser::State)
+                    -> __deser::__derive::Result<__deser::__derive::Begin<'__a>>
                 {
-                    #adapter::__private_begin_as(self, __state)
+                    #adapter::__private_begin(__value, __state)
+                }
+
+                #[inline]
+                fn __private_is_plain() -> bool {
+                    #adapter::__private_is_plain()
+                }
+
+                #[inline]
+                fn __private_is_plain_value(__value: &Self) -> bool {
+                    #adapter::__private_is_plain_value(__value)
+                }
+
+                #[inline]
+                fn __private_emit_plain(__value: &Self, __sink: &mut dyn __deser::__derive::PlainSink)
+                    -> __deser::__derive::Result<()>
+                {
+                    #adapter::__private_emit_plain(__value, __sink)
+                }
+
+                #[inline]
+                fn __private_plain_cost(__value: &Self, __budget: usize) -> __deser::__derive::Option<usize> {
+                    #adapter::__private_plain_cost(__value, __budget)
                 }
 
                 #[inline]
                 fn __private_slice_as_bytes(__values: &[Self])
                     -> __deser::__derive::Option<__deser::__derive::Cow<'_, [__deser::__derive::u8]>>
                 {
-                    #adapter::__private_slice_as_bytes_as(__values)
+                    #adapter::__private_slice_as_bytes(__values)
                 }
             }
         },
@@ -326,13 +348,13 @@ pub(crate) fn derive_deserialize(
         container_attrs.deserialize_bound(),
         vec![
             syn::parse_quote_spanned! { adapter.span()=>
-                #adapter: __deser::adapters::DeserializeAs<'de, #ident #ty_generics>
+                #adapter: __deser::Deserialize<'de, #ident #ty_generics>
             },
             syn::parse_quote! { #ident #ty_generics: __deser::__derive::Send },
         ],
     );
     let adapter = quote_spanned! { adapter.span()=>
-        <#adapter as __deser::adapters::DeserializeAs<'de, Self>>
+        <#adapter as __deser::Deserialize<'de, Self>>
     };
 
     Ok(Some((
@@ -342,41 +364,41 @@ pub(crate) fn derive_deserialize(
                 #[inline]
                 fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::deserialize_into_as(__slot, __state)
+                    #adapter::deserialize_into(__slot, __state)
                 }
 
                 #[inline]
                 fn initial_value() -> __deser::__derive::Option<Self> {
-                    #adapter::initial_value_as()
+                    #adapter::initial_value()
                 }
 
                 #[inline]
                 fn deserialize_update<'__out>(__value: &'__out mut Self, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
-                    #adapter::deserialize_update_as(__value, __state)
+                    #adapter::deserialize_update(__value, __state)
                 }
 
                 #[inline]
                 fn __private_collects() -> bool {
-                    #adapter::__private_collects_as()
+                    #adapter::__private_collects()
                 }
 
                 #[inline]
                 fn __private_collect_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State)
                     -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::__private_collect_into_as(__slot, __state)
+                    #adapter::__private_collect_into(__slot, __state)
                 }
 
                 #[inline]
                 fn __private_collect_update<'__out>(__value: &'__out mut Self, __first: bool, __state: &mut __deser::State)
                     -> __deser::de::SinkHandle<'__out, 'de>
                 {
-                    #adapter::__private_collect_update_as(__value, __first, __state)
+                    #adapter::__private_collect_update(__value, __first, __state)
                 }
 
                 #[inline]
                 fn __private_collect_empty() -> __deser::__derive::Option<Self> {
-                    #adapter::__private_collect_empty_as()
+                    #adapter::__private_collect_empty()
                 }
 
                 #[inline]
@@ -385,7 +407,7 @@ pub(crate) fn derive_deserialize(
                     __atom: __deser::Atom,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    #adapter::__private_atom_into_as(__slot, __atom, __state)
+                    #adapter::__private_atom_into(__slot, __atom, __state)
                 }
 
                 #[inline]
@@ -394,26 +416,26 @@ pub(crate) fn derive_deserialize(
                     __atom: __deser::Atom<'de>,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<()> {
-                    #adapter::__private_borrowed_atom_into_as(__slot, __atom, __state)
+                    #adapter::__private_borrowed_atom_into(__slot, __atom, __state)
                 }
 
                 #[inline]
                 fn __private_is_bytes() -> bool {
-                    #adapter::__private_is_bytes_as()
+                    #adapter::__private_is_bytes()
                 }
 
                 #[inline]
                 fn __private_vec_from_bytes(__bytes: __deser::__derive::Vec<__deser::__derive::u8>)
                     -> __deser::__derive::Option<__deser::__derive::Vec<Self>>
                 {
-                    #adapter::__private_vec_from_bytes_as(__bytes)
+                    #adapter::__private_vec_from_bytes(__bytes)
                 }
 
                 #[inline]
                 fn __private_array_from_bytes<const __N: usize>(__bytes: &[__deser::__derive::u8])
                     -> __deser::__derive::Option<[Self; __N]>
                 {
-                    #adapter::__private_array_from_bytes_as::<__N>(__bytes)
+                    #adapter::__private_array_from_bytes::<__N>(__bytes)
                 }
             }
         },

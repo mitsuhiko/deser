@@ -176,7 +176,11 @@ fn test_partial_writer() {
     let nested: Vec<Vec<Vec<u32>>> = (0..30)
         .map(|x| (0..x % 5).map(|y| (0..y).collect()).collect())
         .collect();
-    let values: [&dyn deser::Serialize; 3] = [&services, &nested, &"scalar"];
+    let values: [deser::ser::SerializeRef<'_>; 3] = [
+        deser::ser::SerializeRef::new(&services),
+        deser::ser::SerializeRef::new(&nested),
+        deser::ser::SerializeRef::new(&"scalar"),
+    ];
     let configs = [
         SerializerConfig::new(),
         SerializerConfig::new().flow(FlowPolicy::LeafIfFits(30)),
@@ -192,8 +196,8 @@ fn test_partial_writer() {
             writer.set_buffer_limit(limit);
             let mut expected = deser_yaml::Serializer::with_config(config);
             for value in values {
-                writer.write(value).unwrap();
-                expected.serialize(value).unwrap();
+                writer.write(&value).unwrap();
+                expected.serialize(&value).unwrap();
             }
             assert_eq!(
                 String::from_utf8(writer.into_inner()).unwrap(),

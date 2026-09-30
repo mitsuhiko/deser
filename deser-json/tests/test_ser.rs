@@ -1,9 +1,18 @@
 use deser::Serialize;
+use deser::adapters::DisplayFromStr;
+use deser::ser::SerializeRef;
 use deser_json::to_string;
 
 #[test]
 fn test_basic() {
     assert_eq!(to_string(&[1, 2, 3, 4]).unwrap(), "[1,2,3,4]");
+}
+
+#[test]
+fn test_unsized() {
+    assert_eq!(to_string("x").unwrap(), "\"x\"");
+    let value = SerializeRef::with_adapter::<DisplayFromStr, _>(&42u32);
+    assert_eq!(to_string(&value).unwrap(), "\"42\"");
 }
 
 #[test]
@@ -247,8 +256,8 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
         }
     }
 

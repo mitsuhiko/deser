@@ -391,10 +391,11 @@ used for an `Option<T>`, a `Vec<T>` or the values of a map without writing
 another function.  Using `deserialize_with` on an optional field also makes the
 field required unless `#[serde(default)]` is added as well.
 
-Deser's `Deserialize` trait never takes `self`, it creates a sink for a slot.
-This makes it possible to express customizations as adapter types
-(`SerializeAs` and `DeserializeAs`) that create sinks for slots of other
-types.  The standard containers are adapters for the same containers holding
+Deser's `Serialize` and `Deserialize` traits never take `self`: they
+serialize a value that is passed to them and create a sink for a slot.  This
+makes it possible to express customizations as adapter types which
+implement `Serialize<T>` and `Deserialize<'de, T>` for other types `T` (the
+type parameter defaults to `Self`).  The standard containers are adapters for the same containers holding
 other types, so `#[deser(as = Option<Vec<DisplayFromStr>>)]` works without
 extra code, and missing fields are handled by the adapter.  Conversions
 that serde only has as container attributes (`from`, `try_from`, `into`)

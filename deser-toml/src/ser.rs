@@ -75,7 +75,7 @@ impl SerializerConfig {
     }
 
     /// Serializes the given value.
-    pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
+    pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
         self.to_string_with(value, |_| {})
     }
 
@@ -83,11 +83,15 @@ impl SerializerConfig {
     ///
     /// The callback is invoked with the driver before the serialization
     /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
+    pub fn to_string_with<F, T: Serialize + ?Sized>(
+        &self,
+        value: &T,
+        setup: F,
+    ) -> Result<String, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.serialize_driver(&mut driver)
     }
@@ -165,7 +169,7 @@ impl Serializer {
     /// Serializes a value.
     ///
     /// If the value fails to serialize, nothing is written.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::Serializer::serialize(self, value)
     }
 
@@ -173,7 +177,11 @@ impl Serializer {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn serialize_with<F, T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        setup: F,
+    ) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
@@ -235,10 +243,10 @@ impl SerializerConfig {
     /// Serializes a value to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: std::io::Write>(
+    pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,
-        value: &dyn Serialize,
+        value: &T,
     ) -> Result<(), Error> {
         self.writer(writer).write(value)
     }
@@ -258,7 +266,10 @@ impl SerializerConfig {
 /// assert_eq!(out, b"a = 1\n");
 /// ```
 #[cfg(feature = "io")]
-pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
 }
 
@@ -277,7 +288,7 @@ pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<
 ///     "name = [\"a\", \"b\"]\n"
 /// );
 /// ```
-pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
+pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
 }
 

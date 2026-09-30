@@ -22,7 +22,6 @@ use core::str::FromStr;
 
 use crate::State;
 use crate::Text;
-use crate::adapters::{DeserializeAs, Same, SerializeAs, SerializeAsRef};
 use crate::de::duplicates::duplicate_field;
 use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, Sink, SinkHandle};
@@ -30,8 +29,8 @@ use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Bytes};
 use crate::ext::ExtValue;
 use crate::ser::{
-    Begin, Chunk, Describe, Serialize, SerializeHandle, StructEmitter, Variant, VariantKind,
-    VariantRepr,
+    Begin, Chunk, Describe, Serialize, SerializeHandle, SerializeRef, StructEmitter, Variant,
+    VariantKind, VariantRepr,
 };
 
 make_slot_wrapper!(SlotWrapper);
@@ -42,11 +41,11 @@ make_slot_wrapper!(SlotWrapper);
 impl<T: ?Sized + Sync> Serialize for PhantomData<T> {
     begin_without_finish!();
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::Atom(Atom::Null))
     }
 
-    fn is_optional(&self) -> bool {
+    fn is_optional(_value: &Self) -> bool {
         true
     }
 }
@@ -88,30 +87,30 @@ macro_rules! newtype_wrapper {
     ($($ty:ident),*) => {
         $(
             impl<T: Serialize> Serialize for $ty<T> {
-                fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-                    self.0.serialize(state)
+                fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+                    T::serialize(&value.0, state)
                 }
 
-                fn finish(&self, state: &mut State) -> Result<(), Error> {
-                    self.0.finish(state)
+                fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
+                    T::finish(&value.0, state)
                 }
 
                 #[inline]
-                fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-                    self.0.__private_begin(state)
+                fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
+                    T::__private_begin(&value.0, state)
                 }
 
-                fn is_optional(&self) -> bool {
-                    self.0.is_optional()
+                fn is_optional(value: &Self) -> bool {
+                    T::is_optional(&value.0)
                 }
 
-                fn container_shape(&self) -> crate::ContainerShape {
-                    self.0.container_shape()
+                fn container_shape(value: &Self) -> crate::ContainerShape {
+                    T::container_shape(&value.0)
                 }
 
-                fn describe(&self, d: &mut dyn Describe) {
+                fn describe(value: &Self, d: &mut dyn Describe) {
                     d.newtype(stringify!($ty));
-                    self.0.describe(d);
+                    T::describe(&value.0, d);
                 }
             }
 
@@ -135,29 +134,29 @@ newtype_wrapper!(Wrapping, Saturating, Reverse);
 
 /// Serializes as the inner value.
 impl<T: Serialize> Serialize for ManuallyDrop<T> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        (**self).serialize(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        T::serialize(value, state)
     }
 
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        (**self).finish(state)
+    fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
+        T::finish(value, state)
     }
 
     #[inline]
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        (**self).__private_begin(state)
+    fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
+        T::__private_begin(value, state)
     }
 
-    fn is_optional(&self) -> bool {
-        (**self).is_optional()
+    fn is_optional(value: &Self) -> bool {
+        T::is_optional(value)
     }
 
-    fn container_shape(&self) -> crate::ContainerShape {
-        (**self).container_shape()
+    fn container_shape(value: &Self) -> crate::ContainerShape {
+        T::container_shape(value)
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        (**self).describe(d);
+    fn describe(value: &Self, d: &mut dyn Describe) {
+        T::describe(value, d);
     }
 }
 
@@ -176,8 +175,8 @@ deserialize_via! {
 
 /// Values of `Infallible` do not exist, they are never serialized.
 impl Serialize for Infallible {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        match *self {}
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        match *value {}
     }
 }
 
@@ -206,8 +205,8 @@ macro_rules! non_zero {
             impl Serialize for NonZero<$ty> {
                 begin_without_finish!();
 
-                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-                    Ok(Chunk::Atom(non_zero!(@atom $atom, self.get())))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                    Ok(Chunk::Atom(non_zero!(@atom $atom, value.get())))
                 }
             }
 
@@ -254,8 +253,8 @@ macro_rules! atomic {
             impl Serialize for core::sync::atomic::$ty {
                 begin_without_finish!();
 
-                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-                    let value = self.load(core::sync::atomic::Ordering::Relaxed);
+                fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                    let value = this.load(core::sync::atomic::Ordering::Relaxed);
                     Ok(Chunk::Atom(Atom::$atom(value as _)))
                 }
             }
@@ -328,43 +327,21 @@ fn result_name<T, E>(value: &Result<T, E>) -> &'static str {
 }
 
 /// Serializes externally tagged: `{"Ok": value}` or `{"Err": error}`.
-impl<T: Serialize, E: Serialize> Serialize for Result<T, E> {
-    begin_without_finish!();
-
-    fn describe(&self, d: &mut dyn Describe) {
-        describe_result(self, d);
-    }
-
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        let value = match self {
-            Ok(value) => SerializeHandle::to(value),
-            Err(err) => SerializeHandle::to(err),
-        };
-        Ok(Chunk::structure(
-            ResultEmitter {
-                name: result_name(self),
-                value: Some(value),
-            },
-            state,
-        ))
-    }
-}
-
-impl<T, E, TA, EA> SerializeAs<Result<T, E>> for Result<TA, EA>
+impl<T, E, TA, EA> Serialize<Result<T, E>> for Result<TA, EA>
 where
     T: Sync,
     E: Sync,
-    TA: SerializeAs<T>,
-    EA: SerializeAs<E>,
+    TA: Serialize<T>,
+    EA: Serialize<E>,
 {
-    fn describe_as(value: &Result<T, E>, d: &mut dyn Describe) {
+    fn describe(value: &Result<T, E>, d: &mut dyn Describe) {
         describe_result(value, d);
     }
 
-    fn serialize_as<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Chunk<'a>, Error> {
         let handle = match value {
-            Ok(value) => SerializeHandle::to(SerializeAsRef::<TA, T>::new(value)),
-            Err(err) => SerializeHandle::to(SerializeAsRef::<EA, E>::new(err)),
+            Ok(value) => SerializeRef::with_adapter::<TA, T>(value).into(),
+            Err(err) => SerializeRef::with_adapter::<EA, E>(err).into(),
         };
         Ok(Chunk::structure(
             ResultEmitter {
@@ -376,12 +353,9 @@ where
     }
 
     #[inline]
-    fn __private_begin_as<'a>(
-        value: &'a Result<T, E>,
-        state: &mut State,
-    ) -> Result<Begin<'a>, Error> {
+    fn __private_begin<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(Begin::chunk(
-            Self::serialize_as(value, state)?,
+            Self::serialize(value, state)?,
             crate::ContainerShape::new(),
             false,
         ))
@@ -425,8 +399,8 @@ fn result_sink<'a, 'de, T, E, TA, EA>(
 where
     T: Send + 'a,
     E: Send + 'a,
-    TA: DeserializeAs<'de, T>,
-    EA: DeserializeAs<'de, E>,
+    TA: Deserialize<'de, T>,
+    EA: Deserialize<'de, E>,
 {
     struct ResultSink<'a, T, E, TA, EA> {
         slot: &'a mut Option<Result<T, E>>,
@@ -440,8 +414,8 @@ where
     where
         T: Send,
         E: Send,
-        TA: DeserializeAs<'de, T>,
-        EA: DeserializeAs<'de, E>,
+        TA: Deserialize<'de, T>,
+        EA: Deserialize<'de, E>,
     {
         fn expecting(&self) -> Cow<'_, str> {
             Cow::Borrowed("Result")
@@ -463,16 +437,16 @@ where
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             Ok(match self.variant {
-                Some(ResultVariant::Ok) => TA::deserialize_into_as(&mut self.ok, state),
-                Some(ResultVariant::Err) => EA::deserialize_into_as(&mut self.err, state),
+                Some(ResultVariant::Ok) => TA::deserialize_into(&mut self.ok, state),
+                Some(ResultVariant::Err) => EA::deserialize_into(&mut self.err, state),
                 None => SinkHandle::null(),
             })
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             match self.variant {
-                Some(ResultVariant::Ok) => TA::__private_atom_into_as(&mut self.ok, atom, state),
-                Some(ResultVariant::Err) => EA::__private_atom_into_as(&mut self.err, atom, state),
+                Some(ResultVariant::Ok) => TA::__private_atom_into(&mut self.ok, atom, state),
+                Some(ResultVariant::Err) => EA::__private_atom_into(&mut self.err, atom, state),
                 None => Ok(()),
             }
         }
@@ -484,10 +458,10 @@ where
         ) -> Result<(), Error> {
             match self.variant {
                 Some(ResultVariant::Ok) => {
-                    TA::__private_borrowed_atom_into_as(&mut self.ok, atom, state)
+                    TA::__private_borrowed_atom_into(&mut self.ok, atom, state)
                 }
                 Some(ResultVariant::Err) => {
-                    EA::__private_borrowed_atom_into_as(&mut self.err, atom, state)
+                    EA::__private_borrowed_atom_into(&mut self.err, atom, state)
                 }
                 None => Ok(()),
             }
@@ -508,35 +482,30 @@ where
         }
     }
 
-    SinkHandle::arena(
-        ResultSink::<T, E, TA, EA> {
-            slot: out,
-            variant: None,
-            ok: None,
-            err: None,
-            _marker: PhantomData,
-        },
-        state,
-    )
-}
-
-impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> Deserialize<'de> for Result<T, E> {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        result_sink::<T, E, Same, Same>(out, state)
+    // SAFETY: `TA` and `EA` are adapters, the sink only holds a marker of
+    // them
+    unsafe {
+        SinkHandle::arena_unbounded(
+            ResultSink::<T, E, TA, EA> {
+                slot: out,
+                variant: None,
+                ok: None,
+                err: None,
+                _marker: PhantomData,
+            },
+            state,
+        )
     }
 }
 
-impl<'de, T, E, TA, EA> DeserializeAs<'de, Result<T, E>> for Result<TA, EA>
+impl<'de, T, E, TA, EA> Deserialize<'de, Result<T, E>> for Result<TA, EA>
 where
     T: Send,
     E: Send,
-    TA: DeserializeAs<'de, T>,
-    EA: DeserializeAs<'de, E>,
+    TA: Deserialize<'de, T>,
+    EA: Deserialize<'de, E>,
 {
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<Result<T, E>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -587,8 +556,8 @@ macro_rules! parse_from_str {
             impl Serialize for $ty {
                 begin_without_finish!();
 
-                fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-                    Ok(Chunk::Atom(Atom::Str(Text::owned(self.to_string()))))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                    Ok(Chunk::Atom(Atom::Str(Text::owned(value.to_string()))))
                 }
             }
 
@@ -636,16 +605,16 @@ parse_from_str! {
 impl Serialize for CStr {
     begin_without_finish!();
 
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(Bytes::new(self.to_bytes()))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(Atom::Bytes(Bytes::new(value.to_bytes()))))
     }
 }
 
 impl Serialize for CString {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        self.as_c_str().serialize(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        CStr::serialize(value.as_c_str(), state)
     }
 }
 
@@ -672,12 +641,12 @@ deserialize_via! {
 
 /// Emits a fixed number of fields.
 struct FieldsEmitter<'a, const N: usize> {
-    fields: [(&'static str, &'a dyn Serialize); N],
+    fields: [(&'static str, SerializeRef<'a>); N],
     index: usize,
 }
 
 impl<'a, const N: usize> FieldsEmitter<'a, N> {
-    fn chunk(fields: [(&'static str, &'a dyn Serialize); N], state: &mut State) -> Chunk<'a> {
+    fn chunk(fields: [(&'static str, SerializeRef<'a>); N], state: &mut State) -> Chunk<'a> {
         Chunk::structure(FieldsEmitter { fields, index: 0 }, state)
     }
 }
@@ -690,7 +659,7 @@ impl<'a, const N: usize> StructEmitter for FieldsEmitter<'a, N> {
         let rv = self
             .fields
             .get(self.index)
-            .map(|&(name, value)| (Cow::Borrowed(name), SerializeHandle::Borrowed(value)));
+            .map(|&(name, value)| (Cow::Borrowed(name), SerializeHandle::from(value)));
         self.index += 1;
         Ok(rv)
     }
@@ -700,9 +669,12 @@ impl<'a, const N: usize> StructEmitter for FieldsEmitter<'a, N> {
 impl<T: Serialize> Serialize for Range<T> {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(FieldsEmitter::chunk(
-            [("start", &self.start), ("end", &self.end)],
+            [
+                ("start", SerializeRef::new(&value.start)),
+                ("end", SerializeRef::new(&value.end)),
+            ],
             state,
         ))
     }
@@ -712,9 +684,12 @@ impl<T: Serialize> Serialize for Range<T> {
 impl<T: Serialize> Serialize for RangeInclusive<T> {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(FieldsEmitter::chunk(
-            [("start", self.start()), ("end", self.end())],
+            [
+                ("start", SerializeRef::new(value.start())),
+                ("end", SerializeRef::new(value.end())),
+            ],
             state,
         ))
     }
@@ -724,8 +699,11 @@ impl<T: Serialize> Serialize for RangeInclusive<T> {
 impl<T: Serialize> Serialize for RangeFrom<T> {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(FieldsEmitter::chunk([("start", &self.start)], state))
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(FieldsEmitter::chunk(
+            [("start", SerializeRef::new(&value.start))],
+            state,
+        ))
     }
 }
 
@@ -733,8 +711,11 @@ impl<T: Serialize> Serialize for RangeFrom<T> {
 impl<T: Serialize> Serialize for RangeTo<T> {
     begin_without_finish!();
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(FieldsEmitter::chunk([("end", &self.end)], state))
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(FieldsEmitter::chunk(
+            [("end", SerializeRef::new(&value.end))],
+            state,
+        ))
     }
 }
 
@@ -887,8 +868,8 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeTo<T> {
 impl<T: Serialize> Serialize for Bound<T> {
     begin_without_finish!();
 
-    fn describe(&self, d: &mut dyn Describe) {
-        let (name, kind) = match self {
+    fn describe(value: &Self, d: &mut dyn Describe) {
+        let (name, kind) = match value {
             Bound::Included(_) => ("Included", VariantKind::Newtype),
             Bound::Excluded(_) => ("Excluded", VariantKind::Newtype),
             Bound::Unbounded => ("Unbounded", VariantKind::Unit),
@@ -896,10 +877,14 @@ impl<T: Serialize> Serialize for Bound<T> {
         d.variant(&Variant::new("Bound", name, kind, VariantRepr::External));
     }
 
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(match self {
-            Bound::Included(value) => FieldsEmitter::chunk([("Included", value)], state),
-            Bound::Excluded(value) => FieldsEmitter::chunk([("Excluded", value)], state),
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(match this {
+            Bound::Included(value) => {
+                FieldsEmitter::chunk([("Included", SerializeRef::new(value))], state)
+            }
+            Bound::Excluded(value) => {
+                FieldsEmitter::chunk([("Excluded", SerializeRef::new(value))], state)
+            }
             Bound::Unbounded => Chunk::Atom(Atom::Str(Text::borrowed("Unbounded"))),
         })
     }

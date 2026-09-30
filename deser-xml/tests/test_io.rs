@@ -2,6 +2,7 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
+use deser::ser::SerializeRef;
 use deser::{Deserialize, Serialize};
 use deser_xml::{DeserializerConfig, Indent, SerializerConfig};
 
@@ -20,7 +21,11 @@ impl std::io::Write for Pieces {
     }
 }
 
-fn streamed(config: &SerializerConfig, value: &dyn Serialize, limit: usize) -> (String, usize) {
+fn streamed<T: Serialize + ?Sized>(
+    config: &SerializerConfig,
+    value: &T,
+    limit: usize,
+) -> (String, usize) {
     let mut writer = config.writer(Pieces(Vec::new(), 0));
     writer.set_buffer_limit(limit);
     writer.write(value).unwrap();
@@ -73,7 +78,11 @@ fn test_writer_same_output() {
         ("b", "2".to_string()),
         ("$text", "x".to_string()),
     ]);
-    let values: [&dyn Serialize; 3] = [&feed, &map, &Some(42)];
+    let values: [SerializeRef<'_>; 3] = [
+        SerializeRef::new(&feed),
+        SerializeRef::new(&map),
+        SerializeRef::new(&Some(42)),
+    ];
     let configs = [
         SerializerConfig::new().root("root"),
         SerializerConfig::new()
@@ -89,9 +98,9 @@ fn test_writer_same_output() {
     };
     for config in &configs[..if miri { 2 } else { 4 }] {
         for value in values {
-            let expected = config.to_string(value).unwrap();
+            let expected = config.to_string(&value).unwrap();
             for &limit in limits {
-                assert_eq!(streamed(config, value, limit).0, expected, "limit {limit}");
+                assert_eq!(streamed(config, &value, limit).0, expected, "limit {limit}");
             }
         }
     }

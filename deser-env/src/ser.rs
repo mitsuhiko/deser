@@ -111,10 +111,10 @@ impl SerializerConfig {
     /// Serializes a value into variables with a prefix.
     ///
     /// See [`to_vars`](crate::to_vars).
-    pub fn to_vars(
+    pub fn to_vars<T: Serialize + ?Sized>(
         &self,
         prefix: &str,
-        value: &dyn Serialize,
+        value: &T,
     ) -> Result<Vec<(String, String)>, Error> {
         self.to_vars_with(prefix, value, |_| {})
     }
@@ -124,16 +124,16 @@ impl SerializerConfig {
     ///
     /// The callback is invoked with the driver before the serialization
     /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn to_vars_with<F>(
+    pub fn to_vars_with<F, T: Serialize + ?Sized>(
         &self,
         prefix: &str,
-        value: &dyn Serialize,
+        value: &T,
         setup: F,
     ) -> Result<Vec<(String, String)>, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         let mut writer = Writer {
             config: self,
@@ -163,7 +163,10 @@ impl SerializerConfig {
 /// let vars = deser_env::to_vars("APP_", &Config { port: 80 }).unwrap();
 /// Command::new("server").envs(vars).spawn().unwrap();
 /// ```
-pub fn to_vars(prefix: &str, value: &dyn Serialize) -> Result<Vec<(String, String)>, Error> {
+pub fn to_vars<T: Serialize + ?Sized>(
+    prefix: &str,
+    value: &T,
+) -> Result<Vec<(String, String)>, Error> {
     SerializerConfig::new().to_vars(prefix, value)
 }
 

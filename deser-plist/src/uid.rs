@@ -67,8 +67,8 @@ impl Extension for Uid {
 }
 
 impl Serialize for Uid {
-    fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
     }
 }
 

@@ -177,7 +177,7 @@
 //!         // directly attach to the key field which can hold any
 //!         // string value.  This means that any string is accepted
 //!         // as key.
-//!         Ok(Deserialize::deserialize_into(&mut self.key, state))
+//!         Ok(String::deserialize_into(&mut self.key, state))
 //!     }
 //!
 //!     fn next_value(
@@ -410,6 +410,33 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     #[inline(always)]
     pub fn arena<S: Sink<'de> + 'a>(val: S, state: &mut State) -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Arena(arena_sink(val, &mut state.arena)))
+    }
+
+    /// Like [`arena`](Self::arena) but the sink does not need to outlive the
+    /// handle.
+    ///
+    /// This is how the implementations that are generic over adapters (like
+    /// `Vec<A>` for `Vec<T>`) create their sinks.  The compiler requires
+    /// the sink to outlive the handle, which includes the adapter.  The
+    /// adapter always does: it's either the type of the value, which
+    /// outlives the slot, or a marker type.  But this cannot be expressed.
+    ///
+    /// # Safety
+    ///
+    /// Everything the sink holds has to outlive `'a`.  The type parameters
+    /// that do not need to outlive it are the ones of adapters, which are
+    /// only used for their functions and never instantiated (the sink holds
+    /// no values of them, only markers like `PhantomData<fn() -> A>`).
+    /// Functions cannot hold borrowed data.
+    #[inline(always)]
+    pub(crate) unsafe fn arena_unbounded<S: Sink<'de>>(
+        val: S,
+        state: &mut State,
+    ) -> SinkHandle<'a, 'de> {
+        // SAFETY: guaranteed by the caller
+        SinkHandle(HandleInner::Arena(unsafe {
+            sinkbox::arena_sink_unbounded(val, &mut state.arena)
+        }))
     }
 
     /// Drops the handle, the block of an owned sink is returned to the arena
@@ -791,13 +818,42 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
 /// Data can only be borrowed if the data format passes it on borrowed (see
 /// [`Sink::borrowed_atom`]).
 ///
+/// # Adapters
+///
+/// The type parameter `T` is the type of the value that is deserialized.
+/// It defaults to `Self`: `impl Deserialize<'de> for Foo` deserializes
+/// `Foo` values.  A type that implements `Deserialize` for another type is
+/// an adapter, it deserializes values of that type on their behalf (see
+/// [`adapters`](crate::adapters)):
+///
+/// ```
+/// use deser::de::SinkHandle;
+/// use deser::{Deserialize, State};
+///
+/// /// Deserializes a `u32` as `u16`.
+/// pub struct Small;
+///
+/// impl<'de> Deserialize<'de, u32> for Small {
+///     fn deserialize_into<'out>(
+///         out: &'out mut Option<u32>,
+///         state: &mut State,
+///     ) -> SinkHandle<'out, 'de> {
+///         // ...
+/// #       let _ = (out, state);
+/// #       SinkHandle::null()
+///     }
+/// }
+/// ```
+///
+/// Adapters are never instantiated, only their functions are used.
+///
 /// # Thread Safety
 ///
 /// Deserializable values are `Send` and so are the sinks they create.  This
 /// allows an ongoing deserialization (a [`DeserializeDriver`]) to move
 /// between threads, for instance when it is suspended while waiting for more
 /// input.  Types that are not `Send` (such as `Rc`) cannot be deserialized.
-pub trait Deserialize<'de>: Sized + Send {
+pub trait Deserialize<'de, T = Self>: Sized + Send {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// There are two typical implementations for this method: the common one is
@@ -805,10 +861,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// will most likely just return that.  An alternative method is to
     /// "wrap" the deserializable in a custom sink (see
     /// [`SinkHandle::arena`]).
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de>;
+    fn deserialize_into<'out>(out: &'out mut Option<T>, state: &mut State)
+    -> SinkHandle<'out, 'de>;
 
     /// Provides the value of a missing struct field.
     ///
@@ -821,7 +875,7 @@ pub trait Deserialize<'de>: Sized + Send {
     /// This only controls missing values.  How null values are handled is up
     /// to the sink (see [`SinkHandle::ignore_null`]).  The initial value is not
     /// used for fields with `#[deser(default)]`.
-    fn initial_value() -> Option<Self> {
+    fn initial_value() -> Option<T> {
         None
     }
 
@@ -838,8 +892,15 @@ pub trait Deserialize<'de>: Sized + Send {
     /// entries, the values of keys that exist are replaced.
     ///
     /// If the update fails, the value might be partially updated.
-    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
-        update::replace_handle(value, state)
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
+    where
+        T: Send,
+    {
+        update::replace_handle_with(
+            value,
+            <Self as Deserialize<'de, T>>::deserialize_into,
+            state,
+        )
     }
 
     /// Deserializes an atom into the slot.
@@ -853,11 +914,15 @@ pub trait Deserialize<'de>: Sized + Send {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_atom_into(
-        out: &mut Option<Self>,
+        out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
     ) -> Result<(), Error> {
-        atom_into_handle(Self::deserialize_into(out, state), atom, state)
+        atom_into_handle(
+            <Self as Deserialize<'de, T>>::deserialize_into(out, state),
+            atom,
+            state,
+        )
     }
 
     /// Deserializes a borrowed atom into the slot.
@@ -868,14 +933,18 @@ pub trait Deserialize<'de>: Sized + Send {
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_borrowed_atom_into(
-        out: &mut Option<Self>,
+        out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        borrowed_atom_into_handle(Self::deserialize_into(out, state), atom, state)
+        borrowed_atom_into_handle(
+            <Self as Deserialize<'de, T>>::deserialize_into(out, state),
+            atom,
+            state,
+        )
     }
 
-    /// Returns `true` if this deserialize is `u8`.
+    /// Returns `true` if the values are `u8`.
     ///
     /// This is used to specialize the handling of bytes for vectors and
     /// arrays of `u8`.
@@ -886,19 +955,19 @@ pub trait Deserialize<'de>: Sized + Send {
         false
     }
 
-    /// Converts bytes into a vector of `Self`.
+    /// Converts bytes into a vector of values.
     ///
     /// This is only implemented for `u8` and used to specialize the
     /// deserialization of `Vec<u8>` from bytes.
     ///
     /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
         let _ = bytes;
         None
     }
 
-    /// Converts bytes into an array of `Self`.
+    /// Converts bytes into an array of values.
     ///
     /// This is only implemented for `u8` and used to specialize the
     /// deserialization of `[u8; N]` from bytes.  Returns `None` if the
@@ -906,7 +975,7 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         let _ = bytes;
         None
     }
@@ -919,19 +988,19 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_atom_default() -> Option<Self> {
+    fn __private_atom_default() -> Option<T> {
         None
     }
 
-    /// Returns how the type is built inline if it's a sequence of atoms.
+    /// Returns how the value is built inline if it's a sequence of atoms.
     ///
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_inline_seq() -> Option<InlineSeq<Self>> {
+    fn __private_inline_seq() -> Option<InlineSeq<T>> {
         None
     }
 
-    /// Returns the format if the type wants its value as raw value.
+    /// Returns the format if the value is deserialized as raw value.
     ///
     /// This is the format of [`Raw`](crate::ext::Raw) values (and wrappers
     /// of them like `Option` and `Box`).  The sinks of containers request
@@ -945,7 +1014,7 @@ pub trait Deserialize<'de>: Sized + Send {
         None
     }
 
-    /// Returns `true` if the type collects the values of a repeated key.
+    /// Returns `true` if the value collects the values of a repeated key.
     ///
     /// This is `true` for collections like `Vec<T>` and sets (and
     /// `Option`s of them).  In a multimap (see
@@ -969,10 +1038,10 @@ pub trait Deserialize<'de>: Sized + Send {
     /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_into<'out>(
-        out: &'out mut Option<Self>,
+        out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        Self::deserialize_into(out, state)
+        <Self as Deserialize<'de, T>>::deserialize_into(out, state)
     }
 
     /// Returns a sink for a value that is added to a collection that is
@@ -985,12 +1054,15 @@ pub trait Deserialize<'de>: Sized + Send {
     /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_update<'out>(
-        value: &'out mut Self,
+        value: &'out mut T,
         first: bool,
         state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
+    ) -> SinkHandle<'out, 'de>
+    where
+        T: Send,
+    {
         let _ = first;
-        Self::deserialize_update(value, state)
+        <Self as Deserialize<'de, T>>::deserialize_update(value, state)
     }
 
     /// Returns the value of a collection whose key is missing in a
@@ -1001,7 +1073,7 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
-    fn __private_collect_empty() -> Option<Self> {
+    fn __private_collect_empty() -> Option<T> {
         None
     }
 }

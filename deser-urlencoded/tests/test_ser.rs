@@ -264,8 +264,13 @@ fn test_top_level() {
     assert_eq!(to_string(&None::<BTreeMap<String, u32>>).unwrap(), "");
     assert_eq!(to_string(&BTreeMap::<String, u32>::new()).unwrap(), "");
 
-    for value in [&42 as &dyn Serialize, &vec![1, 2], &vec![("a", 1, 2)]] {
-        let err = to_string(value).unwrap_err();
+    let (seq, tuples) = (vec![1, 2], vec![("a", 1, 2)]);
+    for value in [
+        deser::ser::SerializeRef::new(&42),
+        deser::ser::SerializeRef::new(&seq),
+        deser::ser::SerializeRef::new(&tuples),
+    ] {
+        let err = to_string(&value).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::UnsupportedType);
     }
 

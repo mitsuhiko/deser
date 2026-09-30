@@ -6,24 +6,19 @@ use core::hash::{BuildHasher, Hash};
 use ::hashbrown::{HashMap, HashSet, hash_map};
 
 use crate::State;
-use crate::adapters::ser_impls::{serialize_as_map, serialize_as_set};
-use crate::adapters::{DeserializeAs, MapSkipError, Same, SerializeAs, skip_map_sink};
+use crate::adapters::{MapSkipError, skip_map_sink};
 use crate::de::impls::{
-    MapOut, MapTarget, SetTarget, collection_methods, collection_methods_as, map_sink,
-    set_collection, set_sink,
+    MapOut, MapTarget, SetTarget, collection_methods, map_sink, set_collection, set_sink,
 };
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::ser::impls::{serialize_map, serialize_set};
-use crate::ser::{Chunk, Describe};
+use crate::ser::{Chunk, Describe, Serialize};
 
+// the hasher of the adapter is not used
 serialize_map! {
-    [K, V, S: Sync] HashMap<K, V, S> => Arbitrary;
-}
-
-serialize_as_map! {
-    [K, V, S: Sync, KA, VA] HashMap<K, V, S> => HashMap<KA, VA>, Arbitrary;
+    [K, V, S: Sync, KA, VA, AS: Sync] HashMap<K, V, S> => HashMap<KA, VA, AS>, Arbitrary;
 }
 
 impl<K, V, S> MapTarget<K, V> for HashMap<K, V, S>
@@ -73,52 +68,43 @@ where
     }
 }
 
-impl<'de, K, V, S> Deserialize<'de> for HashMap<K, V, S>
-where
-    K: Hash + Eq + Deserialize<'de>,
-    V: Deserialize<'de>,
-    S: BuildHasher + Default + Send,
-{
-    #[inline]
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Slot(out), state)
-    }
-
-    /// Merges the entries into the map, the values of keys that exist are
-    /// replaced (not updated).
-    fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
-        map_sink::<_, K, V, Same, Same>(MapOut::Update(value), state)
-    }
-}
-
-impl<'de, K, V, S, KA, VA> DeserializeAs<'de, HashMap<K, V, S>> for HashMap<KA, VA>
+// the hasher of the adapter is not used
+impl<'de, K, V, S, KA, VA, AS> Deserialize<'de, HashMap<K, V, S>> for HashMap<KA, VA, AS>
 where
     K: Hash + Eq + Send,
     V: Send,
     S: BuildHasher + Default + Send,
-    KA: DeserializeAs<'de, K>,
-    VA: DeserializeAs<'de, V>,
+    KA: Deserialize<'de, K>,
+    VA: Deserialize<'de, V>,
+    AS: Send,
 {
-    fn deserialize_into_as<'out>(
+    #[inline]
+    fn deserialize_into<'out>(
         out: &'out mut Option<HashMap<K, V, S>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
     }
+
+    /// Merges the entries into the map, the values of keys that exist are
+    /// replaced (not updated).
+    fn deserialize_update<'out>(
+        value: &'out mut HashMap<K, V, S>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        map_sink::<_, K, V, KA, VA>(MapOut::Update(value), state)
+    }
 }
 
-impl<'de, K, V, S, KA, VA> DeserializeAs<'de, HashMap<K, V, S>> for MapSkipError<KA, VA>
+impl<'de, K, V, S, KA, VA> Deserialize<'de, HashMap<K, V, S>> for MapSkipError<KA, VA>
 where
     K: Hash + Eq + Send,
     V: Send,
     S: BuildHasher + Default + Send,
-    KA: DeserializeAs<'de, K>,
-    VA: DeserializeAs<'de, V>,
+    KA: Deserialize<'de, K>,
+    VA: Deserialize<'de, V>,
 {
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<HashMap<K, V, S>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -126,36 +112,30 @@ where
     }
 }
 
-impl<K, V, S, KA, VA> SerializeAs<HashMap<K, V, S>> for MapSkipError<KA, VA>
+impl<K, V, S, KA, VA> Serialize<HashMap<K, V, S>> for MapSkipError<KA, VA>
 where
     K: Sync,
     V: Sync,
     S: Sync,
-    KA: SerializeAs<K>,
-    VA: SerializeAs<V>,
+    KA: Serialize<K>,
+    VA: Serialize<V>,
 {
-    fn serialize_as<'a>(
-        value: &'a HashMap<K, V, S>,
-        state: &mut State,
-    ) -> Result<Chunk<'a>, Error> {
-        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, S>>>::serialize_as(value, state)
+    fn serialize<'a>(value: &'a HashMap<K, V, S>, state: &mut State) -> Result<Chunk<'a>, Error> {
+        <HashMap<KA, VA, S> as Serialize<HashMap<K, V, S>>>::serialize(value, state)
     }
 
-    fn container_shape_as(value: &HashMap<K, V, S>) -> ContainerShape {
-        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, S>>>::container_shape_as(value)
+    fn container_shape(value: &HashMap<K, V, S>) -> ContainerShape {
+        <HashMap<KA, VA, S> as Serialize<HashMap<K, V, S>>>::container_shape(value)
     }
 
-    fn describe_as(value: &HashMap<K, V, S>, d: &mut dyn Describe) {
-        <HashMap<KA, VA> as SerializeAs<HashMap<K, V, S>>>::describe_as(value, d)
+    fn describe(value: &HashMap<K, V, S>, d: &mut dyn Describe) {
+        <HashMap<KA, VA, S> as Serialize<HashMap<K, V, S>>>::describe(value, d)
     }
 }
 
+// the hasher of the adapter is not used
 serialize_set! {
-    [T, S: Sync] HashSet<T, S> => Arbitrary;
-}
-
-serialize_as_set! {
-    [T, S: Sync, A] HashSet<T, S> => HashSet<A>, Arbitrary;
+    [T, S: Sync, A, AS: Sync] HashSet<T, S> => HashSet<A, AS>, Arbitrary;
 }
 
 impl<T, S> SetTarget<T> for HashSet<T, S>
@@ -176,38 +156,25 @@ where
     }
 }
 
-impl<'de, T, S> Deserialize<'de> for HashSet<T, S>
-where
-    T: Hash + Eq + Deserialize<'de>,
-    S: BuildHasher + Default + Send,
-{
-    #[inline]
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        set_sink::<_, T, Same>(out, state)
-    }
-
-    collection_methods!(set Same);
-}
-
 set_collection! {
     [T: Hash + Eq + Send, S: BuildHasher + Default + Send] HashSet<T, S>;
 }
 
-impl<'de, T, S, A> DeserializeAs<'de, HashSet<T, S>> for HashSet<A>
+// the hasher of the adapter is not used
+impl<'de, T, S, A, AS> Deserialize<'de, HashSet<T, S>> for HashSet<A, AS>
 where
     T: Hash + Eq + Send,
     S: BuildHasher + Default + Send,
-    A: DeserializeAs<'de, T>,
+    A: Deserialize<'de, T>,
+    AS: Send,
 {
-    fn deserialize_into_as<'out>(
+    #[inline]
+    fn deserialize_into<'out>(
         out: &'out mut Option<HashSet<T, S>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         set_sink::<_, T, A>(out, state)
     }
 
-    collection_methods_as!(set HashSet<T, S>);
+    collection_methods!(set HashSet<T, S>);
 }

@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, ExtValue, Number, Timestamp};
+use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
@@ -48,7 +49,7 @@ impl SerializerConfig {
     }
 
     /// Serializes the given value.
-    pub fn to_vec(&self, value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+    pub fn to_vec<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, Error> {
         self.to_vec_with(value, |_| {})
     }
 
@@ -56,11 +57,15 @@ impl SerializerConfig {
     ///
     /// The callback is invoked with the driver before the serialization
     /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn to_vec_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<Vec<u8>, Error>
+    pub fn to_vec_with<F, T: Serialize + ?Sized>(
+        &self,
+        value: &T,
+        setup: F,
+    ) -> Result<Vec<u8>, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.serialize_driver(&mut driver)
     }
@@ -68,7 +73,7 @@ impl SerializerConfig {
     /// Serializes the given value into a string.
     ///
     /// This fails for the binary format.
-    pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
+    pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
         if !self.format.is_text() {
             return Err(Error::new(
                 ErrorKind::UnsupportedType,
@@ -261,7 +266,7 @@ impl Serializer {
     ///
     /// A property list holds a single value, serializing a second value
     /// fails.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::Serializer::serialize(self, value)
     }
 
@@ -269,7 +274,11 @@ impl Serializer {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn serialize_with<F, T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        setup: F,
+    ) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
@@ -377,10 +386,10 @@ impl SerializerConfig {
     /// Serializes a value to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: std::io::Write>(
+    pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,
-        value: &dyn Serialize,
+        value: &T,
     ) -> Result<(), Error> {
         self.writer(writer).write(value)
     }
@@ -396,7 +405,10 @@ impl SerializerConfig {
 /// assert!(out.ends_with(b"<true/>\n</plist>\n"));
 /// ```
 #[cfg(feature = "io")]
-pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
 }
 
@@ -408,14 +420,14 @@ pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<
 /// let bytes = deser_plist::to_vec(&vec!["a", "b"]).unwrap();
 /// assert!(bytes.ends_with(b"<array>\n\t<string>a</string>\n\t<string>b</string>\n</array>\n</plist>\n"));
 /// ```
-pub fn to_vec(value: &dyn Serialize) -> Result<Vec<u8>, Error> {
+pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
     SerializerConfig::new().to_vec(value)
 }
 
 /// Serializes a value to an XML property list in a string.
 ///
 /// This uses the default [`SerializerConfig`].
-pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
+pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
 }
 
@@ -455,7 +467,7 @@ impl ser::EventSink for Builder {
     fn event(
         &mut self,
         event: Event,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         _state: &mut State,
     ) -> Result<(), Error> {
         Builder::event(self, event)

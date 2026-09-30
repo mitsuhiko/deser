@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
+use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, Describe, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
@@ -266,7 +267,7 @@ impl SerializerConfig {
     }
 
     /// Serializes a value.
-    pub fn to_string(&self, value: &dyn Serialize) -> Result<String, Error> {
+    pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
         self.to_string_with(value, |_| {})
     }
 
@@ -274,11 +275,15 @@ impl SerializerConfig {
     ///
     /// The callback is invoked with the driver before the serialization
     /// starts, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn to_string_with<F>(&self, value: &dyn Serialize, setup: F) -> Result<String, Error>
+    pub fn to_string_with<F, T: Serialize + ?Sized>(
+        &self,
+        value: &T,
+        setup: F,
+    ) -> Result<String, Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.serialize_driver(&mut driver)
     }
@@ -448,7 +453,7 @@ impl Serializer {
     /// Serializes a value.
     ///
     /// If the value fails to serialize, nothing is written.
-    pub fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::Serializer::serialize(self, value)
     }
 
@@ -456,7 +461,11 @@ impl Serializer {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub fn serialize_with<F, T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        setup: F,
+    ) -> Result<(), Error>
     where
         F: FnOnce(&mut SerializeDriver<'_>),
     {
@@ -565,10 +574,10 @@ impl SerializerConfig {
     /// Serializes a value as XML document to a writer.
     ///
     /// See [`to_writer`](crate::to_writer).
-    pub fn to_writer<W: std::io::Write>(
+    pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,
-        value: &dyn Serialize,
+        value: &T,
     ) -> Result<(), Error> {
         self.writer(writer).write(value)
     }
@@ -592,14 +601,17 @@ impl SerializerConfig {
 /// assert_eq!(out, br#"<a href="/x"/>"#);
 /// ```
 #[cfg(feature = "io")]
-pub fn to_writer<W: std::io::Write>(writer: W, value: &dyn Serialize) -> Result<(), Error> {
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
 }
 
 /// Serializes a value to XML with the default configuration.
 ///
 /// See [`SerializerConfig`].
-pub fn to_string(value: &dyn Serialize) -> Result<String, Error> {
+pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
 }
 
@@ -758,7 +770,7 @@ impl EventSink for Writer {
     fn event(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         Writer::event(self, event, value, state)
@@ -810,7 +822,7 @@ impl Writer {
     fn event(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &State,
     ) -> Result<(), Error> {
         match self.stack.last_mut() {
@@ -834,7 +846,7 @@ impl Writer {
     fn root(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &State,
     ) -> Result<(), Error> {
         // the name and the namespaces of a `Root` or of the root element the
@@ -948,7 +960,7 @@ impl Writer {
         &mut self,
         key: Key,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &State,
     ) -> Result<(), Error> {
         match (key, event) {
@@ -1008,7 +1020,7 @@ impl Writer {
     fn item(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &State,
     ) -> Result<(), Error> {
         let Some(Frame::Items { name, .. }) = self.stack.last() else {
@@ -1135,7 +1147,7 @@ impl Writer {
     fn open_element(
         &mut self,
         name: &str,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &State,
     ) -> Result<(), Error> {
         let bindings = self.local_bindings.len();
@@ -1168,7 +1180,7 @@ impl Writer {
 
     /// Returns the fields of the map of a value and which attributes it
     /// can have.
-    fn fields_of(&self, value: &dyn Serialize) -> (Option<&'static [&'static str]>, Attrs) {
+    fn fields_of(&self, value: SerializeRef<'_>) -> (Option<&'static [&'static str]>, Attrs) {
         let mut fields = Fields::default();
         value.describe(&mut fields);
         let Some(names) = fields.names.filter(|_| !fields.variant) else {
@@ -1652,9 +1664,12 @@ mod tests {
 
     /// Serializes a value in pieces that are passed on as early as possible
     /// (the driver pauses between values).
-    fn pieces(config: &SerializerConfig, value: &dyn Serialize) -> Result<Vec<String>, Error> {
+    fn pieces<T: Serialize + ?Sized>(
+        config: &SerializerConfig,
+        value: &T,
+    ) -> Result<Vec<String>, Error> {
         let mut pieces = Vec::new();
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         let mut progress = None;
         loop {
             let mut out = String::new();
@@ -1754,7 +1769,13 @@ mod tests {
     fn test_same_output() {
         let map = BTreeMap::from([("$text", "x"), ("@a", "1"), ("b", "2")]);
         let nested = BTreeMap::from([("a", BTreeMap::from([("@x", "1"), ("b", "2")]))]);
-        let values: [&dyn Serialize; 4] = [&feed(), &map, &nested, &Some(42)];
+        let feed = feed();
+        let values: [SerializeRef<'_>; 4] = [
+            SerializeRef::new(&feed),
+            SerializeRef::new(&map),
+            SerializeRef::new(&nested),
+            SerializeRef::new(&Some(42)),
+        ];
         for config in [
             SerializerConfig::new().root("r"),
             SerializerConfig::new()
@@ -1764,8 +1785,8 @@ mod tests {
         ] {
             for value in values {
                 assert_eq!(
-                    pieces(&config, value).unwrap().concat(),
-                    config.to_string(value).unwrap()
+                    pieces(&config, &value).unwrap().concat(),
+                    config.to_string(&value).unwrap()
                 );
             }
         }
@@ -1869,16 +1890,16 @@ mod tests {
         struct Wrong(BTreeMap<&'static str, &'static str>);
 
         impl Serialize for Wrong {
-            fn describe(&self, d: &mut dyn Describe) {
+            fn describe(_value: &Self, d: &mut dyn Describe) {
                 d.structure("Wrong");
                 d.fields(&["$text"]);
             }
 
-            fn serialize(
-                &self,
+            fn serialize<'a>(
+                value: &'a Self,
                 state: &mut deser_core::State,
-            ) -> Result<deser_core::ser::Chunk<'_>, Error> {
-                self.0.serialize(state)
+            ) -> Result<deser_core::ser::Chunk<'a>, Error> {
+                BTreeMap::<&str, &str>::serialize(&value.0, state)
             }
         }
 

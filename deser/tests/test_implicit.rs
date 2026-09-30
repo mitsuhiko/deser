@@ -158,7 +158,7 @@ fn test_recording() {
     let mut text = None::<String>;
     recording
         .replay(
-            Deserialize::deserialize_into(&mut text, driver.state_mut()),
+            String::deserialize_into(&mut text, driver.state_mut()),
             driver.state_mut(),
         )
         .unwrap();
@@ -166,7 +166,7 @@ fn test_recording() {
     let mut value = None::<f64>;
     recording
         .replay(
-            Deserialize::deserialize_into(&mut value, driver.state_mut()),
+            f64::deserialize_into(&mut value, driver.state_mut()),
             driver.state_mut(),
         )
         .unwrap();

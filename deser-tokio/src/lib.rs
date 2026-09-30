@@ -556,7 +556,7 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
     /// it was written, because it fails to serialize, a write fails or the
     /// future is dropped, the stream holds an incomplete value and the
     /// writer refuses to write more values.
-    pub async fn write(&mut self, value: &dyn Serialize) -> Result<(), Error> {
+    pub async fn write<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         self.write_with(value, |_| {}).await
     }
 
@@ -564,8 +564,9 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](deser_core::ser::Layer)s.
-    pub async fn write_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    pub async fn write_with<T, F>(&mut self, value: &T, setup: F) -> Result<(), Error>
     where
+        T: Serialize + ?Sized,
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         if self.writing || self.serializer.in_progress() {
@@ -574,7 +575,7 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
                 "a value was only partially written, the stream cannot continue",
             ));
         }
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         // output that was not written (for instance of values serialized
         // before the serializer was given to the writer) comes first
@@ -687,10 +688,11 @@ where
 /// assert_eq!(out, b"[1,2]");
 /// # }
 /// ```
-pub async fn to_writer<W, S>(writer: W, serializer: S, value: &dyn Serialize) -> Result<(), Error>
+pub async fn to_writer<W, S, T>(writer: W, serializer: S, value: &T) -> Result<(), Error>
 where
     W: AsyncWrite + Unpin,
     S: StreamSerializer,
+    T: Serialize + ?Sized,
 {
     let mut writer = Writer::new(writer, serializer);
     writer.write(value).await?;

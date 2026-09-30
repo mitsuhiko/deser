@@ -1,15 +1,18 @@
 //! Adapters to customize how values are serialized and deserialized.
 //!
 //! An adapter is a type that knows how to serialize or deserialize a value of
-//! *another* type.  Adapters implement [`SerializeAs`] and [`DeserializeAs`]
-//! for the types they support.  They are typically zero sized marker types
-//! which are never instantiated.
+//! *another* type.  [`Serialize`] and [`Deserialize`] have a type parameter
+//! for the type of the value which defaults to `Self`: adapters implement
+//! `Serialize<T>` and `Deserialize<'de, T>` for the types `T` they support.
+//! They are typically zero sized marker types which are never instantiated.
 //!
 //! Adapters compose: the standard containers are adapters for the same
 //! container holding other types.  For instance `Vec<U>` is an adapter for
 //! `Vec<T>` if `U` is an adapter for `T` and `Option<U>` is an adapter for
-//! `Option<T>`.  [`Same`] is the adapter that uses the regular
-//! [`Serialize`] and [`Deserialize`] implementations.
+//! `Option<T>`.  A type is an adapter for itself, `Vec<T>` serializes with
+//! `Vec<T>` as adapter for `Vec<T>`.  [`Same`] is the adapter that uses the
+//! implementations of the type itself (which is useful where the type
+//! cannot be named, like in the derive).
 //!
 //! With the derive, adapters are selected with `#[deser(as = ...)]`.  In the
 //! attribute `_` can be used as a shorthand for [`Same`]:
@@ -32,7 +35,7 @@
 //! ```
 //!
 //! Missing fields are handled by the adapter (see
-//! [`DeserializeAs::initial_value_as`]) so in the example above `upstream` is
+//! [`Deserialize::initial_value`]) so in the example above `upstream` is
 //! optional as `Option<U>` makes missing values `None`.
 //!
 //! `serialize_as` and `deserialize_as` select an adapter for one direction
@@ -146,21 +149,20 @@
 //!
 //! # Implementing Adapters
 //!
-//! Adapters are implemented like [`Deserialize`] and [`Serialize`] except
-//! that the value is not `Self`.  This example serializes a byte vector
-//! into a hex string (`deser-encoding` provides this as `Hex`, and for
-//! bytes implementing [`BytesEncoding`] is less work):
+//! Adapters implement [`Deserialize`] and [`Serialize`] for a type that is
+//! not `Self`.  This example serializes a byte vector into a hex string
+//! (`deser-encoding` provides this as `Hex`, and for bytes implementing
+//! [`BytesEncoding`] is less work):
 //!
 //! ```
-//! use deser::adapters::{DeserializeAs, SerializeAs};
 //! use deser::de::{Sink, SinkHandle};
 //! use deser::ser::Chunk;
-//! use deser::{make_slot_wrapper, Atom, Error, ErrorKind, State};
+//! use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Serialize, State};
 //!
 //! pub struct Hex;
 //!
-//! impl SerializeAs<Vec<u8>> for Hex {
-//!     fn serialize_as<'a>(
+//! impl Serialize<Vec<u8>> for Hex {
+//!     fn serialize<'a>(
 //!         value: &'a Vec<u8>,
 //!         _state: &mut State,
 //!     ) -> Result<Chunk<'a>, Error> {
@@ -195,8 +197,8 @@
 //!     }
 //! }
 //!
-//! impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-//!     fn deserialize_into_as<'out>(
+//! impl<'de> Deserialize<'de, Vec<u8>> for Hex {
+//!     fn deserialize_into<'out>(
 //!         out: &'out mut Option<Vec<u8>>,
 //!         state: &mut State,
 //!     ) -> SinkHandle<'out, 'de> {
@@ -213,8 +215,11 @@
 //! }
 //! ```
 //!
-//! Adapters need to be `'static`.  This is the case for all types that do not
-//! hold references.
+//! Implementations generic over adapters (like wrappers of other adapters)
+//! need the adapters to outlive the sinks and emitters that use them.  If
+//! they are not generic over the lifetime of these (like `Vec<A>` for
+//! `Vec<T>`), they require the adapters to be `'static`, which is the case
+//! for marker types.
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -224,16 +229,13 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
 use crate::State;
-use crate::de::{
-    Deserialize, InlineSeq, OwnedSink, SinkHandle, atom_into_handle, borrowed_atom_into_handle,
-};
+use crate::de::{Deserialize, InlineSeq, OwnedSink, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, Serialize};
+use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
 
 pub(crate) mod bytes;
 mod derived;
-pub(crate) mod ser_impls;
 mod stock;
 mod text;
 
@@ -244,7 +246,6 @@ pub use self::bytes::{
 pub use self::derived::Derived;
 #[doc(hidden)]
 pub use self::derived::{DerivedDeserialize, DerivedSerialize};
-pub(crate) use self::ser_impls::SerializeAsRef;
 pub use self::stock::{
     Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
     VecSkipError,
@@ -253,212 +254,6 @@ pub use self::text::{Separated, SkipBlank, TrimWhitespace};
 // used for the maps of other crates
 #[allow(unused_imports)]
 pub(crate) use self::stock::skip_map_sink;
-
-/// Deserializes a value of type `T` on behalf of it.
-///
-/// This is the equivalent of [`Deserialize`] for adapters.  See the
-/// [module documentation](self) for more information.
-pub trait DeserializeAs<'de, T>: 'static {
-    /// Creates a sink that deserializes the value into the given slot.
-    ///
-    /// See [`Deserialize::deserialize_into`].
-    fn deserialize_into_as<'out>(
-        out: &'out mut Option<T>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de>;
-
-    /// Provides the value of a missing struct field.
-    ///
-    /// See [`Deserialize::initial_value`].
-    fn initial_value_as() -> Option<T> {
-        None
-    }
-
-    /// Creates a sink that updates an existing value.
-    ///
-    /// This is the adapter's version of
-    /// [`Deserialize::deserialize_update`], the derive uses it to update
-    /// fields with adapters.  The default implementation replaces the value
-    /// with the deserialized one.
-    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-        Self: Sized,
-    {
-        crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>(state), state)
-    }
-
-    /// Internal fast path, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_atom_into_as(
-        out: &mut Option<T>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
-    }
-
-    /// Internal fast path, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_borrowed_atom_into_as(
-        out: &mut Option<T>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        borrowed_atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
-    }
-
-    /// Internal specialization of bytes, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_is_bytes_as() -> bool {
-        false
-    }
-
-    /// Internal specialization of bytes, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
-        let _ = bytes;
-        None
-    }
-
-    /// Internal specialization of bytes, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
-        let _ = bytes;
-        None
-    }
-
-    /// See [`Deserialize::__private_atom_default`].
-    ///
-    /// Internal fast path, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_atom_default_as() -> Option<T> {
-        None
-    }
-
-    /// See [`Deserialize::__private_inline_seq`].
-    ///
-    /// Internal fast path, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
-        None
-    }
-
-    /// See [`Deserialize::__private_raw`].
-    ///
-    /// Internal protocol, not public API yet (see `lib.rs`).
-    #[doc(hidden)]
-    #[inline(always)]
-    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
-        None
-    }
-
-    /// See [`Deserialize::__private_collects`].
-    ///
-    /// Internal protocol, not public API yet (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_collects_as() -> bool {
-        false
-    }
-
-    /// See [`Deserialize::__private_collect_into`].
-    ///
-    /// Internal protocol, not public API yet (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_collect_into_as<'out>(
-        out: &'out mut Option<T>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        Self::deserialize_into_as(out, state)
-    }
-
-    /// See [`Deserialize::__private_collect_update`].
-    ///
-    /// Internal protocol, not public API yet (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_collect_update_as<'out>(
-        value: &'out mut T,
-        first: bool,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-        Self: Sized,
-    {
-        let _ = first;
-        Self::deserialize_update_as(value, state)
-    }
-
-    /// See [`Deserialize::__private_collect_empty`].
-    ///
-    /// Internal protocol, not public API yet (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_collect_empty_as() -> Option<T> {
-        None
-    }
-}
-
-/// Serializes a value of type `T` on behalf of it.
-///
-/// This is the equivalent of [`Serialize`] for adapters.  See the
-/// [module documentation](self) for more information.
-pub trait SerializeAs<T: ?Sized>: 'static {
-    /// Serializes the value.
-    ///
-    /// See [`Serialize::serialize`].
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error>;
-
-    /// Invoked after the serialization finished.
-    ///
-    /// See [`Serialize::finish`].
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        let _ = value;
-        let _ = state;
-        Ok(())
-    }
-
-    /// Checks if the value represents an optional value.
-    ///
-    /// See [`Serialize::is_optional`].
-    fn is_optional_as(value: &T) -> bool {
-        let _ = value;
-        false
-    }
-
-    /// Returns the shape of the value if it's a map or sequence.
-    ///
-    /// See [`Serialize::container_shape`].
-    fn container_shape_as(value: &T) -> ContainerShape {
-        let _ = value;
-        ContainerShape::new()
-    }
-
-    /// Describes the Rust shape of the value.
-    ///
-    /// See [`Serialize::describe`].
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        let _ = value;
-        let _ = d;
-    }
-
-    /// Internal fast path, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        let shape = Self::container_shape_as(value);
-        Ok(Begin::chunk(Self::serialize_as(value, state)?, shape, true))
-    }
-
-    /// Internal specialization of bytes, not public API (see `lib.rs`).
-    #[doc(hidden)]
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
-    where
-        T: Sized,
-    {
-        let _ = val;
-        None
-    }
-}
 
 /// The adapter that uses the type's own implementation.
 ///
@@ -479,9 +274,9 @@ pub trait SerializeAs<T: ?Sized>: 'static {
 /// ```
 pub struct Same;
 
-impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
+impl<'de, T: Deserialize<'de>> Deserialize<'de, T> for Same {
     #[inline]
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -489,20 +284,17 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn initial_value_as() -> Option<T> {
+    fn initial_value() -> Option<T> {
         T::initial_value()
     }
 
     #[inline]
-    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de> {
         T::deserialize_update(value, state)
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
@@ -511,7 +303,7 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
@@ -520,42 +312,42 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn __private_is_bytes_as() -> bool {
+    fn __private_is_bytes() -> bool {
         T::__private_is_bytes()
     }
 
     #[inline]
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
         T::__private_vec_from_bytes(bytes)
     }
 
     #[inline]
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         T::__private_array_from_bytes(bytes)
     }
 
     #[inline]
-    fn __private_atom_default_as() -> Option<T> {
+    fn __private_atom_default() -> Option<T> {
         T::__private_atom_default()
     }
 
     #[inline]
-    fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
+    fn __private_inline_seq() -> Option<InlineSeq<T>> {
         T::__private_inline_seq()
     }
 
     #[inline(always)]
-    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
         T::__private_raw()
     }
 
     #[inline]
-    fn __private_collects_as() -> bool {
+    fn __private_collects() -> bool {
         T::__private_collects()
     }
 
     #[inline]
-    fn __private_collect_into_as<'out>(
+    fn __private_collect_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -563,55 +355,72 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     }
 
     #[inline]
-    fn __private_collect_update_as<'out>(
+    fn __private_collect_update<'out>(
         value: &'out mut T,
         first: bool,
         state: &mut State,
-    ) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    ) -> SinkHandle<'out, 'de> {
         T::__private_collect_update(value, first, state)
     }
 
     #[inline]
-    fn __private_collect_empty_as() -> Option<T> {
+    fn __private_collect_empty() -> Option<T> {
         T::__private_collect_empty()
     }
 }
 
-impl<T: Serialize + ?Sized> SerializeAs<T> for Same {
+impl<T: Serialize + ?Sized> Serialize<T> for Same {
     #[inline]
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        value.serialize(state)
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        T::serialize(value, state)
     }
 
     #[inline]
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        value.finish(state)
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        T::finish(value, state)
     }
 
     #[inline]
-    fn is_optional_as(value: &T) -> bool {
-        value.is_optional()
+    fn is_optional(value: &T) -> bool {
+        T::is_optional(value)
     }
 
     #[inline]
-    fn container_shape_as(value: &T) -> ContainerShape {
-        value.container_shape()
+    fn container_shape(value: &T) -> ContainerShape {
+        T::container_shape(value)
     }
 
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        value.describe(d)
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        value.__private_begin(state)
+    fn describe(value: &T, d: &mut dyn Describe) {
+        T::describe(value, d)
     }
 
     #[inline]
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        T::__private_begin(value, state)
+    }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(value: &T) -> bool {
+        T::__private_is_plain_value(value)
+    }
+
+    #[inline]
+    fn __private_emit_plain(value: &T, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        T::__private_emit_plain(value, sink)
+    }
+
+    #[inline]
+    fn __private_plain_cost(value: &T, budget: usize) -> Option<usize> {
+        T::__private_plain_cost(value, budget)
+    }
+
+    #[inline]
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
     where
         T: Sized,
     {
@@ -720,7 +529,7 @@ impl<T: Hash, A> Hash for As<T, A> {
     }
 }
 
-impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
+impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de> for As<T, A> {
     fn deserialize_into<'out>(
         out: &'out mut Option<Self>,
         state: &mut State,
@@ -734,7 +543,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
     }
 
     fn initial_value() -> Option<Self> {
-        A::initial_value_as().map(As::new)
+        A::initial_value().map(As::new)
     }
 
     #[inline]
@@ -744,7 +553,7 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
         state: &mut State,
     ) -> Result<(), Error> {
         let mut inner = None;
-        A::__private_atom_into_as(&mut inner, atom, state)?;
+        A::__private_atom_into(&mut inner, atom, state)?;
         *out = inner.map(As::new);
         Ok(())
     }
@@ -756,59 +565,79 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
         state: &mut State,
     ) -> Result<(), Error> {
         let mut inner = None;
-        A::__private_borrowed_atom_into_as(&mut inner, atom, state)?;
+        A::__private_borrowed_atom_into(&mut inner, atom, state)?;
         *out = inner.map(As::new);
         Ok(())
     }
 
     #[inline]
     fn __private_is_bytes() -> bool {
-        A::__private_is_bytes_as()
+        A::__private_is_bytes()
     }
 
     #[inline(always)]
     fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
-        A::__private_raw_as()
+        A::__private_raw()
     }
 
     fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {
-        A::__private_vec_from_bytes_as(bytes).map(|x| x.into_iter().map(As::new).collect())
+        A::__private_vec_from_bytes(bytes).map(|x| x.into_iter().map(As::new).collect())
     }
 
     fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
-        A::__private_array_from_bytes_as::<N>(bytes).map(|x| x.map(As::new))
+        A::__private_array_from_bytes::<N>(bytes).map(|x| x.map(As::new))
     }
 }
 
-impl<T: Sync, A: SerializeAs<T>> Serialize for As<T, A> {
+impl<T: Sync, A: Serialize<T>> Serialize for As<T, A> {
     #[inline]
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        A::serialize_as(&self.value, state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        A::serialize(&value.value, state)
     }
 
     #[inline]
-    fn finish(&self, state: &mut State) -> Result<(), Error> {
-        A::finish_as(&self.value, state)
+    fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
+        A::finish(&value.value, state)
     }
 
     #[inline]
-    fn is_optional(&self) -> bool {
-        A::is_optional_as(&self.value)
+    fn is_optional(value: &Self) -> bool {
+        A::is_optional(&value.value)
     }
 
     #[inline]
-    fn container_shape(&self) -> ContainerShape {
-        A::container_shape_as(&self.value)
+    fn container_shape(value: &Self) -> ContainerShape {
+        A::container_shape(&value.value)
     }
 
     #[inline]
-    fn describe(&self, d: &mut dyn Describe) {
-        A::describe_as(&self.value, d)
+    fn describe(value: &Self, d: &mut dyn Describe) {
+        A::describe(&value.value, d)
     }
 
     #[inline]
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        A::__private_begin_as(&self.value, state)
+    fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
+        A::__private_begin(&value.value, state)
+    }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        A::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(value: &Self) -> bool {
+        A::__private_is_plain_value(&value.value)
+    }
+
+    #[inline]
+    fn __private_emit_plain(value: &Self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        A::__private_emit_plain(&value.value, sink)
+    }
+
+    #[inline]
+    fn __private_plain_cost(value: &Self, budget: usize) -> Option<usize> {
+        A::__private_plain_cost(&value.value, budget)
     }
 
     #[inline]
@@ -816,6 +645,6 @@ impl<T: Sync, A: SerializeAs<T>> Serialize for As<T, A> {
         // SAFETY: the wrapper is transparent over `T` (the marker is zero
         // sized and has an alignment of one).
         let val = unsafe { &*(val as *const [Self] as *const [T]) };
-        A::__private_slice_as_bytes_as(val)
+        A::__private_slice_as_bytes(val)
     }
 }

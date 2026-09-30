@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::ser::{Serialize, SerializeDriver};
+use crate::ser::{Serialize, SerializeDriver, SerializeRef};
 
 /// Serializes values into an output.
 ///
@@ -58,22 +58,33 @@ pub trait Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error>;
 
     /// Serializes a value.
-    fn serialize(&mut self, value: &dyn Serialize) -> Result<(), Error> {
-        self.drive(&mut SerializeDriver::new(value))
+    fn serialize<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        self.drive(&mut SerializeDriver::new(&value))
     }
 
     /// Serializes a value with a configured driver.
     ///
     /// The callback is invoked with the driver before the value is
     /// serialized, for instance to add [`Layer`](crate::ser::Layer)s.
-    fn serialize_with<F>(&mut self, value: &dyn Serialize, setup: F) -> Result<(), Error>
+    fn serialize_with<T, F>(&mut self, value: &T, setup: F) -> Result<(), Error>
     where
+        T: Serialize + ?Sized,
         F: FnOnce(&mut SerializeDriver<'_>),
         Self: Sized,
     {
-        let mut driver = SerializeDriver::new(value);
+        let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.drive(&mut driver)
+    }
+
+    /// Serializes the value of a reference.
+    ///
+    /// This is like [`serialize`](Self::serialize) but not generic.
+    fn serialize_ref(&mut self, value: SerializeRef<'_>) -> Result<(), Error> {
+        self.drive(&mut SerializeDriver::from_ref(value))
     }
 }
 

@@ -3,11 +3,10 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use crate::State;
-use crate::adapters::{DeserializeAs, SerializeAs};
-use crate::de::{SinkHandle, atom_into_handle, borrowed_atom_into_handle, update};
+use crate::de::{Deserialize, SinkHandle, atom_into_handle, borrowed_atom_into_handle, update};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, PlainSink};
+use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
 
 /// The adapter that uses the derived implementation of a type.
 ///
@@ -20,23 +19,22 @@ use crate::ser::{Begin, Chunk, Describe, PlainSink};
 ///
 /// ```
 /// use deser::{Deserialize, State};
-/// use deser::adapters::{DeserializeAs, Derived};
 /// use deser::de::SinkHandle;
 ///
 /// /// Deserializes with `A`, missing values are the default.
 /// pub struct DefaultIfMissing<A>(std::marker::PhantomData<A>);
 ///
-/// impl<'de, T: Default, A: DeserializeAs<'de, T>> DeserializeAs<'de, T>
+/// impl<'de, T: Default, A: Deserialize<'de, T>> Deserialize<'de, T>
 ///     for DefaultIfMissing<A>
 /// {
-///     fn deserialize_into_as<'out>(
+///     fn deserialize_into<'out>(
 ///         out: &'out mut Option<T>,
 ///         state: &mut State,
 ///     ) -> SinkHandle<'out, 'de> {
-///         A::deserialize_into_as(out, state)
+///         A::deserialize_into(out, state)
 ///     }
 ///
-///     fn initial_value_as() -> Option<T> {
+///     fn initial_value() -> Option<T> {
 ///         Some(T::default())
 ///     }
 /// }
@@ -135,50 +133,53 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
 /// API.
 #[doc(hidden)]
 pub trait DerivedSerialize: Sync {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error>;
 
-    fn finish(&self, _state: &mut State) -> Result<(), Error> {
+    fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
+        let _ = (value, state);
         Ok(())
     }
 
-    fn is_optional(&self) -> bool {
+    fn is_optional(value: &Self) -> bool {
+        let _ = value;
         false
     }
 
-    fn describe(&self, d: &mut dyn Describe) {
-        let _ = d;
+    fn describe(value: &Self, d: &mut dyn Describe) {
+        let _ = (value, d);
     }
 
-    fn container_shape(&self) -> ContainerShape {
+    fn container_shape(value: &Self) -> ContainerShape {
+        let _ = value;
         ContainerShape::new()
     }
 
-    fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        let shape = DerivedSerialize::container_shape(self);
+    fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
+        let shape = <Self as DerivedSerialize>::container_shape(value);
         Ok(Begin::chunk(
-            DerivedSerialize::serialize(self, state)?,
+            <Self as DerivedSerialize>::serialize(value, state)?,
             shape,
             true,
         ))
     }
 
-    fn __private_is_plain() -> bool
-    where
-        Self: Sized,
-    {
+    fn __private_is_plain() -> bool {
         false
     }
 
-    fn __private_is_plain_value(&self) -> bool
-    where
-        Self: Sized,
-    {
+    fn __private_is_plain_value(value: &Self) -> bool {
+        let _ = value;
         <Self as DerivedSerialize>::__private_is_plain()
     }
 
-    fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        let _ = sink;
+    fn __private_emit_plain(value: &Self, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        let _ = (value, sink);
         unreachable!("not a plain value")
+    }
+
+    fn __private_plain_cost(value: &Self, budget: usize) -> Option<usize> {
+        let _ = value;
+        budget.checked_sub(1)
     }
 
     fn __private_slice_as_bytes(_val: &[Self]) -> Option<Cow<'_, [u8]>>
@@ -189,9 +190,9 @@ pub trait DerivedSerialize: Sync {
     }
 }
 
-impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
+impl<'de, T: DerivedDeserialize<'de>> Deserialize<'de, T> for Derived {
     #[inline]
-    fn deserialize_into_as<'out>(
+    fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
@@ -199,12 +200,12 @@ impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     }
 
     #[inline]
-    fn initial_value_as() -> Option<T> {
+    fn initial_value() -> Option<T> {
         T::initial_value()
     }
 
     #[inline]
-    fn deserialize_update_as<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
     where
         T: Send,
     {
@@ -212,7 +213,7 @@ impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     }
 
     #[inline]
-    fn __private_atom_into_as(
+    fn __private_atom_into(
         out: &mut Option<T>,
         atom: Atom,
         state: &mut State,
@@ -221,7 +222,7 @@ impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     }
 
     #[inline]
-    fn __private_borrowed_atom_into_as(
+    fn __private_borrowed_atom_into(
         out: &mut Option<T>,
         atom: Atom<'de>,
         state: &mut State,
@@ -230,53 +231,73 @@ impl<'de, T: DerivedDeserialize<'de>> DeserializeAs<'de, T> for Derived {
     }
 
     #[inline]
-    fn __private_is_bytes_as() -> bool {
+    fn __private_is_bytes() -> bool {
         T::__private_is_bytes()
     }
 
     #[inline]
-    fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
         T::__private_vec_from_bytes(bytes)
     }
 
     #[inline]
-    fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         T::__private_array_from_bytes(bytes)
     }
 }
 
-impl<T: DerivedSerialize + ?Sized> SerializeAs<T> for Derived {
+impl<T: DerivedSerialize + ?Sized> Serialize<T> for Derived {
     #[inline]
-    fn serialize_as<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        value.serialize(state)
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+        T::serialize(value, state)
     }
 
     #[inline]
-    fn finish_as(value: &T, state: &mut State) -> Result<(), Error> {
-        value.finish(state)
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        T::finish(value, state)
     }
 
     #[inline]
-    fn is_optional_as(value: &T) -> bool {
-        value.is_optional()
+    fn is_optional(value: &T) -> bool {
+        T::is_optional(value)
     }
 
     #[inline]
-    fn container_shape_as(value: &T) -> ContainerShape {
-        value.container_shape()
+    fn container_shape(value: &T) -> ContainerShape {
+        T::container_shape(value)
     }
 
-    fn describe_as(value: &T, d: &mut dyn Describe) {
-        value.describe(d)
-    }
-
-    #[inline]
-    fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        value.__private_begin(state)
+    fn describe(value: &T, d: &mut dyn Describe) {
+        T::describe(value, d)
     }
 
     #[inline]
-    fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        T::__private_begin(value, state)
+    }
+
+    #[inline]
+    fn __private_is_plain() -> bool {
+        T::__private_is_plain()
+    }
+
+    #[inline]
+    fn __private_is_plain_value(value: &T) -> bool {
+        T::__private_is_plain_value(value)
+    }
+
+    #[inline]
+    fn __private_emit_plain(value: &T, sink: &mut dyn PlainSink) -> Result<(), Error> {
+        T::__private_emit_plain(value, sink)
+    }
+
+    #[inline]
+    fn __private_plain_cost(value: &T, budget: usize) -> Option<usize> {
+        T::__private_plain_cost(value, budget)
+    }
+
+    #[inline]
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
     where
         T: Sized,
     {

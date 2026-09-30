@@ -10,8 +10,8 @@ use crate::event::{Atom, ContainerShape};
 use crate::ser::begin::Begin;
 use crate::ser::flatten::FlattenedStruct;
 use crate::ser::{
-    Chunk, Describe, MapEmitter, SeqEmitter, Serialize, SerializeHandle, StructEmitter, Variant,
-    VariantKind, VariantRepr,
+    Chunk, Describe, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializeRef,
+    StructEmitter, Variant, VariantKind, VariantRepr,
 };
 use crate::{State, Text};
 
@@ -52,14 +52,14 @@ impl<'a> MapEmitter for EntryEmitter<'a> {
         let index = self.index;
         self.index += 1;
         Ok(if index == 0 {
-            Some(SerializeHandle::Borrowed(&*self.entry.key))
+            Some(SerializeHandle::from(self.entry.key.get()))
         } else {
             None
         })
     }
 
     fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
-        Ok(SerializeHandle::Borrowed(&*self.entry.value))
+        Ok(SerializeHandle::from(self.entry.value.get()))
     }
 }
 
@@ -80,13 +80,13 @@ impl<'a> FieldsSer<'a> {
 }
 
 impl<'a> Serialize for FieldsSer<'a> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
         Ok(Chunk::structure(
             FieldsEmitter {
-                fields: self
+                fields: this
                     .0
                     .iter()
-                    .map(|(name, value)| (*name, SerializeHandle::Borrowed(&**value)))
+                    .map(|(name, value)| (*name, SerializeHandle::from(value.get())))
                     .collect(),
                 index: 0,
             },
@@ -110,7 +110,7 @@ impl<'a> StructEmitter for FieldsEmitter<'a> {
         Ok(self
             .fields
             .get(index)
-            .map(|(name, value)| (Cow::Borrowed(*name), SerializeHandle::Borrowed(&**value))))
+            .map(|(name, value)| (Cow::Borrowed(*name), SerializeHandle::from(value.get()))))
     }
 }
 
@@ -119,7 +119,7 @@ pub enum FieldSer<'a> {
     /// A field with its name.
     Field(&'static str, SerializeHandle<'a>),
     /// A value whose fields are merged into the struct.
-    Flatten(&'a dyn Serialize),
+    Flatten(SerializeRef<'a>),
 }
 
 /// Serializes a list of fields as a struct, some of which are flattened.
@@ -148,20 +148,20 @@ impl<'a> FlatFieldsSer<'a> {
 }
 
 impl<'a> Serialize for FlatFieldsSer<'a> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
         Ok(Chunk::structure(
             FlatFieldsEmitter {
-                fields: self
+                fields: this
                     .fields
                     .iter()
                     .map(|field| match *field {
                         FieldSer::Field(name, ref value) => {
-                            FieldSer::Field(name, SerializeHandle::Borrowed(&**value))
+                            FieldSer::Field(name, SerializeHandle::from(value.get()))
                         }
                         FieldSer::Flatten(value) => FieldSer::Flatten(value),
                     })
                     .collect(),
-                skip_optionals: self.skip_optionals,
+                skip_optionals: this.skip_optionals,
                 index: 0,
                 nested: None,
             },
@@ -199,7 +199,7 @@ impl<'a> StructEmitter for FlatFieldsEmitter<'a> {
                     >(item)
                 };
                 match item {
-                    Some((_, ref handle)) if self.skip_optionals && handle.is_optional() => {
+                    Some((_, ref handle)) if self.skip_optionals && handle.get().is_optional() => {
                         continue;
                     }
                     Some(item) => return Ok(Some(item)),
@@ -221,7 +221,7 @@ impl<'a> StructEmitter for FlatFieldsEmitter<'a> {
                     self.index += 1;
                     return Ok(Some((
                         Cow::Borrowed(*name),
-                        SerializeHandle::Borrowed(&**value),
+                        SerializeHandle::from(value.get()),
                     )));
                 }
                 Some(FieldSer::Flatten(value)) => {
@@ -249,13 +249,13 @@ impl<'a> SeqSer<'a> {
 }
 
 impl<'a> Serialize for SeqSer<'a> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
         Ok(Chunk::seq(
             SeqValuesEmitter {
-                values: self
+                values: this
                     .0
                     .iter()
-                    .map(|value| SerializeHandle::Borrowed(&**value))
+                    .map(|value| SerializeHandle::from(value.get()))
                     .collect(),
                 index: 0,
             },
@@ -276,7 +276,7 @@ impl<'a> SeqEmitter for SeqValuesEmitter<'a> {
         Ok(self
             .values
             .get(index)
-            .map(|value| SerializeHandle::Borrowed(&**value)))
+            .map(|value| SerializeHandle::from(value.get())))
     }
 }
 
@@ -287,14 +287,14 @@ impl<'a> SeqEmitter for SeqValuesEmitter<'a> {
 pub struct TaggedNewtype<'a> {
     tag: &'static str,
     name: SerializeHandle<'a>,
-    inner: &'a dyn Serialize,
+    inner: SerializeRef<'a>,
 }
 
 impl<'a> TaggedNewtype<'a> {
     /// Creates a new tagged newtype.
     ///
     /// `name` is the value of the tag.
-    pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: &'a dyn Serialize) -> Self {
+    pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: SerializeRef<'a>) -> Self {
         TaggedNewtype { tag, name, inner }
     }
 
@@ -339,11 +339,11 @@ impl<'a, S: Serialize + Send + 'a> TaggedContent<'a, S> {
 }
 
 impl<S: Serialize> Serialize for TaggedContent<'_, S> {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(TaggedNewtype::new(
-            self.tag,
-            SerializeHandle::Borrowed(&*self.name),
-            &self.inner,
+            value.tag,
+            SerializeHandle::from(value.name.get()),
+            SerializeRef::new(&value.inner),
         )
         .into_chunk(state))
     }
@@ -366,7 +366,7 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             self.started = true;
             return Ok(Some((
                 Cow::Borrowed(self.value.tag),
-                SerializeHandle::Borrowed(&*self.value.name),
+                SerializeHandle::from(self.value.name.get()),
             )));
         }
         if self.done {

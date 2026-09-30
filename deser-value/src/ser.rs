@@ -7,27 +7,27 @@ use crate::seq::Seq;
 use crate::value::{Kind, Value};
 
 impl Serialize for Value {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        if let Some(ref meta) = self.meta
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        if let Some(ref meta) = value.meta
             && !meta.event_data().is_empty()
         {
             state.attach_event_data(meta.event_data());
         }
-        self.kind.serialize(state)
+        Kind::serialize(&value.kind, state)
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        self.kind.container_shape()
+    fn container_shape(value: &Self) -> ContainerShape {
+        Kind::container_shape(&value.kind)
     }
 
-    fn is_optional(&self) -> bool {
-        matches!(self.kind, Kind::Null)
+    fn is_optional(value: &Self) -> bool {
+        matches!(value.kind, Kind::Null)
     }
 }
 
 impl Serialize for Kind {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(match self {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(match this {
             Kind::Null => Chunk::Atom(Atom::Null),
             Kind::Bool(value) => Chunk::Atom(Atom::Bool(*value)),
             Kind::U64(value) => Chunk::Atom(Atom::U64(*value)),
@@ -40,33 +40,33 @@ impl Serialize for Kind {
             Kind::Bytes(value) => Chunk::Atom(Atom::Bytes(value.as_borrowed())),
             Kind::Ext(value) => Chunk::Atom(Atom::Ext(value.as_borrowed())),
             Kind::Implicit(value) => Chunk::Atom(Atom::Implicit(value.as_borrowed())),
-            Kind::Seq(seq) => return seq.serialize(state),
-            Kind::Map(map) => return map.serialize(state),
+            Kind::Seq(seq) => return Seq::serialize(seq, state),
+            Kind::Map(map) => return Map::serialize(map, state),
         })
     }
 
-    fn container_shape(&self) -> ContainerShape {
-        match self {
-            Kind::Seq(seq) => seq.container_shape(),
-            Kind::Map(map) => map.container_shape(),
+    fn container_shape(value: &Self) -> ContainerShape {
+        match value {
+            Kind::Seq(seq) => Seq::container_shape(seq),
+            Kind::Map(map) => Map::container_shape(map),
             _ => ContainerShape::new(),
         }
     }
 
-    fn is_optional(&self) -> bool {
-        matches!(self, Kind::Null)
+    fn is_optional(value: &Self) -> bool {
+        matches!(value, Kind::Null)
     }
 }
 
 impl Serialize for Seq {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(Chunk::seq(SeqIter(self.items.iter()), state))
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(Chunk::seq(SeqIter(value.items.iter()), state))
     }
 
-    fn container_shape(&self) -> ContainerShape {
+    fn container_shape(value: &Self) -> ContainerShape {
         ContainerShape::new()
-            .with_len(self.len())
-            .with_order(self.order())
+            .with_len(value.len())
+            .with_order(value.order())
     }
 }
 
@@ -79,21 +79,21 @@ impl SeqEmitter for SeqIter<'_> {
 }
 
 impl Serialize for Map {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
         Ok(Chunk::map(
             MapIter {
-                iter: self.inner.entries.iter(),
+                iter: this.inner.entries.iter(),
                 value: None,
             },
             state,
         ))
     }
 
-    fn container_shape(&self) -> ContainerShape {
+    fn container_shape(value: &Self) -> ContainerShape {
         ContainerShape::new()
-            .with_len(self.len())
-            .with_order(self.order())
-            .with_multimap(self.is_multimap())
+            .with_len(value.len())
+            .with_order(value.order())
+            .with_multimap(value.is_multimap())
     }
 }
 

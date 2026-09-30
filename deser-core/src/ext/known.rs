@@ -176,12 +176,12 @@ impl<'a, 'de, T: Bridge> Sink<'de> for BridgeSink<'a, T> {
 macro_rules! impl_well_known {
     ($ty:ty) => {
         impl $crate::ser::Serialize for $ty {
-            fn serialize(
-                &self,
+            fn serialize<'a>(
+                value: &'a Self,
                 _state: &mut $crate::State,
-            ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
+            ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
                 Ok($crate::ser::Chunk::Atom($crate::Atom::Ext(
-                    $crate::ext::ExtValue::borrowed(self),
+                    $crate::ext::ExtValue::borrowed(value),
                 )))
             }
         }
@@ -202,11 +202,11 @@ macro_rules! impl_bridge {
     ($($ty:ty),* $(,)?) => {
         $(
             impl $crate::ser::Serialize for $ty {
-                fn serialize(
-                    &self,
+                fn serialize<'a>(
+                    value: &'a Self,
                     _state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'_>, $crate::Error> {
-                    $crate::ext::known::Bridge::serialize_atom(self).map($crate::ser::Chunk::Atom)
+                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                    $crate::ext::known::Bridge::serialize_atom(value).map($crate::ser::Chunk::Atom)
                 }
 
             }

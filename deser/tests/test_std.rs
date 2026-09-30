@@ -28,9 +28,9 @@ fn without_len(event: Event<'static>) -> Event<'static> {
     }
 }
 
-fn serialize(value: &dyn Serialize) -> Result<Vec<Event<'static>>, Error> {
+fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<Event<'static>>, Error> {
     let mut events = Vec::new();
-    let mut driver = SerializeDriver::new(value);
+    let mut driver = SerializeDriver::new(&value);
     while let Some((event, _, _)) = driver.next()? {
         events.push(without_len(event.to_static()));
     }
@@ -484,11 +484,11 @@ fn test_describe() {
     }
 
     let mut names = Names::default();
-    Some(Wrapping(Reverse(1))).describe(&mut names);
+    deser::ser::SerializeRef::new(&Some(Wrapping(Reverse(1)))).describe(&mut names);
     assert_eq!(names.0, ["some", "newtype Wrapping", "newtype Reverse"]);
 
     let mut names = Names::default();
-    Err::<u32, u32>(1).describe(&mut names);
+    deser::ser::SerializeRef::new(&Err::<u32, u32>(1)).describe(&mut names);
     assert_eq!(names.0, ["variant Result::Err"]);
 }
 
@@ -619,7 +619,7 @@ fn test_once_lock() {
     let set = OnceLock::from(1u32);
     assert_eq!(roundtrip(&set, vec![1u64.into()]).get(), Some(&1));
     let empty = OnceLock::<u32>::new();
-    assert!(empty.is_optional());
+    assert!(OnceLock::<u32>::is_optional(&empty));
     assert_eq!(roundtrip(&empty, vec![Event::from(())]).get(), None);
 
     // missing fields are not set

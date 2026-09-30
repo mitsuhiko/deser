@@ -264,8 +264,8 @@ mod partial {
     }
 
     impl Serialize for Unsized {
-        fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-            Ok(Chunk::seq(UnsizedEmitter(self.0.iter()), state))
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+            Ok(Chunk::seq(UnsizedEmitter(value.0.iter()), state))
         }
     }
 
@@ -284,9 +284,9 @@ mod partial {
         }
     }
 
-    fn streamed(
+    fn streamed<T: Serialize + ?Sized>(
         config: &SerializerConfig,
-        value: &dyn Serialize,
+        value: &T,
         limit: usize,
     ) -> (Vec<u8>, usize) {
         let mut writer = config.writer(Pieces(Vec::new(), 0));
@@ -321,27 +321,31 @@ mod partial {
         let sorted: BTreeMap<u64, String> = (0..if miri { 60 } else { 500 })
             .map(|x| (x, format!("value {x}")))
             .collect();
-        let values: [&dyn Serialize; 6] = [
-            &numbers,
-            &unsized_values,
-            &nested,
-            &maps,
-            &sorted,
-            &"scalar",
+        let values: [deser::ser::SerializeRef<'_>; 6] = [
+            deser::ser::SerializeRef::new(&numbers),
+            deser::ser::SerializeRef::new(&unsized_values),
+            deser::ser::SerializeRef::new(&nested),
+            deser::ser::SerializeRef::new(&maps),
+            deser::ser::SerializeRef::new(&sorted),
+            deser::ser::SerializeRef::new(&"scalar"),
         ];
         for config in [
             SerializerConfig::new(),
             SerializerConfig::new().canonical(true),
         ] {
             for value in values {
-                let expected = config.to_vec(value).unwrap();
+                let expected = config.to_vec(&value).unwrap();
                 let limits: &[usize] = if miri {
                     &[1, 64, usize::MAX]
                 } else {
                     &[1, 5, 64, 1000, usize::MAX]
                 };
                 for &limit in limits {
-                    assert_eq!(streamed(&config, value, limit).0, expected, "limit {limit}");
+                    assert_eq!(
+                        streamed(&config, &value, limit).0,
+                        expected,
+                        "limit {limit}"
+                    );
                 }
             }
         }

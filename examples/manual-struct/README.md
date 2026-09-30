@@ -20,7 +20,7 @@ express. Note that `Cargo.toml` does not enable the `derive` feature.
 - **Deserialize**: `deserialize_into(&mut Option<Self>)` returns a
   `SinkHandle` for a `Sink` that receives `map`, `next_key`, `next_value`
   and `finish` calls. Nested values are deserialized by returning
-  handles for sub-sinks (`Deserialize::deserialize_into(&mut self.id)`).
+  handles for sub-sinks (`usize::deserialize_into(&mut self.id, state)`).
   Unknown keys get `SinkHandle::null()`. Missing fields become
   `ErrorKind::MissingField` errors.
 - Neither side recurses: nested values are handed back to the driver.

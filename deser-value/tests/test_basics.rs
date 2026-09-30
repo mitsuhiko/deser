@@ -507,7 +507,7 @@ fn test_serializer() {
     struct Failing;
 
     impl Serialize for Failing {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "failed"))
         }
     }

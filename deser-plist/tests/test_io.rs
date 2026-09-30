@@ -1,3 +1,4 @@
+use deser::ser::SerializeRef;
 use deser_plist::{DeserializerConfig, Format, SerializerConfig};
 
 use crate::common::Value;
@@ -60,17 +61,22 @@ fn test_partial_writer() {
             ]),
         })
         .collect();
-    let values: [&dyn deser::Serialize; 3] = [&entries, &"scalar", &Vec::<u32>::new()];
+    let empty = Vec::<u32>::new();
+    let values: [SerializeRef<'_>; 3] = [
+        SerializeRef::new(&entries),
+        SerializeRef::new(&"scalar"),
+        SerializeRef::new(&empty),
+    ];
     for format in [Format::Xml, Format::Ascii, Format::Binary] {
         let config = SerializerConfig::new().format(format);
         for value in values {
-            let expected = config.to_vec(value).unwrap();
+            let expected = config.to_vec(&value).unwrap();
             for limit in [1, 13, 500, usize::MAX] {
                 let mut writer = config.writer(Vec::new());
                 writer.set_buffer_limit(limit);
-                writer.write(value).unwrap();
+                writer.write(&value).unwrap();
                 // a stream holds a single value
-                assert!(writer.write(value).is_err());
+                assert!(writer.write(&value).is_err());
                 assert_eq!(writer.into_inner(), expected, "{format:?} {limit}");
             }
         }

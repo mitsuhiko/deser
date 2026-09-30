@@ -298,7 +298,7 @@ fn test_plain_scalars_recorded() {
         let mut driver = deser::de::DeserializeDriver::new(&mut driver_out);
         recording
             .replay(
-                Deserialize::deserialize_into(&mut out, driver.state_mut()),
+                <(String, String, String)>::deserialize_into(&mut out, driver.state_mut()),
                 driver.state_mut(),
             )
             .unwrap();

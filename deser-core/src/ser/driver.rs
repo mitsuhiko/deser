@@ -9,10 +9,10 @@ use crate::de::arena::Buffer;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
-    Begin, BeginKind, Boxed, Chunk, ContainerShape, FIELDS_END, IndexedSeq, IndexedStruct,
-    PLAIN_BUDGET, PlainSink, StructField,
+    Begin, BeginKind, Boxed, Chunk, ContainerShape, Erased, FIELDS_END, HandleInner, IndexedSeq,
+    IndexedStruct, PLAIN_BUDGET, PlainSink, Serialize, SerializeRef, StructField,
 };
-use crate::{Atom, Event, Serialize, State};
+use crate::{Atom, Event, State};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -59,7 +59,7 @@ pub struct SerializeDriver<'a> {
     // `true` if `next` returned an event.  Its event data is detached on the
     // next call.
     delivered: bool,
-    _marker: PhantomData<&'a dyn Serialize>,
+    _marker: PhantomData<SerializeRef<'a>>,
 }
 
 /// A compound value that is currently being serialized.
@@ -108,7 +108,7 @@ impl Emitter {
 /// values are held by raw pointer so that the handle can be moved while
 /// events or emitters borrow from the value.
 pub(crate) struct Held {
-    ptr: NonNull<dyn Serialize>,
+    ptr: NonNull<dyn Erased>,
     owned: Owned,
 }
 
@@ -119,9 +119,9 @@ enum Owned {
     Arena,
 }
 
-// SAFETY: a held value is either a borrowed `&dyn Serialize` (which is
+// SAFETY: a held value is either a borrowed `SerializeRef` (which is
 // `Send` as serializables are `Sync`) or an owned
-// `Box<dyn Serialize + Send>`.
+// `Boxed<dyn Erased + Send>`.
 unsafe impl Send for Held {}
 
 impl Held {
@@ -133,18 +133,16 @@ impl Held {
     #[inline]
     pub(crate) unsafe fn new(handle: SerializeHandle<'_>) -> Held {
         unsafe {
-            let (ptr, owned) = match handle {
-                SerializeHandle::Borrowed(value) => (NonNull::from(value), Owned::No),
-                SerializeHandle::Owned(value) => {
+            let (ptr, owned) = match handle.0 {
+                HandleInner::Borrowed(value) => (NonNull::from(value.as_dyn()), Owned::No),
+                HandleInner::Owned(value) => {
                     let (ptr, in_arena) = Boxed::into_raw(value);
-                    let ptr: NonNull<dyn Serialize + '_> = ptr;
+                    let ptr: NonNull<dyn Erased + '_> = ptr;
                     (ptr, if in_arena { Owned::Arena } else { Owned::Heap })
                 }
             };
             Held {
-                ptr: core::mem::transmute::<NonNull<dyn Serialize + '_>, NonNull<dyn Serialize>>(
-                    ptr,
-                ),
+                ptr: core::mem::transmute::<NonNull<dyn Erased + '_>, NonNull<dyn Erased>>(ptr),
                 owned,
             }
         }
@@ -157,8 +155,8 @@ impl Held {
     /// The returned reference must not be used after the held value was
     /// dropped.
     #[inline(always)]
-    pub(crate) unsafe fn get<'x>(&self) -> &'x dyn Serialize {
-        unsafe { &*self.ptr.as_ptr() }
+    pub(crate) unsafe fn get<'x>(&self) -> SerializeRef<'x> {
+        SerializeRef::from_dyn(unsafe { &*self.ptr.as_ptr() })
     }
 }
 
@@ -167,7 +165,7 @@ impl Drop for Held {
     fn drop(&mut self) {
         #[cold]
         #[inline(never)]
-        unsafe fn drop_owned(ptr: NonNull<dyn Serialize>, in_arena: bool) {
+        unsafe fn drop_owned(ptr: NonNull<dyn Erased>, in_arena: bool) {
             unsafe {
                 drop(Boxed::from_raw(ptr, in_arena));
             }
@@ -204,7 +202,7 @@ const _: () = {
     assert_send::<SerializeDriver<'static>>();
 };
 
-type NextEvent<'a> = Option<(Event<'a>, &'a dyn Serialize)>;
+type NextEvent<'a> = Option<(Event<'a>, SerializeRef<'a>)>;
 
 /// The callback of [`SerializeDriver::drive`] and
 /// [`SerializeDriver::drive_until`].
@@ -231,7 +229,7 @@ trait Callback {
     fn call(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error>;
 
@@ -252,7 +250,7 @@ impl<F: FnMut(Event<'_>, &mut State) -> Result<(), Error>> Callback for Plain<F>
     fn call(
         &mut self,
         event: Event<'_>,
-        _value: &dyn Serialize,
+        _value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         (self.0)(event, state)
@@ -275,8 +273,8 @@ impl<F: FnMut(Event<'_>, &mut State) -> Result<(), Error>> Callback for Plain<F>
 ///   the Rust shape of values need.
 ///
 /// ```
-/// # use deser::ser::{Describe, EventSink, SerializeDriver};
-/// # use deser::{Error, Event, Serialize, State};
+/// # use deser::ser::{Describe, EventSink, SerializeDriver, SerializeRef};
+/// # use deser::{Error, Event, State};
 /// /// Records if the values are `Some`.
 /// struct IsSome(Vec<bool>);
 ///
@@ -294,7 +292,7 @@ impl<F: FnMut(Event<'_>, &mut State) -> Result<(), Error>> Callback for Plain<F>
 ///     fn event(
 ///         &mut self,
 ///         _event: Event<'_>,
-///         value: &dyn Serialize,
+///         value: SerializeRef<'_>,
 ///         _state: &mut State,
 ///     ) -> Result<(), Error> {
 ///         let mut describer = Describer(false);
@@ -329,7 +327,7 @@ pub trait EventSink {
     fn event(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error>;
 
@@ -357,7 +355,7 @@ impl<S: EventSink> Callback for Sink<'_, S> {
     fn call(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         self.0.event(event, value, state)
@@ -375,7 +373,7 @@ impl<S: EventSink> Callback for Pausable<'_, S> {
     fn call(
         &mut self,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
         state: &mut State,
     ) -> Result<(), Error> {
         self.0.event(event, value, state)
@@ -390,10 +388,16 @@ impl<S: EventSink> Callback for Pausable<'_, S> {
 /// The value of the keys of structs, it describes nothing.
 static FIELD_KEY: () = ();
 
+/// Returns the value of the keys of structs.
+#[inline(always)]
+fn field_key() -> SerializeRef<'static> {
+    SerializeRef::new(&FIELD_KEY)
+}
+
 /// Serializes a plain value into a chunk, for when every value is driven
 /// on its own.
 #[inline(never)]
-fn plain_chunk<'x>(plain: &'x dyn Serialize, state: &mut State) -> Result<BeginKind<'x>, Error> {
+fn plain_chunk<'x>(plain: SerializeRef<'x>, state: &mut State) -> Result<BeginKind<'x>, Error> {
     Ok(BeginKind::Chunk(plain.serialize(state)?))
 }
 
@@ -410,7 +414,7 @@ impl<C: Callback> PlainDelivery<'_, '_, C> {
     /// Delivers the first event of a value.
     #[inline(always)]
     fn begin(&mut self, event: Event<'_>) -> Result<(), Error> {
-        self.driver.deliver(self.f, event, &FIELD_KEY)?;
+        self.driver.deliver(self.f, event, field_key())?;
         self.driver.state.is_map_key = false;
         Ok(())
     }
@@ -431,7 +435,7 @@ impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
     #[inline]
     fn seq_end(&mut self) -> Result<(), Error> {
         self.driver.state.depth -= 1;
-        self.driver.deliver(self.f, Event::SeqEnd, &FIELD_KEY)
+        self.driver.deliver(self.f, Event::SeqEnd, field_key())
     }
 
     #[inline]
@@ -443,7 +447,7 @@ impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
     #[inline]
     fn map_end(&mut self) -> Result<(), Error> {
         self.driver.state.depth -= 1;
-        self.driver.deliver(self.f, Event::MapEnd, &FIELD_KEY)
+        self.driver.deliver(self.f, Event::MapEnd, field_key())
     }
 
     #[inline]
@@ -460,7 +464,16 @@ impl<C: Callback> PlainSink for PlainDelivery<'_, '_, C> {
 
 impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the given value implementing [`Serialize`].
-    pub fn new(serializable: &'a dyn Serialize) -> SerializeDriver<'a> {
+    #[inline]
+    pub fn new<T: Serialize>(value: &'a T) -> SerializeDriver<'a> {
+        SerializeDriver::from_ref(SerializeRef::new(value))
+    }
+
+    /// Creates a new driver which serializes the value of a reference.
+    ///
+    /// Unlike [`new`](Self::new) this is not generic, the reference can be
+    /// to a value with an adapter (see [`SerializeRef::with_adapter`]).
+    pub fn from_ref(serializable: SerializeRef<'a>) -> SerializeDriver<'a> {
         let mut state = State::new();
         // the stack of the last driver is reused
         let stack = state
@@ -471,7 +484,7 @@ impl<'a> SerializeDriver<'a> {
             state,
             layers: Vec::new(),
             // SAFETY: the driver cannot outlive 'a
-            next_value: Some(unsafe { Held::new(SerializeHandle::Borrowed(serializable)) }),
+            next_value: Some(unsafe { Held::new(SerializeHandle::from(serializable)) }),
             needs_finish: None,
             stack,
             delivered: false,
@@ -510,7 +523,7 @@ impl<'a> SerializeDriver<'a> {
     /// panics if layers were added.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn next(&mut self) -> Result<Option<(Event<'_>, &dyn Serialize, &mut State)>, Error> {
+    pub fn next(&mut self) -> Result<Option<(Event<'_>, SerializeRef<'_>, &mut State)>, Error> {
         assert!(
             self.layers.is_empty(),
             "layers are only supported by SerializeDriver::drive"
@@ -595,8 +608,8 @@ impl<'a> SerializeDriver<'a> {
     /// not on the size of the value.
     ///
     /// ```
-    /// # use deser::ser::{EventSink, SerializeDriver};
-    /// # use deser::{Error, Event, Serialize, State};
+    /// # use deser::ser::{EventSink, SerializeDriver, SerializeRef};
+    /// # use deser::{Error, Event, State};
     /// /// Collects events and pauses once it holds 100.
     /// struct Collect(Vec<Event<'static>>);
     ///
@@ -604,7 +617,7 @@ impl<'a> SerializeDriver<'a> {
     ///     fn event(
     ///         &mut self,
     ///         event: Event<'_>,
-    ///         _value: &dyn Serialize,
+    ///         _value: SerializeRef<'_>,
     ///         _state: &mut State,
     ///     ) -> Result<(), Error> {
     ///         self.0.push(event.to_static());
@@ -649,10 +662,10 @@ impl<'a> SerializeDriver<'a> {
         &mut self,
         f: &mut C,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
     ) -> Result<(), Error> {
         // the value is only passed on if the callback wants it
-        let value = if C::DESCRIBED { value } else { &FIELD_KEY };
+        let value = if C::DESCRIBED { value } else { field_key() };
         if self.layers.is_empty() {
             f.call(event, value, &mut self.state)?;
         } else {
@@ -672,7 +685,7 @@ impl<'a> SerializeDriver<'a> {
         &mut self,
         f: &mut EventFn<'_>,
         event: Event<'_>,
-        value: &dyn Serialize,
+        value: SerializeRef<'_>,
     ) -> Result<(), Error> {
         Next::new(&mut self.layers, &mut self.state, f, value).emit(event)
     }
@@ -732,7 +745,7 @@ impl<'a> SerializeDriver<'a> {
                             self.deliver(
                                 &mut f,
                                 Event::Atom(Atom::Str(Text::borrowed(key))),
-                                &FIELD_KEY,
+                                field_key(),
                             )?;
                             (value, false)
                         }
@@ -774,7 +787,7 @@ impl<'a> SerializeDriver<'a> {
                 Emitter::Struct(emitter) => match emitter.next(&mut self.state)? {
                     Some((key, value)) => {
                         self.state.is_map_key = true;
-                        self.deliver(&mut f, Event::Atom(Atom::Str(key.into())), &FIELD_KEY)?;
+                        self.deliver(&mut f, Event::Atom(Atom::Str(key.into())), field_key())?;
                         (value, false)
                     }
                     None => {
@@ -880,16 +893,15 @@ impl<'a> SerializeDriver<'a> {
             kind,
             shape,
             needs_finish,
-        } = serializable.__private_begin(&mut self.state)?;
+        } = serializable.begin(&mut self.state)?;
         let kind = match kind {
             // callbacks that describe values need to see every value,
             // large plain values are driven on their own for callbacks that
             // pause
             BeginKind::Plain(plain)
-                if C::UNBOUNDED
-                    || (C::FAST && plain.__private_plain_cost(PLAIN_BUDGET).is_some()) =>
+                if C::UNBOUNDED || (C::FAST && plain.plain_cost(PLAIN_BUDGET).is_some()) =>
             {
-                return plain.__private_emit_plain(&mut PlainDelivery { driver: self, f });
+                return plain.emit_plain(&mut PlainDelivery { driver: self, f });
             }
             BeginKind::Plain(plain) => plain_chunk(plain, &mut self.state)?,
             kind => kind,
@@ -925,8 +937,7 @@ impl<'a> SerializeDriver<'a> {
             }
             // large sequences are emitted in pieces for callbacks that pause
             BeginKind::Seq(seq)
-                if C::UNBOUNDED
-                    || (C::FAST && serializable.__private_plain_cost(PLAIN_BUDGET).is_some()) =>
+                if C::UNBOUNDED || (C::FAST && serializable.plain_cost(PLAIN_BUDGET).is_some()) =>
             {
                 // see above
                 let mut value = Some(value);
@@ -1102,7 +1113,7 @@ impl<'a> SerializeDriver<'a> {
                                 core::mem::transmute::<Cow<'_, str>, Cow<'static, str>>(key)
                             };
                             self.state.is_map_key = true;
-                            return Ok(Some((Event::Atom(Atom::Str(key.into())), &FIELD_KEY)));
+                            return Ok(Some((Event::Atom(Atom::Str(key.into())), field_key())));
                         }
                         None => None,
                     },
@@ -1122,7 +1133,7 @@ impl<'a> SerializeDriver<'a> {
                                 self.state.is_map_key = true;
                                 return Ok(Some((
                                     Event::Atom(Atom::Str(Text::borrowed(key))),
-                                    &FIELD_KEY,
+                                    field_key(),
                                 )));
                             }
                             StructField::Skip => continue,
@@ -1170,11 +1181,11 @@ impl<'a> SerializeDriver<'a> {
     ///
     /// The value must not be used after the next event.
     #[inline(always)]
-    unsafe fn finished_value(&self) -> &'static dyn Serialize {
+    unsafe fn finished_value(&self) -> SerializeRef<'static> {
         match self.needs_finish {
             // SAFETY: the caller guarantees the value is not used for longer
             Some((ref held, _)) => unsafe { held.get() },
-            None => &FIELD_KEY,
+            None => field_key(),
         }
     }
 
@@ -1190,7 +1201,7 @@ impl<'a> SerializeDriver<'a> {
             kind,
             shape,
             needs_finish,
-        } = serializable.__private_begin(&mut self.state)?;
+        } = serializable.begin(&mut self.state)?;
         let kind = match kind {
             BeginKind::Plain(plain) => plain_chunk(plain, &mut self.state)?,
             kind => kind,
@@ -1305,12 +1316,12 @@ fn test_state_mut() {
     struct Name(&'static str);
 
     impl Serialize for Name {
-        fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
             Ok(Chunk::Atom(Atom::Str(
                 if state.get::<Uppercase>().is_some_and(|x| x.0) {
-                    self.0.to_uppercase().into()
+                    value.0.to_uppercase().into()
                 } else {
-                    self.0.into()
+                    value.0.into()
                 },
             )))
         }

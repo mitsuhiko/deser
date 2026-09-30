@@ -195,14 +195,14 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.flush();
-        Ok(Deserialize::deserialize_into(&mut self.key, state))
+        Ok(Value::deserialize_into(&mut self.key, state))
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if let Some(Compound::Seq(_)) = self.compound {
             self.flush();
         }
-        Ok(Deserialize::deserialize_into(&mut self.value, state))
+        Ok(Value::deserialize_into(&mut self.value, state))
     }
 
     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -217,8 +217,8 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 }
 
 impl Serialize for Value {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        Ok(match *self {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        Ok(match *this {
             Value::Null => Chunk::Atom(Atom::Null),
             Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
             Value::Int(ref value) => Chunk::Atom(if let Ok(value) = u64::try_from(*value) {
@@ -235,7 +235,7 @@ impl Serialize for Value {
             Value::Map(ref items) => Chunk::map(ValueMapEmitter(items.iter(), None), state),
             Value::Tagged(ref tag, ref value) => {
                 deser_yaml::set_tag(state, tag.as_str());
-                return value.serialize(state);
+                return Value::serialize(value, state);
             }
         })
     }

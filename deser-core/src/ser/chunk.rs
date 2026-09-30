@@ -34,10 +34,10 @@ pub enum Chunk<'a> {
     /// struct Point(u32, u32);
     ///
     /// impl Serialize for Point {
-    ///     fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    ///     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
     ///         // serialize as a vector
     ///         Ok(Chunk::Forward(SerializeHandle::arena(
-    ///             vec![self.0, self.1],
+    ///             vec![value.0, value.1],
     ///             state,
     ///         )))
     ///     }
@@ -79,6 +79,46 @@ impl<'a> Chunk<'a> {
         Chunk::Struct(unsize(Boxed::arena(emitter, state), |x| {
             x as *mut (dyn StructEmitter + 'a)
         }))
+    }
+
+    /// Like [`seq`](Self::seq) but the emitter does not need to outlive
+    /// `'a`.
+    ///
+    /// This is for the emitters of sequences which are generic over
+    /// adapters (see [`erase_unbounded`](crate::ser::erase_unbounded)).
+    ///
+    /// # Safety
+    ///
+    /// The parts of `E` that do not outlive `'a` must be adapters that are
+    /// only used for their functions, `E` holds no values of them.
+    #[inline(always)]
+    pub(crate) unsafe fn seq_unbounded<E: SeqEmitter>(emitter: E, state: &mut State) -> Chunk<'a> {
+        // like every type parameter, `E` outlives this function
+        let emitter = unsize(Boxed::arena(emitter, state), |x| {
+            x as *mut (dyn SeqEmitter + '_)
+        });
+        // SAFETY: guaranteed by the caller
+        Chunk::Seq(unsafe {
+            core::mem::transmute::<Boxed<dyn SeqEmitter + '_>, Boxed<dyn SeqEmitter + 'a>>(emitter)
+        })
+    }
+
+    /// Like [`map`](Self::map) but the emitter does not need to outlive
+    /// `'a`.
+    ///
+    /// # Safety
+    ///
+    /// See [`seq_unbounded`](Self::seq_unbounded).
+    #[inline(always)]
+    pub(crate) unsafe fn map_unbounded<E: MapEmitter>(emitter: E, state: &mut State) -> Chunk<'a> {
+        // like every type parameter, `E` outlives this function
+        let emitter = unsize(Boxed::arena(emitter, state), |x| {
+            x as *mut (dyn MapEmitter + '_)
+        });
+        // SAFETY: guaranteed by the caller
+        Chunk::Map(unsafe {
+            core::mem::transmute::<Boxed<dyn MapEmitter + '_>, Boxed<dyn MapEmitter + 'a>>(emitter)
+        })
     }
 }
 

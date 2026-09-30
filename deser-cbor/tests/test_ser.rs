@@ -172,8 +172,8 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize(&self, _state: &mut State) -> Result<Chunk<'_>, Error> {
-            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(self))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
         }
     }
 
@@ -374,7 +374,10 @@ fn canonical_floats_and_nan() {
 struct Liar(usize);
 
 impl Serialize for Liar {
-    fn serialize(&self, state: &mut deser::State) -> Result<deser::ser::Chunk<'_>, deser::Error> {
+    fn serialize<'a>(
+        _value: &'a Self,
+        state: &mut deser::State,
+    ) -> Result<deser::ser::Chunk<'a>, deser::Error> {
         struct Emitter(usize);
         impl deser::ser::SeqEmitter for Emitter {
             fn next(
@@ -392,8 +395,8 @@ impl Serialize for Liar {
         Ok(deser::ser::Chunk::seq(Emitter(2), state))
     }
 
-    fn container_shape(&self) -> deser::ContainerShape {
-        deser::ContainerShape::new().with_len(self.0)
+    fn container_shape(value: &Self) -> deser::ContainerShape {
+        deser::ContainerShape::new().with_len(value.0)
     }
 }
 

@@ -102,11 +102,11 @@ fn test_event_data_is_replayed() {
 struct Marked(u32, Option<u32>);
 
 impl Serialize for Marked {
-    fn serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
-        if let Some(marker) = self.1 {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+        if let Some(marker) = value.1 {
             state.event_mut::<Marker>().0 = marker;
         }
-        Ok(Chunk::Atom(Atom::U64(self.0 as u64)))
+        Ok(Chunk::Atom(Atom::U64(value.0 as u64)))
     }
 }
 
