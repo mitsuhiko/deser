@@ -239,7 +239,7 @@ fn test_partial_errors() {
 
 #[test]
 fn test_serializer_in_parts() {
-    use deser::ser::{SerializeDriver, StreamSerializer, Written};
+    use deser::ser::{SerializeDriver, StreamSerializer};
     use deser_json::Serializer;
 
     // without IO: the output is taken while the value is written
@@ -252,11 +252,11 @@ fn test_serializer_in_parts() {
     let mut parts = 0;
     let mut driver = SerializeDriver::new(&value);
     loop {
-        let written = serializer.drive_partial(&mut driver, 64).unwrap();
+        let done = serializer.drive_partial(&mut driver, 64).unwrap();
         out.extend_from_slice(serializer.output());
         serializer.clear_output();
         parts += 1;
-        if written == Written::Done {
+        if done {
             break;
         }
         assert!(serializer.in_progress());
@@ -281,7 +281,7 @@ fn test_serializer_in_parts() {
     let value = vec![vec![1, 2], (0..20).collect()];
     for _ in 0..2 {
         let mut driver = SerializeDriver::new(&value);
-        while serializer.drive_partial(&mut driver, 1).unwrap() == Written::Partial {}
+        while !serializer.drive_partial(&mut driver, 1).unwrap() {}
     }
     let single = config.to_string(&value).unwrap();
     assert_eq!(serializer.as_str(), format!("{single}\n{single}\n"));

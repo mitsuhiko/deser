@@ -863,7 +863,7 @@ impl<'a> Deserializer<'a> {
             let source = self
                 .source
                 .get_or_insert_with(|| String::from_utf8_lossy(input).into());
-            Source::set(driver.state_mut(), source.clone());
+            Source(source.clone()).set(driver.state_mut());
         }
     }
 

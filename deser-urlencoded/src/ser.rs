@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
-use deser_core::ser::{self, EventSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Nesting;
@@ -384,7 +384,7 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         if self.value.is_none() && self.in_progress {
             return Err(Error::in_progress());
         }
@@ -398,10 +398,10 @@ impl ser::StreamSerializer for Serializer {
             limit,
         )? {
             self.in_progress = true;
-            return Ok(Written::Partial);
+            return Ok(false);
         }
         self.in_progress = false;
-        Ok(Written::Done)
+        Ok(true)
     }
 
     fn in_progress(&self) -> bool {

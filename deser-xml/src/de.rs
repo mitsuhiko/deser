@@ -309,7 +309,7 @@ impl<'a> Deserializer<'a> {
         }
         let state = driver.state_mut();
         if self.config.track_locations {
-            Source::set(state, self.input);
+            Source(self.input.into()).set(state);
         }
         self.config.duplicate_keys.set(state);
         TEXT_RULES.set(state);

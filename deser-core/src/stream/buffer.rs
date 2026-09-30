@@ -538,7 +538,23 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// Feeds the events of the ready value into a driver.
     ///
     /// This is useful to deserialize into a custom
-    /// [`Sink`](crate::de::Sink).
+    /// [`Sink`](crate::de::Sink).  The value can borrow from the buffer.
+    /// To feed it into a driver which outlives the buffer's data (for
+    /// instance to implement [`Deserializer`](crate::de::Deserializer) for
+    /// a reader), lend the driver out with
+    /// [`DeserializeDriver::transient`]:
+    ///
+    /// ```
+    /// # use deser::de::{DeserializeDriver, StreamDeserializer};
+    /// # use deser::stream::InputBuffer;
+    /// # use deser::Error;
+    /// fn drive<D: StreamDeserializer>(
+    ///     buffer: &mut InputBuffer<D>,
+    ///     driver: &mut DeserializeDriver<'_, '_>,
+    /// ) -> Result<(), Error> {
+    ///     driver.transient(|driver| buffer.drive(driver))
+    /// }
+    /// ```
     ///
     /// # Panics
     ///
@@ -555,15 +571,11 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     ///
     /// This is like [`drive`](Self::drive) but the value cannot borrow
     /// from the buffer: the driver is lent out with
-    /// [`DeserializeDriver::transient`], borrowed data is passed on like
-    /// data that is only valid for the call.  This allows driving a value
-    /// into a driver which outlives the buffer's data, for instance to
-    /// implement [`Deserializer`](crate::de::Deserializer) for a reader.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no value is ready (see [`poll`](Self::poll)).
-    pub fn drive_transient(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<(), Error> {
+    /// [`DeserializeDriver::transient`].
+    pub(crate) fn drive_transient(
+        &mut self,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<(), Error> {
         let (range, position) = self.take_ready();
         let frame = &self.data[range];
         let deserializer = &mut self.deserializer;

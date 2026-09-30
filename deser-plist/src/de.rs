@@ -173,7 +173,7 @@ impl<'a> Deserializer<'a> {
 
     fn drive_text<'i, O: Out<'i>>(&self, text: &'i str, out: &mut O) -> Result<(), Error> {
         if self.config.track_locations {
-            Source::set(out.state_mut(), Arc::<str>::from(text));
+            Source(Arc::<str>::from(text)).set(out.state_mut());
         }
         let rv = if self.format == Format::Xml {
             read_xml::parse(text, out)

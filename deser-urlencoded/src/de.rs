@@ -294,7 +294,7 @@ impl<'a> Deserializer<'a> {
         let tree = Tree::parse(self.input, &self.config)?;
         let state = driver.state_mut();
         if self.config.track_locations {
-            Source::set(state, self.input);
+            Source(self.input.into()).set(state);
         }
         if self.config.bytes != BytesFormat::BASE64 {
             self.config.bytes.set(state);

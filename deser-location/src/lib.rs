@@ -35,7 +35,7 @@
 //! let mut out = None::<Spanned<bool>>;
 //! {
 //!     let mut driver = DeserializeDriver::new(&mut out);
-//!     Source::set(driver.state_mut(), input);
+//!     Source(input.into()).set(driver.state_mut());
 //!     driver.state_mut().set_input_range(0, 4);
 //!     driver.emit(Event::from(true)).unwrap();
 //! }

@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
-use deser_core::ser::{self, Describe, EventSink, SerializeDriver, Written};
+use deser_core::ser::{self, Describe, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
@@ -501,7 +501,7 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         if self.document.is_none() {
             if self.in_progress {
                 return Err(Error::in_progress());
@@ -520,11 +520,11 @@ impl ser::StreamSerializer for Serializer {
             .serialize_part(&mut self.document, driver, &mut self.out, limit)?
         {
             self.in_progress = true;
-            return Ok(Written::Partial);
+            return Ok(false);
         }
         self.in_progress = false;
         self.written = true;
-        Ok(Written::Done)
+        Ok(true)
     }
 
     fn in_progress(&self) -> bool {

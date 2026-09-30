@@ -19,6 +19,14 @@ All notable changes to deser are documented here.
   outside of deser (sinks have to be implemented for a type of your
   crate), create a slot wrapper with `make_slot_wrapper!` instead, whose
   documentation now describes the type it creates.
+- **Breaking:** removed `deser::ser::Written`,
+  `StreamSerializer::drive_partial` returns `true` once the value is
+  complete (like `SerializeDriver::drive_until`).
+- **Breaking:** `Source::set` takes the source like the other settings of
+  the state: `Source(input.into()).set(state)`.
+- **Breaking:** removed `InputBuffer::drive_transient` (use
+  `driver.transient(|driver| buffer.drive(driver))`) and
+  `Error::push_error` (use `Error::from_errors`).
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and

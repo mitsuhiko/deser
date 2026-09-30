@@ -20,7 +20,7 @@ use crate::State;
 ///
 /// let mut out = None::<bool>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// Source::set(driver.state_mut(), "true");
+/// Source("true".into()).set(driver.state_mut());
 /// assert_eq!(&*driver.state().get::<Source>().unwrap().0, "true");
 /// ```
 #[derive(Clone, Default)]
@@ -28,8 +28,9 @@ pub struct Source(pub Arc<str>);
 
 impl Source {
     /// Sets the source in the state.
-    pub fn set<S: Into<Arc<str>>>(state: &mut State, source: S) {
-        *state.get_mut::<Source>() = Source(source.into());
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<Source>() = self;
     }
 }
 

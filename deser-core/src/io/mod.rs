@@ -110,7 +110,7 @@ use crate::de::{
     Deserialize, DeserializeDriver, DeserializeOwned, Deserializer, StreamDeserializer,
 };
 use crate::error::{Error, ErrorKind};
-use crate::ser::{Serialize, SerializeDriver, Serializer, StreamSerializer, Written};
+use crate::ser::{Serialize, SerializeDriver, Serializer, StreamSerializer};
 use crate::stream::{
     DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Part, Status,
 };
@@ -534,7 +534,7 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     ///
     /// ```
     /// use deser::io::Writer;
-    /// # use deser::ser::{EventSink, SerializeDriver, Serializer, StreamSerializer, Written};
+    /// # use deser::ser::{EventSink, SerializeDriver, Serializer, StreamSerializer};
     /// # use deser::{Error, Event, Serialize, State};
     /// # /// Writes `x` for every event, can stop between values.
     /// # #[derive(Default)]
@@ -558,10 +558,10 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// #     fn output(&self) -> &[u8] { &self.out }
     /// #     fn clear_output(&mut self) { self.out.clear() }
     /// #     fn supports_partial(&self) -> bool { true }
-    /// #     fn drive_partial(&mut self, driver: &mut SerializeDriver<'_>, limit: usize) -> Result<Written, Error> {
+    /// #     fn drive_partial(&mut self, driver: &mut SerializeDriver<'_>, limit: usize) -> Result<bool, Error> {
     /// #         let done = driver.drive_until(&mut Sink(&mut self.out, limit))?;
     /// #         self.partial = !done;
-    /// #         Ok(if done { Written::Done } else { Written::Partial })
+    /// #         Ok(done)
     /// #     }
     /// #     fn in_progress(&self) -> bool { self.partial }
     /// # }
@@ -633,9 +633,9 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
             false => usize::MAX,
         };
         loop {
-            let written = self.serializer.drive_partial(driver, limit)?;
+            let done = self.serializer.drive_partial(driver, limit)?;
             write_output(&mut self.writer, &mut self.serializer)?;
-            if written == Written::Done {
+            if done {
                 return Ok(());
             }
         }

@@ -7,7 +7,7 @@ use core::fmt::{self, Write as _};
 
 use crate::num::{Float, IntBuffer, format_finite};
 use deser_core::ext::Number;
-use deser_core::ser::{self, EventSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
@@ -611,23 +611,19 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         if !self.document || (limit == usize::MAX && !self.in_progress) {
             ser::Serializer::drive(self, driver)?;
-            return Ok(Written::Done);
+            return Ok(true);
         }
         let len = self.out.len();
         match self
             .config
             .write(&mut self.state, driver, true, &mut self.out, limit)
         {
-            Ok(true) => {
-                self.in_progress = false;
-                Ok(Written::Done)
-            }
-            Ok(false) => {
-                self.in_progress = true;
-                Ok(Written::Partial)
+            Ok(done) => {
+                self.in_progress = !done;
+                Ok(done)
             }
             Err(err) => {
                 // the records of the parts that were taken stay written

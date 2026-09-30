@@ -205,8 +205,8 @@ impl Error {
 
     /// Combines errors into one.
     ///
-    /// Errors that hold multiple errors are flattened (see
-    /// [`push_error`](Self::push_error)).  Returns `None` if there are no
+    /// Errors that hold multiple errors are flattened: errors do not nest
+    /// (see [`errors`](Self::errors)).  Returns `None` if there are no
     /// errors.
     pub fn from_errors<I: IntoIterator<Item = Error>>(errors: I) -> Option<Error> {
         let mut errors = errors.into_iter();
@@ -235,7 +235,7 @@ impl Error {
     ///
     /// If the error that is added holds multiple errors, they are added
     /// individually: errors do not nest (see [`errors`](Self::errors)).
-    pub fn push_error(&mut self, err: Error) {
+    pub(crate) fn push_error(&mut self, err: Error) {
         let errors = self.make_multiple();
         match *err.inner {
             ErrorInner::Single(data) => errors.push(Error {

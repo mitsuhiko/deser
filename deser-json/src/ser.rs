@@ -6,7 +6,7 @@ use core::mem::ManuallyDrop;
 
 use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
-use deser_core::ser::{self, EventSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
 use crate::Trailing;
@@ -669,7 +669,7 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         accept_raw(driver);
         let rollback = self.out.len();
         let (mut local, adopt) = match self.value.take() {
@@ -704,11 +704,11 @@ impl ser::StreamSerializer for Serializer {
                 }
                 if done {
                     self.finish_value();
-                    Ok(Written::Done)
+                    Ok(true)
                 } else {
                     self.value = Some(local);
                     self.in_progress = true;
-                    Ok(Written::Partial)
+                    Ok(false)
                 }
             }
             Err(err) => {
@@ -736,13 +736,13 @@ impl Serializer {
         mut writer: ValueWriter,
         driver: &mut SerializeDriver<'_>,
         rollback: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         let rv = writer.drive_whole(driver);
         self.out = writer.output().take();
         match rv {
             Ok(_) => {
                 self.finish_value();
-                Ok(Written::Done)
+                Ok(true)
             }
             Err(err) => {
                 self.out.truncate(rollback);

@@ -88,7 +88,7 @@ use std::task::{Context, Poll, ready};
 use deser_core::de::{
     Deserialize, DeserializeDriver, DeserializeOwned, OwnedDriver, StreamDeserializer,
 };
-use deser_core::ser::{Serialize, SerializeDriver, StreamSerializer, Written};
+use deser_core::ser::{Serialize, SerializeDriver, StreamSerializer};
 use deser_core::stream::{
     DEFAULT_BUFFER_LIMIT, ElementReader, ElementStatus, InputBuffer, Part, Status,
 };
@@ -584,9 +584,9 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
             false => usize::MAX,
         };
         loop {
-            let written = self.serializer.drive_partial(&mut driver, limit)?;
+            let done = self.serializer.drive_partial(&mut driver, limit)?;
             self.write_output().await?;
-            if written == Written::Done {
+            if done {
                 return Ok(());
             }
         }

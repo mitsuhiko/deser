@@ -677,7 +677,7 @@ impl<'a> Deserializer<'a> {
 
         if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
-            Source::set(driver.state_mut(), source.clone());
+            Source(source.clone()).set(driver.state_mut());
         }
         if self.config.bytes != BytesFormat::BASE64 {
             self.config.bytes.set(driver.state_mut());

@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, ExtValue, Number, Timestamp};
-use deser_core::ser::{self, SerializeDriver, Written};
+use deser_core::ser::{self, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
 use crate::format::Format;
@@ -334,11 +334,11 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         if self.value.is_none() {
             if limit == usize::MAX || !self.config.is_text() {
                 ser::Serializer::drive(self, driver)?;
-                return Ok(Written::Done);
+                return Ok(true);
             }
             self.check_single()?;
         }
@@ -349,11 +349,11 @@ impl ser::StreamSerializer for Serializer {
             .serialize_part(&mut self.value, driver, &mut self.out, limit)?
         {
             self.in_progress = true;
-            return Ok(Written::Partial);
+            return Ok(false);
         }
         self.in_progress = false;
         self.written = true;
-        Ok(Written::Done)
+        Ok(true)
     }
 
     fn in_progress(&self) -> bool {

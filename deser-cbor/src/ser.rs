@@ -5,7 +5,7 @@ use core::mem::ManuallyDrop;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, RawInput, Timestamp, Uuid};
-use deser_core::ser::{self, EventSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::copy::extend;
@@ -917,7 +917,7 @@ impl ser::StreamSerializer for Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         if self.item.is_none() && self.in_progress {
             return Err(Error::in_progress());
         }
@@ -928,11 +928,11 @@ impl ser::StreamSerializer for Serializer {
             .serialize_part(&mut self.item, driver, &mut self.out, limit)?
         {
             self.in_progress = true;
-            return Ok(Written::Partial);
+            return Ok(false);
         }
         self.in_progress = false;
         self.written += 1;
-        Ok(Written::Done)
+        Ok(true)
     }
 
     fn in_progress(&self) -> bool {

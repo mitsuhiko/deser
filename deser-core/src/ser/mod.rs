@@ -119,7 +119,7 @@ pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
-pub use self::stream::{StreamSerializer, Written};
+pub use self::stream::StreamSerializer;
 
 pub use driver::{EventSink, SerializeDriver};
 

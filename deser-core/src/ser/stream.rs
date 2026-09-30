@@ -1,19 +1,6 @@
 use crate::error::Error;
 use crate::ser::{SerializeDriver, Serializer};
 
-/// The result of [`StreamSerializer::drive_partial`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Written {
-    /// The value is complete, the output holds the rest of it.
-    Done,
-    /// The value is not complete.
-    ///
-    /// The output holds a part of it which the caller takes (and clears)
-    /// before it calls [`drive_partial`](StreamSerializer::drive_partial)
-    /// again with the same driver to continue.
-    Partial,
-}
-
 /// A [`Serializer`] that writes bytes which can be taken while values are
 /// serialized.
 ///
@@ -98,11 +85,11 @@ pub trait StreamSerializer: Serializer {
     /// Serializes a value, or a part of it, and appends its bytes to the
     /// output.
     ///
-    /// This works like [`drive`](Serializer::drive) but the serializer can
-    /// stop once the output holds at least `limit` bytes (it can hold
-    /// more) and return [`Written::Partial`].  The caller then takes the
-    /// output, clears it and calls again with the same driver until the
-    /// value is complete ([`Written::Done`]).  In between
+    /// Returns `true` once the value is complete.  This works like
+    /// [`drive`](Serializer::drive) but the serializer can stop once the
+    /// output holds at least `limit` bytes (it can hold more) and return
+    /// `false`.  The caller then takes the output, clears it and calls
+    /// again with the same driver until the value is complete.  In between
     /// [`in_progress`](Self::in_progress) is `true` and no other value can
     /// be serialized.  With a limit of `usize::MAX` the value is always
     /// completed in a single call, which allows serializers to use faster
@@ -120,16 +107,16 @@ pub trait StreamSerializer: Serializer {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         let _ = limit;
         self.drive(driver)?;
-        Ok(Written::Done)
+        Ok(true)
     }
 
     /// Returns `true` if a value is partially serialized.
     ///
     /// This is the case after [`drive_partial`](Self::drive_partial)
-    /// returned [`Written::Partial`] until it returns [`Written::Done`].
+    /// returned `false` until it returns `true`.
     /// If the value is abandoned (because it failed, or because the caller
     /// gave up on it, for instance when a write failed), this stays `true`:
     /// the output of the stream holds an incomplete value, so the stream
@@ -157,7 +144,7 @@ impl<S: StreamSerializer + ?Sized> StreamSerializer for &mut S {
         &mut self,
         driver: &mut SerializeDriver<'_>,
         limit: usize,
-    ) -> Result<Written, Error> {
+    ) -> Result<bool, Error> {
         (**self).drive_partial(driver, limit)
     }
 
