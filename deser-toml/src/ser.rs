@@ -7,7 +7,7 @@ use deser_core::ser::{self, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
-use deser_core::__format::IntBuffer;
+use crate::num::IntBuffer;
 use deser_core::ext::{Datetime, Number, Timestamp};
 
 /// Configures how values are serialized to TOML.
@@ -746,17 +746,17 @@ impl<'d> Writer<'d> {
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "zmij")]
-trait Float: zmij::Float + deser_core::__format::Float {}
+trait Float: zmij::Float + crate::num::Float {}
 
 #[cfg(feature = "zmij")]
-impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
+impl<F: zmij::Float + crate::num::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "zmij"))]
-trait Float: deser_core::__format::Float {}
+trait Float: crate::num::Float {}
 
 #[cfg(not(feature = "zmij"))]
-impl<F: deser_core::__format::Float> Float for F {}
+impl<F: crate::num::Float> Float for F {}
 
 /// Writes a float with the shortest text that reads back as the same value
 /// of its type (`f32` or `f64`).  The text always has a fractional part or
@@ -771,7 +771,7 @@ fn write_float<F: Float>(out: &mut String, value: F) {
         #[cfg(feature = "zmij")]
         out.push_small(zmij::Buffer::new().format_finite(value));
         #[cfg(not(feature = "zmij"))]
-        out.push_small(&deser_core::__format::format_finite(value));
+        out.push_small(&crate::num::format_finite(value));
     }
 }
 
@@ -870,6 +870,6 @@ trait PushSmall {
 impl PushSmall for String {
     #[inline(always)]
     fn push_small(&mut self, s: &str) {
-        deser_core::__format::push_str(self, s);
+        crate::copy::push_str(self, s);
     }
 }

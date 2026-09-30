@@ -14,7 +14,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::str;
 
-use deser_core::__format::extend;
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 #[cfg(not(hjson))]
@@ -24,6 +23,7 @@ use deser_core::{Atom, Error, ErrorKind, Event, State};
 #[cfg(hjson)]
 use deser_core::{Implicit, ImplicitValue};
 
+use crate::copy::extend;
 #[cfg(single_quotes)]
 use crate::scan::skip_to_escape_single;
 use crate::scan::{EscapeScanner, is_ascii, skip_to_escape, validate_utf8_slice};
@@ -372,8 +372,8 @@ impl Parser {
         #[cfg(not(hjson))]
         {
             let state = out.state_mut();
-            state.__private_capture_raw(&crate::raw::FORMAT);
-            if self.is_idle() && state.__private_take_raw_request(&crate::raw::FORMAT) {
+            let requested = state.set_raw_format(&crate::raw::FORMAT);
+            if requested && self.is_idle() {
                 self.partial = Pending::Raw;
             }
         }
@@ -967,11 +967,11 @@ fn raw_value<'i, O: Out<'i>>(
 }
 
 /// Returns `true` if the result of an event requests the next value as raw
-/// value (see `State::__private_request_raw`).
+/// value (see `Error::is_raw_request`).
 #[cfg(not(hjson))]
 #[inline(always)]
 fn is_raw_request(err: &Error) -> bool {
-    err.__private_is_raw_request()
+    err.is_raw_request()
 }
 
 //# Hjson has no raw values, it never declares that it passes them on so

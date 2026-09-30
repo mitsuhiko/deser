@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 use deser_core::{Error, ErrorKind, Source};
 
 use crate::common::{Borrowing, Copying, Out, decode_utf16_text, syntax_error};

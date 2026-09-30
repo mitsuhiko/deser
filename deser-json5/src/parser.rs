@@ -14,13 +14,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::str;
 
-use deser_core::__format::extend;
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::RawInput;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 
+use crate::copy::extend;
 use crate::scan::skip_to_escape_single;
 use crate::scan::{EscapeScanner, is_ascii, skip_to_escape, validate_utf8_slice};
 
@@ -336,8 +336,8 @@ impl Parser {
         // the raw values that are passed on, and the top-level value might
         // be one of them
         let state = out.state_mut();
-        state.__private_capture_raw(&crate::raw::FORMAT);
-        if self.is_idle() && state.__private_take_raw_request(&crate::raw::FORMAT) {
+        let requested = state.set_raw_format(&crate::raw::FORMAT);
+        if requested && self.is_idle() {
             self.partial = Pending::Raw;
         }
         let rv = match self.run(&mut cur, eof, base, options.exact_numbers, out) {
@@ -763,10 +763,10 @@ fn raw_value<'i, O: Out<'i>>(
 }
 
 /// Returns `true` if the result of an event requests the next value as raw
-/// value (see `State::__private_request_raw`).
+/// value (see `Error::is_raw_request`).
 #[inline(always)]
 fn is_raw_request(err: &Error) -> bool {
-    err.__private_is_raw_request()
+    err.is_raw_request()
 }
 
 #[inline(never)]

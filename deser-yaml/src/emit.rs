@@ -11,7 +11,7 @@
 use std::borrow::Cow;
 use std::fmt::{self, Write};
 
-use deser_core::__format::IntBuffer;
+use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
 use deser_core::ser::PausableSink;
@@ -170,7 +170,7 @@ impl fmt::Write for ShortText {
         let dst = self.buf.get_mut(self.len..end).ok_or(fmt::Error)?;
         // SAFETY: the destination has the length of the string.  Most texts
         // are short (like numbers), these are copied inline.
-        unsafe { deser_core::__format::copy_small(s.as_ptr(), dst.as_mut_ptr(), s.len()) };
+        unsafe { crate::copy::copy_small(s.as_ptr(), dst.as_mut_ptr(), s.len()) };
         self.len = end;
         Ok(())
     }

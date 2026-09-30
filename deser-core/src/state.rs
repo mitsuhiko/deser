@@ -79,15 +79,12 @@ pub struct State {
     error_limit_reached: bool,
     // the arena the sinks of the deserialization are allocated in
     pub(crate) arena: Arena,
-    // deserialization: the format of the raw values the format that is
-    // parsed passes on (see `__private_capture_raw`)
-    pub(crate) raw_capture: Option<&'static RawFormatInfo>,
+    // the format of the raw values that pass through as they are (see
+    // `set_raw_format`)
+    pub(crate) raw_format: Option<&'static RawFormatInfo>,
     // deserialization: the top-level value is wanted as raw value of the
-    // format (see `__private_take_raw_request`)
+    // format (see `set_raw_format`)
     pub(crate) raw_requested: Option<&'static RawFormatInfo>,
-    // serialization: the format the serializer writes raw values of as they
-    // are (see `__private_accept_raw`)
-    raw_accept: Option<&'static RawFormatInfo>,
 }
 
 /// The function of an [`ErrorContext`].
@@ -114,9 +111,8 @@ impl State {
             remaining_errors: usize::MAX,
             error_limit_reached: false,
             arena: Arena::new(),
-            raw_capture: None,
+            raw_format: None,
             raw_requested: None,
-            raw_accept: None,
         }
     }
 
@@ -260,7 +256,7 @@ impl State {
     /// deserialization (see
     /// [`__private_put_scratch`](Self::__private_put_scratch)).
     ///
-    /// This is not public API.
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     pub fn __private_take_scratch(&mut self) -> Vec<u8> {
@@ -272,89 +268,68 @@ impl State {
     /// Formats that unescape strings into a buffer would otherwise grow it
     /// again for every document.  The buffer is cleared.
     ///
-    /// This is not public API.
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     pub fn __private_put_scratch(&mut self, buffer: Vec<u8>) {
         self.arena.put_vec(Buffer::Scratch, buffer);
     }
 
-    /// Declares that the format passes on the input of values as raw values
-    /// of the format.
+    /// Declares the format of the raw values that pass through as they are.
     ///
-    /// Sinks request raw values from the format with
-    /// [`__private_request_raw`](Self::__private_request_raw).
+    /// Formats with raw values (see [`Raw`](crate::ext::Raw)) call this with
+    /// the description of their format:
     ///
-    /// This is not public API.
-    #[doc(hidden)]
+    /// * Deserializers call it before they emit the first event.  Sinks
+    ///   then request values that deserialize into raw values of the format
+    ///   (see [`Error::is_raw_request`]) and the format passes on their
+    ///   input as [`RawInput`](crate::ext::RawInput) rather than their
+    ///   events.  The top-level value is requested before the
+    ///   deserialization starts: this returns `true` if the top-level value
+    ///   is wanted as raw value.  Only the first call can return `true`.
+    /// * Serializers call it before the first value and ignore the result.
+    ///   Raw values of the format are then emitted as
+    ///   [`RawInput`](crate::ext::RawInput), which the serializer writes as
+    ///   it is.  Raw values of other formats are serialized as the values
+    ///   they hold.
     #[inline(always)]
-    pub fn __private_capture_raw(&mut self, format: &'static RawFormatInfo) {
-        self.raw_capture = Some(format);
+    pub fn set_raw_format(&mut self, format: &'static RawFormatInfo) -> bool {
+        self.raw_format = Some(format);
+        self.raw_requested
+            .take()
+            .is_some_and(|requested| core::ptr::eq(requested, format))
     }
 
     /// Requests the next value as raw value of a format.
     ///
     /// Sinks call this while they handle the event before the value that
     /// deserializes into a [`Raw`](crate::ext::Raw) value (for instance the
-    /// key of the field) and return the result from the event.  It's an
-    /// error (see [`Error::__private_is_raw_request`]) if the format passes
-    /// on the input of values of the format (see
-    /// [`__private_capture_raw`](Self::__private_capture_raw)), otherwise
-    /// the value is deserialized from its events.  The drivers pass the
-    /// request on to the format, which emits the next value as
-    /// [`RawInput`](crate::ext::RawInput).  Sequences request their first
-    /// item when they start and every next one after an item.  As the
-    /// request is the result of an event, formats do not check for it for
-    /// every value.
+    /// key of the field) and return the result from the event.  If the
+    /// format passes on the input of values of the format (see
+    /// [`set_raw_format`](Self::set_raw_format)), the result is the request
+    /// (see [`Error::is_raw_request`]), otherwise the value is deserialized
+    /// from its events.  The drivers pass the request on to the format,
+    /// which emits the next value as [`RawInput`](crate::ext::RawInput).
+    /// Sequences request their first item when they start and every next
+    /// one after an item.  As the request is the result of an event,
+    /// formats do not check for it for every value.
     ///
-    /// The top-level value is requested before the deserialization starts,
-    /// formats take that request with
-    /// [`__private_take_raw_request`](Self::__private_take_raw_request).
-    ///
-    /// This is not public API.
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     pub fn __private_request_raw(&mut self, format: &'static RawFormatInfo) -> Result<(), Error> {
-        match self.raw_capture {
-            Some(capture) if core::ptr::eq(capture, format) => Err(Error::__private_raw_request()),
+        match self.raw_format {
+            Some(own) if core::ptr::eq(own, format) => Err(Error::raw_request()),
             _ => Ok(()),
         }
     }
 
-    /// Takes the request of the top-level value as raw value (see
-    /// [`__private_request_raw`](Self::__private_request_raw)).
-    ///
-    /// Formats call this before the top-level value, it's `true` if the
-    /// value is requested as raw value of the format.
-    ///
-    /// This is not public API.
-    #[doc(hidden)]
-    #[inline]
-    pub fn __private_take_raw_request(&mut self, format: &'static RawFormatInfo) -> bool {
-        self.raw_requested
-            .take()
-            .is_some_and(|requested| core::ptr::eq(requested, format))
-    }
-
-    /// Declares that the serializer writes raw values of a format as they
-    /// are.
-    ///
-    /// Raw values of other formats are serialized as the values they hold
-    /// (see [`Raw`](crate::ext::Raw)).
-    ///
-    /// This is not public API.
-    #[doc(hidden)]
-    #[inline]
-    pub fn __private_accept_raw(&mut self, format: &'static RawFormatInfo) {
-        self.raw_accept = Some(format);
-    }
-
     /// Returns `true` if the serializer writes raw values of the format as
-    /// they are (see [`__private_accept_raw`](Self::__private_accept_raw)).
+    /// they are (see [`set_raw_format`](Self::set_raw_format)).
     #[inline]
     pub(crate) fn accepts_raw(&self, format: &'static RawFormatInfo) -> bool {
-        self.raw_accept
-            .is_some_and(|accepted| core::ptr::eq(accepted, format))
+        self.raw_format
+            .is_some_and(|own| core::ptr::eq(own, format))
     }
 
     /// Takes the state out, leaving an empty state that does not allocate.

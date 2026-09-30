@@ -163,6 +163,7 @@
 extern crate alloc;
 
 mod de;
+mod num;
 mod parser;
 mod ser;
 mod stream;

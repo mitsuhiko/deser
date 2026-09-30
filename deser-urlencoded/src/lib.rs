@@ -158,6 +158,7 @@
 
 mod de;
 mod encoding;
+mod num;
 mod ser;
 mod stream;
 

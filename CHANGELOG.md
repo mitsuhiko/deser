@@ -16,8 +16,17 @@ All notable changes to deser are documented here.
   formats serialize the value they hold, types that do not take raw
   values (like `deser_value::Value`) receive it parsed.  Formats support
   them with the
-  new `deser::ext::{Raw, RawFormat, RawFormatInfo, RawInput}`.  See the
-  new `raw-values` example.
+  new `deser::ext::{Raw, RawFormat, RawFormatInfo, RawInput}`,
+  `State::set_raw_format` and `Error::is_raw_request`.  See the new
+  `raw-values` example.
+- Added `deser::de::{deserialize_value, drive_value, MakeSink}` to
+  implement functions like `from_str` of formats so that only the code
+  that depends on the type of the value exists once per type.  The
+  formats no longer use hidden helpers of `deser-core`.
+- Added `DeserializeDriver::multimap_value` and
+  `deser::de::missing_multimap_value` for formats that read a single
+  value of a key of a multimap (like `deser_env::var`): collections take
+  the value as their only item and are empty if the key is missing.
 
 ## 0.9.1
 

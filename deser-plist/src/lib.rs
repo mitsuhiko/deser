@@ -98,6 +98,7 @@ extern crate alloc;
 mod common;
 mod de;
 mod format;
+mod num;
 mod read_ascii;
 mod read_binary;
 mod read_xml;

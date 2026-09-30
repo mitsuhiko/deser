@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-use deser_core::__format::{Float, format_finite};
+use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
 use deser_core::ser::{self, Describe, PausableSink, SerializeDriver, Written};

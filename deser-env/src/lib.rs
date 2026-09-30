@@ -199,6 +199,7 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod de;
+mod num;
 mod ser;
 
 use std::borrow::Cow;
@@ -206,7 +207,9 @@ use std::fmt;
 use std::sync::Arc;
 
 use deser_core::Text;
-use deser_core::de::{Deserialize, DeserializeDriver, DeserializeOwned, LexicalRules};
+use deser_core::de::{
+    Deserialize, DeserializeDriver, DeserializeOwned, LexicalRules, missing_multimap_value,
+};
 use deser_core::{Atom, Error, ErrorAttachment, ErrorKind};
 
 pub use self::de::{Deserializer, DeserializerConfig};
@@ -372,25 +375,19 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
         None => {
             // collections are empty (like the collections of missing
             // keys in `from_env`)
-            return T::__private_collect_empty()
-                .or_else(T::initial_value)
-                .ok_or_else(|| {
-                    attach(Error::new(
-                        ErrorKind::MissingField,
-                        "environment variable is not set",
-                    ))
-                });
+            return missing_multimap_value::<T>().ok_or_else(|| {
+                attach(Error::new(
+                    ErrorKind::MissingField,
+                    "environment variable is not set",
+                ))
+            });
         }
     };
     let mut out = None;
     {
         // the variable stands for a key given once: collections (like
         // `Vec<T>`) are one value
-        let mut driver = if T::__private_collects() {
-            DeserializeDriver::from_fn(|state| T::__private_collect_into(&mut out, state))
-        } else {
-            DeserializeDriver::new(&mut out)
-        };
+        let mut driver = DeserializeDriver::multimap_value(&mut out);
         LexicalRules::LENIENT.set(driver.state_mut());
         match value.into_string() {
             Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),

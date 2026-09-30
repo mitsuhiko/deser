@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
 use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};

@@ -140,6 +140,7 @@
 
 extern crate alloc;
 
+mod copy;
 mod de;
 mod float;
 mod parser;

@@ -112,17 +112,61 @@ pub trait Deserializer<'de> {
 
 /// Creates the sink of the value that is deserialized.
 ///
-/// See [`deserialize_value`], it's called once.
+/// This is passed from [`deserialize_value`] to the function that drives
+/// the deserializer, which passes it on to [`drive_value`].  It must be
+/// called once, with the state of the driver.
 pub type MakeSink<'m, 'out, 'de> = dyn FnMut(&mut State) -> SinkHandle<'out, 'de> + 'm;
 
 /// Deserializes a value with a function that drives a deserializer into
 /// its sink.
 ///
-/// `drive` receives the function that creates the sink and passes it to
-/// [`drive_value`] (or does what it does).  This keeps everything that does
-/// not depend on the type of the value out of the code that exists once per
-/// type: formats implement functions like `from_str` with it and a function
-/// that creates their deserializer and is not generic.
+/// This is how formats implement functions like `from_str`.  It does the
+/// same as [`Deserializer::deserialize`], but only the part that depends
+/// on the type of the value is generic: `drive` receives a function that
+/// creates the sink of the value and passes it to [`drive_value`] together
+/// with the deserializer.  If `drive` is a function that is not generic
+/// over the value, the code that creates and runs the deserializer exists
+/// once rather than once per type.
+///
+/// If no value was deserialized, an [`EndOfFile`](ErrorKind::EndOfFile)
+/// error is returned.
+///
+/// ```
+/// use deser::de::{
+///     Deserialize, DeserializeDriver, Deserializer, MakeSink, deserialize_value, drive_value,
+/// };
+/// use deser::{Error, ErrorKind, Event};
+///
+/// /// A format which reads comma separated numbers as a sequence.
+/// struct Numbers<'a>(&'a str);
+///
+/// impl<'de> Deserializer<'de> for Numbers<'de> {
+///     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+///         driver.emit(Event::seq_start())?;
+///         for item in self.0.split(',') {
+///             let value: u64 = item
+///                 .trim()
+///                 .parse()
+///                 .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid number"))?;
+///             driver.emit(value)?;
+///         }
+///         driver.emit(Event::SeqEnd)
+///     }
+/// }
+///
+/// /// Deserializes a value from comma separated numbers.
+/// pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
+///     deserialize_value(|make_sink| drive_str(s, make_sink))
+/// }
+///
+/// /// The part of `from_str` that does not depend on the type of the value.
+/// fn drive_str<'de>(s: &'de str, make_sink: &mut MakeSink<'_, '_, 'de>) -> Result<(), Error> {
+///     drive_value(&mut Numbers(s), make_sink)
+/// }
+///
+/// let value: Vec<u32> = from_str("1, 2, 3").unwrap();
+/// assert_eq!(value, [1, 2, 3]);
+/// ```
 #[inline]
 pub fn deserialize_value<'de, T: Deserialize<'de>>(
     drive: impl for<'out> FnOnce(&mut MakeSink<'_, 'out, 'de>) -> Result<(), Error>,
@@ -142,8 +186,11 @@ pub fn deserialize_value<'de, T: Deserialize<'de>>(
     out.ok_or_else(empty_input)
 }
 
-/// Drives a deserializer into the sink of a value (see
-/// [`deserialize_value`]).
+/// Drives a deserializer into the sink of a value.
+///
+/// This creates the state and the driver, creates the sink with
+/// `make_sink` and calls [`Deserializer::drive`].  See
+/// [`deserialize_value`] for how it's used.
 #[inline(never)]
 pub fn drive_value<'out, 'de>(
     de: &mut dyn Deserializer<'de>,

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser_core::__format::{Float, format_finite};
+use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::ser::SerializeDriver;
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};

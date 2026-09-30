@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::de::{self, Deserialize, DeserializeDriver};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 use deser_core::hints::Layout;
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Source};
 

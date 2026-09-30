@@ -3,13 +3,13 @@
 use alloc::vec::Vec;
 use core::str;
 
-use deser_core::__format::extend;
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 use deser_core::{Implicit, ImplicitValue};
 
+use crate::copy::extend;
 use crate::scan::skip_to_escape_single;
 use crate::scan::{EscapeScanner, is_ascii, skip_to_escape, validate_utf8_slice};
 

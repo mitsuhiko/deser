@@ -204,11 +204,13 @@ extern crate alloc;
 
 mod buf;
 mod escape;
+mod num;
 mod pretty;
 mod ser;
 mod trailing;
 
 // These are generated from `deser-template-json`.
+mod copy;
 mod de;
 mod parser;
 mod raw;

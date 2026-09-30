@@ -3,12 +3,12 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
-use deser_core::__format::extend;
 use deser_core::State;
 use deser_core::ext::{BigInt, ExtValue, RawInput, Timestamp};
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
+use crate::copy::extend;
 use crate::ext::{Ext, TIMESTAMP, encode_timestamp};
 
 /// Configures how values are serialized to MessagePack.
@@ -171,7 +171,7 @@ impl Writer {
     /// canonical.
     fn accept_raw(&self, driver: &mut SerializeDriver<'_>) {
         if !self.canonical {
-            driver.state_mut().__private_accept_raw(&crate::raw::FORMAT);
+            driver.state_mut().set_raw_format(&crate::raw::FORMAT);
         }
     }
 

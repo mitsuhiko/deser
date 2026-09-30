@@ -288,6 +288,7 @@ pub trait DeserializeAs<'de, T>: 'static {
         crate::de::update::replace_with(value, OwnedSink::deserialize_as::<Self>(state), state)
     }
 
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_atom_into_as(
         out: &mut Option<T>,
@@ -297,6 +298,7 @@ pub trait DeserializeAs<'de, T>: 'static {
         atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
     }
 
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_borrowed_atom_into_as(
         out: &mut Option<T>,
@@ -306,17 +308,20 @@ pub trait DeserializeAs<'de, T>: 'static {
         borrowed_atom_into_handle(Self::deserialize_into_as(out, state), atom, state)
     }
 
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_is_bytes_as() -> bool {
         false
     }
 
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_vec_from_bytes_as(bytes: Vec<u8>) -> Option<Vec<T>> {
         let _ = bytes;
         None
     }
 
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_array_from_bytes_as<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
         let _ = bytes;
@@ -324,18 +329,24 @@ pub trait DeserializeAs<'de, T>: 'static {
     }
 
     /// See [`Deserialize::__private_atom_default`].
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_atom_default_as() -> Option<T> {
         None
     }
 
     /// See [`Deserialize::__private_inline_seq`].
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
         None
     }
 
     /// See [`Deserialize::__private_raw`].
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     #[inline(always)]
     fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
@@ -343,12 +354,16 @@ pub trait DeserializeAs<'de, T>: 'static {
     }
 
     /// See [`Deserialize::__private_collects`].
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collects_as() -> bool {
         false
     }
 
     /// See [`Deserialize::__private_collect_into`].
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_into_as<'out>(
         out: &'out mut Option<T>,
@@ -358,6 +373,8 @@ pub trait DeserializeAs<'de, T>: 'static {
     }
 
     /// See [`Deserialize::__private_collect_update`].
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_update_as<'out>(
         value: &'out mut T,
@@ -373,6 +390,8 @@ pub trait DeserializeAs<'de, T>: 'static {
     }
 
     /// See [`Deserialize::__private_collect_empty`].
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_empty_as() -> Option<T> {
         None
@@ -422,6 +441,7 @@ pub trait SerializeAs<T: ?Sized>: 'static {
         let _ = d;
     }
 
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     fn __private_begin_as<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
@@ -429,6 +449,7 @@ pub trait SerializeAs<T: ?Sized>: 'static {
         Ok(Begin::chunk(Self::serialize_as(value, state)?, shape, true))
     }
 
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_slice_as_bytes_as(val: &[T]) -> Option<Cow<'_, [u8]>>
     where

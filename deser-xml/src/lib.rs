@@ -238,6 +238,7 @@
 
 mod de;
 mod mixed;
+mod num;
 mod root;
 mod ser;
 mod stream;

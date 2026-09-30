@@ -106,9 +106,11 @@
 //!   fallback on top of the float formatting of `core`.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
+mod copy;
 mod datetime;
 mod de;
 mod document;
+mod num;
 mod parser;
 mod scan;
 mod ser;

@@ -116,6 +116,7 @@
 
 extern crate alloc;
 
+mod copy;
 mod de;
 mod ext;
 mod head;

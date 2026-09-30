@@ -5,9 +5,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver, Frame, LexicalRules};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};

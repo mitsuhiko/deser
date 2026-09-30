@@ -4,7 +4,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
-use deser_core::__format::IntBuffer;
+use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
@@ -402,7 +402,7 @@ impl SerializerConfig {
 
 /// Declares that raw values of JSON are written as they are.
 fn accept_raw(driver: &mut SerializeDriver<'_>) {
-    driver.state_mut().__private_accept_raw(&crate::raw::FORMAT);
+    driver.state_mut().set_raw_format(&crate::raw::FORMAT);
 }
 
 /// Writes the events of a value.
@@ -1104,7 +1104,7 @@ impl Output {
             }
             #[cfg(not(feature = "zmij"))]
             {
-                self.write_str(&deser_core::__format::format_finite(val))
+                self.write_str(&crate::num::format_finite(val))
             }
         } else {
             self.write_str("null")
@@ -1307,17 +1307,17 @@ static ESCAPE: [u8; 256] = [
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(feature = "zmij")]
-trait Float: zmij::Float + deser_core::__format::Float {}
+trait Float: zmij::Float + crate::num::Float {}
 
 #[cfg(feature = "zmij")]
-impl<F: zmij::Float + deser_core::__format::Float> Float for F {}
+impl<F: zmij::Float + crate::num::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
 #[cfg(not(feature = "zmij"))]
-trait Float: deser_core::__format::Float {}
+trait Float: crate::num::Float {}
 
 #[cfg(not(feature = "zmij"))]
-impl<F: deser_core::__format::Float> Float for F {}
+impl<F: crate::num::Float> Float for F {}
 
 /// Serializes a value to JSON.
 ///

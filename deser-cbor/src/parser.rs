@@ -216,7 +216,7 @@ impl Parser {
     /// Items requested as raw values (see `raw_values`) are handled here,
     /// around `parse_items` which parses the other items.  This keeps them
     /// out of its code: sinks request raw values with the result of the
-    /// event before the item (see `State::__private_request_raw`), which
+    /// event before the item (see `Error::is_raw_request`), which
     /// `run` handles like the error of a sink.
     #[inline(always)]
     pub(crate) fn parse<'i, O: Out<'i>>(
@@ -233,7 +233,7 @@ impl Parser {
         };
         loop {
             match self.parse_items(input, pos, eof, base, Reborrow(out)) {
-                Err(err) if err.__private_is_raw_request() => {
+                Err(err) if err.is_raw_request() => {
                     match self.raw_requested(input, base, eof, out) {
                         Ok(next) => pos = next,
                         Err(rv) => return rv,
@@ -434,11 +434,8 @@ impl Parser {
         out: &mut O,
     ) -> Result<usize, Result<Progress, Error>> {
         let state = out.state_mut();
-        state.__private_capture_raw(&crate::raw::FORMAT);
-        if self.frame.is_none()
-            && !self.complete
-            && state.__private_take_raw_request(&crate::raw::FORMAT)
-        {
+        let requested = state.set_raw_format(&crate::raw::FORMAT);
+        if requested && self.frame.is_none() && !self.complete {
             self.raw = true;
         }
         if !self.raw {
@@ -539,7 +536,7 @@ impl Parser {
             let more = match cur.emit_borrowed(out, start, event) {
                 Ok(()) => false,
                 // the next item is requested too
-                Err(err) if err.__private_is_raw_request() => true,
+                Err(err) if err.is_raw_request() => true,
                 Err(err) => {
                     // as if the item was accepted, the rest is skipped
                     self.frame = frame;

@@ -17,6 +17,25 @@ use crate::ser::{Chunk, Serialize, SerializeHandle};
 /// This is implemented by a type of the crate of the format that stands
 /// for the format (for instance `deser_json::Json`).  The format is
 /// described at runtime by a [`RawFormatInfo`].
+///
+/// # Passing on the Input of Values
+///
+/// Raw values of a format that is deserialized from the same format hold
+/// the input of the value, and serializers of the format write them as
+/// they are.  For this the format:
+///
+/// * calls [`State::set_raw_format`](crate::State::set_raw_format) with
+///   its description in the deserializer (before the first event, it
+///   returns whether the top-level value is wanted as raw value) and in
+///   the serializer (before the first value).
+/// * checks with [`Error::is_raw_request`](crate::Error::is_raw_request)
+///   whether the result of an event requests the next value as raw value.
+/// * validates a value that is wanted as raw value and emits its input as
+///   [`RawInput`] (an [`Atom::Ext`]) rather than its events.
+/// * writes the [`RawInput`] of its format as it is when serializing.
+///
+/// Formats that do not do this still have raw values: the values are
+/// encoded with the format then.
 pub trait RawFormat: 'static {
     /// Returns the description of the format.
     ///
@@ -119,7 +138,7 @@ fn same_format(a: &'static RawFormatInfo, b: &'static RawFormatInfo) -> bool {
 ///   [`Deserialize::__private_raw`]).  They validate the value and pass on
 ///   its input instead of its events.
 /// * [`Raw`] values emit it when they are serialized and the serializer
-///   writes the format as it is (see [`State::__private_accept_raw`]).
+///   writes the format as it is (see [`State::set_raw_format`]).
 ///
 /// It knows its format, so it's parsed into its value where it ends up in
 /// something that does not know it (for instance when a recording that
@@ -210,7 +229,7 @@ impl<'a> RawInput<'a> {
     ///
     /// The value can borrow from the input (and the data it borrows).
     pub fn deserialize<'x, T: Deserialize<'x>>(&'x self) -> Result<T, Error> {
-        crate::de::deserializer::deserialize_value(|make_sink| {
+        crate::de::deserialize_value(|make_sink| {
             let mut state = State::new();
             let sink = make_sink(&mut state);
             self.replay_raw(sink, T::__private_raw(), &mut state)

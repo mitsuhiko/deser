@@ -5,7 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
-use deser_core::__format::{Float, IntBuffer, format_finite};
+use crate::num::{Float, IntBuffer, format_finite};
 use deser_core::ext::Number;
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};

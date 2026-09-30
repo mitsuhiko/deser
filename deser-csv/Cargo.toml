@@ -26,6 +26,8 @@ io = ["std", "deser-core/io"]
 deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
 
 [dev-dependencies]
+# the float formatting is tested against it
+zmij = "1.0.23"
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
 deser-json = { version = "0.9.1", path = "../deser-json" }
 deser-location = { version = "0.9.1", path = "../deser-location" }

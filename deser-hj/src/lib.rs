@@ -72,6 +72,7 @@
 extern crate alloc;
 
 // These are generated from `deser-template-json`.
+mod copy;
 mod de;
 mod parser;
 mod scan;

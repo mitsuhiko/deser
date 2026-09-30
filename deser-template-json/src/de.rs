@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::str;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::de::{self, Deserialize, DeserializeDriver};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 use deser_core::{BytesFormat, Error, ErrorKind, Source};
 
 use crate::Trailing;

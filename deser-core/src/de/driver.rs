@@ -205,6 +205,39 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         })
     }
 
+    /// Creates a driver for one value of a key in a multimap.
+    ///
+    /// In a multimap (see
+    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+    /// collections like `Vec<T>` and sets collect the values of a repeated
+    /// key.  This deserializes a value as if it was the only value of such
+    /// a key: collections take it as their only item, other types are
+    /// deserialized like with [`new`](Self::new).  Formats that read a
+    /// single value of a key (like an environment variable) use this, see
+    /// [`missing_multimap_value`](crate::de::missing_multimap_value) for a
+    /// key that is missing.
+    ///
+    /// ```
+    /// use deser::de::DeserializeDriver;
+    ///
+    /// let mut out = None::<Vec<u16>>;
+    /// DeserializeDriver::multimap_value(&mut out).emit(80u64).unwrap();
+    /// assert_eq!(out, Some(vec![80]));
+    ///
+    /// let mut out = None::<u16>;
+    /// DeserializeDriver::multimap_value(&mut out).emit(80u64).unwrap();
+    /// assert_eq!(out, Some(80));
+    /// ```
+    pub fn multimap_value<T: Deserialize<'de>>(
+        out: &'a mut Option<T>,
+    ) -> DeserializeDriver<'a, 'de> {
+        if T::__private_collects() {
+            DeserializeDriver::from_fn(|state| T::__private_collect_into(out, state))
+        } else {
+            DeserializeDriver::new(out)
+        }
+    }
+
     /// Creates a driver that updates an existing value.
     ///
     /// See [`Deserialize::deserialize_update`].
@@ -302,7 +335,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         let outer_is_multimap = state.is_multimap;
         // the nested driver is not driven by the format, its format (if
         // any) declares what it captures
-        let outer_raw_capture = state.raw_capture.take();
+        let outer_raw_format = state.raw_format.take();
         // replayed values are small and often atoms, the stack is only
         // allocated once a container is opened
         let mut driver = DeserializeDriver::with_state(state.take(), sink, 0);
@@ -317,7 +350,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         state.depth = depth;
         state.is_map_key = outer_is_map_key;
         state.is_multimap = outer_is_multimap;
-        state.raw_capture = outer_raw_capture;
+        state.raw_format = outer_raw_format;
         rv
     }
 
@@ -587,7 +620,7 @@ impl<'de> DriverCore<'de> {
         let rv = match rv {
             Ok(()) => Ok(()),
             // a request for a raw value is passed on to the format as it is
-            Err(err) if err.__private_is_raw_request() => Err(err),
+            Err(err) if err.is_raw_request() => Err(err),
             // the error is thrown away (see `State::discard_errors`)
             Err(err) if self.state.discards_errors => Err(err),
             Err(err) => Err(self.state.attach_error_context(err)),
@@ -688,7 +721,7 @@ impl<'de> DriverCore<'de> {
     fn recover(&mut self, err: Error, opened: Option<bool>) -> Result<(), Error> {
         // not an error but a request for a raw value, it's passed on to the
         // format
-        if err.__private_is_raw_request() {
+        if err.is_raw_request() {
             return Err(err);
         }
         let mut err = if self.state.discards_errors {
@@ -906,7 +939,7 @@ impl<'de> DriverCore<'de> {
                 Ok(inline) => Container::Seq(inline),
                 // the sequence requests its first item as raw value, it
                 // starts nevertheless
-                Err(err) if err.__private_is_raw_request() => {
+                Err(err) if err.is_raw_request() => {
                     return self.start_raw_seq(sink, err);
                 }
                 Err(err) => return Err(err),

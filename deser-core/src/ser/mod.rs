@@ -289,6 +289,8 @@ pub trait Serialize: Sync {
     /// implementation calls both methods (in this order) and always requests
     /// `finish` to be invoked.  Types which do not override `finish` can
     /// implement this so that the driver needs a single call per value.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     fn __private_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
@@ -304,6 +306,8 @@ pub trait Serialize: Sync {
     /// (see [`PlainSink`]).  Types which are plain implement
     /// [`__private_emit_plain`](Self::__private_emit_plain) which has to
     /// produce the same events as serializing the value.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     fn __private_is_plain() -> bool
@@ -317,6 +321,8 @@ pub trait Serialize: Sync {
     ///
     /// This is `true` for all values of plain types and for some values
     /// of other types, like empty sequences and maps or `None`.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     fn __private_is_plain_value(&self) -> bool
@@ -331,6 +337,8 @@ pub trait Serialize: Sync {
     /// This is only invoked if
     /// [`__private_is_plain_value`](Self::__private_is_plain_value) returns
     /// `true`.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         let _ = sink;
@@ -343,6 +351,8 @@ pub trait Serialize: Sync {
     /// Atoms cost one (long text and bytes more, see `atom_cost`),
     /// containers one plus the costs of their values.  Values that are not
     /// plain are not emitted at once, they cost one.  See `PLAIN_BUDGET`.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     #[inline]
     fn __private_plain_cost(&self, budget: usize) -> Option<usize> {
@@ -354,6 +364,8 @@ pub trait Serialize: Sync {
     /// This method is used by `u8` and `Vec<T>` / `&[T]` to achieve special
     /// casing of bytes for the serialization system.  It allows a vector of
     /// bytes to be emitted as `Chunk::Bytes` rather than a `Seq`.
+    ///
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_slice_as_bytes(_val: &[Self]) -> Option<Cow<'_, [u8]>>
     where

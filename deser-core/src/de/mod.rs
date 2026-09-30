@@ -58,7 +58,10 @@
 //! ```
 //!
 //! The deserializers of data formats implement the [`Deserializer`] trait
-//! which feeds the events of a value into a driver.
+//! which feeds the events of a value into a driver.  Functions like
+//! `from_str` are implemented with [`deserialize_value`] and
+//! [`drive_value`] so that only the code that depends on the type of the
+//! value exists once per type.
 //!
 //! # Layers and Wrapped Sinks
 //!
@@ -236,7 +239,7 @@ use crate::event::Atom;
 pub(crate) mod arena;
 pub(crate) mod atoms;
 mod collect;
-pub(crate) mod deserializer;
+mod deserializer;
 mod driver;
 pub(crate) mod duplicates;
 #[cfg(feature = "derive")]
@@ -261,7 +264,7 @@ use self::atoms::{
     default_unexpected_atom, default_value_atom,
 };
 pub use self::collect::CollectedErrors;
-pub use self::deserializer::Deserializer;
+pub use self::deserializer::{Deserializer, MakeSink, deserialize_value, drive_value};
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
@@ -285,6 +288,8 @@ use crate::State;
 /// elements of (see [`Sink::__private_seq`]) builds them in its slot for
 /// the element, the driver passes their events to it.  This has to behave
 /// exactly like the sink of the element.
+///
+/// Internal fast path, not public API (see `lib.rs`).
 #[doc(hidden)]
 pub struct InlineSeq<T> {
     /// Starts the sequence in the slot.
@@ -298,6 +303,8 @@ pub struct InlineSeq<T> {
 }
 
 /// An event of a sequence that is built inline (see [`InlineSeq`]).
+///
+/// Internal fast path, not public API (see `lib.rs`).
 #[doc(hidden)]
 #[derive(Clone, Copy)]
 pub enum InlineEvent {
@@ -910,6 +917,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// [`deserialize_into`](Self::deserialize_into), which is what the default
     /// implementation does.  Types with stateless sinks override this so that
     /// atoms can be deserialized without dynamic dispatch.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_atom_into(
         out: &mut Option<Self>,
@@ -923,6 +932,8 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// This is like [`__private_atom_into`](Self::__private_atom_into) but
     /// for [`borrowed_atom`](Sink::borrowed_atom).
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_borrowed_atom_into(
         out: &mut Option<Self>,
@@ -936,6 +947,8 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// This is used to specialize the handling of bytes for vectors and
     /// arrays of `u8`.
+    ///
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_is_bytes() -> bool {
         false
@@ -945,6 +958,8 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// This is only implemented for `u8` and used to specialize the
     /// deserialization of `Vec<u8>` from bytes.
+    ///
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {
         let _ = bytes;
@@ -956,6 +971,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// This is only implemented for `u8` and used to specialize the
     /// deserialization of `[u8; N]` from bytes.  Returns `None` if the
     /// type is not `u8` or the length does not match.
+    ///
+    /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[Self; N]> {
         let _ = bytes;
@@ -967,12 +984,16 @@ pub trait Deserialize<'de>: Sized + Send {
     /// This is implemented for numbers and booleans, sequences of them are
     /// built inline (see [`InlineSeq`]).  The value is a placeholder, it's
     /// overwritten.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_atom_default() -> Option<Self> {
         None
     }
 
     /// Returns how the type is built inline if it's a sequence of atoms.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_inline_seq() -> Option<InlineSeq<Self>> {
         None
@@ -984,6 +1005,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// of them like `Option` and `Box`).  The sinks of containers request
     /// the values of such types as raw values from the format before they
     /// start (see [`State::__private_request_raw`]).
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     #[inline(always)]
     fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
@@ -998,6 +1021,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// fields and map values of these types receive every value of their
     /// key through [`__private_collect_into`](Self::__private_collect_into)
     /// and [`__private_collect_update`](Self::__private_collect_update).
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collects() -> bool {
         false
@@ -1008,6 +1033,8 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// The collection is created if the slot is empty.  This is only used
     /// if [`__private_collects`](Self::__private_collects) returns `true`.
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_into<'out>(
         out: &'out mut Option<Self>,
@@ -1022,6 +1049,8 @@ pub trait Deserialize<'de>: Sized + Send {
     /// The value that is added `first` replaces the collection.  This is
     /// only used if [`__private_collects`](Self::__private_collects) returns
     /// `true`.
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_update<'out>(
         value: &'out mut Self,
@@ -1037,6 +1066,8 @@ pub trait Deserialize<'de>: Sized + Send {
     ///
     /// Collections are empty then.  `None` means that the field is missing
     /// (or has its [`initial_value`](Self::initial_value)).
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
     #[doc(hidden)]
     fn __private_collect_empty() -> Option<Self> {
         None
@@ -1053,10 +1084,33 @@ pub trait DeserializeOwned: for<'de> Deserialize<'de> {}
 
 impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
 
+/// Returns the value of a key that is missing in a multimap.
+///
+/// In a multimap (see
+/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// collections like `Vec<T>` and sets are empty if their key is missing.
+/// Other types have their [`initial_value`](Deserialize::initial_value)
+/// (`None` for `Option<T>`).  `None` means that the value is required.
+/// This is the counterpart of
+/// [`DeserializeDriver::multimap_value`] for a key that is not there.
+///
+/// ```
+/// use deser::de::missing_multimap_value;
+///
+/// assert_eq!(missing_multimap_value::<Vec<u16>>(), Some(vec![]));
+/// assert_eq!(missing_multimap_value::<Option<u16>>(), Some(None));
+/// assert_eq!(missing_multimap_value::<u16>(), None);
+/// ```
+pub fn missing_multimap_value<'de, T: Deserialize<'de>>() -> Option<T> {
+    T::__private_collect_empty().or_else(T::initial_value)
+}
+
 /// Converts a sink into a trait object.
 ///
 /// This is implemented for all sinks.  The default methods of [`Sink`] exist
 /// for every sink type, they use this to forward to code that exists once.
+///
+/// Internal fast path, not public API (see `lib.rs`).
 #[doc(hidden)]
 pub trait AsDynSink<'de> {
     fn __private_as_dyn(&mut self) -> &mut dyn Sink<'de>;
@@ -1166,6 +1220,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// but the behavior must be the same as with the default implementation.
     /// In particular, sinks that override [`next_key`](Self::next_key) must
     /// either not override this method or apply the same logic.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         default_key_atom(self.__private_as_dyn(), atom, state)
@@ -1177,6 +1233,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// then [`atom`](Self::atom) and [`finish`](Self::finish) on the returned
     /// sink, which is exactly what the default implementation does.  See
     /// [`__private_key_atom`](Self::__private_key_atom) for more information.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         default_value_atom(self.__private_as_dyn(), atom, state)
@@ -1186,6 +1244,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     ///
     /// Like [`__private_key_atom`](Self::__private_key_atom) but the atom is
     /// passed to [`borrowed_atom`](Self::borrowed_atom).
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_borrowed_key_atom(
         &mut self,
@@ -1199,6 +1259,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     ///
     /// Like [`__private_value_atom`](Self::__private_value_atom) but the atom
     /// is passed to [`borrowed_atom`](Self::borrowed_atom).
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_borrowed_value_atom(
         &mut self,
@@ -1216,6 +1278,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// [`__private_inline_event`](Self::__private_inline_event) instead of
     /// asking for a sink for them.  Wrappers that forward this have to
     /// forward those as well.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_seq(&mut self, state: &mut State) -> Result<bool, Error> {
         self.seq(state)?;
@@ -1223,6 +1287,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     }
 
     /// Receives the atom at the index of an element that is built inline.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_inline_atom(
         &mut self,
@@ -1235,6 +1301,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     }
 
     /// Receives the other events of an element that is built inline.
+    ///
+    /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
     fn __private_inline_event(
         &mut self,

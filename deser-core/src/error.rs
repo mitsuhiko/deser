@@ -83,7 +83,7 @@ pub trait ErrorContext: 'static {
 }
 
 /// The message of the result that requests a raw value, identified by its
-/// address (see `Error::__private_raw_request`).
+/// address (see `Error::raw_request`).
 static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 
 /// An error for deser.
@@ -330,29 +330,24 @@ impl Error {
         self
     }
 
-    /// Returns the kind of the error.
     /// Creates the result of an event that requests the next value as raw
-    /// value.
-    ///
-    /// This is not an error: sinks return it from the event before a value
-    /// that they want as raw value (see
-    /// [`State::__private_request_raw`](crate::State::__private_request_raw)).
-    /// The drivers pass it on to the format which then passes on the input
-    /// of the next value.
-    ///
-    /// This is not public API.
-    #[doc(hidden)]
+    /// value (see [`is_raw_request`](Self::is_raw_request)).
     #[cold]
-    pub fn __private_raw_request() -> Error {
+    pub(crate) fn raw_request() -> Error {
         Error::new(ErrorKind::Unexpected, RAW_REQUEST)
     }
 
-    /// Returns `true` if this requests the next value as raw value (see
-    /// [`__private_raw_request`](Self::__private_raw_request)).
+    /// Returns `true` if this requests the next value as raw value.
     ///
-    /// This is not public API.
-    #[doc(hidden)]
-    pub fn __private_is_raw_request(&self) -> bool {
+    /// This is not an error: sinks return it from the event before a value
+    /// that deserializes into a [`Raw`](crate::ext::Raw) value of the format
+    /// that is parsed (see [`State::set_raw_format`](crate::State::set_raw_format)).
+    /// Deserializers of formats with raw values check the errors of events
+    /// with this.  If it's `true`, the event was accepted and the format
+    /// passes on the input of the next value as
+    /// [`RawInput`](crate::ext::RawInput) rather than its events.  Other
+    /// formats never see it.
+    pub fn is_raw_request(&self) -> bool {
         match *self.inner {
             ErrorInner::Single(ErrorData {
                 msg: Cow::Borrowed(msg),
@@ -362,6 +357,7 @@ impl Error {
         }
     }
 
+    /// Returns the kind of the error.
     pub fn kind(&self) -> ErrorKind {
         self.data().kind
     }

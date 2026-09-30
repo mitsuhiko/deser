@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 
-use deser_core::__format::{MakeSink, deserialize_value, drive_value};
 use deser_core::Error;
 use deser_core::de::{self, Deserialize, DeserializeDriver};
+use deser_core::de::{MakeSink, deserialize_value, drive_value};
 
 use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 

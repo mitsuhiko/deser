@@ -6,7 +6,7 @@
 use alloc::string::{String, ToString};
 use core::fmt::Write;
 
-use deser_core::__format::format_finite;
+use crate::num::format_finite;
 
 use crate::ser::Node;
 
