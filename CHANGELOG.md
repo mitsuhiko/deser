@@ -2,6 +2,23 @@
 
 All notable changes to deser are documented here.
 
+## Unreleased
+
+- Added raw values, the equivalent of serde_json's `RawValue` without
+  in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
+  `deser_json5::RawJson5`, `deser_cbor::RawCbor` and
+  `deser_msgpack::RawMsgpack` hold the encoding of a value in their
+  format.  Values of the same format keep their input:
+  they are validated without producing events (about 2.5x faster than
+  recording them) and written out again unchanged, with the `Borrowed`
+  adapter the input is borrowed.  Values of other formats are encoded.
+  Raw values are deserialized later with `Raw::deserialize`, other
+  formats serialize the value they hold, types that do not take raw
+  values (like `deser_value::Value`) receive it parsed.  Formats support
+  them with the
+  new `deser::ext::{Raw, RawFormat, RawFormatInfo, RawInput}`.  See the
+  new `raw-values` example.
+
 ## 0.9.1
 
 - `deser-json`, `deser-toml` and `deser-yaml` format floats with `zmij`

@@ -1,0 +1,18 @@
+[package]
+name = "raw-values"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-cbor = { path = "../../deser-cbor" }
+deser-json = { path = "../../deser-json" }
+deser-yaml = { path = "../../deser-yaml" }
+
+[[bin]]
+name = "raw-values"
+path = "src/main.rs"
+test = false
+doc = false

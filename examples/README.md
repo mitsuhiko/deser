@@ -74,6 +74,9 @@ What sets deser apart:
   recovery and writing them.
 * [`json-numbers`](json-numbers): exact decimal numbers and timestamps in
   JSON.
+* [`raw-values`](raw-values): keeping parts of JSON and CBOR documents as
+  they are with `RawJson` and `RawCbor` (and `RawMsgpack` for MessagePack)
+  and deserializing them later.
 * [`streams`](streams): reading and writing files and streams of values
   (JSON Lines, CBOR sequences, YAML documents) with `std::io`.
 * [`tokio-server`](tokio-server): a JSON Lines server and client with

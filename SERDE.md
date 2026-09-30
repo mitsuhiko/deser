@@ -268,6 +268,16 @@ signalling to pass values it cannot express: `serde_json`'s
 date-times do the same.  Every other type (value types, buffers, other
 formats) that does not know about the magic key breaks.
 
+`serde_json::RawValue` is an example: it's a struct with a magic name
+which `serde_json` recognizes.  Buffers see a map with a magic key (so
+raw values fail as fields of untagged enums), other serializers write
+that map, and other deserializers cannot produce raw values at all.
+Deser's raw values (like `deser_json::RawJson`) ask the format for the
+input of the value before it starts, the format passes it on as an
+extension value that knows its format.  Values that are buffered or come
+from other formats are encoded, other serializers write the value a raw
+value holds.
+
 Deser addresses this by keeping the core data model small and allowing it to be
 extended with arbitrary types through extension atoms.  Every extension value
 carries a fallback into the core data model so that serializers and

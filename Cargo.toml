@@ -52,6 +52,7 @@ members = [
   "examples/plist",
   "examples/protocol",
   "examples/query-strings",
+  "examples/raw-values",
   "examples/renames",
   "examples/serde-types",
   "examples/streams",
