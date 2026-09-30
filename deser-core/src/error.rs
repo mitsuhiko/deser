@@ -82,6 +82,10 @@ pub trait ErrorContext: 'static {
     fn add_context(err: Error, state: &State) -> Error;
 }
 
+/// The message of the result that requests a raw value, identified by its
+/// address (see `Error::__private_raw_request`).
+static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
+
 /// An error for deser.
 ///
 /// Besides a kind and a message an error can carry context: the location
@@ -327,6 +331,37 @@ impl Error {
     }
 
     /// Returns the kind of the error.
+    /// Creates the result of an event that requests the next value as raw
+    /// value.
+    ///
+    /// This is not an error: sinks return it from the event before a value
+    /// that they want as raw value (see
+    /// [`State::__private_request_raw`](crate::State::__private_request_raw)).
+    /// The drivers pass it on to the format which then passes on the input
+    /// of the next value.
+    ///
+    /// This is not public API.
+    #[doc(hidden)]
+    #[cold]
+    pub fn __private_raw_request() -> Error {
+        Error::new(ErrorKind::Unexpected, RAW_REQUEST)
+    }
+
+    /// Returns `true` if this requests the next value as raw value (see
+    /// [`__private_raw_request`](Self::__private_raw_request)).
+    ///
+    /// This is not public API.
+    #[doc(hidden)]
+    pub fn __private_is_raw_request(&self) -> bool {
+        match *self.inner {
+            ErrorInner::Single(ErrorData {
+                msg: Cow::Borrowed(msg),
+                ..
+            }) => core::ptr::eq(msg, RAW_REQUEST),
+            _ => false,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         self.data().kind
     }

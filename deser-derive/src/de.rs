@@ -60,6 +60,17 @@ fn field_collects(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
     }
 }
 
+/// Returns an expression that is `true` if a field wants its value as raw
+/// value (see `Deserialize::__private_raw`).
+fn field_raw(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
+    match adapter {
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::adapters::DeserializeAs<'de, #ty>>::__private_raw_as()
+        },
+        None => quote! { <#ty as __deser::Deserialize<'de>>::__private_raw() },
+    }
+}
+
 /// Returns an expression that creates the sink of a value that is added to
 /// the collection in the slot of a field.
 fn field_collect_into(
@@ -1369,11 +1380,21 @@ impl CompactStruct<'_> {
         // the fields that take the value of the default of the container
         let mut default_binding = Vec::new();
         let mut default_name = Vec::new();
+        // the fields that want raw values as bits, the last bit stands for
+        // all fields from the 64th on
+        let mut raw_bits = Vec::new();
+        let mut raw_overflow = Vec::new();
         for (idx, x) in self.attrs.iter().enumerate() {
             let binding = &self.bindings[idx];
             let ty = &x.field().ty;
             let adapter = x.adapters().de();
             let member = syn::Index::from(idx);
+            let raw = field_raw(ty, adapter);
+            if idx < 63 {
+                raw_bits.push(quote! { ((#raw.is_some() as u64) << #idx) });
+            } else {
+                raw_overflow.push(quote! { #raw.is_some() });
+            }
             // what depends on the type of the field is done by its slot
             // (`FieldSlot`), which exists once per type and adapter
             slot_types.push(match adapter {
@@ -1505,6 +1526,11 @@ impl CompactStruct<'_> {
                 impl #wrapper_impl_generics __deser::__derive::StructFields<'de> for __Fields #wrapper_ty_generics #bounded_where_clause {
                     fn field(&mut self, __index: usize) -> &mut dyn __deser::__derive::FieldSlot<'de> {
                         #field_fn_body
+                    }
+
+                    #[inline(always)]
+                    fn raw_fields() -> u64 {
+                        0 #(| #raw_bits)* | (((false #(|| #raw_overflow)*) as u64) << 63)
                     }
 
                     fn finish(

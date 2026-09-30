@@ -1072,6 +1072,10 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
         }
         let inner = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match first {
+            // raw inputs are parsed if the serializer does not write them
+            Event::Atom(atom @ Atom::Ext(_)) => {
+                crate::ext::raw::serialize_recorded_atom(atom, state)?
+            }
             Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
             Event::MapStart(_) => Chunk::map(
                 RecordedEmitter {

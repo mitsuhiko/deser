@@ -978,6 +978,18 @@ pub trait Deserialize<'de>: Sized + Send {
         None
     }
 
+    /// Returns the format if the type wants its value as raw value.
+    ///
+    /// This is the format of [`Raw`](crate::ext::Raw) values (and wrappers
+    /// of them like `Option` and `Box`).  The sinks of containers request
+    /// the values of such types as raw values from the format before they
+    /// start (see [`State::__private_request_raw`]).
+    #[doc(hidden)]
+    #[inline(always)]
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        None
+    }
+
     /// Returns `true` if the type collects the values of a repeated key.
     ///
     /// This is `true` for collections like `Vec<T>` and sets (and

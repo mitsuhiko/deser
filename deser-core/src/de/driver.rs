@@ -198,7 +198,11 @@ where
 impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Creates a new deserializer driver.
     pub fn new<T: Deserialize<'de>>(out: &'a mut Option<T>) -> DeserializeDriver<'a, 'de> {
-        DeserializeDriver::from_fn(|state| T::deserialize_into(out, state))
+        DeserializeDriver::from_fn(|state| {
+            // the top-level value is requested before it starts
+            state.raw_requested = T::__private_raw();
+            T::deserialize_into(out, state)
+        })
     }
 
     /// Creates a driver that updates an existing value.
@@ -296,6 +300,9 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         let depth = state.depth;
         let outer_is_map_key = state.is_map_key;
         let outer_is_multimap = state.is_multimap;
+        // the nested driver is not driven by the format, its format (if
+        // any) declares what it captures
+        let outer_raw_capture = state.raw_capture.take();
         // replayed values are small and often atoms, the stack is only
         // allocated once a container is opened
         let mut driver = DeserializeDriver::with_state(state.take(), sink, 0);
@@ -310,6 +317,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         state.depth = depth;
         state.is_map_key = outer_is_map_key;
         state.is_multimap = outer_is_multimap;
+        state.raw_capture = outer_raw_capture;
         rv
     }
 
@@ -578,6 +586,8 @@ impl<'de> DriverCore<'de> {
     fn finish_event(&mut self, rv: Result<(), Error>) -> Result<(), Error> {
         let rv = match rv {
             Ok(()) => Ok(()),
+            // a request for a raw value is passed on to the format as it is
+            Err(err) if err.__private_is_raw_request() => Err(err),
             // the error is thrown away (see `State::discard_errors`)
             Err(err) if self.state.discards_errors => Err(err),
             Err(err) => Err(self.state.attach_error_context(err)),
@@ -676,6 +686,11 @@ impl<'de> DriverCore<'de> {
     #[cold]
     #[inline(never)]
     fn recover(&mut self, err: Error, opened: Option<bool>) -> Result<(), Error> {
+        // not an error but a request for a raw value, it's passed on to the
+        // format
+        if err.__private_is_raw_request() {
+            return Err(err);
+        }
         let mut err = if self.state.discards_errors {
             // the error is thrown away (see `State::discard_errors`)
             err
@@ -887,7 +902,15 @@ impl<'de> DriverCore<'de> {
                 Err(err) => return Err(err),
             }
         } else {
-            Container::Seq(sink.__private_seq(&mut self.state)?)
+            match sink.__private_seq(&mut self.state) {
+                Ok(inline) => Container::Seq(inline),
+                // the sequence requests its first item as raw value, it
+                // starts nevertheless
+                Err(err) if err.__private_is_raw_request() => {
+                    return self.start_raw_seq(sink, err);
+                }
+                Err(err) => return Err(err),
+            }
         };
         self.state.is_multimap = container.is_multimap();
         self.state.depth += 1;
@@ -935,6 +958,17 @@ impl<'de> DriverCore<'de> {
             sink.release(&mut self.state);
         }
         rv
+    }
+
+    /// Starts a sequence whose sink requested its first item as raw value
+    /// (see `emit_start`), the request is returned.
+    #[cold]
+    #[inline(never)]
+    fn start_raw_seq(&mut self, sink: SinkHandle<'de, 'de>, request: Error) -> Result<(), Error> {
+        self.state.is_multimap = false;
+        self.state.depth += 1;
+        self.sink_stack.push((sink, Container::Seq(false)));
+        Err(request)
     }
 
     /// Ends an element that is built inline by the sink on top of the

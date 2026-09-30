@@ -46,15 +46,16 @@
 //! representations that formats can understand and that the types of other
 //! crates convert into:
 //!
-//! | Type          | Represents                           | Fallback                     |
-//! |---------------|--------------------------------------|------------------------------|
-//! | [`Datetime`]  | dates, times and date-times          | RFC 3339 string              |
-//! | [`Timestamp`] | instants in time                     | RFC 3339 string in UTC       |
-//! | [`Duration`]  | exact lengths of time                | ISO 8601 duration string     |
-//! | [`Uuid`]      | UUIDs                                | hyphenated string            |
-//! | [`Decimal`]   | exact decimal numbers                | decimal string               |
-//! | [`BigInt`]    | integers that do not fit 128 bits    | decimal string               |
-//! | [`Number`]    | number literals of text formats      | `f64`                        |
+//! | Type          | Represents                            | Fallback                     |
+//! |---------------|---------------------------------------|------------------------------|
+//! | [`Datetime`]  | dates, times and date-times           | RFC 3339 string              |
+//! | [`Timestamp`] | instants in time                      | RFC 3339 string in UTC       |
+//! | [`Duration`]  | exact lengths of time                 | ISO 8601 duration string     |
+//! | [`Uuid`]      | UUIDs                                 | hyphenated string            |
+//! | [`Decimal`]   | exact decimal numbers                 | decimal string               |
+//! | [`BigInt`]    | integers that do not fit 128 bits     | decimal string               |
+//! | [`Number`]    | number literals of text formats       | `f64`                        |
+//! | [`RawInput`]  | the encoded input of values           | scalars, the input           |
 //!
 //! All well-known types implement [`Serialize`](crate::Serialize) and
 //! [`Deserialize`](crate::Deserialize).  When deserialized they accept
@@ -128,6 +129,7 @@ mod decimal;
 mod duration;
 pub(crate) mod known;
 mod number;
+pub(crate) mod raw;
 mod uuid;
 
 pub use self::bigint::BigInt;
@@ -135,6 +137,7 @@ pub use self::datetime::{Date, Datetime, Offset, Time, Timestamp};
 pub use self::decimal::Decimal;
 pub use self::duration::Duration;
 pub use self::number::Number;
+pub use self::raw::{Raw, RawFormat, RawFormatInfo, RawInput, TextRawFormat};
 pub use self::uuid::Uuid;
 
 /// A type that can be passed through deser as an extension to the data model.
@@ -415,6 +418,23 @@ impl<'a> ExtValue<'a> {
         // SAFETY: the pointer is not null if the keys match, then it points
         // to a `K::Value<'s>` for the borrow of self.
         (!ptr.is_null()).then(|| unsafe { &*(ptr as *const K::Value<'_>) })
+    }
+
+    /// Returns the value if it's of the extension with the key `K`, for
+    /// the lifetime of the data it borrows.
+    ///
+    /// # Safety
+    ///
+    /// The values of the extension must be covariant in their lifetime.
+    #[inline]
+    pub(crate) unsafe fn downcast_value_ref_covariant<K: BorrowedExtension>(
+        &self,
+    ) -> Option<&K::Value<'a>> {
+        let ptr = self.get().value_ptr(TypeId::of::<K>());
+        // SAFETY: the pointer is not null if the keys match, then it points
+        // to a `K::Value<'x>` where `'x` outlives `'a`, which is a
+        // `K::Value<'a>` as the values are covariant.
+        (!ptr.is_null()).then(|| unsafe { &*(ptr as *const K::Value<'a>) })
     }
 
     /// Returns a value borrowing from this one.

@@ -532,6 +532,10 @@ where
         fn seq(&mut self, state: &mut State) -> Result<(), Error> {
             self.is_seq = true;
             self.vec.reserve(cautious_capacity::<T>(state));
+            // the first item is requested as raw value when it starts
+            if let Some(format) = A::__private_raw_as() {
+                state.__private_request_raw(format)?;
+            }
             Ok(())
         }
 
@@ -580,7 +584,12 @@ where
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.flush();
-            A::__private_atom_into_as(&mut self.element, atom, state)
+            A::__private_atom_into_as(&mut self.element, atom, state)?;
+            // raw values are atoms, the next item is requested after one
+            match A::__private_raw_as() {
+                Some(format) => state.__private_request_raw(format),
+                None => Ok(()),
+            }
         }
 
         fn __private_borrowed_value_atom(
@@ -589,7 +598,11 @@ where
             state: &mut State,
         ) -> Result<(), Error> {
             self.flush();
-            A::__private_borrowed_atom_into_as(&mut self.element, atom, state)
+            A::__private_borrowed_atom_into_as(&mut self.element, atom, state)?;
+            match A::__private_raw_as() {
+                Some(format) => state.__private_request_raw(format),
+                None => Ok(()),
+            }
         }
 
         fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
@@ -1037,7 +1050,12 @@ where
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             self.flush_before(state)?;
-            KA::__private_atom_into_as(&mut self.key, atom, state)
+            KA::__private_atom_into_as(&mut self.key, atom, state)?;
+            // the value is requested as raw value after its key
+            match VA::__private_raw_as() {
+                Some(format) => state.__private_request_raw(format),
+                None => Ok(()),
+            }
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1053,7 +1071,11 @@ where
             state: &mut State,
         ) -> Result<(), Error> {
             self.flush_before(state)?;
-            KA::__private_borrowed_atom_into_as(&mut self.key, atom, state)
+            KA::__private_borrowed_atom_into_as(&mut self.key, atom, state)?;
+            match VA::__private_raw_as() {
+                Some(format) => state.__private_request_raw(format),
+                None => Ok(()),
+            }
         }
 
         fn __private_borrowed_value_atom(
@@ -1435,6 +1457,11 @@ where
         crate::de::update::update_option(value, state)
     }
 
+    #[inline(always)]
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        T::__private_raw()
+    }
+
     #[inline]
     fn __private_collects() -> bool {
         T::__private_collects()
@@ -1470,6 +1497,11 @@ impl<'de, T, A: DeserializeAs<'de, T>> DeserializeAs<'de, Option<T>> for Option<
     // An optional collection collects into the collection, it's `None` if
     // its key is missing.  Values that are null (or empty text for types
     // that do not accept it) are not added.
+
+    #[inline(always)]
+    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw_as()
+    }
 
     #[inline]
     fn __private_collects_as() -> bool {
@@ -2045,6 +2077,11 @@ macro_rules! deserialize_via {
                         out, atom, state,
                     )
                 }
+
+                #[inline(always)]
+                fn __private_raw() -> Option<&'static $crate::ext::RawFormatInfo> {
+                    <$via as $crate::de::Deserialize<'de>>::__private_raw()
+                }
             }
         )*
     };
@@ -2078,6 +2115,11 @@ macro_rules! deserialize_as_via {
                     state: &mut State,
                 ) -> Result<(), Error> {
                     via_borrowed_atom_into::<T, $wrapper<T>, A>(out, atom, state)
+                }
+
+                #[inline(always)]
+                fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+                    A::__private_raw_as()
                 }
             }
         )*
@@ -2137,6 +2179,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
         state: &mut State,
     ) -> Result<(), Error> {
         via_borrowed_atom_into::<T, Self, Same>(out, atom, state)
+    }
+
+    #[inline(always)]
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        T::__private_raw()
     }
 
     /// Updates the value in the box.

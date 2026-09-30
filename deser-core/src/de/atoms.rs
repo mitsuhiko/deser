@@ -151,7 +151,8 @@ pub(crate) fn default_borrowed_value_atom<'de>(
 
 /// The default of `Sink::unexpected_atom`.
 ///
-/// Extension values are lowered to their fallback, [`Atom::F32`] is widened
+/// Extension values are lowered to their fallback (the input of raw values
+/// is parsed into the sink), [`Atom::F32`] is widened
 /// into an [`Atom::F64`] and [`Atom::Lexical`] is passed on as
 /// [`Atom::Str`].  [`Atom::Implicit`] is passed on as its value and if that
 /// is rejected as [`Atom::Str`] with its text.  All other atoms are an
@@ -174,6 +175,10 @@ pub(crate) fn default_unexpected_atom(
         atom => atom,
     };
     if let Atom::Ext(ref ext) = atom {
+        // the input of a raw value is parsed into the sink
+        if let Some(input) = ext.downcast_value_ref::<crate::ext::RawInput>() {
+            return crate::ext::raw::parse_into(input, sink, state);
+        }
         let fallback = ext.fallback();
         debug_assert!(
             !matches!(fallback, Atom::Ext(_)),

@@ -131,7 +131,11 @@ pub fn deserialize_value<'de, T: Deserialize<'de>>(
     {
         let mut slot = Some(&mut out);
         drive(&mut |state| match slot.take() {
-            Some(slot) => T::deserialize_into(slot, state),
+            Some(slot) => {
+                // the top-level value is requested before it starts
+                state.raw_requested = T::__private_raw();
+                T::deserialize_into(slot, state)
+            }
             None => panic!("the sink of a value was created twice"),
         })?;
     }

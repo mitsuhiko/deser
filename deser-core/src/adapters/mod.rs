@@ -335,6 +335,13 @@ pub trait DeserializeAs<'de, T>: 'static {
         None
     }
 
+    /// See [`Deserialize::__private_raw`].
+    #[doc(hidden)]
+    #[inline(always)]
+    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+        None
+    }
+
     /// See [`Deserialize::__private_collects`].
     #[doc(hidden)]
     fn __private_collects_as() -> bool {
@@ -514,6 +521,11 @@ impl<'de, T: Deserialize<'de>> DeserializeAs<'de, T> for Same {
     #[inline]
     fn __private_inline_seq_as() -> Option<InlineSeq<T>> {
         T::__private_inline_seq()
+    }
+
+    #[inline(always)]
+    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+        T::__private_raw()
     }
 
     #[inline]
@@ -731,6 +743,11 @@ impl<'de, T: Send, A: DeserializeAs<'de, T>> Deserialize<'de> for As<T, A> {
     #[inline]
     fn __private_is_bytes() -> bool {
         A::__private_is_bytes_as()
+    }
+
+    #[inline(always)]
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw_as()
     }
 
     fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {

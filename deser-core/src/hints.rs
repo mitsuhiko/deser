@@ -210,6 +210,11 @@ impl<'de, T, H: Hint, A: DeserializeAs<'de, T>> DeserializeAs<'de, T> for Hinted
         A::__private_array_from_bytes_as(bytes)
     }
 
+    #[inline(always)]
+    fn __private_raw_as() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw_as()
+    }
+
     #[inline]
     fn __private_collects_as() -> bool {
         A::__private_collects_as()

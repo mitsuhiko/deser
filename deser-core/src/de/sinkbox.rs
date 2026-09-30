@@ -139,6 +139,7 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
     pub(crate) fn new<F: StructFields<'de> + 'a>(
         fields: F,
         info: &'static StructInfo,
+        raw: u64,
         arena: &mut Arena,
     ) -> StructBox<'a, 'de> {
         let (layout, offset) = struct_block_layout(Layout::new::<F>());
@@ -150,7 +151,7 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
             raw_fields.write(fields);
             let raw_fields =
                 NonNull::new_unchecked(raw_fields as *mut (dyn StructFields<'de> + 'a));
-            StructBox::init(block, raw_fields, info)
+            StructBox::init(block, raw_fields, info, raw)
         }
     }
 
@@ -164,11 +165,12 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
         block: NonNull<u8>,
         fields: NonNull<dyn StructFields<'de> + 'a>,
         info: &'static StructInfo,
+        raw: u64,
     ) -> StructBox<'a, 'de> {
         let ptr = block.cast::<StructSink<'a, 'de>>();
         // SAFETY: the block is valid for writes of the sink, the sink owns
         // the fields
-        unsafe { ptr.as_ptr().write(StructSink::new(fields, info)) };
+        unsafe { ptr.as_ptr().write(StructSink::new(fields, info, raw)) };
         StructBox {
             ptr: ptr as NonNull<dyn Sink<'de> + 'a>,
             _marker: PhantomData,

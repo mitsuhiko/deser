@@ -304,6 +304,19 @@ pub trait StructFields<'de>: Send {
     /// Returns the slot of the field with the index.
     fn field(&mut self, index: usize) -> &mut dyn FieldSlot<'de>;
 
+    /// Returns the fields that want raw values as bits by index (see
+    /// [`Deserialize::__private_raw`](crate::de::Deserialize::__private_raw)).
+    ///
+    /// The last bit is set if a field from the 64th on wants a raw value,
+    /// these are asked for it (see [`FieldSlot::raw`]).
+    #[inline(always)]
+    fn raw_fields() -> u64
+    where
+        Self: Sized,
+    {
+        0
+    }
+
     /// Builds the struct from the fields and places it in the slot.
     ///
     /// If [`StructFinish::ok`] returns `false` or required fields are
@@ -321,6 +334,10 @@ pub trait FieldSlot<'de>: Send {
     /// Returns `true` if the field collects the values of a repeated key
     /// (see [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
     fn collects(&self) -> bool;
+
+    /// Returns the format of the raw value the field wants (see
+    /// [`Deserialize::__private_raw`](crate::de::Deserialize::__private_raw)).
+    fn raw(&self) -> Option<&'static crate::ext::RawFormatInfo>;
 
     /// Returns the sink of the field, optionally collecting its value.
     fn sink(&mut self, collect: Collect, state: &mut State) -> SinkHandle<'_, 'de>;
@@ -384,6 +401,10 @@ impl<'de> FieldSlot<'de> for NoField {
         false
     }
 
+    fn raw(&self) -> Option<&'static crate::ext::RawFormatInfo> {
+        None
+    }
+
     fn sink(&mut self, _collect: Collect, _state: &mut State) -> SinkHandle<'_, 'de> {
         SinkHandle::null()
     }
@@ -414,6 +435,10 @@ pub fn no_field_slot<'x, 'de>() -> &'x mut dyn FieldSlot<'de> {
 impl<'de, T: Send, A: DeserializeAs<'de, T>> FieldSlot<'de> for Slot<T, A> {
     fn collects(&self) -> bool {
         A::__private_collects_as()
+    }
+
+    fn raw(&self) -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw_as()
     }
 
     fn sink(&mut self, collect: Collect, state: &mut State) -> SinkHandle<'_, 'de> {
@@ -531,6 +556,9 @@ pub struct StructSink<'a, 'de> {
     seen: Seen,
     errors: CollectedErrors,
     info: &'static StructInfo,
+    // the fields that want raw values as bits by index (see
+    // `StructFields::raw_fields`)
+    raw: u64,
     // the fields are empty once they are finished, they are not dropped
     finished: bool,
 }
@@ -546,7 +574,12 @@ impl<'a, 'de> StructSink<'a, 'de> {
         info: &'static StructInfo,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::from_struct_box(StructBox::new(fields, info, &mut state.arena))
+        SinkHandle::from_struct_box(StructBox::new(
+            fields,
+            info,
+            F::raw_fields(),
+            &mut state.arena,
+        ))
     }
 
     /// Creates the sink for fields, see [`StructBox`].
@@ -554,6 +587,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
     pub(crate) fn new(
         fields: NonNull<dyn StructFields<'de> + 'a>,
         info: &'static StructInfo,
+        raw: u64,
     ) -> StructSink<'a, 'de> {
         StructSink {
             fields,
@@ -564,6 +598,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
             },
             errors: CollectedErrors::new(),
             info,
+            raw,
             finished: false,
         }
     }
@@ -579,6 +614,20 @@ impl<'a, 'de> StructSink<'a, 'de> {
         // SAFETY: the fields are valid while the sink exists and only
         // borrowed through it
         unsafe { self.fields.as_mut() }
+    }
+
+    /// Requests the value of the key as raw value if its field wants one.
+    #[inline(never)]
+    fn request_raw(&mut self, state: &mut State) -> Result<(), Error> {
+        let index = self.key.index;
+        // the last bit stands for all fields from the 64th on
+        if self.raw & (1 << index.min(63)) != 0
+            && index < self.info.fields.len()
+            && let Some(format) = self.fields().field(index).raw()
+        {
+            return state.__private_request_raw(format);
+        }
+        Ok(())
     }
 
     /// Returns how this occurrence of a field is deserialized.
@@ -664,7 +713,11 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.key.key_atom(atom, self.key.lookup, state)
+        self.key.key_atom(atom, self.key.lookup, state)?;
+        if self.raw != 0 {
+            return self.request_raw(state);
+        }
+        Ok(())
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -683,7 +736,11 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
         state: &mut State,
     ) -> Result<(), Error> {
         // keys are only matched, they do not need to be borrowed
-        self.key.key_atom(atom, self.key.lookup, state)
+        self.key.key_atom(atom, self.key.lookup, state)?;
+        if self.raw != 0 {
+            return self.request_raw(state);
+        }
+        Ok(())
     }
 
     fn __private_borrowed_value_atom(
