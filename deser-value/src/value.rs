@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 
-use deser_core::ext::{BorrowedExtension, ExtValue, Extension};
+use deser_core::ext::{BorrowedExtension, ExtValue, Extension, RawInput};
 use deser_core::{Atom, Bytes, EventData, Implicit, ImplicitValue, Position};
 
 use crate::index::ValueIndex;
@@ -779,9 +779,14 @@ impl Kind {
 
     /// Creates a kind from an extension value.
     ///
-    /// Integers of extensions which fit into 64 bits are converted.
+    /// Integers of extensions which fit into 64 bits are converted, the
+    /// input of raw values is parsed into the value it holds.
     pub(crate) fn from_ext(ext: ExtValue<'_>) -> Kind {
-        if let Some(&value) = ext.downcast_ref::<u128>() {
+        if let Some(input) = ext.downcast_value_ref::<RawInput>() {
+            if let Ok(value) = input.deserialize::<Value>() {
+                return value.kind;
+            }
+        } else if let Some(&value) = ext.downcast_ref::<u128>() {
             if let Ok(value) = u64::try_from(value) {
                 return Kind::U64(value);
             }

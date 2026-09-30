@@ -325,3 +325,23 @@ fn test_repeated() {
     driver.emit("a").unwrap();
     assert!(driver.emit(2u64).is_err());
 }
+
+#[test]
+fn test_raw_values() {
+    use deser::ext::{ExtValue, RawFormat, RawInput};
+    use deser_json::RawJson;
+
+    // raw values are values like any other
+    let raw: RawJson = deser_json::from_str(r#"{"a": [1, 2]}"#).unwrap();
+    let value = deser_value::to_value(&raw).unwrap();
+    assert_eq!(value["a"][1], deser_value::Value::from(2u64));
+    let back: RawJson = deser_value::from_value(&value).unwrap();
+    assert_eq!(back.get(), r#"{"a":[1,2]}"#);
+
+    // the input of raw values is parsed when it becomes a value
+    // SAFETY: the input is valid JSON
+    let input = unsafe { RawInput::new(&br#"{"a": [1, 2]}"#[..], deser_json::Json::info()) };
+    let value = deser_value::Value::from(ExtValue::borrowed_value::<RawInput>(&input));
+    assert_eq!(value["a"][0], deser_value::Value::from(1u64));
+    assert_eq!(deser_yaml::to_string(&value).unwrap(), "a:\n  - 1\n  - 2\n");
+}
