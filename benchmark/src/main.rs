@@ -36,6 +36,7 @@ mod github;
 mod kubernetes;
 mod logs;
 mod manifests;
+mod raw;
 mod saphyr;
 mod sessions;
 mod table;
@@ -562,6 +563,7 @@ impl Data {
         benches.add_deser(&self.blobs);
         benches.add_deser_and_serde(&self.registry);
         benches.add_deser_and_serde(&self.tree);
+        raw::add_benches(&mut benches, &self.twitter, &self.logs);
 
         benches
     }
