@@ -13,6 +13,8 @@ All notable changes to deser are documented here.
 - **Breaking:** removed `DeserializeDriver::from_sink` and
   `DeserializeDriver::from_state`, use `DeserializeDriver::from_fn` (for
   instance `from_fn(|_| sink)`) or `deser::de::deserialize_value`.
+- **Breaking:** `SinkHandle` no longer repeats the methods of `Sink` as
+  inherent methods, import `deser::de::Sink` to call them.
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and

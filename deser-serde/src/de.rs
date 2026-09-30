@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 
 use deser_core::Text;
-use deser_core::de::LexicalRules;
+use deser_core::de::{LexicalRules, Sink};
 use deser_core::{Atom, ErrorKind, Event, ImplicitValue};
 use serde::de::{self, DeserializeSeed, Visitor};
 

@@ -622,13 +622,26 @@ pub(crate) fn empty_lexical_or_none<'a>(
     }
 }
 
-// The methods on the handle are inherent so that they can be used without
-// having the `Sink` trait in scope.  The `Sink` implementation delegates to
-// them.
 impl<'a, 'de> SinkHandle<'a, 'de> {
-    /// Forwards to [`Sink::atom`].
+    /// Returns `true` if the handle ignores null atoms (see
+    /// [`ignore_null`](Self::ignore_null)).
+    #[inline(always)]
+    fn is_optional(&self) -> bool {
+        match self.0 {
+            HandleInner::OptionalBorrowed(_)
+            | HandleInner::OptionalArena(_)
+            | HandleInner::OptionalHeap(_) => true,
+            #[cfg(feature = "derive")]
+            HandleInner::OptionalStruct(_) => true,
+            _ => false,
+        }
+    }
+}
+
+// The handle forwards to the sink it holds.
+impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
     #[inline]
-    pub fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.skip_null(&atom) {
             return Ok(());
         }
@@ -642,9 +655,8 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         self.sink_mut().atom(atom, state)
     }
 
-    /// Forwards to [`Sink::borrowed_atom`].
     #[inline]
-    pub fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         if self.skip_null(&atom) {
             return Ok(());
         }
@@ -660,105 +672,31 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         self.sink_mut().borrowed_atom(atom, state)
     }
 
-    /// Returns `true` if the handle ignores null atoms (see
-    /// [`ignore_null`](Self::ignore_null)).
-    #[inline(always)]
-    fn is_optional(&self) -> bool {
-        match self.0 {
-            HandleInner::OptionalBorrowed(_)
-            | HandleInner::OptionalArena(_)
-            | HandleInner::OptionalHeap(_) => true,
-            #[cfg(feature = "derive")]
-            HandleInner::OptionalStruct(_) => true,
-            _ => false,
-        }
-    }
-
-    /// Handles an atom the sink does not accept (see
-    /// [`Sink::unexpected_atom`]).
-    pub fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    /// Handles an atom the sink does not accept.
+    ///
+    /// This is [`Sink::unexpected_atom`] of the sink the handle holds.
+    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         default_unexpected_atom(self.sink_mut(), atom, state)
-    }
-
-    /// Forwards to [`Sink::map`].
-    #[inline]
-    pub fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().map(state)
-    }
-
-    /// Forwards to [`Sink::seq`].
-    #[inline]
-    pub fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().seq(state)
-    }
-
-    /// Forwards to [`Sink::next_key`].
-    #[inline]
-    pub fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink_mut().next_key(state)
-    }
-
-    /// Forwards to [`Sink::next_value`].
-    #[inline]
-    pub fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink_mut().next_value(state)
-    }
-
-    /// Forwards to [`Sink::value_for_key`].
-    pub fn value_for_key(
-        &mut self,
-        key: &str,
-        state: &mut State,
-    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.sink_mut().value_for_key(key, state)
-    }
-
-    /// Forwards to [`Sink::finish`].
-    #[inline]
-    pub fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().finish(state)
-    }
-
-    /// Forwards to [`Sink::recover`].
-    pub fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.sink_mut().recover(err, state)
-    }
-
-    /// Forwards to [`Sink::expecting`].
-    pub fn expecting(&self) -> Cow<'_, str> {
-        self.sink().expecting()
-    }
-}
-
-impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
-    #[inline]
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        SinkHandle::atom(self, atom, state)
-    }
-
-    #[inline]
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        SinkHandle::borrowed_atom(self, atom, state)
     }
 
     #[inline]
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        SinkHandle::map(self, state)
+        self.sink_mut().map(state)
     }
 
     #[inline]
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        SinkHandle::seq(self, state)
+        self.sink_mut().seq(state)
     }
 
     #[inline]
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        SinkHandle::next_key(self, state)
+        self.sink_mut().next_key(state)
     }
 
     #[inline]
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        SinkHandle::next_value(self, state)
+        self.sink_mut().next_value(state)
     }
 
     #[inline]
@@ -818,20 +756,20 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        SinkHandle::value_for_key(self, key, state)
+        self.sink_mut().value_for_key(key, state)
     }
 
     #[inline]
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        SinkHandle::finish(self, state)
+        self.sink_mut().finish(state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        SinkHandle::recover(self, err, state)
+        self.sink_mut().recover(err, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        SinkHandle::expecting(self)
+        self.sink().expecting()
     }
 }
 
