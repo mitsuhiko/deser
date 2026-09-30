@@ -17,6 +17,7 @@ use core::str;
 use deser_core::__format::extend;
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
+use deser_core::ext::RawInput;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 
@@ -204,6 +205,36 @@ struct PartialString {
     copied: usize,
 }
 
+/// What the parser continues with.
+#[derive(Clone, Copy, Debug)]
+enum Pending {
+    /// Nothing, the next token.
+    None,
+    /// An incomplete string at the start of the input.
+    String(PartialString),
+    /// The next value is requested as raw value (see `raw_value`).
+    Raw,
+}
+
+impl Pending {
+    #[inline(always)]
+    fn is_string(&self) -> bool {
+        matches!(self, Pending::String(_))
+    }
+
+    /// Takes the incomplete string.
+    #[inline(always)]
+    fn take_string(&mut self) -> Option<PartialString> {
+        match *self {
+            Pending::String(partial) => {
+                *self = Pending::None;
+                Some(partial)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A JSON parser which can be suspended between tokens.
 #[derive(Debug)]
 pub(crate) struct Parser {
@@ -212,7 +243,7 @@ pub(crate) struct Parser {
     container: Container,
     expect: Expect,
     scratch: Vec<u8>,
-    partial: Option<PartialString>,
+    partial: Pending,
     // the last error was an error of a sink, the rest of the value
     // continues at the position
     recoverable: Option<usize>,
@@ -225,7 +256,7 @@ impl Default for Parser {
             container: Container::Top,
             expect: Expect::Value,
             scratch: Vec::new(),
-            partial: None,
+            partial: Pending::None,
             recoverable: None,
         }
     }
@@ -243,7 +274,9 @@ macro_rules! emit {
 impl Parser {
     /// Returns `true` if the parser is between values.
     pub(crate) fn is_idle(&self) -> bool {
-        self.expect == Expect::Value && self.container == Container::Top && self.partial.is_none()
+        self.expect == Expect::Value
+            && self.container == Container::Top
+            && !self.partial.is_string()
     }
 
     /// Resets the parser to parse a new value.
@@ -253,7 +286,7 @@ impl Parser {
         self.stack.clear();
         self.container = Container::Top;
         self.expect = Expect::Value;
-        self.partial = None;
+        self.partial = Pending::None;
         self.recoverable = None;
     }
 
@@ -300,12 +333,19 @@ impl Parser {
         if self.scratch.capacity() == 0 {
             take_scratch(&mut self.scratch, out.state_mut());
         }
+        // the raw values that are passed on, and the top-level value might
+        // be one of them
+        let state = out.state_mut();
+        state.__private_capture_raw(&crate::raw::FORMAT);
+        if self.is_idle() && state.__private_take_raw_request(&crate::raw::FORMAT) {
+            self.partial = Pending::Raw;
+        }
         let rv = match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
             Err(err) if err.offset().is_none() => Err(err.with_offset(base + cur.pos)),
             Err(err) => Err(err),
         };
-        if self.partial.is_none() && self.scratch.capacity() != 0 {
+        if !self.partial.is_string() && self.scratch.capacity() != 0 {
             put_scratch(&mut self.scratch, out.state_mut());
         }
         rv
@@ -324,13 +364,14 @@ impl Parser {
         let stack = &mut self.stack;
         let scratch = &mut self.scratch;
         let mut container = self.container;
-        let mut partial = self.partial.take();
+        let mut partial = core::mem::replace(&mut self.partial, Pending::None);
 
         // stores the state and returns that more input is needed
         macro_rules! suspend {
             ($consumed:expr, $expect:expr) => {{
                 self.container = container;
                 self.expect = $expect;
+                self.partial = partial;
                 return Ok(Progress::NeedMore($consumed));
             }};
         }
@@ -340,10 +381,16 @@ impl Parser {
         macro_rules! sink {
             ($rv:expr, $expect:expr) => {
                 if let Err(err) = $rv {
-                    self.container = container;
-                    self.expect = $expect;
-                    self.recoverable = Some(cur.pos);
-                    return Err(err);
+                    // the next value is requested as raw value, this is
+                    // not an error
+                    if is_raw_request(&err) {
+                        partial = Pending::Raw;
+                    } else {
+                        self.container = container;
+                        self.expect = $expect;
+                        self.recoverable = Some(cur.pos);
+                        return Err(err);
+                    }
                 }
             };
         }
@@ -365,9 +412,9 @@ impl Parser {
         macro_rules! string {
             ($start:expr, $expect:expr) => {{
                 cur.hit_end = false;
-                let rv = cur.parse_str(scratch, $start, partial.take());
+                let rv = cur.parse_str(scratch, $start, partial.take_string());
                 if cur.hit_end && !eof {
-                    self.partial = Some(PartialString {
+                    partial = Pending::String(PartialString {
                         scanned: cur.partial.0 - $start,
                         copied: cur.partial.1 - $start,
                     });
@@ -381,6 +428,9 @@ impl Parser {
         macro_rules! close {
             ($start:expr, $event:expr) => {{
                 container = stack.pop().unwrap_or(Container::Top);
+                // a sequence of raw values requests the value after its
+                // last one
+                partial = Pending::None;
                 sink!(
                     emit!(out, base, $start, cur.pos, $event),
                     Expect::AfterValue
@@ -439,7 +489,7 @@ impl Parser {
         // `true` if a value follows.
         macro_rules! open_map {
             () => {{
-                let byte = if partial.is_some() {
+                let byte = if partial.is_string() {
                     b'"'
                 } else {
                     next_byte!(Expect::KeyOrEnd)
@@ -527,7 +577,7 @@ impl Parser {
             Expect::ValueOrEnd => !open_seq!(),
             Expect::KeyOrEnd => !open_map!(),
             Expect::Key => {
-                let byte = if partial.is_some() {
+                let byte = if partial.is_string() {
                     b'"'
                 } else {
                     next_byte!(Expect::Key)
@@ -544,10 +594,28 @@ impl Parser {
 
         'value: loop {
             if !skip_value {
-                let byte = if partial.is_some() {
-                    b'"'
-                } else {
-                    next_byte!(Expect::Value)
+                let byte = match partial {
+                    Pending::None => next_byte!(Expect::Value),
+                    Pending::String(_) => b'"',
+                    // the value is requested as raw value: it's validated
+                    // and passed on as it is.  This is handled on its own
+                    // so that it does not affect the code of other values.
+                    Pending::Raw => {
+                        // the whitespace before the value
+                        let _ = next_byte!(Expect::Value);
+                        let start = cur.pos;
+                        partial = Pending::None;
+                        match raw_value(cur, scratch, eof, base, out) {
+                            RawValue::Emitted(rv) => sink!(rv, Expect::AfterValue),
+                            RawValue::Incomplete => {
+                                partial = Pending::Raw;
+                                suspend!(start, Expect::Value)
+                            }
+                            RawValue::Failed(err) => return Err(err),
+                        }
+                        skip_value = true;
+                        continue 'value;
+                    }
                 };
                 let start = cur.pos;
                 cur.bump();
@@ -654,6 +722,91 @@ impl Parser {
                 }
             }
         }
+    }
+}
+
+/// What happened to a value that is requested as raw value.
+enum RawValue {
+    /// It was emitted, the result is the one of the sink.
+    Emitted(Result<(), Error>),
+    /// It's incomplete, it's parsed again with more input.
+    Incomplete,
+    /// It's invalid.
+    Failed(Error),
+}
+
+/// Skips a value that is requested as raw value and emits its input, the
+/// cursor is at its first byte.
+#[cold]
+#[inline(never)]
+fn raw_value<'i, O: Out<'i>>(
+    cur: &mut Cursor<'i>,
+    scratch: &mut Vec<u8>,
+    eof: bool,
+    base: usize,
+    out: &mut O,
+) -> RawValue {
+    let start = cur.pos;
+    match skip_raw(cur, scratch, eof, base, out.state_mut()) {
+        Ok(true) => {}
+        Ok(false) => return RawValue::Incomplete,
+        Err(err) => return RawValue::Failed(err),
+    }
+    let input = &cur.input[start..cur.pos];
+    // SAFETY: the value was validated (see `skip_raw`).  The input is valid
+    // UTF-8: strings were validated if the input is a byte slice,
+    // everything else is ASCII (or validated like comments).
+    let value = unsafe { RawInput::new(input, &crate::raw::FORMAT) };
+    out.state_mut()
+        .set_input_range(base + start, base + cur.pos);
+    RawValue::Emitted(out.emit_input(Atom::Ext(ExtValue::owned_value::<RawInput>(value))))
+}
+
+/// Returns `true` if the result of an event requests the next value as raw
+/// value (see `State::__private_request_raw`).
+#[inline(always)]
+fn is_raw_request(err: &Error) -> bool {
+    err.__private_is_raw_request()
+}
+
+#[inline(never)]
+fn skip_raw(
+    cur: &mut Cursor<'_>,
+    _scratch: &mut Vec<u8>,
+    eof: bool,
+    base: usize,
+    state: &mut State,
+) -> Result<bool, Error> {
+    let options = Options {
+        validate_utf8: cur.validate_utf8,
+        exact_numbers: false,
+    };
+    match Parser::default().parse(cur.input, cur.pos, eof, base, options, &mut Skip(state))? {
+        Progress::Done(end) => {
+            cur.pos = end;
+            Ok(true)
+        }
+        Progress::NeedMore(_) => Ok(false),
+    }
+}
+
+/// Discards the events of a value that is skipped (see `skip_raw`).
+struct Skip<'a>(&'a mut State);
+
+impl<'i> Out<'i> for Skip<'_> {
+    #[inline(always)]
+    fn state_mut(&mut self) -> &mut State {
+        self.0
+    }
+
+    #[inline(always)]
+    fn emit<'e, E: Into<Event<'e>>>(&mut self, _event: E) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn emit_input(&mut self, _atom: Atom<'i>) -> Result<(), Error> {
+        Ok(())
     }
 }
 

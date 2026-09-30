@@ -16,11 +16,13 @@ extern crate alloc;
 
 mod de;
 mod parser;
+mod raw;
 mod scan;
 mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::raw::{Json5, RawJson5};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-pub use deser_json::Trailing;
+pub use deser_json::{Trailing, to_string};

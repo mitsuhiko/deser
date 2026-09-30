@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use deser_core::__format::IntBuffer;
-use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
+use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
 use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
@@ -332,6 +332,7 @@ impl SerializerConfig {
         &self,
         driver: &mut SerializeDriver<'_>,
     ) -> Result<String, Error> {
+        accept_raw(driver);
         if self.is_compact() {
             self.serialize_compact(driver)
         } else {
@@ -397,6 +398,11 @@ impl SerializerConfig {
             ValueWriter::Pretty(self.pretty_writer(out))
         }
     }
+}
+
+/// Declares that raw values of JSON are written as they are.
+fn accept_raw(driver: &mut SerializeDriver<'_>) {
+    driver.state_mut().__private_accept_raw(&crate::raw::FORMAT);
 }
 
 /// Writes the events of a value.
@@ -664,6 +670,7 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<Written, Error> {
+        accept_raw(driver);
         let rollback = self.out.len();
         let (mut local, adopt) = match self.value.take() {
             // the writer writes into the output directly if it's empty,
@@ -1146,6 +1153,15 @@ impl Output {
     /// their fallback representation.
     #[cold]
     fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
+        // raw values of JSON are written as they are, the serialization
+        // only passes them on if they are (see `accept_raw`)
+        if let Some(raw) = ext.downcast_value_ref::<RawInput>()
+            && core::ptr::eq(raw.format(), &crate::raw::FORMAT)
+            && let Some(text) = raw.as_str()
+        {
+            self.write_str(text);
+            return Ok(());
+        }
         // JSON numbers have arbitrary precision, so wide integers and
         // decimals can be written natively.
         if let Some(&val) = ext.downcast_ref::<u128>() {

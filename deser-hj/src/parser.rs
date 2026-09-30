@@ -192,6 +192,41 @@ struct PartialString {
     copied: usize,
 }
 
+/// What the parser continues with.
+#[derive(Clone, Copy, Debug)]
+enum Pending {
+    /// Nothing, the next token.
+    None,
+    /// An incomplete string at the start of the input.
+    String(PartialString),
+    /// The next value is requested as raw value (see `raw_value`).
+    Raw,
+}
+
+impl Pending {
+    #[inline(always)]
+    fn is_none(&self) -> bool {
+        matches!(self, Pending::None)
+    }
+
+    #[inline(always)]
+    fn is_string(&self) -> bool {
+        matches!(self, Pending::String(_))
+    }
+
+    /// Takes the incomplete string.
+    #[inline(always)]
+    fn take_string(&mut self) -> Option<PartialString> {
+        match *self {
+            Pending::String(partial) => {
+                *self = Pending::None;
+                Some(partial)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A JSON parser which can be suspended between tokens.
 #[derive(Debug)]
 pub(crate) struct Parser {
@@ -200,7 +235,7 @@ pub(crate) struct Parser {
     container: Container,
     expect: Expect,
     scratch: Vec<u8>,
-    partial: Option<PartialString>,
+    partial: Pending,
     // the last error was an error of a sink, the rest of the value
     // continues at the position
     recoverable: Option<usize>,
@@ -216,7 +251,7 @@ impl Default for Parser {
             container: Container::Top,
             expect: Expect::Value,
             scratch: Vec::new(),
-            partial: None,
+            partial: Pending::None,
             recoverable: None,
             column: 0,
         }
@@ -235,7 +270,9 @@ macro_rules! emit {
 impl Parser {
     /// Returns `true` if the parser is between values.
     pub(crate) fn is_idle(&self) -> bool {
-        self.expect == Expect::Value && self.container == Container::Top && self.partial.is_none()
+        self.expect == Expect::Value
+            && self.container == Container::Top
+            && !self.partial.is_string()
     }
 
     /// Resets the parser to parse a new value.
@@ -245,7 +282,7 @@ impl Parser {
         self.stack.clear();
         self.container = Container::Top;
         self.expect = Expect::Value;
-        self.partial = None;
+        self.partial = Pending::None;
         self.recoverable = None;
     }
 
@@ -307,7 +344,7 @@ impl Parser {
             Err(err) if err.offset().is_none() => Err(err.with_offset(base + cur.pos)),
             Err(err) => Err(err),
         };
-        if self.partial.is_none() && self.scratch.capacity() != 0 {
+        if !self.partial.is_string() && self.scratch.capacity() != 0 {
             put_scratch(&mut self.scratch, out.state_mut());
         }
         rv
@@ -326,13 +363,14 @@ impl Parser {
         let stack = &mut self.stack;
         let scratch = &mut self.scratch;
         let mut container = self.container;
-        let mut partial = self.partial.take();
+        let mut partial = core::mem::replace(&mut self.partial, Pending::None);
 
         // stores the state and returns that more input is needed
         macro_rules! suspend {
             ($consumed:expr, $expect:expr) => {{
                 self.container = container;
                 self.expect = $expect;
+                self.partial = partial;
                 self.column = advance_column(self.column, &input[..$consumed]);
                 return Ok(Progress::NeedMore($consumed));
             }};
@@ -343,10 +381,16 @@ impl Parser {
         macro_rules! sink {
             ($rv:expr, $expect:expr) => {
                 if let Err(err) = $rv {
-                    self.container = container;
-                    self.expect = $expect;
-                    self.recoverable = Some(cur.pos);
-                    return Err(err);
+                    // the next value is requested as raw value, this is
+                    // not an error
+                    if is_raw_request(&err) {
+                        partial = Pending::Raw;
+                    } else {
+                        self.container = container;
+                        self.expect = $expect;
+                        self.recoverable = Some(cur.pos);
+                        return Err(err);
+                    }
                 }
             };
         }
@@ -368,9 +412,9 @@ impl Parser {
         macro_rules! string {
             ($start:expr, $expect:expr) => {{
                 cur.hit_end = false;
-                let rv = cur.parse_str(scratch, $start, partial.take());
+                let rv = cur.parse_str(scratch, $start, partial.take_string());
                 if cur.hit_end && !eof {
-                    self.partial = Some(PartialString {
+                    partial = Pending::String(PartialString {
                         scanned: cur.partial.0 - $start,
                         copied: cur.partial.1 - $start,
                     });
@@ -445,7 +489,7 @@ impl Parser {
         // `true` if a value follows.
         macro_rules! open_map {
             () => {{
-                let byte = if partial.is_some() {
+                let byte = if partial.is_string() {
                     b'"'
                 } else {
                     next_byte!(Expect::KeyOrEnd)
@@ -570,7 +614,7 @@ impl Parser {
             Expect::KeyOrEnd if container == Container::Braceless => !open_braceless!(),
             Expect::KeyOrEnd => !open_map!(),
             Expect::Key => {
-                let byte = if partial.is_some() {
+                let byte = if partial.is_string() {
                     b'"'
                 } else {
                     next_byte!(Expect::Key)
@@ -587,10 +631,10 @@ impl Parser {
 
         'value: loop {
             if !skip_value {
-                let byte = if partial.is_some() {
-                    b'"'
-                } else {
-                    next_byte!(Expect::Value)
+                let byte = match partial {
+                    Pending::None => next_byte!(Expect::Value),
+                    Pending::String(_) => b'"',
+                    Pending::Raw => unreachable!("Hjson has no raw values"),
                 };
                 // a map key at the root starts a map without braces
                 if container == Container::Top && partial.is_none() && byte != b'{' && byte != b'['
@@ -719,6 +763,11 @@ impl Parser {
             }
         }
     }
+}
+
+#[inline(always)]
+fn is_raw_request(_err: &Error) -> bool {
+    false
 }
 
 /// Takes the scratch space that was kept with the state.

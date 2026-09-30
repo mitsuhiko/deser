@@ -42,6 +42,13 @@
 //! JSON is valid JSON5, so values are serialized as JSON with the
 //! serializer of `deser-json` (which is re-exported).
 //!
+//! # Raw Values
+//!
+//! [`RawJson5`] holds the JSON5 text of a value.  Like `deser_json::RawJson` it
+//! keeps the text of values that are deserialized from JSON5 as it is
+//! (including comments), other values are encoded as JSON.  See
+//! [`Raw`](deser_core::ext::Raw) for more information.
+//!
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams of the
@@ -60,10 +67,12 @@ extern crate alloc;
 // These are generated from `deser-template-json`.
 mod de;
 mod parser;
+mod raw;
 mod scan;
 mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::raw::{Json5, RawJson5};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

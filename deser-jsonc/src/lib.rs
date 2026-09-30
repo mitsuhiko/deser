@@ -28,6 +28,13 @@
 //! JSON is valid JSONC, so values are serialized as JSON with the
 //! serializer of `deser-json` (which is re-exported).
 //!
+//! # Raw Values
+//!
+//! [`RawJsonc`] holds the JSONC text of a value.  Like `deser_json::RawJson` it
+//! keeps the text of values that are deserialized from JSONC as it is
+//! (including comments), other values are encoded as JSON.  See
+//! [`Raw`](deser_core::ext::Raw) for more information.
+//!
 //! # Features
 //!
 //! * `io` (enabled by default): reading and writing streams of the
@@ -46,10 +53,12 @@ extern crate alloc;
 // These are generated from `deser-template-json`.
 mod de;
 mod parser;
+mod raw;
 mod scan;
 mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::raw::{Jsonc, RawJsonc};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

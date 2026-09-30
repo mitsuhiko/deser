@@ -52,6 +52,49 @@
 //! assert_eq!(user.name, "Peter");
 //! ```
 //!
+//! # Raw Values
+//!
+//! [`RawJson`] holds the JSON text of a value.  The JSON of values that are
+//! deserialized from JSON is kept as it is: it's validated but not
+//! deserialized, which is faster, and written out again unchanged.  With
+//! the [`Borrowed`](deser_core::adapters::Borrowed) adapter the text is
+//! borrowed from the input:
+//!
+//! ```rust
+//! use std::collections::BTreeMap;
+//! use deser::adapters::Borrowed;
+//! use deser_json::RawJson;
+//!
+//! #[derive(deser::Deserialize, deser::Serialize)]
+//! struct Envelope<'a> {
+//!     kind: String,
+//!     #[deser(as = Borrowed)]
+//!     payload: RawJson<'a>,
+//! }
+//!
+//! let input = r#"{"kind": "point", "payload": {"x": 1.50, "y": 2}}"#;
+//! let envelope: Envelope = deser_json::from_str(input).unwrap();
+//! assert_eq!(envelope.payload.get(), r#"{"x": 1.50, "y": 2}"#);
+//!
+//! // deserialized later, once it's known what it is
+//! let point: BTreeMap<String, f64> = envelope.payload.deserialize().unwrap();
+//! assert_eq!(point["x"], 1.5);
+//!
+//! // and written out again unchanged
+//! assert_eq!(
+//!     deser_json::to_string(&envelope).unwrap(),
+//!     r#"{"kind":"point","payload":{"x": 1.50, "y": 2}}"#
+//! );
+//! ```
+//!
+//! The text is only kept for values in places where the type is known
+//! before the value starts: fields of derived structs, standard containers,
+//! `Option` and `Box`.  Everywhere else (like the fields of untagged enums)
+//! and for values of other formats (including the other JSON dialects) the
+//! value is encoded as JSON.  Other formats serialize the value a
+//! [`RawJson`] holds.  See [`Raw`](deser_core::ext::Raw) for more
+//! information.
+//!
 //! # Pretty Printing
 //!
 //! By default the output is compact.  [`SerializerConfig::pretty`] indents
@@ -168,10 +211,12 @@ mod trailing;
 // These are generated from `deser-template-json`.
 mod de;
 mod parser;
+mod raw;
 mod scan;
 mod stream;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::raw::{Json, RawJson};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
 pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};
