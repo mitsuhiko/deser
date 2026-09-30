@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
-use deser_core::ser::{self, Describe, PausableSink, SerializeDriver, Written};
+use deser_core::ser::{self, Describe, EventSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Names;
@@ -286,7 +286,7 @@ impl SerializerConfig {
     /// Serializes the value of a driver into a document.
     fn serialize_driver(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
         let mut writer = Writer::new(self);
-        driver.drive_described(|event, value, state| writer.event(event, value, state))?;
+        driver.drive_sink(&mut writer)?;
         writer.finish()?;
         Ok(writer.out)
     }
@@ -320,7 +320,7 @@ impl SerializerConfig {
         let mut writer = value.take().unwrap_or_else(|| Box::new(Writer::new(self)));
         // after an error the value is abandoned, its writer is dropped
         let done = if limit == usize::MAX {
-            driver.drive_described(|event, value, state| writer.event(event, value, state))?;
+            driver.drive_sink(&mut *writer)?;
             true
         } else {
             writer.limit = limit;
@@ -684,7 +684,7 @@ pub(crate) struct Writer {
     out: String,
     base: usize,
     /// The driver is paused once this much output is final (see
-    /// `PausableSink`).
+    /// `EventSink`).
     limit: usize,
     /// An error of `pause`, which cannot fail.
     error: Option<Error>,
@@ -752,7 +752,7 @@ impl Describe for Fields {
     }
 }
 
-impl PausableSink for Writer {
+impl EventSink for Writer {
     const DESCRIBED: bool = true;
 
     fn event(

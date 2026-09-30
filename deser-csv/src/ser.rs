@@ -7,7 +7,7 @@ use core::fmt::{self, Write as _};
 
 use crate::num::{Float, IntBuffer, format_finite};
 use deser_core::ext::Number;
-use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::Dialect;
@@ -808,7 +808,7 @@ struct RecordWriter<'a> {
     out: &'a mut Vec<u8>,
 }
 
-impl PausableSink for RecordWriter<'_> {
+impl EventSink for RecordWriter<'_> {
     #[inline]
     fn event(
         &mut self,

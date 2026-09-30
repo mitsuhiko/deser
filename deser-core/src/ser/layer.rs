@@ -108,8 +108,8 @@ impl<'n> Next<'n> {
     ///
     /// This is only useful to [describe](crate::ser::Describe) the value.
     /// If the driver does not pass on values (see
-    /// [`drive_described`](crate::ser::SerializeDriver::drive_described)),
-    /// this is a value that describes nothing.
+    /// [`EventSink::DESCRIBED`](crate::ser::EventSink::DESCRIBED)), this is
+    /// a value that describes nothing.
     pub fn value(&self) -> &dyn Serialize {
         self.value
     }

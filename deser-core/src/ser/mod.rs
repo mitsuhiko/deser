@@ -121,7 +121,7 @@ pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
 pub use self::stream::{StreamSerializer, Written};
 
-pub use driver::{EventSink, PausableSink, SerializeDriver};
+pub use driver::{EventSink, SerializeDriver};
 
 pub(crate) use self::begin::{
     Begin, BeginKind, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PLAIN_BUDGET,

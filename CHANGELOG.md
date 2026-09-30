@@ -4,6 +4,12 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** merged `deser::ser::PausableSink` into `EventSink`.  An
+  event sink receives the value of every event (if it sets
+  `EventSink::DESCRIBED`) and can pause the driver with
+  `EventSink::pause`, which only `SerializeDriver::drive_until` invokes.
+  `SerializeDriver::drive_described` was removed, use `drive_sink` with a
+  sink that sets `DESCRIBED`.
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and

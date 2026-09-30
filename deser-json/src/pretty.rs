@@ -15,7 +15,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use deser_core::hints::Layout;
-use deser_core::ser::PausableSink;
+use deser_core::ser::EventSink;
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize, State};
 
 use crate::ser::{Indent, Output};
@@ -58,7 +58,7 @@ pub(crate) struct PrettyWriter {
     entries: Vec<usize>,
     /// A buffer for the text of aborted attempts.
     scratch: String,
-    /// The output is passed on once it's this long (see `PausableSink`).
+    /// The output is passed on once it's this long (see `EventSink`).
     pub(crate) limit: usize,
 }
 
@@ -289,7 +289,7 @@ impl PrettyWriter {
     }
 }
 
-impl PausableSink for PrettyWriter {
+impl EventSink for PrettyWriter {
     #[inline]
     fn event(
         &mut self,

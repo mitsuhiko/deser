@@ -9,7 +9,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use deser_core::ser::{EventSink, PausableSink};
+use deser_core::ser::EventSink;
 use deser_core::{Error, ErrorKind, Event, Serialize, State};
 
 use crate::format::Format;
@@ -42,17 +42,11 @@ pub(crate) struct TextWriter {
     /// `true` once the value was written.
     done: bool,
     /// The driver is paused once the output is this long (see
-    /// `PausableSink`).
+    /// `EventSink`).
     pub(crate) limit: usize,
 }
 
 impl EventSink for TextWriter {
-    fn event(&mut self, event: Event<'_>, _state: &mut State) -> Result<(), Error> {
-        TextWriter::event(self, event)
-    }
-}
-
-impl PausableSink for TextWriter {
     fn event(
         &mut self,
         event: Event<'_>,

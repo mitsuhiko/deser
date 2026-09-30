@@ -6,7 +6,7 @@ use core::mem::ManuallyDrop;
 
 use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
-use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Serialize};
 
 use crate::Trailing;
@@ -825,18 +825,11 @@ pub(crate) struct Writer {
     container: Container,
     first: bool,
     is_key: bool,
-    // the output is passed on once it's this long (see `PausableSink`)
+    // the output is passed on once it's this long (see `EventSink`)
     limit: usize,
 }
 
-impl ser::EventSink for Writer {
-    #[inline(always)]
-    fn event(&mut self, event: Event, _state: &mut deser_core::State) -> Result<(), Error> {
-        Writer::event(self, event)
-    }
-}
-
-impl PausableSink for Writer {
+impl EventSink for Writer {
     #[inline(always)]
     fn event(
         &mut self,

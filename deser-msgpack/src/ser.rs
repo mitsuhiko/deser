@@ -5,7 +5,7 @@ use core::mem::ManuallyDrop;
 
 use deser_core::State;
 use deser_core::ext::{BigInt, ExtValue, RawInput, Timestamp};
-use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver, Written};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Serialize};
 
 use crate::copy::extend;
@@ -98,7 +98,7 @@ pub(crate) struct Writer {
     insertions: Vec<Insertion>,
     // the number of open containers whose length is patched in at the end
     open_unknown: usize,
-    // the output is passed on once it's this long (see `PausableSink`)
+    // the output is passed on once it's this long (see `EventSink`)
     limit: usize,
 }
 
@@ -110,14 +110,7 @@ struct Insertion {
     bytes: [u8; 4],
 }
 
-impl ser::EventSink for Writer {
-    #[inline(always)]
-    fn event(&mut self, event: Event, _state: &mut State) -> Result<(), Error> {
-        Writer::event(self, event)
-    }
-}
-
-impl PausableSink for Writer {
+impl EventSink for Writer {
     #[inline(always)]
     fn event(
         &mut self,

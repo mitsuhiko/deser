@@ -41,8 +41,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use deser_core::ser::{Describe, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr};
-use deser_core::{Atom, Event};
+use deser_core::ser::{
+    Describe, EventSink, Serialize, SerializeDriver, Variant, VariantKind, VariantRepr,
+};
+use deser_core::{Atom, Error, Event, State};
 
 /// Serializes a serializable value to `Debug` format.
 pub struct ToDebug {
@@ -70,10 +72,7 @@ impl ToDebug {
     pub fn new(value: &dyn Serialize) -> ToDebug {
         let mut builder = Builder::default();
         SerializeDriver::new(value)
-            .drive_described(|event, value, state| {
-                builder.event(event, value, state.is_map_key());
-                Ok(())
-            })
+            .drive_sink(&mut builder)
             .unwrap();
         ToDebug {
             root: builder.root.expect("no value was serialized"),
@@ -203,6 +202,20 @@ struct Builder {
     // keys of maps waiting for their value
     keys: Vec<Option<Node>>,
     root: Option<Node>,
+}
+
+impl EventSink for Builder {
+    const DESCRIBED: bool = true;
+
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        Builder::event(self, event, value, state.is_map_key());
+        Ok(())
+    }
 }
 
 impl Builder {

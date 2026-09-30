@@ -534,13 +534,13 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     ///
     /// ```
     /// use deser::io::Writer;
-    /// # use deser::ser::{PausableSink, SerializeDriver, Serializer, StreamSerializer, Written};
+    /// # use deser::ser::{EventSink, SerializeDriver, Serializer, StreamSerializer, Written};
     /// # use deser::{Error, Event, Serialize, State};
     /// # /// Writes `x` for every event, can stop between values.
     /// # #[derive(Default)]
     /// # struct Xs { out: Vec<u8>, partial: bool }
     /// # struct Sink<'a>(&'a mut Vec<u8>, usize);
-    /// # impl PausableSink for Sink<'_> {
+    /// # impl EventSink for Sink<'_> {
     /// #     fn event(&mut self, _: Event<'_>, _: &dyn Serialize, _: &mut State) -> Result<(), Error> {
     /// #         self.0.push(b'x');
     /// #         Ok(())

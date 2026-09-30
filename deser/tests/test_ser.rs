@@ -227,7 +227,8 @@ fn test_is_map_key() {
 
 #[test]
 fn test_describe_through_layers() {
-    use deser::ser::{Describe, Layer, Next};
+    use deser::ser::{Describe, EventSink, Layer, Next};
+    use deser::{Serialize, State};
 
     struct Passthrough;
 
@@ -250,6 +251,22 @@ fn test_describe_through_layers() {
         }
     }
 
+    impl EventSink for Names {
+        const DESCRIBED: bool = true;
+
+        fn event(
+            &mut self,
+            _event: Event<'_>,
+            value: &dyn Serialize,
+            state: &mut State,
+        ) -> Result<(), deser::Error> {
+            if !state.is_map_key() {
+                value.describe(self);
+            }
+            Ok(())
+        }
+    }
+
     #[derive(deser::Serialize)]
     struct Point {
         x: Option<u32>,
@@ -258,14 +275,7 @@ fn test_describe_through_layers() {
     let mut names = Names::default();
     let mut driver = SerializeDriver::new(&Point { x: Some(1) });
     driver.push_layer(Passthrough);
-    driver
-        .drive_described(|_event, value, state| {
-            if !state.is_map_key() {
-                value.describe(&mut names);
-            }
-            Ok(())
-        })
-        .unwrap();
+    driver.drive_sink(&mut names).unwrap();
     // the map start (and end) describe the struct, the value the option
     assert_eq!(names.0, ["Point", "Some", "Point"]);
 
@@ -421,7 +431,7 @@ fn test_drive_like_next() {
 mod pausing {
     use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-    use deser::ser::{Layer, Next, PausableSink, SerializeDriver};
+    use deser::ser::{EventSink, Layer, Next, SerializeDriver};
     use deser::{Error, Event, Serialize, State};
 
     /// Collects the events with the map key flags and pauses after every
@@ -433,7 +443,7 @@ mod pausing {
         max_between_pauses: usize,
     }
 
-    impl PausableSink for Collect {
+    impl EventSink for Collect {
         fn event(
             &mut self,
             event: Event<'_>,

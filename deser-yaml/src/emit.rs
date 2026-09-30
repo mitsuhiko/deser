@@ -14,7 +14,7 @@ use std::fmt::{self, Write};
 use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
-use deser_core::ser::PausableSink;
+use deser_core::ser::EventSink;
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::quote::{
@@ -227,11 +227,11 @@ pub(crate) struct Emitter {
     /// allocate for every attempt).
     spare_events: Vec<(Event<'static>, Hints)>,
     /// The driver is paused once the output is this long (see
-    /// `PausableSink`).
+    /// `EventSink`).
     pub(crate) limit: usize,
 }
 
-impl PausableSink for Emitter {
+impl EventSink for Emitter {
     fn event(
         &mut self,
         event: Event<'_>,

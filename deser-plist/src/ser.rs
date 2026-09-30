@@ -452,7 +452,12 @@ struct Builder {
 }
 
 impl ser::EventSink for Builder {
-    fn event(&mut self, event: Event, _state: &mut State) -> Result<(), Error> {
+    fn event(
+        &mut self,
+        event: Event,
+        _value: &dyn Serialize,
+        _state: &mut State,
+    ) -> Result<(), Error> {
         Builder::event(self, event)
     }
 }

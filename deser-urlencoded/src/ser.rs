@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
-use deser_core::ser::{self, PausableSink, SerializeDriver, Written};
+use deser_core::ser::{self, EventSink, SerializeDriver, Written};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::Nesting;
@@ -503,7 +503,7 @@ pub(crate) struct Writer {
     limit: usize,
 }
 
-impl PausableSink for Writer {
+impl EventSink for Writer {
     fn event(
         &mut self,
         event: Event<'_>,

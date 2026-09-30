@@ -19,9 +19,18 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 /// The driver allows serializing a [`Serialize`] iteratively.
 ///
 /// This is the only way to convert from a [`Serialize`] into an event
-/// stream.  As a user one has to call [`next`](Self::next) until `None`
-/// is returned, indicating the end of the event stream, or use
-/// [`drive`](Self::drive).
+/// stream.  There are several ways to receive the events:
+///
+/// * [`drive`](Self::drive) invokes a callback for every event and
+///   [`drive_sink`](Self::drive_sink) delivers them to an [`EventSink`].
+///   Both serialize the value at once.
+/// * [`drive_until`](Self::drive_until) delivers the events to an
+///   [`EventSink`] which can pause the driver, for instance to write the
+///   output of large values in pieces.
+/// * [`next`](Self::next) returns one event at a time.
+///
+/// Event sinks can also receive the values of the events to
+/// [describe](crate::ser::Describe) them (see [`EventSink::DESCRIBED`]).
 ///
 /// When the serialization fails, the error gets the context of the
 /// current value attached (see [`State::add_error_context`]).
@@ -30,8 +39,8 @@ use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 ///
 /// [`Layer`]s sit between the serialized values and the format and see
 /// every event before the format receives it.  They are added with
-/// [`push_layer`](Self::push_layer) and are only supported by
-/// [`drive`](Self::drive).
+/// [`push_layer`](Self::push_layer) and are not supported by
+/// [`next`](Self::next).
 pub struct SerializeDriver<'a> {
     state: State,
     layers: Vec<Box<dyn Layer>>,
@@ -198,7 +207,7 @@ const _: () = {
 type NextEvent<'a> = Option<(Event<'a>, &'a dyn Serialize)>;
 
 /// The callback of [`SerializeDriver::drive`] and
-/// [`SerializeDriver::drive_described`].
+/// [`SerializeDriver::drive_until`].
 trait Callback {
     /// `true` if the callback receives the values of the events.
     const DESCRIBED: bool;
@@ -250,49 +259,73 @@ impl<F: FnMut(Event<'_>, &mut State) -> Result<(), Error>> Callback for Plain<F>
     }
 }
 
-/// Receives the events of [`SerializeDriver::drive_sink`].
+/// Receives the events of [`SerializeDriver::drive_sink`] and
+/// [`SerializeDriver::drive_until`].
 ///
-/// This is like the callback of [`drive`](SerializeDriver::drive) but
-/// formats can mark the implementation as `#[inline(always)]` which makes
-/// the compiler specialize it for every kind of event the driver delivers.
+/// Unlike the callback of [`drive`](SerializeDriver::drive) an event
+/// sink can:
+///
+/// * pause the driver (with [`drive_until`](SerializeDriver::drive_until)):
+///   before the next value is serialized the driver asks the sink with
+///   [`pause`](Self::pause) if it should stop.  This is used to write the
+///   output of large values in pieces, for instance to wait until the
+///   output that was produced so far was written to a socket.
+/// * receive the values of the events (see [`DESCRIBED`](Self::DESCRIBED))
+///   to [describe](crate::ser::Describe) them, which formats that reflect
+///   the Rust shape of values need.
+///
+/// ```
+/// # use deser::ser::{Describe, EventSink, SerializeDriver};
+/// # use deser::{Error, Event, Serialize, State};
+/// /// Records if the values are `Some`.
+/// struct IsSome(Vec<bool>);
+///
+/// struct Describer(bool);
+///
+/// impl Describe for Describer {
+///     fn some(&mut self) {
+///         self.0 = true;
+///     }
+/// }
+///
+/// impl EventSink for IsSome {
+///     const DESCRIBED: bool = true;
+///
+///     fn event(
+///         &mut self,
+///         _event: Event<'_>,
+///         value: &dyn Serialize,
+///         _state: &mut State,
+///     ) -> Result<(), Error> {
+///         let mut describer = Describer(false);
+///         value.describe(&mut describer);
+///         self.0.push(describer.0);
+///         Ok(())
+///     }
+/// }
+///
+/// # fn do_it() -> Result<(), deser::Error> {
+/// let mut sink = IsSome(Vec::new());
+/// let value = vec![Some(1), None];
+/// SerializeDriver::new(&value).drive_sink(&mut sink)?;
+/// assert_eq!(sink.0, [false, true, false, false]);
+/// # Ok(()) } do_it().unwrap();
+/// ```
 pub trait EventSink {
-    /// Receives an event.
-    fn event(&mut self, event: Event<'_>, state: &mut State) -> Result<(), Error>;
-}
-
-/// A callback that delivers to an event sink.
-struct Sink<'s, S>(&'s mut S);
-
-impl<S: EventSink> Callback for Sink<'_, S> {
-    const DESCRIBED: bool = false;
-
-    #[inline(always)]
-    fn call(
-        &mut self,
-        event: Event<'_>,
-        _value: &dyn Serialize,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        self.0.event(event, state)
-    }
-}
-
-/// Receives the events of [`SerializeDriver::drive_until`].
-///
-/// This is like the callback of [`drive_described`](SerializeDriver::drive_described)
-/// but the sink can pause the driver: before the next value is serialized
-/// the driver asks the sink with [`pause`](Self::pause) if it should stop.
-/// This is used to write the output of large values in pieces, for
-/// instance to wait until the output that was produced so far was written
-/// to a socket.
-pub trait PausableSink {
     /// `true` if the sink receives the values of the events.
     ///
     /// Otherwise the value passed to [`event`](Self::event) describes
-    /// nothing.  See [`drive_described`](SerializeDriver::drive_described).
+    /// nothing.  Values are only passed on if they are wanted as the
+    /// driver serializes values faster if it does not need to hand out
+    /// every one of them.
     const DESCRIBED: bool = false;
 
     /// Receives an event.
+    ///
+    /// Formats can mark the implementation as `#[inline(always)]` which
+    /// makes the compiler specialize it for every kind of event the driver
+    /// delivers (which is not possible with the callback of
+    /// [`drive`](SerializeDriver::drive)).
     fn event(
         &mut self,
         event: Event<'_>,
@@ -306,14 +339,35 @@ pub trait PausableSink {
     /// sequences (not the keys of structs) and between the pieces of large
     /// values that only hold atoms.  After the first value of a call to
     /// [`drive_until`](SerializeDriver::drive_until) returns `true`, the
-    /// call returns.
-    fn pause(&mut self) -> bool;
+    /// call returns.  The default implementation never pauses.
+    ///
+    /// [`drive_sink`](SerializeDriver::drive_sink) does not invoke this.
+    fn pause(&mut self) -> bool {
+        false
+    }
 }
 
-/// A callback that delivers to a pausable sink.
+/// A callback that delivers to an event sink and does not pause.
+struct Sink<'s, S>(&'s mut S);
+
+impl<S: EventSink> Callback for Sink<'_, S> {
+    const DESCRIBED: bool = S::DESCRIBED;
+
+    #[inline(always)]
+    fn call(
+        &mut self,
+        event: Event<'_>,
+        value: &dyn Serialize,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.0.event(event, value, state)
+    }
+}
+
+/// A callback that delivers to an event sink which can pause.
 struct Pausable<'s, S>(&'s mut S);
 
-impl<S: PausableSink> Callback for Pausable<'_, S> {
+impl<S: EventSink> Callback for Pausable<'_, S> {
     const DESCRIBED: bool = S::DESCRIBED;
     const PAUSABLE: bool = true;
 
@@ -330,25 +384,6 @@ impl<S: PausableSink> Callback for Pausable<'_, S> {
     #[inline(always)]
     fn pause(&mut self) -> bool {
         self.0.pause()
-    }
-}
-
-/// A callback that receives values.
-struct Described<F>(F);
-
-impl<F: FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error>> Callback
-    for Described<F>
-{
-    const DESCRIBED: bool = true;
-
-    #[inline(always)]
-    fn call(
-        &mut self,
-        event: Event<'_>,
-        value: &dyn Serialize,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        (self.0)(event, value, state)
     }
 }
 
@@ -507,7 +542,8 @@ impl<'a> SerializeDriver<'a> {
     /// This produces the same events as calling [`next`](Self::next) until
     /// it returns `None` but it's faster.  The first error (either produced
     /// by a serializable or returned by the callback) aborts the
-    /// serialization.
+    /// serialization.  To receive the values of the events or to pause the
+    /// serialization, use an [`EventSink`].
     ///
     /// ```
     /// # use deser::ser::SerializeDriver;
@@ -534,6 +570,9 @@ impl<'a> SerializeDriver<'a> {
 
     /// Like [`drive`](Self::drive) but delivers the events to an
     /// [`EventSink`].
+    ///
+    /// The sink is not asked to pause (see [`drive_until`](Self::drive_until)),
+    /// the value is serialized at once.
     #[inline]
     pub fn drive_sink<S: EventSink>(&mut self, sink: &mut S) -> Result<(), Error> {
         match self.drive_impl(Sink(sink)) {
@@ -545,7 +584,7 @@ impl<'a> SerializeDriver<'a> {
     /// Drives the serialization until it's complete or the sink pauses it.
     ///
     /// Returns `true` once the serialization is complete.  If the sink
-    /// paused the driver (see [`PausableSink::pause`]), `false` is returned
+    /// paused the driver (see [`EventSink::pause`]), `false` is returned
     /// and the next call continues where this one stopped.  At least one
     /// value is serialized per call.
     ///
@@ -556,12 +595,12 @@ impl<'a> SerializeDriver<'a> {
     /// not on the size of the value.
     ///
     /// ```
-    /// # use deser::ser::{PausableSink, SerializeDriver};
+    /// # use deser::ser::{EventSink, SerializeDriver};
     /// # use deser::{Error, Event, Serialize, State};
     /// /// Collects events and pauses once it holds 100.
     /// struct Collect(Vec<Event<'static>>);
     ///
-    /// impl PausableSink for Collect {
+    /// impl EventSink for Collect {
     ///     fn event(
     ///         &mut self,
     ///         event: Event<'_>,
@@ -596,49 +635,9 @@ impl<'a> SerializeDriver<'a> {
     /// # Ok(()) } do_it().unwrap();
     /// ```
     #[inline]
-    pub fn drive_until<S: PausableSink>(&mut self, sink: &mut S) -> Result<bool, Error> {
+    pub fn drive_until<S: EventSink>(&mut self, sink: &mut S) -> Result<bool, Error> {
         match self.drive_impl(Pausable(sink)) {
             Ok(done) => Ok(done),
-            Err(err) => Err(self.state.attach_error_context(err)),
-        }
-    }
-
-    /// Like [`drive`](Self::drive) but the callback also receives the value
-    /// of every event.
-    ///
-    /// The value is intended to be [described](crate::ser::Describe) by
-    /// formats that reflect the Rust shape of values.  Formats that do not
-    /// need it should use [`drive`](Self::drive) which is faster.
-    ///
-    /// ```
-    /// # use deser::ser::{Describe, SerializeDriver};
-    /// # fn do_it() -> Result<(), deser::Error> {
-    /// struct IsSome(bool);
-    ///
-    /// impl Describe for IsSome {
-    ///     fn some(&mut self) {
-    ///         self.0 = true;
-    ///     }
-    /// }
-    ///
-    /// let mut some = Vec::new();
-    /// let value = vec![Some(1), None];
-    /// SerializeDriver::new(&value).drive_described(|_event, value, _state| {
-    ///     let mut describer = IsSome(false);
-    ///     value.describe(&mut describer);
-    ///     some.push(describer.0);
-    ///     Ok(())
-    /// })?;
-    /// assert_eq!(some, [false, true, false, false]);
-    /// # Ok(()) } do_it().unwrap();
-    /// ```
-    #[inline]
-    pub fn drive_described<F>(&mut self, f: F) -> Result<(), Error>
-    where
-        F: FnMut(Event<'_>, &dyn Serialize, &mut State) -> Result<(), Error>,
-    {
-        match self.drive_impl(Described(f)) {
-            Ok(_) => Ok(()),
             Err(err) => Err(self.state.attach_error_context(err)),
         }
     }
