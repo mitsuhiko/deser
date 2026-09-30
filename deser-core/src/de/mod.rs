@@ -13,19 +13,15 @@
 //! places these values there is called a [`Sink`] which is returned within a
 //! [`SinkHandle`] from the deserializer.
 //!
-//! If you can get away with stateless deserialization you can avoid an
-//! allocation by using a newtype wrapper around `Option<T>`.  You can
-//! get such a wrapper by using the
-//! [`make_slot_wrapper`](crate::make_slot_wrapper`) macro ([more
-//! information](https://doc.rust-lang.org/error-index.html#E0117))
-//! which will create a type [`SlotWrapper`].  Due to Rust's orphan rules
-//! you need to create your own type in your crate and you can't use the
-//! one from this module directly.  ([more
-//! information](https://doc.rust-lang.org/error-index.html#E0117)).
-//!
-//! This [`SlotWrapper`] derefs into an `Option<T>` which makes it quite
-//! convenient to use.  By calling [`SlotWrapper::make_handle`] with a slot, one
-//! can directly retrieve a [`SinkHandle`].
+//! If you can get away with stateless deserialization you can avoid
+//! allocating the sink by using a newtype wrapper around `Option<T>` as the
+//! sink.  You can get such a wrapper (a slot wrapper) by using the
+//! [`make_slot_wrapper`] macro.  Due to Rust's orphan rules ([more
+//! information](https://doc.rust-lang.org/error-index.html#E0117)) the
+//! wrapper has to be a type of your crate, which is what the macro creates.
+//! The wrapper derefs into an `Option<T>` which makes it quite convenient
+//! to use.  By calling its `make_handle` function with a slot, one can
+//! directly retrieve a [`SinkHandle`].
 //!
 //! # Streaming Deserialization
 //!
@@ -81,7 +77,7 @@
 //!
 //! To deserialize a primitive you implement a sink for your slot wrapper and
 //! implement the necessary callback.  You can do this as you do not need any
-//! state on the sink so we can use a [`SlotWrapper`].  In this example we
+//! state on the sink so we can use a slot wrapper.  In this example we
 //! want to accept a `bool` so we just need to implement the
 //! [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
 //! resulting value then must be placed in the slot:
@@ -321,8 +317,6 @@ pub enum InlineEvent {
 fn no_inline_seq() -> ! {
     panic!("the sink does not build sequences inline")
 }
-
-__make_slot_wrapper!((pub), SlotWrapper);
 
 /// A handle to a [`Sink`].
 ///
@@ -807,9 +801,10 @@ pub trait Deserialize<'de>: Sized + Send {
     /// Creates a sink that deserializes the value into the given slot.
     ///
     /// There are two typical implementations for this method: the common one is
-    /// to return a [`SlotWrapper`].  Custom types will most likely just return
-    /// that.  An alternative method is to "wrap" the deserializable in a custom
-    /// sink.
+    /// to return a slot wrapper (see [`make_slot_wrapper`]).  Custom types
+    /// will most likely just return that.  An alternative method is to
+    /// "wrap" the deserializable in a custom sink (see
+    /// [`SinkHandle::arena`]).
     fn deserialize_into<'out>(
         out: &'out mut Option<Self>,
         state: &mut State,

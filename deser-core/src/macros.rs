@@ -1,50 +1,50 @@
-/// Creates a newtype wrapper around `Option<T>`.
+/// Creates a newtype wrapper around `Option<T>` to implement sinks on.
 ///
 /// Slot wrappers are useful to implement deserialization when stateless
-/// deserialization is an option.  This way an allocation is avoided.
-/// For more information see [`de`](crate::de).  To see the generated
-/// slot wrapper API see [`SlotWrapper`](crate::de::SlotWrapper).
+/// deserialization is an option: the sink is the slot itself, which avoids
+/// allocating the sink.  Due to Rust's orphan rules the wrapper has to be a
+/// type of your crate so that you can implement
+/// [`Sink`](crate::de::Sink) for it.  For more information see
+/// [`de`](crate::de).
 ///
-/// ## Example
+/// The macro creates a crate private type with the given name:
 ///
 /// ```rust
 /// deser::make_slot_wrapper!(SlotWrapper);
 /// ```
+///
+/// This is a `#[repr(transparent)]` wrapper around `Option<T>` which
+/// dereferences to the `Option<T>` and has these functions:
+///
+/// * `SlotWrapper::wrap(out: &mut Option<T>) -> &mut SlotWrapper<T>`
+///   wraps a slot.
+/// * `SlotWrapper::make_handle(out: &mut Option<T>) -> SinkHandle<'_, 'de>`
+///   wraps a slot and returns a handle to it (if the wrapper implements
+///   [`Sink`](crate::de::Sink)), which is what
+///   [`Deserialize::deserialize_into`](crate::de::Deserialize::deserialize_into)
+///   typically returns.  This is equivalent to
+///   `SinkHandle::to(SlotWrapper::wrap(out))`.
 #[macro_export]
 macro_rules! make_slot_wrapper {
     ($name:ident) => {
-        $crate::__make_slot_wrapper!((pub(crate)), $name);
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __make_slot_wrapper {
-    (($($vis:tt)*), $name:ident) => {
-        /// The generated slot wrapper.
-        ///
-        /// Note that you need to generate your own slot wrapper by using the
-        /// [`make_slot_wrapper`] macro so you're able to implement a sink
-        /// for it.
+        /// A slot wrapper created by `make_slot_wrapper!`.
         #[repr(transparent)]
-        $($vis)* struct $name<T>(Option<T>);
+        pub(crate) struct $name<T>(Option<T>);
 
         impl<T> $name<T> {
             /// Wraps a slot transparently.
-            ///
-            /// This wraps a slot (an `Option<T>`) in a slot wrapper.  Typically
-            /// the [`make_handle`](Self::make_handle) shortcut is preferred.
-            $($vis)* fn wrap(out: &mut Option<T>) -> &mut Self {
+            #[allow(dead_code)]
+            pub(crate) fn wrap(out: &mut Option<T>) -> &mut Self {
+                // SAFETY: the wrapper is a transparent wrapper around the slot
                 unsafe { &mut *(out as *mut Option<T> as *mut $name<T>) }
             }
 
-            /// Wraps a slot transparently and returns a handle.
-            ///
-            /// This wraps a slot (an `Option<T>`) in a slot wrapper and then
-            /// returns a [`SinkHandle`] to it.
-            ///
-            /// Equivalent to `SinkHandle::to(SlotWrapper::wrap(...))`.
-            $($vis)* fn make_handle<'de>(out: &mut Option<T>) -> $crate::de::SinkHandle<'_, 'de> where $name<T>: $crate::de::Sink<'de> {
+            /// Wraps a slot transparently and returns a handle to it.
+            #[allow(dead_code)]
+            pub(crate) fn make_handle<'de>(out: &mut Option<T>) -> $crate::de::SinkHandle<'_, 'de>
+            where
+                $name<T>: $crate::de::Sink<'de>,
+            {
                 $crate::de::SinkHandle::to(Self::wrap(out))
             }
         }

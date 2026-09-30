@@ -15,6 +15,10 @@ All notable changes to deser are documented here.
   instance `from_fn(|_| sink)`) or `deser::de::deserialize_value`.
 - **Breaking:** `SinkHandle` no longer repeats the methods of `Sink` as
   inherent methods, import `deser::de::Sink` to call them.
+- **Breaking:** removed `deser::de::SlotWrapper`.  It could not be used
+  outside of deser (sinks have to be implemented for a type of your
+  crate), create a slot wrapper with `make_slot_wrapper!` instead, whose
+  documentation now describes the type it creates.
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and
