@@ -529,13 +529,10 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         T: Deserialize<'a>,
         F: FnOnce(&mut DeserializeDriver<'_, 'a>),
     {
-        let mut out = None;
-        {
-            let mut driver = DeserializeDriver::new(&mut out);
-            setup(&mut driver);
-            self.drive(&mut driver)?;
-        }
-        out.ok_or_else(|| Error::new(ErrorKind::EndOfFile, "empty input"))
+        crate::de::deserialize_value(|driver| {
+            setup(driver);
+            self.drive(driver)
+        })
     }
 
     /// Feeds the events of the ready value into a driver.

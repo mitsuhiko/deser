@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 
 use deser_core::Text;
-use deser_core::de::{self, Deserialize, DeserializeDriver};
-use deser_core::de::{MakeSink, deserialize_value, drive_value};
+use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
 use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
@@ -102,7 +101,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_str`](crate::from_str).
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
-        deserialize_value(|make_sink| self.drive_str(s, make_sink))
+        deserialize_value(|driver| self.drive_str(s, driver))
     }
 
     /// The part of [`from_str`](Self::from_str) that does not depend on the type
@@ -110,16 +109,16 @@ impl DeserializerConfig {
     fn drive_str<'de>(
         &self,
         s: &'de str,
-        make_sink: &mut MakeSink<'_, '_, 'de>,
+        driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        drive_value(&mut Deserializer::from_str_with_config(s, self), make_sink)
+        de::Deserializer::drive(&mut Deserializer::from_str_with_config(s, self), driver)
     }
 
     /// Deserializes a value from TOML in a byte slice.
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
-        deserialize_value(|make_sink| self.drive_slice(bytes, make_sink))
+        deserialize_value(|driver| self.drive_slice(bytes, driver))
     }
 
     /// The part of [`from_slice`](Self::from_slice) that does not depend on the type
@@ -127,11 +126,11 @@ impl DeserializerConfig {
     fn drive_slice<'de>(
         &self,
         bytes: &'de [u8],
-        make_sink: &mut MakeSink<'_, '_, 'de>,
+        driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        drive_value(
+        de::Deserializer::drive(
             &mut Deserializer::from_slice_with_config(bytes, self),
-            make_sink,
+            driver,
         )
     }
 }

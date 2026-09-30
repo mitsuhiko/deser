@@ -10,6 +10,9 @@ All notable changes to deser are documented here.
   `EventSink::pause`, which only `SerializeDriver::drive_until` invokes.
   `SerializeDriver::drive_described` was removed, use `drive_sink` with a
   sink that sets `DESCRIBED`.
+- **Breaking:** removed `DeserializeDriver::from_sink` and
+  `DeserializeDriver::from_state`, use `DeserializeDriver::from_fn` (for
+  instance `from_fn(|_| sink)`) or `deser::de::deserialize_value`.
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and
@@ -25,10 +28,10 @@ All notable changes to deser are documented here.
   new `deser::ext::{Raw, RawFormat, RawFormatInfo, RawInput}`,
   `State::set_raw_format` and `Error::is_raw_request`.  See the new
   `raw-values` example.
-- Added `deser::de::{deserialize_value, drive_value, MakeSink}` to
-  implement functions like `from_str` of formats so that only the code
-  that depends on the type of the value exists once per type.  The
-  formats no longer use hidden helpers of `deser-core`.
+- Added `deser::de::deserialize_value` to implement functions like
+  `from_str` of formats so that only the code that depends on the type
+  of the value exists once per type.  The formats no longer use hidden
+  helpers of `deser-core`.
 - Added `DeserializeDriver::multimap_value` and
   `deser::de::missing_multimap_value` for formats that read a single
   value of a key of a multimap (like `deser_env::var`): collections take

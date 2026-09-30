@@ -800,7 +800,7 @@ fn test_deep_nesting() {
     let depth = if cfg!(miri) { 300 } else { 100_000 };
     let input = format!("a = {}{}", "[".repeat(depth), "]".repeat(depth));
     let mut out = None::<()>;
-    let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());
+    let mut driver = deser::de::DeserializeDriver::from_fn(|_| deser::de::SinkHandle::null());
     deser_toml::Deserializer::from_str(&input)
         .drive(&mut driver)
         .unwrap();
@@ -808,7 +808,7 @@ fn test_deep_nesting() {
     assert!(out.take().is_none());
 
     let input = format!("a = {}{}", "{b = ".repeat(depth), "}".repeat(depth));
-    let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());
+    let mut driver = deser::de::DeserializeDriver::from_fn(|_| deser::de::SinkHandle::null());
     assert!(
         deser_toml::Deserializer::from_str(&input)
             .drive(&mut driver)
@@ -816,13 +816,13 @@ fn test_deep_nesting() {
     );
 
     let input = format!("a = {}1{}", "{b = ".repeat(depth), "}".repeat(depth));
-    let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());
+    let mut driver = deser::de::DeserializeDriver::from_fn(|_| deser::de::SinkHandle::null());
     deser_toml::Deserializer::from_str(&input)
         .drive(&mut driver)
         .unwrap();
 
     let input = format!("[{}]", vec!["a"; depth].join("."));
-    let mut driver = deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::null());
+    let mut driver = deser::de::DeserializeDriver::from_fn(|_| deser::de::SinkHandle::null());
     deser_toml::Deserializer::from_str(&input)
         .drive(&mut driver)
         .unwrap();

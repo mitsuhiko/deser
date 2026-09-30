@@ -266,7 +266,7 @@ fn test_child_sinks_dropped_before_parent_is_used() {
         finished_with: None,
     };
     {
-        let mut driver = DeserializeDriver::from_sink(SinkHandle::to(&mut sink));
+        let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(&mut sink));
         driver.emit(Event::seq_start()).unwrap();
         driver.emit(1u64).unwrap();
         driver.emit(2u64).unwrap();
@@ -491,7 +491,7 @@ fn test_panics() {
 
     let mut sink = PanickingSink;
     let rv = catch_unwind(AssertUnwindSafe(|| {
-        let mut driver = DeserializeDriver::from_sink(SinkHandle::to(&mut sink));
+        let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(&mut sink));
         driver.emit(1u64).unwrap();
     }));
     assert!(rv.is_err());

@@ -1,7 +1,6 @@
 use alloc::sync::Arc;
 
-use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules};
-use deser_core::de::{MakeSink, deserialize_value, drive_value};
+use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules, deserialize_value};
 use deser_core::{Error, ErrorKind, Source};
 
 use crate::common::{Borrowing, Copying, Out, decode_utf16_text, syntax_error};
@@ -52,7 +51,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
-        deserialize_value(|make_sink| self.drive_slice(input, make_sink))
+        deserialize_value(|driver| self.drive_slice(input, driver))
     }
 
     /// The part of [`from_slice`](Self::from_slice) that does not depend on the type
@@ -60,11 +59,11 @@ impl DeserializerConfig {
     fn drive_slice<'de>(
         &self,
         input: &'de [u8],
-        make_sink: &mut MakeSink<'_, '_, 'de>,
+        driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        drive_value(
+        de::Deserializer::drive(
             &mut Deserializer::from_slice_with_config(input, self),
-            make_sink,
+            driver,
         )
     }
 }

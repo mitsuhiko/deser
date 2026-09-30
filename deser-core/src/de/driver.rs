@@ -269,19 +269,12 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         DeserializeDriver::from_fn(|state| T::deserialize_update(value, state))
     }
 
-    /// Creates a new deserializer driver from a sink.
-    ///
-    /// The sink cannot be allocated in the arena of the driver, see
-    /// [`from_fn`](Self::from_fn) for that.
-    pub fn from_sink(sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
-        DeserializeDriver::with_state(State::new(), sink, STACK_CAPACITY)
-    }
-
     /// Creates a new deserializer driver with a sink that is created with
     /// the state of the driver.
     ///
     /// This allows the sink to be allocated in the arena of the driver
-    /// (see [`SinkHandle::arena`]).
+    /// (see [`SinkHandle::arena`]).  The function can also return a sink
+    /// that exists already (for instance with [`SinkHandle::to`]).
     ///
     /// ```
     /// use deser::de::{DeserializeDriver, Recording};
@@ -303,15 +296,14 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
         // the sink in them) do not move
         let mut state = State::new();
         let sink = make(&mut state);
-        DeserializeDriver::with_state(state, sink, STACK_CAPACITY)
+        DeserializeDriver::from_state(state, sink)
     }
 
     /// Creates a driver from a state and a sink that was created with it.
-    ///
-    /// This is like [`from_fn`](Self::from_fn) for code that creates the
-    /// sink where the type is known and runs the driver in a function that
-    /// is not generic.
-    pub fn from_state(state: State, sink: SinkHandle<'a, 'de>) -> DeserializeDriver<'a, 'de> {
+    pub(crate) fn from_state(
+        state: State,
+        sink: SinkHandle<'a, 'de>,
+    ) -> DeserializeDriver<'a, 'de> {
         DeserializeDriver::with_state(state, sink, STACK_CAPACITY)
     }
 
@@ -1156,10 +1148,9 @@ fn test_sink_outlives_state() {
     // and freed with the sink (miri checks that nothing leaks)
     let orphaned = ORPHANED.with(|x| x.get());
     let mut out = None::<Vec<BTreeMap<String, u32>>>;
-    let mut driver = DeserializeDriver::from_sink(Vec::<BTreeMap<String, u32>>::deserialize_into(
-        &mut out,
-        &mut State::new(),
-    ));
+    let mut driver = DeserializeDriver::from_fn(|_| {
+        Vec::<BTreeMap<String, u32>>::deserialize_into(&mut out, &mut State::new())
+    });
     assert_eq!(ORPHANED.with(|x| x.get()), orphaned + 1);
     for event in [
         Event::seq_start(),
@@ -1180,7 +1171,7 @@ fn test_sink_outlives_state() {
     let mut owned = OwnedSink::<Vec<u32>>::deserialize(driver.state_mut());
     drop(driver);
     assert_eq!(ORPHANED.with(|x| x.get()), orphaned + 2);
-    let mut driver = DeserializeDriver::from_sink(SinkHandle::to(owned.borrow_mut()));
+    let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(owned.borrow_mut()));
     for event in [Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd] {
         driver.emit(event).unwrap();
     }

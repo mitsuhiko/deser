@@ -1,8 +1,7 @@
 use core::marker::PhantomData;
 
 use deser_core::Error;
-use deser_core::de::{self, Deserialize, DeserializeDriver};
-use deser_core::de::{MakeSink, deserialize_value, drive_value};
+use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 
 use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 
@@ -36,7 +35,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_slice`](crate::from_slice).
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
-        deserialize_value(|make_sink| self.drive_slice(input, make_sink))
+        deserialize_value(|driver| self.drive_slice(input, driver))
     }
 
     /// The part of [`from_slice`](Self::from_slice) that does not depend on
@@ -44,11 +43,11 @@ impl DeserializerConfig {
     fn drive_slice<'de>(
         &self,
         input: &'de [u8],
-        make_sink: &mut MakeSink<'_, '_, 'de>,
+        driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(input, self);
-        drive_value(&mut de, make_sink)?;
-        de.end()
+        let mut deserializer = Deserializer::from_slice_with_config(input, self);
+        de::Deserializer::drive(&mut deserializer, driver)?;
+        deserializer.end()
     }
 }
 

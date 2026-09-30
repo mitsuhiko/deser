@@ -432,7 +432,7 @@ fn test_lengths_are_passed_on() {
     let mut shape = None;
     let input = hex("9f01ff");
     let mut driver =
-        deser::de::DeserializeDriver::from_sink(deser::de::SinkHandle::heap(Shape(&mut shape)));
+        deser::de::DeserializeDriver::from_fn(|_| deser::de::SinkHandle::heap(Shape(&mut shape)));
     deser_cbor::Deserializer::from_slice(&input)
         .drive(&mut driver)
         .unwrap();

@@ -229,11 +229,8 @@ impl<'a> RawInput<'a> {
     ///
     /// The value can borrow from the input (and the data it borrows).
     pub fn deserialize<'x, T: Deserialize<'x>>(&'x self) -> Result<T, Error> {
-        crate::de::deserialize_value(|make_sink| {
-            let mut state = State::new();
-            let sink = make_sink(&mut state);
-            self.replay_raw(sink, T::__private_raw(), &mut state)
-        })
+        // the driver requests the value as raw value if `T` wants one
+        crate::de::deserialize_value(|driver| (self.format.replay)(&self.bytes, driver))
     }
 }
 
@@ -422,7 +419,7 @@ impl<'a, F: RawFormat> Raw<'a, F> {
             return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8"));
         }
         {
-            let mut driver = DeserializeDriver::from_sink(SinkHandle::null());
+            let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::null());
             (info.replay)(&bytes, &mut driver)?;
         }
         // SAFETY: the value was validated

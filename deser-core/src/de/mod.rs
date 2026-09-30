@@ -59,9 +59,8 @@
 //!
 //! The deserializers of data formats implement the [`Deserializer`] trait
 //! which feeds the events of a value into a driver.  Functions like
-//! `from_str` are implemented with [`deserialize_value`] and
-//! [`drive_value`] so that only the code that depends on the type of the
-//! value exists once per type.
+//! `from_str` are implemented with [`deserialize_value`] so that only the
+//! code that depends on the type of the value exists once per type.
 //!
 //! # Layers and Wrapped Sinks
 //!
@@ -264,7 +263,7 @@ use self::atoms::{
     default_unexpected_atom, default_value_atom,
 };
 pub use self::collect::CollectedErrors;
-pub use self::deserializer::{Deserializer, MakeSink, deserialize_value, drive_value};
+pub use self::deserializer::{Deserializer, deserialize_value};
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};

@@ -698,7 +698,7 @@ fn test_borrowed_strings() {
 
     let mut sink = Borrowed(Vec::new());
     {
-        let mut driver = DeserializeDriver::from_sink(SinkHandle::to(&mut sink));
+        let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(&mut sink));
         Deserializer::from_str(
             "[plain words, 'quoted', \"double\", 'it''s', \"esc\\n\", multi\n line]",
         )
