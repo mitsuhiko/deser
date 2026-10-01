@@ -12,7 +12,7 @@ macro_rules! begin_without_finish {
             state: &mut crate::State,
         ) -> Result<crate::ser::Begin<'a>, crate::Error> {
             let shape = Self::container_shape(value);
-            Ok(crate::ser::Begin::chunk(
+            Ok(crate::ser::Begin::emit(
                 Self::serialize(value, state)?,
                 shape,
                 false,

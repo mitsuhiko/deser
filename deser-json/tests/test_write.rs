@@ -211,14 +211,14 @@ fn test_partial_streams() {
 
 #[test]
 fn test_partial_errors() {
-    use deser::ser::Chunk;
+    use deser::ser::Emit;
     use deser::{Error, ErrorKind, State};
 
     /// Fails to serialize.
     struct Fail;
 
     impl deser::Serialize for Fail {
-        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "fail"))
         }
     }

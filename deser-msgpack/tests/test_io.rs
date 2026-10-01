@@ -236,7 +236,7 @@ fn test_feeding_bounds_the_buffer() {
 mod partial {
     use std::collections::{BTreeMap, HashMap};
 
-    use deser::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle};
+    use deser::ser::{Emit, SeqEmitter, Serialize, SerializeHandle};
     use deser::{Error, State};
     use deser_msgpack::SerializerConfig;
 
@@ -252,8 +252,8 @@ mod partial {
     }
 
     impl Serialize for Unsized {
-        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-            Ok(Chunk::seq(UnsizedEmitter(value.0.iter()), state))
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::seq(UnsizedEmitter(value.0.iter()), state))
         }
     }
 

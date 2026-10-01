@@ -38,14 +38,14 @@
 //!
 //! ```rust
 //! use deser_path::{Path, PathLayer};
-//! use deser::ser::{Serialize, SerializeDriver, Chunk};
+//! use deser::ser::{Serialize, SerializeDriver, Emit};
 //! use deser::State;
 //! use deser::Error;
 //!
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
 //!         // for as long as the `PathLayer` is added we can at any point
 //!         // request the current path from the state.
 //!         println!("{}", state.get::<Path>().unwrap());

@@ -91,7 +91,7 @@
 //! ```
 //! use deser::de::{Deserialize, Slot, default_atom};
 //! use deser::ext::{Extension, ExtValue};
-//! use deser::ser::{Chunk, Serialize};
+//! use deser::ser::{Emit, Serialize};
 //! use deser::State;
 //! use deser::{Atom, Error};
 //!
@@ -110,8 +110,8 @@
 //! }
 //!
 //! impl Serialize for Timestamp {
-//!     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-//!         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+//!     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+//!         Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
 //!     }
 //! }
 //!

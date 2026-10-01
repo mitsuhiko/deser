@@ -2,12 +2,12 @@
 use std::iter::Peekable;
 
 use deser_core::de::LexicalRules;
-use deser_core::ser::{Chunk, SerializeHandle};
+use deser_core::ser::{Emit, SerializeHandle};
 use deser_core::{Atom, ErrorKind, Event, State};
 
 use crate::de::{Source, ValueDe, unexpected_end};
 use crate::error::Error;
-use crate::ser::{Emit, EventSerializer, Events};
+use crate::ser::{EventOut, EventSerializer, Events};
 use crate::sink::{Collector, Push};
 
 struct Recorded<'de> {
@@ -92,7 +92,7 @@ enum SerBuffer {
     Events(Vec<Event<'static>>),
 }
 
-impl Emit for SerBuffer {
+impl EventOut for SerBuffer {
     fn emit(&mut self, event: Event<'_>) -> Result<(), Error> {
         match self {
             SerBuffer::Empty => {
@@ -118,7 +118,7 @@ impl Emit for SerBuffer {
 pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
     value: &T,
     state: &mut State,
-) -> Result<Chunk<'static>, deser_core::Error> {
+) -> Result<Emit<'static>, deser_core::Error> {
     let mut buffer = SerBuffer::Empty;
     value
         .serialize(EventSerializer::new(&mut buffer))
@@ -128,8 +128,8 @@ pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
             ErrorKind::Unexpected,
             "serde serializer produced no value",
         )),
-        SerBuffer::Atom(atom) => Ok(Chunk::Atom(atom)),
-        SerBuffer::Events(events) => Ok(Chunk::Forward(SerializeHandle::arena(
+        SerBuffer::Atom(atom) => Ok(Emit::Atom(atom)),
+        SerBuffer::Events(events) => Ok(Emit::Forward(SerializeHandle::arena(
             Events::new(events)?,
             state,
         ))),

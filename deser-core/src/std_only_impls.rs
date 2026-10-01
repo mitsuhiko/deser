@@ -14,17 +14,17 @@ use crate::de::impls::{Via, deserialize_via, via_handle};
 use crate::de::{Deserialize, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
-use crate::ser::{Chunk, Describe, Serialize};
+use crate::ser::{Describe, Emit, Serialize};
 use crate::{State, Text};
 
 // OnceLock
 
 /// Serializes like an `Option`: as the value if it's set, as null if not.
 impl<T: Serialize + Send> Serialize for OnceLock<T> {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         match this.get() {
             Some(value) => T::serialize(value, state),
-            None => Ok(Chunk::Atom(Atom::Null)),
+            None => Ok(Emit::Atom(Atom::Null)),
         }
     }
 
@@ -92,9 +92,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OnceLock<T> {
 impl Serialize for Path {
     begin_without_finish!();
 
-    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
         match this.to_str() {
-            Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
+            Some(value) => Ok(Emit::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
                 "path contains invalid UTF-8 characters",
@@ -106,7 +106,7 @@ impl Serialize for Path {
 impl Serialize for PathBuf {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Path::serialize(value.as_path(), state)
     }
 }
@@ -147,9 +147,9 @@ deserialize_via! {
 impl Serialize for OsStr {
     begin_without_finish!();
 
-    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
         match this.to_str() {
-            Some(value) => Ok(Chunk::Atom(Atom::Str(Text::borrowed(value)))),
+            Some(value) => Ok(Emit::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
                 ErrorKind::Unexpected,
                 "OS string contains invalid UTF-8 characters",
@@ -161,7 +161,7 @@ impl Serialize for OsStr {
 impl Serialize for OsString {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         OsStr::serialize(value.as_os_str(), state)
     }
 }

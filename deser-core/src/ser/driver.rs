@@ -9,7 +9,7 @@ use crate::arena::Buffer;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
-    Begin, BeginKind, Boxed, Chunk, ContainerShape, Erased, FIELDS_END, HandleInner, IndexedSeq,
+    Begin, BeginKind, Boxed, ContainerShape, Emit, Erased, FIELDS_END, HandleInner, IndexedSeq,
     IndexedStruct, PLAIN_BUDGET, PlainSink, Serialize, SerializeRef, StructField,
 };
 use crate::{Atom, Event, State};
@@ -80,7 +80,7 @@ enum Emitter {
     IndexedSeq(&'static dyn IndexedSeq, usize),
     /// A struct with the index of the next field.
     IndexedStruct(&'static dyn IndexedStruct, usize),
-    /// A value that forwarded to another value (see [`Chunk::Forward`]).
+    /// A value that forwarded to another value (see [`Emit::Forward`]).
     ///
     /// The frame holds the value while the forwarded value (which can
     /// borrow from it) is serialized.  It does not emit events and it's
@@ -394,11 +394,11 @@ fn field_key() -> SerializeRef<'static> {
     SerializeRef::new(&FIELD_KEY)
 }
 
-/// Serializes a plain value into a chunk, for when every value is driven
+/// Serializes a plain value into an `Emit`, for when every value is driven
 /// on its own.
 #[inline(never)]
-fn plain_chunk<'x>(plain: SerializeRef<'x>, state: &mut State) -> Result<BeginKind<'x>, Error> {
-    Ok(BeginKind::Chunk(plain.serialize(state)?))
+fn serialize_plain<'x>(plain: SerializeRef<'x>, state: &mut State) -> Result<BeginKind<'x>, Error> {
+    Ok(BeginKind::Emit(plain.serialize(state)?))
 }
 
 /// Delivers the events of plain values (see [`PlainSink`]).
@@ -534,7 +534,7 @@ impl<'a> SerializeDriver<'a> {
         };
         self.delivered = rv.is_some();
         // The event and the value borrow from the values held by the driver
-        // but never from the state (serializables cannot return chunks
+        // but never from the state (serializables cannot return `Emit`s
         // borrowing from it), which is why the state can be handed out
         // mutably.
         Ok(rv.map(|(event, value)| (event, value, &mut self.state)))
@@ -903,26 +903,24 @@ impl<'a> SerializeDriver<'a> {
             {
                 return plain.emit_plain(&mut PlainDelivery { driver: self, f });
             }
-            BeginKind::Plain(plain) => plain_chunk(plain, &mut self.state)?,
+            BeginKind::Plain(plain) => serialize_plain(plain, &mut self.state)?,
             kind => kind,
         };
         let (emitter, event) = match kind {
-            BeginKind::Chunk(Chunk::Atom(atom)) => {
+            BeginKind::Emit(Emit::Atom(atom)) => {
                 self.deliver(f, Event::Atom(atom), serializable)?;
                 if needs_finish {
                     serializable.finish(&mut self.state)?;
                 }
                 return Ok(());
             }
-            BeginKind::Chunk(Chunk::Struct(emitter)) => {
+            BeginKind::Emit(Emit::Struct(emitter)) => {
                 (Emitter::Struct(emitter), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Map(emitter)) => {
+            BeginKind::Emit(Emit::Map(emitter)) => {
                 (Emitter::Map(emitter, false), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Seq(emitter)) => {
-                (Emitter::Seq(emitter), Event::SeqStart(shape))
-            }
+            BeginKind::Emit(Emit::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart(shape)),
             // callbacks that describe values need to see every value
             BeginKind::Struct(fields) if C::FAST => {
                 // an owned value is dropped here, not in the callee where
@@ -946,7 +944,7 @@ impl<'a> SerializeDriver<'a> {
                 return rv;
             }
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
-            BeginKind::Chunk(Chunk::Forward(forwarded)) => {
+            BeginKind::Emit(Emit::Forward(forwarded)) => {
                 let forwarded = self.push_forward(value, needs_finish, forwarded);
                 return self.drive_forwarded(forwarded, is_key, f);
             }
@@ -1203,28 +1201,26 @@ impl<'a> SerializeDriver<'a> {
             needs_finish,
         } = serializable.begin(&mut self.state)?;
         let kind = match kind {
-            BeginKind::Plain(plain) => plain_chunk(plain, &mut self.state)?,
+            BeginKind::Plain(plain) => serialize_plain(plain, &mut self.state)?,
             kind => kind,
         };
         let (emitter, event) = match kind {
-            BeginKind::Chunk(Chunk::Atom(atom)) => {
+            BeginKind::Emit(Emit::Atom(atom)) => {
                 self.needs_finish = Some((value, needs_finish));
                 return Ok(Some((Event::Atom(atom), serializable)));
             }
-            BeginKind::Chunk(Chunk::Struct(emitter)) => {
+            BeginKind::Emit(Emit::Struct(emitter)) => {
                 (Emitter::Struct(emitter), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Map(emitter)) => {
+            BeginKind::Emit(Emit::Map(emitter)) => {
                 (Emitter::Map(emitter, false), Event::MapStart(shape))
             }
-            BeginKind::Chunk(Chunk::Seq(emitter)) => {
-                (Emitter::Seq(emitter), Event::SeqStart(shape))
-            }
+            BeginKind::Emit(Emit::Seq(emitter)) => (Emitter::Seq(emitter), Event::SeqStart(shape)),
             BeginKind::Struct(fields) => {
                 (Emitter::IndexedStruct(fields, 0), Event::MapStart(shape))
             }
             BeginKind::Seq(seq) => (Emitter::IndexedSeq(seq, 0), Event::SeqStart(shape)),
-            BeginKind::Chunk(Chunk::Forward(forwarded)) => {
+            BeginKind::Emit(Emit::Forward(forwarded)) => {
                 let forwarded = self.push_forward(value, needs_finish, forwarded);
                 return self.serialize_forwarded(forwarded, is_key);
             }
@@ -1316,8 +1312,8 @@ fn test_state_mut() {
     struct Name(&'static str);
 
     impl Serialize for Name {
-        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-            Ok(Chunk::Atom(Atom::Str(
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Atom(Atom::Str(
                 if state.get::<Uppercase>().is_some_and(|x| x.0) {
                     value.0.to_uppercase().into()
                 } else {

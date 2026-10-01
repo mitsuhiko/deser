@@ -29,7 +29,7 @@ use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Bytes};
 use crate::ext::ExtValue;
 use crate::ser::{
-    Begin, Chunk, Describe, Serialize, SerializeHandle, SerializeRef, StructEmitter, Variant,
+    Begin, Describe, Emit, Serialize, SerializeHandle, SerializeRef, StructEmitter, Variant,
     VariantKind, VariantRepr,
 };
 
@@ -39,8 +39,8 @@ use crate::ser::{
 impl<T: ?Sized + Sync> Serialize for PhantomData<T> {
     begin_without_finish!();
 
-    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Null))
+    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Null))
     }
 
     fn is_optional(_value: &Self) -> bool {
@@ -76,7 +76,7 @@ macro_rules! newtype_wrapper {
     ($($ty:ident),*) => {
         $(
             impl<T: Serialize> Serialize for $ty<T> {
-                fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+                fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
                     T::serialize(&value.0, state)
                 }
 
@@ -123,7 +123,7 @@ newtype_wrapper!(Wrapping, Saturating, Reverse);
 
 /// Serializes as the inner value.
 impl<T: Serialize> Serialize for ManuallyDrop<T> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         T::serialize(value, state)
     }
 
@@ -164,7 +164,7 @@ deserialize_via! {
 
 /// Values of `Infallible` do not exist, they are never serialized.
 impl Serialize for Infallible {
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
         match *value {}
     }
 }
@@ -185,8 +185,8 @@ macro_rules! non_zero {
             impl Serialize for NonZero<$ty> {
                 begin_without_finish!();
 
-                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                    Ok(Chunk::Atom(non_zero!(@atom $atom, value.get())))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+                    Ok(Emit::Atom(non_zero!(@atom $atom, value.get())))
                 }
             }
 
@@ -233,9 +233,9 @@ macro_rules! atomic {
             impl Serialize for core::sync::atomic::$ty {
                 begin_without_finish!();
 
-                fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+                fn serialize<'a>(this: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
                     let value = this.load(core::sync::atomic::Ordering::Relaxed);
-                    Ok(Chunk::Atom(Atom::$atom(value as _)))
+                    Ok(Emit::Atom(Atom::$atom(value as _)))
                 }
             }
 
@@ -318,12 +318,12 @@ where
         describe_result(value, d);
     }
 
-    fn serialize<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Emit<'a>, Error> {
         let handle = match value {
             Ok(value) => SerializeRef::serialize_as::<TA, T>(value).into(),
             Err(err) => SerializeRef::serialize_as::<EA, E>(err).into(),
         };
-        Ok(Chunk::structure(
+        Ok(Emit::structure(
             ResultEmitter {
                 name: result_name(value),
                 value: Some(handle),
@@ -334,7 +334,7 @@ where
 
     #[inline]
     fn __private_begin<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Begin<'a>, Error> {
-        Ok(Begin::chunk(
+        Ok(Begin::emit(
             Self::serialize(value, state)?,
             crate::ContainerShape::new(),
             false,
@@ -538,8 +538,8 @@ macro_rules! parse_from_str {
             impl Serialize for $ty {
                 begin_without_finish!();
 
-                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                    Ok(Chunk::Atom(Atom::Str(Text::owned(value.to_string()))))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+                    Ok(Emit::Atom(Atom::Str(Text::owned(value.to_string()))))
                 }
             }
 
@@ -577,15 +577,15 @@ parse_from_str! {
 impl Serialize for CStr {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(Bytes::new(value.to_bytes()))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Bytes(Bytes::new(value.to_bytes()))))
     }
 }
 
 impl Serialize for CString {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         CStr::serialize(value.as_c_str(), state)
     }
 }
@@ -618,8 +618,8 @@ struct FieldsEmitter<'a, const N: usize> {
 }
 
 impl<'a, const N: usize> FieldsEmitter<'a, N> {
-    fn chunk(fields: [(&'static str, SerializeRef<'a>); N], state: &mut State) -> Chunk<'a> {
-        Chunk::structure(FieldsEmitter { fields, index: 0 }, state)
+    fn emit(fields: [(&'static str, SerializeRef<'a>); N], state: &mut State) -> Emit<'a> {
+        Emit::structure(FieldsEmitter { fields, index: 0 }, state)
     }
 }
 
@@ -641,8 +641,8 @@ impl<'a, const N: usize> StructEmitter for FieldsEmitter<'a, N> {
 impl<T: Serialize> Serialize for Range<T> {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(FieldsEmitter::chunk(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(FieldsEmitter::emit(
             [
                 ("start", SerializeRef::new(&value.start)),
                 ("end", SerializeRef::new(&value.end)),
@@ -656,8 +656,8 @@ impl<T: Serialize> Serialize for Range<T> {
 impl<T: Serialize> Serialize for RangeInclusive<T> {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(FieldsEmitter::chunk(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(FieldsEmitter::emit(
             [
                 ("start", SerializeRef::new(value.start())),
                 ("end", SerializeRef::new(value.end())),
@@ -671,8 +671,8 @@ impl<T: Serialize> Serialize for RangeInclusive<T> {
 impl<T: Serialize> Serialize for RangeFrom<T> {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(FieldsEmitter::chunk(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(FieldsEmitter::emit(
             [("start", SerializeRef::new(&value.start))],
             state,
         ))
@@ -683,8 +683,8 @@ impl<T: Serialize> Serialize for RangeFrom<T> {
 impl<T: Serialize> Serialize for RangeTo<T> {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(FieldsEmitter::chunk(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(FieldsEmitter::emit(
             [("end", SerializeRef::new(&value.end))],
             state,
         ))
@@ -868,15 +868,15 @@ impl<T: Serialize> Serialize for Bound<T> {
         d.variant(&Variant::new("Bound", name, kind, VariantRepr::External));
     }
 
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match this {
             Bound::Included(value) => {
-                FieldsEmitter::chunk([("Included", SerializeRef::new(value))], state)
+                FieldsEmitter::emit([("Included", SerializeRef::new(value))], state)
             }
             Bound::Excluded(value) => {
-                FieldsEmitter::chunk([("Excluded", SerializeRef::new(value))], state)
+                FieldsEmitter::emit([("Excluded", SerializeRef::new(value))], state)
             }
-            Bound::Unbounded => Chunk::Atom(Atom::Str(Text::borrowed("Unbounded"))),
+            Bound::Unbounded => Emit::Atom(Atom::Str(Text::borrowed("Unbounded"))),
         })
     }
 }

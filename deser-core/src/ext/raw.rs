@@ -10,7 +10,7 @@ use crate::de::{Deserialize, DeserializeDriver, RecordBuf, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{BorrowedExtension, ExtValue};
-use crate::ser::{Chunk, Serialize, SerializeHandle, SerializeRef};
+use crate::ser::{Emit, Serialize, SerializeHandle, SerializeRef};
 
 /// A data format whose encoded values can be held by [`Raw`].
 ///
@@ -345,13 +345,13 @@ impl BorrowedExtension for RawInput<'static> {
 ///
 /// The input is passed on as extension value if the serializer writes its
 /// format as it is, otherwise the value is parsed and serialized.
-fn serialize_input<'a>(input: &'a RawInput<'_>, state: &mut State) -> Result<Chunk<'a>, Error> {
+fn serialize_input<'a>(input: &'a RawInput<'_>, state: &mut State) -> Result<Emit<'a>, Error> {
     if state.accepts_raw(input.format) {
-        return Ok(Chunk::Atom(Atom::Ext(
-            ExtValue::borrowed_value::<RawInput>(input),
-        )));
+        return Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed_value::<RawInput>(
+            input,
+        ))));
     }
-    Ok(Chunk::Forward(SerializeHandle::arena(
+    Ok(Emit::Forward(SerializeHandle::arena(
         input.record()?,
         state,
     )))
@@ -364,13 +364,13 @@ fn serialize_input<'a>(input: &'a RawInput<'_>, state: &mut State) -> Result<Chu
 pub(crate) fn serialize_recorded_atom<'a>(
     atom: &'a Atom<'_>,
     state: &mut State,
-) -> Result<Chunk<'a>, Error> {
+) -> Result<Emit<'a>, Error> {
     if let Atom::Ext(ext) = atom
         && let Some(input) = ext.downcast_value_ref::<RawInput>()
     {
         return serialize_input(input, state);
     }
-    Ok(Chunk::Atom(atom.as_borrowed()))
+    Ok(Emit::Atom(atom.as_borrowed()))
 }
 
 /// A value encoded in the format `F`.
@@ -555,7 +555,7 @@ impl<F: RawFormat> core::hash::Hash for Raw<'_, F> {
 /// Serialized with the format `F`, the encoded value is written as it is.
 /// Other formats serialize the value it holds.
 impl<F: RawFormat> Serialize for Raw<'_, F> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         serialize_input(&value.input, state)
     }
 }
@@ -641,7 +641,7 @@ impl<'de: 'a, 'a, F: RawFormat> Deserialize<'de, Raw<'a, F>> for Borrowed {
 }
 
 impl<'a, F: RawFormat> Serialize<Raw<'a, F>> for Borrowed {
-    fn serialize<'x>(value: &'x Raw<'a, F>, state: &mut State) -> Result<Chunk<'x>, Error> {
+    fn serialize<'x>(value: &'x Raw<'a, F>, state: &mut State) -> Result<Emit<'x>, Error> {
         <Raw<'a, F>>::serialize(value, state)
     }
 }

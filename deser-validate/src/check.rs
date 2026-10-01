@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use deser_core::adapters::Same;
 use deser_core::de::{OwnedSink, Sink, SinkHandle, checked_update};
-use deser_core::ser::{Chunk, Describe};
+use deser_core::ser::{Describe, Emit};
 use deser_core::{Atom, ContainerShape, Deserialize, Error, Serialize, State};
 
 use crate::{Validator, Violation};
@@ -172,7 +172,7 @@ fn validate_slot<T, V: Validator<T>>(slot: &mut Option<T>) -> Result<(), Error> 
 }
 
 impl<T: ?Sized, V: 'static, A: Serialize<T>> Serialize<T> for Check<V, A> {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         A::serialize(value, state)
     }
 

@@ -19,7 +19,7 @@ use crate::de::{Deserialize, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::impls::serialize_slice;
-use crate::ser::{Chunk, Serialize, plain_atom};
+use crate::ser::{Emit, Serialize, plain_atom};
 
 serialize_slice! {
     [T: Sync, A: Serialize<T>, const CAP: usize] ArrayVec<T, CAP> => ArrayVec<A, CAP>, A;
@@ -113,8 +113,8 @@ impl<const CAP: usize> Serialize for ArrayString<CAP> {
     begin_without_finish!();
     plain_atom!(|v| Atom::Str(Text::borrowed(v.as_str())));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Text::borrowed(value.as_str()))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Str(Text::borrowed(value.as_str()))))
     }
 }
 

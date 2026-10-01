@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::known::invalid;
 use crate::ext::{BorrowedExtension, ExtValue};
-use crate::ser::{Chunk, Serialize};
+use crate::ser::{Emit, Serialize};
 
 /// A number literal from a text format.
 ///
@@ -162,8 +162,8 @@ impl BorrowedExtension for Number<'static> {
 }
 
 impl<'a> Serialize for Number<'a> {
-    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed_value::<Number>(
+    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed_value::<Number>(
             value,
         ))))
     }

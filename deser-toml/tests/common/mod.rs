@@ -4,7 +4,7 @@
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle, default_atom};
 use deser::ext::ExtValue;
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::{Atom, Error, Text};
 use deser_toml::{Datetime, Offset};
 
@@ -294,18 +294,18 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 }
 
 impl Serialize for Value {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match *this {
-            Value::Str(ref value) => Chunk::Atom(Atom::Str(Text::borrowed(value))),
+            Value::Str(ref value) => Emit::Atom(Atom::Str(Text::borrowed(value))),
             Value::Int(value) => match i64::try_from(value) {
-                Ok(value) => Chunk::Atom(Atom::I64(value)),
-                Err(_) => Chunk::Atom(Atom::U64(value as u64)),
+                Ok(value) => Emit::Atom(Atom::I64(value)),
+                Err(_) => Emit::Atom(Atom::U64(value as u64)),
             },
-            Value::Float(value) => Chunk::Atom(Atom::F64(value)),
-            Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
-            Value::Datetime(ref value) => Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))),
-            Value::Array(ref items) => Chunk::seq(ArrayEmitter(items.iter()), state),
-            Value::Table(ref items) => Chunk::map(
+            Value::Float(value) => Emit::Atom(Atom::F64(value)),
+            Value::Bool(value) => Emit::Atom(Atom::Bool(value)),
+            Value::Datetime(ref value) => Emit::Atom(Atom::Ext(ExtValue::borrowed(value))),
+            Value::Array(ref items) => Emit::seq(ArrayEmitter(items.iter()), state),
+            Value::Table(ref items) => Emit::map(
                 TableEmitter {
                     iter: items.iter(),
                     value: None,

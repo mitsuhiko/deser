@@ -339,7 +339,7 @@ fn no_inline_seq() -> ! {
 /// Unlike the [`SerializeHandle`](crate::ser::SerializeHandle) of
 /// serialization, which holds a value that is not serialized yet, this
 /// holds a sink that is already deserializing a value.  The serialization
-/// equivalent of a sink is an emitter in a [`Chunk`](crate::ser::Chunk).
+/// equivalent of a sink is an emitter in a [`Emit`](crate::ser::Emit).
 /// The constructors line up: [`to`](Self::to) borrows,
 /// [`arena`](Self::arena) and [`heap`](Self::heap) own in the same way for
 /// both handles.

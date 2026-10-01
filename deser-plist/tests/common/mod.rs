@@ -4,7 +4,7 @@
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle, default_atom};
 use deser::ext::{ExtValue, Timestamp};
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::{Atom, Error};
 use deser_plist::{Format, SerializerConfig, Uid};
 
@@ -146,8 +146,8 @@ macro_rules! map {
 }
 
 impl Serialize for Value {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(match *this {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(match *this {
             Value::Null => Atom::Null,
             Value::Bool(value) => Atom::Bool(value),
             Value::U64(value) => Atom::U64(value),
@@ -159,9 +159,9 @@ impl Serialize for Value {
             Value::Date(ref value) => Atom::Ext(ExtValue::borrowed(value)),
             Value::Uid(value) => Atom::Ext(ExtValue::owned(Uid::new(value))),
             Value::Ext(ref value) => Atom::Ext(value.as_borrowed()),
-            Value::Array(ref items) => return Ok(Chunk::seq(ArrayEmitter(items.iter()), state)),
+            Value::Array(ref items) => return Ok(Emit::seq(ArrayEmitter(items.iter()), state)),
             Value::Map(ref items) => {
-                return Ok(Chunk::map(MapEntryEmitter(items.iter(), None), state));
+                return Ok(Emit::map(MapEntryEmitter(items.iter(), None), state));
             }
         }))
     }

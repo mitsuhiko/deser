@@ -1782,12 +1782,12 @@ pub(crate) fn derive_serialize(
             None => info.name.ser_handle(),
         };
         let is_unit = matches!(info.content, Content::Unit);
-        let chunk = match repr_of(info) {
+        let emit = match repr_of(info) {
             Repr::External if is_unit => match info.tag_field() {
-                Some(_) => quote! { __deser::ser::Chunk::Forward(#tag_handle) },
+                Some(_) => quote! { __deser::ser::Emit::Forward(#tag_handle) },
                 None => {
                     let atom = info.name.atom();
-                    quote! { __deser::ser::Chunk::Atom(#atom) }
+                    quote! { __deser::ser::Emit::Atom(#atom) }
                 }
             },
             Repr::External => {
@@ -1795,41 +1795,41 @@ pub(crate) fn derive_serialize(
                 match (info.tag_field(), info.name.as_str()) {
                     (None, Some(name)) => quote! {
                         __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#name, #content)]))
-                            .into_chunk(__state)
+                            .into_emit(__state)
                     },
                     _ => quote! {
-                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_chunk(__state)
+                        __deser::__derive::EntrySer::new(#tag_handle, #content).into_emit(__state)
                     },
                 }
             }
             Repr::Internal { tag } => match info.content {
                 Content::Unit => quote! {
                     __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
-                        .into_chunk(__state)
+                        .into_emit(__state)
                 },
                 Content::Struct(_) => {
                     let fields = fields_ser(info, container_attrs, Some((tag, tag_handle)))?;
-                    quote! { #fields.into_chunk(__state) }
+                    quote! { #fields.into_emit(__state) }
                 }
                 Content::Newtype(idx) => {
                     let inner = info.fields[idx].ser_value();
                     quote! {
-                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_chunk(__state)
+                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #inner).into_emit(__state)
                     }
                 }
                 Content::Adapted(_) => match info.adapted_value().unwrap() {
                     (value, true) => quote! {
-                        __deser::__derive::TaggedContent::new(#tag, #tag_handle, #value).into_chunk(__state)
+                        __deser::__derive::TaggedContent::new(#tag, #tag_handle, #value).into_emit(__state)
                     },
                     (value, false) => quote! {
-                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #value).into_chunk(__state)
+                        __deser::__derive::TaggedNewtype::new(#tag, #tag_handle, #value).into_emit(__state)
                     },
                 },
                 Content::Tuple(_) => unreachable!(),
             },
             Repr::Adjacent { tag, .. } if is_unit => quote! {
                 __deser::__derive::FieldsSer(__deser::__derive::Vec::from([(#tag, #tag_handle)]))
-                    .into_chunk(__state)
+                    .into_emit(__state)
             },
             Repr::Adjacent { tag, content } => {
                 let content_handle = content_handle(info, container_attrs)?;
@@ -1838,18 +1838,18 @@ pub(crate) fn derive_serialize(
                         (#tag, #tag_handle),
                         (#content, #content_handle),
                     ]))
-                    .into_chunk(__state)
+                    .into_emit(__state)
                 }
             }
             Repr::Untagged => match info.content {
-                Content::Unit => quote! { __deser::ser::Chunk::Atom(__deser::Atom::Null) },
+                Content::Unit => quote! { __deser::ser::Emit::Atom(__deser::Atom::Null) },
                 Content::Newtype(idx) => {
                     let value = info.fields[idx].ser_value();
                     quote! { #value.serialize(__state)? }
                 }
                 Content::Adapted(_) => match info.adapted_value().unwrap() {
                     (value, true) => quote! {
-                        __deser::ser::Chunk::Forward(__deser::ser::SerializeHandle::arena(#value, __state))
+                        __deser::ser::Emit::Forward(__deser::ser::SerializeHandle::arena(#value, __state))
                     },
                     (value, false) => {
                         quote! { #value.serialize(__state)? }
@@ -1859,16 +1859,16 @@ pub(crate) fn derive_serialize(
                     let handles = info.content_handles();
                     quote! {
                         __deser::__derive::SeqSer(__deser::__derive::Vec::from([#(#handles),*]))
-                            .into_chunk(__state)
+                            .into_emit(__state)
                     }
                 }
                 Content::Struct(_) => {
                     let fields = fields_ser(info, container_attrs, None)?;
-                    quote! { #fields.into_chunk(__state) }
+                    quote! { #fields.into_emit(__state) }
                 }
             },
         };
-        arms.push(quote! { #pattern => #chunk, });
+        arms.push(quote! { #pattern => #emit, });
     }
 
     let ser_trait = crate::forward::serialize_trait(container_attrs);
@@ -1889,7 +1889,7 @@ pub(crate) fn derive_serialize(
                 fn serialize<'__a>(
                     __value: &'__a Self,
                     __state: &mut __deser::State,
-                ) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                ) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
                     __deser::__derive::Ok(match *__value {
                         #(#arms)*
                     })

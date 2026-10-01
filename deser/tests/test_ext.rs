@@ -1,7 +1,7 @@
 use deser::State;
 use deser::de::{DeserializeDriver, DeserializeOwned, Slot, default_atom};
 use deser::ext::{ExtValue, Extension};
-use deser::ser::{Chunk, SerializeDriver};
+use deser::ser::{Emit, SerializeDriver};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -52,8 +52,8 @@ impl Extension for Timestamp {
 }
 
 impl Serialize for Timestamp {
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
     }
 }
 

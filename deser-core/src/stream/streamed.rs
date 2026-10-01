@@ -7,7 +7,7 @@ use crate::State;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, Serialize};
+use crate::ser::{Begin, Describe, Emit, Serialize};
 
 /// A sequence whose elements can be handed out while it's read.
 ///
@@ -156,7 +156,7 @@ impl<T> DerefMut for Streamed<T> {
 }
 
 impl<T: Serialize> Serialize for Streamed<T> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Vec::<T>::serialize(&value.items, state)
     }
 

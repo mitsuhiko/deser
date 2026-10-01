@@ -155,7 +155,7 @@ fn test_simple_values() {
 fn test_extension_fallback() {
     use deser::State;
     use deser::ext::{ExtValue, Extension};
-    use deser::ser::Chunk;
+    use deser::ser::Emit;
     use deser::{Atom, Error};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -172,8 +172,8 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
         }
     }
 
@@ -377,7 +377,7 @@ impl Serialize for Liar {
     fn serialize<'a>(
         _value: &'a Self,
         state: &mut deser::State,
-    ) -> Result<deser::ser::Chunk<'a>, deser::Error> {
+    ) -> Result<deser::ser::Emit<'a>, deser::Error> {
         struct Emitter(usize);
         impl deser::ser::SeqEmitter for Emitter {
             fn next(
@@ -392,7 +392,7 @@ impl Serialize for Liar {
                 })
             }
         }
-        Ok(deser::ser::Chunk::seq(Emitter(2), state))
+        Ok(deser::ser::Emit::seq(Emitter(2), state))
     }
 
     fn container_shape(value: &Self) -> deser::ContainerShape {

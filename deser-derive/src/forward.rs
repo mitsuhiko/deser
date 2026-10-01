@@ -257,7 +257,7 @@ pub(crate) fn derive_serialize(
             impl #impl_generics __deser::Serialize for #ident #ty_generics #where_clause {
                 #[inline]
                 fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Chunk<'__a>>
+                    -> __deser::__derive::Result<__deser::ser::Emit<'__a>>
                 {
                     #adapter::serialize(__value, __state)
                 }

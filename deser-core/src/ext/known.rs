@@ -171,8 +171,8 @@ macro_rules! impl_well_known {
             fn serialize<'a>(
                 value: &'a Self,
                 _state: &mut $crate::State,
-            ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                Ok($crate::ser::Chunk::Atom($crate::Atom::Ext(
+            ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
+                Ok($crate::ser::Emit::Atom($crate::Atom::Ext(
                     $crate::ext::ExtValue::borrowed(value),
                 )))
             }
@@ -202,8 +202,8 @@ macro_rules! impl_bridge {
                 fn serialize<'a>(
                     value: &'a Self,
                     _state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    $crate::ext::known::Bridge::serialize_atom(value).map($crate::ser::Chunk::Atom)
+                ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
+                    $crate::ext::known::Bridge::serialize_atom(value).map($crate::ser::Emit::Atom)
                 }
 
             }

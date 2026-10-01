@@ -2,14 +2,14 @@
 
 use deser_core::Text;
 use deser_core::ext::ExtValue;
-use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser_core::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser_core::{Atom, Bytes, ContainerShape, ErrorKind, Event, State};
 use serde::ser::{self, Impossible};
 
 use crate::error::Error;
 
 /// Receives the events produced by the [`EventSerializer`].
-pub(crate) trait Emit {
+pub(crate) trait EventOut {
     fn emit(&mut self, event: Event<'_>) -> Result<(), Error>;
 }
 
@@ -27,7 +27,7 @@ pub(crate) struct EventSerializer<'e, E: ?Sized> {
     out: &'e mut E,
 }
 
-impl<'e, E: Emit + ?Sized> EventSerializer<'e, E> {
+impl<'e, E: EventOut + ?Sized> EventSerializer<'e, E> {
     pub(crate) fn new(out: &'e mut E) -> EventSerializer<'e, E> {
         EventSerializer { out }
     }
@@ -44,7 +44,7 @@ impl<'e, E: Emit + ?Sized> EventSerializer<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::Serializer for EventSerializer<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::Serializer for EventSerializer<'e, E> {
     type Ok = ();
     type Error = Error;
     type SerializeSeq = Compound<'e, E>;
@@ -227,7 +227,7 @@ pub(crate) struct Compound<'e, E: ?Sized> {
     variant: bool,
 }
 
-impl<'e, E: Emit + ?Sized> Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> Compound<'e, E> {
     fn new(out: &'e mut E, variant: bool) -> Compound<'e, E> {
         Compound { out, variant }
     }
@@ -245,7 +245,7 @@ impl<'e, E: Emit + ?Sized> Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeSeq for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeSeq for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -258,7 +258,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeSeq for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeTuple for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeTuple for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -271,7 +271,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeTuple for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeTupleStruct for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeTupleStruct for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -284,7 +284,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeTupleStruct for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeTupleVariant for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeTupleVariant for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -297,7 +297,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeTupleVariant for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeMap for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeMap for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -314,7 +314,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeMap for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeStruct for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeStruct for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -332,7 +332,7 @@ impl<'e, E: Emit + ?Sized> ser::SerializeStruct for Compound<'e, E> {
     }
 }
 
-impl<'e, E: Emit + ?Sized> ser::SerializeStructVariant for Compound<'e, E> {
+impl<'e, E: EventOut + ?Sized> ser::SerializeStructVariant for Compound<'e, E> {
     type Ok = ();
     type Error = Error;
 
@@ -478,8 +478,8 @@ impl Events {
 }
 
 impl Serialize for Events {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
-        EventsValue(&value.0).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, deser_core::Error> {
+        EventsValue(&value.0).emit(state)
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
@@ -512,14 +512,14 @@ fn value_len(events: &[Event<'static>]) -> usize {
 struct EventsValue<'a>(&'a [Event<'static>]);
 
 impl<'a> EventsValue<'a> {
-    fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+    fn emit(&self, state: &mut State) -> Result<Emit<'a>, deser_core::Error> {
         let events = self.0;
         // the content is everything between the start and the end event
         let content = events.get(1..events.len().saturating_sub(1)).unwrap_or(&[]);
         Ok(match events.first() {
-            Some(Event::Atom(atom)) => Chunk::Atom(atom.as_borrowed()),
-            Some(Event::MapStart(_)) => Chunk::map(EventsEmitter::new(content), state),
-            Some(Event::SeqStart(_)) => Chunk::seq(EventsEmitter::new(content), state),
+            Some(Event::Atom(atom)) => Emit::Atom(atom.as_borrowed()),
+            Some(Event::MapStart(_)) => Emit::map(EventsEmitter::new(content), state),
+            Some(Event::SeqStart(_)) => Emit::seq(EventsEmitter::new(content), state),
             _ => return Err(malformed()),
         })
     }
@@ -533,8 +533,8 @@ impl<'a> EventsValue<'a> {
 }
 
 impl Serialize for EventsValue<'_> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
-        value.chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, deser_core::Error> {
+        value.emit(state)
     }
 
     fn container_shape(value: &Self) -> ContainerShape {

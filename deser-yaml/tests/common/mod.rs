@@ -4,7 +4,7 @@
 use deser::State;
 use deser::de::{Deserialize, Sink, SinkHandle, default_atom};
 use deser::ext::ExtValue;
-use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::{Atom, Bytes, Error};
 
 /// A dynamic YAML value.
@@ -217,22 +217,22 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
 }
 
 impl Serialize for Value {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match *this {
-            Value::Null => Chunk::Atom(Atom::Null),
-            Value::Bool(value) => Chunk::Atom(Atom::Bool(value)),
-            Value::Int(ref value) => Chunk::Atom(if let Ok(value) = u64::try_from(*value) {
+            Value::Null => Emit::Atom(Atom::Null),
+            Value::Bool(value) => Emit::Atom(Atom::Bool(value)),
+            Value::Int(ref value) => Emit::Atom(if let Ok(value) = u64::try_from(*value) {
                 Atom::U64(value)
             } else if let Ok(value) = i64::try_from(*value) {
                 Atom::I64(value)
             } else {
                 Atom::Ext(ExtValue::borrowed(value))
             }),
-            Value::Float(value) => Chunk::Atom(Atom::F64(value)),
-            Value::Str(ref value) => Chunk::Atom(Atom::Str(value.as_str().into())),
-            Value::Bytes(ref value) => Chunk::Atom(Atom::Bytes(Bytes::borrowed(value))),
-            Value::Seq(ref items) => Chunk::seq(ValueSeqEmitter(items.iter()), state),
-            Value::Map(ref items) => Chunk::map(ValueMapEmitter(items.iter(), None), state),
+            Value::Float(value) => Emit::Atom(Atom::F64(value)),
+            Value::Str(ref value) => Emit::Atom(Atom::Str(value.as_str().into())),
+            Value::Bytes(ref value) => Emit::Atom(Atom::Bytes(Bytes::borrowed(value))),
+            Value::Seq(ref items) => Emit::seq(ValueSeqEmitter(items.iter()), state),
+            Value::Map(ref items) => Emit::map(ValueMapEmitter(items.iter(), None), state),
             Value::Tagged(ref tag, ref value) => {
                 deser_yaml::set_tag(state, tag.as_str());
                 return Value::serialize(value, state);

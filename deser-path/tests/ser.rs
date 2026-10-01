@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use deser::State;
-use deser::ser::{Chunk, Serialize, SerializeDriver};
+use deser::ser::{Emit, Serialize, SerializeDriver};
 use deser::{Atom, Error, ErrorKind};
 use deser_path::{Path, PathLayer};
 
@@ -21,10 +21,10 @@ fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
 struct MyBool(bool);
 
 impl Serialize for MyBool {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         let path = state.get::<Path>().unwrap();
         assert_eq!(path.segments().len(), 2);
-        Ok(Chunk::Atom(Atom::Bool(value.0)))
+        Ok(Emit::Atom(Atom::Bool(value.0)))
     }
 }
 
@@ -123,7 +123,7 @@ fn test_error_path() {
     struct Fails;
 
     impl Serialize for Fails {
-        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "cannot serialize"))
         }
     }

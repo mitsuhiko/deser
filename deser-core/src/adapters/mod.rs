@@ -157,7 +157,7 @@
 //! ```
 //! use std::borrow::Cow;
 //! use deser::de::{Slot, default_atom};
-//! use deser::ser::Chunk;
+//! use deser::ser::Emit;
 //! use deser::{Atom, Deserialize, Error, ErrorKind, Serialize, State};
 //!
 //! pub struct Hex;
@@ -166,10 +166,10 @@
 //!     fn serialize<'a>(
 //!         value: &'a Vec<u8>,
 //!         _state: &mut State,
-//!     ) -> Result<Chunk<'a>, Error> {
+//!     ) -> Result<Emit<'a>, Error> {
 //!         let hex: String =
 //!             value.iter().map(|x| format!("{:02x}", x)).collect();
-//!         Ok(Chunk::Atom(Atom::Str(hex.into())))
+//!         Ok(Emit::Atom(Atom::Str(hex.into())))
 //!     }
 //! }
 //!
@@ -226,7 +226,7 @@ use crate::State;
 use crate::de::{Deserialize, InlineSeq, OwnedSink, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
+use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 
 pub(crate) mod bytes;
 mod derived;
@@ -369,7 +369,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de, T> for Same {
 
 impl<T: Serialize + ?Sized> Serialize<T> for Same {
     #[inline]
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         T::serialize(value, state)
     }
 
@@ -593,7 +593,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de> for As<T, A> {
 
 impl<T: Sync, A: Serialize<T>> Serialize for As<T, A> {
     #[inline]
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         A::serialize(&value.value, state)
     }
 

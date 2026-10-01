@@ -4,7 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::ser::{Describe, Emit, Serialize};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, State};
 use deser_location::Locations;
 
@@ -408,10 +408,10 @@ fn report_error(err: Error, state: &mut State) -> Error {
 }
 
 impl<T: Serialize, V> Serialize for Validated<T, V> {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         match this.value {
             Some(ref value) => T::serialize(value, state),
-            None => Ok(Chunk::Atom(Atom::Null)),
+            None => Ok(Emit::Atom(Atom::Null)),
         }
     }
 

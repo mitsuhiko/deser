@@ -7,7 +7,7 @@ use crate::State;
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::ser::boxed::{self, Boxed};
-use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
+use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 
 /// A value that serializes with an adapter.
 ///
@@ -61,7 +61,7 @@ impl<A, T> Adapted<A, T> {
 /// This is the trait object behind [`SerializeRef`] and
 /// [`SerializeHandle`], it's implemented for [`Adapted`].
 pub(crate) trait Erased: Sync {
-    fn erased_serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error>;
+    fn erased_serialize(&self, state: &mut State) -> Result<Emit<'_>, Error>;
     fn erased_finish(&self, state: &mut State) -> Result<(), Error>;
     fn erased_is_optional(&self) -> bool;
     fn erased_container_shape(&self) -> ContainerShape;
@@ -74,7 +74,7 @@ pub(crate) trait Erased: Sync {
 
 impl<A: Serialize<T>, T: ?Sized + Sync> Erased for Adapted<A, T> {
     #[inline]
-    fn erased_serialize(&self, state: &mut State) -> Result<Chunk<'_>, Error> {
+    fn erased_serialize(&self, state: &mut State) -> Result<Emit<'_>, Error> {
         A::serialize(&self.value, state)
     }
 
@@ -202,7 +202,7 @@ impl<'a> SerializeRef<'a> {
 
     /// Serializes the value (see [`Serialize::serialize`]).
     #[inline]
-    pub fn serialize(self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    pub fn serialize(self, state: &mut State) -> Result<Emit<'a>, Error> {
         self.value.erased_serialize(state)
     }
 
@@ -272,7 +272,7 @@ impl<'a, T: Serialize> From<&'a T> for SerializeRef<'a> {
 
 impl Serialize for SerializeRef<'_> {
     #[inline]
-    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
+    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
         value.serialize(state)
     }
 
@@ -327,7 +327,7 @@ impl Serialize for SerializeRef<'_> {
 /// Unlike the [`SinkHandle`](crate::de::SinkHandle) of deserialization,
 /// which holds a sink that is already deserializing a value, this holds a
 /// value that is not serialized yet.  The serialization equivalent of a
-/// sink is an emitter in a [`Chunk`].  The constructors line up:
+/// sink is an emitter in a [`Emit`].  The constructors line up:
 /// [`to`](Self::to) borrows, [`arena`](Self::arena) and
 /// [`heap`](Self::heap) own in the same way for both handles.
 pub struct SerializeHandle<'a>(pub(crate) HandleInner<'a>);
@@ -349,7 +349,7 @@ impl<'a> SerializeHandle<'a> {
     /// Creates an owned handle to a value in the arena of the state.
     ///
     /// This is how owned values are typically created (for instance for
-    /// [`Chunk::Forward`]), see [`Boxed`].
+    /// [`Emit::Forward`]), see [`Boxed`].
     #[inline(always)]
     pub fn arena<S: Serialize + Send + 'a>(value: S, state: &mut State) -> SerializeHandle<'a> {
         SerializeHandle(HandleInner::Owned(boxed::unsize(
@@ -393,7 +393,7 @@ impl fmt::Debug for SerializeHandle<'_> {
 
 impl Serialize for SerializeHandle<'_> {
     #[inline]
-    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
+    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
         value.get().serialize(state)
     }
 

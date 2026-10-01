@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use deser::State;
 use deser::de::{DeserializeDriver, DeserializeOwned, OwnedSink, Sink, SinkHandle};
-use deser::ser::{Chunk, SerializeDriver, SerializeHandle, StructEmitter};
+use deser::ser::{Emit, SerializeDriver, SerializeHandle, StructEmitter};
 use deser::{Atom, Deserialize, Error, Event, Serialize};
 
 fn depth() -> usize {
@@ -399,8 +399,8 @@ struct BufferEmitter<'a> {
 struct Nested(usize);
 
 impl Serialize for Nested {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::structure(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::structure(
             BufferEmitter {
                 depth: value.0,
                 index: 0,
@@ -453,7 +453,7 @@ fn test_borrowed_keys_across_reallocation() {
 struct Panicking;
 
 impl Serialize for Panicking {
-    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
         panic!("serialize panicked");
     }
 }

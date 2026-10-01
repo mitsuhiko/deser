@@ -1,8 +1,8 @@
 //! Generic data structure serialization framework.
 //!
 //! Serialization in deser is based on the [`Serialize`] trait which produces
-//! [`Chunk`] objects.  A serializable object walks an object and produces either
-//! an atomic chunk or a chunk containing an emitter which yields further values.
+//! [`Emit`] values.  A serializable value either emits an atom or an emitter
+//! which yields further values.
 //!
 //! # Streaming Serialization
 //!
@@ -34,33 +34,33 @@
 //! # Serializing Primitives
 //!
 //! Primitive values such as integers are trivial to serialize as you just
-//! directly return the right type of [`Chunk`] from the serialization method.
+//! directly return the right type of [`Emit`] from the serialization method.
 //!
 //! ```rust
-//! use deser::ser::{Serialize, Chunk};
+//! use deser::ser::{Serialize, Emit};
 //! use deser::State;
 //! use deser::{Atom, Error};
 //!
 //! struct MyInt(u32);
 //!
 //! impl Serialize for MyInt {
-//!     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+//!     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
 //!         // one can also just do `u32::serialize(&value.0, state)`
-//!         Ok(Chunk::Atom(Atom::U64(value.0 as u64)))
+//!         Ok(Emit::Atom(Atom::U64(value.0 as u64)))
 //!     }
 //! }
 //! ```
 //!
 //! # Serializing Structs
 //!
-//! To serialize compounds like structs you return a chunk containing an
+//! To serialize compounds like structs you return an [`Emit`] holding an
 //! emitter.  The emitter hands out the values of the fields as
 //! [`SerializeHandle`]s: a handle borrows the value if it exists already,
 //! otherwise it can own it (see [`SerializeHandle::arena`]).
 //!
 //! ```rust
 //! use std::borrow::Cow;
-//! use deser::ser::{Serialize, Chunk, StructEmitter, SerializeHandle};
+//! use deser::ser::{Serialize, Emit, StructEmitter, SerializeHandle};
 //! use deser::State;
 //! use deser::Error;
 //!
@@ -70,9 +70,9 @@
 //! }
 //!
 //! impl Serialize for User {
-//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+//!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
 //!         // the emitter is allocated in the arena of the state
-//!         Ok(Chunk::structure(UserEmitter { user: value, index: 0 }, state))
+//!         Ok(Emit::structure(UserEmitter { user: value, index: 0 }, state))
 //!     }
 //! }
 //!
@@ -108,9 +108,9 @@ use crate::event::ContainerShape;
 
 pub(crate) mod begin;
 mod boxed;
-mod chunk;
 mod describe;
 mod driver;
+mod emit;
 #[cfg(feature = "derive")]
 pub(crate) mod enums;
 #[cfg(feature = "derive")]
@@ -122,8 +122,8 @@ mod serializer;
 mod stream;
 
 pub use self::boxed::Boxed;
-pub use self::chunk::Chunk;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
+pub use self::emit::Emit;
 pub(crate) use self::handle::{Adapted, Erased, HandleInner};
 pub use self::handle::{SerializeHandle, SerializeRef};
 pub use self::layer::{Layer, Next};
@@ -176,8 +176,8 @@ pub trait SeqEmitter: Send {
 
 /// A data structure that can be serialized into any data format supported by Deser.
 ///
-/// [`serialize`](Self::serialize) serializes the value into a [`Chunk`].  For
-/// compound values like lists or structs, the chunk holds an emitter which
+/// [`serialize`](Self::serialize) serializes the value into an [`Emit`].  For
+/// compound values like lists or structs, it holds an emitter which
 /// hands out the values the compound value contains.  The
 /// [`container_shape`](Self::container_shape) of such values is passed on
 /// with the start event of the container.
@@ -191,15 +191,15 @@ pub trait SeqEmitter: Send {
 /// [`adapters`](crate::adapters)):
 ///
 /// ```
-/// use deser::ser::{Chunk, Serialize};
+/// use deser::ser::{Emit, Serialize};
 /// use deser::{Atom, Error, State};
 ///
 /// /// Serializes a `u32` as string.
 /// pub struct AsString;
 ///
 /// impl Serialize<u32> for AsString {
-///     fn serialize<'a>(value: &'a u32, _state: &mut State) -> Result<Chunk<'a>, Error> {
-///         Ok(Chunk::Atom(Atom::Str(value.to_string().into())))
+///     fn serialize<'a>(value: &'a u32, _state: &mut State) -> Result<Emit<'a>, Error> {
+///         Ok(Emit::Atom(Atom::Str(value.to_string().into())))
 ///     }
 /// }
 /// ```
@@ -219,7 +219,7 @@ pub trait SeqEmitter: Send {
 /// have to be held while the serialization moves between threads.
 pub trait Serialize<T: ?Sized = Self>: Sync {
     /// Serializes the value.
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error>;
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error>;
 
     /// Invoked after the serialization finished.
     ///
@@ -276,7 +276,7 @@ pub trait Serialize<T: ?Sized = Self>: Sync {
     #[inline]
     fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
         let shape = <Self as Serialize<T>>::container_shape(value);
-        Ok(Begin::chunk(
+        Ok(Begin::emit(
             <Self as Serialize<T>>::serialize(value, state)?,
             shape,
             true,
@@ -344,7 +344,7 @@ pub trait Serialize<T: ?Sized = Self>: Sync {
     ///
     /// This method is used by `u8` and `Vec<T>` / `&[T]` to achieve special
     /// casing of bytes for the serialization system.  It allows a vector of
-    /// bytes to be emitted as `Chunk::Bytes` rather than a `Seq`.
+    /// bytes to be emitted as `Emit::Bytes` rather than a `Seq`.
     ///
     /// Internal specialization of bytes, not public API (see `lib.rs`).
     #[doc(hidden)]

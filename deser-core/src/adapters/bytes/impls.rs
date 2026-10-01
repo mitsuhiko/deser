@@ -10,7 +10,7 @@ use crate::adapters::bytes::BytesEncoding;
 use crate::de::{Deserialize, Sink, SinkHandle, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes, ContainerShape};
-use crate::ser::{Begin, Chunk, Serialize};
+use crate::ser::{Begin, Emit, Serialize};
 
 mod sealed {
     use super::*;
@@ -224,13 +224,13 @@ macro_rules! encoding_adapter {
                 fn serialize<'a>(
                     value: &'a $ty,
                     _state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
                     let mut rv = alloc::string::String::new();
                     E::encode(
                         $crate::adapters::bytes::BytesBufImpl::bytes(value),
                         &mut rv,
                     );
-                    Ok($crate::ser::Chunk::Atom($crate::Atom::Str($crate::Text::owned(rv))))
+                    Ok($crate::ser::Emit::Atom($crate::Atom::Str($crate::Text::owned(rv))))
                 }
 
                 #[inline]
@@ -238,7 +238,7 @@ macro_rules! encoding_adapter {
                     value: &'a $ty,
                     state: &mut $crate::State,
                 ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
-                    Ok($crate::ser::Begin::chunk(
+                    Ok($crate::ser::Begin::emit(
                         Self::serialize(value, state)?,
                         $crate::ContainerShape::new(),
                         false,
@@ -307,15 +307,15 @@ pub struct BytesFallback<F>(PhantomData<fn() -> F>);
 
 impl<T: BytesBuf, F: BytesFallbackFormat> Serialize<T> for BytesFallback<F> {
     #[inline]
-    fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(
+    fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Bytes(
             Bytes::borrowed(value.bytes()).with_fallback(const { &F::FORMAT }),
         )))
     }
 
     #[inline]
     fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        Ok(Begin::chunk(
+        Ok(Begin::emit(
             Self::serialize(value, state)?,
             ContainerShape::new(),
             false,

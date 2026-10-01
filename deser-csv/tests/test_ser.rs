@@ -316,15 +316,15 @@ fn test_field_order() {
 
 #[test]
 fn test_implicit() {
-    use deser::ser::Chunk;
+    use deser::ser::Emit;
     use deser::{Atom, Error, Implicit, ImplicitValue, State};
 
     // like the plain scalars of YAML
     struct Plain(&'static str, ImplicitValue);
 
     impl Serialize for Plain {
-        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-            Ok(Chunk::Atom(Atom::Implicit(Implicit::new(value.0, value.1))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Atom(Atom::Implicit(Implicit::new(value.0, value.1))))
         }
     }
 

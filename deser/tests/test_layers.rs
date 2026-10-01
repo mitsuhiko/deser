@@ -529,7 +529,7 @@ fn test_ser_error_context() {
         fn serialize<'a>(
             _value: &'a Self,
             _state: &mut State,
-        ) -> Result<deser::ser::Chunk<'a>, Error> {
+        ) -> Result<deser::ser::Emit<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "nope"))
         }
     }

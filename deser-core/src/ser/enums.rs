@@ -10,7 +10,7 @@ use crate::event::{Atom, ContainerShape};
 use crate::ser::begin::Begin;
 use crate::ser::flatten::FlattenedStruct;
 use crate::ser::{
-    Chunk, Describe, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializeRef,
+    Describe, Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializeRef,
     StructEmitter, Variant, VariantKind, VariantRepr,
 };
 use crate::{State, Text};
@@ -30,9 +30,9 @@ impl<'a> EntrySer<'a> {
         EntrySer { key, value }
     }
 
-    /// Converts the entry into a chunk.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::map(
+    /// Converts the entry into an [`Emit`].
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::map(
             EntryEmitter {
                 entry: self,
                 index: 0,
@@ -67,9 +67,9 @@ impl<'a> MapEmitter for EntryEmitter<'a> {
 pub struct FieldsSer<'a>(pub Vec<(&'static str, SerializeHandle<'a>)>);
 
 impl<'a> FieldsSer<'a> {
-    /// Converts the fields into a chunk.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::structure(
+    /// Converts the fields into an [`Emit`].
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::structure(
             FieldsEmitter {
                 fields: self.0,
                 index: 0,
@@ -80,8 +80,8 @@ impl<'a> FieldsSer<'a> {
 }
 
 impl<'a> Serialize for FieldsSer<'a> {
-    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::structure(
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::structure(
             FieldsEmitter {
                 fields: this
                     .0
@@ -133,9 +133,9 @@ pub struct FlatFieldsSer<'a> {
 }
 
 impl<'a> FlatFieldsSer<'a> {
-    /// Converts the fields into a chunk.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::structure(
+    /// Converts the fields into an [`Emit`].
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::structure(
             FlatFieldsEmitter {
                 fields: self.fields,
                 skip_optionals: self.skip_optionals,
@@ -148,8 +148,8 @@ impl<'a> FlatFieldsSer<'a> {
 }
 
 impl<'a> Serialize for FlatFieldsSer<'a> {
-    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::structure(
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::structure(
             FlatFieldsEmitter {
                 fields: this
                     .fields
@@ -236,9 +236,9 @@ impl<'a> StructEmitter for FlatFieldsEmitter<'a> {
 pub struct SeqSer<'a>(pub Vec<SerializeHandle<'a>>);
 
 impl<'a> SeqSer<'a> {
-    /// Converts the values into a chunk.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::seq(
+    /// Converts the values into an [`Emit`].
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::seq(
             SeqValuesEmitter {
                 values: self.0,
                 index: 0,
@@ -249,8 +249,8 @@ impl<'a> SeqSer<'a> {
 }
 
 impl<'a> Serialize for SeqSer<'a> {
-    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::seq(
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::seq(
             SeqValuesEmitter {
                 values: this
                     .0
@@ -298,9 +298,9 @@ impl<'a> TaggedNewtype<'a> {
         TaggedNewtype { tag, name, inner }
     }
 
-    /// Converts the value into a chunk.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::structure(
+    /// Converts the value into an [`Emit`].
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::structure(
             TaggedNewtypeEmitter {
                 value: self,
                 content: None,
@@ -317,7 +317,7 @@ impl<'a> TaggedNewtype<'a> {
 ///
 /// This is used for the content of variants with adapters, which is a
 /// tuple of references to the fields.  It's serialized by forwarding to it
-/// (see [`Chunk::Forward`]) as the content cannot be borrowed otherwise.
+/// (see [`Emit::Forward`]) as the content cannot be borrowed otherwise.
 pub struct TaggedContent<'a, S> {
     tag: &'static str,
     name: SerializeHandle<'a>,
@@ -332,20 +332,20 @@ impl<'a, S: Serialize + Send + 'a> TaggedContent<'a, S> {
         TaggedContent { tag, name, inner }
     }
 
-    /// Converts the value into a chunk that forwards to it.
-    pub fn into_chunk(self, state: &mut State) -> Chunk<'a> {
-        Chunk::Forward(SerializeHandle::arena(self, state))
+    /// Converts the value into an [`Emit`] that forwards to it.
+    pub fn into_emit(self, state: &mut State) -> Emit<'a> {
+        Emit::Forward(SerializeHandle::arena(self, state))
     }
 }
 
 impl<S: Serialize> Serialize for TaggedContent<'_, S> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(TaggedNewtype::new(
             value.tag,
             SerializeHandle::from(value.name.get()),
             SerializeRef::new(&value.inner),
         )
-        .into_chunk(state))
+        .into_emit(state))
     }
 }
 
@@ -444,8 +444,8 @@ pub struct UnitVariants {
 
 /// Serializes the variant of a unit enum by index.
 #[inline]
-pub fn serialize_unit(variants: &UnitVariants, index: usize) -> Result<Chunk<'static>, Error> {
-    Ok(Chunk::Atom(match variants.atoms[index] {
+pub fn serialize_unit(variants: &UnitVariants, index: usize) -> Result<Emit<'static>, Error> {
+    Ok(Emit::Atom(match variants.atoms[index] {
         UnitName::Str(name) => Atom::Str(Text::borrowed(name)),
         UnitName::U64(value) => Atom::U64(value),
         UnitName::I64(value) => Atom::I64(value),
@@ -456,7 +456,7 @@ pub fn serialize_unit(variants: &UnitVariants, index: usize) -> Result<Chunk<'st
 
 /// Begins the serialization of the variant of a unit enum by index.
 pub fn begin_unit(variants: &UnitVariants, index: usize) -> Result<Begin<'static>, Error> {
-    Ok(Begin::chunk(
+    Ok(Begin::emit(
         serialize_unit(variants, index)?,
         ContainerShape::new(),
         false,

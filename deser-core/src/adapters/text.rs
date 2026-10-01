@@ -19,7 +19,7 @@ use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape};
 use crate::ext::Number;
-use crate::ser::{Begin, Chunk, Describe, Serialize};
+use crate::ser::{Begin, Describe, Emit, Serialize};
 
 /// A sequence that is written as text with a separator, like `a,b,c`.
 ///
@@ -552,7 +552,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for TrimWhitespac
 }
 
 impl<T: ?Sized, A: Serialize<T>> Serialize<T> for TrimWhitespace<A> {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         A::serialize(value, state)
     }
 
@@ -586,7 +586,7 @@ impl<T: ?Sized, A: Serialize<T>> Serialize<T> for TrimWhitespace<A> {
 }
 
 impl<T: ?Sized, A: Serialize<T>> Serialize<T> for SkipBlank<A> {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         A::serialize(value, state)
     }
 
@@ -660,15 +660,15 @@ fn atom_text<'a>(atom: &'a Atom<'_>) -> Result<Cow<'a, str>, Error> {
 }
 
 /// Appends the text of a serialized element.
-fn push_chunk(chunk: Chunk<'_>, state: &mut State, out: &mut String) -> Result<(), Error> {
-    match chunk {
-        Chunk::Atom(ref atom) => out.push_str(&atom_text(atom)?),
-        Chunk::Forward(handle) => {
-            push_chunk(handle.get().serialize(state)?, state, out)?;
+fn push_emit(emit: Emit<'_>, state: &mut State, out: &mut String) -> Result<(), Error> {
+    match emit {
+        Emit::Atom(ref atom) => out.push_str(&atom_text(atom)?),
+        Emit::Forward(handle) => {
+            push_emit(handle.get().serialize(state)?, state, out)?;
             handle.get().finish(state)?;
         }
-        Chunk::Struct(_) | Chunk::Map(_) => return Err(unsupported_element("map")),
-        Chunk::Seq(_) => return Err(unsupported_element("sequence")),
+        Emit::Struct(_) | Emit::Map(_) => return Err(unsupported_element("map")),
+        Emit::Seq(_) => return Err(unsupported_element("sequence")),
     }
     Ok(())
 }
@@ -687,7 +687,7 @@ fn join<'v, T: 'v, A: Serialize<T>>(
         }
         count += 1;
         let start = out.len();
-        push_chunk(A::serialize(value, state)?, state, &mut out)?;
+        push_emit(A::serialize(value, state)?, state, &mut out)?;
         A::finish(value, state)?;
         if out[start..].contains(sep) {
             return Err(Error::new(
@@ -733,9 +733,9 @@ macro_rules! separated_impls {
                 fn serialize<'a>(
                     value: &'a $target,
                     state: &mut State,
-                ) -> Result<Chunk<'a>, Error> {
+                ) -> Result<Emit<'a>, Error> {
                     let text = join::<T, A>(value.iter(), SEP, state)?;
-                    Ok(Chunk::Atom(Atom::Str(Text::owned(text))))
+                    Ok(Emit::Atom(Atom::Str(Text::owned(text))))
                 }
 
                 #[inline]
@@ -743,7 +743,7 @@ macro_rules! separated_impls {
                     value: &'a $target,
                     state: &mut State,
                 ) -> Result<Begin<'a>, Error> {
-                    Ok(Begin::chunk(
+                    Ok(Begin::emit(
                         Self::serialize(value, state)?,
                         ContainerShape::new(),
                         false,

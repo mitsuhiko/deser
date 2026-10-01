@@ -30,7 +30,7 @@ pub(crate) fn atom_cost(atom: &Atom<'_>) -> usize {
 }
 #[cfg(feature = "derive")]
 use crate::ser::StructEmitter;
-use crate::ser::{Chunk, SeqEmitter, Serialize, SerializeHandle, SerializeRef};
+use crate::ser::{Emit, SeqEmitter, Serialize, SerializeHandle, SerializeRef};
 
 /// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
 pub struct Begin<'a> {
@@ -40,20 +40,20 @@ pub struct Begin<'a> {
 }
 
 pub(crate) enum BeginKind<'a> {
-    Chunk(Chunk<'a>),
+    Emit(Emit<'a>),
     Struct(&'a dyn IndexedStruct),
     Seq(&'a dyn IndexedSeq),
     /// A plain value (see [`PlainSink`]), the driver either emits it or
-    /// serializes it into a chunk.
+    /// serializes it into an [`Emit`].
     Plain(SerializeRef<'a>),
 }
 
 impl<'a> Begin<'a> {
-    /// Begins a value with a chunk.
+    /// Begins a value with an [`Emit`].
     #[inline]
-    pub fn chunk(chunk: Chunk<'a>, shape: ContainerShape, needs_finish: bool) -> Begin<'a> {
+    pub fn emit(emit: Emit<'a>, shape: ContainerShape, needs_finish: bool) -> Begin<'a> {
         Begin {
-            kind: BeginKind::Chunk(chunk),
+            kind: BeginKind::Emit(emit),
             shape,
             needs_finish,
         }
@@ -61,7 +61,7 @@ impl<'a> Begin<'a> {
 
     /// Begins a struct which provides its fields by index.
     ///
-    /// This is equivalent to a [`Chunk::Struct`] but does not require an
+    /// This is equivalent to a [`Emit::Struct`] but does not require an
     /// emitter to be allocated.  `finish` is not invoked.
     #[inline]
     pub fn indexed_struct(value: &'a dyn IndexedStruct, shape: ContainerShape) -> Begin<'a> {
@@ -89,7 +89,7 @@ impl<'a> Begin<'a> {
 
     /// Begins a sequence which provides its elements by index.
     ///
-    /// This is equivalent to a [`Chunk::Seq`] but does not require an
+    /// This is equivalent to a [`Emit::Seq`] but does not require an
     /// emitter to be allocated.  `finish` is not invoked.
     #[inline]
     pub fn indexed_seq(value: &'a dyn IndexedSeq, shape: ContainerShape) -> Begin<'a> {
@@ -217,7 +217,7 @@ impl<'a> IndexedStructEmitter<'a> {
     }
 }
 
-/// Serializes a derived struct into a chunk (see
+/// Serializes a derived struct into an [`Emit`] (see
 /// [`Serialize::serialize`]).
 ///
 /// This exists once for all structs, the derived code only calls it.
@@ -226,8 +226,8 @@ impl<'a> IndexedStructEmitter<'a> {
 pub fn serialize_indexed<'a>(
     fields: &'a dyn IndexedStruct,
     state: &mut State,
-) -> Result<Chunk<'a>, Error> {
-    Ok(Chunk::structure(IndexedStructEmitter::new(fields), state))
+) -> Result<Emit<'a>, Error> {
+    Ok(Emit::structure(IndexedStructEmitter::new(fields), state))
 }
 
 /// Describes a derived struct (see [`Serialize::describe`]).

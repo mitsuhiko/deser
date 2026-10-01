@@ -228,7 +228,7 @@ only improvements that survive repeated comparisons.
 
 Every value goes through an `Atom` (and usually an `Event`), so how they
 are laid out matters as much as their size.  Both are 32 bytes, checked
-at compile time together with `Chunk`.
+at compile time together with `Emit`.
 
 When `Str` and `Lexical` changed from `Cow<str>` to `Text` (a pointer and
 a length, two words), numbers in the binary formats became 5-15% slower

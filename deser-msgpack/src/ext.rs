@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use deser_core::State;
 use deser_core::de::{Deserialize, Slot, default_atom};
 use deser_core::ext::{ExtValue, Extension, Timestamp};
-use deser_core::ser::{Chunk, Serialize};
+use deser_core::ser::{Emit, Serialize};
 use deser_core::{Atom, Bytes, Error};
 
 /// The extension type of timestamps.
@@ -59,8 +59,8 @@ impl Extension for Ext {
 }
 
 impl Serialize for Ext {
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
     }
 }
 

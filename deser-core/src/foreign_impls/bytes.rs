@@ -13,7 +13,7 @@ use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::Atom;
-use crate::ser::{Chunk, Serialize, plain_atom};
+use crate::ser::{Emit, Serialize, plain_atom};
 
 macro_rules! byte_buffer {
     ($($ty:ty => $convert:expr;)*) => {
@@ -22,8 +22,8 @@ macro_rules! byte_buffer {
                 begin_without_finish!();
                 plain_atom!(|v| Atom::Bytes(crate::Bytes::new(&v[..])));
 
-                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                    Ok(Chunk::Atom(Atom::Bytes(crate::Bytes::new(&value[..]))))
+                fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+                    Ok(Emit::Atom(Atom::Bytes(crate::Bytes::new(&value[..]))))
                 }
             }
 

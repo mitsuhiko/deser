@@ -1,5 +1,5 @@
 use deser_core::Text;
-use deser_core::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use deser_core::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser_core::{Atom, ContainerShape, Error, ErrorKind, State};
 
 use crate::map::Map;
@@ -7,7 +7,7 @@ use crate::seq::Seq;
 use crate::value::{Kind, Value};
 
 impl Serialize for Value {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         if let Some(ref meta) = value.meta
             && !meta.event_data().is_empty()
         {
@@ -26,20 +26,20 @@ impl Serialize for Value {
 }
 
 impl Serialize for Kind {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match this {
-            Kind::Null => Chunk::Atom(Atom::Null),
-            Kind::Bool(value) => Chunk::Atom(Atom::Bool(*value)),
-            Kind::U64(value) => Chunk::Atom(Atom::U64(*value)),
-            Kind::I64(value) => Chunk::Atom(Atom::I64(*value)),
-            Kind::F32(value) => Chunk::Atom(Atom::F32(*value)),
-            Kind::F64(value) => Chunk::Atom(Atom::F64(*value)),
-            Kind::Char(value) => Chunk::Atom(Atom::Char(*value)),
-            Kind::Str(value) => Chunk::Atom(Atom::Str(Text::borrowed(value))),
-            Kind::Lexical(value) => Chunk::Atom(Atom::Lexical(Text::borrowed(value))),
-            Kind::Bytes(value) => Chunk::Atom(Atom::Bytes(value.as_borrowed())),
-            Kind::Ext(value) => Chunk::Atom(Atom::Ext(value.as_borrowed())),
-            Kind::Implicit(value) => Chunk::Atom(Atom::Implicit(value.as_borrowed())),
+            Kind::Null => Emit::Atom(Atom::Null),
+            Kind::Bool(value) => Emit::Atom(Atom::Bool(*value)),
+            Kind::U64(value) => Emit::Atom(Atom::U64(*value)),
+            Kind::I64(value) => Emit::Atom(Atom::I64(*value)),
+            Kind::F32(value) => Emit::Atom(Atom::F32(*value)),
+            Kind::F64(value) => Emit::Atom(Atom::F64(*value)),
+            Kind::Char(value) => Emit::Atom(Atom::Char(*value)),
+            Kind::Str(value) => Emit::Atom(Atom::Str(Text::borrowed(value))),
+            Kind::Lexical(value) => Emit::Atom(Atom::Lexical(Text::borrowed(value))),
+            Kind::Bytes(value) => Emit::Atom(Atom::Bytes(value.as_borrowed())),
+            Kind::Ext(value) => Emit::Atom(Atom::Ext(value.as_borrowed())),
+            Kind::Implicit(value) => Emit::Atom(Atom::Implicit(value.as_borrowed())),
             Kind::Seq(seq) => return Seq::serialize(seq, state),
             Kind::Map(map) => return Map::serialize(map, state),
         })
@@ -59,8 +59,8 @@ impl Serialize for Kind {
 }
 
 impl Serialize for Seq {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::seq(SeqIter(value.items.iter()), state))
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::seq(SeqIter(value.items.iter()), state))
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
@@ -79,8 +79,8 @@ impl SeqEmitter for SeqIter<'_> {
 }
 
 impl Serialize for Map {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::map(
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::map(
             MapIter {
                 iter: this.inner.entries.iter(),
                 value: None,

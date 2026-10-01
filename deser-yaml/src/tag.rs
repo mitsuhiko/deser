@@ -27,7 +27,7 @@ use std::fmt;
 
 use deser_core::State;
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::ser::{Describe, Emit, Serialize};
 use deser_core::{Atom, ContainerShape, Error};
 
 /// The tag of a node, attached as event data to its first event.
@@ -130,14 +130,14 @@ impl<T: fmt::Debug> fmt::Debug for Tagged<T> {
 }
 
 impl<T: Serialize> Serialize for Tagged<T> {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         // the tag is set after the value attached its data (like the tag of
         // a recorded value), it replaces it
-        let chunk = T::serialize(&this.value, state)?;
+        let emit = T::serialize(&this.value, state)?;
         if let Some(ref tag) = this.tag {
             set_tag(state, tag.as_str());
         }
-        Ok(chunk)
+        Ok(emit)
     }
 
     fn finish(this: &Self, state: &mut State) -> Result<(), Error> {

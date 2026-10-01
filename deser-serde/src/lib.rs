@@ -83,7 +83,7 @@ use deser_core::Deserialize;
 use deser_core::Serialize;
 use deser_core::State;
 use deser_core::de::SinkHandle;
-use deser_core::ser::Chunk;
+use deser_core::ser::Emit;
 
 mod buffered;
 mod de;
@@ -117,7 +117,7 @@ fn missing_value<'de, T: serde::Deserialize<'de>>() -> Option<T> {
 pub struct Serde;
 
 impl<T: serde::Serialize + ?Sized> Serialize<T> for Serde {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, deser_core::Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, deser_core::Error> {
         buffered::serialize(value, state)
     }
 

@@ -60,7 +60,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use deser_core::State;
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::ser::{Describe, Emit, Serialize};
 use deser_core::{Atom, ContainerShape, Error, Source};
 
 /// Re-exported from deser, which counts positions the same way for errors.
@@ -381,7 +381,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
 }
 
 impl<T: Serialize> Serialize for Spanned<T> {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         T::serialize(&this.value, state)
     }
 

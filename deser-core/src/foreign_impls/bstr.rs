@@ -25,7 +25,7 @@ use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, Sink, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes};
-use crate::ser::{Chunk, Serialize, plain_atom};
+use crate::ser::{Emit, Serialize, plain_atom};
 
 /// Returns the atom of a byte string.
 #[inline]
@@ -39,8 +39,8 @@ fn bstr_atom(bytes: &[u8]) -> Atom<'_> {
 impl Serialize for BStr {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(bstr_atom(value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(bstr_atom(value)))
     }
 }
 
@@ -48,8 +48,8 @@ impl Serialize for BString {
     begin_without_finish!();
     plain_atom!(|v| bstr_atom(v));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(bstr_atom(value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(bstr_atom(value)))
     }
 }
 

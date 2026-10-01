@@ -18,8 +18,13 @@ All notable changes to deser are documented here.
 - **Breaking:** merged `SerializeAs` into `Serialize`, which has a type
   parameter for the type of the value as well: `Serialize<T: ?Sized =
   Self>`.  Its methods take the value instead of `self`:
-  `fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error>`
+  `fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error>`
   (and `value.serialize(state)` is `T::serialize(value, state)`).
+- **Breaking:** renamed `deser::ser::Chunk` to `deser::ser::Emit` (and
+  `Begin::chunk` to `Begin::emit`), as it describes how a value is
+  emitted rather than a piece of data.  The variants and the
+  constructors (`Emit::seq`, `Emit::map` and `Emit::structure`) did not
+  change.
 - **Breaking:** as `Serialize` cannot be a trait object anymore, values
   are passed on as `deser::ser::SerializeRef` instead of
   `&dyn Serialize` (created with `SerializeRef::new(&value)` or

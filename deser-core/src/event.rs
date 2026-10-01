@@ -485,10 +485,11 @@ impl<'a> From<Atom<'a>> for Event<'a> {
 ///
 /// ## Serialization
 ///
-/// [`Event`] and [`Chunk`](crate::ser::Chunk) are two close relatives.  A chunk
-/// is stateful whereas [`Event`] represents a single event from a chunk.
-/// Atomic chunks directly create an event whereas compound chunks keep emitting
-/// more chunks which again can produce events.  To go from chunks to events use
+/// [`Event`] and [`Emit`](crate::ser::Emit) are two close relatives.  An
+/// [`Emit`](crate::ser::Emit) can be stateful whereas [`Event`] represents a
+/// single event.  Atoms directly create an event whereas the emitters of
+/// compound values keep handing out values which again produce events.  To
+/// go from [`Emit`](crate::ser::Emit)s to events use
 /// the [`SerializeDriver`](crate::ser::SerializeDriver) method.
 ///
 /// ## Deserialization

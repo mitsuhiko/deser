@@ -13,7 +13,7 @@ express. Note that `Cargo.toml` does not enable the `derive` feature.
 
 ## What it shows
 
-- **Serialize**: `serialize` returns `Chunk::Struct` with a
+- **Serialize**: `serialize` returns `Emit::Struct` with a
   `StructEmitter` that yields `(key, SerializeHandle)` pairs one at a
   time. `describe` reports the Rust shape (`d.structure("User")`), which
   `deser-debug` uses.

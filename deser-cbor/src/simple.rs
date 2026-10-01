@@ -3,7 +3,7 @@ use alloc::borrow::Cow;
 use deser_core::State;
 use deser_core::de::{Deserialize, Slot, default_atom};
 use deser_core::ext::{ExtValue, Extension};
-use deser_core::ser::{Chunk, Serialize};
+use deser_core::ser::{Emit, Serialize};
 use deser_core::{Atom, Error, ErrorKind};
 
 /// A CBOR simple value.
@@ -54,8 +54,8 @@ impl Extension for Simple {
 }
 
 impl Serialize for Simple {
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
     }
 }
 

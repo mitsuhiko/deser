@@ -3,7 +3,7 @@ use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 use crate::extensions::Snapshot;
-use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use crate::ser::{Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use alloc::borrow::Cow;
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
@@ -1067,7 +1067,7 @@ fn close(events: &mut [RecordedEvent<'_>], start: usize) {
 struct RecordedValue<'a, 'de>(&'a [RecordedEvent<'de>]);
 
 impl<'a, 'de> RecordedValue<'a, 'de> {
-    fn chunk(&self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn emit(&self, state: &mut State) -> Result<Emit<'a>, Error> {
         let events = self.0;
         let (first, snapshot) = match events.first() {
             Some(first) => (&first.event, &first.snapshot),
@@ -1089,15 +1089,15 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
             Event::Atom(atom @ Atom::Ext(_)) => {
                 crate::ext::raw::serialize_recorded_atom(atom, state)?
             }
-            Event::Atom(atom) => Chunk::Atom(atom.as_borrowed()),
-            Event::MapStart(_) => Chunk::map(
+            Event::Atom(atom) => Emit::Atom(atom.as_borrowed()),
+            Event::MapStart(_) => Emit::map(
                 RecordedEmitter {
                     rest: inner,
                     current: RecordedValue(&[]),
                 },
                 state,
             ),
-            Event::SeqStart(_) => Chunk::seq(
+            Event::SeqStart(_) => Emit::seq(
                 RecordedEmitter {
                     rest: inner,
                     current: RecordedValue(&[]),
@@ -1129,8 +1129,8 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
 }
 
 impl Serialize for RecordedValue<'_, '_> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        value.chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        value.emit(state)
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
@@ -1175,8 +1175,8 @@ impl MapEmitter for RecordedEmitter<'_, '_> {
 }
 
 impl Serialize for Recording {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        RecordedValue(value.0.events.as_slice()).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        RecordedValue(value.0.events.as_slice()).emit(state)
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
@@ -1191,8 +1191,8 @@ impl Serialize for Recording {
 /// Record buffers serialize like [`Recording`]s, borrowed atoms are
 /// serialized without copying them.
 impl Serialize for RecordBuf<'_> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        RecordedValue(value.events.as_slice()).chunk(state)
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        RecordedValue(value.events.as_slice()).emit(state)
     }
 
     fn container_shape(value: &Self) -> ContainerShape {

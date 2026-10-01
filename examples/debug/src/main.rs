@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 
-use deser::ser::{Chunk, SerializeHandle, StructEmitter};
+use deser::ser::{Emit, SerializeHandle, StructEmitter};
 use deser::{Deserialize, Error, Serialize, State};
 use deser_debug::ToDebug;
 
@@ -108,8 +108,8 @@ impl fmt::Debug for Drawing {
 pub struct Anonymous;
 
 impl Serialize for Anonymous {
-    fn serialize<'a>(_value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::structure(AnonymousEmitter(0), state))
+    fn serialize<'a>(_value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::structure(AnonymousEmitter(0), state))
     }
 }
 

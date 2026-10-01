@@ -22,7 +22,7 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// receive it during serialization.  Formats get mutable access to it through
 /// the drivers.  The state also holds the arena the sinks and emitters are
 /// allocated in (see [`SinkHandle::arena`](crate::de::SinkHandle::arena)
-/// and [`Chunk::seq`](crate::ser::Chunk::seq)).
+/// and [`Emit::seq`](crate::ser::Emit::seq)).
 ///
 /// Besides some information about the current position (such as the
 /// [`depth`](Self::depth)) it holds typed values that can be used by formats

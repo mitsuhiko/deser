@@ -10,7 +10,7 @@ use std::borrow::Cow;
 
 use deser::State;
 use deser::de::{DeserializeDriver, Sink, SinkHandle};
-use deser::ser::{Chunk, Describe, SerializeHandle, StructEmitter};
+use deser::ser::{Describe, Emit, SerializeHandle, StructEmitter};
 use deser::{Deserialize, Error, ErrorKind, Event, Serialize};
 use deser_debug::ToDebug;
 
@@ -24,8 +24,8 @@ impl Serialize for User {
         d.structure("User");
     }
 
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::structure(
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::structure(
             UserEmitter {
                 user: value,
                 index: 0,

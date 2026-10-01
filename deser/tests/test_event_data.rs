@@ -1,5 +1,5 @@
 use deser::de::{DeserializeDriver, DeserializeOwned, Slot};
-use deser::ser::{Chunk, Serialize, SerializeDriver};
+use deser::ser::{Emit, Serialize, SerializeDriver};
 use deser::{Atom, Deserialize, Error, Event, State};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -95,11 +95,11 @@ fn test_event_data_is_replayed() {
 struct Marked(u32, Option<u32>);
 
 impl Serialize for Marked {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         if let Some(marker) = value.1 {
             state.event_mut::<Marker>().0 = marker;
         }
-        Ok(Chunk::Atom(Atom::U64(value.0 as u64)))
+        Ok(Emit::Atom(Atom::U64(value.0 as u64)))
     }
 }
 

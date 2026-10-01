@@ -36,7 +36,7 @@ use crate::adapters::Same;
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, Serialize};
+use crate::ser::{Begin, Describe, Emit, Serialize};
 
 /// How a map or sequence is laid out by formats that have a choice.
 ///
@@ -124,7 +124,7 @@ pub struct Hinted<H, A = Same>(PhantomData<fn() -> (H, A)>);
 
 impl<T: ?Sized, H: Hint, A: Serialize<T>> Serialize<T> for Hinted<H, A> {
     #[inline]
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         H::set(state);
         A::serialize(value, state)
     }

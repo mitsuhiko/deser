@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle, default_atom};
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{
-    Boxed, Chunk, Describe, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
+    Boxed, Describe, Emit, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
 };
 use deser_core::{Atom, Error, ErrorKind, Serialize, State, Text};
 
@@ -477,11 +477,11 @@ fn text_key(state: &State) -> &'static str {
 pub(crate) struct KeepsWhitespace(pub(crate) bool);
 
 impl<T: Serialize, W: Whitespace> Serialize for Mixed<T, W> {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         if W::KEEP {
             state.event_mut::<KeepsWhitespace>().0 = true;
         }
-        Ok(Chunk::structure(
+        Ok(Emit::structure(
             MixedEmitter {
                 values: value.0.iter(),
                 current: None,
@@ -536,13 +536,13 @@ impl<'a, T: Serialize> StructEmitter for MixedEmitter<'a, T> {
                 return Ok(None);
             };
             let entries = match T::serialize(value, state)? {
-                Chunk::Struct(emitter) => Entries::Struct(emitter),
-                Chunk::Atom(Atom::Str(name) | Atom::Lexical(name))
+                Emit::Struct(emitter) => Entries::Struct(emitter),
+                Emit::Atom(Atom::Str(name) | Atom::Lexical(name))
                     if is_unit_variant(SerializeRef::new(value)) =>
                 {
                     Entries::Unit(Some(name.into_cow()))
                 }
-                Chunk::Atom(Atom::Null) => Entries::Unit(None),
+                Emit::Atom(Atom::Null) => Entries::Unit(None),
                 _ => {
                     return Err(Error::new(
                         ErrorKind::UnsupportedType,

@@ -11,8 +11,8 @@ use crate::arena::ArenaBox;
 /// An owned value of a serialization, like a `Box`.
 ///
 /// The value is either in the arena of the state (which is how
-/// [`Chunk::seq`](crate::ser::Chunk::seq), [`Chunk::map`](crate::ser::Chunk::map),
-/// [`Chunk::structure`](crate::ser::Chunk::structure) and
+/// [`Emit::seq`](crate::ser::Emit::seq), [`Emit::map`](crate::ser::Emit::map),
+/// [`Emit::structure`](crate::ser::Emit::structure) and
 /// [`SerializeHandle::arena`](crate::ser::SerializeHandle::arena) allocate
 /// it) or on the heap (`Box::new(value).into()`).  The arena belongs to the
 /// state, the emitters of the open containers are on top of each other in

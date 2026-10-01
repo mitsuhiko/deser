@@ -22,7 +22,7 @@ use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ext::ExtValue;
 use crate::ser::{
-    Adapted, Begin, Chunk, Describe, IndexedSeq, MapEmitter, PlainSink, SeqEmitter, Serialize,
+    Adapted, Begin, Describe, Emit, IndexedSeq, MapEmitter, PlainSink, SeqEmitter, Serialize,
     SerializeHandle, SerializeRef, atom_cost, plain_atom,
 };
 
@@ -30,8 +30,8 @@ impl Serialize for bool {
     begin_without_finish!();
     plain_atom!(|v| Atom::Bool(*v));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bool(*value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Bool(*value)))
     }
 }
 
@@ -39,8 +39,8 @@ impl Serialize for () {
     begin_without_finish!();
     plain_atom!(|_v| Atom::Null);
 
-    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Null))
+    fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Null))
     }
 
     fn is_optional(_value: &Self) -> bool {
@@ -52,8 +52,8 @@ impl Serialize for u8 {
     begin_without_finish!();
     plain_atom!(|v| Atom::U64(u64::from(*v)));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::U64(*value as u64)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::U64(*value as u64)))
     }
 
     fn __private_slice_as_bytes(val: &[u8]) -> Option<Cow<'_, [u8]>> {
@@ -65,8 +65,8 @@ impl Serialize for char {
     begin_without_finish!();
     plain_atom!(|v| Atom::Char(*v));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Char(*value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Char(*value)))
     }
 }
 
@@ -76,8 +76,8 @@ macro_rules! serialize_int {
             begin_without_finish!();
             plain_atom!(|v| Atom::$atom(*v as _));
 
-            fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                Ok(Chunk::Atom(Atom::$atom(*value as _)))
+            fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+                Ok(Emit::Atom(Atom::$atom(*value as _)))
             }
         }
     };
@@ -97,8 +97,8 @@ impl Serialize for f32 {
     begin_without_finish!();
     plain_atom!(|v| Atom::F32(*v));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::F32(*value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::F32(*value)))
     }
 }
 
@@ -106,8 +106,8 @@ impl Serialize for f64 {
     begin_without_finish!();
     plain_atom!(|v| Atom::F64(*v));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::F64(*value)))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::F64(*value)))
     }
 }
 
@@ -117,8 +117,8 @@ macro_rules! serialize_ext_int {
             begin_without_finish!();
             plain_atom!(|v| Atom::Ext(ExtValue::borrowed(v)));
 
-            fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-                Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+            fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+                Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
             }
         }
     };
@@ -131,16 +131,16 @@ impl Serialize for String {
     begin_without_finish!();
     plain_atom!(|v| Atom::Str(Text::borrowed(v.as_str())));
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(value.as_str().into())))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Str(value.as_str().into())))
     }
 }
 
 impl Serialize for str {
     begin_without_finish!();
 
-    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Text::borrowed(value))))
+    fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Str(Text::borrowed(value))))
     }
 }
 
@@ -151,7 +151,7 @@ where
     T: Serialize + ToOwned + ?Sized,
     T::Owned: Sync,
 {
-    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
+    fn serialize<'b>(value: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
         T::serialize(value, state)
     }
 
@@ -188,19 +188,19 @@ pub(crate) fn handle_as<A: Serialize<T>, T: Sync>(value: &T) -> SerializeHandle<
 pub(crate) struct IterEmitter<'a, I, A>(I, PhantomData<(&'a (), fn() -> A)>);
 
 impl<'a, I, A> IterEmitter<'a, I, A> {
-    /// Creates the chunk of a sequence of the elements.
+    /// Emits a sequence of the elements.
     ///
-    /// The adapter does not need to outlive the chunk (see
-    /// `Chunk::seq_unbounded`).
+    /// The adapter does not need to outlive the `Emit` (see
+    /// `Emit::seq_unbounded`).
     #[inline(always)]
-    pub(crate) fn chunk<T>(iter: I, state: &mut State) -> Chunk<'a>
+    pub(crate) fn emit<T>(iter: I, state: &mut State) -> Emit<'a>
     where
         I: Iterator<Item = &'a T> + Send + 'a,
         T: Sync + 'a,
         A: Serialize<T>,
     {
         // SAFETY: the emitter only holds a marker of the adapter
-        unsafe { Chunk::seq_unbounded(IterEmitter::<'a, I, A>(iter, PhantomData), state) }
+        unsafe { Emit::seq_unbounded(IterEmitter::<'a, I, A>(iter, PhantomData), state) }
     }
 }
 
@@ -223,12 +223,12 @@ pub(crate) struct MapIterEmitter<'a, I, V, KA, VA> {
 }
 
 impl<'a, I, V, KA, VA> MapIterEmitter<'a, I, V, KA, VA> {
-    /// Creates the chunk of a map of the entries.
+    /// Emits a map of the entries.
     ///
-    /// The adapters do not need to outlive the chunk (see
-    /// `Chunk::map_unbounded`).
+    /// The adapters do not need to outlive the `Emit` (see
+    /// `Emit::map_unbounded`).
     #[inline(always)]
-    pub(crate) fn chunk<K>(iter: I, state: &mut State) -> Chunk<'a>
+    pub(crate) fn emit<K>(iter: I, state: &mut State) -> Emit<'a>
     where
         I: Iterator<Item = (&'a K, &'a V)> + Send + 'a,
         K: Sync + 'a,
@@ -242,7 +242,7 @@ impl<'a, I, V, KA, VA> MapIterEmitter<'a, I, V, KA, VA> {
             _marker: PhantomData,
         };
         // SAFETY: the emitter only holds a marker of the adapters
-        unsafe { Chunk::map_unbounded(emitter, state) }
+        unsafe { Emit::map_unbounded(emitter, state) }
     }
 }
 
@@ -308,8 +308,8 @@ macro_rules! serialize_slice {
                     _state: &mut $crate::State,
                 ) -> Result<$crate::ser::Begin<'a>, $crate::Error> {
                     Ok(match <$elem as $crate::ser::Serialize<T>>::__private_slice_as_bytes(&value[..]) {
-                        Some(bytes) => $crate::ser::Begin::chunk(
-                            $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))),
+                        Some(bytes) => $crate::ser::Begin::emit(
+                            $crate::ser::Emit::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes))),
                             $crate::ContainerShape::new(),
                             false,
                         ),
@@ -327,12 +327,12 @@ macro_rules! serialize_slice {
                 fn serialize<'a>(
                     value: &'a $ty,
                     state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
+                ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
                     Ok(match <$elem as $crate::ser::Serialize<T>>::__private_slice_as_bytes(&value[..]) {
                         Some(bytes) => {
-                            $crate::ser::Chunk::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
+                            $crate::ser::Emit::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
                         }
-                        None => $crate::ser::impls::IterEmitter::<_, $elem>::chunk(value[..].iter(), state),
+                        None => $crate::ser::impls::IterEmitter::<_, $elem>::emit(value[..].iter(), state),
                     })
                 }
 
@@ -518,8 +518,8 @@ impl<T: Sync, A: Serialize<T>> Serialize<VecDeque<T>> for VecDeque<A> {
     #[inline]
     fn __private_begin<'a>(value: &'a VecDeque<T>, _state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(match deque_bytes::<T, A>(value) {
-            Some(bytes) => Begin::chunk(
-                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+            Some(bytes) => Begin::emit(
+                Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
                 ContainerShape::new(),
                 false,
             ),
@@ -531,10 +531,10 @@ impl<T: Sync, A: Serialize<T>> Serialize<VecDeque<T>> for VecDeque<A> {
         ContainerShape::new().with_len(value.len())
     }
 
-    fn serialize<'a>(value: &'a VecDeque<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a VecDeque<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match deque_bytes::<T, A>(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::chunk(value.iter(), state),
+            Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
+            None => IterEmitter::<_, A>::emit(value.iter(), state),
         })
     }
 
@@ -597,8 +597,8 @@ impl<T: Sync, A: Serialize<T>> Serialize<LinkedList<T>> for LinkedList<A> {
         ContainerShape::new().with_len(value.len())
     }
 
-    fn serialize<'a>(value: &'a LinkedList<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(IterEmitter::<_, A>::chunk(value.iter(), state))
+    fn serialize<'a>(value: &'a LinkedList<T>, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(IterEmitter::<_, A>::emit(value.iter(), state))
     }
 }
 
@@ -610,8 +610,8 @@ impl<T: Sync, A: Serialize<T>> Serialize<BinaryHeap<T>> for BinaryHeap<A> {
         _state: &mut State,
     ) -> Result<Begin<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(value.as_slice()) {
-            Some(bytes) => Begin::chunk(
-                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+            Some(bytes) => Begin::emit(
+                Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
                 ContainerShape::new(),
                 false,
             ),
@@ -623,10 +623,10 @@ impl<T: Sync, A: Serialize<T>> Serialize<BinaryHeap<T>> for BinaryHeap<A> {
         ContainerShape::new().with_len(value.len())
     }
 
-    fn serialize<'a>(value: &'a BinaryHeap<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a BinaryHeap<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(value.as_slice()) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::chunk(value.as_slice().iter(), state),
+            Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
+            None => IterEmitter::<_, A>::emit(value.as_slice().iter(), state),
         })
     }
 }
@@ -665,7 +665,7 @@ macro_rules! serialize_map {
                     if Self::__private_is_plain_value(value) {
                         Ok($crate::ser::impls::begin_plain::<Self, $ty>(value, shape))
                     } else {
-                        Ok($crate::ser::Begin::chunk(Self::serialize(value, state)?, shape, false))
+                        Ok($crate::ser::Begin::emit(Self::serialize(value, state)?, shape, false))
                     }
                 }
 
@@ -678,8 +678,8 @@ macro_rules! serialize_map {
                 fn serialize<'a>(
                     value: &'a $ty,
                     state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::impls::MapIterEmitter::<_, V, KA, VA>::chunk::<K>(value.iter(), state))
+                ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
+                    Ok($crate::ser::impls::MapIterEmitter::<_, V, KA, VA>::emit::<K>(value.iter(), state))
                 }
 
                 #[inline]
@@ -754,7 +754,7 @@ macro_rules! serialize_set {
                     if Self::__private_is_plain_value(value) {
                         Ok($crate::ser::impls::begin_plain::<Self, $ty>(value, shape))
                     } else {
-                        Ok($crate::ser::Begin::chunk(Self::serialize(value, state)?, shape, false))
+                        Ok($crate::ser::Begin::emit(Self::serialize(value, state)?, shape, false))
                     }
                 }
 
@@ -771,8 +771,8 @@ macro_rules! serialize_set {
                 fn serialize<'a>(
                     value: &'a $ty,
                     state: &mut $crate::State,
-                ) -> Result<$crate::ser::Chunk<'a>, $crate::Error> {
-                    Ok($crate::ser::impls::IterEmitter::<_, A>::chunk(value.iter(), state))
+                ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
+                    Ok($crate::ser::impls::IterEmitter::<_, A>::emit(value.iter(), state))
                 }
 
                 #[inline]
@@ -841,10 +841,10 @@ impl<T: Sync, A: Serialize<T>> Serialize<Option<T>> for Option<A> {
         }
     }
 
-    fn serialize<'a>(value: &'a Option<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Option<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         match value {
             Some(value) => A::serialize(value, state),
-            None => Ok(Chunk::Atom(Atom::Null)),
+            None => Ok(Emit::Atom(Atom::Null)),
         }
     }
 
@@ -859,8 +859,8 @@ impl<T: Sync, A: Serialize<T>> Serialize<Option<T>> for Option<A> {
     fn __private_begin<'a>(value: &'a Option<T>, state: &mut State) -> Result<Begin<'a>, Error> {
         match value {
             Some(value) => A::__private_begin(value, state),
-            None => Ok(Begin::chunk(
-                Chunk::Atom(Atom::Null),
+            None => Ok(Begin::emit(
+                Emit::Atom(Atom::Null),
                 ContainerShape::new(),
                 false,
             )),
@@ -943,11 +943,11 @@ macro_rules! serialize_for_tuple {
                 Some(budget)
             }
 
-            fn serialize<'a>(value: &'a ($($name,)*), state: &mut State) -> Result<Chunk<'a>, Error> {
+            fn serialize<'a>(value: &'a ($($name,)*), state: &mut State) -> Result<Emit<'a>, Error> {
                 // SAFETY: the wrapper is valid for 'a (it's the value), it only
                 // holds a marker of the adapters
                 let seq = unsafe { crate::ser::begin::indexed_unbounded(Adapted::<Self, _>::ptr(value)) };
-                Ok(Chunk::seq(crate::ser::IndexedSeqEmitter::new(seq), state))
+                Ok(Emit::seq(crate::ser::IndexedSeqEmitter::new(seq), state))
             }
         }
 
@@ -996,8 +996,8 @@ impl<T: Sync, A: Serialize<T>, const N: usize> Serialize<[T; N]> for [A; N] {
     #[inline]
     fn __private_begin<'a>(value: &'a [T; N], _state: &mut State) -> Result<Begin<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(&value[..]) {
-            Some(bytes) => Begin::chunk(
-                Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
+            Some(bytes) => Begin::emit(
+                Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
                 ContainerShape::new(),
                 false,
             ),
@@ -1009,10 +1009,10 @@ impl<T: Sync, A: Serialize<T>, const N: usize> Serialize<[T; N]> for [A; N] {
         ContainerShape::new().with_len(value.len())
     }
 
-    fn serialize<'a>(value: &'a [T; N], state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a [T; N], state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(value) {
-            Some(bytes) => Chunk::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::chunk(value.iter(), state),
+            Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
+            None => IterEmitter::<_, A>::emit(value.iter(), state),
         })
     }
 
@@ -1070,7 +1070,7 @@ macro_rules! serialize_pointer {
     ($([$($gen:tt)*] $ty:ty => $adapter:ty;)*) => {
         $(
             impl<$($gen)*> Serialize<$ty> for $adapter {
-                fn serialize<'a>(value: &'a $ty, state: &mut State) -> Result<Chunk<'a>, Error> {
+                fn serialize<'a>(value: &'a $ty, state: &mut State) -> Result<Emit<'a>, Error> {
                     A::serialize(value, state)
                 }
 

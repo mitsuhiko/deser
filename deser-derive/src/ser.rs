@@ -18,7 +18,7 @@ fn begin_without_finish(ser_trait: &TokenStream) -> TokenStream {
             __state: &mut __deser::State,
         ) -> __deser::__derive::Result<__deser::__derive::Begin<'__a>> {
             let __shape = <Self as #ser_trait>::container_shape(__value);
-            __deser::__derive::Ok(__deser::__derive::Begin::chunk(
+            __deser::__derive::Ok(__deser::__derive::Begin::emit(
                 <Self as #ser_trait>::serialize(__value, __state)?,
                 __shape,
                 false,
@@ -293,8 +293,8 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     __d.structure(#type_name);
                 }
 
-                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::structure(__StructEmitter {
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
+                    __deser::__derive::Ok(__deser::ser::Emit::structure(__StructEmitter {
                         data: __value,
                         index: 0,
                         #temp_emitter_init
@@ -472,7 +472,7 @@ fn derive_indexed_struct(
                     #shape
                 }
 
-                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
                     __deser::__derive::serialize_indexed(__value, __state)
                 }
 
@@ -558,7 +558,7 @@ fn derive_enum(input: &syn::DeriveInput, enumeration: &syn::DataEnum) -> syn::Re
                 }
 
                 fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State)
-                    -> __deser::__derive::Result<__deser::ser::Chunk<'__a>>
+                    -> __deser::__derive::Result<__deser::ser::Emit<'__a>>
                 {
                     __deser::__derive::serialize_unit(&__VARIANTS, __index(__value))
                 }
@@ -644,8 +644,8 @@ fn derive_tuple_struct(
                     __deser::ContainerShape::new().with_len(#len)
                 }
 
-                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
-                    __deser::__derive::Ok(__deser::ser::Chunk::seq(__deser::__derive::IndexedSeqEmitter::new(__value), __state))
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
+                    __deser::__derive::Ok(__deser::ser::Emit::seq(__deser::__derive::IndexedSeqEmitter::new(__value), __state))
                 }
 
                 #[inline]
@@ -696,8 +696,8 @@ fn derive_unit_struct(
                 __d.unit_struct(#type_name);
             }
 
-            fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
-                __deser::__derive::Ok(__deser::ser::Chunk::Atom(__deser::Atom::Null))
+            fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
+                __deser::__derive::Ok(__deser::ser::Emit::Atom(__deser::Atom::Null))
             }
         }
     })
@@ -734,7 +734,7 @@ pub(crate) fn derive_newtype_struct(
                     __d.newtype(#type_name);
                     #ser::describe(#value, __d)
                 }
-                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Chunk<'__a>> {
+                fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
                     #ser::serialize(#value, __state)
                 }
                 fn finish(__value: &Self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {

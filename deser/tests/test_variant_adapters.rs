@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use deser::adapters::{DisplayFromStr, FromInto};
 use deser::de::{DeserializeOwned, Slot, default_atom};
-use deser::ser::{Chunk, SerializeDriver};
+use deser::ser::{Emit, SerializeDriver};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
@@ -56,8 +56,8 @@ fn map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
 struct Joined;
 
 impl Serialize<(&u32, &u32)> for Joined {
-    fn serialize<'a>(value: &'a (&u32, &u32), _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(
+    fn serialize<'a>(value: &'a (&u32, &u32), _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Str(
             format!("{},{}", value.0, value.1).into(),
         )))
     }
@@ -88,8 +88,8 @@ impl<'de> Deserialize<'de, (u32, u32)> for Joined {
 struct Marker;
 
 impl Serialize<()> for Marker {
-    fn serialize<'a>(_value: &'a (), _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bool(true)))
+    fn serialize<'a>(_value: &'a (), _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Bool(true)))
     }
 }
 

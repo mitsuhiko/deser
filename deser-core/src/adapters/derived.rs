@@ -6,7 +6,7 @@ use crate::State;
 use crate::de::{Deserialize, SinkHandle, atom_into_handle, borrowed_atom_into_handle, update};
 use crate::error::Error;
 use crate::event::{Atom, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
+use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 
 /// The adapter that uses the derived implementation of a type.
 ///
@@ -137,7 +137,7 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
 /// API.
 #[doc(hidden)]
 pub trait DerivedSerialize: Sync {
-    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error>;
+    fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error>;
 
     fn finish(value: &Self, state: &mut State) -> Result<(), Error> {
         let _ = (value, state);
@@ -160,7 +160,7 @@ pub trait DerivedSerialize: Sync {
 
     fn __private_begin<'a>(value: &'a Self, state: &mut State) -> Result<Begin<'a>, Error> {
         let shape = <Self as DerivedSerialize>::container_shape(value);
-        Ok(Begin::chunk(
+        Ok(Begin::emit(
             <Self as DerivedSerialize>::serialize(value, state)?,
             shape,
             true,
@@ -253,7 +253,7 @@ impl<'de, T: DerivedDeserialize<'de>> Deserialize<'de, T> for Derived {
 
 impl<T: DerivedSerialize + ?Sized> Serialize<T> for Derived {
     #[inline]
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         T::serialize(value, state)
     }
 

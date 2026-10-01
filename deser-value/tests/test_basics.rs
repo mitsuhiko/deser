@@ -500,14 +500,14 @@ fn test_container_keys_compare_in_order() {
 
 #[test]
 fn test_serializer() {
-    use deser::ser::{Chunk, Serialize};
+    use deser::ser::{Emit, Serialize};
     use deser::{Error, ErrorKind, State};
     use deser_value::Serializer;
 
     struct Failing;
 
     impl Serialize for Failing {
-        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
+        fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
             Err(Error::new(ErrorKind::Unexpected, "failed"))
         }
     }

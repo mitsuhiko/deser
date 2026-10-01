@@ -1,13 +1,13 @@
 use deser::Error;
 use deser::State;
-use deser::ser::{Chunk, MapEmitter, Serialize, SerializeDriver, SerializeHandle};
+use deser::ser::{Emit, MapEmitter, Serialize, SerializeDriver, SerializeHandle};
 use std::collections::{BTreeMap, btree_map};
 
 struct Flags(BTreeMap<u64, bool>);
 
 impl Serialize for Flags {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::map(
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::map(
             FlagsMapEmitter {
                 iter: this.0.iter(),
                 value: None,

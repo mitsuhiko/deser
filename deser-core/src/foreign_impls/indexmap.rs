@@ -20,7 +20,7 @@ use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::ser::impls::{serialize_map, serialize_set};
-use crate::ser::{Chunk, Describe, Serialize};
+use crate::ser::{Describe, Emit, Serialize};
 
 // the hasher of the adapter is not used
 serialize_map! {
@@ -35,7 +35,7 @@ where
     KA: Serialize<K>,
     VA: Serialize<V>,
 {
-    fn serialize<'a>(value: &'a IndexMap<K, V, S>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a IndexMap<K, V, S>, state: &mut State) -> Result<Emit<'a>, Error> {
         <IndexMap<KA, VA, S> as Serialize<IndexMap<K, V, S>>>::serialize(value, state)
     }
 

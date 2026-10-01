@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use deser_core::State;
 use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
-use deser_core::ser::{Chunk, Describe, Serialize};
+use deser_core::ser::{Describe, Emit, Serialize};
 use deser_core::{Atom, ContainerShape, Error};
 
 /// The name of the root element and the namespaces declared on it,
@@ -140,16 +140,16 @@ impl<T> Root<T> {
 }
 
 impl<T: Serialize> Serialize for Root<T> {
-    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(this: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
         // the root is set after the value attached its data (like the root
         // of a recorded value), it replaces it
-        let chunk = T::serialize(&this.value, state)?;
+        let emit = T::serialize(&this.value, state)?;
         if this.name.is_some() || !this.namespaces.is_empty() {
             let data = state.event_mut::<RootData>();
             data.name.clone_from(&this.name);
             data.namespaces.clone_from(&this.namespaces);
         }
-        Ok(chunk)
+        Ok(emit)
     }
 
     fn finish(this: &Self, state: &mut State) -> Result<(), Error> {

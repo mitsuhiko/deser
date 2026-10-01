@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use deser::adapters::{As, DisplayFromStr, FromInto, Same, TryFromInto};
 use deser::de::{DeserializeDriver, DeserializeOwned, SinkHandle};
-use deser::ser::{Chunk, Describe, SerializeDriver};
+use deser::ser::{Describe, Emit, SerializeDriver};
 use deser::{Deserialize, Error, ErrorKind, Event, Serialize, State};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -848,7 +848,7 @@ struct Byte(u8);
 struct ViaU8;
 
 impl Serialize<Byte> for ViaU8 {
-    fn serialize<'a>(value: &'a Byte, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Byte, state: &mut State) -> Result<Emit<'a>, Error> {
         u8::serialize(&value.0, state)
     }
 

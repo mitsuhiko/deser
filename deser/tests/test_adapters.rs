@@ -7,7 +7,7 @@ use deser::adapters::{
     As, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
 };
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording, Slot, default_atom};
-use deser::ser::{Chunk, SerializeDriver, SerializeHandle, SerializeRef};
+use deser::ser::{Emit, SerializeDriver, SerializeHandle, SerializeRef};
 use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
 /// Removes the length from container starts, the tests are not about it.
@@ -499,9 +499,9 @@ fn test_error_recovery() {
 struct Hex;
 
 impl Serialize<Vec<u8>> for Hex {
-    fn serialize<'a>(value: &'a Vec<u8>, _state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Vec<u8>, _state: &mut State) -> Result<Emit<'a>, Error> {
         let hex: String = value.iter().map(|x| format!("{:02x}", x)).collect();
-        Ok(Chunk::Atom(Atom::Str(hex.into())))
+        Ok(Emit::Atom(Atom::Str(hex.into())))
     }
 }
 
@@ -811,8 +811,8 @@ struct Forwarding<'a> {
 }
 
 impl<'a> Serialize for Forwarding<'a> {
-    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Forward(SerializeHandle::from(value.inner)))
+    fn serialize<'b>(value: &'b Self, _state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::Forward(SerializeHandle::from(value.inner)))
     }
 
     fn finish(value: &Self, _state: &mut State) -> Result<(), Error> {
@@ -827,7 +827,7 @@ struct Logged<'a, T> {
 }
 
 impl<'a, T: Serialize> Serialize for Logged<'a, T> {
-    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Chunk<'b>, Error> {
+    fn serialize<'b>(this: &'b Self, state: &mut State) -> Result<Emit<'b>, Error> {
         T::serialize(&this.value, state)
     }
 

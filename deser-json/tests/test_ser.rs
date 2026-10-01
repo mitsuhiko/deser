@@ -239,7 +239,7 @@ fn test_well_known_types() {
 fn test_extension_fallback() {
     use deser::State;
     use deser::ext::{ExtValue, Extension};
-    use deser::ser::Chunk;
+    use deser::ser::Emit;
     use deser::{Atom, Error};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -256,8 +256,8 @@ fn test_extension_fallback() {
     }
 
     impl Serialize for Timestamp {
-        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Chunk<'a>, Error> {
-            Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Atom(Atom::Ext(ExtValue::borrowed(value))))
         }
     }
 

@@ -1898,7 +1898,7 @@ mod tests {
             fn serialize<'a>(
                 value: &'a Self,
                 state: &mut deser_core::State,
-            ) -> Result<deser_core::ser::Chunk<'a>, Error> {
+            ) -> Result<deser_core::ser::Emit<'a>, Error> {
                 BTreeMap::<&str, &str>::serialize(&value.0, state)
             }
         }

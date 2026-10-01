@@ -22,7 +22,7 @@ use crate::de::mapped::MappedSink;
 use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
-use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
+use crate::ser::{Begin, Describe, Emit, Serialize, SerializeHandle};
 
 /// Deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the data.
 ///
@@ -132,14 +132,14 @@ impl<'de: 'a, 'a> Deserialize<'de, Cow<'a, [u8]>> for Borrowed {
 }
 
 impl<'a> Serialize<Cow<'a, str>> for Borrowed {
-    fn serialize<'b>(value: &'b Cow<'a, str>, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Text::borrowed(value))))
+    fn serialize<'b>(value: &'b Cow<'a, str>, _state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::Atom(Atom::Str(Text::borrowed(value))))
     }
 }
 
 impl<'a> Serialize<Cow<'a, [u8]>> for Borrowed {
-    fn serialize<'b>(value: &'b Cow<'a, [u8]>, _state: &mut State) -> Result<Chunk<'b>, Error> {
-        Ok(Chunk::Atom(Atom::Bytes(Bytes::borrowed(value))))
+    fn serialize<'b>(value: &'b Cow<'a, [u8]>, _state: &mut State) -> Result<Emit<'b>, Error> {
+        Ok(Emit::Atom(Atom::Bytes(Bytes::borrowed(value))))
     }
 }
 
@@ -194,13 +194,13 @@ where
 }
 
 impl<T: Display + ?Sized> Serialize<T> for DisplayFromStr {
-    fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Str(Text::owned(value.to_string()))))
+    fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Str(Text::owned(value.to_string()))))
     }
 
     #[inline]
     fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
-        Ok(Begin::chunk(
+        Ok(Begin::emit(
             Self::serialize(value, state)?,
             ContainerShape::new(),
             false,
@@ -261,8 +261,8 @@ impl<'de> Deserialize<'de, bool> for Flag {
 }
 
 impl Serialize<bool> for Flag {
-    fn serialize<'a>(value: &'a bool, _state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Atom(Atom::Bool(*value)))
+    fn serialize<'a>(value: &'a bool, _state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Atom(Atom::Bool(*value)))
     }
 }
 
@@ -356,8 +356,8 @@ where
     T: Clone + Into<U>,
     U: Serialize + Send + 'static,
 {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
-        Ok(Chunk::Forward(SerializeHandle::arena(
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Forward(SerializeHandle::arena(
             Into::<U>::into(value.clone()),
             state,
         )))
@@ -473,9 +473,9 @@ where
     <T as TryInto<U>>::Error: Display,
     U: Serialize + Send + 'static,
 {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         let value: U = value.clone().try_into().map_err(conversion_error)?;
-        Ok(Chunk::Forward(SerializeHandle::arena(value, state)))
+        Ok(Emit::Forward(SerializeHandle::arena(value, state)))
     }
 
     fn is_optional(value: &T) -> bool {
@@ -741,7 +741,7 @@ impl<'a, 'de, T: Default + Send> Sink<'de> for DefaultOnErrorSink<'a, 'de, T> {
 }
 
 impl<T: ?Sized, A: Serialize<T>> Serialize<T> for DefaultOnError<A> {
-    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
         A::serialize(value, state)
     }
 
@@ -902,7 +902,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipE
 }
 
 impl<T: Sync, A: Serialize<T>> Serialize<Vec<T>> for VecSkipError<A> {
-    fn serialize<'a>(value: &'a Vec<T>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a Vec<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         <Vec<A> as Serialize<Vec<T>>>::serialize(value, state)
     }
 
@@ -1131,7 +1131,7 @@ where
     KA: Serialize<K>,
     VA: Serialize<V>,
 {
-    fn serialize<'a>(value: &'a BTreeMap<K, V>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a BTreeMap<K, V>, state: &mut State) -> Result<Emit<'a>, Error> {
         <BTreeMap<KA, VA> as Serialize<BTreeMap<K, V>>>::serialize(value, state)
     }
 
@@ -1153,7 +1153,7 @@ where
     KA: Serialize<K>,
     VA: Serialize<V>,
 {
-    fn serialize<'a>(value: &'a HashMap<K, V, H>, state: &mut State) -> Result<Chunk<'a>, Error> {
+    fn serialize<'a>(value: &'a HashMap<K, V, H>, state: &mut State) -> Result<Emit<'a>, Error> {
         <HashMap<KA, VA> as Serialize<HashMap<K, V, H>>>::serialize(value, state)
     }
 
