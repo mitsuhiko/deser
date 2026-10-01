@@ -1,8 +1,8 @@
 use deser::State;
-use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Slot, default_atom};
 use deser::ext::{ExtValue, Extension};
 use deser::ser::{Chunk, SerializeDriver};
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, make_slot_wrapper};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -57,30 +57,19 @@ impl Serialize for Timestamp {
     }
 }
 
-make_slot_wrapper!(SlotWrapper);
-
-impl<'de> Sink<'de> for SlotWrapper<Timestamp> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Ext(ref ext) if ext.is::<Timestamp>() => {
-                **self = ext.downcast_ref::<Timestamp>().cloned();
+                **slot = ext.downcast_ref::<Timestamp>().cloned();
                 Ok(())
             }
             Atom::I64(value) => {
-                **self = Some(Timestamp(value));
+                slot.set(Timestamp(value));
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
-    }
-}
-
-impl<'de> Deserialize<'de> for Timestamp {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
     }
 }
 

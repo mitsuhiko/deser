@@ -18,8 +18,9 @@ use crate::text::{Slice, Text};
 ///
 /// Atoms are non exhaustive which means that new variants might appear
 /// in the future.  Deser tries to build around this restriction for instance
-/// through APIs like [`unexpected_atom`](crate::de::Sink::unexpected_atom) so that
-/// one always have something to call.
+/// through the default handling of atoms
+/// ([`default_atom`](crate::de::default_atom)) so that one always has
+/// something to call.
 ///
 /// Values which are not part of the core data model are represented as
 /// [`Atom::Ext`].  For more information see [`ext`](crate::ext).
@@ -33,7 +34,7 @@ use crate::text::{Slice, Text};
 /// is `0.1`, as `f64` it's `0.10000000149011612`).  Sinks that do not care
 /// about the precision only need to handle `F64`: the default handling of
 /// atoms widens `F32` (see
-/// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).
+/// [`default_atom`](crate::de::default_atom)).
 ///
 /// Text whose type the format cannot express is [`Lexical`](Atom::Lexical).
 /// It's a string for everybody who does not care, see there for more
@@ -63,7 +64,7 @@ pub enum Atom<'a> {
     /// `"42"`) is [`Str`](Atom::Str).
     ///
     /// Sinks receive it as [`Str`](Atom::Str) unless they handle it (see
-    /// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).  Sinks
+    /// [`default_atom`](crate::de::default_atom)).  Sinks
     /// that borrow strings have to handle it themselves, the fallback does
     /// not borrow for the lifetime of the input.  Serializers write it as
     /// string.
@@ -86,7 +87,7 @@ pub enum Atom<'a> {
     /// Formats do not produce it when they read floats (the precision of
     /// a float in the input is unknown or, like in CBOR, an encoding
     /// detail).  Sinks receive it as [`F64`](Atom::F64) unless they handle
-    /// it (see [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).
+    /// it (see [`default_atom`](crate::de::default_atom)).
     F32(f32),
     /// A double precision float.
     F64(f64),
@@ -210,7 +211,7 @@ impl<'a> Atom<'a> {
 ///
 /// Types that accept the value receive it, types that reject it receive
 /// the text as [`Str`](Atom::Str) instead (see
-/// [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom)).  This
+/// [`default_atom`](crate::de::default_atom)).  This
 /// means that a `u32` is `31` for `0x1F` while a `String` is `"0x1F"` and an
 /// `Option<String>` is `None` for `~` while a `String` is `"~"`.  If both are
 /// rejected, the error is the one of the value.  Enums look up their

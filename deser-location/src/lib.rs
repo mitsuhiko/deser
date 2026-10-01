@@ -280,6 +280,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Spanned<T> {
             state,
         )
     }
+
+    fn expecting() -> Cow<'static, str> {
+        T::expecting()
+    }
 }
 
 struct SpannedSink<'a, 'de, T> {
@@ -372,13 +376,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for SpannedSink<'a, 'de, T> {
         if let Some(ref compound) = self.compound {
             return compound.borrow().expecting();
         }
-        let mut slot = None;
-        let mut state = State::new();
-        Cow::Owned(
-            T::deserialize_into(&mut slot, &mut state)
-                .expecting()
-                .into_owned(),
-        )
+        T::expecting()
     }
 }
 

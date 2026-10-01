@@ -5,6 +5,8 @@ use core::hash::{BuildHasher, Hash};
 
 use ::hashbrown::{HashMap, HashSet, hash_map};
 
+use alloc::borrow::Cow;
+
 use crate::State;
 use crate::adapters::{MapSkipError, skip_map_sink};
 use crate::de::impls::{
@@ -86,6 +88,10 @@ where
         map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashMap<K, V, S> as MapTarget<K, V>>::NAME)
+    }
+
     /// Merges the entries into the map, the values of keys that exist are
     /// replaced (not updated).
     fn deserialize_update<'out>(
@@ -109,6 +115,10 @@ where
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         skip_map_sink::<_, K, V, KA, VA>(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashMap<K, V, S> as MapTarget<K, V>>::NAME)
     }
 }
 
@@ -174,6 +184,10 @@ where
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         set_sink::<_, T, A>(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashSet<T, S> as SetTarget<T>>::NAME)
     }
 
     collection_methods!(set HashSet<T, S>);

@@ -1455,6 +1455,7 @@ pub(crate) fn derive_deserialize(
             quote! {
                 __deser::__derive::untagged_fallback(
                     __slot,
+                    __TYPE_NAME,
                     __tagged #turbofish,
                     __candidate #turbofish, __state)
             },
@@ -1503,6 +1504,10 @@ pub(crate) fn derive_deserialize(
             impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
                 fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                     #handle
+                }
+
+                fn expecting() -> __deser::__derive::StrCow<'static> {
+                    __deser::__derive::StrCow::Borrowed(__TYPE_NAME)
                 }
 
                 #atom_into

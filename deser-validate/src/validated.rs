@@ -178,6 +178,10 @@ impl<'de, T: Deserialize<'de>, V: Validator<T>> Deserialize<'de> for Validated<T
         )
     }
 
+    fn expecting() -> Cow<'static, str> {
+        T::expecting()
+    }
+
     /// Missing values are the missing values of `T` (validated).
     fn initial_value() -> Option<Self> {
         T::initial_value().map(Validated::new)

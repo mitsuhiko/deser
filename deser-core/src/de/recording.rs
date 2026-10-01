@@ -4,6 +4,7 @@ use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
 use crate::extensions::Snapshot;
 use crate::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
+use alloc::borrow::Cow;
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -681,6 +682,11 @@ pub(crate) trait Capture<'de, T>: Send {
 
     /// Receives the recording of any other value.
     fn recorded(&mut self, recording: T, state: &mut State) -> Result<(), Error>;
+
+    /// Returns what the value expects (see `Sink::expecting`).
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed("any value")
+    }
 }
 
 /// Passes every captured value to a callback as recording.
@@ -737,6 +743,13 @@ impl<'de, T, C> CaptureSink<T, C> {
 }
 
 impl<'de, T: Target<'de> + Default, C: Capture<'de, T>> Sink<'de> for CaptureSink<T, C> {
+    fn expecting(&self) -> Cow<'_, str> {
+        match self.then {
+            Some(ref then) => then.expecting(),
+            None => Cow::Borrowed("any value"),
+        }
+    }
+
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         match self.then.take() {
             Some(mut then) => then.atom(atom, state),
@@ -987,6 +1000,10 @@ impl<'de> Deserialize<'de> for Recording {
             state,
         )
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
+    }
 }
 
 /// Returns the number of events of the value the events start with.
@@ -1205,5 +1222,9 @@ impl<'de> Deserialize<'de> for RecordBuf<'de> {
             },
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
     }
 }

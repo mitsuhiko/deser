@@ -4,6 +4,7 @@
 //! native bytes represent as strings (base64 by default).  When
 //! deserialized, they accept what `Vec<u8>` accepts.
 use ::bytes::{Bytes, BytesMut};
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use crate::State;
@@ -51,6 +52,10 @@ macro_rules! byte_buffer {
                 #[inline]
                 fn deserialize_into<'a, 'de>(out: &'a mut Option<Self>, state: &mut State) -> SinkHandle<'a, 'de> {
                     <Self as Deserialize<'de>>::deserialize_into(out, state)
+                }
+
+                fn expecting() -> Cow<'static, str> {
+                    <Self as Deserialize<'static>>::expecting()
                 }
             }
 

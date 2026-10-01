@@ -16,10 +16,10 @@ use std::collections::HashMap;
 use crate::State;
 use crate::Text;
 use crate::adapters::Same;
-use crate::de::impls::MapTarget;
+use crate::de::impls::{MapTarget, SeqTarget};
 use crate::de::lexical::parse_bool_with;
 use crate::de::mapped::MappedSink;
-use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle};
+use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
@@ -47,91 +47,87 @@ use crate::ser::{Begin, Chunk, Describe, Serialize, SerializeHandle};
 /// ```
 pub struct Borrowed;
 
-make_slot_wrapper!(BorrowedSlot);
-
-impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, str>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("string")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de: 'a, 'a> Deserialize<'de, Cow<'a, str>> for Borrowed {
+    fn deserialize_atom(
+        slot: &mut Slot<Cow<'a, str>, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(value) | Atom::Lexical(value) => {
-                **self = Some(Cow::Owned(value.into_owned()));
+                slot.set(Cow::Owned(value.into_owned()));
                 Ok(())
             }
             Atom::Char(value) => {
-                **self = Some(Cow::Owned(value.to_string()));
+                slot.set(Cow::Owned(value.to_string()));
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<Cow<'a, str>, Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(value) | Atom::Lexical(value) => {
-                **self = Some(value.into_cow());
+                slot.set(value.into_cow());
                 Ok(())
             }
             // strings take the text of values whose type was inferred
             Atom::Implicit(value) => {
-                **self = Some(value.into_parts().0.into_cow());
+                slot.set(value.into_parts().0.into_cow());
                 Ok(())
             }
-            other => self.atom(other, state),
-        }
-    }
-}
-
-impl<'de: 'a, 'a> Sink<'de> for BorrowedSlot<Cow<'a, [u8]>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("bytes")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Bytes(value) => {
-                **self = Some(Cow::Owned(value.into_owned()));
-                Ok(())
-            }
-            // formats without native bytes represent them as strings
-            Atom::Str(ref value) => {
-                **self = Some(Cow::Owned(crate::adapters::bytes::decode_str(
-                    value, state,
-                )?));
-                Ok(())
-            }
-            other => self.unexpected_atom(other, state),
+            other => Self::deserialize_atom(slot, other, state),
         }
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Bytes(value) => {
-                **self = Some(value.into_data());
-                Ok(())
-            }
-            other => self.atom(other, state),
-        }
-    }
-}
-
-impl<'de: 'a, 'a> Deserialize<'de, Cow<'a, str>> for Borrowed {
-    fn deserialize_into<'b>(
-        out: &'b mut Option<Cow<'a, str>>,
-        _state: &mut State,
-    ) -> SinkHandle<'b, 'de> {
-        BorrowedSlot::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("string")
     }
 }
 
 impl<'de: 'a, 'a> Deserialize<'de, Cow<'a, [u8]>> for Borrowed {
-    fn deserialize_into<'b>(
-        out: &'b mut Option<Cow<'a, [u8]>>,
-        _state: &mut State,
-    ) -> SinkHandle<'b, 'de> {
-        BorrowedSlot::make_handle(out)
+    fn deserialize_atom(
+        slot: &mut Slot<Cow<'a, [u8]>, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        match atom {
+            Atom::Bytes(value) => {
+                slot.set(Cow::Owned(value.into_owned()));
+                Ok(())
+            }
+            // formats without native bytes represent them as strings
+            Atom::Str(ref value) => {
+                slot.set(Cow::Owned(crate::adapters::bytes::decode_str(
+                    value, state,
+                )?));
+                Ok(())
+            }
+            other => default_atom(slot, other, state),
+        }
+    }
+
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<Cow<'a, [u8]>, Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        match atom {
+            Atom::Bytes(value) => {
+                slot.set(value.into_data());
+                Ok(())
+            }
+            other => Self::deserialize_atom(slot, other, state),
+        }
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("bytes")
     }
 }
 
@@ -165,18 +161,20 @@ impl<'a> Serialize<Cow<'a, [u8]>> for Borrowed {
 /// ```
 pub struct DisplayFromStr;
 
-make_slot_wrapper!(FromStrSlot);
-
-impl<'de, T> Sink<'de> for FromStrSlot<T>
+impl<'de, T> Deserialize<'de, T> for DisplayFromStr
 where
     T: FromStr + Send,
     T::Err: Display,
 {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(
+        slot: &mut Slot<T, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref value) => match value.parse::<T>() {
                 Ok(value) => {
-                    **self = Some(value);
+                    slot.set(value);
                     Ok(())
                 }
                 Err(err) => Err(Error::new(
@@ -184,47 +182,15 @@ where
                     format!("invalid value: {}", err),
                 )),
             },
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 
-    fn expecting(&self) -> Cow<'_, str> {
+    fn expecting() -> Cow<'static, str> {
         Cow::Borrowed("string")
     }
-}
 
-impl<'de, T> Deserialize<'de, T> for DisplayFromStr
-where
-    T: FromStr + Send,
-    T::Err: Display,
-{
-    fn deserialize_into<'out>(
-        out: &'out mut Option<T>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        FromStrSlot::make_handle(out)
-    }
-
-    #[inline]
-    fn __private_atom_into(
-        out: &mut Option<T>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let sink = FromStrSlot::wrap(out);
-        sink.atom(atom, state)?;
-        sink.finish(state)
-    }
-
-    #[inline]
-    fn __private_borrowed_atom_into(
-        out: &mut Option<T>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        // the value is parsed, it does not borrow
-        Self::__private_atom_into(out, atom, state)
-    }
+    slot_atom_into!(T);
 }
 
 impl<T: Display + ?Sized> Serialize<T> for DisplayFromStr {
@@ -266,57 +232,32 @@ impl<T: Display + ?Sized> Serialize<T> for DisplayFromStr {
 /// ```
 pub struct Flag;
 
-make_slot_wrapper!(FlagSlot);
-
-impl<'de> Sink<'de> for FlagSlot<bool> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("flag")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de, bool> for Flag {
+    fn deserialize_atom(
+        slot: &mut Slot<bool, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         let value = match atom {
             Atom::Bool(value) => value,
             Atom::Null => true,
             Atom::Str(ref value) | Atom::Lexical(ref value) if value.is_empty() => true,
             Atom::Str(ref value) | Atom::Lexical(ref value) => parse_bool_with(value, true, state)?,
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(slot, other, state),
         };
-        **self = Some(value);
+        slot.set(value);
         Ok(())
     }
-}
 
-impl<'de> Deserialize<'de, bool> for Flag {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<bool>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        FlagSlot::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("flag")
     }
 
     fn initial_value() -> Option<bool> {
         Some(false)
     }
 
-    #[inline]
-    fn __private_atom_into(
-        out: &mut Option<bool>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let sink = FlagSlot::wrap(out);
-        sink.atom(atom, state)?;
-        sink.finish(state)
-    }
-
-    #[inline]
-    fn __private_borrowed_atom_into(
-        out: &mut Option<bool>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        Self::__private_atom_into(out, atom, state)
-    }
+    slot_atom_into!(bool);
 }
 
 impl Serialize<bool> for Flag {
@@ -375,6 +316,10 @@ where
             |value| Ok(value.into()),
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        U::expecting()
     }
 
     fn initial_value() -> Option<T> {
@@ -483,6 +428,10 @@ where
         )
     }
 
+    fn expecting() -> Cow<'static, str> {
+        U::expecting()
+    }
+
     fn initial_value() -> Option<T> {
         U::initial_value().and_then(|value| T::try_from(value).ok())
     }
@@ -575,6 +524,10 @@ impl<'de, T: Default + Send, A: Deserialize<'de, T>> Deserialize<'de, T> for Def
             },
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     fn initial_value() -> Option<T> {
@@ -815,7 +768,7 @@ impl<T: ?Sized, A: Serialize<T>> Serialize<T> for DefaultOnError<A> {
 }
 
 /// Deserializes an atom and returns the value unless it failed.
-fn try_atom<'de, T, A: Deserialize<'de, T>>(atom: Atom, state: &mut State) -> Option<T> {
+fn try_atom<'de, T: Send, A: Deserialize<'de, T>>(atom: Atom, state: &mut State) -> Option<T> {
     let mut value = None;
     match state.discard_errors(|state| A::__private_atom_into(&mut value, atom, state)) {
         Ok(()) => value,
@@ -824,7 +777,7 @@ fn try_atom<'de, T, A: Deserialize<'de, T>>(atom: Atom, state: &mut State) -> Op
 }
 
 /// Deserializes a borrowed atom and returns the value unless it failed.
-fn try_borrowed_atom<'de, T, A: Deserialize<'de, T>>(
+fn try_borrowed_atom<'de, T: Send, A: Deserialize<'de, T>>(
     atom: Atom<'de>,
     state: &mut State,
 ) -> Option<T> {
@@ -863,6 +816,10 @@ fn try_borrowed_atom<'de, T, A: Deserialize<'de, T>>(
 pub struct VecSkipError<A = Same>(PhantomData<fn() -> A>);
 
 impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipError<A> {
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<Vec<T> as SeqTarget<T>>::NAME)
+    }
+
     fn deserialize_into<'out>(
         out: &'out mut Option<Vec<T>>,
         state: &mut State,
@@ -885,7 +842,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipE
 
         impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
             fn expecting(&self) -> Cow<'_, str> {
-                Cow::Borrowed("vec")
+                Cow::Borrowed(<Vec<T> as SeqTarget<T>>::NAME)
             }
 
             fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -1037,6 +994,10 @@ where
         KA: Deserialize<'de, K>,
         VA: Deserialize<'de, V>,
     {
+        fn expecting(&self) -> Cow<'_, str> {
+            Cow::Borrowed(M::NAME)
+        }
+
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
             self.replace = DuplicateKeys::of(state) == DuplicateKeys::Last;
             Ok(())
@@ -1136,6 +1097,10 @@ where
     ) -> SinkHandle<'out, 'de> {
         skip_map_sink::<_, K, V, KA, VA>(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<BTreeMap<K, V> as MapTarget<K, V>>::NAME)
+    }
 }
 
 #[cfg(feature = "std")]
@@ -1152,6 +1117,10 @@ where
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         skip_map_sink::<_, K, V, KA, VA>(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashMap<K, V, H> as MapTarget<K, V>>::NAME)
     }
 }
 

@@ -77,6 +77,8 @@
 //! `IpAddr`) there is no buffering.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
+use std::borrow::Cow;
+
 use deser_core::Deserialize;
 use deser_core::Serialize;
 use deser_core::State;
@@ -130,6 +132,10 @@ impl<'de, T: serde::Deserialize<'de> + Send> Deserialize<'de, T> for Serde {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         SinkHandle::arena(RootSink::new(out, buffered::Buffer::default()), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("serde value")
     }
 
     fn initial_value() -> Option<T> {

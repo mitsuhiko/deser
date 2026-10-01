@@ -21,7 +21,7 @@ use crate::Text;
 use crate::de::arena::ArenaBox;
 use crate::de::recording::{Capture, RecordBuf};
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
-use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, default_atom};
 use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::Atom;
 use crate::extensions::EventData;
@@ -270,6 +270,10 @@ impl<'de> Deserialize<'de> for IgnoredContent {
         }
 
         SinkHandle::arena(IgnoredContentSink(out), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
     }
 }
 
@@ -556,7 +560,7 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if let Atom::Ext(_) = atom {
             // lowered to the fallback
-            return self.unexpected_atom(atom, state);
+            return default_atom(self, atom, state);
         }
         if let Some(value) = lookup_atom(&atom, self.unit) {
             *self.out = Some(value);
@@ -877,7 +881,7 @@ enum UntaggedInput<'t, 'de> {
     Recorded(&'t RecordBuf<'de>),
 }
 
-/// Tries a variant of an untagged enum (see [`UntaggedVariants`]).
+/// Tries a variant of an untagged enum (see `UntaggedVariants`).
 pub struct UntaggedTry<'t, 'de, E> {
     input: UntaggedInput<'t, 'de>,
     // the data of the event of an atom
@@ -973,6 +977,10 @@ struct UntaggedCapture<'a, 'de, E> {
 }
 
 impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de, E> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
+    }
+
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         untagged_atom(self.out, self.name, self.variants, atom, state)
     }
@@ -1001,6 +1009,7 @@ impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de,
 /// atoms are recorded and replayed, the recording borrows from the data.
 pub fn untagged_fallback<'a, 'de, E: Send>(
     out: &'a mut Option<E>,
+    name: &'static str,
     tagged: for<'x> fn(&'x mut Option<E>, &mut State) -> SinkHandle<'x, 'de>,
     variants: UntaggedVariants<'de, E>,
     state: &mut State,
@@ -1008,6 +1017,7 @@ pub fn untagged_fallback<'a, 'de, E: Send>(
     RecordBuf::capture_with(
         FallbackCapture {
             out,
+            name,
             tagged,
             variants,
         },
@@ -1019,6 +1029,7 @@ pub fn untagged_fallback<'a, 'de, E: Send>(
 /// this.
 struct FallbackCapture<'a, 'de, E> {
     out: &'a mut Option<E>,
+    name: &'static str,
     tagged: for<'x> fn(&'x mut Option<E>, &mut State) -> SinkHandle<'x, 'de>,
     variants: UntaggedVariants<'de, E>,
 }
@@ -1050,6 +1061,10 @@ impl<'a, 'de, E: Send> FallbackCapture<'a, 'de, E> {
 }
 
 impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for FallbackCapture<'a, 'de, E> {
+    fn expecting(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
+    }
+
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let input = UntaggedInput::Atom(atom.as_borrowed());
         self.deliver(

@@ -9,19 +9,20 @@
 //!
 //! Deserialization is based on "slots" and "sinks".  The basic idea is that when a
 //! type should be deserialized a slot in the form of an `Option<T>` is passed
-//! to it where the deserialized value will be placed.  The abstraction that
-//! places these values there is called a [`Sink`] which is returned within a
-//! [`SinkHandle`] from the deserializer.
+//! to it where the deserialized value will be placed.  The events of the
+//! value are received by a [`Sink`] which places the value in the slot.
+//! [`Deserialize::deserialize_into`] returns the sink of a slot in a
+//! [`SinkHandle`].  There are two ways to implement [`Deserialize`]:
 //!
-//! If you can get away with stateless deserialization you can avoid
-//! allocating the sink by using a newtype wrapper around `Option<T>` as the
-//! sink.  You can get such a wrapper (a slot wrapper) by using the
-//! [`make_slot_wrapper`] macro.  Due to Rust's orphan rules ([more
-//! information](https://doc.rust-lang.org/error-index.html#E0117)) the
-//! wrapper has to be a type of your crate, which is what the macro creates.
-//! The wrapper derefs into an `Option<T>` which makes it quite convenient
-//! to use.  By calling its `make_handle` function with a slot, one can
-//! directly retrieve a [`SinkHandle`].
+//! * Values that are deserialized from a single [`Atom`] (like numbers or
+//!   strings) implement [`Deserialize::deserialize_atom`].  They need no
+//!   state: the slot itself (a [`Slot`], which dereferences to the
+//!   `Option<T>`) is their sink and nothing needs to be allocated (see
+//!   [Deserializing Primitives](#deserializing-primitives)).
+//! * All other values (like structs, maps and sequences) implement
+//!   [`Deserialize::deserialize_into`] and return a sink of their own which
+//!   holds the state of the deserialization (see
+//!   [Struct Deserialization](#struct-deserialization)).
 //!
 //! # Streaming Deserialization
 //!
@@ -75,63 +76,54 @@
 //!
 //! # Deserializing Primitives
 //!
-//! To deserialize a primitive you implement a sink for your slot wrapper and
-//! implement the necessary callback.  You can do this as you do not need any
-//! state on the sink so we can use a slot wrapper.  In this example we
-//! want to accept a `bool` so we just need to implement the
-//! [`atom`](Sink::atom) method as bools are represented as [`Atom`]s.  The
-//! resulting value then must be placed in the slot:
+//! Primitives are deserialized from [`Atom`]s.  As no state is needed for
+//! this, you only implement [`Deserialize::deserialize_atom`] which receives
+//! the atom and the [`Slot`] the resulting value must be placed in.  In this
+//! example we want to accept a `bool`:
 //!
 //! ```rust
-//! use deser::de::{Sink, Deserialize, SinkHandle};
-//! use deser::State;
-//! use deser::{make_slot_wrapper, Error, Atom};
-//!
-//! make_slot_wrapper!(SlotWrapper);
+//! use std::borrow::Cow;
+//! use deser::de::{Deserialize, Slot, default_atom};
+//! use deser::{Atom, Error, State};
 //!
 //! struct MyBool(bool);
 //!
-//! impl<'de> Sink<'de> for SlotWrapper<MyBool> {
-//!     fn atom(
-//!         &mut self,
+//! impl<'de> Deserialize<'de> for MyBool {
+//!     fn deserialize_atom(
+//!         slot: &mut Slot<Self>,
 //!         atom: Atom,
 //!         state: &mut State,
 //!     ) -> Result<(), Error> {
 //!         match atom {
 //!             Atom::Bool(value) => {
-//!                 // note the extra star here to reach through the deref
-//!                 // of the slot wrapper.
-//!                 **self = Some(MyBool(value));
+//!                 slot.set(MyBool(value));
 //!                 Ok(())
 //!             }
-//!             // for any other value we dispatch to the default handling
-//!             // which creates an unexpected type error but might have
-//!             // more elaborate default behavior in the future.
-//!             other => self.unexpected_atom(other, state),
+//!             // any other atom goes to the default handling, which passes
+//!             // some atoms on in another form (like extension values as
+//!             // their fallback) and rejects the rest
+//!             other => default_atom(slot, other, state),
 //!         }
 //!     }
-//! }
 //!
-//! impl<'de> Deserialize<'de> for MyBool {
-//!     fn deserialize_into<'out>(
-//!         out: &'out mut Option<Self>,
-//!         state: &mut State,
-//!     ) -> SinkHandle<'out, 'de> {
-//!         // Since we're using the SlotWrapper abstraction we can directly
-//!         // make a handle here by using the `make_handle` utility.
-//!         SlotWrapper::make_handle(out)
+//!     // what is expected in error messages, this defaults to the name
+//!     // of the type
+//!     fn expecting() -> Cow<'static, str> {
+//!         Cow::Borrowed("bool")
 //!     }
 //! }
 //! ```
 //!
 //! # Struct Deserialization
 //!
-//! If you want to deserialize a struct you need to implement the map methods.
-//! As you need to keep track of state you will need to return a sink that
-//! is owned by the handle (allocated in the arena of the deserialization
-//! with [`SinkHandle::arena`]) and you can't use the slot wrapper.
+//! If you want to deserialize a struct you need a sink that implements the
+//! map methods.  As the sink keeps track of state, you implement
+//! [`deserialize_into`](Deserialize::deserialize_into) which returns a sink
+//! that is owned by the handle (allocated in the arena of the
+//! deserialization with [`SinkHandle::arena`]).
 //!
 //! ```rust
+//! use std::borrow::Cow;
 //! use deser::de::{Deserialize, Sink, SinkHandle};
 //! use deser::State;
 //! use deser::{Error, ErrorKind};
@@ -154,6 +146,12 @@
 //!         };
 //!         SinkHandle::arena(sink, state)
 //!     }
+//!
+//!     // what is expected in error messages (like for a string that is
+//!     // passed instead of the map)
+//!     fn expecting() -> Cow<'static, str> {
+//!         Cow::Borrowed("flag")
+//!     }
 //! }
 //!
 //! struct FlagSink<'a> {
@@ -164,6 +162,11 @@
 //! }
 //!
 //! impl<'a, 'de> Sink<'de> for FlagSink<'a> {
+//!     // the sink of a value reports what the value expects
+//!     fn expecting(&self) -> Cow<'_, str> {
+//!         Flag::expecting()
+//!     }
+//!
 //!     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
 //!         // the default implementation returns an error, so we need to
 //!         // override it to remove this error.
@@ -249,14 +252,16 @@ pub(crate) mod mapped;
 mod owned;
 pub(crate) mod recording;
 mod sinkbox;
+pub(crate) mod slot;
 mod stream;
 pub(crate) mod unknown;
 pub(crate) mod update;
 
+pub use self::atoms::default_atom;
 pub(crate) use self::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use self::atoms::{
     default_borrowed_key_atom, default_borrowed_value_atom, default_container, default_key_atom,
-    default_unexpected_atom, default_value_atom,
+    default_value_atom,
 };
 pub use self::collect::CollectedErrors;
 pub use self::deserializer::{Deserializer, deserialize_value};
@@ -269,6 +274,7 @@ pub use self::recording::{RecordBuf, Recording};
 #[cfg(feature = "derive")]
 use self::sinkbox::StructBox;
 use self::sinkbox::{ArenaSink, HeapSink, arena_sink};
+pub use self::slot::Slot;
 pub use self::stream::{Frame, Progress, StreamDeserializer};
 pub use self::unknown::{IgnoredFields, UnknownFields};
 pub use self::update::checked_update;
@@ -373,39 +379,53 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// rather be created with [`heap`](Self::heap).
     ///
     /// ```
-    /// use deser::de::{Deserialize, Sink, SinkHandle};
-    /// use deser::{Atom, Error, State};
+    /// use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+    /// use deser::{Error, Event, State};
     ///
-    /// struct Flag(bool);
+    /// /// The number of items of a sequence.
+    /// struct Count(usize);
     ///
-    /// struct FlagSink<'a> {
-    ///     out: &'a mut Option<Flag>,
+    /// struct CountSink<'a> {
+    ///     out: &'a mut Option<Count>,
+    ///     count: usize,
     /// }
     ///
-    /// impl<'de> Sink<'de> for FlagSink<'_> {
-    ///     fn atom(
+    /// impl<'de> Sink<'de> for CountSink<'_> {
+    ///     fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn next_value(
     ///         &mut self,
-    ///         atom: Atom,
-    ///         state: &mut State,
-    ///     ) -> Result<(), Error> {
-    ///         match atom {
-    ///             Atom::Bool(value) => {
-    ///                 *self.out = Some(Flag(value));
-    ///                 Ok(())
-    ///             }
-    ///             other => self.unexpected_atom(other, state),
-    ///         }
+    ///         _state: &mut State,
+    ///     ) -> Result<SinkHandle<'_, 'de>, Error> {
+    ///         self.count += 1;
+    ///         // the items themselves are ignored
+    ///         Ok(SinkHandle::null())
+    ///     }
+    ///
+    ///     fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+    ///         *self.out = Some(Count(self.count));
+    ///         Ok(())
     ///     }
     /// }
     ///
-    /// impl<'de> Deserialize<'de> for Flag {
+    /// impl<'de> Deserialize<'de> for Count {
     ///     fn deserialize_into<'a>(
     ///         out: &'a mut Option<Self>,
     ///         state: &mut State,
     ///     ) -> SinkHandle<'a, 'de> {
-    ///         SinkHandle::arena(FlagSink { out }, state)
+    ///         SinkHandle::arena(CountSink { out, count: 0 }, state)
     ///     }
     /// }
+    ///
+    /// let mut out = None::<Count>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// for event in [Event::seq_start(), "a".into(), "b".into(), Event::SeqEnd] {
+    ///     driver.emit(event).unwrap();
+    /// }
+    /// drop(driver);
+    /// assert_eq!(out.unwrap().0, 2);
     /// ```
     #[inline(always)]
     pub fn arena<S: Sink<'de> + 'a>(val: S, state: &mut State) -> SinkHandle<'a, 'de> {
@@ -693,13 +713,6 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
         self.sink_mut().borrowed_atom(atom, state)
     }
 
-    /// Handles an atom the sink does not accept.
-    ///
-    /// This is [`Sink::unexpected_atom`] of the sink the handle holds.
-    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        default_unexpected_atom(self.sink_mut(), atom, state)
-    }
-
     #[inline]
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink_mut().map(state)
@@ -796,9 +809,22 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
 
 /// A trait for deserializable types.
 ///
-/// A type is deserializable if it can deserialize into a [`Sink`].  The
-/// actual deserialization logic itself is implemented by the returned
-/// [`Sink`].
+/// A type is deserializable if it can create a [`Sink`] for its slot with
+/// [`deserialize_into`](Self::deserialize_into).  This is how values are
+/// deserialized, but there are two ways to implement it:
+///
+/// * Values that are deserialized from a single atom (like numbers or
+///   strings) implement [`deserialize_atom`](Self::deserialize_atom).  The
+///   default implementation of `deserialize_into` returns the slot itself
+///   as sink (see [`Slot`]), which passes the atom on.
+/// * All other values implement `deserialize_into` and return a sink of
+///   their own (see [`SinkHandle::arena`]), which implements the actual
+///   deserialization logic.
+///
+/// Either way, [`expecting`](Self::expecting) says what the value expects
+/// in error messages (the sink reports it).  If neither `deserialize_atom`
+/// nor `deserialize_into` is implemented, every value is rejected.  See the
+/// [module documentation](crate::de) for examples of both.
 ///
 /// The lifetime `'de` is the lifetime of the data that is deserialized.
 /// Types that borrow from it (like `&'de str`) only implement
@@ -827,20 +853,27 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
 /// [`adapters`](crate::adapters)):
 ///
 /// ```
-/// use deser::de::SinkHandle;
-/// use deser::{Deserialize, State};
+/// use std::borrow::Cow;
+/// use deser::de::Slot;
+/// use deser::{Atom, Deserialize, Error, State};
 ///
 /// /// Deserializes a `u32` as `u16`.
 /// pub struct Small;
 ///
 /// impl<'de> Deserialize<'de, u32> for Small {
-///     fn deserialize_into<'out>(
-///         out: &'out mut Option<u32>,
+///     fn deserialize_atom(
+///         slot: &mut Slot<u32, Self>,
+///         atom: Atom,
 ///         state: &mut State,
-///     ) -> SinkHandle<'out, 'de> {
-///         // ...
-/// #       let _ = (out, state);
-/// #       SinkHandle::null()
+///     ) -> Result<(), Error> {
+///         let mut value = None::<u16>;
+///         u16::deserialize_atom(Slot::wrap(&mut value), atom, state)?;
+///         **slot = value.map(u32::from);
+///         Ok(())
+///     }
+///
+///     fn expecting() -> Cow<'static, str> {
+///         Cow::Borrowed("u16")
 ///     }
 /// }
 /// ```
@@ -852,17 +885,79 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
 /// Deserializable values are `Send` and so are the sinks they create.  This
 /// allows an ongoing deserialization (a [`DeserializeDriver`]) to move
 /// between threads, for instance when it is suspended while waiting for more
-/// input.  Types that are not `Send` (such as `Rc`) cannot be deserialized.
-pub trait Deserialize<'de, T = Self>: Sized + Send {
+/// input.  Types that are not `Send` (such as `Rc`) cannot be deserialized,
+/// which is why `T` has to be `Send`.
+pub trait Deserialize<'de, T: Send = Self>: Sized + Send {
     /// Creates a sink that deserializes the value into the given slot.
     ///
-    /// There are two typical implementations for this method: the common one is
-    /// to return a slot wrapper (see [`make_slot_wrapper`]).  Custom types
-    /// will most likely just return that.  An alternative method is to
-    /// "wrap" the deserializable in a custom sink (see
-    /// [`SinkHandle::arena`]).
-    fn deserialize_into<'out>(out: &'out mut Option<T>, state: &mut State)
-    -> SinkHandle<'out, 'de>;
+    /// This is how every value is deserialized, whichever way the type
+    /// implements `Deserialize`.  The default implementation returns the
+    /// slot itself as sink (see [`Slot`]), which passes atoms to
+    /// [`deserialize_atom`](Self::deserialize_atom).  This is what values
+    /// that are deserialized from atoms use.  Values that need state to be
+    /// deserialized (like maps and sequences) implement this and return
+    /// their own sink (see [`SinkHandle::arena`]).
+    #[inline]
+    fn deserialize_into<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        // the slot is the sink, nothing is allocated in the state (the atoms
+        // come with the state)
+        let _ = state;
+        Slot::<T, Self>::handle(out)
+    }
+
+    /// Deserializes an atom into the slot.
+    ///
+    /// This is invoked by the sink of the default implementation of
+    /// [`deserialize_into`](Self::deserialize_into) (the slot itself, see
+    /// [`Slot`]) for every atom it receives.  The value is placed in the
+    /// slot, atoms which are not accepted are passed to [`default_atom`]
+    /// (with the slot as sink).  The default implementation does this for
+    /// every atom.
+    ///
+    /// Types that implement `deserialize_into` do not use this.  This also
+    /// means that calling it only deserializes values that implement it
+    /// (like the primitives), other values reject every atom.  To
+    /// deserialize an atom into any value, pass it to the sink returned by
+    /// `deserialize_into`.
+    fn deserialize_atom(
+        slot: &mut Slot<T, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        default_atom(slot, atom, state)
+    }
+
+    /// Deserializes an atom that borrows from the data being deserialized
+    /// into the slot.
+    ///
+    /// This is like [`deserialize_atom`](Self::deserialize_atom) for
+    /// [`Sink::borrowed_atom`], which it forwards to by default.  Only values
+    /// which borrow (like `&'de str`) need to implement it.
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<T, Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        <Self as Deserialize<'de, T>>::deserialize_atom(slot, atom, state)
+    }
+
+    /// Returns what the value expects, for error messages.
+    ///
+    /// This is what the errors of values that do not match say they expect
+    /// (`unexpected map, expected u32`).  The sink of the value reports it
+    /// with [`Sink::expecting`]: the [`Slot`] returns this, sinks returned
+    /// by [`deserialize_into`](Self::deserialize_into) should return it as
+    /// well.  The derive returns the name of the type (or what
+    /// `#[deser(expecting = "...")]` says), wrappers like `Option<T>` and
+    /// `Box<T>` what their value expects.  The default implementation
+    /// returns the name of the type without the module paths (like
+    /// `Vec<Point>`), which is the name of the adapter for adapters.
+    fn expecting() -> Cow<'static, str> {
+        slot::short_type_name(core::any::type_name::<Self>())
+    }
 
     /// Provides the value of a missing struct field.
     ///
@@ -892,10 +987,7 @@ pub trait Deserialize<'de, T = Self>: Sized + Send {
     /// entries, the values of keys that exist are replaced.
     ///
     /// If the update fails, the value might be partially updated.
-    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de> {
         update::replace_handle_with(
             value,
             <Self as Deserialize<'de, T>>::deserialize_into,
@@ -908,8 +1000,9 @@ pub trait Deserialize<'de, T = Self>: Sized + Send {
     /// This must behave exactly like invoking [`atom`](Sink::atom) and
     /// [`finish`](Sink::finish) on the sink returned by
     /// [`deserialize_into`](Self::deserialize_into), which is what the default
-    /// implementation does.  Types with stateless sinks override this so that
-    /// atoms can be deserialized without dynamic dispatch.
+    /// implementation does.  Types that are deserialized with a [`Slot`]
+    /// override this so that atoms can be deserialized without dynamic
+    /// dispatch.
     ///
     /// Internal fast path, not public API (see `lib.rs`).
     #[doc(hidden)]
@@ -1057,10 +1150,7 @@ pub trait Deserialize<'de, T = Self>: Sized + Send {
         value: &'out mut T,
         first: bool,
         state: &mut State,
-    ) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    ) -> SinkHandle<'out, 'de> {
         let _ = first;
         <Self as Deserialize<'de, T>>::deserialize_update(value, state)
     }
@@ -1135,6 +1225,11 @@ impl<'de, T: Sink<'de>> AsDynSink<'de> for T {
 ///
 /// The sink then places the received value in the slot connected to the sink.
 ///
+/// Values that are deserialized from a single atom do not need to implement
+/// a sink, the [`Slot`] is their sink (see
+/// [`Deserialize::deserialize_atom`]).  Sinks are implemented for values
+/// that need state, like structs, maps and sequences.
+///
 /// # Borrowed Data
 ///
 /// Atoms are passed to [`atom`](Self::atom) with a lifetime that only lasts
@@ -1145,12 +1240,14 @@ impl<'de, T: Sink<'de>> AsDynSink<'de> for T {
 pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// Receives an [`Atom`].
     ///
-    /// Any unknown atom variant should be dispatched to [`unexpected_atom`](Self::unexpected_atom).
-    /// This is particularly important for [`Atom::Ext`] as the default
-    /// implementation of `unexpected_atom` will retry with the fallback atom
-    /// of the extension value.
+    /// Atoms which are not accepted are passed to [`default_atom`], the
+    /// default handling of atoms (which is what the default implementation
+    /// does for every atom).  This is
+    /// particularly important for [`Atom::Ext`] as extension values are
+    /// passed on as their fallback.  Values that are deserialized from atoms
+    /// implement [`Deserialize::deserialize_atom`] instead of a sink.
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        default_unexpected_atom(self.__private_as_dyn(), atom, state)
+        default_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Receives an [`Atom`] that borrows from the data being deserialized.
@@ -1158,26 +1255,6 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// The default implementation forwards to [`atom`](Self::atom).
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         self.atom(atom, state)
-    }
-
-    /// Implements a default fallback handling for atoms.
-    ///
-    /// For [`Atom::Ext`] values the atom is lowered into the core data model
-    /// with [`fallback`](crate::ext::ExtValue::fallback) and passed to
-    /// [`atom`](Self::atom) again.  [`Atom::F32`] is widened into an
-    /// [`Atom::F64`] and passed on the same way, so sinks that accept floats
-    /// only need to handle `F64`.  [`Atom::Lexical`] is passed on as
-    /// [`Atom::Str`], so sinks that accept strings accept lexical atoms
-    /// too.  For all other atoms an error is returned.
-    ///
-    /// This is a helper for implementations of [`atom`](Self::atom), it's
-    /// not invoked by the driver (and not part of the vtable of sinks, so
-    /// that it does not exist once per sink).
-    fn unexpected_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error>
-    where
-        Self: Sized,
-    {
-        default_unexpected_atom(self.__private_as_dyn(), atom, state)
     }
 
     /// Begins the deserialization of a map.
@@ -1372,10 +1449,12 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
         Err(err)
     }
 
-    /// Utility method to return an expectation message that is used in error messages.
+    /// Returns what the sink expects, for error messages.
     ///
-    /// This is typically the name of the type.  The default implementation
-    /// returns `"compatible type"`.
+    /// The sink of a value returns what the value expects (see
+    /// [`Deserialize::expecting`]), sinks which pass values on to another
+    /// sink what that sink expects.  The default implementation returns
+    /// `"compatible type"`.
     fn expecting(&self) -> Cow<'_, str> {
         Cow::Borrowed("compatible type")
     }

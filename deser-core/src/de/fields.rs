@@ -20,7 +20,7 @@ use crate::de::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use crate::de::duplicates::{duplicate_field, is_seen, mark_seen};
 use crate::de::sinkbox::StructBox;
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, Sink, SinkHandle, default_atom};
 use crate::error::{Error, ErrorKind, discarded_error};
 use crate::event::Atom;
 
@@ -266,7 +266,7 @@ impl<'de> Sink<'de> for FieldKeySink {
                 }
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(self, other, state),
         }
     }
 

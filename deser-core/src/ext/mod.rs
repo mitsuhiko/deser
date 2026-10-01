@@ -14,9 +14,8 @@
 //!   [downcast](ExtValue::downcast_ref) the value and handle it natively.
 //!   Otherwise it serializes the fallback.
 //! * a [`Sink`](crate::de::Sink) which knows about an extension type can
-//!   downcast it.  Otherwise the default implementation of
-//!   [`Sink::unexpected_atom`](crate::de::Sink::unexpected_atom) retries
-//!   with the fallback.
+//!   downcast it.  Otherwise the default handling of atoms (see
+//!   [`default_atom`](crate::de::default_atom)) retries with the fallback.
 //!
 //! This avoids in-band signalling: the value keeps its identity for everybody
 //! who understands it, and degrades gracefully for everybody else.

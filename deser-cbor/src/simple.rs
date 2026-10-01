@@ -1,7 +1,7 @@
 use alloc::borrow::Cow;
 
 use deser_core::State;
-use deser_core::de::{Deserialize, Sink, SinkHandle};
+use deser_core::de::{Deserialize, Slot, default_atom};
 use deser_core::ext::{ExtValue, Extension};
 use deser_core::ser::{Chunk, Serialize};
 use deser_core::{Atom, Error, ErrorKind};
@@ -60,22 +60,7 @@ impl Serialize for Simple {
 }
 
 impl<'de> Deserialize<'de> for Simple {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SinkHandle::arena(SimpleSink(out), state)
-    }
-}
-
-struct SimpleSink<'a>(&'a mut Option<Simple>);
-
-impl<'a, 'de> Sink<'de> for SimpleSink<'a> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("simple")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         let simple = match atom {
             Atom::Ext(ref ext) if ext.is::<Simple>() => *ext.downcast_ref::<Simple>().unwrap(),
             Atom::Bool(false) => Simple(20),
@@ -90,9 +75,13 @@ impl<'a, 'de> Sink<'de> for SimpleSink<'a> {
                     ));
                 }
             },
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(slot, other, state),
         };
-        *self.0 = Some(simple);
+        slot.set(simple);
         Ok(())
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("simple")
     }
 }

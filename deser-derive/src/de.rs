@@ -268,6 +268,14 @@ fn derive_tuple_struct(
     } else {
         quote! { __deser::de::OwnedSink::<#tuple_ty>::deserialize(__state) }
     };
+    // the tuple is what is expected
+    let expecting = if has_adapters {
+        quote! {
+            <(#(#adapters,)*) as __deser::Deserialize<'de, #tuple_ty>>::expecting()
+        }
+    } else {
+        quote! { <#tuple_ty as __deser::Deserialize<'de>>::expecting() }
+    };
     let construct = st.construct(&values);
     let handle = quote! {
         __deser::__derive::mapped(
@@ -282,6 +290,10 @@ fn derive_tuple_struct(
         impl #impl_generics #de_trait for #ident #ty_generics #where_clause {
             fn deserialize_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State) -> __deser::de::SinkHandle<'__out, 'de> {
                 #handle
+            }
+
+            fn expecting() -> __deser::__derive::StrCow<'static> {
+                #expecting
             }
         }
     })
@@ -315,6 +327,10 @@ fn derive_unit_struct(
                         <Self as #de_trait>::__private_atom_into(__slot, __atom, __state)
                     },
                     #type_name, __state)
+            }
+
+            fn expecting() -> __deser::__derive::StrCow<'static> {
+                __deser::__derive::StrCow::Borrowed(#type_name)
             }
 
             #[inline]
@@ -1132,6 +1148,10 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     }, __state)
                 }
 
+                fn expecting() -> __deser::__derive::StrCow<'static> {
+                    __deser::__derive::StrCow::Borrowed(#type_name)
+                }
+
                 #update_method
             }
 
@@ -1517,6 +1537,10 @@ impl CompactStruct<'_> {
                             &__INFO, __state)
                     }
 
+                    fn expecting() -> __deser::__derive::StrCow<'static> {
+                        __deser::__derive::StrCow::Borrowed(#type_name)
+                    }
+
                     #update_method
                 }
 
@@ -1709,6 +1733,10 @@ pub(crate) fn derive_enum(
                     __deser::__derive::unit_enum_sink(__slot, __set_slot, &__UNIT, __state)
                 }
 
+                fn expecting() -> __deser::__derive::StrCow<'static> {
+                    __deser::__derive::StrCow::Borrowed(#type_name)
+                }
+
                 fn deserialize_update<'__out>(
                     __value: &'__out mut Self,
                     __state: &mut __deser::State,
@@ -1776,6 +1804,13 @@ pub(crate) fn derive_newtype_struct(
     };
     let atom_into = atom_into(field_type, adapter, quote! { &mut __inner });
     let borrowed_atom_into = borrowed_atom_into(field_type, adapter, quote! { &mut __inner });
+    // the sink passes everything on to the sink of the field
+    let expecting = match adapter {
+        None => quote! { <#field_type as __deser::Deserialize<'de>>::expecting() },
+        Some(adapter) => quote_spanned! { adapter.span()=>
+            <#adapter as __deser::Deserialize<'de, #field_type>>::expecting()
+        },
+    };
 
     let wrapper_generics = with_lifetime_bound(&de_generics, "'__a");
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
@@ -1795,6 +1830,10 @@ pub(crate) fn derive_newtype_struct(
                         slot: __slot,
                         sink: #make_sink,
                     }, __state)
+                }
+
+                fn expecting() -> __deser::__derive::StrCow<'static> {
+                    #expecting
                 }
 
                 #newtype_update

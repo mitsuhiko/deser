@@ -177,9 +177,6 @@ pub use deser_core::{
     Event, EventData, Implicit, ImplicitValue, Order, Position, Source, State, Text,
 };
 
-#[doc(inline)]
-pub use deser_core::make_slot_wrapper;
-
 // common re-exports
 
 #[doc(no_inline)]

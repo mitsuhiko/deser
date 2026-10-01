@@ -13,7 +13,7 @@ pub use self::encodings::{Base64, Base64NoPad, Base64Url, Base64UrlNoPad};
 pub use self::impls::{BytesBuf, BytesFallback, BytesFallbackFormat, IntSeq};
 
 #[allow(unused_imports)]
-pub(crate) use self::impls::{BytesBufImpl, encoded_handle, encoding_adapter};
+pub(crate) use self::impls::{BytesBufImpl, encoded_expecting, encoded_handle, encoding_adapter};
 
 pub(crate) use self::encodings::decode_base64;
 

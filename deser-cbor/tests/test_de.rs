@@ -3,7 +3,7 @@
 //! Adapted from the cbor2 test suite.
 use crate::common;
 
-use deser::de::{DeserializeOwned, Limits};
+use deser::de::{DeserializeOwned, Limits, Slot};
 use std::collections::HashMap;
 
 use common::{Value, de, hex};
@@ -491,26 +491,19 @@ fn value_error_offsets() {
     assert_eq!(err.offset(), Some(3));
 
     // the input ranges of the items are published
-    use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+    use deser::de::{Deserialize, DeserializeDriver};
     use deser::{Atom, Error, State};
 
     #[derive(Debug)]
     struct Range(std::ops::Range<usize>);
 
-    deser::make_slot_wrapper!(SlotWrapper);
-
     impl<'de> Deserialize<'de> for Range {
-        fn deserialize_into<'out>(
-            out: &'out mut Option<Self>,
-            _state: &mut State,
-        ) -> SinkHandle<'out, 'de> {
-            SlotWrapper::make_handle(out)
-        }
-    }
-
-    impl<'de> Sink<'de> for SlotWrapper<Range> {
-        fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
-            **self = Some(Range(state.input_range().unwrap()));
+        fn deserialize_atom(
+            slot: &mut Slot<Self>,
+            _atom: Atom,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            slot.set(Range(state.input_range().unwrap()));
             Ok(())
         }
     }

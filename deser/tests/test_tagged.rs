@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use deser::de::{DeserializeDriver, DeserializeOwned, Recording};
+use deser::de::{DeserializeDriver, DeserializeOwned, Recording, Slot};
 use deser::ser::SerializeDriver;
 use deser::{ContainerShape, Deserialize, Error, ErrorKind, Event, Serialize};
 
@@ -333,24 +333,17 @@ struct Probe {
     shape: deser::ContainerShape,
 }
 
-deser::make_slot_wrapper!(ProbeSlot);
-
-impl<'de> deser::de::Sink<'de> for ProbeSlot<Probe> {
-    fn atom(&mut self, _atom: deser::Atom, state: &mut deser::State) -> Result<(), Error> {
-        **self = Some(Probe {
+impl<'de> Deserialize<'de> for Probe {
+    fn deserialize_atom(
+        slot: &mut Slot<Self>,
+        _atom: deser::Atom,
+        state: &mut deser::State,
+    ) -> Result<(), Error> {
+        slot.set(Probe {
             depth: state.depth(),
             shape: state.container_shape(),
         });
         Ok(())
-    }
-}
-
-impl<'de> Deserialize<'de> for Probe {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut deser::State,
-    ) -> deser::de::SinkHandle<'out, 'de> {
-        ProbeSlot::make_handle(out)
     }
 }
 

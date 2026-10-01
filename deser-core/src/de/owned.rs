@@ -131,7 +131,7 @@ impl<'de, T: Deserialize<'de>> OwnedSink<'de, T> {
     }
 }
 
-impl<'de, T> OwnedSink<'de, T> {
+impl<'de, T: Send> OwnedSink<'de, T> {
     /// Creates a new owned sink that deserializes with an adapter.
     ///
     /// This is like [`deserialize`](Self::deserialize) but begins the
@@ -140,7 +140,9 @@ impl<'de, T> OwnedSink<'de, T> {
     pub fn deserialize_as<A: Deserialize<'de, T>>(state: &mut State) -> OwnedSink<'de, T> {
         OwnedSink::with(A::deserialize_into, state)
     }
+}
 
+impl<'de, T> OwnedSink<'de, T> {
     /// Creates an owned sink whose slot starts out with a value.
     pub(crate) fn with_slot(
         slot: Option<T>,

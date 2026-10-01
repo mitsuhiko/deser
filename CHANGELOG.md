@@ -43,10 +43,28 @@ All notable changes to deser are documented here.
   instance `from_fn(|_| sink)`) or `deser::de::deserialize_value`.
 - **Breaking:** `SinkHandle` no longer repeats the methods of `Sink` as
   inherent methods, import `deser::de::Sink` to call them.
-- **Breaking:** removed `deser::de::SlotWrapper`.  It could not be used
-  outside of deser (sinks have to be implemented for a type of your
-  crate), create a slot wrapper with `make_slot_wrapper!` instead, whose
-  documentation now describes the type it creates.
+- **Breaking:** removed `make_slot_wrapper!` and `deser::de::SlotWrapper`.
+  Values that are deserialized from atoms implement
+  `Deserialize::deserialize_atom` (and `Deserialize::expecting`) instead
+  of a sink:
+  `deserialize_into` has a default implementation which returns the slot
+  as sink (a `deser::de::Slot`, which dereferences to the `Option<T>`),
+  so no macro, no sink and no `deserialize_into` are needed.
+  `deserialize_borrowed_atom` receives borrowed atoms.
+- Added `Deserialize::expecting`, what a value expects in error messages
+  (like `Sink::expecting` of its sink, which reports it).  The derive
+  implements it with the name of the type (or `#[deser(expecting)]`),
+  wrappers like `Option<T>` forward it, the default is the name of the
+  type.  The maps that `MapSkipError` deserializes report their type
+  instead of `compatible type`.
+- **Breaking:** replaced `Sink::unexpected_atom` with the function
+  `deser::de::default_atom(sink, atom, state)`, the default handling of
+  atoms that sinks (and `deserialize_atom`, with the slot as sink) pass the
+  atoms they do not accept to.  Overriding the method had no effect (the
+  driver does not invoke it).
+- **Breaking:** the value type of `Deserialize<'de, T>` has to be `Send`
+  (`T: Send`), which it had to be in practice already.  Generic adapters
+  need the bound (`impl<'de, T: Send, A: Deserialize<'de, T>>`).
 - **Breaking:** removed `deser::ser::Written`,
   `StreamSerializer::drive_partial` returns `true` once the value is
   complete (like `SerializeDriver::drive_until`).
@@ -57,8 +75,8 @@ All notable changes to deser are documented here.
   `Error::push_error` (use `Error::from_errors`).
 - **Breaking:** removed `BytesFormat::is_seq` (compare with
   `BytesFormat::SEQ`), `Error::error_count` (use `errors().count()`),
-  `Atom::widen_float` (sinks receive floats as `F64` through
-  `Sink::unexpected_atom`) and `OwnedDriver::driver` (use
+  `Atom::widen_float` (sinks receive floats as `F64` through the default
+  handling of atoms) and `OwnedDriver::driver` (use
   `OwnedDriver::with`).
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,

@@ -4,7 +4,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use crate::State;
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, Slot, default_atom};
 use crate::error::Error;
 use crate::event::Atom;
 use crate::ext::known::invalid;
@@ -172,26 +172,11 @@ impl<'a> Serialize for Number<'a> {
 /// Numbers are deserialized from numbers (and number extension values) and
 /// strings with the syntax of JSON numbers.  The text is always owned.
 impl<'de, 'a> Deserialize<'de> for Number<'a> {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SinkHandle::arena(NumberSink(out), state)
-    }
-}
-
-struct NumberSink<'a, 'n>(&'a mut Option<Number<'n>>);
-
-impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
-    fn expecting(&self) -> Cow<'_, str> {
-        "number".into()
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         let number = match atom {
             Atom::Ext(ref ext) => match ext.downcast_value_ref::<Number>() {
                 Some(value) => value.clone().into_static(),
-                None => return self.unexpected_atom(atom, state),
+                None => return default_atom(slot, atom, state),
             },
             Atom::U64(value) => Number::new(value.to_string(), value as f64),
             Atom::I64(value) => Number::new(value.to_string(), value as f64),
@@ -199,10 +184,14 @@ impl<'a, 'n, 'de> Sink<'de> for NumberSink<'a, 'n> {
             // the text of an `f32` is shorter, the value is the one of the text
             Atom::F32(value) if value.is_finite() => Number::parse(format!("{:?}", value))?,
             Atom::Str(ref value) => Number::parse(value.to_string())?,
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(slot, other, state),
         };
-        *self.0 = Some(number);
+        slot.set(number);
         Ok(())
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("number")
     }
 }
 

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use deser::State;
-use deser::de::{Deserialize, Sink, SinkHandle};
+use deser::de::{Deserialize, Sink, SinkHandle, default_atom};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::{Atom, Error, Text};
@@ -255,7 +255,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             Atom::Ext(ref ext) if ext.is::<Datetime>() => {
                 Value::Datetime(*ext.downcast_ref::<Datetime>().unwrap())
             }
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(self, other, state),
         });
         Ok(())
     }

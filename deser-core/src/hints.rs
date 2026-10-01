@@ -163,13 +163,17 @@ impl<T: ?Sized, H: Hint, A: Serialize<T>> Serialize<T> for Hinted<H, A> {
     }
 }
 
-impl<'de, T, H: Hint, A: Deserialize<'de, T>> Deserialize<'de, T> for Hinted<H, A> {
+impl<'de, T: Send, H: Hint, A: Deserialize<'de, T>> Deserialize<'de, T> for Hinted<H, A> {
     #[inline]
     fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         A::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     #[inline]
@@ -233,10 +237,7 @@ impl<'de, T, H: Hint, A: Deserialize<'de, T>> Deserialize<'de, T> for Hinted<H, 
         value: &'out mut T,
         first: bool,
         state: &mut State,
-    ) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    ) -> SinkHandle<'out, 'de> {
         A::__private_collect_update(value, first, state)
     }
 

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use deser::State;
-use deser::de::{Deserialize, Sink, SinkHandle};
+use deser::de::{Deserialize, Sink, SinkHandle, default_atom};
 use deser::ext::ExtValue;
 use deser::ser::{Chunk, MapEmitter, SeqEmitter, Serialize, SerializeHandle};
 use deser::{Atom, Bytes, Error};
@@ -175,7 +175,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
                 Value::Int(*ext.downcast_ref::<u128>().unwrap() as i128)
             }
             Atom::Ext(ref ext) if ext.is::<i128>() => Value::Int(*ext.downcast_ref().unwrap()),
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(self, other, state),
         };
         self.set(value);
         Ok(())

@@ -6,9 +6,9 @@ use std::str::FromStr;
 use deser::adapters::{
     As, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
 };
-use deser::de::{DeserializeDriver, DeserializeOwned, Recording, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Recording, Slot, default_atom};
 use deser::ser::{Chunk, SerializeDriver, SerializeHandle, SerializeRef};
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -505,10 +505,12 @@ impl Serialize<Vec<u8>> for Hex {
     }
 }
 
-make_slot_wrapper!(HexSlot);
-
-impl<'de> deser::de::Sink<'de> for HexSlot<Vec<u8>> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de, Vec<u8>> for Hex {
+    fn deserialize_atom(
+        slot: &mut Slot<Vec<u8>, Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref s) if s.len() % 2 == 0 => {
                 let bytes = (0..s.len())
@@ -516,20 +518,11 @@ impl<'de> deser::de::Sink<'de> for HexSlot<Vec<u8>> {
                     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid hex"))?;
-                **self = Some(bytes);
+                slot.set(bytes);
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
-    }
-}
-
-impl<'de> Deserialize<'de, Vec<u8>> for Hex {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Vec<u8>>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        HexSlot::make_handle(out)
     }
 }
 

@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use crate::BytesFormat;
 use crate::State;
 use crate::adapters::bytes::BytesEncoding;
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, Sink, SinkHandle, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Chunk, Serialize};
@@ -22,6 +22,7 @@ mod sealed {
             out: &'a mut Option<Self>,
             state: &mut State,
         ) -> SinkHandle<'a, 'de>;
+        fn expecting() -> Cow<'static, str>;
     }
 
     pub trait BytesFallbackFormatImpl: Send + Sync + 'static {
@@ -30,6 +31,7 @@ mod sealed {
             out: &'a mut Option<T>,
             state: &mut State,
         ) -> SinkHandle<'a, 'de>;
+        fn expecting<T: BytesBufImpl>() -> Cow<'static, str>;
     }
 }
 
@@ -65,6 +67,10 @@ impl BytesBufImpl for Vec<u8> {
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
+    }
 }
 
 impl<const N: usize> BytesBufImpl for [u8; N] {
@@ -86,6 +92,10 @@ impl<const N: usize> BytesBufImpl for [u8; N] {
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
+    }
 }
 
 impl<'c> BytesBufImpl for Cow<'c, [u8]> {
@@ -105,6 +115,10 @@ impl<'c> BytesBufImpl for Cow<'c, [u8]> {
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
     }
 }
 
@@ -127,6 +141,10 @@ impl<E: BytesEncoding> BytesFallbackFormatImpl for E {
     ) -> SinkHandle<'a, 'de> {
         encoded_handle::<T, E>(out, state)
     }
+
+    fn expecting<T: BytesBufImpl>() -> Cow<'static, str> {
+        encoded_expecting::<E>()
+    }
 }
 
 /// Represents bytes as sequences of integers.
@@ -147,6 +165,15 @@ impl BytesFallbackFormatImpl for IntSeq {
         // bytes accept sequences of integers anyways
         T::deserialize_into(out, state)
     }
+
+    fn expecting<T: BytesBufImpl>() -> Cow<'static, str> {
+        T::expecting()
+    }
+}
+
+/// What bytes with an encoding expect.
+pub(crate) fn encoded_expecting<E: BytesEncoding>() -> Cow<'static, str> {
+    Cow::Owned(format!("bytes or {} string", E::NAME))
 }
 
 /// Deserializes bytes which are either native bytes or encoded strings.
@@ -157,14 +184,14 @@ struct EncodedSink<'a, T, E> {
 
 impl<'a, 'de, T: BytesBufImpl, E: BytesEncoding> Sink<'de> for EncodedSink<'a, T, E> {
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Owned(format!("bytes or {} string", E::NAME))
+        encoded_expecting::<E>()
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         let bytes = match atom {
             Atom::Bytes(value) => value.into_data().into_owned(),
             Atom::Str(value) => E::decode(&value)?,
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(self, other, state),
         };
         *self.out = Some(T::from_vec(bytes)?);
         Ok(())
@@ -226,6 +253,10 @@ macro_rules! encoding_adapter {
                 fn deserialize_into<'a>(
                     out: &'a mut Option<$ty>, state: &mut $crate::State) -> $crate::de::SinkHandle<'a, 'de> {
                     $crate::adapters::bytes::encoded_handle::<$ty, E>(out, state)
+                }
+
+                fn expecting() -> alloc::borrow::Cow<'static, str> {
+                    $crate::adapters::bytes::encoded_expecting::<E>()
                 }
             }
         )*
@@ -299,5 +330,9 @@ impl<'de, T: BytesBuf, F: BytesFallbackFormat> Deserialize<'de, T> for BytesFall
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         F::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        F::expecting::<T>()
     }
 }

@@ -342,7 +342,7 @@ enum SkipBlankSink<'a, 'de, T, A> {
     Active(SinkHandle<'a, 'de>),
 }
 
-impl<'a, 'de, T, A: Deserialize<'de, T>> SkipBlankSink<'a, 'de, T, A> {
+impl<'a, 'de, T: Send, A: Deserialize<'de, T>> SkipBlankSink<'a, 'de, T, A> {
     /// Returns the sink of the value, creates it if needed.
     fn active(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
         if let SkipBlankSink::Pending(..) = self
@@ -443,15 +443,7 @@ impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, '
         match self {
             SkipBlankSink::Active(sink) => sink.expecting(),
             // the sink of the value does not exist yet
-            SkipBlankSink::Pending(..) => {
-                let mut slot = None;
-                let mut state = State::new();
-                Cow::Owned(
-                    A::deserialize_into(&mut slot, &mut state)
-                        .expecting()
-                        .into_owned(),
-                )
-            }
+            SkipBlankSink::Pending(..) => A::expecting(),
         }
     }
 }
@@ -465,6 +457,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for SkipBlank<A> 
         unsafe {
             SinkHandle::arena_unbounded(SkipBlankSink::<T, A>::Pending(out, PhantomData), state)
         }
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     fn initial_value() -> Option<T> {
@@ -508,12 +504,16 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for SkipBlank<A> 
     }
 }
 
-impl<'de, T, A: Deserialize<'de, T>> Deserialize<'de, T> for TrimWhitespace<A> {
+impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for TrimWhitespace<A> {
     fn deserialize_into<'out>(
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         TextSink::handle(A::deserialize_into(out, state), TextOp::Trim, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     fn initial_value() -> Option<T> {
@@ -720,6 +720,10 @@ macro_rules! separated_impls {
                     TextSink::handle(
                         <$adapter as Deserialize<'de, $target>>::deserialize_into(out, state),
                         TextOp::Split(SEP), state)
+                }
+
+                fn expecting() -> Cow<'static, str> {
+                    <$adapter as Deserialize<'de, $target>>::expecting()
                 }
             }
 

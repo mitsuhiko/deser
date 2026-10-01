@@ -2,7 +2,7 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use deser_core::State;
-use deser_core::de::{Deserialize, Sink, SinkHandle};
+use deser_core::de::{Deserialize, Slot, default_atom};
 use deser_core::ext::{ExtValue, Extension, Timestamp};
 use deser_core::ser::{Chunk, Serialize};
 use deser_core::{Atom, Bytes, Error};
@@ -65,22 +65,7 @@ impl Serialize for Ext {
 }
 
 impl<'de> Deserialize<'de> for Ext {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SinkHandle::arena(ExtSink(out), state)
-    }
-}
-
-struct ExtSink<'a>(&'a mut Option<Ext>);
-
-impl<'a, 'de> Sink<'de> for ExtSink<'a> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("msgpack extension")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         let value = match atom {
             Atom::Ext(ref ext) => {
                 if let Some(value) = ext.downcast_ref::<Ext>() {
@@ -89,13 +74,17 @@ impl<'a, 'de> Sink<'de> for ExtSink<'a> {
                     let mut buf = [0; 12];
                     Ext::new(TIMESTAMP, encode_timestamp(value, &mut buf))
                 } else {
-                    return self.unexpected_atom(atom, state);
+                    return default_atom(slot, atom, state);
                 }
             }
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(slot, other, state),
         };
-        *self.0 = Some(value);
+        slot.set(value);
         Ok(())
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("msgpack extension")
     }
 }
 

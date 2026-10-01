@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use deser_core::de::{Deserialize, DuplicateKeys, Sink, SinkHandle};
+use deser_core::de::{Deserialize, DuplicateKeys, Sink, SinkHandle, default_atom};
 use deser_core::{Atom, Error, ErrorKind, Source, State};
 
 use crate::map::Map;
@@ -179,7 +179,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
                 **out = atom_value(atom, state)?;
                 Ok(())
             }
-            _ => self.unexpected_atom(atom, state),
+            _ => default_atom(self, atom, state),
         }
     }
 
@@ -377,6 +377,10 @@ impl<'de> Deserialize<'de> for Value {
         SinkHandle::arena(ValueSink::new(Out::Value(out)), state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
+    }
+
     #[doc(hidden)]
     fn __private_atom_into(
         out: &mut Option<Self>,
@@ -412,6 +416,10 @@ impl<'de> Deserialize<'de> for Seq {
     ) -> SinkHandle<'out, 'de> {
         SinkHandle::arena(ValueSink::new(Out::Seq(out)), state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("sequence")
+    }
 }
 
 impl<'de> Deserialize<'de> for Map {
@@ -420,6 +428,10 @@ impl<'de> Deserialize<'de> for Map {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         SinkHandle::arena(ValueSink::new(Out::Map(out)), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("map")
     }
 
     /// Merges the data into the map, the values of keys that exist are

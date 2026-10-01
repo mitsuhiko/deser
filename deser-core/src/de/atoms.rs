@@ -149,20 +149,59 @@ pub(crate) fn default_borrowed_value_atom<'de>(
     borrowed_atom_into_handle(sink.next_value(state)?, atom, state)
 }
 
-/// The default of `Sink::unexpected_atom`.
+/// The default handling of atoms, which is what [`Sink::atom`] does by
+/// default.
 ///
-/// Extension values are lowered to their fallback (the input of raw values
-/// is parsed into the sink), [`Atom::F32`] is widened
-/// into an [`Atom::F64`] and [`Atom::Lexical`] is passed on as
-/// [`Atom::Str`].  [`Atom::Implicit`] is passed on as its value and if that
-/// is rejected as [`Atom::Str`] with its text.  All other atoms are an
-/// error.
+/// Sinks pass the atoms they do not accept to this (and values the atoms
+/// their [`deserialize_atom`](crate::de::Deserialize::deserialize_atom) does
+/// not accept, with the slot as sink).  Some atoms are passed on to
+/// [`Sink::atom`] of the sink again in another form:
+///
+/// * [`Atom::Ext`] values are lowered into the core data model with their
+///   [`fallback`](crate::ext::ExtValue::fallback) (the input of raw values
+///   is parsed into the sink).
+/// * [`Atom::F32`] is widened into an [`Atom::F64`], so sinks that accept
+///   floats only need to handle `F64`.
+/// * [`Atom::Lexical`] is passed on as [`Atom::Str`], so sinks that accept
+///   strings accept lexical atoms too.
+/// * [`Atom::Implicit`] is passed on as its value and, if that is rejected,
+///   as its text (see [`Implicit`](crate::Implicit)).
+///
+/// For all other atoms an error is returned that is based on
+/// [`Sink::expecting`] of the sink, which is
+/// [`Deserialize::expecting`](crate::de::Deserialize::expecting) for a
+/// [`Slot`](crate::de::Slot).
+///
+/// ```
+/// use deser::de::{Deserialize, Slot, default_atom};
+/// use deser::{Atom, Error, State};
+///
+/// struct MyBool(bool);
+///
+/// impl<'de> Deserialize<'de> for MyBool {
+///     fn deserialize_atom(
+///         slot: &mut Slot<Self>,
+///         atom: Atom,
+///         state: &mut State,
+///     ) -> Result<(), Error> {
+///         match atom {
+///             Atom::Bool(value) => {
+///                 slot.set(MyBool(value));
+///                 Ok(())
+///             }
+///             other => default_atom(slot, other, state),
+///         }
+///     }
+/// }
+///
+/// // a lexical atom is passed on as string, which is rejected
+/// let mut out = None::<MyBool>;
+/// let mut driver = deser::de::DeserializeDriver::new(&mut out);
+/// let err = driver.emit(Atom::Lexical("true".into())).unwrap_err();
+/// assert_eq!(err.message(), "unexpected string, expected MyBool");
+/// ```
 #[inline(never)]
-pub(crate) fn default_unexpected_atom(
-    sink: &mut dyn Sink<'_>,
-    atom: Atom,
-    state: &mut State,
-) -> Result<(), Error> {
+pub fn default_atom(sink: &mut dyn Sink<'_>, atom: Atom, state: &mut State) -> Result<(), Error> {
     let atom = match atom {
         Atom::F32(value) => return sink.atom(Atom::F64(f64::from(value)), state),
         Atom::Lexical(value) => {

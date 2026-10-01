@@ -24,7 +24,7 @@ use crate::State;
 use crate::Text;
 use crate::de::duplicates::duplicate_field;
 use crate::de::impls::{Via, deserialize_via};
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, Sink, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind, unknown_variant};
 use crate::event::{Atom, Bytes};
 use crate::ext::ExtValue;
@@ -32,8 +32,6 @@ use crate::ser::{
     Begin, Chunk, Describe, Serialize, SerializeHandle, SerializeRef, StructEmitter, Variant,
     VariantKind, VariantRepr,
 };
-
-make_slot_wrapper!(SlotWrapper);
 
 // PhantomData
 
@@ -50,30 +48,21 @@ impl<T: ?Sized + Sync> Serialize for PhantomData<T> {
     }
 }
 
-impl<'de, T: ?Sized + Send> Sink<'de> for SlotWrapper<PhantomData<T>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("null")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Null => {
-                **self = Some(PhantomData);
-                Ok(())
-            }
-            other => self.unexpected_atom(other, state),
-        }
-    }
-}
-
 /// Deserializes from null.  Missing values are accepted as the value is
 /// skipped by `#[deser(skip_serializing_optionals)]`.
 impl<'de, T: ?Sized + Send> Deserialize<'de> for PhantomData<T> {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Null => {
+                slot.set(PhantomData);
+                Ok(())
+            }
+            other => default_atom(slot, other, state),
+        }
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("null")
     }
 
     fn initial_value() -> Option<Self> {
@@ -180,20 +169,11 @@ impl Serialize for Infallible {
     }
 }
 
-impl<'de> Sink<'de> for SlotWrapper<Infallible> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("nothing")
-    }
-}
-
 /// Deserializing `Infallible` always fails, for instance to rule out a
 /// variant of a generic enum (`Result<T, Infallible>`).
 impl<'de> Deserialize<'de> for Infallible {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("nothing")
     }
 }
 
@@ -362,6 +342,9 @@ where
     }
 }
 
+/// What results expect.
+const RESULT_NAME: &str = "Result";
+
 /// The variant of a `Result`.
 #[derive(Clone, Copy)]
 enum ResultVariant {
@@ -369,25 +352,23 @@ enum ResultVariant {
     Err,
 }
 
-make_slot_wrapper!(ResultVariantSlot);
-
-impl<'de> Sink<'de> for ResultVariantSlot<ResultVariant> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("Ok or Err")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de> for ResultVariant {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(ref name) => {
-                **self = Some(match &**name {
+                slot.set(match &**name {
                     "Ok" => ResultVariant::Ok,
                     "Err" => ResultVariant::Err,
                     other => return Err(unknown_variant(Some(other), "Result", &["Ok", "Err"])),
                 });
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("Ok or Err")
     }
 }
 
@@ -418,21 +399,21 @@ where
         EA: Deserialize<'de, E>,
     {
         fn expecting(&self) -> Cow<'_, str> {
-            Cow::Borrowed("Result")
+            Cow::Borrowed(RESULT_NAME)
         }
 
         fn map(&mut self, _state: &mut State) -> Result<(), Error> {
             Ok(())
         }
 
-        fn next_key(&mut self, _state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             if self.variant.is_some() {
                 return Err(Error::new(
                     ErrorKind::Unexpected,
                     "expected a single entry for Result",
                 ));
             }
-            Ok(ResultVariantSlot::make_handle(&mut self.variant))
+            Ok(ResultVariant::deserialize_into(&mut self.variant, state))
         }
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -511,6 +492,10 @@ where
     ) -> SinkHandle<'out, 'de> {
         result_sink::<T, E, TA, EA>(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(RESULT_NAME)
+    }
 }
 
 // Types that are represented as strings
@@ -521,27 +506,24 @@ trait Parse: FromStr<Err: Display> + Send {
     const EXPECTING: &'static str;
 }
 
-make_slot_wrapper!(ParseSlot);
-
-impl<'de, T: Parse> Sink<'de> for ParseSlot<T> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed(T::EXPECTING)
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Str(ref value) => match value.parse::<T>() {
-                Ok(value) => {
-                    **self = Some(value);
-                    Ok(())
-                }
-                Err(err) => Err(Error::new(
-                    ErrorKind::Unexpected,
-                    format!("invalid {}: {}", T::EXPECTING, err),
-                )),
-            },
-            other => self.unexpected_atom(other, state),
-        }
+/// Deserializes a type that is parsed from a string.
+fn parse_atom<'de, T: Parse + Deserialize<'de>>(
+    slot: &mut Slot<T>,
+    atom: Atom,
+    state: &mut State,
+) -> Result<(), Error> {
+    match atom {
+        Atom::Str(ref value) => match value.parse::<T>() {
+            Ok(value) => {
+                slot.set(value);
+                Ok(())
+            }
+            Err(err) => Err(Error::new(
+                ErrorKind::Unexpected,
+                format!("invalid {}: {}", T::EXPECTING, err),
+            )),
+        },
+        other => default_atom(slot, other, state),
     }
 }
 
@@ -562,29 +544,19 @@ macro_rules! parse_from_str {
             }
 
             impl<'de> Deserialize<'de> for $ty {
-                fn deserialize_into<'out>(out: &'out mut Option<Self>, _state: &mut State) -> SinkHandle<'out, 'de> {
-                    ParseSlot::make_handle(out)
-                }
-
-                #[inline]
-                fn __private_atom_into(
-                    out: &mut Option<Self>,
+                fn deserialize_atom(
+                    slot: &mut Slot<Self>,
                     atom: Atom,
                     state: &mut State,
                 ) -> Result<(), Error> {
-                    let sink = ParseSlot::wrap(out);
-                    sink.atom(atom, state)?;
-                    sink.finish(state)
+                    parse_atom(slot, atom, state)
                 }
 
-                #[inline]
-                fn __private_borrowed_atom_into(
-                    out: &mut Option<Self>,
-                    atom: Atom<'de>,
-                    state: &mut State,
-                ) -> Result<(), Error> {
-                    Self::__private_atom_into(out, atom, state)
+                fn expecting() -> Cow<'static, str> {
+                    Cow::Borrowed(<$ty as Parse>::EXPECTING)
                 }
+
+                slot_atom_into!();
             }
         )*
     };
@@ -719,6 +691,9 @@ impl<T: Serialize> Serialize for RangeTo<T> {
     }
 }
 
+/// What ranges expect.
+const RANGE_NAME: &str = "range";
+
 /// Deserializes the fields of a range.
 struct RangeSink<'a, T, R> {
     slot: &'a mut Option<R>,
@@ -757,7 +732,7 @@ impl<'a, T, R> RangeSink<'a, T, R> {
 
 impl<'a, 'de, T: Deserialize<'de>, R: Send> Sink<'de> for RangeSink<'a, T, R> {
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("range")
+        Cow::Borrowed(RANGE_NAME)
     }
 
     fn map(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -820,6 +795,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Range<T> {
             state,
         )
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(RANGE_NAME)
+    }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeInclusive<T> {
@@ -833,6 +812,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeInclusive<T> {
             |start, end| RangeInclusive::new(start.unwrap(), end.unwrap()),
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(RANGE_NAME)
     }
 }
 
@@ -850,6 +833,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeFrom<T> {
             state,
         )
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(RANGE_NAME)
+    }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeTo<T> {
@@ -858,6 +845,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for RangeTo<T> {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         RangeSink::handle(out, &["end"], |_, end| RangeTo { end: end.unwrap() }, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(RANGE_NAME)
     }
 }
 
@@ -890,6 +881,9 @@ impl<T: Serialize> Serialize for Bound<T> {
     }
 }
 
+/// What bounds expect.
+const BOUND_NAME: &str = "Bound";
+
 /// Deserializes a `Bound`.
 struct BoundSink<'a, T> {
     slot: &'a mut Option<Bound<T>>,
@@ -901,7 +895,7 @@ struct BoundSink<'a, T> {
 
 impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("Bound")
+        Cow::Borrowed(BOUND_NAME)
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -913,7 +907,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
                 *self.slot = Some(Bound::Unbounded);
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(self, other, state),
         }
     }
 
@@ -975,5 +969,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Bound<T> {
             },
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(BOUND_NAME)
     }
 }

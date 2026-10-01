@@ -3,9 +3,9 @@ use std::fmt::{self, Debug, Display};
 use std::str::FromStr;
 
 use deser::adapters::{DisplayFromStr, FromInto};
-use deser::de::{DeserializeOwned, SinkHandle};
+use deser::de::{DeserializeOwned, Slot, default_atom};
 use deser::ser::{Chunk, SerializeDriver};
-use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State, make_slot_wrapper};
+use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
     let mut out = None;
@@ -63,31 +63,24 @@ impl Serialize<(&u32, &u32)> for Joined {
     }
 }
 
-make_slot_wrapper!(JoinedSlot);
-
-impl<'de> deser::de::Sink<'de> for JoinedSlot<(u32, u32)> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de, (u32, u32)> for Joined {
+    fn deserialize_atom(
+        slot: &mut Slot<(u32, u32), Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref s) => {
                 let invalid = || Error::new(ErrorKind::Unexpected, "invalid pair");
                 let (a, b) = s.split_once(',').ok_or_else(invalid)?;
-                **self = Some((
+                slot.set((
                     a.parse().map_err(|_| invalid())?,
                     b.parse().map_err(|_| invalid())?,
                 ));
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
-    }
-}
-
-impl<'de> Deserialize<'de, (u32, u32)> for Joined {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<(u32, u32)>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        JoinedSlot::make_handle(out)
     }
 }
 
@@ -100,26 +93,19 @@ impl Serialize<()> for Marker {
     }
 }
 
-make_slot_wrapper!(MarkerSlot);
-
-impl<'de> deser::de::Sink<'de> for MarkerSlot<()> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de, ()> for Marker {
+    fn deserialize_atom(
+        slot: &mut Slot<(), Self>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Bool(true) => {
-                **self = Some(());
+                slot.set(());
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
-    }
-}
-
-impl<'de> Deserialize<'de, ()> for Marker {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<()>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        MarkerSlot::make_handle(out)
     }
 }
 
@@ -179,7 +165,7 @@ fn test_externally_tagged() {
         deserialize::<External>(vec!["Unit".into()])
             .unwrap_err()
             .message(),
-        "unexpected null, expected compatible type"
+        "unexpected null, expected Marker"
     );
     assert_eq!(
         deserialize::<External>(map(&[("Pair", "1".into())]))
@@ -355,10 +341,7 @@ fn test_directional() {
     );
     let rv = deserialize::<Directional>(map(&[("t", "Read".into()), ("a", 1u64.into())]));
     // the adapter receives the map (without the tag)
-    assert_eq!(
-        rv.unwrap_err().message(),
-        "unexpected map, expected compatible type"
-    );
+    assert_eq!(rv.unwrap_err().message(), "unexpected map, expected Joined");
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

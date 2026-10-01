@@ -155,9 +155,10 @@
 //! [`BytesEncoding`] is less work):
 //!
 //! ```
-//! use deser::de::{Sink, SinkHandle};
+//! use std::borrow::Cow;
+//! use deser::de::{Slot, default_atom};
 //! use deser::ser::Chunk;
-//! use deser::{make_slot_wrapper, Atom, Deserialize, Error, ErrorKind, Serialize, State};
+//! use deser::{Atom, Deserialize, Error, ErrorKind, Serialize, State};
 //!
 //! pub struct Hex;
 //!
@@ -172,11 +173,9 @@
 //!     }
 //! }
 //!
-//! make_slot_wrapper!(HexSlot);
-//!
-//! impl<'de> Sink<'de> for HexSlot<Vec<u8>> {
-//!     fn atom(
-//!         &mut self,
+//! impl<'de> Deserialize<'de, Vec<u8>> for Hex {
+//!     fn deserialize_atom(
+//!         slot: &mut Slot<Vec<u8>, Self>,
 //!         atom: Atom,
 //!         state: &mut State,
 //!     ) -> Result<(), Error> {
@@ -189,20 +188,15 @@
 //!                     .map_err(|_| {
 //!                         Error::new(ErrorKind::Unexpected, "invalid hex")
 //!                     })?;
-//!                 **self = Some(bytes);
+//!                 slot.set(bytes);
 //!                 Ok(())
 //!             }
-//!             other => self.unexpected_atom(other, state),
+//!             other => default_atom(slot, other, state),
 //!         }
 //!     }
-//! }
 //!
-//! impl<'de> Deserialize<'de, Vec<u8>> for Hex {
-//!     fn deserialize_into<'out>(
-//!         out: &'out mut Option<Vec<u8>>,
-//!         state: &mut State,
-//!     ) -> SinkHandle<'out, 'de> {
-//!         HexSlot::make_handle(out)
+//!     fn expecting() -> Cow<'static, str> {
+//!         Cow::Borrowed("hex string")
 //!     }
 //! }
 //!
@@ -281,6 +275,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de, T> for Same {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         T::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        T::expecting()
     }
 
     #[inline]
@@ -540,6 +538,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de> for As<T, A> {
             |value| Ok(As::new(value)),
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     fn initial_value() -> Option<Self> {

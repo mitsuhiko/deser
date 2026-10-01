@@ -22,12 +22,10 @@ use crate::State;
 use crate::Text;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
 use crate::de::impls::{Via, deserialize_via};
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, Sink, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Bytes};
 use crate::ser::{Chunk, Serialize, plain_atom};
-
-make_slot_wrapper!(SlotWrapper);
 
 /// Returns the atom of a byte string.
 #[inline]
@@ -85,9 +83,12 @@ impl BStringSink<'_> {
     }
 }
 
+/// What byte strings expect.
+const BSTRING_NAME: &str = "byte string";
+
 impl<'de> Sink<'de> for BStringSink<'_> {
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("byte string")
+        Cow::Borrowed(BSTRING_NAME)
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -96,7 +97,7 @@ impl<'de> Sink<'de> for BStringSink<'_> {
                 *self.out = Some(value);
                 Ok(())
             }
-            Err(other) => self.unexpected_atom(other, state),
+            Err(other) => default_atom(self, other, state),
         }
     }
 
@@ -138,6 +139,10 @@ impl<'de> Deserialize<'de> for BString {
             },
             state,
         )
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(BSTRING_NAME)
     }
 
     #[inline]
@@ -204,51 +209,50 @@ impl BytesBufImpl for BString {
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
+    }
 }
 
 encoding_adapter!([] BString);
 
-impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a BStr> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("borrowed byte string")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+/// Borrows strings and bytes from the data.
+impl<'de: 'a, 'a> Deserialize<'de> for &'a BStr {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(_) | Atom::Lexical(_) | Atom::Bytes(_) => Err(Error::new(
                 ErrorKind::Unexpected,
                 "unexpected owned byte string, expected a borrowed byte string (the data \
                  format or the type buffering the value does not support borrowing)",
             )),
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_borrowed() => {
-                **self = text.borrowed_str().map(BStr::new);
+                **slot = text.borrowed_str().map(BStr::new);
                 Ok(())
             }
             Atom::Implicit(ref value) if value.text().is_borrowed() => {
-                **self = value.text().borrowed_str().map(BStr::new);
+                **slot = value.text().borrowed_str().map(BStr::new);
                 Ok(())
             }
             Atom::Bytes(ref value) if value.is_borrowed() => {
-                **self = value.borrowed_data().map(BStr::new);
+                **slot = value.borrowed_data().map(BStr::new);
                 Ok(())
             }
-            other => self.atom(other, state),
+            other => Self::deserialize_atom(slot, other, state),
         }
     }
-}
 
-/// Borrows strings and bytes from the data.
-impl<'de: 'a, 'a> Deserialize<'de> for &'a BStr {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("borrowed byte string")
     }
 }

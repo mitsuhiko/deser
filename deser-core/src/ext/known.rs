@@ -3,7 +3,7 @@
 use alloc::borrow::Cow;
 
 use crate::State;
-use crate::de::Sink;
+use crate::de::{Deserialize, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{ExtValue, Extension};
@@ -131,45 +131,37 @@ fn test_rounding() {
     }
 }
 
-/// Deserializes a well-known type.
-pub(crate) struct KnownSink<'a, T>(pub(crate) &'a mut Option<T>);
-
-impl<'a, 'de, T: WellKnown> Sink<'de> for KnownSink<'a, T> {
-    fn expecting(&self) -> Cow<'_, str> {
-        T::EXPECTING.into()
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match T::from_atom(&atom)? {
-            Some(value) => {
-                *self.0 = Some(value);
-                Ok(())
-            }
-            None => self.unexpected_atom(atom, state),
+/// Deserializes an atom into a well-known type.
+pub(crate) fn known_atom<'de, T: WellKnown + Deserialize<'de>>(
+    slot: &mut Slot<T>,
+    atom: Atom,
+    state: &mut State,
+) -> Result<(), Error> {
+    match T::from_atom(&atom)? {
+        Some(value) => {
+            slot.set(value);
+            Ok(())
         }
+        None => default_atom(slot, atom, state),
     }
 }
 
-/// Deserializes a type bridged onto a well-known type.
-pub(crate) struct BridgeSink<'a, T>(pub(crate) &'a mut Option<T>);
-
-impl<'a, 'de, T: Bridge> Sink<'de> for BridgeSink<'a, T> {
-    fn expecting(&self) -> Cow<'_, str> {
-        T::EXPECTING.into()
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        let value = match T::Known::from_atom(&atom) {
-            Ok(Some(known)) => T::from_known(known)?,
-            Ok(None) => return self.unexpected_atom(atom, state),
-            Err(err) => match atom {
-                Atom::Str(ref s) => T::parse_fallback(s).ok_or(err)?,
-                _ => return Err(err),
-            },
-        };
-        *self.0 = Some(value);
-        Ok(())
-    }
+/// Deserializes an atom into a type bridged onto a well-known type.
+pub(crate) fn bridge_atom<'de, T: Bridge + Deserialize<'de>>(
+    slot: &mut Slot<T>,
+    atom: Atom,
+    state: &mut State,
+) -> Result<(), Error> {
+    let value = match T::Known::from_atom(&atom) {
+        Ok(Some(known)) => T::from_known(known)?,
+        Ok(None) => return default_atom(slot, atom, state),
+        Err(err) => match atom {
+            Atom::Str(ref s) => T::parse_fallback(s).ok_or(err)?,
+            _ => return Err(err),
+        },
+    };
+    slot.set(value);
+    Ok(())
 }
 
 /// Implements `Serialize` and `Deserialize` for a well-known type.
@@ -187,11 +179,16 @@ macro_rules! impl_well_known {
         }
 
         impl<'de> $crate::de::Deserialize<'de> for $ty {
-            fn deserialize_into<'out>(
-                out: &'out mut Option<Self>,
+            fn deserialize_atom(
+                slot: &mut $crate::de::Slot<Self>,
+                atom: $crate::Atom,
                 state: &mut $crate::State,
-            ) -> $crate::de::SinkHandle<'out, 'de> {
-                $crate::de::SinkHandle::arena($crate::ext::known::KnownSink(out), state)
+            ) -> Result<(), $crate::Error> {
+                $crate::ext::known::known_atom(slot, atom, state)
+            }
+
+            fn expecting() -> alloc::borrow::Cow<'static, str> {
+                alloc::borrow::Cow::Borrowed(<$ty as $crate::ext::known::WellKnown>::EXPECTING)
             }
         }
     };
@@ -212,8 +209,18 @@ macro_rules! impl_bridge {
             }
 
             impl<'de> $crate::de::Deserialize<'de> for $ty {
-                fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut $crate::State) -> $crate::de::SinkHandle<'out, 'de> {
-                    $crate::de::SinkHandle::arena($crate::ext::known::BridgeSink(out), state)
+                fn deserialize_atom(
+                    slot: &mut $crate::de::Slot<Self>,
+                    atom: $crate::Atom,
+                    state: &mut $crate::State,
+                ) -> Result<(), $crate::Error> {
+                    $crate::ext::known::bridge_atom(slot, atom, state)
+                }
+
+                fn expecting() -> alloc::borrow::Cow<'static, str> {
+                    alloc::borrow::Cow::Borrowed(
+                        <$ty as $crate::ext::known::Bridge>::EXPECTING,
+                    )
                 }
             }
         )*

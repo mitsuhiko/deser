@@ -11,13 +11,11 @@ use alloc::string::String;
 
 use crate::adapters::Same;
 use crate::de::impls::{Via, deserialize_via, via_handle};
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::{Chunk, Describe, Serialize};
 use crate::{State, Text};
-
-make_slot_wrapper!(SlotWrapper);
 
 // OnceLock
 
@@ -78,6 +76,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OnceLock<T> {
         via_handle::<Option<T>, Self, Same>(out, state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        T::expecting()
+    }
+
     fn initial_value() -> Option<Self> {
         Some(OnceLock::new())
     }
@@ -109,49 +111,22 @@ impl Serialize for PathBuf {
     }
 }
 
-impl<'de> Sink<'de> for SlotWrapper<PathBuf> {
-    fn expecting(&self) -> Cow<'_, str> {
+impl<'de> Deserialize<'de> for PathBuf {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
+        match atom {
+            Atom::Str(value) => {
+                slot.set(PathBuf::from(value.into_owned()));
+                Ok(())
+            }
+            other => default_atom(slot, other, state),
+        }
+    }
+
+    fn expecting() -> Cow<'static, str> {
         Cow::Borrowed("path")
     }
 
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match atom {
-            Atom::Str(value) => {
-                **self = Some(PathBuf::from(value.into_owned()));
-                Ok(())
-            }
-            other => self.unexpected_atom(other, state),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PathBuf {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-
-    #[inline]
-    fn __private_atom_into(
-        out: &mut Option<Self>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let sink = SlotWrapper::wrap(out);
-        sink.atom(atom, state)?;
-        sink.finish(state)
-    }
-
-    #[inline]
-    fn __private_borrowed_atom_into(
-        out: &mut Option<Self>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        Self::__private_atom_into(out, atom, state)
-    }
+    slot_atom_into!();
 }
 
 impl Via<PathBuf> for Box<Path> {

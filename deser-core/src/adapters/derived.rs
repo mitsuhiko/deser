@@ -24,7 +24,7 @@ use crate::ser::{Begin, Chunk, Describe, PlainSink, Serialize};
 /// /// Deserializes with `A`, missing values are the default.
 /// pub struct DefaultIfMissing<A>(std::marker::PhantomData<A>);
 ///
-/// impl<'de, T: Default, A: Deserialize<'de, T>> Deserialize<'de, T>
+/// impl<'de, T: Default + Send, A: Deserialize<'de, T>> Deserialize<'de, T>
 ///     for DefaultIfMissing<A>
 /// {
 ///     fn deserialize_into<'out>(
@@ -77,6 +77,10 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
 
     fn initial_value() -> Option<Self> {
         None
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        crate::de::slot::short_type_name(core::any::type_name::<Self>())
     }
 
     fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
@@ -197,6 +201,10 @@ impl<'de, T: DerivedDeserialize<'de>> Deserialize<'de, T> for Derived {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         T::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        T::expecting()
     }
 
     #[inline]

@@ -186,6 +186,9 @@ fn complete<T: Send + 'static>(value: T, items: &mut Vec<T>, state: &State) {
     items.push(value);
 }
 
+/// What streamed values expect.
+const STREAMED_NAME: &str = "sequence";
+
 impl<'de, T: Deserialize<'de> + 'static> Deserialize<'de> for Streamed<T> {
     fn deserialize_into<'out>(
         out: &'out mut Option<Self>,
@@ -199,6 +202,10 @@ impl<'de, T: Deserialize<'de> + 'static> Deserialize<'de> for Streamed<T> {
             state,
         )
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(STREAMED_NAME)
+    }
 }
 
 struct StreamedSink<'a, T> {
@@ -208,7 +215,7 @@ struct StreamedSink<'a, T> {
 
 impl<'a, 'de, T: Deserialize<'de> + 'static> Sink<'de> for StreamedSink<'a, T> {
     fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("sequence")
+        Cow::Borrowed(STREAMED_NAME)
     }
 
     fn seq(&mut self, _state: &mut State) -> Result<(), Error> {

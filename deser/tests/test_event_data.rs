@@ -1,6 +1,6 @@
-use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
+use deser::de::{DeserializeDriver, DeserializeOwned, Slot};
 use deser::ser::{Chunk, Serialize, SerializeDriver};
-use deser::{Atom, Deserialize, Error, Event, State, make_slot_wrapper};
+use deser::{Atom, Deserialize, Error, Event, State};
 
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
@@ -23,21 +23,14 @@ struct Marker(u32);
 #[derive(Debug, PartialEq)]
 struct Probe(Option<u32>);
 
-make_slot_wrapper!(ProbeSlot);
-
-impl<'de> Sink<'de> for ProbeSlot<Probe> {
-    fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
-        **self = Some(Probe(state.event::<Marker>().map(|marker| marker.0)));
-        Ok(())
-    }
-}
-
 impl<'de> Deserialize<'de> for Probe {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        ProbeSlot::make_handle(out)
+    fn deserialize_atom(
+        slot: &mut Slot<Self>,
+        _atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        slot.set(Probe(state.event::<Marker>().map(|marker| marker.0)));
+        Ok(())
     }
 }
 

@@ -1,34 +1,23 @@
 use std::collections::BTreeMap;
 
 use deser::State;
-use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
+use deser::de::{Deserialize, DeserializeDriver, Sink, SinkHandle, Slot, default_atom};
 use deser::{Atom, Error, Event};
 use deser_path::{Path, PathLayer, PathSegment};
 
 #[derive(Debug, PartialEq, Eq)]
 struct MyBool(bool);
 
-deser::make_slot_wrapper!(SlotWrapper);
-
 impl<'de> Deserialize<'de> for MyBool {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-}
-
-impl<'de> Sink<'de> for SlotWrapper<MyBool> {
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
                 let path = state.get::<Path>().unwrap();
                 assert_eq!(path.segments().len(), 1);
-                **self = Some(MyBool(value));
+                slot.set(MyBool(value));
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 }
@@ -58,18 +47,13 @@ fn test_path() {
 struct RecordPath(String);
 
 impl<'de> Deserialize<'de> for RecordPath {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-}
-
-impl<'de> Sink<'de> for SlotWrapper<RecordPath> {
-    fn atom(&mut self, _atom: Atom, state: &mut State) -> Result<(), Error> {
+    fn deserialize_atom(
+        slot: &mut Slot<Self>,
+        _atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
         let path = state.get::<Path>().unwrap();
-        **self = Some(RecordPath(path.to_string()));
+        slot.set(RecordPath(path.to_string()));
         Ok(())
     }
 }

@@ -5,11 +5,12 @@
 //! (`SmallVec<[T; N]>`) which requires the `const_generics` feature of
 //! `smallvec`.
 use ::smallvec::SmallVec;
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use crate::State;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
-use crate::de::impls::{SeqTarget, collection_methods, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, seq_expecting, seq_sink};
 use crate::de::update::Collection;
 use crate::de::{Deserialize, SinkHandle};
 use crate::error::Error;
@@ -37,6 +38,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, Smal
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         seq_sink::<SmallVec<[T; N]>, T, A>(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        seq_expecting::<SmallVec<[T; N]>, T, A>()
     }
 
     collection_methods!(SmallVec<[T; N]>);
@@ -70,6 +75,10 @@ impl<const N: usize> BytesBufImpl for SmallVec<[u8; N]> {
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
     }
 }
 

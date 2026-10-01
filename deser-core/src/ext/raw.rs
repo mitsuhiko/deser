@@ -571,6 +571,10 @@ impl<'de, 'a, F: RawFormat> Deserialize<'de> for Raw<'a, F> {
         RecordBuf::capture_with(RawCapture(out), state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
+    }
+
     #[inline]
     fn __private_atom_into(
         out: &mut Option<Self>,
@@ -604,6 +608,10 @@ impl<'de: 'a, 'a, F: RawFormat> Deserialize<'de, Raw<'a, F>> for Borrowed {
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         RecordBuf::capture_with(BorrowedRawCapture(out), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("any value")
     }
 
     #[inline]

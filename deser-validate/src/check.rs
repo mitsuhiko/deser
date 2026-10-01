@@ -118,6 +118,10 @@ where
         )
     }
 
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
+    }
+
     fn initial_value() -> Option<T> {
         A::initial_value().filter(|value| V::validate(value).is_ok())
     }

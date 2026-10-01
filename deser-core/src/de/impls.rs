@@ -22,137 +22,95 @@ use crate::de::mapped::MappedSink;
 use crate::de::update::Collection;
 use crate::de::{CollectedErrors, DuplicateKeys};
 use crate::de::{
-    Deserialize, InlineEvent, InlineSeq, OwnedSink, Sink, SinkHandle, empty_lexical_or_none,
-    is_empty_lexical, is_null_atom,
+    Deserialize, InlineEvent, InlineSeq, OwnedSink, Sink, SinkHandle, Slot, default_atom,
+    empty_lexical_or_none, is_empty_lexical, is_null_atom,
 };
 use crate::de::{atom_into_handle, borrowed_atom_into_handle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ImplicitValue};
 use crate::ext::Number;
 
-make_slot_wrapper!(SlotWrapper);
-
-macro_rules! deserialize {
-    ($ty:ty $(, $default:expr)?) => {
-        impl<'de> Deserialize<'de> for $ty {
-            fn deserialize_into<'out>(
-                out: &'out mut Option<Self>,
-                _state: &mut State,
-            ) -> SinkHandle<'out, 'de> {
-                SlotWrapper::make_handle(out)
-            }
-
-            __slot_wrapper_atom_into!();
-
-            $(
-                #[inline]
-                fn __private_atom_default() -> Option<Self> {
-                    Some($default)
-                }
-            )?
-        }
-    };
-}
-
-/// Implements `__private_atom_into` for types using a slot wrapper.
-macro_rules! __slot_wrapper_atom_into {
-    () => {
-        #[inline]
-        fn __private_atom_into(
-            out: &mut Option<Self>,
-            atom: Atom,
-            state: &mut State,
-        ) -> Result<(), Error> {
-            let sink = SlotWrapper::wrap(out);
-            sink.atom(atom, state)?;
-            sink.finish(state)
-        }
-
-        #[inline]
-        fn __private_borrowed_atom_into(
-            out: &mut Option<Self>,
-            atom: Atom<'de>,
-            state: &mut State,
-        ) -> Result<(), Error> {
-            // the sink does not borrow
-            Self::__private_atom_into(out, atom, state)
-        }
-    };
-}
-
-impl<'de> Sink<'de> for SlotWrapper<()> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("null")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de> for () {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Null => {
-                **self = Some(());
+                slot.set(());
                 Ok(())
             }
             Atom::Lexical(ref value) if lexical::is_empty_null(value, state) => {
-                **self = Some(());
+                slot.set(());
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
-}
-deserialize!(());
 
-impl<'de> Sink<'de> for SlotWrapper<bool> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("bool")
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("null")
     }
 
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    slot_atom_into!();
+}
+
+impl<'de> Deserialize<'de> for bool {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bool(value) => {
-                **self = Some(value);
+                slot.set(value);
                 Ok(())
             }
             Atom::Lexical(ref value) => {
-                **self = Some(lexical::parse_bool(value, state)?);
+                slot.set(lexical::parse_bool(value, state)?);
                 Ok(())
             }
             // the text of other values is not a bool either
             Atom::Implicit(ref value) => match value.value() {
                 ImplicitValue::Bool(value) => {
-                    **self = Some(value);
+                    slot.set(value);
                     Ok(())
                 }
-                _ => self.unexpected_atom(atom, state),
+                _ => default_atom(slot, atom, state),
             },
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
-}
-deserialize!(bool, false);
 
-impl<'de> Sink<'de> for SlotWrapper<String> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("string")
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("bool")
     }
 
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+    slot_atom_into!();
+
+    #[inline]
+    fn __private_atom_default() -> Option<Self> {
+        Some(false)
+    }
+}
+
+impl<'de> Deserialize<'de> for String {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(value) | Atom::Lexical(value) => {
-                **self = Some(match value.into_cow() {
+                slot.set(match value.into_cow() {
                     Cow::Borrowed(value) => copy_str(value),
                     Cow::Owned(value) => value,
                 });
                 Ok(())
             }
             Atom::Char(value) => {
-                **self = Some(value.to_string());
+                slot.set(value.to_string());
                 Ok(())
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("string")
+    }
+
+    slot_atom_into!();
 }
-deserialize!(String);
 
 /// Copies a string into a new allocation.
 ///
@@ -193,70 +151,79 @@ fn copy_str(value: &str) -> String {
     }
 }
 
-macro_rules! int_sink {
+/// Implements the deserialization of an integer.
+macro_rules! int_atom {
     ($ty:ty) => {
-        impl<'de> Sink<'de> for SlotWrapper<$ty> {
-            fn expecting(&self) -> Cow<'_, str> {
-                Cow::Borrowed(stringify!($ty))
-            }
+        #[allow(clippy::useless_conversion)]
+        fn deserialize_atom(
+            slot: &mut Slot<Self>,
+            atom: Atom,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            let out_of_range = |value: &dyn core::fmt::Display| {
+                lexical::out_of_range(value, stringify!($ty), state)
+            };
+            let value = match atom {
+                Atom::U64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
+                Atom::I64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
+                Atom::Ext(ref ext) if ext.is::<u128>() => {
+                    let value = *ext.downcast_ref::<u128>().unwrap();
+                    <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                }
+                Atom::Ext(ref ext) if ext.is::<i128>() => {
+                    let value = *ext.downcast_ref::<i128>().unwrap();
+                    <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                }
+                Atom::Lexical(ref value) => match value.parse::<$ty>() {
+                    Ok(value) => value,
+                    Err(err) => {
+                        return Err(lexical::int_error(value, err, stringify!($ty), state));
+                    }
+                },
+                // the text of other values is not a number either
+                Atom::Implicit(ref value) => match value.value() {
+                    ImplicitValue::U64(value) => {
+                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                    }
+                    ImplicitValue::I64(value) => {
+                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
+                    }
+                    _ => return default_atom(slot, atom, state),
+                },
+                other => return default_atom(slot, other, state),
+            };
+            slot.set(value);
+            Ok(())
+        }
 
-            #[allow(clippy::useless_conversion)]
-            fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-                let out_of_range = |value: &dyn core::fmt::Display| {
-                    lexical::out_of_range(value, stringify!($ty), state)
-                };
-                let value = match atom {
-                    Atom::U64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
-                    Atom::I64(value) => <$ty>::try_from(value).map_err(|_| out_of_range(&value))?,
-                    Atom::Ext(ref ext) if ext.is::<u128>() => {
-                        let value = *ext.downcast_ref::<u128>().unwrap();
-                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
-                    }
-                    Atom::Ext(ref ext) if ext.is::<i128>() => {
-                        let value = *ext.downcast_ref::<i128>().unwrap();
-                        <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
-                    }
-                    Atom::Lexical(ref value) => match value.parse::<$ty>() {
-                        Ok(value) => value,
-                        Err(err) => {
-                            return Err(lexical::int_error(value, err, stringify!($ty), state));
-                        }
-                    },
-                    // the text of other values is not a number either
-                    Atom::Implicit(ref value) => match value.value() {
-                        ImplicitValue::U64(value) => {
-                            <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
-                        }
-                        ImplicitValue::I64(value) => {
-                            <$ty>::try_from(value).map_err(|_| out_of_range(&value))?
-                        }
-                        _ => return self.unexpected_atom(atom, state),
-                    },
-                    other => return self.unexpected_atom(other, state),
-                };
-                **self = Some(value);
-                Ok(())
-            }
+        fn expecting() -> Cow<'static, str> {
+            Cow::Borrowed(stringify!($ty))
+        }
+
+        slot_atom_into!();
+
+        #[inline]
+        fn __private_atom_default() -> Option<Self> {
+            Some(0)
         }
     };
 }
 
-int_sink!(u8);
+/// Implements `Deserialize` for integers.
+macro_rules! deserialize_int {
+    ($($ty:ty),*) => {
+        $(
+            impl<'de> Deserialize<'de> for $ty {
+                int_atom!($ty);
+            }
+        )*
+    };
+}
+
+deserialize_int!(u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
 impl<'de> Deserialize<'de> for u8 {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
-    }
-
-    __slot_wrapper_atom_into!();
-
-    #[inline]
-    fn __private_atom_default() -> Option<Self> {
-        Some(0)
-    }
+    int_atom!(u8);
 
     fn __private_is_bytes() -> bool {
         true
@@ -271,38 +238,11 @@ impl<'de> Deserialize<'de> for u8 {
     }
 }
 
-int_sink!(u16);
-deserialize!(u16, 0);
-int_sink!(u32);
-deserialize!(u32, 0);
-int_sink!(u64);
-deserialize!(u64, 0);
-int_sink!(i8);
-deserialize!(i8, 0);
-int_sink!(i16);
-deserialize!(i16, 0);
-int_sink!(i32);
-deserialize!(i32, 0);
-int_sink!(i64);
-deserialize!(i64, 0);
-int_sink!(isize);
-deserialize!(isize, 0);
-int_sink!(usize);
-deserialize!(usize, 0);
-int_sink!(u128);
-deserialize!(u128, 0);
-int_sink!(i128);
-deserialize!(i128, 0);
-
-impl<'de> Sink<'de> for SlotWrapper<char> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("char")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de> Deserialize<'de> for char {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Char(value) => {
-                **self = Some(value);
+                slot.set(value);
                 Ok(())
             }
             Atom::Str(ref s) => {
@@ -310,40 +250,52 @@ impl<'de> Sink<'de> for SlotWrapper<char> {
                 if let Some(first_char) = chars.next()
                     && chars.next().is_none()
                 {
-                    **self = Some(first_char);
+                    slot.set(first_char);
                     return Ok(());
                 }
-                Err(atom.unexpected_error(&self.expecting()))
+                Err(atom.unexpected_error(&Self::expecting()))
             }
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
-}
-deserialize!(char);
 
-macro_rules! float_sink {
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("char")
+    }
+
+    slot_atom_into!();
+}
+
+macro_rules! deserialize_float {
     ($ty:ty) => {
-        impl<'de> Sink<'de> for SlotWrapper<$ty> {
-            fn expecting(&self) -> Cow<'_, str> {
+        impl<'de> Deserialize<'de> for $ty {
+            fn expecting() -> Cow<'static, str> {
                 Cow::Borrowed(stringify!($ty))
             }
 
+            slot_atom_into!();
+
             #[inline]
-            fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+            fn __private_atom_default() -> Option<Self> {
+                Some(0.0)
+            }
+
+            #[inline]
+            fn deserialize_atom(
+                slot: &mut Slot<Self>,
+                atom: Atom,
+                state: &mut State,
+            ) -> Result<(), Error> {
                 // Keep the owning variants out of the inlined numeric path.
                 // This is not cold: JSON commonly emits Number extensions.
                 #[inline(never)]
-                fn other(
-                    sink: &mut SlotWrapper<$ty>,
-                    atom: Atom,
-                    state: &mut State,
-                ) -> Result<(), Error> {
+                fn other(slot: &mut Slot<$ty>, atom: Atom, state: &mut State) -> Result<(), Error> {
                     let value = match atom {
                         Atom::Ext(ext) => match number_value(&ext) {
                             Some(value) => value as $ty,
                             None if ext.is::<u128>() => *ext.downcast_ref::<u128>().unwrap() as $ty,
                             None if ext.is::<i128>() => *ext.downcast_ref::<i128>().unwrap() as $ty,
-                            None => return sink.unexpected_atom(Atom::Ext(ext), state),
+                            None => return default_atom(slot, Atom::Ext(ext), state),
                         },
                         Atom::Lexical(value) => match value.parse::<$ty>() {
                             Ok(value) => value,
@@ -354,11 +306,11 @@ macro_rules! float_sink {
                             ImplicitValue::U64(value) => value as $ty,
                             ImplicitValue::I64(value) => value as $ty,
                             ImplicitValue::F64(value) => value as $ty,
-                            _ => return sink.unexpected_atom(atom, state),
+                            _ => return default_atom(slot, atom, state),
                         },
-                        other => return sink.unexpected_atom(other, state),
+                        other => return default_atom(slot, other, state),
                     };
-                    **sink = Some(value);
+                    slot.set(value);
                     Ok(())
                 }
 
@@ -367,12 +319,12 @@ macro_rules! float_sink {
                     Atom::I64(value) => value as $ty,
                     Atom::F64(value) => value as $ty,
                     Atom::F32(value) => value as $ty,
-                    atom => return other(self, atom, state),
+                    atom => return other(slot, atom, state),
                 };
                 // Only variants with Copy payloads reach here. Avoid calling
                 // Atom's out-of-line drop glue, which has nothing to drop.
                 core::mem::forget(atom);
-                **self = Some(value);
+                slot.set(value);
                 Ok(())
             }
         }
@@ -385,11 +337,8 @@ fn number_value(ext: &crate::ext::ExtValue) -> Option<f64> {
     ext.downcast_value_ref::<Number>().map(|x| x.value())
 }
 
-float_sink!(f32);
-deserialize!(f32, 0.0);
-
-float_sink!(f64);
-deserialize!(f64, 0.0);
+deserialize_float!(f32);
+deserialize_float!(f64);
 
 // The containers are implemented as adapters (see `crate::adapters`) that
 // are generic over the adapters of their elements.  The `Deserialize`
@@ -461,6 +410,16 @@ impl<T: Send + Sync> SeqTarget<T> for Arc<[T]> {
     }
 }
 
+/// What a sequence expects (see [`Deserialize::expecting`]).
+pub(crate) fn seq_expecting<'de, C: SeqTarget<T>, T: Send, A: Deserialize<'de, T>>()
+-> Cow<'static, str> {
+    Cow::Borrowed(if A::__private_is_bytes() {
+        "bytes"
+    } else {
+        C::NAME
+    })
+}
+
 /// Creates the sink for a sequence with an element adapter.
 ///
 /// The elements are collected into a vector which is converted into the
@@ -493,11 +452,7 @@ where
 
     impl<'de, 'a, C: SeqTarget<T>, T: Send, A: Deserialize<'de, T>> Sink<'de> for SeqSink<'a, C, T, A> {
         fn expecting(&self) -> Cow<'_, str> {
-            Cow::Borrowed(if A::__private_is_bytes() {
-                "bytes"
-            } else {
-                C::NAME
-            })
+            seq_expecting::<C, T, A>()
         }
 
         fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -520,10 +475,10 @@ where
                             *self.slot = Some(C::from_vec(vec)?);
                             Ok(())
                         }
-                        None => self.unexpected_atom(atom, state),
+                        None => default_atom(self, atom, state),
                     }
                 }
-                other => self.unexpected_atom(other, state),
+                other => default_atom(self, other, state),
             }
         }
 
@@ -701,6 +656,10 @@ macro_rules! deserialize_seq {
                 #[inline]
                 fn deserialize_into<'out>(out: &'out mut Option<$target>, state: &mut State) -> SinkHandle<'out, 'de> {
                     seq_sink::<$target, T, A>(out, state)
+                }
+
+                fn expecting() -> Cow<'static, str> {
+                    seq_expecting::<$target, T, A>()
                 }
 
                 $(deserialize_seq! { @$collect $target })?
@@ -1111,6 +1070,10 @@ where
         map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<BTreeMap<K, V> as MapTarget<K, V>>::NAME)
+    }
+
     /// Merges the entries into the map, the values of keys that exist are
     /// replaced (not updated).
     fn deserialize_update<'out>(
@@ -1139,6 +1102,10 @@ where
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         map_sink::<_, K, V, KA, VA>(MapOut::Slot(out), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashMap<K, V, H> as MapTarget<K, V>>::NAME)
     }
 
     /// Merges the entries into the map, the values of keys that exist are
@@ -1306,6 +1273,10 @@ impl<'de, T: Ord + Send, A: Deserialize<'de, T>> Deserialize<'de, BTreeSet<T>> f
         set_sink::<_, T, A>(out, state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<BTreeSet<T> as SetTarget<T>>::NAME)
+    }
+
     collection_methods!(set BTreeSet<T>);
 }
 
@@ -1325,6 +1296,10 @@ where
         set_sink::<_, T, A>(out, state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(<HashSet<T, H> as SetTarget<T>>::NAME)
+    }
+
     collection_methods!(set HashSet<T, H>);
 }
 
@@ -1335,6 +1310,11 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Option<T>> for Optio
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
         A::deserialize_into(out.insert(None), state).ignore_null()
+    }
+
+    // the handle passes everything on to the value
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
     }
 
     fn deserialize_update<'out>(
@@ -1428,10 +1408,20 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Option<T>> for Optio
     }
 }
 
+/// What tuples expect.
+const TUPLE_NAME: &str = "tuple";
+
+/// What arrays expect.
+const ARRAY_NAME: &str = "array";
+
 macro_rules! deserialize_for_tuple {
     () => ();
     ($(($name:ident, $adapter:ident),)+) => (
         impl<'de, $($name: Send,)* $($adapter: Deserialize<'de, $name>),*> Deserialize<'de, ($($name,)*)> for ($($adapter,)*) {
+            fn expecting() -> Cow<'static, str> {
+                Cow::Borrowed(TUPLE_NAME)
+            }
+
             // tuples of atoms are built inline, this behaves like the sink
             // below
             #[inline]
@@ -1499,7 +1489,7 @@ macro_rules! deserialize_for_tuple {
 
                 impl<'de, 'a, $($name: Send,)* $($adapter: Deserialize<'de, $name>,)*> Sink<'de> for TupleSink<'a, $($name,)* $($adapter,)*> {
                     fn expecting(&self) -> Cow<'_, str> {
-                        Cow::Borrowed("tuple")
+                        Cow::Borrowed(TUPLE_NAME)
                     }
 
                     fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
@@ -1584,6 +1574,10 @@ deserialize_for_tuple! {
 }
 
 impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; N]> for [A; N] {
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed(ARRAY_NAME)
+    }
+
     // arrays of atoms are built inline, this behaves like the sink below
     #[inline]
     fn __private_inline_seq() -> Option<InlineSeq<[T; N]>> {
@@ -1677,7 +1671,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
             for ArraySink<'a, T, A, N>
         {
             fn expecting(&self) -> Cow<'_, str> {
-                Cow::Borrowed("array")
+                Cow::Borrowed(ARRAY_NAME)
             }
 
             fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
@@ -1710,7 +1704,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
                             )),
                         }
                     }
-                    other => self.unexpected_atom(other, state),
+                    other => default_atom(self, other, state),
                 }
             }
 
@@ -1837,6 +1831,7 @@ pub(crate) fn via_atom_into<'de, T, U, A>(
     state: &mut State,
 ) -> Result<(), Error>
 where
+    T: Send,
     U: Via<T>,
     A: Deserialize<'de, T>,
 {
@@ -1856,6 +1851,7 @@ pub(crate) fn via_borrowed_atom_into<'de, T, U, A>(
     state: &mut State,
 ) -> Result<(), Error>
 where
+    T: Send,
     U: Via<T>,
     A: Deserialize<'de, T>,
 {
@@ -1875,6 +1871,11 @@ macro_rules! deserialize_via {
                 #[inline]
                 fn deserialize_into<'out>(out: &'out mut Option<Self>, state: &mut $crate::State) -> $crate::de::SinkHandle<'out, 'de> {
                     $crate::de::impls::via_handle::<$via, Self, $crate::adapters::Same>(out, state)
+                }
+
+                // the sink passes everything on to the sink of the value
+                fn expecting() -> alloc::borrow::Cow<'static, str> {
+                    <$via as $crate::de::Deserialize<'de>>::expecting()
                 }
 
                 #[inline]
@@ -1922,6 +1923,10 @@ macro_rules! deserialize_as_via {
                 #[inline]
                 fn deserialize_into<'out>(out: &'out mut Option<$wrapper<T>>, state: &mut State) -> SinkHandle<'out, 'de> {
                     via_handle::<T, $wrapper<T>, A>(out, state)
+                }
+
+                fn expecting() -> Cow<'static, str> {
+                    A::expecting()
                 }
 
                 #[inline]
@@ -2026,6 +2031,10 @@ where
         via_handle::<T::Owned, Self, Same>(out, state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        <T::Owned as Deserialize<'de>>::expecting()
+    }
+
     #[inline]
     fn __private_atom_into(
         out: &mut Option<Self>,
@@ -2057,49 +2066,40 @@ fn expected_borrowed(what: &str) -> Error {
     )
 }
 
-impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a str> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("str")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de: 'a, 'a> Deserialize<'de> for &'a str {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(_) | Atom::Lexical(_) | Atom::Implicit(_) => Err(expected_borrowed("string")),
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref text) | Atom::Lexical(ref text) if text.is_borrowed() => {
-                **self = text.borrowed_str();
+                **slot = text.borrowed_str();
                 Ok(())
             }
             // strings take the text of values whose type was inferred
             Atom::Implicit(ref value) if value.text().is_borrowed() => {
-                **self = value.text().borrowed_str();
+                **slot = value.text().borrowed_str();
                 Ok(())
             }
-            other => self.atom(other, state),
+            other => Self::deserialize_atom(slot, other, state),
         }
     }
-}
 
-impl<'de: 'a, 'a> Deserialize<'de> for &'a str {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("str")
     }
 }
 
-impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("bytes")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Bytes(_) => Err(expected_borrowed("bytes")),
             Atom::Str(_) => Err(Error::new(
@@ -2107,26 +2107,25 @@ impl<'de: 'a, 'a> Sink<'de> for SlotWrapper<&'a [u8]> {
                 "unexpected string, expected borrowed bytes (bytes cannot be borrowed \
                  from strings, use Vec<u8> or Cow<[u8]> instead)",
             )),
-            other => self.unexpected_atom(other, state),
+            other => default_atom(slot, other, state),
         }
     }
 
-    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+    fn deserialize_borrowed_atom(
+        slot: &mut Slot<Self>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
         match atom {
             Atom::Bytes(ref value) if value.is_borrowed() => {
-                **self = value.borrowed_data();
+                **slot = value.borrowed_data();
                 Ok(())
             }
-            other => self.atom(other, state),
+            other => Self::deserialize_atom(slot, other, state),
         }
     }
-}
 
-impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("bytes")
     }
 }

@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::atomic::{self, AtomicUsize};
 
-use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle};
-use deser::{Atom, Deserialize, Event, State, Text, make_slot_wrapper};
+use deser::de::{DeserializeDriver, DeserializeOwned, Sink, SinkHandle, Slot, default_atom};
+use deser::{Atom, Deserialize, Event, State, Text};
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> T {
     let mut out = None;
@@ -94,31 +94,33 @@ fn test_f32_fallback() {
     // sinks that only know `F64` get single precision floats widened
     struct F64Only(f64);
 
-    make_slot_wrapper!(SlotWrapper);
-
-    impl<'de> Sink<'de> for SlotWrapper<F64Only> {
-        fn atom(&mut self, atom: Atom, state: &mut deser::State) -> Result<(), deser::Error> {
+    impl<'de> Deserialize<'de> for F64Only {
+        fn deserialize_atom(
+            slot: &mut Slot<Self>,
+            atom: Atom,
+            state: &mut deser::State,
+        ) -> Result<(), deser::Error> {
             match atom {
                 Atom::F64(value) => {
-                    **self = Some(F64Only(value));
+                    slot.set(F64Only(value));
                     Ok(())
                 }
-                other => self.unexpected_atom(other, state),
+                other => default_atom(slot, other, state),
             }
-        }
-    }
-
-    impl<'de> Deserialize<'de> for F64Only {
-        fn deserialize_into<'out>(
-            out: &'out mut Option<Self>,
-            _state: &mut State,
-        ) -> SinkHandle<'out, 'de> {
-            SlotWrapper::make_handle(out)
         }
     }
 
     let value = deserialize::<F64Only>(vec![Event::Atom(Atom::F32(1.5))]);
     assert_eq!(value.0, 1.5);
+
+    // without `expecting` errors name the type
+    let mut out = None::<F64Only>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    let err = driver.emit(Event::Atom(Atom::Bool(true))).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Unexpected: unexpected bool, expected F64Only"
+    );
 
     // integers do not accept floats of either precision
     let mut out = None::<u32>;
@@ -230,20 +232,13 @@ fn test_array_dropping_on_error() {
         }
     }
 
-    make_slot_wrapper!(SlotWrapper);
-
     impl<'de> Deserialize<'de> for X {
-        fn deserialize_into<'out>(
-            out: &'out mut Option<Self>,
-            _state: &mut State,
-        ) -> SinkHandle<'out, 'de> {
-            SlotWrapper::make_handle(out)
-        }
-    }
-
-    impl<'de> Sink<'de> for SlotWrapper<X> {
-        fn atom(&mut self, _atom: Atom, _state: &mut deser::State) -> Result<(), deser::Error> {
-            **self = Some(X);
+        fn deserialize_atom(
+            slot: &mut Slot<Self>,
+            _atom: Atom,
+            _state: &mut deser::State,
+        ) -> Result<(), deser::Error> {
+            slot.set(X);
             Ok(())
         }
     }

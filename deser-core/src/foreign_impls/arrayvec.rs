@@ -13,15 +13,13 @@ use ::arrayvec::{ArrayString, ArrayVec};
 use crate::State;
 use crate::Text;
 use crate::adapters::bytes::{BytesBufImpl, encoding_adapter};
-use crate::de::impls::{SeqTarget, collection_methods, seq_sink};
+use crate::de::impls::{SeqTarget, collection_methods, seq_expecting, seq_sink};
 use crate::de::update::Collection;
-use crate::de::{Deserialize, Sink, SinkHandle};
+use crate::de::{Deserialize, SinkHandle, Slot, default_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::impls::serialize_slice;
 use crate::ser::{Chunk, Serialize, plain_atom};
-
-make_slot_wrapper!(SlotWrapper);
 
 serialize_slice! {
     [T: Sync, A: Serialize<T>, const CAP: usize] ArrayVec<T, CAP> => ArrayVec<A, CAP>, A;
@@ -65,6 +63,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const CAP: usize> Deserialize<'de, Ar
         seq_sink::<ArrayVec<T, CAP>, T, A>(out, state)
     }
 
+    fn expecting() -> Cow<'static, str> {
+        seq_expecting::<ArrayVec<T, CAP>, T, A>()
+    }
+
     collection_methods!(ArrayVec<T, CAP>);
 }
 
@@ -97,6 +99,10 @@ impl<const CAP: usize> BytesBufImpl for ArrayVec<u8, CAP> {
     ) -> SinkHandle<'a, 'de> {
         <Self as Deserialize<'de>>::deserialize_into(out, state)
     }
+
+    fn expecting() -> Cow<'static, str> {
+        <Self as Deserialize<'static>>::expecting()
+    }
 }
 
 encoding_adapter!(
@@ -112,12 +118,8 @@ impl<const CAP: usize> Serialize for ArrayString<CAP> {
     }
 }
 
-impl<'de, const CAP: usize> Sink<'de> for SlotWrapper<ArrayString<CAP>> {
-    fn expecting(&self) -> Cow<'_, str> {
-        Cow::Borrowed("string")
-    }
-
-    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+impl<'de, const CAP: usize> Deserialize<'de> for ArrayString<CAP> {
+    fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         let mut rv = ArrayString::new();
         match atom {
             Atom::Str(ref value) | Atom::Lexical(ref value) => rv
@@ -126,39 +128,15 @@ impl<'de, const CAP: usize> Sink<'de> for SlotWrapper<ArrayString<CAP>> {
             Atom::Char(value) => rv
                 .try_push(value)
                 .map_err(|_| capacity_exceeded("string", CAP))?,
-            other => return self.unexpected_atom(other, state),
+            other => return default_atom(slot, other, state),
         }
-        **self = Some(rv);
+        slot.set(rv);
         Ok(())
     }
-}
 
-impl<'de, const CAP: usize> Deserialize<'de> for ArrayString<CAP> {
-    fn deserialize_into<'out>(
-        out: &'out mut Option<Self>,
-        _state: &mut State,
-    ) -> SinkHandle<'out, 'de> {
-        SlotWrapper::make_handle(out)
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("string")
     }
 
-    #[inline]
-    fn __private_atom_into(
-        out: &mut Option<Self>,
-        atom: Atom,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        let sink = SlotWrapper::wrap(out);
-        sink.atom(atom, state)?;
-        sink.finish(state)
-    }
-
-    #[inline]
-    fn __private_borrowed_atom_into(
-        out: &mut Option<Self>,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        // the sink does not borrow
-        Self::__private_atom_into(out, atom, state)
-    }
+    slot_atom_into!();
 }

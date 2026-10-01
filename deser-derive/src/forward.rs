@@ -367,6 +367,10 @@ pub(crate) fn derive_deserialize(
                     #adapter::deserialize_into(__slot, __state)
                 }
 
+                fn expecting() -> __deser::__derive::StrCow<'static> {
+                    #adapter::expecting()
+                }
+
                 #[inline]
                 fn initial_value() -> __deser::__derive::Option<Self> {
                     #adapter::initial_value()

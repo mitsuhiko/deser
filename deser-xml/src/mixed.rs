@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle};
+use deser_core::de::{Deserialize, OwnedSink, Sink, SinkHandle, default_atom};
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{
     Boxed, Chunk, Describe, SerializeHandle, StructEmitter, Variant, VariantKind, VariantRepr,
@@ -311,6 +311,10 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> Deserialize<'de> for Mixed<T, W> {
         )
     }
 
+    fn expecting() -> Cow<'static, str> {
+        Cow::Borrowed("mixed content")
+    }
+
     /// Missing content is empty.
     fn initial_value() -> Option<Self> {
         Some(Mixed::new())
@@ -382,7 +386,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> Sink<'de> for MixedSink<'_, 'de, T
                 sink.atom(atom, state)?;
                 sink.finish(state)
             }
-            atom => self.unexpected_atom(atom, state),
+            atom => default_atom(self, atom, state),
         }
     }
 
