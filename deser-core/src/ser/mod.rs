@@ -24,6 +24,13 @@
 //!
 //! This type of interface also permits the serialization of almost unlimited depth.
 //!
+//! The serializers of data formats implement the [`Serializer`] trait which
+//! receives the events of a value from a driver.  [`Layer`]s sit between
+//! the values and the format and see every event, for instance to rename
+//! keys or to redact values.  They are added with
+//! [`SerializeDriver::push_layer`] (for instance in
+//! [`Serializer::serialize_with`]).
+//!
 //! # Serializing Primitives
 //!
 //! Primitive values such as integers are trivial to serialize as you just
@@ -46,9 +53,10 @@
 //!
 //! # Serializing Structs
 //!
-//! To serialize compounds like structs you return a chunk containing an emitter.
-//! Note that the emitter returns a [`SerializeHandle`].  If want you want to
-//! serialize is not already available the handle can own it.
+//! To serialize compounds like structs you return a chunk containing an
+//! emitter.  The emitter hands out the values of the fields as
+//! [`SerializeHandle`]s: a handle borrows the value if it exists already,
+//! otherwise it can own it (see [`SerializeHandle::arena`]).
 //!
 //! ```rust
 //! use std::borrow::Cow;
@@ -169,8 +177,8 @@ pub trait SeqEmitter: Send {
 /// A data structure that can be serialized into any data format supported by Deser.
 ///
 /// [`serialize`](Self::serialize) serializes the value into a [`Chunk`].  For
-/// compound values like lists or similar, the piece contains a boxed emitter
-/// which can be further processed to walk the embedded compound value.  The
+/// compound values like lists or structs, the chunk holds an emitter which
+/// hands out the values the compound value contains.  The
 /// [`container_shape`](Self::container_shape) of such values is passed on
 /// with the start event of the container.
 ///

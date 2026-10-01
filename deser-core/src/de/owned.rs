@@ -56,15 +56,18 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 
 /// Utility to bundle a sink with a slot.
 ///
-/// There are situations where one wants to be able to deserialize into
-/// a slot that needs to be allocated on the heap and hold it together
-/// with the sink handle.  Rust's lifetimes make this impossible so this
-/// abstraction is provided to allow this.
+/// There are situations where one wants to deserialize into a slot that
+/// does not exist yet (for instance the value inside a wrapper, which is
+/// only built once the value is complete) and hold the slot together with
+/// the sink that borrows it.  Rust's lifetimes make this impossible so this
+/// abstraction is provided to allow this.  The slot and the sink are
+/// allocated in the arena of the state, the value is taken out with
+/// [`take`](Self::take).
 ///
 /// # Example
 ///
 /// This example demonstrates the use of an [`OwnedSink`] to implement
-/// [`Deserialize`] for a newtype wrapper.  For simplicities sake only
+/// [`Deserialize`] for a newtype wrapper.  For simplicity's sake only
 /// atoms have been implemented here.
 ///
 /// ```rust

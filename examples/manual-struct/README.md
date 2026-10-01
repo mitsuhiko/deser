@@ -25,6 +25,10 @@ express. Note that `Cargo.toml` does not enable the `derive` feature.
   `ErrorKind::MissingField` errors.
 - Neither side recurses: nested values are handed back to the driver.
   This is why `deep-nesting` works.
+- Only compound values need a sink. Types that are deserialized from a
+  single atom (like numbers or strings) implement
+  `Deserialize::deserialize_atom` instead and need no sink at all (see the
+  documentation of `deser::de`).
 - Driving a sink by hand: `DeserializeDriver::new(&mut out)` plus
   `driver.emit(...)` of `Event`s. No data format is involved.
 

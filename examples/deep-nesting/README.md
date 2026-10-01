@@ -10,7 +10,7 @@ Most serialization libraries recurse on the call stack, one frame per
 nesting level. Deeply nested input then overflows the stack. Such a crash
 cannot be caught, which makes it a denial-of-service risk with untrusted
 input. deser does not recurse: nested sinks and emitters are handed back
-to a driver that keeps them on the heap. This example proves it with a
+to a driver that keeps them in an arena on the heap. This example proves it with a
 million levels of nesting. It also shows how to put a limit on nesting
 depth anyway.
 

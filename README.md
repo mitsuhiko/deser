@@ -219,8 +219,9 @@ More practical examples are in the
 Instead of visitors calling into each other recursively, deserializing a type
 creates a sink that receives events and serializing it produces emitters that
 hand out nested values.  Nested sinks and emitters are returned to a driver
-which keeps them on the heap, which is why nesting cannot overflow the stack
-and a deserialization can be suspended between events.  The data model is
+which keeps them in an arena instead of on the call stack, which is why
+nesting cannot overflow the stack and a deserialization can be suspended
+between events.  The data model is
 small (atoms, maps and sequences) and can be extended with
 [extension atoms](https://docs.rs/deser/latest/deser/ext/) that carry a
 fallback for formats which do not understand them.  Where buffering cannot be

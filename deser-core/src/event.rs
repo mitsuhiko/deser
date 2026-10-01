@@ -176,22 +176,19 @@ impl<'a> Atom<'a> {
 
     /// Creates an "unexpected" error.
     ///
-    /// This is useful when implementing sinks that do not want to deal with an
-    /// atom of a specific type.  The default implementation of a
-    /// [`Sink`](crate::de::Sink) uses this method as follows:
+    /// This is the error that [`default_atom`](crate::de::default_atom)
+    /// returns for atoms it cannot pass on in another form, with what the
+    /// sink expects.  Sinks (and
+    /// [`Deserialize::deserialize_atom`](crate::de::Deserialize::deserialize_atom))
+    /// should pass the atoms they do not accept to `default_atom` rather
+    /// than returning this error, so that extension values are passed on
+    /// as their fallback and lexical atoms as strings.
     ///
     /// ```
-    /// # use deser::{Atom, Error, State, de::Sink};
-    /// # struct MySink;
-    /// impl<'de> Sink<'de> for MySink {
-    ///     fn atom(
-    ///         &mut self,
-    ///         atom: Atom,
-    ///         _state: &mut State,
-    ///     ) -> Result<(), Error> {
-    ///         Err(atom.unexpected_error(&self.expecting()))
-    ///     }
-    /// }
+    /// use deser::Atom;
+    ///
+    /// let err = Atom::Bool(true).unexpected_error("u32");
+    /// assert_eq!(err.message(), "unexpected bool, expected u32");
     /// ```
     pub fn unexpected_error(&self, expectation: &str) -> Error {
         Error::new(

@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Recording};
-/// use deser::{Deserialize, Event};
+/// use deser::{Deserialize, Event, State};
 ///
 /// let mut recording = Recording::new();
 /// {
@@ -40,15 +40,11 @@ use alloc::vec::Vec;
 ///     driver.emit(Event::SeqEnd).unwrap();
 /// }
 ///
+/// // replayed into the sink of a value, here with a new state
 /// let mut out = None::<Vec<u32>>;
-/// {
-///     let mut driver_out = None::<()>;
-///     let mut driver = DeserializeDriver::new(&mut driver_out);
-///     let state = driver.state_mut();
-///     recording
-///         .replay(Vec::<u32>::deserialize_into(&mut out, state), state)
-///         .unwrap();
-/// }
+/// let mut state = State::new();
+/// let sink = Vec::<u32>::deserialize_into(&mut out, &mut state);
+/// recording.replay(sink, &mut state).unwrap();
 /// assert_eq!(out, Some(vec![1, 2]));
 /// ```
 ///

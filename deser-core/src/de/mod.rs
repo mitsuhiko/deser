@@ -26,11 +26,10 @@
 //!
 //! # Streaming Deserialization
 //!
-//! Because the serialization interface of Deser is tricky due to use of
-//! lifetimes, a safe abstraction is provided with the [`DeserializeDriver`].
-//! This type which allow you to drive the deserialization process without using
-//! stack space.  You feed it events and internally the driver ensures that the
-//! deserlization system is driven in the right way.
+//! Driving sinks by hand is tricky due to their lifetimes, so a safe
+//! abstraction is provided with the [`DeserializeDriver`].  It drives the
+//! deserialization without using the call stack for nesting: you emit
+//! events into it and the driver passes them on to the right sinks.
 //!
 //! ```rust
 //! use std::collections::BTreeMap;
@@ -224,10 +223,11 @@
 //!
 //! # Owned Sinks and Slots
 //!
-//! From the above model you can see that deserialization requires a mutable reference
-//! to an `Option`.  In certain situations it can become necessary to "make up a slot
-//! on the spot" to temporarily deserialize into.  For more information see
-//! [`OwnedSink`].
+//! From the above model you can see that deserialization requires a
+//! mutable reference to an `Option`.  In certain situations it can become
+//! necessary to "make up a slot on the spot" to temporarily deserialize
+//! into.  [`OwnedSink`] bundles a sink with its slot and [`OwnedDriver`]
+//! a driver with the slot of the value it deserializes.
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 

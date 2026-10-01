@@ -58,8 +58,8 @@ is a library, in a binary only the code that is used would be compiled.
   `deser-core`.  All structs without flattened fields share one sink
   (`StructSink`) which holds the fields in the same block.  What depends
   on the type of a field (its sink, atoms, borrowed atoms and if it
-  collects) is done by its `Slot<T, A>` which implements `FieldSlot` once
-  per type of field and adapter, not once per struct.  The derive only
+  collects) is done by its `FieldValue<T, A>` which implements `FieldSlot`
+  once per type of field and adapter, not once per struct.  The derive only
   implements `StructFields`: the slot of a field by index and `finish`.
   The shared sink costs an indirect call per field, which makes
   deserializing structs 2%-3% slower than with a sink per struct (up to
@@ -105,7 +105,7 @@ is a library, in a binary only the code that is used would be compiled.
 * **Updates** (`deserialize_update`) are implemented by every struct even
   if they are not used, as `UpdateFields` (2.2% of the IR).  They could
   use slots like the fields of `StructFields`, but they update the
-  fields of the struct in place (`&mut T`, not a `Slot`).
+  fields of the struct in place (`&mut T`, not a `FieldValue`).
 * **Every type** costs something even if its derived code is small: its
   fields are boxed, dropped and have a vtable, and each field type is
   instantiated for the generic helpers of the derive.

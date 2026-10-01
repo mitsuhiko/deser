@@ -2,7 +2,7 @@
 //!
 //! Deser does not use the call stack to process nested values: sinks and
 //! emitters for nested values are handed back to a driver which keeps them
-//! on the heap.  This means that a million levels of nesting deserialize
+//! in an arena on the heap.  This means that a million levels of nesting deserialize
 //! and serialize just fine.
 //!
 //! For untrusted input it can still make sense to reject such data (for

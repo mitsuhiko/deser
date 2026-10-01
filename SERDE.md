@@ -310,7 +310,7 @@ a format (for instance deserializing from a `serde_json::Value`) can still
 overflow the stack.
 
 Deser's sinks and emitters return the sinks and emitters of nested values
-to a driver which keeps them on the heap.  Nesting does not use the call
+to a driver which keeps them in an arena.  Nesting does not use the call
 stack, a million levels of nesting deserialize, serialize and are skipped
 without problems.  For untrusted input the depth and size can be limited
 with the `Limits` layer, to any value.
@@ -622,7 +622,7 @@ with.  This makes serde very fast at runtime but produces a lot of code for
 the compiler to process and for the binary to contain.  Deser uses dynamic
 dispatch for the sinks and emitters instead and moves everything that does
 not depend on the types of the fields out of the derived code.  Release
-builds of derived code are about 1.6 times as fast as with serde (see
+builds of derived code compile about 2.3 times as fast as with serde (see
 [compile-times](https://github.com/mitsuhiko/deser/tree/main/compile-times)),
 at some cost of runtime performance (see
 [benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)).

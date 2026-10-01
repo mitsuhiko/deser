@@ -89,6 +89,7 @@
 //! # Example
 //!
 //! ```
+//! use deser::de::{Deserialize, Slot, default_atom};
 //! use deser::ext::{Extension, ExtValue};
 //! use deser::ser::{Chunk, Serialize};
 //! use deser::State;
@@ -113,6 +114,38 @@
 //!         Ok(Chunk::Atom(Atom::Ext(ExtValue::borrowed(value))))
 //!     }
 //! }
+//!
+//! impl<'de> Deserialize<'de> for Timestamp {
+//!     fn deserialize_atom(
+//!         slot: &mut Slot<Self>,
+//!         atom: Atom,
+//!         state: &mut State,
+//!     ) -> Result<(), Error> {
+//!         // the extension value itself
+//!         if let Atom::Ext(ref ext) = atom
+//!             && let Some(value) = ext.downcast_ref::<Timestamp>()
+//!         {
+//!             slot.set(value.clone());
+//!             return Ok(());
+//!         }
+//!         match atom {
+//!             // the fallback (other extension values are passed on as their
+//!             // fallback by `default_atom`)
+//!             Atom::I64(seconds) => {
+//!                 slot.set(Timestamp(seconds));
+//!                 Ok(())
+//!             }
+//!             other => default_atom(slot, other, state),
+//!         }
+//!     }
+//! }
+//!
+//! let value = Timestamp(1_700_000_000);
+//! let mut out = None::<Timestamp>;
+//! deser::de::DeserializeDriver::new(&mut out)
+//!     .emit(Atom::Ext(ExtValue::borrowed(&value)))
+//!     .unwrap();
+//! assert_eq!(out, Some(value));
 //! ```
 use alloc::string::ToString;
 use alloc::sync::Arc;

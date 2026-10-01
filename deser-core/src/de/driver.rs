@@ -13,10 +13,10 @@ use crate::event::{Atom, ContainerShape, Event};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
-/// This is a convenient way to safely drive a [`Sink`](crate::de::Sink) of a [`Deserialize`]
-/// without using the runtime stack.  As rust lifetimes make what this type does
-/// internally impossible with safe code, this is a safe abstractiont that
-/// hides the unsafety internally.
+/// This is a convenient way to safely drive the [`Sink`](crate::de::Sink)
+/// of a [`Deserialize`] without using the call stack for nesting.  As Rust
+/// lifetimes make what this type does internally impossible with safe
+/// code, this is a safe abstraction that hides the unsafety internally.
 ///
 /// # Events and Their Context
 ///

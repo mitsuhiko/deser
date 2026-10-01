@@ -1,6 +1,7 @@
-//! The arena that sinks are allocated in.
+//! The arena that sinks and emitters are allocated in.
 //!
-//! Deserializing compound values creates a sink for most containers.  Sinks
+//! Deserializing compound values creates a sink for most containers
+//! (serializing them an emitter, see [`Boxed`](crate::ser::Boxed)).  Sinks
 //! are created when a container starts and dropped when it ends, so they
 //! live and die like the frames of a stack.  They are allocated in an arena
 //! which belongs to the [`State`](crate::State) of the deserialization:

@@ -127,10 +127,10 @@ pub struct Account {
 //!
 //! ```toml
 //! [dependencies]
-//! deser-cbor = { version = "0.8", default-features = false }
+//! deser-cbor = { version = "0.9", default-features = false }
 //!
 //! [dependencies.deser]
-//! version = "0.8"
+//! version = "0.9"
 //! default-features = false
 //! features = ["derive"]
 //! ```

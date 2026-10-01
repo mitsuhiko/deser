@@ -16,10 +16,13 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 ///
 /// The state acts as a communication channel between the data format and
 /// the types that are serialized or deserialized.  It is used in both
-/// directions: [`Sink`](crate::de::Sink)s receive it during deserialization
-/// and [`Serialize`](crate::ser::Serialize) implementations and emitters
+/// directions: [`Deserialize`](crate::de::Deserialize) implementations and
+/// [`Sink`](crate::de::Sink)s receive it during deserialization and
+/// [`Serialize`](crate::ser::Serialize) implementations and emitters
 /// receive it during serialization.  Formats get mutable access to it through
-/// the drivers.
+/// the drivers.  The state also holds the arena the sinks and emitters are
+/// allocated in (see [`SinkHandle::arena`](crate::de::SinkHandle::arena)
+/// and [`Chunk::seq`](crate::ser::Chunk::seq)).
 ///
 /// Besides some information about the current position (such as the
 /// [`depth`](Self::depth)) it holds typed values that can be used by formats

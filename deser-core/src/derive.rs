@@ -122,10 +122,11 @@
 //!   with unnamed fields are like this without the attribute (see
 //!   [unnamed fields](#unnamed-field-attributes)), for them it only checks
 //!   that one field is not skipped.
-//! * `#[deser(skip_serializing_optionals)]`: when this is set the struct serializer will automatically
-//!   skip over all optional values that are currently not set.  This uses the
-//!   [`is_optional`](crate::ser::Serialize::is_optional) serialize method to figure out if a
-//!   a field is optional.  At the moment only `None` and `()` are considered optional.
+//! * `#[deser(skip_serializing_optionals)]`: skips all fields whose value
+//!   is currently not set.  This uses
+//!   [`Serialize::is_optional`](crate::ser::Serialize::is_optional) to
+//!   check the value: `None`, `()`, `PhantomData` and an unset `OnceLock`
+//!   are optional (and wrappers like `Box` of them).
 //! * `#[deser(as = Adapter)]`, `#[deser(serialize_as = Adapter)]` and
 //!   `#[deser(deserialize_as = Adapter)]`: serializes and deserializes the
 //!   struct with an adapter instead of its fields.  See [container

@@ -14,7 +14,8 @@
 //!   the memory used does not depend on their size.
 //! * A [`StreamDeserializer`](crate::de::StreamDeserializer) (for instance
 //!   `deser_json::StreamDeserializer`) splits the input of a stream into
-//!   values or deserializes them while their input arrives.  The
+//!   values or deserializes them in parts while their input arrives (see
+//!   [`drive_partial`](crate::de::StreamDeserializer::drive_partial)).  The
 //!   [`InputBuffer`] of this module holds the input that was read and
 //!   invokes the stream deserializer.
 //!
