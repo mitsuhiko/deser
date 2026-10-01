@@ -133,7 +133,7 @@ impl<'a, 'de> Drop for HeapSink<'a, 'de> {
 /// points to the fields.  This behaves like an [`ArenaSink`] of the struct
 /// sink which owns the fields.
 #[cfg(feature = "derive")]
-pub(crate) struct StructBox<'a, 'de> {
+pub(crate) struct ArenaStruct<'a, 'de> {
     // a pointer to the `StructSink` at the start of the block, it's a
     // `dyn Sink` so that the handle can use it like the one of an `ArenaSink`
     ptr: NonNull<dyn Sink<'de> + 'a>,
@@ -142,7 +142,7 @@ pub(crate) struct StructBox<'a, 'de> {
 
 // SAFETY: see `ArenaBox`, the sink and the fields are `Send`.
 #[cfg(feature = "derive")]
-unsafe impl Send for StructBox<'_, '_> {}
+unsafe impl Send for ArenaStruct<'_, '_> {}
 
 /// Returns the layout of the block of a struct sink and the offset of the
 /// fields in it.
@@ -156,7 +156,7 @@ fn struct_block_layout(fields: Layout) -> (Layout, usize) {
 }
 
 #[cfg(feature = "derive")]
-impl<'a, 'de: 'a> StructBox<'a, 'de> {
+impl<'a, 'de: 'a> ArenaStruct<'a, 'de> {
     /// Moves the fields to the heap together with a sink for them.
     #[inline]
     pub(crate) fn new<F: StructFields<'de> + 'a>(
@@ -164,7 +164,7 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
         info: &'static StructInfo,
         raw: u64,
         arena: &mut Arena,
-    ) -> StructBox<'a, 'de> {
+    ) -> ArenaStruct<'a, 'de> {
         let (layout, offset) = struct_block_layout(Layout::new::<F>());
         let block = arena.alloc(layout);
         // SAFETY: the block is valid for writes of the sink and the fields
@@ -174,7 +174,7 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
             raw_fields.write(fields);
             let raw_fields =
                 NonNull::new_unchecked(raw_fields as *mut (dyn StructFields<'de> + 'a));
-            StructBox::init(block, raw_fields, info, raw)
+            ArenaStruct::init(block, raw_fields, info, raw)
         }
     }
 
@@ -189,12 +189,12 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
         fields: NonNull<dyn StructFields<'de> + 'a>,
         info: &'static StructInfo,
         raw: u64,
-    ) -> StructBox<'a, 'de> {
+    ) -> ArenaStruct<'a, 'de> {
         let ptr = block.cast::<StructSink<'a, 'de>>();
         // SAFETY: the block is valid for writes of the sink, the sink owns
         // the fields
         unsafe { ptr.as_ptr().write(StructSink::new(fields, info, raw)) };
-        StructBox {
+        ArenaStruct {
             ptr: ptr as NonNull<dyn Sink<'de> + 'a>,
             _marker: PhantomData,
         }
@@ -216,7 +216,7 @@ impl<'a, 'de: 'a> StructBox<'a, 'de> {
 }
 
 #[cfg(feature = "derive")]
-impl<'a, 'de> StructBox<'a, 'de> {
+impl<'a, 'de> ArenaStruct<'a, 'de> {
     /// Drops the sink and the fields, returns the size of the block.
     ///
     /// # Safety
@@ -256,7 +256,7 @@ impl<'a, 'de> StructBox<'a, 'de> {
 }
 
 #[cfg(feature = "derive")]
-impl<'a, 'de> Drop for StructBox<'a, 'de> {
+impl<'a, 'de> Drop for ArenaStruct<'a, 'de> {
     fn drop(&mut self) {
         // SAFETY: the box is not used after
         drop(unsafe { self.drop_values() });

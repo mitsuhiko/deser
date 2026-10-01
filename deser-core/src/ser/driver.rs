@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::Text;
-use crate::arena::Buffer;
+use crate::arena::{Alloc, Buffer};
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{
@@ -109,14 +109,8 @@ impl Emitter {
 /// events or emitters borrow from the value.
 pub(crate) struct Held {
     ptr: NonNull<dyn Erased>,
-    owned: Owned,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-enum Owned {
-    No,
-    Heap,
-    Arena,
+    /// Where the value is allocated if it's owned, `None` if it's borrowed.
+    owned: Option<Alloc>,
 }
 
 // SAFETY: a held value is either a borrowed `SerializeRef` (which is
@@ -134,11 +128,11 @@ impl Held {
     pub(crate) unsafe fn new(handle: SerializeHandle<'_>) -> Held {
         unsafe {
             let (ptr, owned) = match handle.0 {
-                HandleInner::Borrowed(value) => (NonNull::from(value.as_dyn()), Owned::No),
+                HandleInner::Borrowed(value) => (NonNull::from(value.as_dyn()), None),
                 HandleInner::Owned(value) => {
-                    let (ptr, in_arena) = Boxed::into_raw(value);
+                    let (ptr, alloc) = Boxed::into_raw(value);
                     let ptr: NonNull<dyn Erased + '_> = ptr;
-                    (ptr, if in_arena { Owned::Arena } else { Owned::Heap })
+                    (ptr, Some(alloc))
                 }
             };
             Held {
@@ -165,15 +159,15 @@ impl Drop for Held {
     fn drop(&mut self) {
         #[cold]
         #[inline(never)]
-        unsafe fn drop_owned(ptr: NonNull<dyn Erased>, in_arena: bool) {
+        unsafe fn drop_owned(ptr: NonNull<dyn Erased>, alloc: Alloc) {
             unsafe {
-                drop(Boxed::from_raw(ptr, in_arena));
+                drop(Boxed::from_raw(ptr, alloc));
             }
         }
 
-        if self.owned != Owned::No {
-            // SAFETY: owned values were created from a box of the kind
-            unsafe { drop_owned(self.ptr, self.owned == Owned::Arena) };
+        if let Some(alloc) = self.owned {
+            // SAFETY: owned values were created from a box of the allocation
+            unsafe { drop_owned(self.ptr, alloc) };
         }
     }
 }

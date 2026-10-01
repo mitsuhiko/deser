@@ -271,7 +271,7 @@ pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::{RecordBuf, Recording};
 #[cfg(feature = "derive")]
-use self::sinkbox::StructBox;
+use self::sinkbox::ArenaStruct;
 use self::sinkbox::{ArenaSink, HeapSink, arena_sink};
 pub use self::slot::Slot;
 pub use self::stream::{Frame, Progress, StreamDeserializer};
@@ -350,7 +350,7 @@ enum HandleInner<'a, 'de> {
     Arena(ArenaSink<'a, 'de>),
     Heap(HeapSink<'a, 'de>),
     #[cfg(feature = "derive")]
-    Struct(StructBox<'a, 'de>),
+    Struct(ArenaStruct<'a, 'de>),
     Null(ignore::Ignore),
     // The optional variants are used to implement `Option<T>` without an
     // extra allocation: a null atom is not forwarded but turns the handle
@@ -359,7 +359,7 @@ enum HandleInner<'a, 'de> {
     OptionalArena(ArenaSink<'a, 'de>),
     OptionalHeap(HeapSink<'a, 'de>),
     #[cfg(feature = "derive")]
-    OptionalStruct(StructBox<'a, 'de>),
+    OptionalStruct(ArenaStruct<'a, 'de>),
 }
 
 impl<'a, 'de> SinkHandle<'a, 'de> {
@@ -495,7 +495,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Creates an owned handle to the sink of a derived struct.
     #[cfg(feature = "derive")]
     #[inline]
-    pub(crate) fn from_struct_box(sink: StructBox<'a, 'de>) -> SinkHandle<'a, 'de> {
+    pub(crate) fn from_arena_struct(sink: ArenaStruct<'a, 'de>) -> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Struct(sink))
     }
 

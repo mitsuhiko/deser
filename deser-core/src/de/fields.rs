@@ -18,7 +18,7 @@ use crate::adapters::Same;
 use crate::de::CollectedErrors;
 use crate::de::atoms::{atom_into_handle, borrowed_atom_into_handle};
 use crate::de::duplicates::{duplicate_field, is_seen, mark_seen};
-use crate::de::sinkbox::StructBox;
+use crate::de::sinkbox::ArenaStruct;
 use crate::de::unknown::{unknown_field, wants_unknown_fields};
 use crate::de::{Deserialize, Sink, SinkHandle, default_atom};
 use crate::error::{Error, ErrorKind, discarded_error};
@@ -552,7 +552,7 @@ impl Seen {
 /// It exists once for all structs, the fields are behind
 /// [`StructFields`].
 pub struct StructSink<'a, 'de> {
-    // the fields are in the same block as the sink (see `StructBox`) which
+    // the fields are in the same block as the sink (see `ArenaStruct`) which
     // drops them
     fields: NonNull<dyn StructFields<'de> + 'a>,
     key: FieldKeySink,
@@ -577,7 +577,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
         info: &'static StructInfo,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
-        SinkHandle::from_struct_box(StructBox::new(
+        SinkHandle::from_arena_struct(ArenaStruct::new(
             fields,
             info,
             F::raw_fields(),
@@ -585,7 +585,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
         ))
     }
 
-    /// Creates the sink for fields, see [`StructBox`].
+    /// Creates the sink for fields, see [`ArenaStruct`].
     #[inline(always)]
     pub(crate) fn new(
         fields: NonNull<dyn StructFields<'de> + 'a>,

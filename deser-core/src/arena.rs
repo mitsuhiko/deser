@@ -202,6 +202,14 @@ impl Chunk {
     }
 }
 
+/// Where an owned value is allocated: in the arena of a state or on the
+/// heap.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Alloc {
+    Arena,
+    Heap,
+}
+
 /// The arena of a state, see the module documentation.
 pub(crate) struct Arena {
     /// The end of the last block (or the start of the first chunk if there

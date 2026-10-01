@@ -6,7 +6,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::arena::ArenaBox;
+use crate::arena::{Alloc, ArenaBox};
 
 /// An owned value of a serialization, like a `Box`.
 ///
@@ -23,7 +23,7 @@ use crate::arena::ArenaBox;
 /// be on the heap.
 pub struct Boxed<T: ?Sized> {
     ptr: NonNull<T>,
-    in_arena: bool,
+    alloc: Alloc,
     _marker: PhantomData<T>,
 }
 
@@ -37,16 +37,16 @@ impl<T: ?Sized> Boxed<T> {
     pub(crate) fn from_arena(value: ArenaBox<T>) -> Boxed<T> {
         Boxed {
             ptr: ArenaBox::into_raw(value),
-            in_arena: true,
+            alloc: Alloc::Arena,
             _marker: PhantomData,
         }
     }
 
-    /// Takes the pointer out of the box, the flag is `true` if the value is
-    /// in an arena.
+    /// Takes the pointer out of the box together with where the value is
+    /// allocated.
     #[inline(always)]
-    pub(crate) fn into_raw(this: Boxed<T>) -> (NonNull<T>, bool) {
-        let rv = (this.ptr, this.in_arena);
+    pub(crate) fn into_raw(this: Boxed<T>) -> (NonNull<T>, Alloc) {
+        let rv = (this.ptr, this.alloc);
         core::mem::forget(this);
         rv
     }
@@ -55,13 +55,13 @@ impl<T: ?Sized> Boxed<T> {
     ///
     /// # Safety
     ///
-    /// The pointer and flag must come from `into_raw` and the box must
+    /// The pointer and allocation must come from `into_raw` and the box must
     /// only be created once.
     #[inline(always)]
-    pub(crate) unsafe fn from_raw(ptr: NonNull<T>, in_arena: bool) -> Boxed<T> {
+    pub(crate) unsafe fn from_raw(ptr: NonNull<T>, alloc: Alloc) -> Boxed<T> {
         Boxed {
             ptr,
-            in_arena,
+            alloc,
             _marker: PhantomData,
         }
     }
@@ -70,13 +70,14 @@ impl<T: ?Sized> Boxed<T> {
     /// away if it's on the top (see [`SinkHandle::arena`](crate::de::SinkHandle::arena)).
     #[inline(always)]
     pub(crate) fn release(this: Boxed<T>, state: &mut State) {
-        let (ptr, in_arena) = Boxed::into_raw(this);
-        // SAFETY: the pointer comes from a box of the kind of the flag
+        let (ptr, alloc) = Boxed::into_raw(this);
+        // SAFETY: the pointer comes from a box of the allocation
         unsafe {
-            if in_arena {
-                ArenaBox::release_in(ArenaBox::from_raw(ptr.as_ptr()), &mut state.arena)
-            } else {
-                drop(Box::from_raw(ptr.as_ptr()))
+            match alloc {
+                Alloc::Arena => {
+                    ArenaBox::release_in(ArenaBox::from_raw(ptr.as_ptr()), &mut state.arena)
+                }
+                Alloc::Heap => drop(Box::from_raw(ptr.as_ptr())),
             }
         }
     }
@@ -96,7 +97,7 @@ impl<T: ?Sized> From<Box<T>> for Boxed<T> {
         Boxed {
             // SAFETY: the pointer of a box is not null
             ptr: unsafe { NonNull::new_unchecked(Box::into_raw(value)) },
-            in_arena: false,
+            alloc: Alloc::Heap,
             _marker: PhantomData,
         }
     }
@@ -122,12 +123,11 @@ impl<T: ?Sized> DerefMut for Boxed<T> {
 
 impl<T: ?Sized> Drop for Boxed<T> {
     fn drop(&mut self) {
-        // SAFETY: the pointer comes from a box of the kind of the flag
+        // SAFETY: the pointer comes from a box of the allocation
         unsafe {
-            if self.in_arena {
-                drop(ArenaBox::from_raw(self.ptr.as_ptr()))
-            } else {
-                drop(Box::from_raw(self.ptr.as_ptr()))
+            match self.alloc {
+                Alloc::Arena => drop(ArenaBox::from_raw(self.ptr.as_ptr())),
+                Alloc::Heap => drop(Box::from_raw(self.ptr.as_ptr())),
             }
         }
     }
@@ -144,7 +144,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Boxed<T> {
 /// The trait object is created by `cast`, which is `|x| x as *mut dyn Trait`.
 #[inline(always)]
 pub(crate) fn unsize<T, U: ?Sized>(value: Boxed<T>, cast: fn(*mut T) -> *mut U) -> Boxed<U> {
-    let (ptr, in_arena) = Boxed::into_raw(value);
+    let (ptr, alloc) = Boxed::into_raw(value);
     // SAFETY: the cast only changes the type of the pointer
-    unsafe { Boxed::from_raw(NonNull::new_unchecked(cast(ptr.as_ptr())), in_arena) }
+    unsafe { Boxed::from_raw(NonNull::new_unchecked(cast(ptr.as_ptr())), alloc) }
 }
