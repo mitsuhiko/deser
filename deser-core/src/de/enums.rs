@@ -49,21 +49,21 @@ pub trait VariantBuilder<'de, E>: Send {
 ///
 /// `'a` is the lifetime of the slot of the enum.  The enum (and with it
 /// the types of its fields) outlives it, which allows enums to borrow.
-pub struct BoxedVariant<'a, 'de, E>(ArenaBox<dyn VariantBuilder<'de, E> + 'a>);
+pub struct ArenaVariant<'a, 'de, E>(ArenaBox<dyn VariantBuilder<'de, E> + 'a>);
 
-impl<'a, 'de, E> BoxedVariant<'a, 'de, E> {
+impl<'a, 'de, E> ArenaVariant<'a, 'de, E> {
     /// Moves a builder into the arena of the state.
     #[inline(always)]
     pub fn new<B: VariantBuilder<'de, E> + 'a>(builder: B, state: &mut State) -> Self {
         let ptr = ArenaBox::into_raw(ArenaBox::new(builder, &mut state.arena));
         // SAFETY: the pointer comes from the box
-        BoxedVariant(unsafe {
+        ArenaVariant(unsafe {
             ArenaBox::from_raw(ptr.as_ptr() as *mut (dyn VariantBuilder<'de, E> + 'a))
         })
     }
 }
 
-impl<'a, 'de, E> core::ops::Deref for BoxedVariant<'a, 'de, E> {
+impl<'a, 'de, E> core::ops::Deref for ArenaVariant<'a, 'de, E> {
     type Target = dyn VariantBuilder<'de, E> + 'a;
 
     #[inline(always)]
@@ -72,7 +72,7 @@ impl<'a, 'de, E> core::ops::Deref for BoxedVariant<'a, 'de, E> {
     }
 }
 
-impl<'a, 'de, E> core::ops::DerefMut for BoxedVariant<'a, 'de, E> {
+impl<'a, 'de, E> core::ops::DerefMut for ArenaVariant<'a, 'de, E> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.get_mut()
@@ -87,14 +87,14 @@ pub struct ValueVariant<'de, V, E> {
 }
 
 impl<'de, V: Deserialize<'de>, E> ValueVariant<'de, V, E> {
-    /// Creates a boxed builder for a variant.
-    pub fn boxed<'a>(convert: fn(V) -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
+    /// Creates a builder for a variant in the arena of the state.
+    pub fn arena<'a>(convert: fn(V) -> E, state: &mut State) -> ArenaVariant<'a, 'de, E>
     where
         'de: 'a,
         V: 'a,
         E: 'a,
     {
-        BoxedVariant::new(
+        ArenaVariant::new(
             ValueVariant {
                 sink: OwnedSink::deserialize(state),
                 convert,
@@ -121,13 +121,14 @@ pub struct IgnoredVariant<'de, E> {
 }
 
 impl<'de, E> IgnoredVariant<'de, E> {
-    /// Creates a boxed builder for a variant which ignores its content.
-    pub fn boxed<'a>(make: fn() -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
+    /// Creates a builder for a variant which ignores its content, in the
+    /// arena of the state.
+    pub fn arena<'a>(make: fn() -> E, state: &mut State) -> ArenaVariant<'a, 'de, E>
     where
         'de: 'a,
         E: 'a,
     {
-        BoxedVariant::new(
+        ArenaVariant::new(
             IgnoredVariant {
                 sink: SinkHandle::null(),
                 make,
@@ -161,15 +162,16 @@ where
     T: Deserialize<'de>,
     C: Deserialize<'de>,
 {
-    /// Creates a boxed builder for a variant which captures its tag.
-    pub fn boxed<'a>(convert: fn(T, C) -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
+    /// Creates a builder for a variant which captures its tag, in the arena
+    /// of the state.
+    pub fn arena<'a>(convert: fn(T, C) -> E, state: &mut State) -> ArenaVariant<'a, 'de, E>
     where
         'de: 'a,
         T: 'a,
         C: 'a,
         E: 'a,
     {
-        BoxedVariant::new(
+        ArenaVariant::new(
             OtherVariant {
                 tag: None,
                 content: OwnedSink::deserialize(state),
@@ -416,10 +418,10 @@ pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Err
 
 /// Looks up a variant by tag.
 pub(crate) type VariantLookup<'a, 'de, E> =
-    fn(Tag<'_>, &mut State) -> Option<BoxedVariant<'a, 'de, E>>;
+    fn(Tag<'_>, &mut State) -> Option<ArenaVariant<'a, 'de, E>>;
 
 /// Creates the builder of a special variant.
-pub type VariantMaker<'a, 'de, E> = fn(&mut State) -> BoxedVariant<'a, 'de, E>;
+pub type VariantMaker<'a, 'de, E> = fn(&mut State) -> ArenaVariant<'a, 'de, E>;
 
 /// Looks up a unit variant by tag.
 pub(crate) type UnitLookup<E> = fn(Tag<'_>) -> Option<E>;
@@ -453,7 +455,7 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
         tag: &RecordBuf<'de>,
         name: &str,
         state: &mut State,
-    ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
+    ) -> Result<ArenaVariant<'a, 'de, E>, Error> {
         let atom = tag.single_atom();
         if let Some(atom) = atom
             && let Some(variant) = lookup_atom(atom, |tag| (self.lookup)(tag, state))
@@ -479,7 +481,7 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
         &self,
         tag: &str,
         state: &mut State,
-    ) -> Result<BoxedVariant<'a, 'de, E>, Error> {
+    ) -> Result<ArenaVariant<'a, 'de, E>, Error> {
         match self.default {
             Some(default) => {
                 let mut variant = default(state);
@@ -518,7 +520,7 @@ pub struct ExternallyTaggedSink<'a, 'de, E> {
     key: RecordBuf<'de>,
     has_key: bool,
     done: bool,
-    variant: Option<BoxedVariant<'a, 'de, E>>,
+    variant: Option<ArenaVariant<'a, 'de, E>>,
 }
 
 impl<'a, 'de, E: Send> ExternallyTaggedSink<'a, 'de, E> {
@@ -692,7 +694,7 @@ pub struct AdjacentlyTaggedSink<'a, 'de, E> {
     recorded_content: Option<RecordBuf<'de>>,
     has_content: bool,
     deny_unknown_fields: bool,
-    variant: Option<BoxedVariant<'a, 'de, E>>,
+    variant: Option<ArenaVariant<'a, 'de, E>>,
 }
 
 impl<'a, 'de, E: Send> AdjacentlyTaggedSink<'a, 'de, E> {
@@ -729,7 +731,7 @@ impl<'a, 'de, E: Send> AdjacentlyTaggedSink<'a, 'de, E> {
 
     fn start_variant(
         &mut self,
-        mut variant: BoxedVariant<'a, 'de, E>,
+        mut variant: ArenaVariant<'a, 'de, E>,
         state: &mut State,
     ) -> Result<(), Error> {
         if let Some(content) = self.recorded_content.take() {
@@ -1112,7 +1114,7 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     key: RecordBuf<'de>,
     pending: Vec<(RecordBuf<'de>, RecordBuf<'de>)>,
     tag_value: Option<RecordBuf<'de>>,
-    variant: Option<BoxedVariant<'a, 'de, E>>,
+    variant: Option<ArenaVariant<'a, 'de, E>>,
     // if the key of the variant was recorded to look for the tag
     variant_key: bool,
     // if the enum is flattened into a struct
@@ -1151,7 +1153,7 @@ impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
     /// Starts a variant and replays the pairs recorded so far into it.
     fn start_variant(
         &mut self,
-        mut variant: BoxedVariant<'a, 'de, E>,
+        mut variant: ArenaVariant<'a, 'de, E>,
         state: &mut State,
     ) -> Result<(), Error> {
         variant.sink().map(state)?;

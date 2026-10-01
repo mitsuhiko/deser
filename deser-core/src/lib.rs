@@ -108,7 +108,7 @@ pub mod __derive {
         unit_struct,
     };
     pub use crate::de::enums::{
-        AdjacentlyTaggedSink, BoxedVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
+        AdjacentlyTaggedSink, ArenaVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
         IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UnitEnum, UntaggedTry,
         ValueVariant, VariantMaker, Variants, atom_sink, unit_enum_atom_into, unit_enum_sink,
         untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,

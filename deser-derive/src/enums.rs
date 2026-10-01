@@ -1218,14 +1218,14 @@ pub(crate) fn derive_deserialize(
                 let construct = construct(&values);
                 untagged_tries.push(None);
                 quote! {
-                    __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::boxed(
+                    __deser::__derive::OtherVariant::<#tag_ty, #content_ty, #enum_ty>::arena(
                         |__tag: #tag_ty, #content_pattern: #content_ty| #construct, __state)
                 }
             }
             None if info.other && matches!(info.content, Content::Unit) => {
                 let construct = construct(&values);
                 untagged_tries.push(None);
-                quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::boxed(|| #construct, __state) }
+                quote! { __deser::__derive::IgnoredVariant::<#enum_ty>::arena(|| #construct, __state) }
             }
             None => {
                 let construct = construct(&values);
@@ -1233,7 +1233,7 @@ pub(crate) fn derive_deserialize(
                     __try.variant::<#content_ty>(|#content_pattern: #content_ty| #construct)
                 }));
                 quote! {
-                    __deser::__derive::ValueVariant::<#content_ty, #enum_ty>::boxed(
+                    __deser::__derive::ValueVariant::<#content_ty, #enum_ty>::arena(
                         |#content_pattern: #content_ty| #construct, __state)
                 }
             }
@@ -1243,7 +1243,7 @@ pub(crate) fn derive_deserialize(
 
     let type_name_const = type_name_const(container_attrs);
     let builder_ty = quote! {
-        __deser::__derive::BoxedVariant<'__a, 'de, #enum_ty>
+        __deser::__derive::ArenaVariant<'__a, 'de, #enum_ty>
     };
 
     // makes a function for a special variant
