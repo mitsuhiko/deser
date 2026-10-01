@@ -122,6 +122,9 @@ All notable changes to deser are documented here.
   `deser::de::missing_multimap_value` for formats that read a single
   value of a key of a multimap (like `deser_env::var`): collections take
   the value as their only item and are empty if the key is missing.
+- `deser-xml`: added `DeserializerConfig::bytes` so that bytes written
+  in another format than base64 (with `SerializerConfig::bytes`) can be
+  read back.
 
 ## 0.9.1
 

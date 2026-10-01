@@ -4,7 +4,7 @@ use deser_core::de::{
     self, ContentKey, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules,
     deserialize_value,
 };
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
+use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
 use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, BytesStart, Event as XmlEvent};
 use quick_xml::name::{QName, ResolveResult};
@@ -24,6 +24,7 @@ pub struct DeserializerConfig {
     resolve_namespaces: bool,
     duplicate_keys: DuplicateKeys,
     track_locations: bool,
+    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -40,6 +41,7 @@ impl DeserializerConfig {
             resolve_namespaces: false,
             duplicate_keys: DuplicateKeys::Error,
             track_locations: true,
+            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -172,6 +174,39 @@ impl DeserializerConfig {
     /// be resolved into lines and columns.  The default is `true`.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
+        self
+    }
+
+    /// Sets how text is decoded into bytes.
+    ///
+    /// XML has no bytes, types that expect bytes (like `Vec<u8>`) accept
+    /// text instead.  By default text is decoded as base64, both with the
+    /// standard and the URL-safe alphabet and with or without padding.
+    /// This changes how text is decoded, for [`BytesFormat::SEQ`] it's
+    /// still decoded as base64.
+    ///
+    /// ```
+    /// #[derive(deser::Deserialize)]
+    /// struct Blob {
+    ///     data: Vec<u8>,
+    /// }
+    ///
+    /// let blob: Blob = deser_xml::from_str("<Blob><data>Af8=</data></Blob>").unwrap();
+    /// assert_eq!(blob.data, [1, 255]);
+    /// let blob: Blob = deser_xml::from_str("<Blob><data>Af8</data></Blob>").unwrap();
+    /// assert_eq!(blob.data, [1, 255]);
+    /// ```
+    ///
+    /// Text in other encodings than base64 needs this, for instance hex
+    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
+    /// [`deser-encoding`](https://docs.rs/deser-encoding)), as written
+    /// with [`SerializerConfig::bytes`](crate::SerializerConfig::bytes).
+    ///
+    /// The format is placed into the state (see
+    /// [bytes](deser_core::adapters#bytes)).  Values that use an adapter for
+    /// bytes are not affected.
+    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
+        self.bytes = format;
         self
     }
 
@@ -312,6 +347,9 @@ impl<'a> Deserializer<'a> {
             Source(self.input.into()).set(state);
         }
         self.config.duplicate_keys.set(state);
+        if self.config.bytes != BytesFormat::BASE64 {
+            self.config.bytes.set(state);
+        }
         TEXT_RULES.set(state);
         // elements with attributes are text for types that expect text,
         // text is an element for types that expect maps

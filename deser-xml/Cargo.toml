@@ -26,6 +26,7 @@ quick-xml = "0.42.0"
 # the float formatting is tested against it
 zmij = "1.0.23"
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
+deser-encoding = { path = "../deser-encoding" }
 deser-json = { version = "0.9.1", path = "../deser-json" }
 deser-path = { version = "0.9.1", path = "../deser-path" }
 deser-value = { version = "0.9.1", path = "../deser-value" }

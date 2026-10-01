@@ -1,3 +1,4 @@
+mod test_bytes;
 mod test_de;
 #[cfg(feature = "io")]
 mod test_io;

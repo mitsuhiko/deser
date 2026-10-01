@@ -261,6 +261,11 @@ impl SerializerConfig {
     }
 
     /// Sets how bytes are written (default base64).
+    ///
+    /// XML has no bytes, they are written as text in this format.
+    /// [`BytesFormat::SEQ`] is written as base64.  Bytes in other formats
+    /// than base64 need to be deserialized with the same format (see
+    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
     pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
         self.bytes = format;
         self
