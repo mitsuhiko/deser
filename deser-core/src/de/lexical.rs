@@ -101,18 +101,6 @@ impl LexicalRules {
         self.empty_is_null = yes;
         self
     }
-
-    /// Returns `true` if booleans are also `yes`, `on`, `1`, `no`, `off`
-    /// and `0`.
-    pub const fn lenient_bools(&self) -> bool {
-        self.lenient_bools
-    }
-
-    /// Returns `true` if empty text is a missing value for types that do
-    /// not accept it.
-    pub const fn empty_is_null(&self) -> bool {
-        self.empty_is_null
-    }
 }
 
 impl Default for LexicalRules {

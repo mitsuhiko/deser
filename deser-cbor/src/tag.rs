@@ -1,31 +1,4 @@
-//! Support for CBOR tags.
-//!
-//! Tags are not part of the deser data model.  Instead they are exchanged
-//! out of band through the [`State`]:
-//!
-//! * When deserializing, the tags in front of a data item are published into
-//!   the state for the first event of the item (the atom or the start of the
-//!   map or sequence).  Types can pick them up with
-//!   [`take_tag`].  Types which do not care about tags never see them, which
-//!   means that unknown tags are transparent.
-//! * When serializing, [`push_tag`] registers a tag of a value in the state
-//!   and the serializer writes it in front of the data item.
-//! * [`Tagged`] captures the outermost tag of a value and writes it.
-//!
-//! Both directions use the same event data.  This means that values which
-//! capture event data (such as [`Recording`](deser_core::de::Recording)) keep
-//! the tags: CBOR that is deserialized into a recording and serialized again
-//! retains its tags.
-//!
-//! The simplest way to work with tags is the [`Tagged`] wrapper.
-//!
-//! The bignum tags 2 and 3 are handled by the format itself: they are
-//! converted to and from integers (and [`BigInt`](deser_core::ext::BigInt) for
-//! bignums that do not fit into 128 bits).  The same applies to the tags of
-//! the well-known types: date/time strings (tag 0), decimal fractions (tag
-//! 4), UUIDs (tag 37) and full-date strings (tag 1004) are converted to and
-//! from the respective [well-known types](deser_core::ext) if their content is
-//! valid.  Otherwise they are passed on as tagged values.
+//! Support for CBOR tags (see the crate documentation).
 use alloc::vec::Vec;
 use core::fmt;
 

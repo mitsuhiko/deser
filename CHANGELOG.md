@@ -89,6 +89,16 @@ All notable changes to deser are documented here.
   `Atom::widen_float` (sinks receive floats as `F64` through the default
   handling of atoms) and `OwnedDriver::driver` (use
   `OwnedDriver::with`).
+- **Breaking:** removed `LexicalRules::lenient_bools` and
+  `LexicalRules::empty_is_null`.  Types that want to honor the rules pass
+  lexical atoms on to the types of deser (like `bool` or `Option<T>`).
+- **Breaking:** removed `BigInt::from_i128` and `BigInt::from_u128`, use
+  `BigInt::from`.
+- **Breaking:** renamed `Number::into_static` to `Number::into_owned`,
+  like `Raw::into_owned` and `RawInput::into_owned`.
+- **Breaking:** the `tag` modules of `deser-cbor` and `deser-yaml` are
+  private, their items are available at the root of the crates
+  (`deser_cbor::Tagged`, `deser_yaml::take_tag`, ...).
 - Added raw values, the equivalent of serde_json's `RawValue` without
   in-band signalling: `deser_json::RawJson`, `deser_jsonc::RawJsonc`,
   `deser_json5::RawJson5`, `deser_cbor::RawCbor` and

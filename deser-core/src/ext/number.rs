@@ -84,7 +84,7 @@ impl<'a> Number<'a> {
     }
 
     /// Detaches the number from the data it borrows.
-    pub fn into_static(self) -> Number<'static> {
+    pub fn into_owned(self) -> Number<'static> {
         Number {
             text: Cow::Owned(self.text.into_owned()),
             value: self.value,
@@ -153,7 +153,7 @@ impl BorrowedExtension for Number<'static> {
     }
 
     fn to_static(value: &Number<'_>) -> Number<'static> {
-        value.clone().into_static()
+        value.clone().into_owned()
     }
 
     fn shorten<'s, 'l: 's>(value: &'s Number<'l>) -> &'s Number<'s> {
@@ -175,7 +175,7 @@ impl<'de, 'a> Deserialize<'de> for Number<'a> {
     fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         let number = match atom {
             Atom::Ext(ref ext) => match ext.downcast_value_ref::<Number>() {
-                Some(value) => value.clone().into_static(),
+                Some(value) => value.clone().into_owned(),
                 None => return default_atom(slot, atom, state),
             },
             Atom::U64(value) => Number::new(value.to_string(), value as f64),

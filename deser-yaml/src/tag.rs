@@ -1,27 +1,4 @@
-//! Support for YAML tags.
-//!
-//! Tags are not part of the deser data model.  Standard tags that determine
-//! the type of a value (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
-//! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) are handled by the format
-//! itself.  All
-//! other tags are exchanged out of band through the deserializer state:
-//!
-//! * When deserializing, the tag of a node is published into the
-//!   [`State`] for the first event of the node (the atom or the
-//!   start of the map or sequence).  Types can pick it up with [`take_tag`].
-//!   Types which do not care about tags never see them, which means that
-//!   unknown tags are transparent: the value of `!color red` is the string
-//!   `red`.
-//! * When serializing, [`set_tag`] registers the tag of a value in the state
-//!   and the serializer writes it in front of the node.
-//! * [`Tagged`] captures the tag of a value and writes it.
-//!
-//! Both directions use the same event data, so values which capture event
-//! data (such as [`Recording`](deser_core::de::Recording)) keep the tags.
-//!
-//! Tags are reported fully resolved: `!foo` stays `!foo` but `!!set`
-//! becomes `tag:yaml.org,2002:set` and tag handles declared with `%TAG`
-//! directives are expanded.
+//! Support for YAML tags (see the crate documentation).
 use std::borrow::Cow;
 use std::fmt;
 

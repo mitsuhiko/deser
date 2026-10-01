@@ -45,23 +45,6 @@ pub struct BigInt {
 }
 
 impl BigInt {
-    /// Creates a big integer from an `i128`.
-    pub fn from_i128(value: i128) -> BigInt {
-        let mut rv = BigInt::from_u128(value.unsigned_abs());
-        rv.negative = value < 0;
-        rv
-    }
-
-    /// Creates a big integer from an `u128`.
-    pub fn from_u128(value: u128) -> BigInt {
-        let bytes = value.to_be_bytes();
-        let skip = (value.leading_zeros() / 8) as usize;
-        BigInt {
-            negative: false,
-            magnitude: bytes[skip..].to_vec(),
-        }
-    }
-
     /// Returns the magnitude without leading zero bytes.
     pub fn significant_magnitude(&self) -> &[u8] {
         let skip = self.magnitude.iter().take_while(|&&x| x == 0).count();
@@ -168,25 +151,32 @@ impl Ord for BigInt {
 
 impl From<i128> for BigInt {
     fn from(value: i128) -> BigInt {
-        BigInt::from_i128(value)
+        let mut rv = BigInt::from(value.unsigned_abs());
+        rv.negative = value < 0;
+        rv
     }
 }
 
 impl From<u128> for BigInt {
     fn from(value: u128) -> BigInt {
-        BigInt::from_u128(value)
+        let bytes = value.to_be_bytes();
+        let skip = (value.leading_zeros() / 8) as usize;
+        BigInt {
+            negative: false,
+            magnitude: bytes[skip..].to_vec(),
+        }
     }
 }
 
 impl From<i64> for BigInt {
     fn from(value: i64) -> BigInt {
-        BigInt::from_i128(value.into())
+        BigInt::from(i128::from(value))
     }
 }
 
 impl From<u64> for BigInt {
     fn from(value: u64) -> BigInt {
-        BigInt::from_u128(value.into())
+        BigInt::from(u128::from(value))
     }
 }
 

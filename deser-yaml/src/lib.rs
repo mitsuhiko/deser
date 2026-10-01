@@ -63,7 +63,7 @@
 //! ```
 //! The standard tags (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
 //! `!!binary`, `!!timestamp`, `!!seq` and `!!map`) determine the type of a
-//! value, all other tags are passed on out of band (see [`tag`]).
+//! value, all other tags are passed on out of band (see [Tags](#tags)).
 //! Timestamps are only recognized with an explicit `!!timestamp` tag.  They
 //! are passed on as the well-known [`Datetime`](deser_core::ext::Datetime) type
 //! (a date or an offset date-time, timestamps without time zone are in UTC)
@@ -104,8 +104,32 @@
 //! their text the same way, `version: 1.10` read into a `deser_value::Value` or a
 //! recording is written as `version: 1.10` again.
 //!
-//! Tags are written with [`Tagged`] or [`set_tag`] (see [`tag`]).  Streams of
+//! Tags are written with [`Tagged`] or [`set_tag`] (see [Tags](#tags)).  Streams of
 //! multiple documents are written with [`Serializer`].
+//!
+//! # Tags
+//!
+//! Tags are not part of the deser data model.  The standard tags determine
+//! the type of a value (see [Data Model](#data-model)), all
+//! other tags are exchanged out of band through the
+//! [`State`](deser_core::State):
+//!
+//! * When deserializing, the tag of a node is published into the state for
+//!   the first event of the node (the atom or the start of the map or
+//!   sequence).  Types can pick it up with [`take_tag`].
+//!   Types which do not care about tags never see them, which means that
+//!   unknown tags are transparent: the value of `!color red` is the string
+//!   `red`.
+//! * When serializing, [`set_tag`] registers the tag of a value in the state
+//!   and the serializer writes it in front of the node.
+//! * [`Tagged`] captures the tag of a value and writes it.
+//!
+//! Both directions use the same event data, so values which capture event
+//! data (such as [`Recording`](deser_core::de::Recording)) keep the tags.
+//!
+//! Tags are reported fully resolved: `!foo` stays `!foo` but `!!set`
+//! becomes `tag:yaml.org,2002:set` and tag handles declared with `%TAG`
+//! directives are expanded.
 //!
 //! # Documents
 //!
@@ -175,7 +199,7 @@ mod scanner;
 mod ser;
 mod stream;
 pub mod style;
-pub mod tag;
+mod tag;
 
 pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
 pub use self::resolve::Version;
