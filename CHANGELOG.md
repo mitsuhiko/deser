@@ -127,6 +127,10 @@ All notable changes to deser are documented here.
   read back.
 - `deser-xml`: added `Deserializer::config` like the deserializers of
   the other formats have.
+- `deser-json`: added `SerializerConfig::non_finite_floats` which writes
+  NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
+  `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable
+  it, so these floats roundtrip through JSON5.
 
 ## 0.9.1
 

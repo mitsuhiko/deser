@@ -90,6 +90,7 @@ pub struct SerializerConfig {
     compact: bool,
     inline: InlinePolicy,
     trailing: Trailing,
+    non_finite_floats: bool,
 }
 
 impl Default for SerializerConfig {
@@ -107,6 +108,7 @@ impl SerializerConfig {
             compact: true,
             inline: InlinePolicy::Never,
             trailing: Trailing::Strict,
+            non_finite_floats: false,
         }
     }
 
@@ -272,6 +274,31 @@ impl SerializerConfig {
         self
     }
 
+    /// Writes NaN and infinite floats as `NaN`, `Infinity` and `-Infinity`.
+    ///
+    /// JSON cannot represent these values, by default (`false`) they are
+    /// written as `null`.  [JSON5](https://json5.org/) (and for instance
+    /// the `json` module of Python) supports them with these literals, the
+    /// output is then no longer JSON.  The serialization functions of
+    /// [`deser-json5`](https://docs.rs/deser-json5) enable this.
+    ///
+    /// ```
+    /// use deser_json::SerializerConfig;
+    ///
+    /// let values = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
+    /// assert_eq!(deser_json::to_string(&values).unwrap(), "[null,null,null]");
+    /// const NON_FINITE: SerializerConfig =
+    ///     SerializerConfig::new().non_finite_floats(true);
+    /// assert_eq!(
+    ///     NON_FINITE.to_string(&values).unwrap(),
+    ///     "[NaN,Infinity,-Infinity]"
+    /// );
+    /// ```
+    pub const fn non_finite_floats(mut self, yes: bool) -> SerializerConfig {
+        self.non_finite_floats = yes;
+        self
+    }
+
     /// Serializes the given value.
     // inlined so that the pretty writer is not linked for constant compact
     // configurations (see `serialize_driver`)
@@ -373,6 +400,7 @@ impl SerializerConfig {
             ser: Output {
                 out,
                 bytes: self.bytes,
+                non_finite_floats: self.non_finite_floats,
             },
             stack: Vec::new(),
             container: Container::Top,
@@ -387,6 +415,7 @@ impl SerializerConfig {
         let ser = Output {
             out,
             bytes: self.bytes,
+            non_finite_floats: self.non_finite_floats,
         };
         let inline_width = match self.inline {
             InlinePolicy::Never => None,
@@ -819,6 +848,8 @@ pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
 pub(crate) struct Output {
     pub(crate) out: Buffer,
     bytes: BytesFormat,
+    // NaN and infinities are written as JSON5 literals instead of `null`
+    non_finite_floats: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1112,8 +1143,22 @@ impl Output {
                 self.write_str(&crate::num::format_finite(val))
             }
         } else {
-            self.write_str("null")
+            self.write_non_finite(val.to_f64())
         }
+    }
+
+    /// Writes NaN or an infinite float.
+    #[cold]
+    fn write_non_finite(&mut self, val: f64) {
+        self.write_str(if !self.non_finite_floats {
+            "null"
+        } else if val.is_nan() {
+            "NaN"
+        } else if val > 0.0 {
+            "Infinity"
+        } else {
+            "-Infinity"
+        })
     }
 
     /// Writes an extension value as map key.

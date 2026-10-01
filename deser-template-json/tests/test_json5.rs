@@ -77,6 +77,37 @@ fn test_non_finite() {
 }
 
 #[test]
+fn test_non_finite_roundtrip() {
+    let values = vec![1.5, f64::INFINITY, f64::NEG_INFINITY, f64::NAN];
+    let json5 = dialect::to_string(&values).unwrap();
+    assert_eq!(json5, "[1.5,Infinity,-Infinity,NaN]");
+    let back: Vec<f64> = from_str(&json5).unwrap();
+    assert_eq!(back[..3], values[..3]);
+    assert!(back[3].is_nan());
+
+    let values = vec![f32::NEG_INFINITY, f32::NAN];
+    assert_eq!(dialect::to_string(&values).unwrap(), "[-Infinity,NaN]");
+
+    let mut out = Vec::new();
+    dialect::to_writer(&mut out, &values).unwrap();
+    assert_eq!(out, b"[-Infinity,NaN]");
+
+    // a configuration has to enable it, the default writes JSON
+    let config = dialect::SerializerConfig::new();
+    assert_eq!(config.to_string(&values).unwrap(), "[null,null]");
+    let config = config.non_finite_floats(true);
+    assert_eq!(config.to_string(&values).unwrap(), "[-Infinity,NaN]");
+    let config = config.pretty(dialect::Indent::Spaces(2));
+    assert_eq!(
+        config.to_string(&values).unwrap(),
+        "[\n  -Infinity,\n  NaN\n]"
+    );
+    let mut serializer = dialect::Serializer::with_config(&config);
+    serializer.serialize(&f64::NAN).unwrap();
+    assert_eq!(serializer.finish(), "NaN");
+}
+
+#[test]
 fn test_exact_numbers() {
     // the text of numbers is passed on in the syntax of JSON
     let value: Vec<Decimal> = from_str("[+1.50, .50, 5.e2, -.1e-1]").unwrap();

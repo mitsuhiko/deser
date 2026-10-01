@@ -40,7 +40,26 @@
 //! ```
 //!
 //! JSON is valid JSON5, so values are serialized as JSON with the
-//! serializer of `deser-json` (which is re-exported).
+//! serializer of `deser-json` (which is re-exported).  Unlike JSON, JSON5
+//! can represent NaN and infinite floats: [`to_string`] and [`to_writer`]
+//! write them as `NaN`, `Infinity` and `-Infinity` where `deser-json`
+//! writes `null`.  A [`SerializerConfig`] needs
+//! [`non_finite_floats`](SerializerConfig::non_finite_floats) for this:
+//!
+//! ```rust
+//! use deser_json5::{Indent, SerializerConfig};
+//!
+//! let values = vec![1.5, f64::NAN, f64::NEG_INFINITY];
+//! assert_eq!(deser_json5::to_string(&values).unwrap(), "[1.5,NaN,-Infinity]");
+//!
+//! const PRETTY: SerializerConfig = SerializerConfig::new()
+//!     .pretty(Indent::Spaces(2))
+//!     .non_finite_floats(true);
+//! assert_eq!(
+//!     PRETTY.to_string(&values).unwrap(),
+//!     "[\n  1.5,\n  NaN,\n  -Infinity\n]"
+//! );
+//! ```
 //!
 //! # Raw Values
 //!
@@ -77,6 +96,43 @@ pub use self::raw::{Json5, RawJson5};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
+pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing};
+
+use alloc::string::String;
+use deser_core::{Error, Serialize};
+
+/// The configuration of [`to_string`] and [`to_writer`].
+const SERIALIZER_CONFIG: SerializerConfig = SerializerConfig::new().non_finite_floats(true);
+
+/// Serializes a value to JSON5.
+///
+/// The output is JSON, except for NaN and infinite floats which are
+/// written as `NaN`, `Infinity` and `-Infinity`.
+///
+/// ```
+/// let value = vec![1.0, f64::INFINITY];
+/// assert_eq!(deser_json5::to_string(&value).unwrap(), "[1.0,Infinity]");
+/// ```
+#[inline]
+pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
+    SERIALIZER_CONFIG.to_string(value)
+}
+
+/// Serializes a value as JSON5 to a writer.
+///
+/// Like [`to_string`] the output is JSON except for NaN and infinite
+/// floats.  The output of large values is written in parts while they are
+/// serialized (see `deser::io`), the writer does not need to be buffered.
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_json5::to_writer(&mut out, &vec![f64::NAN]).unwrap();
+/// assert_eq!(out, b"[NaN]");
+/// ```
 #[cfg(feature = "io")]
-pub use deser_json::to_writer;
-pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing, to_string};
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
+    SERIALIZER_CONFIG.to_writer(writer, value)
+}
