@@ -125,6 +125,8 @@ All notable changes to deser are documented here.
 - `deser-xml`: added `DeserializerConfig::bytes` so that bytes written
   in another format than base64 (with `SerializerConfig::bytes`) can be
   read back.
+- `deser-xml`: added `Deserializer::config` like the deserializers of
+  the other formats have.
 
 ## 0.9.1
 

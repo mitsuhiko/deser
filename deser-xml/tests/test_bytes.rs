@@ -35,7 +35,9 @@ fn test_bytes_config() {
     assert_eq!(config.from_str::<Blob>(&xml).unwrap(), blob());
     assert_eq!(config.from_slice::<Blob>(xml.as_bytes()).unwrap(), blob());
 
+    // the deserializer keeps the configuration
     let mut de = Deserializer::from_str_with_config(&xml, &config);
+    assert_eq!(de.config(), &config);
     assert_eq!(de.deserialize::<Blob>().unwrap(), blob());
 
     // without it the hex text is not base64

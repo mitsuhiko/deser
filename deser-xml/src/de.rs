@@ -316,6 +316,11 @@ impl<'a> Deserializer<'a> {
         }
     }
 
+    /// Returns the configuration.
+    pub fn config(&self) -> &DeserializerConfig {
+        &self.config
+    }
+
     /// Deserializes the document.
     pub fn deserialize<T: Deserialize<'a>>(&mut self) -> Result<T, Error> {
         de::Deserializer::deserialize(self)
