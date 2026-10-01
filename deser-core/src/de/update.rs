@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::de::arena::ArenaBox;
+use crate::arena::ArenaBox;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;

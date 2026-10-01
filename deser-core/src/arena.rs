@@ -1,12 +1,12 @@
 //! The arena that sinks and emitters are allocated in.
 //!
-//! Deserializing compound values creates a sink for most containers
-//! (serializing them an emitter, see [`Boxed`](crate::ser::Boxed)).  Sinks
+//! Deserializing compound values creates a sink for most containers,
+//! serializing them an emitter (see [`Boxed`](crate::ser::Boxed)).  Both
 //! are created when a container starts and dropped when it ends, so they
 //! live and die like the frames of a stack.  They are allocated in an arena
-//! which belongs to the [`State`](crate::State) of the deserialization:
-//! allocating bumps a pointer, and the space of the sinks on top is reused
-//! once they are dropped.
+//! which belongs to the [`State`](crate::State) of the deserialization or
+//! serialization: allocating bumps a pointer, and the space of the sinks
+//! and emitters on top is reused once they are dropped.
 //!
 //! Every block is followed by a footer with the top of the arena before the
 //! block was allocated (the footer of the block below it is right before
@@ -202,7 +202,7 @@ impl Chunk {
     }
 }
 
-/// The arena of a deserialization, see the module documentation.
+/// The arena of a state, see the module documentation.
 pub(crate) struct Arena {
     /// The end of the last block (or the start of the first chunk if there
     /// are no blocks).  Null if there is no chunk yet.

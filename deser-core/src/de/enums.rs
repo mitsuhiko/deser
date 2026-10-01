@@ -18,7 +18,7 @@ use core::ptr::NonNull;
 
 use crate::State;
 use crate::Text;
-use crate::de::arena::ArenaBox;
+use crate::arena::ArenaBox;
 use crate::de::recording::{Capture, RecordBuf};
 use crate::de::unknown::{report_unclaimed_key, unknown_field, unknown_field_error};
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, default_atom};
@@ -45,7 +45,7 @@ pub trait VariantBuilder<'de, E>: Send {
     fn build(&mut self) -> Option<E>;
 }
 
-/// A variant builder in the arena of the deserialization.
+/// A variant builder in the arena of the state.
 ///
 /// `'a` is the lifetime of the slot of the enum.  The enum (and with it
 /// the types of its fields) outlives it, which allows enums to borrow.

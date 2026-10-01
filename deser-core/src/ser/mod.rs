@@ -71,7 +71,7 @@
 //!
 //! impl Serialize for User {
 //!     fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Chunk<'a>, Error> {
-//!         // the emitter is allocated in the arena of the serialization
+//!         // the emitter is allocated in the arena of the state
 //!         Ok(Chunk::structure(UserEmitter { user: value, index: 0 }, state))
 //!     }
 //! }

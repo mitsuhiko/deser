@@ -12,7 +12,7 @@ use alloc::string::String;
 /// stateful emitter that keeps yielding values until it's done walking over
 /// the map.
 ///
-/// The emitters are typically allocated in the arena of the serialization
+/// The emitters are typically allocated in the arena of the state
 /// with [`Chunk::seq`], [`Chunk::map`] and [`Chunk::structure`] (see
 /// [`Boxed`]).  They are the serialization equivalent of the
 /// [`Sink`](crate::de::Sink)s of deserialization: they hold the state of a
@@ -66,7 +66,7 @@ impl<'a> Chunk<'a> {
         }))
     }
 
-    /// Creates a chunk of a map emitter in the arena of the serialization.
+    /// Creates a chunk of a map emitter in the arena of the state.
     #[inline(always)]
     pub fn map<E: MapEmitter + 'a>(emitter: E, state: &mut State) -> Chunk<'a> {
         Chunk::Map(unsize(Boxed::arena(emitter, state), |x| {

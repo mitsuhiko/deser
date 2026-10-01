@@ -16,6 +16,7 @@ mod macros;
 mod event;
 
 pub mod adapters;
+mod arena;
 pub mod de;
 mod error;
 pub mod ext;

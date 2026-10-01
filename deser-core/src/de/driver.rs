@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use crate::State;
 use crate::Text;
-use crate::de::arena::Buffer;
+use crate::arena::Buffer;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::lexical::ContentKey;
 use crate::de::{Deserialize, InlineEvent, Sink, SinkHandle};
@@ -1085,8 +1085,8 @@ impl<'de> Drop for DriverCore<'de> {
 
 #[test]
 fn test_arena_is_not_orphaned() {
+    use crate::arena::ORPHANED;
     use crate::de::Recording;
-    use crate::de::arena::ORPHANED;
     use alloc::collections::BTreeMap;
     use alloc::string::String;
 
@@ -1139,8 +1139,8 @@ fn test_arena_is_not_orphaned() {
 
 #[test]
 fn test_sink_outlives_state() {
+    use crate::arena::ORPHANED;
     use crate::de::OwnedSink;
-    use crate::de::arena::ORPHANED;
     use alloc::collections::BTreeMap;
     use alloc::string::String;
 

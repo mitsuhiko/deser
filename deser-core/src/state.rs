@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use core::any::TypeId;
 use core::fmt;
 
-use crate::de::arena::{Arena, Buffer};
+use crate::arena::{Arena, Buffer};
 use crate::error::{Error, ErrorContext};
 use crate::event::ContainerShape;
 use crate::ext::RawFormatInfo;

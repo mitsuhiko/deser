@@ -234,7 +234,6 @@ use alloc::vec::Vec;
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 
-pub(crate) mod arena;
 pub(crate) mod atoms;
 mod collect;
 mod deserializer;
@@ -330,7 +329,7 @@ fn no_inline_seq() -> ! {
 /// to recurse into structures.  This poses a challenge if the target
 /// sink cannot be directly borrowed.  This is where [`SinkHandle`]
 /// comes in.  In cases where the [`Sink`] cannot be borrowed it's owned
-/// by the handle, either in the arena of the deserialization
+/// by the handle, either in the arena of the state
 /// ([`arena`](Self::arena), which is what sinks typically use) or on the
 /// heap ([`heap`](Self::heap)).
 ///
@@ -369,7 +368,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Borrowed(sink))
     }
 
-    /// Creates an owned handle to a sink in the arena of the deserialization.
+    /// Creates an owned handle to a sink in the arena of the state.
     ///
     /// This is how sinks are typically created: the arena belongs to the
     /// state of the deserialization and the sinks of the containers that
@@ -474,7 +473,7 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     pub(crate) fn release(self, state: &mut State) {
         match self.0 {
             HandleInner::Arena(sink) | HandleInner::OptionalArena(sink) => {
-                arena::ArenaBox::release_in(sink, &mut state.arena)
+                crate::arena::ArenaBox::release_in(sink, &mut state.arena)
             }
             #[cfg(feature = "derive")]
             HandleInner::Struct(sink) | HandleInner::OptionalStruct(sink) => {

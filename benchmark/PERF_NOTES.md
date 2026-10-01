@@ -177,7 +177,7 @@ only improvements that survive repeated comparisons.
    recovery, input ranges and event data must still behave identically.
 
 6. **Revisit sink storage only with a profile-backed design.**  Sinks are
-   allocated in an arena of the state (see `deser-core/src/de/arena.rs`).
+   allocated in an arena of the state (see `deser-core/src/arena.rs`).
    Without any reuse of sink memory deserialization is two to six times
    slower (macOS allocator).  The arena replaced a cache of blocks per
    thread and size class.  Together with the emitters of serializations

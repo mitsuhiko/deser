@@ -1,7 +1,7 @@
 //! Storage for sinks.
 //!
-//! Sinks are allocated in the arena of the deserialization (see
-//! [`arena`](crate::de::arena)) unless they are created with
+//! Sinks are allocated in the arena of the state (see
+//! [`arena`](crate::arena)) unless they are created with
 //! [`SinkHandle::heap`](crate::de::SinkHandle::heap), which allocates them
 //! from the global allocator.
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
@@ -9,10 +9,10 @@ use alloc::boxed::Box;
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
-use crate::de::Sink;
 #[cfg(feature = "derive")]
-use crate::de::arena::Release;
-use crate::de::arena::{Arena, ArenaBox};
+use crate::arena::Release;
+use crate::arena::{Arena, ArenaBox};
+use crate::de::Sink;
 #[cfg(feature = "derive")]
 use crate::de::fields::{StructFields, StructInfo, StructSink};
 

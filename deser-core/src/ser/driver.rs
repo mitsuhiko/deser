@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::Text;
-use crate::de::arena::Buffer;
+use crate::arena::Buffer;
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
 use crate::ser::{

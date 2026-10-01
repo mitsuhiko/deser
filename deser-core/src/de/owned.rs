@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::de::arena::ArenaBox;
+use crate::arena::ArenaBox;
 use crate::de::{Deserialize, DeserializeDriver, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 

@@ -346,7 +346,7 @@ impl<'a> SerializeHandle<'a> {
         SerializeHandle(HandleInner::Borrowed(SerializeRef::new(value)))
     }
 
-    /// Creates an owned handle to a value in the arena of the serialization.
+    /// Creates an owned handle to a value in the arena of the state.
     ///
     /// This is how owned values are typically created (for instance for
     /// [`Chunk::Forward`]), see [`Boxed`].

@@ -6,11 +6,11 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 use crate::State;
-use crate::de::arena::ArenaBox;
+use crate::arena::ArenaBox;
 
 /// An owned value of a serialization, like a `Box`.
 ///
-/// The value is either in the arena of the serialization (which is how
+/// The value is either in the arena of the state (which is how
 /// [`Chunk::seq`](crate::ser::Chunk::seq), [`Chunk::map`](crate::ser::Chunk::map),
 /// [`Chunk::structure`](crate::ser::Chunk::structure) and
 /// [`SerializeHandle::arena`](crate::ser::SerializeHandle::arena) allocate
