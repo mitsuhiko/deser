@@ -213,10 +213,7 @@ impl<'de, T: DerivedDeserialize<'de>> Deserialize<'de, T> for Derived {
     }
 
     #[inline]
-    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de> {
         T::deserialize_update(value, state)
     }
 

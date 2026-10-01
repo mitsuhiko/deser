@@ -128,10 +128,7 @@ where
 
     /// Updates the value with `A` and validates it once the update is
     /// complete.
-    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de>
-    where
-        T: Send,
-    {
+    fn deserialize_update<'out>(value: &'out mut T, state: &mut State) -> SinkHandle<'out, 'de> {
         checked_update(
             value,
             A::deserialize_update,
