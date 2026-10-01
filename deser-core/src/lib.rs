@@ -108,13 +108,13 @@ pub mod __derive {
     };
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, BoxedVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
-        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UnitEnum, UntaggedTry, Variant,
-        VariantMaker, Variants, atom_sink, unit_enum_atom_into, unit_enum_sink, untagged_atom,
-        untagged_borrowed_atom, untagged_fallback, untagged_handle,
+        IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UnitEnum, UntaggedTry,
+        ValueVariant, VariantMaker, Variants, atom_sink, unit_enum_atom_into, unit_enum_sink,
+        untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{
-        Collect, FieldKeySink, FieldSlot, NextField, Slot, StructFields, StructFinish, StructInfo,
-        StructSink, StructUpdateSink, UpdateFields, collected_errors, missing_field,
+        Collect, FieldKeySink, FieldSlot, FieldValue, NextField, StructFields, StructFinish,
+        StructInfo, StructSink, StructUpdateSink, UpdateFields, collected_errors, missing_field,
         new_missing_field_error, no_field_slot,
     };
     pub use crate::de::mapped::mapped;

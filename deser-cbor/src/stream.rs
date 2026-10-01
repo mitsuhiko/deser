@@ -29,7 +29,7 @@ struct StreamState {
     stack: Vec<Option<u64>>,
     // an item was not well-formed
     failed: bool,
-    // parses items while their input arrives (see `feed`)
+    // parses items while their input arrives (see `drive_partial`)
     parser: Parser,
     // the driver of the current item was set up
     started: bool,
@@ -37,7 +37,7 @@ struct StreamState {
     // position in the input
     skipping: Option<usize>,
     // parsing failed, the stream cannot be continued
-    feed_failed: bool,
+    partial_failed: bool,
     // the stream ended within an item
     ended: bool,
 }
@@ -165,8 +165,8 @@ impl StreamState {
 ///
 /// Items which do not borrow are deserialized while their input arrives
 /// (see
-/// [`StreamDeserializer::feed`](de::StreamDeserializer::feed)) so only incomplete data items (like strings)
-/// are buffered.
+/// [`StreamDeserializer::drive_partial`](de::StreamDeserializer::drive_partial))
+/// so only incomplete data items (like strings) are buffered.
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
@@ -228,7 +228,7 @@ impl StreamDeserializer {
         if state.ended {
             return Ok(Err(Progress::End));
         }
-        if state.feed_failed {
+        if state.partial_failed {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "cannot continue after an error",
@@ -307,11 +307,11 @@ impl de::StreamDeserializer for StreamDeserializer {
         de.end()
     }
 
-    fn supports_feed(&self) -> bool {
+    fn supports_partial(&self) -> bool {
         true
     }
 
-    fn feed(
+    fn drive_partial(
         &mut self,
         input: &[u8],
         offset: usize,
@@ -393,7 +393,7 @@ pub fn from_reader<T: DeserializeOwned, R: Read>(reader: R) -> Result<T, Error> 
 /// Ends the stream after an error that cannot be recovered from.
 fn fail(state: &mut StreamState, err: Error, eof: bool) -> Error {
     state.parser.reset();
-    state.feed_failed = true;
+    state.partial_failed = true;
     // after an incomplete item at the end there are no more items
     state.ended = eof && err.kind() == ErrorKind::EndOfFile;
     err

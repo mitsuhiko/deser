@@ -79,13 +79,14 @@ impl<'a, 'de, E> core::ops::DerefMut for BoxedVariant<'a, 'de, E> {
     }
 }
 
-/// A variant that is deserialized as `V` and then converted into `E`.
-pub struct Variant<'de, V, E> {
+/// A variant whose content is deserialized as a value of type `V` which is
+/// then converted into `E`.
+pub struct ValueVariant<'de, V, E> {
     sink: OwnedSink<'de, V>,
     convert: fn(V) -> E,
 }
 
-impl<'de, V: Deserialize<'de>, E> Variant<'de, V, E> {
+impl<'de, V: Deserialize<'de>, E> ValueVariant<'de, V, E> {
     /// Creates a boxed builder for a variant.
     pub fn boxed<'a>(convert: fn(V) -> E, state: &mut State) -> BoxedVariant<'a, 'de, E>
     where
@@ -94,7 +95,7 @@ impl<'de, V: Deserialize<'de>, E> Variant<'de, V, E> {
         E: 'a,
     {
         BoxedVariant::new(
-            Variant {
+            ValueVariant {
                 sink: OwnedSink::deserialize(state),
                 convert,
             },
@@ -103,9 +104,9 @@ impl<'de, V: Deserialize<'de>, E> Variant<'de, V, E> {
     }
 }
 
-impl<'de, V: Deserialize<'de>, E> VariantBuilder<'de, E> for Variant<'de, V, E> {
+impl<'de, V: Deserialize<'de>, E> VariantBuilder<'de, E> for ValueVariant<'de, V, E> {
     fn sink(&mut self) -> &mut dyn Sink<'de> {
-        self.sink.borrow_mut()
+        self.sink.get_mut()
     }
 
     fn build(&mut self) -> Option<E> {
@@ -185,7 +186,7 @@ where
     C: Deserialize<'de>,
 {
     fn sink(&mut self) -> &mut dyn Sink<'de> {
-        self.content.borrow_mut()
+        self.content.get_mut()
     }
 
     fn set_tag(&mut self, tag: Option<&RecordBuf<'de>>, state: &mut State) -> Result<(), Error> {

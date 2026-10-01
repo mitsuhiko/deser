@@ -217,7 +217,7 @@ fn test_stream_deserializer_without_io() {
     assert_eq!(buffer.peek().unwrap(), Status::Ready);
     let mut out = None::<Vec<u32>>;
     let mut driver = deser::de::DeserializeDriver::new(&mut out);
-    assert_eq!(buffer.feed(&mut driver).unwrap(), Status::Ready);
+    assert_eq!(buffer.drive_partial(&mut driver).unwrap(), Status::Ready);
     drop(driver);
     assert_eq!(out, Some(vec![1]));
     assert_eq!(buffer.peek().unwrap(), Status::Ready);
@@ -255,7 +255,7 @@ fn test_feeding_bounds_the_buffer() {
         let chunks = input.as_bytes().chunks(1024).collect::<Vec<_>>();
         for (idx, chunk) in chunks.iter().enumerate() {
             buffer.extend_from_slice(chunk);
-            let status = buffer.feed(&mut driver).unwrap();
+            let status = buffer.drive_partial(&mut driver).unwrap();
             // the value is complete with the last chunk
             if idx == chunks.len() - 1 {
                 assert_eq!(status, Status::Ready);
@@ -270,7 +270,7 @@ fn test_feeding_bounds_the_buffer() {
     assert!(max_buffered < 100, "{max_buffered} bytes buffered");
     assert_eq!(
         buffer
-            .feed(&mut DeserializeDriver::new(&mut None::<u32>))
+            .drive_partial(&mut DeserializeDriver::new(&mut None::<u32>))
             .unwrap(),
         Status::End
     );

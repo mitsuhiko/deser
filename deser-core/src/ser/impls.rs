@@ -180,7 +180,7 @@ where
 /// Returns a handle to a value that serializes with an adapter.
 #[inline(always)]
 pub(crate) fn handle_as<A: Serialize<T>, T: Sync>(value: &T) -> SerializeHandle<'_> {
-    SerializeHandle::from(SerializeRef::with_adapter::<A, T>(value))
+    SerializeHandle::from(SerializeRef::serialize_as::<A, T>(value))
 }
 
 /// Emits the elements of an iterator with an adapter.
@@ -287,7 +287,7 @@ pub(crate) fn begin_plain<'a, A: Serialize<T>, T: Sync>(
     value: &'a T,
     shape: ContainerShape,
 ) -> Begin<'a> {
-    Begin::plain(SerializeRef::with_adapter::<A, T>(value), shape)
+    Begin::plain(SerializeRef::serialize_as::<A, T>(value), shape)
 }
 
 /// Implements `Serialize` for the containers of slices, generic over the

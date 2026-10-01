@@ -23,7 +23,7 @@ All notable changes to deser are documented here.
 - **Breaking:** as `Serialize` cannot be a trait object anymore, values
   are passed on as `deser::ser::SerializeRef` instead of
   `&dyn Serialize` (created with `SerializeRef::new(&value)` or
-  `SerializeRef::with_adapter::<A, _>(&value)`), for instance to
+  `SerializeRef::serialize_as::<A, _>(&value)`), for instance to
   `EventSink::event`, `Next::value`, `SerializeDriver::next` and
   `FlattenedStruct::new`.  `SerializeHandle` is opaque (convert from a
   `SerializeRef` and back with `SerializeHandle::get`).  The functions
@@ -32,6 +32,12 @@ All notable changes to deser are documented here.
   allows unsized values (`to_string("x")`).  `Serializer::serialize_ref`
   and `SerializeDriver::from_ref` take a `SerializeRef`.
 - **Breaking:** `BytesEncoding` requires `Send + Sync`.
+- **Breaking:** renamed `StreamDeserializer::supports_feed` and
+  `StreamDeserializer::feed` to `supports_partial` and `drive_partial`
+  (and the same methods of `InputBuffer`), matching
+  `StreamSerializer::supports_partial` and `drive_partial`.
+- **Breaking:** renamed `OwnedSink::borrow` and `OwnedSink::borrow_mut`
+  to `get` and `get_mut`.
 - **Breaking:** merged `deser::ser::PausableSink` into `EventSink`.  An
   event sink receives the value of every event (if it sets
   `EventSink::DESCRIBED`) and can pause the driver with

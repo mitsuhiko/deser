@@ -12,15 +12,15 @@ use crate::state::State;
 /// The slot of a value that is deserialized from an atom.
 ///
 /// Values that are deserialized from atoms (like numbers or strings) do not
-/// need a sink with state: the sink is the slot itself.  A `Slot<T, D>` is
+/// need a sink with state: the sink is the slot itself.  A `Slot<T, A>` is
 /// the slot of a `T` (a transparent wrapper around the `Option<T>`) which
 /// is a [`Sink`] that passes the atoms it receives to
-/// [`D::deserialize_atom`](Deserialize::deserialize_atom).  This is the
+/// [`A::deserialize_atom`](Deserialize::deserialize_atom).  This is the
 /// sink of the default implementation of
 /// [`Deserialize::deserialize_into`], so values that are deserialized from
 /// atoms only implement [`deserialize_atom`](Deserialize::deserialize_atom)
 /// (and [`expecting`](Deserialize::expecting), which defaults to the name
-/// of the type).  `D` is the type that implements [`Deserialize`], which is
+/// of the type).  `A` is the type that implements [`Deserialize`], which is
 /// the value itself unless it's an adapter (see
 /// [`adapters`](crate::adapters)).
 ///
@@ -60,20 +60,20 @@ use crate::state::State;
 /// assert_eq!(out.unwrap().0, 21.5);
 /// ```
 #[repr(transparent)]
-pub struct Slot<T, D = T> {
+pub struct Slot<T, A = T> {
     value: Option<T>,
-    // `D` is only used for its functions
-    _marker: PhantomData<fn() -> D>,
+    // `A` is only used for its functions
+    _marker: PhantomData<fn() -> A>,
 }
 
-impl<T, D> Slot<T, D> {
+impl<T, A> Slot<T, A> {
     /// Wraps an `Option<T>` in a slot.
     ///
     /// This is a cast, the slot is the `Option<T>`.
     #[inline(always)]
-    pub fn wrap(out: &mut Option<T>) -> &mut Slot<T, D> {
+    pub fn wrap(out: &mut Option<T>) -> &mut Slot<T, A> {
         // SAFETY: the slot is a transparent wrapper around the option
-        unsafe { &mut *(out as *mut Option<T> as *mut Slot<T, D>) }
+        unsafe { &mut *(out as *mut Option<T> as *mut Slot<T, A>) }
     }
 
     /// Places a value in the slot.
@@ -83,26 +83,26 @@ impl<T, D> Slot<T, D> {
     }
 }
 
-impl<'de, T: Send, D: Deserialize<'de, T>> Slot<T, D> {
+impl<'de, T: Send, A: Deserialize<'de, T>> Slot<T, A> {
     /// Returns a handle to the slot of the `Option<T>`.
     ///
-    /// Unlike [`SinkHandle::to`] this does not require `D` to outlive the
-    /// handle: `D` is only used for its functions, which cannot hold
+    /// Unlike [`SinkHandle::to`] this does not require `A` to outlive the
+    /// handle: `A` is only used for its functions, which cannot hold
     /// borrowed data (see `SinkHandle::arena_unbounded`).
     #[inline(always)]
     pub(crate) fn handle<'a>(out: &'a mut Option<T>) -> SinkHandle<'a, 'de> {
         // the slot outlives this function (like every type parameter)
-        let sink: *mut (dyn Sink<'de> + '_) = out as *mut Option<T> as *mut Slot<T, D>;
+        let sink: *mut (dyn Sink<'de> + '_) = out as *mut Option<T> as *mut Slot<T, A>;
         // SAFETY: the slot is a transparent wrapper around the option which
-        // is borrowed for the lifetime of the handle.  What `D` stands for
-        // is not used, the sink only invokes the functions of `D`.
+        // is borrowed for the lifetime of the handle.  What `A` stands for
+        // is not used, the sink only invokes the functions of `A`.
         SinkHandle::to(unsafe {
             &mut *core::mem::transmute::<*mut (dyn Sink<'de> + '_), *mut (dyn Sink<'de> + 'a)>(sink)
         })
     }
 }
 
-impl<T, D> Deref for Slot<T, D> {
+impl<T, A> Deref for Slot<T, A> {
     type Target = Option<T>;
 
     #[inline(always)]
@@ -111,26 +111,26 @@ impl<T, D> Deref for Slot<T, D> {
     }
 }
 
-impl<T, D> DerefMut for Slot<T, D> {
+impl<T, A> DerefMut for Slot<T, A> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Option<T> {
         &mut self.value
     }
 }
 
-impl<'de, T: Send, D: Deserialize<'de, T>> Sink<'de> for Slot<T, D> {
+impl<'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for Slot<T, A> {
     #[inline]
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        D::deserialize_atom(self, atom, state)
+        A::deserialize_atom(self, atom, state)
     }
 
     #[inline]
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        D::deserialize_borrowed_atom(self, atom, state)
+        A::deserialize_borrowed_atom(self, atom, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        D::expecting()
+        A::expecting()
     }
 }
 

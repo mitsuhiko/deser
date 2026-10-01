@@ -337,8 +337,13 @@ fn no_inline_seq() -> ! {
 /// The handle itself implements [`Sink`] and forwards all calls to the
 /// sink it holds.
 ///
-/// The equivalent for serialization is the
-/// [`SerializeHandle`](crate::ser::SerializeHandle).
+/// Unlike the [`SerializeHandle`](crate::ser::SerializeHandle) of
+/// serialization, which holds a value that is not serialized yet, this
+/// holds a sink that is already deserializing a value.  The serialization
+/// equivalent of a sink is an emitter in a [`Chunk`](crate::ser::Chunk).
+/// The constructors line up: [`to`](Self::to) borrows,
+/// [`arena`](Self::arena) and [`heap`](Self::heap) own in the same way for
+/// both handles.
 pub struct SinkHandle<'a, 'de: 'a>(HandleInner<'a, 'de>);
 
 enum HandleInner<'a, 'de> {
@@ -360,8 +365,8 @@ enum HandleInner<'a, 'de> {
 
 impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Create a borrowed handle to a [`Sink`].
-    pub fn to(val: &'a mut dyn Sink<'de>) -> SinkHandle<'a, 'de> {
-        SinkHandle(HandleInner::Borrowed(val))
+    pub fn to(sink: &'a mut dyn Sink<'de>) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Borrowed(sink))
     }
 
     /// Creates an owned handle to a sink in the arena of the deserialization.
@@ -428,8 +433,8 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// assert_eq!(out.unwrap().0, 2);
     /// ```
     #[inline(always)]
-    pub fn arena<S: Sink<'de> + 'a>(val: S, state: &mut State) -> SinkHandle<'a, 'de> {
-        SinkHandle(HandleInner::Arena(arena_sink(val, &mut state.arena)))
+    pub fn arena<S: Sink<'de> + 'a>(sink: S, state: &mut State) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Arena(arena_sink(sink, &mut state.arena)))
     }
 
     /// Like [`arena`](Self::arena) but the sink does not need to outlive the
@@ -450,12 +455,12 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Functions cannot hold borrowed data.
     #[inline(always)]
     pub(crate) unsafe fn arena_unbounded<S: Sink<'de>>(
-        val: S,
+        sink: S,
         state: &mut State,
     ) -> SinkHandle<'a, 'de> {
         // SAFETY: guaranteed by the caller
         SinkHandle(HandleInner::Arena(unsafe {
-            sinkbox::arena_sink_unbounded(val, &mut state.arena)
+            sinkbox::arena_sink_unbounded(sink, &mut state.arena)
         }))
     }
 
@@ -484,15 +489,15 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
     /// Unlike [`arena`](Self::arena) the sink does not need a state and is
     /// independent of any deserialization, but every sink is a separate
     /// allocation.
-    pub fn heap<S: Sink<'de> + 'a>(val: S) -> SinkHandle<'a, 'de> {
-        SinkHandle(HandleInner::Heap(HeapSink::new(val)))
+    pub fn heap<S: Sink<'de> + 'a>(sink: S) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Heap(HeapSink::new(sink)))
     }
 
     /// Creates an owned handle to the sink of a derived struct.
     #[cfg(feature = "derive")]
     #[inline]
-    pub(crate) fn from_struct_box(val: StructBox<'a, 'de>) -> SinkHandle<'a, 'de> {
-        SinkHandle(HandleInner::Struct(val))
+    pub(crate) fn from_struct_box(sink: StructBox<'a, 'de>) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Struct(sink))
     }
 
     /// Creates a sink handle that drops all values.

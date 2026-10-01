@@ -28,7 +28,7 @@ pub enum Frame {
     End,
 }
 
-/// The result of [`StreamDeserializer::feed`].
+/// The result of [`StreamDeserializer::drive_partial`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Progress {
     /// The value is complete, it used the first `consumed` bytes of the
@@ -70,13 +70,13 @@ pub enum Progress {
 /// regular parser.  Values read from their frames can borrow from the
 /// buffer.
 ///
-/// # Feeding
+/// # Partial Deserialization
 ///
-/// Formats which can be parsed while the input arrives (like JSON and
-/// CBOR) can also deserialize values while their input is fed to them
-/// (see [`feed`](Self::feed)).  Only incomplete tokens are buffered, so
-/// the memory used does not depend on the size of the values.  Values
-/// read this way cannot borrow from the input.
+/// Formats which can be parsed while the input arrives (like JSON and CBOR)
+/// can also deserialize values while their input is fed to them (see
+/// [`drive_partial`](Self::drive_partial)).  Only incomplete tokens are
+/// buffered, so the memory used does not depend on the size of the
+/// values.  Values read this way cannot borrow from the input.
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Frame, StreamDeserializer};
@@ -160,17 +160,18 @@ pub trait StreamDeserializer {
         false
     }
 
-    /// Returns `true` if the deserializer implements [`feed`](Self::feed).
+    /// Returns `true` if the deserializer implements
+    /// [`drive_partial`](Self::drive_partial).
     ///
     /// This can depend on the configuration, for instance JSON Lines are
     /// read line by line.
-    fn supports_feed(&self) -> bool {
+    fn supports_partial(&self) -> bool {
         false
     }
 
     /// Deserializes a value while its input arrives.
     ///
-    /// This is only invoked if [`supports_feed`](Self::supports_feed)
+    /// This is only invoked if [`supports_partial`](Self::supports_partial)
     /// returns `true`.  It's used instead of [`frame`](Self::frame) and
     /// [`drive_frame`](Self::drive_frame) for values which do not borrow
     /// from the input.  The deserializer emits the events of the parts of
@@ -188,7 +189,7 @@ pub trait StreamDeserializer {
     /// deserializer decides if the stream can continue with the next value
     /// (for instance by skipping the rest of the value if a sink failed) or
     /// if further calls fail.
-    fn feed(
+    fn drive_partial(
         &mut self,
         input: &[u8],
         offset: usize,
@@ -219,8 +220,8 @@ pub trait StreamDeserializer {
     /// Offsets of errors refer to the input.  The provided implementation
     /// returns `None`, then the next value is found by framing it (which
     /// buffers it completely).  Deserializers that support
-    /// [`feed`](Self::feed) should implement this so values are not
-    /// buffered to find out if they exist.
+    /// [`drive_partial`](Self::drive_partial) should implement this so
+    /// values are not buffered to find out if they exist.
     fn peek(&mut self, input: &[u8], eof: bool) -> Result<Option<Progress>, Error> {
         let _ = (input, eof);
         Ok(None)
@@ -244,18 +245,18 @@ impl<D: StreamDeserializer + ?Sized> StreamDeserializer for &mut D {
         (**self).is_text()
     }
 
-    fn supports_feed(&self) -> bool {
-        (**self).supports_feed()
+    fn supports_partial(&self) -> bool {
+        (**self).supports_partial()
     }
 
-    fn feed(
+    fn drive_partial(
         &mut self,
         input: &[u8],
         offset: usize,
         eof: bool,
         driver: &mut DeserializeDriver<'_, '_>,
     ) -> Result<Progress, Error> {
-        (**self).feed(input, offset, eof, driver)
+        (**self).drive_partial(input, offset, eof, driver)
     }
 
     fn peek(&mut self, input: &[u8], eof: bool) -> Result<Option<Progress>, Error> {

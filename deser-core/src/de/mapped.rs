@@ -43,35 +43,35 @@ pub fn mapped<'a, 'de, T: Send + 'a, U: Send + 'a>(
 
 impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().atom(atom, state)
+        self.sink.get_mut().atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().borrowed_atom(atom, state)
+        self.sink.get_mut().borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().map(state)
+        self.sink.get_mut().map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().seq(state)
+        self.sink.get_mut().seq(state)
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_key(state)
+        self.sink.get_mut().next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_value(state)
+        self.sink.get_mut().next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().__private_key_atom(atom, state)
+        self.sink.get_mut().__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().__private_value_atom(atom, state)
+        self.sink.get_mut().__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -79,9 +79,7 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.sink
-            .borrow_mut()
-            .__private_borrowed_key_atom(atom, state)
+        self.sink.get_mut().__private_borrowed_key_atom(atom, state)
     }
 
     fn __private_borrowed_value_atom(
@@ -90,7 +88,7 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
         state: &mut State,
     ) -> Result<(), Error> {
         self.sink
-            .borrow_mut()
+            .get_mut()
             .__private_borrowed_value_atom(atom, state)
     }
 
@@ -99,15 +97,15 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.sink.borrow_mut().value_for_key(key, state)
+        self.sink.get_mut().value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().recover(err, state)
+        self.sink.get_mut().recover(err, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
+        self.sink.get_mut().finish(state)?;
         if let Some(value) = self.sink.take() {
             *self.out = Some((self.convert)(value)?);
         }
@@ -115,6 +113,6 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        self.sink.borrow().expecting()
+        self.sink.get().expecting()
     }
 }

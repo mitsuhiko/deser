@@ -74,7 +74,7 @@ pub enum Status {
 /// The offsets, lines and columns of errors refer to the stream.
 ///
 /// Stream deserializers which support it can also deserialize values while
-/// their input arrives, see [`feed`](Self::feed).
+/// their input arrives, see [`drive_partial`](Self::drive_partial).
 pub struct InputBuffer<D: StreamDeserializer> {
     deserializer: D,
     // `data[start..end]` holds the input that was not consumed yet, the
@@ -90,8 +90,8 @@ pub struct InputBuffer<D: StreamDeserializer> {
     // `true` once the deserializer reported the end or failed
     done: bool,
     failed: bool,
-    // a value is being fed into a driver
-    feeding: bool,
+    // a value is being deserialized in parts
+    partial: bool,
 }
 
 impl<D: StreamDeserializer> InputBuffer<D> {
@@ -111,7 +111,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             ready: None,
             done: false,
             failed: false,
-            feeding: false,
+            partial: false,
         }
     }
 
@@ -166,7 +166,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         if self.failed {
             return Err(failed_error());
         }
-        if self.feeding {
+        if self.partial {
             return Err(Error::new(ErrorKind::Unexpected, "a value is being fed"));
         }
         if self.done {
@@ -229,14 +229,14 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// Returns [`Status::Ready`] if a value follows (it does not need to be
     /// complete), [`Status::End`] if there are no more values and
     /// [`Status::NeedInput`] if more input is needed to know.  The value is
-    /// then read with [`feed`](Self::feed) or, once
+    /// then read with [`drive_partial`](Self::drive_partial) or, once
     /// [`poll`](Self::poll) reports it's complete, with
     /// [`deserialize`](Self::deserialize).  If the stream deserializer
     /// cannot find the start of a value on its own (see
     /// [`StreamDeserializer::peek`]), the value is framed which means that
     /// it's buffered completely.
     pub fn peek(&mut self) -> Result<Status, Error> {
-        if self.ready.is_some() || self.feeding {
+        if self.ready.is_some() || self.partial {
             return Ok(Status::Ready);
         }
         if self.failed {
@@ -291,16 +291,17 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// Returns `true` if the stream deserializer can deserialize values
     /// while their input arrives.
     ///
-    /// See [`StreamDeserializer::supports_feed`] and [`feed`](Self::feed).
-    pub fn supports_feed(&self) -> bool {
-        self.deserializer.supports_feed()
+    /// See [`StreamDeserializer::supports_partial`] and
+    /// [`drive_partial`](Self::drive_partial).
+    pub fn supports_partial(&self) -> bool {
+        self.deserializer.supports_partial()
     }
 
-    /// Feeds the input into the driver of the next value.
+    /// Deserializes the next value in parts while its input arrives.
     ///
     /// This is the alternative to [`poll`](Self::poll) and
     /// [`deserialize`](Self::deserialize) for stream deserializers which
-    /// support it (see [`supports_feed`](Self::supports_feed)) and values
+    /// support it (see [`supports_partial`](Self::supports_partial)) and values
     /// which do not borrow from the input.  If the value was framed already
     /// (by [`peek`](Self::peek) of a format that cannot find the start of a
     /// value otherwise), it's deserialized from its frame.  The input is fed into the driver until the
@@ -320,8 +321,8 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// # impl StreamDeserializer for Digits {
     /// #     fn frame(&mut self, _: &[u8], _: bool) -> Result<Frame, Error> { unimplemented!() }
     /// #     fn drive_frame<'de>(&mut self, _: &'de [u8], _: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> { unimplemented!() }
-    /// #     fn supports_feed(&self) -> bool { true }
-    /// #     fn feed(&mut self, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
+    /// #     fn supports_partial(&self) -> bool { true }
+    /// #     fn drive_partial(&mut self, input: &[u8], _: usize, eof: bool, driver: &mut DeserializeDriver<'_, '_>) -> Result<Progress, Error> {
     /// #         if !self.started {
     /// #             if input.is_empty() && eof { return Ok(Progress::End); }
     /// #             driver.emit(deser::Event::seq_start())?;
@@ -347,21 +348,25 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     ///     let mut driver = DeserializeDriver::new(&mut out);
     ///     for chunk in [&b"12"[..], b"3"] {
     ///         buffer.extend_from_slice(chunk);
-    ///         assert_eq!(buffer.feed(&mut driver).unwrap(), Status::NeedInput);
+    ///         assert_eq!(buffer.drive_partial(&mut driver).unwrap(), Status::NeedInput);
     ///     }
     ///     buffer.set_eof();
-    ///     assert_eq!(buffer.feed(&mut driver).unwrap(), Status::Ready);
+    ///     assert_eq!(buffer.drive_partial(&mut driver).unwrap(), Status::Ready);
     /// }
     /// assert_eq!(out.unwrap(), [1, 2, 3]);
     /// ```
     ///
     /// # Panics
     ///
-    /// Panics if the stream deserializer does not support feeding.
-    pub fn feed(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<Status, Error> {
+    /// Panics if the stream deserializer does not support partial
+    /// deserialization.
+    pub fn drive_partial(
+        &mut self,
+        driver: &mut DeserializeDriver<'_, '_>,
+    ) -> Result<Status, Error> {
         assert!(
-            self.deserializer.supports_feed(),
-            "the stream deserializer does not support feeding"
+            self.deserializer.supports_partial(),
+            "the stream deserializer does not support partial deserialization"
         );
         // a value that was framed already (see `peek`)
         if self.ready.is_some() {
@@ -376,18 +381,18 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         let input = &self.data[self.start..self.end];
         let rv = self
             .deserializer
-            .feed(input, self.position.offset, self.eof, driver);
+            .drive_partial(input, self.position.offset, self.eof, driver);
         match rv {
             Ok(Progress::Done { consumed }) => {
                 assert!(consumed <= input.len(), "invalid progress");
                 self.consume(consumed);
-                self.feeding = false;
+                self.partial = false;
                 Ok(Status::Ready)
             }
             Ok(Progress::NeedMore { consumed }) => {
                 assert!(consumed <= input.len(), "invalid progress");
                 self.consume(consumed);
-                self.feeding = true;
+                self.partial = true;
                 if self.eof {
                     self.failed = true;
                     return Err(self.locate(
@@ -400,12 +405,12 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             Ok(Progress::End) => {
                 assert!(self.eof, "end of values before the end of the input");
                 self.done = true;
-                self.feeding = false;
+                self.partial = false;
                 Ok(Status::End)
             }
             // whether the stream can continue is up to the deserializer
             Err(err) => {
-                self.feeding = false;
+                self.partial = false;
                 Err(self.locate(err))
             }
         }

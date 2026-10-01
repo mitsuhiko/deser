@@ -43,7 +43,7 @@ use deser_core::stream::{InputBuffer, Status};
 ///
 /// The data read by the framed reader is moved into the codec's buffer, so
 /// errors refer to positions in the stream.  If the format supports it
-/// (see [`StreamDeserializer::supports_feed`]), values are deserialized
+/// (see [`StreamDeserializer::supports_partial`]), values are deserialized
 /// while their input arrives.
 #[cfg_attr(docsrs, doc(cfg(feature = "codec")))]
 pub struct Codec<D: StreamDeserializer, S: StreamSerializer, T> {
@@ -83,14 +83,14 @@ impl<D: StreamDeserializer, S: StreamSerializer, T> Codec<D, S, T> {
             self.buffer.extend_from_slice(src);
             src.clear();
         }
-        if !self.buffer.supports_feed() {
+        if !self.buffer.supports_partial() {
             return match self.buffer.poll()? {
                 Status::Ready => self.buffer.deserialize().map(Some),
                 Status::NeedInput | Status::End => Ok(None),
             };
         }
         let mut driver = self.pending.take().unwrap_or_default();
-        match driver.with(|driver| self.buffer.feed(driver))? {
+        match driver.with(|driver| self.buffer.drive_partial(driver))? {
             Status::Ready => driver.finish().map(Some),
             Status::End => Ok(None),
             Status::NeedInput => {

@@ -223,7 +223,7 @@ fn test_feeding_bounds_the_buffer() {
         let mut driver = DeserializeDriver::new(&mut out);
         for chunk in bytes.chunks(1024) {
             buffer.extend_from_slice(chunk);
-            if buffer.feed(&mut driver).unwrap() == Status::Ready {
+            if buffer.drive_partial(&mut driver).unwrap() == Status::Ready {
                 break;
             }
             max_buffered = max_buffered.max(buffer.buffered());

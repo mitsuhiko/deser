@@ -208,7 +208,7 @@ struct CheckSink<'a, 'de, T, V> {
 impl<'a, 'de, T, V> CheckSink<'a, 'de, T, V> {
     fn begin(&mut self, state: &State) -> &mut (dyn Sink<'de> + '_) {
         self.start = state.input_range().map(|range| range.start);
-        self.sink.borrow_mut()
+        self.sink.get_mut()
     }
 }
 
@@ -230,19 +230,19 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_key(state)
+        self.sink.get_mut().next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.borrow_mut().next_value(state)
+        self.sink.get_mut().next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().__private_key_atom(atom, state)
+        self.sink.get_mut().__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().__private_value_atom(atom, state)
+        self.sink.get_mut().__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -250,9 +250,7 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.sink
-            .borrow_mut()
-            .__private_borrowed_key_atom(atom, state)
+        self.sink.get_mut().__private_borrowed_key_atom(atom, state)
     }
 
     fn __private_borrowed_value_atom(
@@ -261,7 +259,7 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
         state: &mut State,
     ) -> Result<(), Error> {
         self.sink
-            .borrow_mut()
+            .get_mut()
             .__private_borrowed_value_atom(atom, state)
     }
 
@@ -270,15 +268,15 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.sink.borrow_mut().value_for_key(key, state)
+        self.sink.get_mut().value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().recover(err, state)
+        self.sink.get_mut().recover(err, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
+        self.sink.get_mut().finish(state)?;
         if let Some(value) = self.sink.take() {
             if let Err(violation) = V::validate(&value) {
                 let err = violation.into_error();
@@ -293,6 +291,6 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        self.sink.borrow().expecting()
+        self.sink.get().expecting()
     }
 }

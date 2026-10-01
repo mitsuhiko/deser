@@ -83,9 +83,9 @@ pub enum ElementStatus<E, T> {
 /// sequence which are handed out.
 ///
 /// Elements are handed out before more input is needed, so an element is
-/// available as soon as its last byte was read (if the stream
-/// deserializer supports [`StreamDeserializer::feed`], otherwise once the
-/// value is complete).
+/// available as soon as its last byte was read (if the stream deserializer
+/// supports [`StreamDeserializer::drive_partial`], otherwise once the value
+/// is complete).
 pub struct ElementReader<T, E> {
     queue: Arc<Queue>,
     // the value that is deserialized while its input arrives
@@ -141,7 +141,7 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
             }
 
             let register = ElementQueue(Some(self.queue.clone()));
-            if !buffer.supports_feed() {
+            if !buffer.supports_partial() {
                 match buffer.poll()? {
                     Status::Ready => {
                         self.value = Some(buffer.deserialize_with(|driver| {
@@ -159,7 +159,7 @@ impl<T: DeserializeOwned + 'static, E: Send + 'static> ElementReader<T, E> {
                 driver.with(|driver| *driver.state_mut().get_mut::<ElementQueue>() = register);
                 driver
             });
-            match driver.with(|driver| buffer.feed(driver)) {
+            match driver.with(|driver| buffer.drive_partial(driver)) {
                 Ok(Status::Ready) => {
                     self.value = Some(self.driver.take().unwrap().finish()?);
                 }

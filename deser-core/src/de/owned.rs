@@ -97,10 +97,10 @@ unsafe fn unbounded<'x, X>(ptr: *mut X) -> &'x mut X {
 ///         atom: Atom,
 ///         state: &mut State,
 ///     ) -> Result<(), Error> {
-///         self.sink.borrow_mut().atom(atom, state)
+///         self.sink.get_mut().atom(atom, state)
 ///     }
 ///     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-///         self.sink.borrow_mut().finish(state)?;
+///         self.sink.get_mut().finish(state)?;
 ///         *self.out = self.sink.take().map(AtomWrapper);
 ///         Ok(())
 ///     }
@@ -208,15 +208,13 @@ impl<'de, T> OwnedSink<'de, T> {
         }
     }
 
-    /// Immutably borrows the sink.
-    #[allow(clippy::should_implement_trait)]
-    pub fn borrow(&self) -> &(dyn Sink<'de> + '_) {
+    /// Returns a reference to the sink.
+    pub fn get(&self) -> &(dyn Sink<'de> + '_) {
         &*self.sink
     }
 
-    /// Mutably borrows the sink.
-    #[allow(clippy::should_implement_trait)]
-    pub fn borrow_mut(&mut self) -> &mut (dyn Sink<'de> + '_) {
+    /// Returns a mutable reference to the sink.
+    pub fn get_mut(&mut self) -> &mut (dyn Sink<'de> + '_) {
         &mut *self.sink
     }
 

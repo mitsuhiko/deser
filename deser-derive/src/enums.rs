@@ -225,7 +225,7 @@ impl<'a> VariantInfo<'a> {
         Some(match idxs[..] {
             [] => (
                 quote_spanned! { adapter.span()=>
-                    __deser::ser::SerializeRef::with_adapter::<#adapter, ()>(&())
+                    __deser::ser::SerializeRef::serialize_as::<#adapter, ()>(&())
                 },
                 false,
             ),
@@ -233,7 +233,7 @@ impl<'a> VariantInfo<'a> {
                 let binding = &self.fields[idx].binding;
                 (
                     quote_spanned! { adapter.span()=>
-                        __deser::ser::SerializeRef::with_adapter::<#adapter, #ty>(#binding)
+                        __deser::ser::SerializeRef::serialize_as::<#adapter, #ty>(#binding)
                     },
                     false,
                 )
@@ -1233,7 +1233,7 @@ pub(crate) fn derive_deserialize(
                     __try.variant::<#content_ty>(|#content_pattern: #content_ty| #construct)
                 }));
                 quote! {
-                    __deser::__derive::Variant::<#content_ty, #enum_ty>::boxed(
+                    __deser::__derive::ValueVariant::<#content_ty, #enum_ty>::boxed(
                         |#content_pattern: #content_ty| #construct, __state)
                 }
             }

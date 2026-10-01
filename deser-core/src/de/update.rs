@@ -14,19 +14,19 @@ use crate::event::Atom;
 macro_rules! forward_to_owned {
     ($field:ident) => {
         fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.$field.borrow_mut().next_key(state)
+            self.$field.get_mut().next_key(state)
         }
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.$field.borrow_mut().next_value(state)
+            self.$field.get_mut().next_value(state)
         }
 
         fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.$field.borrow_mut().__private_key_atom(atom, state)
+            self.$field.get_mut().__private_key_atom(atom, state)
         }
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.$field.borrow_mut().__private_value_atom(atom, state)
+            self.$field.get_mut().__private_value_atom(atom, state)
         }
 
         fn __private_borrowed_key_atom(
@@ -35,7 +35,7 @@ macro_rules! forward_to_owned {
             state: &mut State,
         ) -> Result<(), Error> {
             self.$field
-                .borrow_mut()
+                .get_mut()
                 .__private_borrowed_key_atom(atom, state)
         }
 
@@ -45,7 +45,7 @@ macro_rules! forward_to_owned {
             state: &mut State,
         ) -> Result<(), Error> {
             self.$field
-                .borrow_mut()
+                .get_mut()
                 .__private_borrowed_value_atom(atom, state)
         }
 
@@ -54,15 +54,15 @@ macro_rules! forward_to_owned {
             key: &str,
             state: &mut State,
         ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-            self.$field.borrow_mut().value_for_key(key, state)
+            self.$field.get_mut().value_for_key(key, state)
         }
 
         fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-            self.$field.borrow_mut().recover(err, state)
+            self.$field.get_mut().recover(err, state)
         }
 
         fn expecting(&self) -> Cow<'_, str> {
-            self.$field.borrow().expecting()
+            self.$field.get().expecting()
         }
     };
 }
@@ -90,11 +90,11 @@ struct Replacer<'a, 'de, T> {
 
 impl<'a, 'de, T: Send> Replace<'de> for Replacer<'a, 'de, T> {
     fn sink(&mut self) -> &mut (dyn Sink<'de> + '_) {
-        self.sink.borrow_mut()
+        self.sink.get_mut()
     }
 
     fn sink_ref(&self) -> &(dyn Sink<'de> + '_) {
-        self.sink.borrow()
+        self.sink.get()
     }
 
     fn replace(&mut self) {
@@ -434,7 +434,7 @@ impl<'a, 'de, T: Send> Sink<'de> for OptionUpdateSink<'a, 'de, T> {
             drop(self.sink.take());
             return Ok(());
         }
-        self.sink.borrow_mut().atom(atom, state)
+        self.sink.get_mut().atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
@@ -442,21 +442,21 @@ impl<'a, 'de, T: Send> Sink<'de> for OptionUpdateSink<'a, 'de, T> {
             drop(self.sink.take());
             return Ok(());
         }
-        self.sink.borrow_mut().borrowed_atom(atom, state)
+        self.sink.get_mut().borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().map(state)
+        self.sink.get_mut().map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().seq(state)
+        self.sink.get_mut().seq(state)
     }
 
     forward_to_owned!(sink);
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
+        self.sink.get_mut().finish(state)?;
         *self.out = self.sink.take();
         Ok(())
     }
@@ -575,19 +575,19 @@ where
     A: Deserialize<'de, T>,
 {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.element.borrow_mut().atom(atom, state)
+        self.element.get_mut().atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        self.element.borrow_mut().borrowed_atom(atom, state)
+        self.element.get_mut().borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.element.borrow_mut().map(state)
+        self.element.get_mut().map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        match self.element.borrow_mut().seq(state) {
+        match self.element.get_mut().seq(state) {
             Err(err) if err.kind() == ErrorKind::Unexpected => {
                 // the element that rejected the sequence is not a value
                 // (the slots of optionals are set when they are created)
@@ -600,7 +600,7 @@ where
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.element.borrow_mut().next_key(state)
+        self.element.get_mut().next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
@@ -608,20 +608,20 @@ where
             // the previous item was finished by the driver
             CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)?;
             self.element = OwnedSink::deserialize_as::<A>(state);
-            return Ok(SinkHandle::to(self.element.borrow_mut()));
+            return Ok(SinkHandle::to(self.element.get_mut()));
         }
-        self.element.borrow_mut().next_value(state)
+        self.element.get_mut().next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.element.borrow_mut().__private_key_atom(atom, state)
+        self.element.get_mut().__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.extend {
             return crate::de::atom_into_handle(self.next_value(state)?, atom, state);
         }
-        self.element.borrow_mut().__private_value_atom(atom, state)
+        self.element.get_mut().__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -630,7 +630,7 @@ where
         state: &mut State,
     ) -> Result<(), Error> {
         self.element
-            .borrow_mut()
+            .get_mut()
             .__private_borrowed_key_atom(atom, state)
     }
 
@@ -643,7 +643,7 @@ where
             return crate::de::borrowed_atom_into_handle(self.next_value(state)?, atom, state);
         }
         self.element
-            .borrow_mut()
+            .get_mut()
             .__private_borrowed_value_atom(atom, state)
     }
 
@@ -655,23 +655,23 @@ where
         if self.extend {
             return Ok(None);
         }
-        self.element.borrow_mut().value_for_key(key, state)
+        self.element.get_mut().value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
         if self.extend {
             return Err(err);
         }
-        self.element.borrow_mut().recover(err, state)
+        self.element.get_mut().recover(err, state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        self.element.borrow().expecting()
+        self.element.get().expecting()
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         if !self.extend {
-            self.element.borrow_mut().finish(state)?;
+            self.element.get_mut().finish(state)?;
         }
         CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)
     }

@@ -472,7 +472,7 @@ impl<'a> SerializeDriver<'a> {
     /// Creates a new driver which serializes the value of a reference.
     ///
     /// Unlike [`new`](Self::new) this is not generic, the reference can be
-    /// to a value with an adapter (see [`SerializeRef::with_adapter`]).
+    /// to a value with an adapter (see [`SerializeRef::serialize_as`]).
     pub fn from_ref(serializable: SerializeRef<'a>) -> SerializeDriver<'a> {
         let mut state = State::new();
         // the stack of the last driver is reused

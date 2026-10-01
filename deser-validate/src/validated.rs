@@ -202,7 +202,7 @@ struct ValidatedSink<'a, 'de, T, V> {
 impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
     /// Returns the sink of the value unless it failed.
     fn sink(&mut self) -> Option<&mut (dyn Sink<'de> + '_)> {
-        self.sink.as_mut().map(|sink| sink.borrow_mut())
+        self.sink.as_mut().map(|sink| sink.get_mut())
     }
 
     /// Returns the sink of the value at its start.
@@ -391,7 +391,7 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for ValidatedSink<'a, 'de, T, 
 
     fn expecting(&self) -> Cow<'_, str> {
         match self.sink {
-            Some(ref sink) => sink.borrow().expecting(),
+            Some(ref sink) => sink.get().expecting(),
             None => Cow::Borrowed("compatible type"),
         }
     }

@@ -155,10 +155,13 @@ pub(crate) unsafe fn erase_unbounded<'a, S: Erased>(value: *const S) -> &'a (dyn
 /// assert!(!SerializeRef::new(&value).is_optional());
 ///
 /// // serializes as string
-/// let value = SerializeRef::with_adapter::<DisplayFromStr, _>(&value);
+/// let value = SerializeRef::serialize_as::<DisplayFromStr, _>(&value);
 /// ```
 ///
-/// The equivalent for deserialization is the [`Sink`](crate::de::Sink).
+/// Deserialization has no equivalent: values are type erased by creating
+/// their [`Sink`](crate::de::Sink) (see
+/// [`Deserialize::deserialize_into`](crate::de::Deserialize::deserialize_into)),
+/// which is already in the middle of deserializing them.
 #[derive(Clone, Copy)]
 pub struct SerializeRef<'a> {
     value: &'a (dyn Erased + 'a),
@@ -177,7 +180,7 @@ impl<'a> SerializeRef<'a> {
     ///
     /// See [`adapters`](crate::adapters).
     #[inline(always)]
-    pub fn with_adapter<A: Serialize<T>, T: Sync>(value: &'a T) -> SerializeRef<'a> {
+    pub fn serialize_as<A: Serialize<T>, T: Sync>(value: &'a T) -> SerializeRef<'a> {
         SerializeRef {
             // SAFETY: the wrapper is valid for 'a (it's the value), it only
             // holds a marker of the adapter
@@ -321,8 +324,12 @@ impl Serialize for SerializeRef<'_> {
 /// [`to`](Self::to) and [`SerializeRef`]) or owns it (see
 /// [`arena`](Self::arena) and [`heap`](Self::heap)).
 ///
-/// The equivalent for deserialization is the
-/// [`SinkHandle`](crate::de::SinkHandle).
+/// Unlike the [`SinkHandle`](crate::de::SinkHandle) of deserialization,
+/// which holds a sink that is already deserializing a value, this holds a
+/// value that is not serialized yet.  The serialization equivalent of a
+/// sink is an emitter in a [`Chunk`].  The constructors line up:
+/// [`to`](Self::to) borrows, [`arena`](Self::arena) and
+/// [`heap`](Self::heap) own in the same way for both handles.
 pub struct SerializeHandle<'a>(pub(crate) HandleInner<'a>);
 
 pub(crate) enum HandleInner<'a> {
@@ -335,8 +342,8 @@ pub(crate) enum HandleInner<'a> {
 impl<'a> SerializeHandle<'a> {
     /// Creates a borrowed handle to a value.
     #[inline(always)]
-    pub fn to<S: Serialize>(val: &'a S) -> SerializeHandle<'a> {
-        SerializeHandle(HandleInner::Borrowed(SerializeRef::new(val)))
+    pub fn to<S: Serialize>(value: &'a S) -> SerializeHandle<'a> {
+        SerializeHandle(HandleInner::Borrowed(SerializeRef::new(value)))
     }
 
     /// Creates an owned handle to a value in the arena of the serialization.
@@ -344,9 +351,9 @@ impl<'a> SerializeHandle<'a> {
     /// This is how owned values are typically created (for instance for
     /// [`Chunk::Forward`]), see [`Boxed`].
     #[inline(always)]
-    pub fn arena<S: Serialize + Send + 'a>(val: S, state: &mut State) -> SerializeHandle<'a> {
+    pub fn arena<S: Serialize + Send + 'a>(value: S, state: &mut State) -> SerializeHandle<'a> {
         SerializeHandle(HandleInner::Owned(boxed::unsize(
-            Boxed::arena(Adapted::<S, S>::owned(val), state),
+            Boxed::arena(Adapted::<S, S>::owned(value), state),
             |x| x as *mut (dyn Erased + Send + 'a),
         )))
     }
@@ -355,9 +362,9 @@ impl<'a> SerializeHandle<'a> {
     ///
     /// Unlike [`arena`](Self::arena) the value does not need a state and is
     /// independent of any serialization.
-    pub fn heap<S: Serialize + Send + 'a>(val: S) -> SerializeHandle<'a> {
+    pub fn heap<S: Serialize + Send + 'a>(value: S) -> SerializeHandle<'a> {
         SerializeHandle(HandleInner::Owned(Boxed::from(
-            Box::new(Adapted::<S, S>::owned(val)) as Box<dyn Erased + Send + 'a>,
+            Box::new(Adapted::<S, S>::owned(value)) as Box<dyn Erased + Send + 'a>,
         )))
     }
 

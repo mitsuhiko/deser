@@ -1171,7 +1171,7 @@ fn test_sink_outlives_state() {
     let mut owned = OwnedSink::<Vec<u32>>::deserialize(driver.state_mut());
     drop(driver);
     assert_eq!(ORPHANED.with(|x| x.get()), orphaned + 2);
-    let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(owned.borrow_mut()));
+    let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::to(owned.get_mut()));
     for event in [Event::seq_start(), 1u64.into(), 2u64.into(), Event::SeqEnd] {
         driver.emit(event).unwrap();
     }

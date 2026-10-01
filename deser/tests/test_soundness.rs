@@ -282,22 +282,22 @@ fn test_owned_sink_after_take() {
     let state = driver.state_mut();
 
     let mut owned = OwnedSink::<Vec<String>>::deserialize(state);
-    owned.borrow_mut().seq(state).unwrap();
+    owned.get_mut().seq(state).unwrap();
     owned
-        .borrow_mut()
+        .get_mut()
         .next_value(state)
         .unwrap()
         .atom(Atom::Str("a".into()), state)
         .unwrap();
-    owned.borrow_mut().finish(state).unwrap();
+    owned.get_mut().finish(state).unwrap();
     assert_eq!(owned.take(), Some(vec!["a".to_string()]));
 
     // after take the sink ignores everything
-    owned.borrow_mut().seq(state).unwrap();
-    let _ = owned.borrow_mut().next_value(state);
-    owned.borrow_mut().finish(state).unwrap();
+    owned.get_mut().seq(state).unwrap();
+    let _ = owned.get_mut().next_value(state);
+    owned.get_mut().finish(state).unwrap();
     assert_eq!(owned.take(), None);
-    assert_eq!(owned.borrow().expecting(), "compatible type");
+    assert_eq!(owned.get().expecting(), "compatible type");
 }
 
 #[test]
@@ -307,14 +307,14 @@ fn test_owned_sink_dropped_half_way() {
     let state = driver.state_mut();
 
     let mut owned = OwnedSink::<BTreeMap<String, Inner>>::deserialize(state);
-    owned.borrow_mut().map(state).unwrap();
+    owned.get_mut().map(state).unwrap();
     owned
-        .borrow_mut()
+        .get_mut()
         .next_key(state)
         .unwrap()
         .atom(Atom::Str("a".into()), state)
         .unwrap();
-    let mut value = owned.borrow_mut().next_value(state).unwrap();
+    let mut value = owned.get_mut().next_value(state).unwrap();
     value.map(state).unwrap();
     drop(value);
     drop(owned);

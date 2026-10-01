@@ -1192,7 +1192,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                 fn __collected_errors(&mut self, __state: &mut __deser::State) -> __deser::Error {
                     #(
                         if self.#flatten_used || <#flatten_ty as __deser::Deserialize<'de>>::initial_value().is_none() {
-                            if let __deser::__derive::Err(__err) = self.#flatten_fields.borrow_mut().finish(__state) {
+                            if let __deser::__derive::Err(__err) = self.#flatten_fields.get_mut().finish(__state) {
                                 self.errors.push(__err, __state);
                             }
                         }
@@ -1272,7 +1272,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                         return __deser::de::Sink::next_value(self, __state).map(__deser::__derive::Some);
                     }
                     #(
-                        if let __deser::__derive::Some(__sink) = self.#flatten_fields.borrow_mut().value_for_key(__key, __state)? {
+                        if let __deser::__derive::Some(__sink) = self.#flatten_fields.get_mut().value_for_key(__key, __state)? {
                             self.#flatten_used = true;
                             self.flatten_current = #flatten_index;
                             return __deser::__derive::Ok(__deser::__derive::Some(__sink));
@@ -1287,7 +1287,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                     // the values that flattened fields took are theirs
                     #(
                         if self.flatten_current == #flatten_index {
-                            return self.#flatten_fields.borrow_mut().recover(__err, __state);
+                            return self.#flatten_fields.get_mut().recover(__err, __state);
                         }
                     )*
                     self.errors.collect(__err, __state)
@@ -1310,7 +1310,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
                             <#flatten_ty as __deser::Deserialize<'de>>::initial_value()
                         };
                         if #flatten_initial.is_none() {
-                            self.#flatten_fields.borrow_mut().finish(__state)?;
+                            self.#flatten_fields.get_mut().finish(__state)?;
                         }
                     )*
                     #unclaimed_keys
@@ -1419,9 +1419,9 @@ impl CompactStruct<'_> {
             // (`FieldSlot`), which exists once per type and adapter
             slot_types.push(match adapter {
                 Some(adapter) => quote_spanned! { adapter.span()=>
-                    __deser::__derive::Slot<#ty, #adapter>
+                    __deser::__derive::FieldValue<#ty, #adapter>
                 },
-                None => quote! { __deser::__derive::Slot<#ty> },
+                None => quote! { __deser::__derive::FieldValue<#ty> },
             });
             if !has_container_default && x.default().is_none() && !x.required() {
                 empty_fields.push(member.clone());
@@ -1531,7 +1531,7 @@ impl CompactStruct<'_> {
                         __deser::__derive::StructSink::handle(
                             __Fields {
                                 slot: __slot,
-                                values: (#(__deser::__derive::Slot::new(#defaults),)*),
+                                values: (#(__deser::__derive::FieldValue::new(#defaults),)*),
                                 _marker: __deser::__derive::PhantomData,
                             },
                             &__INFO, __state)
@@ -1867,57 +1867,57 @@ pub(crate) fn derive_newtype_struct(
                 fn atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().atom(__atom, __state)
+                    self.sink.get_mut().atom(__atom, __state)
                 }
 
                 fn borrowed_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().borrowed_atom(__atom, __state)
+                    self.sink.get_mut().borrowed_atom(__atom, __state)
                 }
 
                 fn map(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                    self.sink.borrow_mut().map(__state)
+                    self.sink.get_mut().map(__state)
                 }
 
                 fn seq(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()>  {
-                    self.sink.borrow_mut().seq(__state)
+                    self.sink.get_mut().seq(__state)
                 }
 
                 fn next_key(&mut self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
-                    self.sink.borrow_mut().next_key(__state)
+                    self.sink.get_mut().next_key(__state)
                 }
 
                 fn next_value(&mut self, __state: &mut __deser::State)
                     -> __deser::__derive::Result<__deser::de::SinkHandle<'_, 'de>>
                 {
-                    self.sink.borrow_mut().next_value(__state)
+                    self.sink.get_mut().next_value(__state)
                 }
 
                 fn __private_key_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().__private_key_atom(__atom, __state)
+                    self.sink.get_mut().__private_key_atom(__atom, __state)
                 }
 
                 fn __private_value_atom(&mut self, __atom: __deser::Atom, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().__private_value_atom(__atom, __state)
+                    self.sink.get_mut().__private_value_atom(__atom, __state)
                 }
 
                 fn __private_borrowed_key_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().__private_borrowed_key_atom(__atom, __state)
+                    self.sink.get_mut().__private_borrowed_key_atom(__atom, __state)
                 }
 
                 fn __private_borrowed_value_atom(&mut self, __atom: __deser::Atom<'de>, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().__private_borrowed_value_atom(__atom, __state)
+                    self.sink.get_mut().__private_borrowed_value_atom(__atom, __state)
                 }
 
                 fn value_for_key(
@@ -1925,23 +1925,23 @@ pub(crate) fn derive_newtype_struct(
                     __key: &str,
                     __state: &mut __deser::State,
                 ) -> __deser::__derive::Result<__deser::__derive::Option<__deser::de::SinkHandle<'_, 'de>>> {
-                    self.sink.borrow_mut().value_for_key(__key, __state)
+                    self.sink.get_mut().value_for_key(__key, __state)
                 }
 
                 fn recover(&mut self, __err: __deser::Error, __state: &mut __deser::State)
                     -> __deser::__derive::Result<()>
                 {
-                    self.sink.borrow_mut().recover(__err, __state)
+                    self.sink.get_mut().recover(__err, __state)
                 }
 
                 fn finish(&mut self, __state: &mut __deser::State) -> __deser::__derive::Result<()> {
-                    self.sink.borrow_mut().finish(__state)?;
+                    self.sink.get_mut().finish(__state)?;
                     *self.slot = self.sink.take().map(#convert);
                     __deser::__derive::Ok(())
                 }
 
                 fn expecting(&self) -> __deser::__derive::StrCow<'_> {
-                    self.sink.borrow().expecting()
+                    self.sink.get().expecting()
                 }
             }
         };

@@ -602,7 +602,7 @@ struct DefaultOnErrorSink<'a, 'de, T> {
 impl<'a, 'de, T> DefaultOnErrorSink<'a, 'de, T> {
     /// Returns the sink of the value unless it failed.
     fn sink(&mut self) -> Option<&mut (dyn Sink<'de> + '_)> {
-        self.sink.as_mut().map(|sink| sink.borrow_mut())
+        self.sink.as_mut().map(|sink| sink.get_mut())
     }
 
     /// Discards the value if the result is an error.
@@ -734,7 +734,7 @@ impl<'a, 'de, T: Default + Send> Sink<'de> for DefaultOnErrorSink<'a, 'de, T> {
 
     fn expecting(&self) -> Cow<'_, str> {
         match self.sink {
-            Some(ref sink) => sink.borrow().expecting(),
+            Some(ref sink) => sink.get().expecting(),
             None => Cow::Borrowed("compatible type"),
         }
     }

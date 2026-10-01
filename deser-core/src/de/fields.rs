@@ -294,11 +294,11 @@ pub struct StructInfo {
 /// The fields of a derived struct without flattened fields.
 ///
 /// The derive implements this for a struct that holds the slot of the
-/// struct and a [`Slot`] for every field.  [`StructSink`] does everything
-/// that does not depend on the types of the fields, it exists once for all
-/// structs, and what depends on the type of a field is done by the
-/// [`FieldSlot`] of the field which exists once per type of field.  The
-/// derive only returns the slot of a field by its index and builds the
+/// struct and a [`FieldValue`] for every field.  [`StructSink`] does
+/// everything that does not depend on the types of the fields, it exists
+/// once for all structs, and what depends on the type of a field is done
+/// by the [`FieldSlot`] of the field which exists once per type of field.
+/// The derive only returns the slot of a field by its index and builds the
 /// struct.
 pub trait StructFields<'de>: Send {
     /// Returns the slot of the field with the index.
@@ -327,9 +327,9 @@ pub trait StructFields<'de>: Send {
 
 /// The value of a field of a derived struct while it's deserialized.
 ///
-/// This is implemented by [`Slot`] for all types of fields (and adapters),
-/// so the code exists once per type of field instead of once per struct
-/// (see [`StructFields`]).
+/// This is implemented by [`FieldValue`] for all types of fields (and
+/// adapters), so the code exists once per type of field instead of once per
+/// struct (see [`StructFields`]).
 pub trait FieldSlot<'de>: Send {
     /// Returns `true` if the field collects the values of a repeated key
     /// (see [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
@@ -357,18 +357,21 @@ pub trait FieldSlot<'de>: Send {
     ) -> Result<(), Error>;
 }
 
-/// The slot of a field of type `T` that is deserialized with the adapter
+/// The value of a field of type `T` that is deserialized with the adapter
 /// `A` (see [`FieldSlot`]).
-pub struct Slot<T, A = Same> {
+///
+/// This is unrelated to the public [`Slot`](crate::de::Slot), the slot of a
+/// value that is deserialized from an atom.
+pub struct FieldValue<T, A = Same> {
     value: Option<T>,
     _adapter: PhantomData<fn() -> A>,
 }
 
-impl<T, A> Slot<T, A> {
+impl<T, A> FieldValue<T, A> {
     /// Creates the slot with an initial value.
     #[inline(always)]
-    pub fn new(value: Option<T>) -> Slot<T, A> {
-        Slot {
+    pub fn new(value: Option<T>) -> FieldValue<T, A> {
+        FieldValue {
             value,
             _adapter: PhantomData,
         }
@@ -432,7 +435,7 @@ pub fn no_field_slot<'x, 'de>() -> &'x mut dyn FieldSlot<'de> {
     Box::leak(Box::new(NoField))
 }
 
-impl<'de, T: Send, A: Deserialize<'de, T>> FieldSlot<'de> for Slot<T, A> {
+impl<'de, T: Send, A: Deserialize<'de, T>> FieldSlot<'de> for FieldValue<T, A> {
     fn collects(&self) -> bool {
         A::__private_collects()
     }

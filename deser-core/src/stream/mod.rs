@@ -22,7 +22,7 @@
 //! connect them to [`std::io`](https://doc.rust-lang.org/std/io/), and
 //! crates like `deser-tokio` to other kinds of IO.
 //!
-//! # Frames and Feeding
+//! # Frames and Partial Deserialization
 //!
 //! A stream deserializer splits the input into frames: it finds the bytes
 //! of the next value in the input that was read so far (see
@@ -31,11 +31,11 @@
 //! deserialized from its frame with the format's regular parser.  Types
 //! can borrow from the frame (see [`InputBuffer::deserialize`]).
 //!
-//! Formats which can be parsed while the input arrives (like JSON and
-//! CBOR) can also deserialize values while the input is fed to them (see
-//! [`InputBuffer::feed`]): the parts of a value are deserialized as they
-//! are read and only incomplete tokens are buffered, which means that the
-//! memory used does not depend on the size of the values.
+//! Formats which can be parsed while the input arrives (like JSON and CBOR)
+//! can also deserialize values while the input is fed to them (see
+//! [`InputBuffer::drive_partial`]): the parts of a value are deserialized
+//! as they are read and only incomplete tokens are buffered, which means
+//! that the memory used does not depend on the size of the values.
 //!
 //! # Large Sequences
 //!

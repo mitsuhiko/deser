@@ -107,7 +107,7 @@ pub use self::codec::Codec;
 /// The values are split and deserialized with a [`StreamDeserializer`] (for
 /// instance `deser_json::StreamDeserializer`).  The reader buffers the
 /// input so it does not need to be buffered.  If the format supports it
-/// (see [`StreamDeserializer::supports_feed`]), values are deserialized
+/// (see [`StreamDeserializer::supports_partial`]), values are deserialized
 /// while their input arrives which means that only incomplete tokens are
 /// buffered.
 pub struct Reader<R, D: StreamDeserializer> {
@@ -171,7 +171,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
         T: DeserializeOwned + 'static,
         F: FnOnce(&mut DeserializeDriver<'_, '_>),
     {
-        if !self.buffer.supports_feed() {
+        if !self.buffer.supports_partial() {
             if !ready!(self.poll_fill(cx))? {
                 return Poll::Ready(Ok(None));
             }
@@ -208,7 +208,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
             }
         };
         loop {
-            match driver.with(|driver| self.buffer.feed(driver))? {
+            match driver.with(|driver| self.buffer.drive_partial(driver))? {
                 Status::Ready => return Poll::Ready(driver.finish().map(Some)),
                 Status::End => return Poll::Ready(Ok(None)),
                 Status::NeedInput => match self.poll_read_more(cx) {

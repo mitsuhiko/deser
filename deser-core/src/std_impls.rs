@@ -320,8 +320,8 @@ where
 
     fn serialize<'a>(value: &'a Result<T, E>, state: &mut State) -> Result<Chunk<'a>, Error> {
         let handle = match value {
-            Ok(value) => SerializeRef::with_adapter::<TA, T>(value).into(),
-            Err(err) => SerializeRef::with_adapter::<EA, E>(err).into(),
+            Ok(value) => SerializeRef::serialize_as::<TA, T>(value).into(),
+            Err(err) => SerializeRef::serialize_as::<EA, E>(err).into(),
         };
         Ok(Chunk::structure(
             ResultEmitter {

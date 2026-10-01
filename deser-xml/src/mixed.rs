@@ -353,7 +353,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> MixedSink<'_, 'de, T, W> {
     fn begin(&mut self, key: &str, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         self.end(state)?;
         let pending = self.pending.insert(OwnedSink::deserialize(state));
-        let sink = pending.borrow_mut();
+        let sink = pending.get_mut();
         sink.map(state)?;
         let mut key_sink = sink.next_key(state)?;
         key_sink.atom(Atom::Lexical(Text::borrowed(key)), state)?;
@@ -367,7 +367,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> MixedSink<'_, 'de, T, W> {
     /// Values that leave no value are left out.
     fn end(&mut self, state: &mut State) -> Result<(), Error> {
         if let Some(mut pending) = self.pending.take() {
-            pending.borrow_mut().finish(state)?;
+            pending.get_mut().finish(state)?;
             self.values.extend(pending.take());
         }
         Ok(())
@@ -449,7 +449,7 @@ impl<'de, T: Deserialize<'de>, W: Whitespace> Sink<'de> for MixedSink<'_, 'de, T
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
         self.key = None;
         match self.pending {
-            Some(ref mut pending) => pending.borrow_mut().recover(err, state),
+            Some(ref mut pending) => pending.get_mut().recover(err, state),
             None => Err(err),
         }
     }

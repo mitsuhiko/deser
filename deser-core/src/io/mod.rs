@@ -65,7 +65,7 @@
 //! ```
 //!
 //! Readers deserialize values while their input arrives if the format
-//! supports it (see [`StreamDeserializer::feed`]),
+//! supports it (see [`StreamDeserializer::drive_partial`]),
 //! otherwise the complete value is buffered first.  Values which borrow
 //! from the reader's buffer are read with [`Reader::read_borrowed`].
 //!
@@ -192,9 +192,9 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
     /// Feeds the next value into a driver.
     ///
     /// Returns `false` if there are no more values.
-    fn feed(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<bool, Error> {
+    fn drive_partial(&mut self, driver: &mut DeserializeDriver<'_, '_>) -> Result<bool, Error> {
         loop {
-            match self.buffer.feed(driver)? {
+            match self.buffer.drive_partial(driver)? {
                 Status::Ready => return Ok(true),
                 Status::End => return Ok(false),
                 Status::NeedInput => self.read_more()?,
@@ -205,7 +205,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
     /// Reads the next value.
     ///
     /// Returns `None` if there are no more values.  If the format supports
-    /// it (see [`StreamDeserializer::supports_feed`]), the value is
+    /// it (see [`StreamDeserializer::supports_partial`]), the value is
     /// deserialized while the input is read which means that only
     /// incomplete tokens are buffered.  Otherwise the complete value is
     /// buffered first.  Whether reading can continue after an error depends
@@ -225,7 +225,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         F: FnOnce(&mut DeserializeDriver<'_, '_>),
     {
         self.ensure_idle()?;
-        if !self.buffer.supports_feed() {
+        if !self.buffer.supports_partial() {
             if !self.fill()? {
                 return Ok(None);
             }
@@ -239,7 +239,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         {
             let mut driver = DeserializeDriver::<'_, 'static>::new(&mut out);
             setup(&mut driver);
-            if !self.feed(&mut driver)? {
+            if !self.drive_partial(&mut driver)? {
                 return Ok(None);
             }
         }
@@ -449,8 +449,8 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
 impl<'de, R: Read, D: StreamDeserializer> Deserializer<'de> for Reader<R, D> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
         self.ensure_idle()?;
-        let found = if self.buffer.supports_feed() {
-            self.feed(driver)?
+        let found = if self.buffer.supports_partial() {
+            self.drive_partial(driver)?
         } else if self.fill()? {
             self.buffer.drive_transient(driver)?;
             true

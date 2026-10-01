@@ -136,21 +136,21 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for LocatedSink<'a, 'de, T> {
                 let located = ext.downcast_ref::<LocatedAtom>().unwrap();
                 self.path = Some(located.path.clone());
                 self.span = located.span;
-                self.sink.borrow_mut().atom(located.value.clone(), state)
+                self.sink.get_mut().atom(located.value.clone(), state)
             }
-            other => self.sink.borrow_mut().atom(other, state),
+            other => self.sink.get_mut().atom(other, state),
         }
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.sink.borrow_mut().finish(state)?;
+        self.sink.get_mut().finish(state)?;
         let (path, span) = (self.path.take(), self.span);
         *self.out = self.sink.take().map(|value| Located { value, path, span });
         Ok(())
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        self.sink.borrow().expecting()
+        self.sink.get().expecting()
     }
 }
 

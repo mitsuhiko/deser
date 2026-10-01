@@ -221,7 +221,7 @@ impl<'a, 'de, T: Deserialize<'de>> TaggedSink<'a, 'de, T> {
     fn compound(&mut self, state: &mut State) -> &mut dyn Sink<'de> {
         self.compound
             .get_or_insert_with(|| OwnedSink::deserialize(state))
-            .borrow_mut()
+            .get_mut()
     }
 }
 
@@ -268,7 +268,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
         match self.compound {
-            Some(ref mut compound) => compound.borrow_mut().recover(err, state),
+            Some(ref mut compound) => compound.get_mut().recover(err, state),
             None => Err(err),
         }
     }
@@ -276,7 +276,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         let value = match self.compound {
             Some(ref mut compound) => {
-                compound.borrow_mut().finish(state)?;
+                compound.get_mut().finish(state)?;
                 compound.take()
             }
             None => self.slot.take(),
@@ -288,7 +288,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for TaggedSink<'a, 'de, T> {
 
     fn expecting(&self) -> Cow<'_, str> {
         if let Some(ref compound) = self.compound {
-            return compound.borrow().expecting();
+            return compound.get().expecting();
         }
         T::expecting()
     }

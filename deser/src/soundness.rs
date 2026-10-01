@@ -25,7 +25,7 @@
 /// let mut state = State::new();
 /// let mut owned = OwnedSink::<u32>::deserialize(&mut state);
 /// let mut local = None::<u32>;
-/// *owned.borrow_mut() =
+/// *owned.get_mut() =
 ///     u32::deserialize_into(&mut local, &mut state);
 /// ```
 ///

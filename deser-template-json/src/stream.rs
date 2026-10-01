@@ -59,7 +59,7 @@ fn skip_whitespace(input: &[u8], pos: usize, eof: bool) -> (usize, bool) {
 struct StreamState {
     // `Trailing::Strict`: the value was read
     done: bool,
-    // parses values while their input arrives (see `feed`)
+    // parses values while their input arrives (see `drive_partial`)
     parser: Parser,
     // the rest of a value that failed in a sink is skipped from the
     // position in the input
@@ -441,10 +441,10 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 ///   values that fail to deserialize, values that are not valid JSON end
 ///   the stream (unless they are read from their frames).
 ///
-/// Except for JSON Lines, values which do not borrow are deserialized
-/// while their input arrives (see
-/// [`StreamDeserializer::feed`](de::StreamDeserializer::feed)) so only
-/// incomplete tokens are buffered.
+/// Except for JSON Lines, values which do not borrow are deserialized while
+/// their input arrives (see
+/// [`StreamDeserializer::drive_partial`](de::StreamDeserializer::drive_partial))
+/// so only incomplete tokens are buffered.
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
@@ -606,11 +606,11 @@ impl de::StreamDeserializer for StreamDeserializer {
 
     /// JSON Lines are read line by line, the other values while their
     /// input arrives.
-    fn supports_feed(&self) -> bool {
+    fn supports_partial(&self) -> bool {
         self.config.trailing_mode() != Trailing::Newline
     }
 
-    fn feed(
+    fn drive_partial(
         &mut self,
         input: &[u8],
         offset: usize,
@@ -656,7 +656,7 @@ impl de::StreamDeserializer for StreamDeserializer {
     }
 
     fn peek(&mut self, input: &[u8], eof: bool) -> Result<Option<Progress>, Error> {
-        if !de::StreamDeserializer::supports_feed(self) {
+        if !de::StreamDeserializer::supports_partial(self) {
             return Ok(None);
         }
         Ok(Some(match self.skip_to_value(input, 0, eof)? {

@@ -11,7 +11,7 @@ fn test_basic() {
 #[test]
 fn test_unsized() {
     assert_eq!(to_string("x").unwrap(), "\"x\"");
-    let value = SerializeRef::with_adapter::<DisplayFromStr, _>(&42u32);
+    let value = SerializeRef::serialize_as::<DisplayFromStr, _>(&42u32);
     assert_eq!(to_string(&value).unwrap(), "\"42\"");
 }
 

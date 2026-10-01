@@ -14,7 +14,9 @@ use alloc::string::String;
 ///
 /// The emitters are typically allocated in the arena of the serialization
 /// with [`Chunk::seq`], [`Chunk::map`] and [`Chunk::structure`] (see
-/// [`Boxed`]).
+/// [`Boxed`]).  They are the serialization equivalent of the
+/// [`Sink`](crate::de::Sink)s of deserialization: they hold the state of a
+/// value that is being serialized.
 pub enum Chunk<'a> {
     Atom(Atom<'a>),
     Struct(Boxed<dyn StructEmitter + 'a>),

@@ -49,7 +49,7 @@ pub(crate) fn serialize_ref(
     match adapter {
         // spanned so that errors about unsupported types point to the adapter
         Some(adapter) => quote_spanned! { adapter.span()=>
-            __deser::ser::SerializeRef::with_adapter::<#adapter, #ty>(#value)
+            __deser::ser::SerializeRef::serialize_as::<#adapter, #ty>(#value)
         },
         None => quote! { __deser::ser::SerializeRef::new(#value) },
     }
