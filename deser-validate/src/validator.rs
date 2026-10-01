@@ -39,8 +39,9 @@ use deser_core::{Error, ErrorAttachment, ErrorKind};
 /// assert!(Slug::validate(&"My Service".to_string()).is_err());
 /// ```
 ///
-/// Most validators are easier to write with the [`validator!`](crate::validator)
-/// macro, which turns a condition or a function into a validator type.
+/// Most validators are easier to write with the
+/// [`validator!`](macro@crate::validator) macro, which turns a condition or
+/// a function into a validator type.
 /// Implementing the trait is needed for types with generics or lifetimes,
 /// which the macro does not support:
 ///

@@ -13,7 +13,7 @@ use crate::event::{Atom, ContainerShape, Event};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
-/// This is a convenient way to safely drive the [`Sink`](crate::de::Sink)
+/// This is a convenient way to safely drive the [`Sink`]
 /// of a [`Deserialize`] without using the call stack for nesting.  As Rust
 /// lifetimes make what this type does internally impossible with safe
 /// code, this is a safe abstraction that hides the unsafety internally.
@@ -448,7 +448,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Emits an event that borrows from the data being deserialized.
     ///
     /// This is like [`emit`](Self::emit) but atoms are passed to
-    /// [`Sink::borrowed_atom`](crate::de::Sink::borrowed_atom) which means
+    /// [`Sink::borrowed_atom`] which means
     /// that types like `&str` can borrow them:
     ///
     /// ```

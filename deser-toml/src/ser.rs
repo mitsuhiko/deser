@@ -26,7 +26,7 @@ use deser_core::ext::{Datetime, Number, Timestamp};
 /// The output is compatible with TOML 1.0.
 ///
 /// [`to_string`](Self::to_string) works like the
-/// [`to_string`](crate::to_string) function.
+/// [`to_string`] function.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SerializerConfig {
     bytes: BytesFormat,
@@ -242,7 +242,7 @@ impl SerializerConfig {
 
     /// Serializes a value to a writer.
     ///
-    /// See [`to_writer`](crate::to_writer).
+    /// See [`to_writer`].
     pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,

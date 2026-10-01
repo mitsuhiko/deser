@@ -573,7 +573,7 @@ impl SerializerConfig {
 
     /// Serializes a value as XML document to a writer.
     ///
-    /// See [`to_writer`](crate::to_writer).
+    /// See [`to_writer`].
     pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
         &self,
         writer: W,

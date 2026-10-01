@@ -49,7 +49,7 @@ impl DeserializerConfig {
 
     /// Deserializes a value from a property list.
     ///
-    /// See [`from_slice`](crate::from_slice).
+    /// See [`from_slice`].
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_slice(input, driver))
     }
@@ -72,7 +72,7 @@ impl DeserializerConfig {
 ///
 /// The format of the input (binary, XML or OpenStep) is detected
 /// automatically (see [`Format::detect`]).  Most of the time the
-/// [`from_slice`](crate::from_slice) function (or the method of the same
+/// [`from_slice`] function (or the method of the same
 /// name on [`DeserializerConfig`]) is all that is needed.  The
 /// deserializer is useful to [`drive`](Self::drive) a custom sink.
 ///

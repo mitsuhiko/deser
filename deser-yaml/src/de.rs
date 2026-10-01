@@ -127,7 +127,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::Source)) which allows resolving the
+    /// [`Source`]) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -164,7 +164,7 @@ impl DeserializerConfig {
 
     /// Deserializes a value from YAML.
     ///
-    /// See [`from_str`](crate::from_str).
+    /// See [`from_str`].
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_str(s, driver))
     }
@@ -181,7 +181,7 @@ impl DeserializerConfig {
 
     /// Deserializes a value from YAML in a byte slice.
     ///
-    /// See [`from_slice`](crate::from_slice).
+    /// See [`from_slice`].
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, bytes: &'de [u8]) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_slice(bytes, driver))
     }
@@ -211,8 +211,8 @@ impl DeserializerConfig {
 /// assert!(de.is_end());
 /// ```
 ///
-/// To deserialize a single document, use [`from_str`](crate::from_str) and
-/// [`from_slice`](crate::from_slice) (or the methods of the same name on
+/// To deserialize a single document, use [`from_str`] and
+/// [`from_slice`] (or the methods of the same name on
 /// [`DeserializerConfig`]).
 ///
 /// # Aliases

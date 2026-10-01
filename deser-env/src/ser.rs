@@ -110,7 +110,7 @@ impl SerializerConfig {
 
     /// Serializes a value into variables with a prefix.
     ///
-    /// See [`to_vars`](crate::to_vars).
+    /// See [`to_vars`].
     pub fn to_vars<T: Serialize + ?Sized>(
         &self,
         prefix: &str,

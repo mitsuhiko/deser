@@ -1,14 +1,14 @@
 //! Serialization of the types of the standard library and other crates as
 //! well-known types.
 
-/// Implements conversions between `num_bigint::BigInt` and [`BigInt`] for
+/// Implements conversions between `num_bigint::BigInt` and [`BigInt`](crate::ext::BigInt) for
 /// a path to the `num_bigint` crate.
 #[cfg(any(feature = "bigdecimal", feature = "num-bigint"))]
 macro_rules! num_bigint_conversions {
     ($num_bigint:path) => {
         use $num_bigint as num_bigint_crate;
 
-        /// Converts a `num_bigint::BigInt` into a [`BigInt`].
+        /// Converts a `num_bigint::BigInt` into a [`BigInt`](crate::ext::BigInt).
         fn from_num(value: &num_bigint_crate::BigInt) -> crate::ext::BigInt {
             let (sign, magnitude) = value.to_bytes_be();
             crate::ext::BigInt {
@@ -17,7 +17,7 @@ macro_rules! num_bigint_conversions {
             }
         }
 
-        /// Converts a [`BigInt`] into a `num_bigint::BigInt`.
+        /// Converts a [`BigInt`](crate::ext::BigInt) into a `num_bigint::BigInt`.
         fn to_num(value: &crate::ext::BigInt) -> num_bigint_crate::BigInt {
             let sign = if value.is_zero() {
                 num_bigint_crate::Sign::NoSign

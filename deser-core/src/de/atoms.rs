@@ -165,11 +165,11 @@ pub(crate) fn default_borrowed_value_atom<'de>(
 /// * [`Atom::Lexical`] is passed on as [`Atom::Str`], so sinks that accept
 ///   strings accept lexical atoms too.
 /// * [`Atom::Implicit`] is passed on as its value and, if that is rejected,
-///   as its text (see [`Implicit`](crate::Implicit)).
+///   as its text (see [`Implicit`]).
 ///
 /// For all other atoms an error is returned that is based on
 /// [`Sink::expecting`] of the sink, which is
-/// [`Deserialize::expecting`](crate::de::Deserialize::expecting) for a
+/// [`Deserialize::expecting`] for a
 /// [`Slot`](crate::de::Slot).
 ///
 /// ```

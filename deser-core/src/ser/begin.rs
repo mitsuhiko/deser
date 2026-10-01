@@ -32,7 +32,7 @@ pub(crate) fn atom_cost(atom: &Atom<'_>) -> usize {
 use crate::ser::StructEmitter;
 use crate::ser::{Emit, SeqEmitter, Serialize, SerializeHandle, SerializeRef};
 
-/// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
+/// The result of [`Serialize::__private_begin`].
 pub struct Begin<'a> {
     pub(crate) kind: BeginKind<'a>,
     pub(crate) shape: ContainerShape,
@@ -104,7 +104,7 @@ impl<'a> Begin<'a> {
     /// need to outlive `'a`.
     ///
     /// This is for the sequences which are generic over adapters (see
-    /// [`erase_unbounded`](crate::ser::erase_unbounded)).
+    /// [`erase_unbounded`](crate::ser::handle::erase_unbounded)).
     ///
     /// # Safety
     ///
@@ -330,7 +330,7 @@ pub const FIELDS_END: usize = usize::MAX;
 /// The events they produce do not depend on anything but the value, which
 /// allows the driver to hand out their events directly instead of driving
 /// every value on its own.  See
-/// [`Serialize::__private_is_plain`](crate::ser::Serialize::__private_is_plain).
+/// [`Serialize::__private_is_plain`].
 pub trait PlainSink {
     fn atom(&mut self, atom: Atom<'_>) -> Result<(), Error>;
     fn seq_start(&mut self, shape: ContainerShape) -> Result<(), Error>;

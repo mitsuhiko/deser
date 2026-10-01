@@ -88,7 +88,7 @@ impl<'a> Emit<'a> {
     /// `'a`.
     ///
     /// This is for the emitters of sequences which are generic over
-    /// adapters (see [`erase_unbounded`](crate::ser::erase_unbounded)).
+    /// adapters (see [`erase_unbounded`](crate::ser::handle::erase_unbounded)).
     ///
     /// # Safety
     ///

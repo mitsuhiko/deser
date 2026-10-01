@@ -14,7 +14,7 @@ use crate::{Validator, Violation};
 /// The value is deserialized with the adapter `A` ([`Same`] by default)
 /// and validated once it's complete.  If it's invalid, deserialization
 /// fails with an error that points at the start of the value and has the
-/// [`Violation`](crate::Violation) attached.  The type of the field does
+/// [`Violation`] attached.  The type of the field does
 /// not change, and the adapter composes with the other adapters and the
 /// containers:
 ///
@@ -89,7 +89,7 @@ use crate::{Validator, Violation};
 /// # Updates
 ///
 /// When a value is updated (see
-/// [`Deserialize::deserialize_update`](deser_core::Deserialize::deserialize_update)),
+/// [`Deserialize::deserialize_update`]),
 /// it's updated with `A` and validated once the update is complete.  Types
 /// that update in place (like derived structs) are merged and then
 /// validated as a whole.  If the updated value is invalid, the update fails

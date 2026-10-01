@@ -32,7 +32,7 @@ pub(crate) type FieldLookup = fn(&str) -> Option<usize>;
 
 /// A function that returns `true` if the field with the index collects the
 /// values of a repeated key (see
-/// [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
+/// [`Deserialize::__private_collects`]).
 pub(crate) type FieldCollects = fn(usize) -> bool;
 
 /// How the value of a field is deserialized.
@@ -305,7 +305,7 @@ pub trait StructFields<'de>: Send {
     fn field(&mut self, index: usize) -> &mut dyn FieldSlot<'de>;
 
     /// Returns the fields that want raw values as bits by index (see
-    /// [`Deserialize::__private_raw`](crate::de::Deserialize::__private_raw)).
+    /// [`Deserialize::__private_raw`]).
     ///
     /// The last bit is set if a field from the 64th on wants a raw value,
     /// these are asked for it (see [`FieldSlot::raw`]).
@@ -332,11 +332,11 @@ pub trait StructFields<'de>: Send {
 /// struct (see [`StructFields`]).
 pub trait FieldSlot<'de>: Send {
     /// Returns `true` if the field collects the values of a repeated key
-    /// (see [`Deserialize::__private_collects`](crate::de::Deserialize::__private_collects)).
+    /// (see [`Deserialize::__private_collects`]).
     fn collects(&self) -> bool;
 
     /// Returns the format of the raw value the field wants (see
-    /// [`Deserialize::__private_raw`](crate::de::Deserialize::__private_raw)).
+    /// [`Deserialize::__private_raw`]).
     fn raw(&self) -> Option<&'static crate::ext::RawFormatInfo>;
 
     /// Returns the sink of the field, optionally collecting its value.
@@ -799,7 +799,7 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
 }
 
 /// The fields of a derived struct that is updated (see
-/// [`Deserialize::deserialize_update`](crate::de::Deserialize::deserialize_update)).
+/// [`Deserialize::deserialize_update`]).
 ///
 /// The derive implements this for structs, [`StructUpdateSink`] does
 /// everything else, it exists once for all structs.

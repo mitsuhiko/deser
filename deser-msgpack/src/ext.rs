@@ -27,7 +27,7 @@ pub(crate) const TIMESTAMP: i8 = -1;
 /// ```
 ///
 /// Timestamps (type `-1`) are converted to and from
-/// [`Timestamp`](deser_core::ext::Timestamp) instead.  They are still
+/// [`Timestamp`] instead.  They are still
 /// accepted by this type which then holds their encoding.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ext {

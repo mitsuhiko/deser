@@ -383,7 +383,7 @@ pub(crate) fn serialize_recorded_atom<'a>(
 /// * If it's deserialized from the format `F`, it holds the input of the
 ///   value as it is.  The format only validates the value and does not
 ///   produce its events, which is fast.  With the
-///   [`Borrowed`](crate::adapters::Borrowed) adapter the input is
+///   [`Borrowed`] adapter the input is
 ///   borrowed.
 /// * Otherwise (from another format or where the format cannot pass on
 ///   the input, see below) the value is encoded in the format `F`.  The
@@ -562,7 +562,7 @@ impl<F: RawFormat> Serialize for Raw<'_, F> {
 
 /// Raw values are deserialized owned so that `Raw<'static, F>` can be
 /// deserialized from any data.  To borrow use the
-/// [`Borrowed`](crate::adapters::Borrowed) adapter.
+/// [`Borrowed`] adapter.
 impl<'de, 'a, F: RawFormat> Deserialize<'de> for Raw<'a, F> {
     fn deserialize_into<'out>(
         out: &'out mut Option<Self>,

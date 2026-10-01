@@ -148,7 +148,7 @@ impl DeserializerConfig {
 
     /// Deserializes the records of a reader.
     ///
-    /// See [`from_reader`](crate::from_reader).
+    /// See [`from_reader`].
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, mut reader: R) -> Result<T, Error> {
         let mut input = alloc::vec::Vec::new();
         reader.read_to_end(&mut input)?;

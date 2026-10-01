@@ -33,7 +33,7 @@ impl DeserializerConfig {
 
     /// Deserializes a value from CBOR.
     ///
-    /// See [`from_slice`](crate::from_slice).
+    /// See [`from_slice`].
     pub fn from_slice<'de, T: Deserialize<'de>>(&self, input: &'de [u8]) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_slice(input, driver))
     }
@@ -66,7 +66,7 @@ impl DeserializerConfig {
 /// assert!(de.is_end());
 /// ```
 ///
-/// To deserialize a single data item, use [`from_slice`](crate::from_slice)
+/// To deserialize a single data item, use [`from_slice`]
 /// (or the method of the same name on [`DeserializerConfig`]).
 pub struct Deserializer<'a> {
     input: &'a [u8],

@@ -96,7 +96,7 @@ impl DeserializerConfig {
 
     /// Deserializes a document from a reader.
     ///
-    /// See [`from_reader`](crate::from_reader).
+    /// See [`from_reader`].
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
         deser_core::io::from_reader(reader, StreamDeserializer::with_config(self))
     }

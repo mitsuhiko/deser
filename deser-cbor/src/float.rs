@@ -69,9 +69,9 @@ fn f64_to_f16(value: f64) -> Option<u16> {
 /// Encodes a single precision float as half precision float if that is
 /// lossless.
 ///
-/// This is the same as [`f64_to_f16`] for the value as `f64` but works on
-/// the bits of the `f32`.  NaN is never converted, the caller has to handle
-/// it.
+/// This is the same as `f64_to_f16` (the reference in the tests) for the
+/// value as `f64` but works on the bits of the `f32`.  NaN is never
+/// converted, the caller has to handle it.
 #[inline]
 pub(crate) fn f32_to_f16(value: f32) -> Option<u16> {
     let bits = value.to_bits();

@@ -149,7 +149,7 @@ impl DeserializerConfig {
     /// The byte range of every event is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::Source)) which allows resolving the
+    /// [`Source`]) which allows resolving the
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
@@ -253,8 +253,8 @@ impl DeserializerConfig {
 /// assert!(de.is_end());
 /// ```
 ///
-/// To deserialize a single value, use [`from_str`](crate::from_str) and
-/// [`from_slice`](crate::from_slice) (or the methods of the same name on
+/// To deserialize a single value, use [`from_str`] and
+/// [`from_slice`] (or the methods of the same name on
 /// [`DeserializerConfig`]).  The deserializer is also useful to
 /// [`drive`](Self::drive) a custom sink.
 pub struct Deserializer<'a> {

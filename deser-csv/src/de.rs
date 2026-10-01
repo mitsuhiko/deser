@@ -276,7 +276,7 @@ impl DeserializerConfig {
     /// The byte range of every field is always published into the state
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
-    /// [`Source`](deser_core::Source)).  This copies the input.
+    /// [`Source`]).  This copies the input.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
         self
