@@ -2010,9 +2010,133 @@ deserialize_as_via!(
         ) -> SinkHandle<'out, 'de> {
             A::deserialize_update(&mut **value, state)
         }
-    },
-    [Send + Sync] Arc
+    }
 );
+
+/// Deserializes the value of an `Arc<T>` with the adapter `Self`.
+///
+/// This is implemented for the adapters of sized values, which are
+/// deserialized and moved into the `Arc`, and for the trait objects of open
+/// enums (see `#[deser::open_enum]`), which are deserialized in a box.
+/// Unsized values cannot implement [`Deserialize`] themselves, so the
+/// implementation of `Deserialize` for `Arc<A>` goes through this trait.
+///
+/// Not public API, used by the code `#[deser::open_enum]` generates.
+#[doc(hidden)]
+pub trait DeserializeArc<'de, T: ?Sized> {
+    /// Creates a sink that deserializes the value into the slot.
+    fn __private_arc_into<'out>(
+        out: &'out mut Option<Arc<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de>;
+
+    /// Returns what the value expects in error messages.
+    fn __private_arc_expecting() -> Cow<'static, str>;
+
+    /// Deserializes an atom into the slot.
+    #[inline]
+    fn __private_arc_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        atom_into_handle(Self::__private_arc_into(out, state), atom, state)
+    }
+
+    /// Deserializes a borrowed atom into the slot.
+    #[inline]
+    fn __private_arc_borrowed_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        borrowed_atom_into_handle(Self::__private_arc_into(out, state), atom, state)
+    }
+
+    /// Returns the format if the value is deserialized as raw value.
+    #[inline(always)]
+    fn __private_arc_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        None
+    }
+}
+
+impl<'de, T: Send + Sync, A: Deserialize<'de, T>> DeserializeArc<'de, T> for A {
+    #[inline]
+    fn __private_arc_into<'out>(
+        out: &'out mut Option<Arc<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        via_handle::<T, Arc<T>, A>(out, state)
+    }
+
+    fn __private_arc_expecting() -> Cow<'static, str> {
+        A::expecting()
+    }
+
+    #[inline]
+    fn __private_arc_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        via_atom_into::<T, Arc<T>, A>(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_arc_borrowed_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        via_borrowed_atom_into::<T, Arc<T>, A>(out, atom, state)
+    }
+
+    #[inline(always)]
+    fn __private_arc_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_raw()
+    }
+}
+
+impl<'de, T: ?Sized + Send + Sync, A: ?Sized + DeserializeArc<'de, T>> Deserialize<'de, Arc<T>>
+    for Arc<A>
+where
+    Arc<A>: Send,
+{
+    #[inline]
+    fn deserialize_into<'out>(
+        out: &'out mut Option<Arc<T>>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::__private_arc_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::__private_arc_expecting()
+    }
+
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        A::__private_arc_atom_into(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<Arc<T>>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        A::__private_arc_borrowed_atom_into(out, atom, state)
+    }
+
+    #[inline(always)]
+    fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
+        A::__private_arc_raw()
+    }
+}
 
 impl<'a, T: ToOwned + Sync + ?Sized> Via<T::Owned> for Cow<'a, T>
 where

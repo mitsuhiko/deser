@@ -24,6 +24,8 @@ mod test_io;
 mod test_layers;
 mod test_lexical;
 mod test_names;
+#[cfg(feature = "open-enums")]
+mod test_open_enums;
 mod test_other;
 mod test_other_crates;
 mod test_ser;

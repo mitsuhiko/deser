@@ -1,0 +1,15 @@
+[package]
+name = "pipeline-extras"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../../deser", features = ["open-enums"] }
+pipeline = { path = "../pipeline" }
+
+[lib]
+test = false
+doctest = false
+doc = false

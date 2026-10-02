@@ -991,3 +991,150 @@
 //!     tags: Vec<String>,
 //! }
 //! ```
+//!
+//! # Open Enums
+//!
+//! With the `open-enums` feature (off by default) a trait can be an open
+//! enum: an enum whose variants are the types that implement the trait,
+//! which can be in any crate.  The trait objects (`Box<dyn Trait>` and
+//! `Arc<dyn Trait>`) are serialized and deserialized like the enums of the
+//! derive, with the name of the type as tag.  This is useful for plugins
+//! and configuration where the set of types is not known to the crate that
+//! defines the trait.
+//!
+//! The trait is marked with [`#[deser::open_enum]`](../attr.open_enum.html) and
+//! every implementation with [`#[deser::variant]`](../attr.variant.html).
+//! Serializing needs nothing else, the variants know their names.  To
+//! deserialize, the variants are registered in an
+//! [`OpenEnums`](crate::OpenEnums) registry which is given to the
+//! deserialization in the [`Context`](crate::Context):
+//!
+//! ```
+//! use deser::de::{DeserializeDriver, DeserializeOwned};
+//! use deser::{Context, Deserialize, DuplicateVariant, Event, OpenEnums, Serialize};
+//!
+//! #[deser::open_enum(tag = "type", rename_all = "snake_case")]
+//! pub trait Step: Send + Sync {
+//!     fn run(&self, input: &str) -> String;
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Replace {
+//!     from: String,
+//!     to: String,
+//! }
+//!
+//! // `{"type": "replace", "from": "a", "to": "b"}`
+//! #[deser::variant]
+//! impl Step for Replace {
+//!     fn run(&self, input: &str) -> String {
+//!         input.replace(&self.from, &self.to)
+//!     }
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Uppercase;
+//!
+//! // `{"type": "upper"}`
+//! #[deser::variant(rename = "upper", alias = "uppercase")]
+//! impl Step for Uppercase {
+//!     fn run(&self, input: &str) -> String {
+//!         input.to_uppercase()
+//!     }
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! pub struct Pipeline {
+//!     steps: Vec<Box<dyn Step>>,
+//! }
+//!
+//! // crates with variants usually provide a function like this
+//! pub fn register(variants: &mut OpenEnums) -> Result<(), DuplicateVariant> {
+//!     variants
+//!         .register::<dyn Step, Replace>()?
+//!         .register::<dyn Step, Uppercase>()?;
+//!     Ok(())
+//! }
+//!
+//! let mut variants = OpenEnums::new();
+//! register(&mut variants).unwrap();
+//! let context = Context::new().with(variants);
+//!
+//! // `{"steps": [{"type": "upper"}]}`, for instance with
+//! // `deser_json::Deserializer::from_str(input).deserialize_in(&context)`
+//! let mut out = None::<Pipeline>;
+//! let mut driver = DeserializeDriver::new(&mut out);
+//! driver.set_context(&context);
+//! for event in [
+//!     Event::map_start(),
+//!     "steps".into(),
+//!     Event::seq_start(),
+//!     Event::map_start(),
+//!     "type".into(),
+//!     "upper".into(),
+//!     Event::MapEnd,
+//!     Event::SeqEnd,
+//!     Event::MapEnd,
+//! ] {
+//!     driver.emit(event).unwrap();
+//! }
+//! drop(driver);
+//! assert_eq!(out.unwrap().steps[0].run("hi"), "HI");
+//! ```
+//!
+//! The representation is configured on the trait like the one of enums:
+//! without `tag` open enums are externally tagged, with `tag` internally
+//! tagged and with `tag` and `content` adjacently tagged.  Untagged open
+//! enums are not supported.  The variants are serialized like newtype
+//! variants with the type as content, so the types of internally tagged
+//! open enums need to be structs or maps (or unit structs, which are the
+//! tag alone).
+//!
+//! Only the variants that are registered are deserialized, which also
+//! limits what untrusted input can create.  Deserializing an open enum
+//! without registry in the context is an error.  The names of the variants
+//! (including their aliases) are unique: registering a variant with the
+//! name of another one fails with
+//! [`DuplicateVariant`](crate::DuplicateVariant).
+//!
+//! The variants are named after their type (the last segment of its path),
+//! in the style of `rename_all`.  Types with generic arguments need a name
+//! (`rename`).
+//!
+//! ## Open Enum Attributes
+//!
+//! These are given to `#[deser::open_enum(...)]`:
+//!
+//! | Attribute | Description |
+//! |---|---|
+//! | `tag = "..."` | Internally tagged with the tag in this key, see [enums](#enums). |
+//! | `content = "..."` | Adjacently tagged with the content in this key (requires `tag`). |
+//! | `tag_alias = "..."`, `content_alias = "..."` | Other keys of the tag or content which are accepted when deserializing. |
+//! | `rename_all = "..."` | Names the variants in this style (the names of the types are in `PascalCase`). |
+//! | `alias_all = "..."` | Accepts the names of the variants in this style as well. |
+//! | `deny_unknown_fields` | Rejects keys besides the tag and the content (adjacently tagged open enums only, the variants deny their unknown fields themselves). |
+//! | `rename = "..."` | The name of the open enum in errors and descriptions (the name of the trait by default). |
+//! | `crate = path` | The path to deser, see [crate path](#crate-path). |
+//!
+//! ## Variant Attributes
+//!
+//! These are given to `#[deser::variant(...)]`:
+//!
+//! | Attribute | Description |
+//! |---|---|
+//! | `rename = ...` | The name of the variant, a string or an integer or boolean (see [tags](#tags)). |
+//! | `alias = ...` | Another name of the variant which is accepted when deserializing. |
+//! | `crate = path` | The path to deser, see [crate path](#crate-path). |
+//!
+//! ## Rules and Limitations
+//!
+//! * The trait needs `Send` and `Sync` as supertraits (values are `Send`
+//!   and `Sync`), it cannot have generic parameters and it needs to be dyn
+//!   compatible.
+//! * Every implementation of the trait needs `#[deser::variant]`, the
+//!   attribute implements a hidden method of the trait (`__deser_variant`)
+//!   which is missing otherwise.  Implementations cannot be generic, the
+//!   types need to implement [`Serialize`](crate::Serialize) and
+//!   [`Deserialize`](crate::Deserialize) without borrowing (they are
+//!   `'static`).
+//! * Unknown tags are errors, there is no catch-all or default variant yet.

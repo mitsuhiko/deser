@@ -1,0 +1,18 @@
+[package]
+name = "open-enums"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["open-enums"] }
+deser-json = { path = "../../deser-json" }
+pipeline = { path = "pipeline" }
+pipeline-extras = { path = "pipeline-extras" }
+
+[[bin]]
+name = "open-enums"
+path = "src/main.rs"
+test = false
+doc = false

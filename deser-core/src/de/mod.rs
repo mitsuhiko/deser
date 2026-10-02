@@ -266,6 +266,8 @@ pub use self::collect::CollectedErrors;
 pub use self::deserializer::{Deserializer, deserialize_value};
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
+#[doc(hidden)]
+pub use self::impls::DeserializeArc;
 pub use self::layer::{Layer, LayerEvent, Limits, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};

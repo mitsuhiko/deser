@@ -67,6 +67,9 @@ What sets deser apart:
 * [`validation`](validation): validating while deserializing with
   `deser-validate`, forms that keep invalid values with their errors and
   API requests rejected with a report of all problems.
+* [`open-enums`](open-enums): a pipeline whose steps are trait objects
+  and other crates add steps, with `#[deser::open_enum]` (the
+  `open-enums` feature).
 * [`protocol`](protocol): a wire protocol with integer tags, enums named
   by their discriminants, tag aliases and forwarding of unknown messages
   without losing data.

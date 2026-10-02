@@ -55,7 +55,7 @@ NO_STD_TARGET_64 := aarch64-unknown-none
 # example uses the derive
 NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hj deser-msgpack deser-plist deser-path deser-debug deser-transcode no-std
 # the features of deser-core that work without `std`
-NO_STD_FEATURES := derive,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
+NO_STD_FEATURES := derive,open-enums,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
 # the crates with speedups that work without `std`
 NO_STD_SPEEDUPS := deser-cbor deser-json deser-jsonc deser-json5 deser-hj deser-msgpack
 NO_STD_SPEEDUPS_FEATURES := $(subst $(space),$(comma),$(foreach crate,$(NO_STD_SPEEDUPS),$(crate)/speedups))

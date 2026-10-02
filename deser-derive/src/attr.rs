@@ -262,6 +262,36 @@ pub(crate) enum RenameAll {
 }
 
 impl RenameAll {
+    /// The styles in the order in which the variants of open enums contain
+    /// their names (see `VariantEntry::styled` in deser-core).  The first
+    /// one keeps the name of the type.
+    #[cfg(feature = "open-enums")]
+    pub(crate) const STYLES: [RenameAll; 8] = [
+        RenameAll::PascalCase,
+        RenameAll::LowerCase,
+        RenameAll::UpperCase,
+        RenameAll::CamelCase,
+        RenameAll::SnakeCase,
+        RenameAll::ScreamingSnakeCase,
+        RenameAll::KebabCase,
+        RenameAll::ScreamingKebabCase,
+    ];
+
+    /// Returns the index of the style in [`STYLES`](Self::STYLES).
+    #[cfg(feature = "open-enums")]
+    pub(crate) fn style_index(self) -> usize {
+        match self {
+            RenameAll::PascalCase => 0,
+            RenameAll::LowerCase => 1,
+            RenameAll::UpperCase => 2,
+            RenameAll::CamelCase => 3,
+            RenameAll::SnakeCase => 4,
+            RenameAll::ScreamingSnakeCase => 5,
+            RenameAll::KebabCase => 6,
+            RenameAll::ScreamingKebabCase => 7,
+        }
+    }
+
     /// Converts the name of a field (in snake case) to the style.
     ///
     /// Letters are converted with the case mappings of Unicode, names are
@@ -294,7 +324,7 @@ impl RenameAll {
     ///
     /// Letters are converted with the case mappings of Unicode, names are
     /// not required to be ASCII.
-    fn apply_to_variant(self, name: &str) -> String {
+    pub(crate) fn apply_to_variant(self, name: &str) -> String {
         match self {
             RenameAll::PascalCase => name.to_string(),
             RenameAll::LowerCase => name.to_lowercase(),
@@ -352,7 +382,7 @@ impl RenameAll {
     }
 
     /// Parses the value of `rename_all = "..."`.
-    fn parse_meta(meta: &ParseNestedMeta) -> syn::Result<RenameAll> {
+    pub(crate) fn parse_meta(meta: &ParseNestedMeta) -> syn::Result<RenameAll> {
         RenameAll::parse(&parse_lit_str(meta)?)
     }
 
@@ -384,7 +414,7 @@ pub(crate) enum Name {
 
 impl Name {
     /// Parses the value of `name = ...`.
-    fn parse(meta: &ParseNestedMeta) -> syn::Result<Name> {
+    pub(crate) fn parse(meta: &ParseNestedMeta) -> syn::Result<Name> {
         let expr: syn::Expr = meta.value()?.parse()?;
         Name::from_expr(expr)
     }
@@ -813,7 +843,7 @@ fn check_conflict(seen: &[SeenAttr], name: &str, others: &[&str]) -> syn::Result
 }
 
 /// Stores a value in a slot that must not have been filled before.
-fn set_once<T>(
+pub(crate) fn set_once<T>(
     meta: &ParseNestedMeta,
     name: &str,
     slot: &mut Option<T>,
@@ -827,7 +857,7 @@ fn set_once<T>(
 }
 
 /// Sets a flag that must not have been set before and does not take a value.
-fn set_flag(meta: &ParseNestedMeta, name: &str, flag: &mut bool) -> syn::Result<()> {
+pub(crate) fn set_flag(meta: &ParseNestedMeta, name: &str, flag: &mut bool) -> syn::Result<()> {
     if has_value(meta) {
         return Err(meta.error(format!("{} does not take a value", name)));
     }
@@ -870,7 +900,7 @@ fn reject_self(tokens: TokenStream) -> syn::Result<()> {
 }
 
 /// Parses the value of `name = path`.
-fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
+pub(crate) fn parse_path(meta: &ParseNestedMeta) -> syn::Result<syn::ExprPath> {
     let path: syn::ExprPath = meta
         .value()?
         .parse()
@@ -1885,7 +1915,7 @@ pub(crate) enum VariantName {
 
 impl VariantName {
     /// Parses the value of `rename = ...` or `alias = ...` of a variant.
-    fn parse(meta: &ParseNestedMeta) -> syn::Result<VariantName> {
+    pub(crate) fn parse(meta: &ParseNestedMeta) -> syn::Result<VariantName> {
         let expr: syn::Expr = meta.value()?.parse()?;
         let (negative, lit) = match expr {
             syn::Expr::Lit(syn::ExprLit { ref lit, .. }) => (false, lit),

@@ -1312,7 +1312,7 @@ pub(crate) fn derive_deserialize(
                     lookup: __lookup #turbofish,
                     other: #other,
                     default: #default,
-                    names: &[#(#names),*],
+                    names: __deser::__derive::VariantNames::Static(&[#(#names),*]),
                 }
             },
         )

@@ -30,6 +30,8 @@ mod bytes_format;
 mod context;
 mod extensions;
 mod foreign_impls;
+#[cfg(feature = "open-enums")]
+mod open_enum;
 mod position;
 mod source;
 mod state;
@@ -44,6 +46,8 @@ pub use self::context::Context;
 pub use self::error::{Error, ErrorAttachment, ErrorCategory, ErrorContext, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;
+#[cfg(feature = "open-enums")]
+pub use self::open_enum::{DuplicateVariant, OpenEnum, OpenEnums, OpenVariant};
 pub use self::position::Position;
 pub use self::source::Source;
 pub use self::state::State;
@@ -113,8 +117,8 @@ pub mod __derive {
     pub use crate::de::enums::{
         AdjacentlyTaggedSink, ArenaVariant, EnumKey, ExternallyTaggedSink, IgnoredContent,
         IgnoredVariant, InternallyTaggedSink, OtherVariant, Tag, UnitEnum, UntaggedTry,
-        ValueVariant, VariantMaker, Variants, atom_sink, unit_enum_atom_into, unit_enum_sink,
-        untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
+        ValueVariant, VariantMaker, VariantNames, Variants, atom_sink, unit_enum_atom_into,
+        unit_enum_sink, untagged_atom, untagged_borrowed_atom, untagged_fallback, untagged_handle,
     };
     pub use crate::de::fields::{
         Collect, FieldKeySink, FieldSlot, FieldValue, NextField, StructFields, StructFinish,
@@ -135,4 +139,18 @@ pub mod __derive {
         UnitName, UnitVariants, begin_unit, describe_unit, serialize_unit, skipped_variant,
     };
     pub use crate::ser::flatten::FlattenedStruct;
+
+    #[cfg(feature = "open-enums")]
+    pub use crate::de::DeserializeArc;
+    #[cfg(feature = "open-enums")]
+    pub use crate::open_enum::{
+        MakeVariant, OpenEnumInfo, OpenRepr, VariantEntry, VariantValue,
+        container_shape as open_enum_container_shape, describe as open_enum_describe,
+        deserialize_arc as open_enum_deserialize_arc, deserialize_box as open_enum_deserialize_box,
+        serialize as open_enum_serialize, variant as open_enum_variant,
+    };
+    #[cfg(feature = "open-enums")]
+    pub use alloc::sync::Arc;
+    #[cfg(feature = "open-enums")]
+    pub use core::any::type_name;
 }

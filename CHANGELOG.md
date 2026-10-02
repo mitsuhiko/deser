@@ -12,6 +12,16 @@ All notable changes to deser are documented here.
   `Deserializer::update_in`, `Serializer::serialize_in`, the
   `set_context` methods of the drivers and of `io::Reader`, `io::Writer`
   and `stream::InputBuffer`.
+- Added open enums (behind the `open-enums` feature, off by default): a
+  trait marked with `#[deser::open_enum]` is an enum whose variants are
+  the implementations marked with `#[deser::variant]`, which can be in any
+  crate.  `Box<dyn Trait>` and `Arc<dyn Trait>` are serialized and
+  deserialized like the enums of the derive (externally, internally or
+  adjacently tagged, with `rename_all`, `alias_all`, aliases and names
+  that are not strings).  The variants are registered explicitly in an
+  `OpenEnums` registry which is given to deserializations in the context.
+  `Arc<T>` is deserialized through a hidden trait (`de::DeserializeArc`)
+  so that it works for the trait objects of open enums.
 - **Breaking:** merged `DeserializeAs` into `Deserialize`, which has a
   type parameter for the type of the value: `Deserialize<'de, T = Self>`.
   Adapters implement `Deserialize<'de, T>` with the methods of

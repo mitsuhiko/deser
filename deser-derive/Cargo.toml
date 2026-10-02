@@ -18,6 +18,11 @@ proc-macro = true
 test = false
 doctest = false
 
+[features]
+# the attribute macros of open enums (`#[deser::open_enum]` and
+# `#[deser::variant]`), which parse items with syn
+open-enums = ["syn/full"]
+
 [dependencies]
 proc-macro2 = "1.0.91"
 quote = "1.0.35"

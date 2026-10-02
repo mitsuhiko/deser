@@ -288,6 +288,7 @@ pub struct TaggedNewtype<'a> {
     tag: &'static str,
     name: SerializeHandle<'a>,
     inner: SerializeRef<'a>,
+    allow_unit: bool,
 }
 
 impl<'a> TaggedNewtype<'a> {
@@ -295,7 +296,23 @@ impl<'a> TaggedNewtype<'a> {
     ///
     /// `name` is the value of the tag.
     pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: SerializeRef<'a>) -> Self {
-        TaggedNewtype { tag, name, inner }
+        TaggedNewtype {
+            tag,
+            name,
+            inner,
+            allow_unit: false,
+        }
+    }
+
+    /// Serializes content that is null (like unit structs) as the tag alone.
+    ///
+    /// The variants of open enums deserialize such content from the tag
+    /// alone (enums handle `()` in the derive and reject other null
+    /// content).
+    #[cfg(feature = "open-enums")]
+    pub(crate) fn allow_unit(mut self) -> Self {
+        self.allow_unit = true;
+        self
     }
 
     /// Converts the value into an [`Emit`].
@@ -377,6 +394,11 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             // the tag alone would be deserialized as the content (not as
             // null), `()` is handled by the derive.
             if content.is_null() {
+                if self.value.allow_unit {
+                    self.done = true;
+                    self.value.inner.finish(state)?;
+                    return Ok(None);
+                }
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
                     "newtype variants of internally tagged enums must contain structs or maps",

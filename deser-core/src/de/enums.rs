@@ -284,7 +284,7 @@ impl<'de> Deserialize<'de> for IgnoredContent {
 ///
 /// Variants are named by strings, integers or booleans.  Non-negative
 /// integers are always [`U64`](Self::U64).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tag<'a> {
     Str(&'a str),
     U64(u64),
@@ -435,7 +435,27 @@ pub struct Variants<'a, 'de, E> {
     /// Creates the variant for missing tags (`#[deser(default)]`).
     pub default: Option<VariantMaker<'a, 'de, E>>,
     /// The names of the variants for errors.
-    pub names: &'static [&'static str],
+    pub names: VariantNames,
+}
+
+/// The names of the variants of a tagged enum, for errors.
+#[derive(Clone, Copy)]
+pub enum VariantNames {
+    /// The names are known at compile time (enums of the derive).
+    Static(&'static [&'static str]),
+    /// The names depend on the state (open enums, whose variants are
+    /// registered in the context).
+    Dynamic(for<'s> fn(&'s State) -> Vec<&'s str>),
+}
+
+impl VariantNames {
+    /// Returns the names.
+    fn get<'s>(&self, state: &'s State) -> Cow<'s, [&'s str]> {
+        match *self {
+            VariantNames::Static(names) => Cow::Borrowed(names),
+            VariantNames::Dynamic(names) => Cow::Owned(names(state)),
+        }
+    }
 }
 
 impl<'a, 'de, E> Clone for Variants<'a, 'de, E> {
@@ -471,7 +491,7 @@ impl<'a, 'de, E> Variants<'a, 'de, E> {
             None => Err(unknown_variant(
                 atom.and_then(tag_display).as_deref(),
                 name,
-                self.names,
+                &self.names.get(state),
             )),
         }
     }
@@ -586,7 +606,7 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
             None => {
                 return Err(unknown_variant_atom(
                     &atom,
-                    self.variants.names,
+                    &self.variants.names.get(state),
                     &self.expecting(),
                 ));
             }

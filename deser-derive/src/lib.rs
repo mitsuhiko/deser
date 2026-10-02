@@ -12,6 +12,8 @@ mod bound;
 mod de;
 mod enums;
 mod forward;
+#[cfg(feature = "open-enums")]
+mod open_enum;
 mod ser;
 mod transparent;
 mod unnamed;
@@ -41,6 +43,35 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as syn::DeriveInput);
     expand(&mut input, de::derive_deserialize)
+}
+
+/// Makes a trait an open enum.
+///
+/// The trait objects (`Box<dyn Trait>` and `Arc<dyn Trait>`) are serialized
+/// and deserialized like enums whose variants are the implementations of
+/// the trait marked with [`variant`](macro@variant).  See
+/// [open enums](derive/index.html#open-enums).
+// the links are relative to the root of deser which inlines the macro
+#[cfg(feature = "open-enums")]
+#[proc_macro_attribute]
+pub fn open_enum(args: TokenStream, input: TokenStream) -> TokenStream {
+    open_enum::expand_open_enum(args.into(), input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Makes an implementation of an open enum a variant.
+///
+/// Every implementation of a trait marked with
+/// [`open_enum`](macro@open_enum) needs this.  See
+/// [open enums](derive/index.html#open-enums).
+// the links are relative to the root of deser which inlines the macro
+#[cfg(feature = "open-enums")]
+#[proc_macro_attribute]
+pub fn variant(args: TokenStream, input: TokenStream) -> TokenStream {
+    open_enum::expand_variant(args.into(), input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 /// Returns the error for unions without a container adapter.

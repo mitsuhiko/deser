@@ -99,11 +99,7 @@ impl Context {
     }
 
     #[inline]
-    fn lookup<'a>(
-        &self,
-        values: &'a [Entry],
-        key: TypeId,
-    ) -> Option<&'a dyn DebugAny> {
+    fn lookup<'a>(&self, values: &'a [Entry], key: TypeId) -> Option<&'a dyn DebugAny> {
         values
             .iter()
             .find(|(k, _)| k.0 == key)
