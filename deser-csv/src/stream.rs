@@ -127,7 +127,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         self.state
-            .emit_record(&self.config, frame, 0, driver)
+            .emit_record(&self.config, frame, 0, false, driver)
             .map_err(|err| err.resolve_position(frame))
     }
 

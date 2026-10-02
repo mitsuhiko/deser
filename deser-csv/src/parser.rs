@@ -35,8 +35,9 @@ pub(crate) struct Dialect {
     pub(crate) escape: Escape,
     pub(crate) comment: Option<u8>,
     classes: [u8; 256],
-    // the special characters (repeated to fill the array) in every byte
-    // of a word
+    // the special characters (repeated to fill the array)
+    special_bytes: [u8; 5],
+    // the special characters in every byte of a word
     specials: [u64; 5],
 }
 
@@ -102,14 +103,14 @@ impl Dialect {
             Terminator::Newline | Terminator::CrLf => (b'\n', b'\r'),
             Terminator::Byte(byte) => (byte, byte),
         };
-        let specials = [
+        let special_bytes = [
             delimiter,
             quote.unwrap_or(delimiter),
             escape.byte().unwrap_or(delimiter),
             first,
             second,
-        ]
-        .map(|byte| u64::from(byte) * LO);
+        ];
+        let specials = special_bytes.map(|byte| u64::from(byte) * LO);
         Ok(Dialect {
             delimiter,
             quote,
@@ -117,6 +118,7 @@ impl Dialect {
             escape,
             comment,
             classes,
+            special_bytes,
             specials,
         })
     }
@@ -133,23 +135,135 @@ impl Dialect {
     }
 
     /// Returns `true` if the text contains a special character.
-    #[inline]
+    ///
+    /// The text is checked eight bytes at a time.  Fields are mostly short,
+    /// so the bytes that do not fill a word are not checked one by one but
+    /// with words that overlap (bytes that are checked twice do not change
+    /// the result).
+    #[inline(always)]
     pub(crate) fn has_special(&self, text: &[u8]) -> bool {
-        // eight bytes at a time: a byte of `x` is zero where the text has
-        // the special character
-        let (chunks, rest) = text.as_chunks::<8>();
-        for chunk in chunks {
-            let word = u64::from_ne_bytes(*chunk);
-            let mut found = 0;
-            for special in self.specials {
-                let x = word ^ special;
-                found |= x.wrapping_sub(LO) & !x & HI;
+        let len = text.len();
+        let word = match len {
+            0 => return false,
+            // the first, middle and last byte are all bytes
+            1..=3 => {
+                let bytes = [text[0], text[len / 2], text[len - 1], text[0]];
+                u64::from(u32::from_ne_bytes(bytes)) * 0x1_0000_0001
             }
-            if found != 0 {
-                return true;
+            4..=8 => u64::from(load_u32(text, 0)) | u64::from(load_u32(text, len - 4)) << 32,
+            _ => {
+                let (chunks, _) = text.as_chunks::<8>();
+                for chunk in chunks {
+                    if self.word_has_special(u64::from_ne_bytes(*chunk)) {
+                        return true;
+                    }
+                }
+                // the last eight bytes (which overlap with the chunks)
+                load_u64(text, len - 8)
             }
+        };
+        self.word_has_special(word)
+    }
+
+    /// Returns `true` if a byte of the word is a special character.
+    #[inline(always)]
+    fn word_has_special(&self, word: u64) -> bool {
+        // a byte of `x` is zero where the word has the special character
+        let mut found = 0;
+        for special in self.specials {
+            let x = word ^ special;
+            found |= x.wrapping_sub(LO) & !x & HI;
         }
-        rest.iter().any(|&b| self.is_special(b))
+        found != 0
+    }
+
+    /// Returns the special characters of the 64 bytes at `start` as bits
+    /// (bit `i` is set if the byte at `start + i` is special).
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
+    #[inline(always)]
+    fn special_mask(&self, input: &[u8], start: usize) -> u64 {
+        use core::arch::aarch64::*;
+        const BITS: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+        let block: &[u8; 64] = input[start..start + 64].try_into().unwrap();
+        // SAFETY: neon is available and the chunks are 16 bytes long
+        unsafe {
+            let specials = self.special_bytes.map(|byte| vdupq_n_u8(byte));
+            let bits = vld1q_u8(BITS.as_ptr());
+            let flags = |chunk: &[u8]| {
+                let chars = vld1q_u8(chunk.as_ptr());
+                let mut flags = vceqq_u8(chars, specials[0]);
+                for &special in &specials[1..] {
+                    flags = vorrq_u8(flags, vceqq_u8(chars, special));
+                }
+                vandq_u8(flags, bits)
+            };
+            let a = flags(&block[..16]);
+            let b = flags(&block[16..32]);
+            let c = flags(&block[32..48]);
+            let d = flags(&block[48..]);
+            // adding neighbors three times combines the bits of 8 bytes
+            let ab = vpaddq_u8(a, b);
+            let cd = vpaddq_u8(c, d);
+            let abcd = vpaddq_u8(ab, cd);
+            vgetq_lane_u64::<0>(vreinterpretq_u64_u8(vpaddq_u8(abcd, abcd)))
+        }
+    }
+
+    /// Returns the special characters of the 64 bytes at `start` as bits
+    /// (bit `i` is set if the byte at `start + i` is special).
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2", not(miri)))]
+    #[inline(always)]
+    fn special_mask(&self, input: &[u8], start: usize) -> u64 {
+        use core::arch::x86_64::*;
+        let block: &[u8; 64] = input[start..start + 64].try_into().unwrap();
+        // SAFETY: sse2 is available and the chunks are 16 bytes long
+        unsafe {
+            let specials = self.special_bytes.map(|byte| _mm_set1_epi8(byte as i8));
+            let bits = |chunk: &[u8]| {
+                let chars = _mm_loadu_si128(chunk.as_ptr().cast::<__m128i>());
+                let mut flags = _mm_cmpeq_epi8(chars, specials[0]);
+                for &special in &specials[1..] {
+                    flags = _mm_or_si128(flags, _mm_cmpeq_epi8(chars, special));
+                }
+                u64::from(_mm_movemask_epi8(flags) as u16)
+            };
+            bits(&block[..16])
+                | bits(&block[16..32]) << 16
+                | bits(&block[32..48]) << 32
+                | bits(&block[48..]) << 48
+        }
+    }
+
+    /// Returns the special characters of the 64 bytes at `start` as bits
+    /// (bit `i` is set if the byte at `start + i` is special).
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "neon", not(miri)),
+        all(target_arch = "x86_64", target_feature = "sse2", not(miri))
+    )))]
+    #[inline(always)]
+    fn special_mask(&self, input: &[u8], start: usize) -> u64 {
+        const LOW: u64 = 0x7f7f_7f7f_7f7f_7f7f;
+        let block: &[u8; 64] = input[start..start + 64].try_into().unwrap();
+        let specials = self.special_bytes.map(|byte| u64::from(byte) * LO);
+        let mut mask = 0;
+        for (index, chunk) in block.as_chunks::<8>().0.iter().enumerate() {
+            let word = u64::from_le_bytes(*chunk);
+            // the high bit of a byte of `rest` is set if the byte is none of
+            // the special characters: `(x & LOW) + LOW` has it set if the low
+            // bits of the byte of `x` are not zero (without carries between
+            // bytes), with `x` if the byte is not zero
+            let mut rest = u64::MAX;
+            for special in specials {
+                let x = word ^ special;
+                rest &= ((x & LOW) + LOW) | x;
+            }
+            let found = !(rest | LOW) >> 7;
+            // moves the lowest bit of every byte into the highest byte (byte
+            // `i` to bit `56 + i`), the products do not overlap
+            let bits = found.wrapping_mul(0x0102_0408_1020_4080) >> 56;
+            mask |= bits << (index * 8);
+        }
+        mask
     }
 
     /// Returns `true` if the byte ends a record.
@@ -219,6 +333,54 @@ pub(crate) struct Options {
     /// accepted.
     pub(crate) lenient_quotes: bool,
     pub(crate) max_record_len: usize,
+}
+
+/// The special characters of 64 bytes of the input, see `next_special`.
+#[derive(Clone, Copy)]
+struct Block {
+    start: usize,
+    mask: u64,
+}
+
+impl Block {
+    /// A block that holds no position: positions are at most `isize::MAX`,
+    /// their offset to it (wrapping around) is at least `isize::MAX + 1`.
+    const NONE: Block = Block {
+        start: isize::MAX as usize + 1,
+        mask: 0,
+    };
+}
+
+/// Returns the position of the first special character at or after `pos`
+/// (or the length of the input).
+///
+/// Fields are found with masks of the special characters of 64 bytes, which
+/// are kept for the fields that follow.  Looking at the bytes one by one
+/// costs a mispredicted branch at the end of every field.  The bytes at the
+/// end, which do not fill a block, are looked at one by one.
+#[inline(always)]
+fn next_special(dialect: &Dialect, input: &[u8], mut pos: usize, block: &mut Block) -> usize {
+    let len = input.len();
+    loop {
+        let offset = pos.wrapping_sub(block.start);
+        if offset < 64 {
+            let mask = block.mask >> offset;
+            if mask != 0 {
+                return pos + mask.trailing_zeros() as usize;
+            }
+            pos = block.start + 64;
+        }
+        if len - pos < 64 {
+            while pos < len && dialect.class(input[pos]) == OTHER {
+                pos += 1;
+            }
+            return pos;
+        }
+        *block = Block {
+            start: pos,
+            mask: dialect.special_mask(input, pos),
+        };
+    }
 }
 
 /// Finds the fields of records.
@@ -311,7 +473,8 @@ impl Scanner {
 
         let len = input.len();
         let mut pos = self.pos;
-        while pos < len {
+        let mut block = Block::NONE;
+        'scan: while pos < len {
             match self.mode {
                 Mode::Comment => {
                     match input[pos..].iter().position(|&b| dialect.is_terminator(b)) {
@@ -357,18 +520,29 @@ impl Scanner {
                         }
                     }
                 }
-                Mode::Unquoted => {
-                    while pos < len && dialect.class(input[pos]) == OTHER {
-                        pos += 1;
-                    }
+                // the fields that follow are unquoted too (most are), they
+                // are scanned here without going through the modes
+                Mode::Unquoted => loop {
+                    pos = next_special(dialect, input, pos, &mut block);
                     let Some(&byte) = input.get(pos) else {
-                        break;
+                        break 'scan;
                     };
                     match dialect.class(byte) {
                         DELIMITER => {
                             self.push_unquoted(input, pos, options);
                             pos += 1;
-                            self.start_field(pos);
+                            if !options.trim
+                                && let Some(&next) = input.get(pos)
+                                && dialect.class(next) == OTHER
+                            {
+                                self.span_start = pos;
+                                self.start = pos;
+                                self.flags = 0;
+                                pos += 1;
+                            } else {
+                                self.start_field(pos);
+                                break;
+                            }
                         }
                         QUOTE => {
                             if !options.lenient_quotes {
@@ -380,13 +554,14 @@ impl Scanner {
                             self.flags |= UNESCAPE;
                             self.mode = Mode::UnquotedEscape;
                             pos += 1;
+                            break;
                         }
                         _ => {
                             self.push_unquoted(input, pos, options);
                             return Ok(self.end_record(dialect, input, pos, eof));
                         }
                     }
-                }
+                },
                 Mode::UnquotedEscape => {
                     pos += 1;
                     self.mode = Mode::Unquoted;
@@ -562,6 +737,18 @@ impl Scanner {
     }
 }
 
+/// Reads four bytes at `pos`.
+#[inline(always)]
+pub(crate) fn load_u32(bytes: &[u8], pos: usize) -> u32 {
+    u32::from_ne_bytes(*bytes[pos..].first_chunk().unwrap())
+}
+
+/// Reads eight bytes at `pos`.
+#[inline(always)]
+pub(crate) fn load_u64(bytes: &[u8], pos: usize) -> u64 {
+    u64::from_ne_bytes(*bytes[pos..].first_chunk().unwrap())
+}
+
 #[inline(always)]
 fn is_space(byte: u8) -> bool {
     byte == b' ' || byte == b'\t'
@@ -686,18 +873,90 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_long_records() {
+        // records longer than the blocks of 64 bytes the fields are found
+        // with, with the special characters at all offsets in the blocks
+        const FIELDS: [(&str, &str); 8] = [
+            ("", ""),
+            ("a", "a"),
+            ("hello world", "hello world"),
+            ("\"a, \"\"b\"\"\"", "a, \"b\""),
+            ("\"x\ny\"", "x\ny"),
+            ("-1.5", "-1.5"),
+            (
+                "a long field that does not fit into a block of sixty-four bytes",
+                "a long field that does not fit into a block of sixty-four bytes",
+            ),
+            ("\u{e4}\u{f6}\u{fc}\u{df}", "\u{e4}\u{f6}\u{fc}\u{df}"),
+        ];
+        let mut input = String::new();
+        let mut expected = Vec::new();
+        let mut state = 1u32;
+        for _ in 0..if cfg!(miri) { 8 } else { 64 } {
+            let mut record = Vec::new();
+            for index in 0..7 {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let (text, value) = FIELDS[(state >> 16) as usize % FIELDS.len()];
+                if index > 0 {
+                    input.push(',');
+                }
+                input.push_str(text);
+                record.push(value.to_string());
+            }
+            // a record with a single empty field would be a blank line
+            if record.iter().all(|value| value.is_empty()) {
+                input.push('x');
+                record[6] = "x".into();
+            }
+            input.push_str(if state & 1 << 20 != 0 { "\r\n" } else { "\n" });
+            expected.push(record);
+        }
+        let input = input.as_bytes();
+        for size in [1, 3, 8, 63, 64, 65, 100, input.len()] {
+            assert_eq!(scan_all(input, size), expected, "size {}", size);
+        }
+    }
+
+    #[test]
     fn test_has_special() {
         let dialect = dialect();
         assert!(!dialect.has_special(b""));
         assert!(!dialect.has_special(b"abcdefghijklmnop\x80\xff"));
         for special in *b",\"\n\r" {
-            for len in 1..20 {
+            for len in 1..40 {
+                assert!(!dialect.has_special(&vec![b'x'; len]));
                 for pos in 0..len {
                     let mut text = vec![b'x'; len];
                     text[pos] = special;
                     assert!(dialect.has_special(&text), "{:?}", text);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_special_mask() {
+        let dialect = dialect();
+        let mut input = [b'x'; 64];
+        assert_eq!(dialect.special_mask(&input, 0), 0);
+        for special in *b",\"\n\r" {
+            for pos in 0..64 {
+                input[pos] = special;
+                // the neighbors of special characters are not special (also
+                // the ones that differ in a bit)
+                if pos > 0 {
+                    input[pos - 1] = special ^ 1;
+                }
+                assert_eq!(dialect.special_mask(&input, 0), 1 << pos, "{:?}", input);
+                input = [b'x'; 64];
+            }
+        }
+        let input: Vec<u8> = (0..=255).collect();
+        for start in 0..=(256 - 64) {
+            let expected = (0..64).fold(0u64, |mask, index| {
+                mask | (u64::from(dialect.is_special(input[start + index])) << index)
+            });
+            assert_eq!(dialect.special_mask(&input, start), expected);
         }
     }
 

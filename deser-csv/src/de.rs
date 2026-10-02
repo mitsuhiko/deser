@@ -518,12 +518,14 @@ impl StreamState {
     /// Emits the record that was found last.
     ///
     /// `record` holds the bytes of the record, `base` is its offset in the
-    /// input for the input ranges.
+    /// input for the input ranges.  `utf8` is set if the record is known to
+    /// be UTF-8 (the input is a string), otherwise it's checked.
     pub(crate) fn emit_record<'de>(
         &mut self,
         config: &DeserializerConfig,
         record: &'de [u8],
         base: usize,
+        utf8: bool,
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         let StreamState {
@@ -577,7 +579,7 @@ impl StreamState {
             record,
             // the special characters are ASCII, so if the record is UTF-8
             // all of its fields are
-            record_is_utf8: record.is_ascii() || core::str::from_utf8(record).is_ok(),
+            record_is_utf8: utf8 || record.is_ascii() || core::str::from_utf8(record).is_ok(),
             base,
         };
         // the start and end of the record are at its start and end (for
@@ -697,6 +699,8 @@ impl<'de> FieldEmitter<'_, 'de> {
 /// ```
 pub struct Deserializer<'a> {
     input: &'a [u8],
+    // the input is a string
+    utf8: bool,
     pos: usize,
     config: DeserializerConfig,
     state: StreamState,
@@ -709,12 +713,12 @@ impl<'a> Deserializer<'a> {
     /// Creates a new deserializer for a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(input: &'a str) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input.as_bytes(), &DeserializerConfig::new())
+        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a string with the given configuration.
     pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input.as_bytes(), config)
+        Deserializer::new(input.as_bytes(), true, config)
     }
 
     /// Creates a new deserializer for a byte slice.
@@ -730,8 +734,13 @@ impl<'a> Deserializer<'a> {
         input: &'a [u8],
         config: &DeserializerConfig,
     ) -> Deserializer<'a> {
+        Deserializer::new(input, false, config)
+    }
+
+    fn new(input: &'a [u8], utf8: bool, config: &DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             input,
+            utf8,
             pos: 0,
             config: config.clone(),
             state: StreamState::default(),
@@ -852,7 +861,7 @@ impl<'a> Deserializer<'a> {
         let input = self.input;
         self.set_source(driver);
         self.state
-            .emit_record(&self.config, &input[start..end], start, driver)?;
+            .emit_record(&self.config, &input[start..end], start, self.utf8, driver)?;
         Ok(true)
     }
 
@@ -923,7 +932,7 @@ impl<'a> Deserializer<'a> {
         driver.emit(Event::SeqStart(shape))?;
         while let Some((start, end)) = next {
             self.state
-                .emit_record(&self.config, &input[start..end], start, driver)?;
+                .emit_record(&self.config, &input[start..end], start, self.utf8, driver)?;
             next = self.next_record()?;
         }
         driver.emit(Event::SeqEnd)
