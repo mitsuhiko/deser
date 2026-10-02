@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.65s | 2.78s | 3.02s           |
-| miniserde | 1.97s | 2.18s | 2.22s           |
-| deser     | 2.46s | 2.61s | 2.82s           |
+| serde     | 2.42s | 2.53s | 2.96s           |
+| miniserde | 1.88s | 1.99s | 2.12s           |
+| deser     | 2.36s | 2.50s | 2.68s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -26,11 +26,11 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.34s | 0.42s | 7.96s           |
-| miniserde | 0.15s | 0.20s | 1.54s           |
-| deser     | 0.37s | 0.47s | 3.46s           |
+| serde     | 0.33s | 0.42s | 7.83s           |
+| miniserde | 0.15s | 0.19s | 1.52s           |
+| deser     | 0.37s | 0.50s | 3.75s           |
 
-* Clean builds are 0.4s-0.6s slower than with miniserde.  The crates of the
+* Clean builds are 0.5s-0.6s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
   `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
@@ -39,9 +39,9 @@ is a library, in a binary only the code that is used would be compiled.
   float formatting of `deser-json`) costs 0.15s: it runs at the same
   time as the one of `proc-macro2` at the start of the critical path
   and slows it down.
-* Release builds of derived code are 2.3 times as fast as with serde
-  but 2.2 times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 240k lines of LLVM IR
+* Release builds of derived code are 2.1 times as fast as with serde
+  but 2.5 times slower than with miniserde (deser 0.8 from 2023 took
+  3.1s, with far fewer features).  deser generates 271k lines of LLVM IR
   (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
   The frontend (`check`) spends most of its time type and borrow checking
   the derived code, the expanded library has 61k lines (serde 71k,
@@ -125,23 +125,23 @@ parentheses is how much larger they are than hello world (in KiB).
 | hello world                     | 334 KiB          | 279 KiB         |
 | serde                           | 418 KiB (+84)    | 311 KiB (+32)   |
 | miniserde                       | 383 KiB (+49)    | 295 KiB (+16)   |
-| deser                           | 586 KiB (+252)   | 409 KiB (+129)  |
-| deser (without zmij)            | 619 KiB (+285)   | 425 KiB (+146)  |
+| deser                           | 635 KiB (+301)   | 409 KiB (+129)  |
+| deser (without zmij)            | 652 KiB (+318)   | 441 KiB (+162)  |
 | serde, 100 types                | 1226 KiB (+892)  | 860 KiB (+581)  |
 | miniserde, 100 types            | 644 KiB (+310)   | 491 KiB (+211)  |
-| deser, 100 types                | 963 KiB (+629)   | 655 KiB (+375)  |
-| deser (without zmij), 100 types | 979 KiB (+645)   | 687 KiB (+408)  |
+| deser, 100 types                | 1110 KiB (+776)  | 671 KiB (+391)  |
+| deser (without zmij), 100 types | 1127 KiB (+793)  | 703 KiB (+424)  |
 
-* The fixed cost of deser is high: the small program is 170 KiB larger
-  than with serde (100 KiB optimized for size).  The derived code of
+* The fixed cost of deser is high: the small program is 217 KiB larger
+  than with serde (98 KiB optimized for size).  The derived code of
   the small program is only 3.5 KiB, the rest is the runtime (the
   drivers, the JSON reader and writer, errors, extension values like big
   integers and base64 bytes) and the parts of the standard library it
   uses.
-* A type costs less than with serde: 3.8 KiB per struct and enum
-  against 8.1 KiB with serde (2.5 KiB against 5.5 KiB optimized for
-  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 21%
-  smaller than serde.  It was 6.5 KiB (3.9 KiB): the fields are
+* A type costs less than with serde: 4.8 KiB per struct and enum
+  against 8.1 KiB with serde (2.6 KiB against 5.5 KiB optimized for
+  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 9%
+  smaller than serde (22% optimized for size).  It was 6.5 KiB (3.9 KiB): the fields are
   deserialized by slots that exist once per type of field (see above),
   functions like `from_str` only create the sink of the value for every
   type (`deserialize_value`) and the helpers that serialize, describe
@@ -158,7 +158,7 @@ parentheses is how much larger they are than hello world (in KiB).
   formats, enabled by default).  Without it they are formatted with the
   standard library's `{:e}` and parsed again to pick the even digits of
   ties (`format_finite`).  This links the float formatting and parsing
-  of the standard library, the program is 33 KiB larger (16 KiB
+  of the standard library, the program is 17 KiB larger (32 KiB
   optimized for size).
 * **Profiles** matter more than with serde: on their own
   `codegen-units = 1` and `panic = "abort"` each make the small program
