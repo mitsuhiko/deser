@@ -5,13 +5,19 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
-use crate::num::{Float, IntBuffer, format_finite};
+use crate::num::{Float, IntBuffer};
 use deser_core::ext::Number;
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
-use crate::parser::Dialect;
+use crate::parser::{Dialect, load_u32, load_u64};
+
+/// Reads sixteen bytes at `pos`.
+#[inline(always)]
+fn load_u128(bytes: &[u8], pos: usize) -> u128 {
+    u128::from_ne_bytes(*bytes[pos..].first_chunk().unwrap())
+}
 use crate::{Escape, Nulls, QuoteStyle, Terminator};
 
 /// Configures how values are serialized into delimited text.
@@ -331,6 +337,9 @@ impl SerializerConfig {
             encoder: FieldEncoder {
                 config: self,
                 dialect,
+                plain: matches!(self.quote_style, QuoteStyle::Necessary | QuoteStyle::Never)
+                    && self.nulls == Nulls::None
+                    && !self.escape_formulas,
             },
             names: state.names.take(),
             len: state.len,
@@ -341,7 +350,7 @@ impl SerializerConfig {
             record_start: 0,
             field_ends: core::mem::take(&mut state.buffers.field_ends),
             record: core::mem::take(&mut state.buffers.record),
-            scratch: core::mem::take(&mut state.buffers.scratch),
+            scratch: Scratch::new(core::mem::take(&mut state.buffers.scratch)),
             open: false,
             limit,
             out,
@@ -360,7 +369,7 @@ impl SerializerConfig {
         state.buffers = Buffers {
             field_ends: writer.field_ends,
             record: writer.record,
-            scratch: writer.scratch,
+            scratch: writer.scratch.bytes,
         };
         rv
     }
@@ -808,7 +817,7 @@ struct RecordWriter<'a> {
     /// The collected record (while not writing directly).
     record: Record,
     /// The text of numbers and other atoms that are not text.
-    scratch: Vec<u8>,
+    scratch: Scratch,
     /// A record is being written.
     open: bool,
     /// The driver is paused between records once the output is this long.
@@ -904,7 +913,7 @@ impl RecordWriter<'_> {
     }
 
     /// Handles a key or field of a record.
-    #[inline]
+    #[inline(always)]
     fn atom(&mut self, atom: &Atom<'_>, is_key: bool) -> Result<(), Error> {
         if is_key {
             return self.key(atom);
@@ -925,7 +934,23 @@ impl RecordWriter<'_> {
     }
 
     /// Handles the key of a field.
+    #[inline(always)]
     fn key(&mut self, atom: &Atom<'_>) -> Result<(), Error> {
+        // most keys are the names of the columns in their order
+        if self.direct
+            && let Atom::Str(key) = atom
+            && let Some(names) = &self.names
+            && let Some(name) = names.get(self.fields)
+            && same_key(name.as_bytes(), key.as_bytes())
+        {
+            return Ok(());
+        }
+        self.other_key(atom)
+    }
+
+    /// Handles a key that is not the name of the next column (see `key`).
+    #[inline(never)]
+    fn other_key(&mut self, atom: &Atom<'_>) -> Result<(), Error> {
         let key = match atom {
             Atom::Null | Atom::Bytes(_) => None,
             atom => self.encoder.text(atom, &mut self.scratch)?,
@@ -935,7 +960,9 @@ impl RecordWriter<'_> {
             self.record.keys.extend_from_slice(key.bytes);
         } else {
             let names = self.names.as_deref().unwrap_or_default();
-            if names.get(self.fields).map(String::as_bytes) == Some(key.bytes) {
+            if let Some(name) = names.get(self.fields)
+                && same_key(name.as_bytes(), key.bytes)
+            {
                 return Ok(());
             }
             let key = key.bytes.to_vec();
@@ -1100,11 +1127,30 @@ struct Text<'a> {
 struct FieldEncoder<'a> {
     config: &'a SerializerConfig,
     dialect: &'a Dialect,
+    /// Text without special characters is written as it is: fields are
+    /// only quoted if necessary, null is empty and formulas are not
+    /// escaped.
+    plain: bool,
 }
 
 impl FieldEncoder<'_> {
     /// Encodes a field (`None` for null).
+    #[inline(always)]
     fn encode(&self, text: Option<Text<'_>>, out: &mut Vec<u8>) -> Result<(), Error> {
+        // most fields are written as they are
+        if self.plain
+            && let Some(Text { bytes, .. }) = text
+            && !self.dialect.has_special(bytes)
+        {
+            push_bytes(out, bytes);
+            return Ok(());
+        }
+        self.encode_special(text, out)
+    }
+
+    /// Encodes a field that is not written as it is (see `encode`).
+    #[inline(never)]
+    fn encode_special(&self, text: Option<Text<'_>>, out: &mut Vec<u8>) -> Result<(), Error> {
         let config = self.config;
         let Some(Text { bytes, numeric }) = text else {
             if let Nulls::Text(null) = config.nulls {
@@ -1228,46 +1274,38 @@ impl FieldEncoder<'_> {
     /// Returns the text of an atom, `None` for null.
     ///
     /// Text that is not a string is written into `scratch`.
+    #[inline(always)]
     fn text<'a>(
+        &self,
+        atom: &'a Atom<'_>,
+        scratch: &'a mut Scratch,
+    ) -> Result<Option<Text<'a>>, Error> {
+        let (bytes, numeric) = match *atom {
+            Atom::Str(ref value) | Atom::Lexical(ref value) => (value.as_bytes(), false),
+            Atom::Null => return Ok(None),
+            Atom::Bool(value) => (if value { &b"true"[..] } else { b"false" }, false),
+            // numbers are formatted on the stack
+            Atom::U64(value) => (scratch.int.format_u64(value).as_bytes(), true),
+            Atom::I64(value) => (scratch.int.format_i64(value).as_bytes(), true),
+            Atom::F64(value) => (scratch.float(value), true),
+            Atom::F32(value) => (scratch.float(value), true),
+            _ => return self.other_text(atom, &mut scratch.bytes),
+        };
+        Ok(Some(Text { bytes, numeric }))
+    }
+
+    /// Returns the text of an atom that is not a number (see `text`).
+    #[inline(never)]
+    fn other_text<'a>(
         &self,
         atom: &'a Atom<'_>,
         scratch: &'a mut Vec<u8>,
     ) -> Result<Option<Text<'a>>, Error> {
         scratch.clear();
         let numeric = match *atom {
-            Atom::Null => return Ok(None),
-            Atom::Bool(value) => {
-                let text: &[u8] = if value { b"true" } else { b"false" };
-                return Ok(Some(Text {
-                    bytes: text,
-                    numeric: false,
-                }));
-            }
-            Atom::Str(ref value) | Atom::Lexical(ref value) => {
-                return Ok(Some(Text {
-                    bytes: value.as_bytes(),
-                    numeric: false,
-                }));
-            }
             Atom::Char(value) => {
                 scratch.extend_from_slice(value.encode_utf8(&mut [0; 4]).as_bytes());
                 false
-            }
-            Atom::U64(value) => {
-                scratch.extend_from_slice(IntBuffer::new().format_u64(value).as_bytes());
-                true
-            }
-            Atom::I64(value) => {
-                scratch.extend_from_slice(IntBuffer::new().format_i64(value).as_bytes());
-                true
-            }
-            Atom::F32(value) => {
-                write_float(scratch, value);
-                true
-            }
-            Atom::F64(value) => {
-                write_float(scratch, value);
-                true
             }
             Atom::Bytes(ref bytes) => {
                 let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
@@ -1293,7 +1331,7 @@ impl FieldEncoder<'_> {
                             format!("CSV does not support {}", ext.name()),
                         )),
                         fallback => {
-                            let mut inner = Vec::new();
+                            let mut inner = Scratch::new(Vec::new());
                             let numeric = match self.text(&fallback, &mut inner)? {
                                 Some(text) => {
                                     let numeric = text.numeric;
@@ -1313,7 +1351,7 @@ impl FieldEncoder<'_> {
             }
             // values whose type was inferred from text are written as value
             Atom::Implicit(ref value) => {
-                let mut inner = Vec::new();
+                let mut inner = Scratch::new(Vec::new());
                 return Ok(match self.text(&value.value().to_atom(), &mut inner)? {
                     Some(text) => {
                         let numeric = text.numeric;
@@ -1350,14 +1388,137 @@ impl fmt::Write for ByteWriter<'_> {
     }
 }
 
-/// Writes a float with the shortest text that reads back as the same value
-/// of its type (`f32` or `f64`), like the other formats.
-fn write_float<F: Float>(out: &mut Vec<u8>, value: F) {
-    if value.is_finite() {
-        out.extend_from_slice(format_finite(value).as_bytes());
-    } else {
-        // `NaN`, `inf` and `-inf`
-        let _ = write!(ByteWriter(out), "{}", value.to_f64());
+/// Holds the text of atoms that are not text (see `FieldEncoder::text`).
+struct Scratch {
+    /// Text that is not a number.
+    bytes: Vec<u8>,
+    int: IntBuffer,
+    #[cfg(feature = "zmij")]
+    float: zmij::Buffer,
+}
+
+impl Scratch {
+    fn new(bytes: Vec<u8>) -> Scratch {
+        Scratch {
+            bytes,
+            int: IntBuffer::new(),
+            #[cfg(feature = "zmij")]
+            float: zmij::Buffer::new(),
+        }
+    }
+
+    /// Formats a float with the shortest text that reads back as the same
+    /// value of its type (`f32` or `f64`), like the other formats.
+    #[inline]
+    fn float<F: FormatFloat>(&mut self, value: F) -> &[u8] {
+        if !value.is_finite() {
+            // `NaN`, `inf` and `-inf`
+            self.bytes.clear();
+            let _ = write!(ByteWriter(&mut self.bytes), "{}", value.to_f64());
+            return &self.bytes;
+        }
+        #[cfg(feature = "zmij")]
+        {
+            self.float.format_finite(value).as_bytes()
+        }
+        #[cfg(not(feature = "zmij"))]
+        {
+            self.bytes.clear();
+            self.bytes
+                .extend_from_slice(crate::num::format_finite(value).as_bytes());
+            &self.bytes
+        }
+    }
+}
+
+/// The floats that can be formatted.
+#[cfg(feature = "zmij")]
+trait FormatFloat: zmij::Float + Float {}
+
+#[cfg(feature = "zmij")]
+impl<F: zmij::Float + Float> FormatFloat for F {}
+
+#[cfg(not(feature = "zmij"))]
+trait FormatFloat: Float {}
+
+#[cfg(not(feature = "zmij"))]
+impl<F: Float> FormatFloat for F {}
+
+/// Appends bytes to the output.
+///
+/// Fields are mostly short, and for them `extend_from_slice` spends more
+/// time calling `memcpy` than copying.  Up to 32 bytes are copied with two
+/// writes that overlap.
+#[inline(always)]
+fn push_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
+    let len = bytes.len();
+    if len > 32 {
+        out.extend_from_slice(bytes);
+        return;
+    }
+    out.reserve(32);
+    let start = out.len();
+    // SAFETY: there is room for 32 bytes after the end of the output.  The
+    // writes are within the first `len` of them and cover all of them, so
+    // the output is initialized up to its new length.
+    unsafe {
+        let dst = out.as_mut_ptr().add(start);
+        match len {
+            0 => {}
+            // the first, middle and last byte are all bytes
+            1..=3 => {
+                *dst = bytes[0];
+                *dst.add(len / 2) = bytes[len / 2];
+                *dst.add(len - 1) = bytes[len - 1];
+            }
+            4..=8 => {
+                dst.cast::<u32>().write_unaligned(load_u32(bytes, 0));
+                dst.add(len - 4)
+                    .cast::<u32>()
+                    .write_unaligned(load_u32(bytes, len - 4));
+            }
+            9..=16 => {
+                dst.cast::<u64>().write_unaligned(load_u64(bytes, 0));
+                dst.add(len - 8)
+                    .cast::<u64>()
+                    .write_unaligned(load_u64(bytes, len - 8));
+            }
+            _ => {
+                dst.cast::<u128>().write_unaligned(load_u128(bytes, 0));
+                dst.add(len - 16)
+                    .cast::<u128>()
+                    .write_unaligned(load_u128(bytes, len - 16));
+            }
+        }
+        out.set_len(start + len);
+    }
+}
+
+/// Returns `true` if a key is the name of a column.
+///
+/// Keys are short, comparing them with words that overlap is faster than
+/// calling `memcmp` for every field.
+#[inline(always)]
+fn same_key(name: &[u8], key: &[u8]) -> bool {
+    let len = name.len();
+    if len != key.len() {
+        return false;
+    }
+    match len {
+        0 => true,
+        // the first, middle and last byte are all bytes
+        1..=3 => {
+            name[0] == key[0] && name[len / 2] == key[len / 2] && name[len - 1] == key[len - 1]
+        }
+        4..=8 => {
+            load_u32(name, 0) == load_u32(key, 0)
+                && load_u32(name, len - 4) == load_u32(key, len - 4)
+        }
+        9..=16 => {
+            load_u64(name, 0) == load_u64(key, 0)
+                && load_u64(name, len - 8) == load_u64(key, len - 8)
+        }
+        _ => name == key,
     }
 }
 
@@ -1367,4 +1528,40 @@ fn unsupported_key() -> Error {
         ErrorKind::UnsupportedType,
         "the keys of records must be strings, numbers or booleans",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_push_bytes() {
+        let text: Vec<u8> = (b'a'..=b'z').chain(b'A'..=b'Z').collect();
+        for len in 0..=text.len() {
+            for prefix in [0, 1, 7] {
+                let mut out = vec![b'-'; prefix];
+                push_bytes(&mut out, &text[..len]);
+                assert_eq!(&out[prefix..], &text[..len]);
+                assert_eq!(out.len(), prefix + len);
+            }
+        }
+    }
+
+    #[test]
+    fn test_same_key() {
+        let text: Vec<u8> = (b'a'..=b'z').chain(b'A'..=b'Z').collect();
+        for len in 0..=text.len() {
+            let name = &text[..len];
+            assert!(same_key(name, &text[..len]));
+            if len > 0 {
+                assert!(!same_key(name, &text[..len - 1]));
+                assert!(!same_key(&text[..len - 1], name));
+            }
+            for pos in 0..len {
+                let mut key = name.to_vec();
+                key[pos] ^= 1;
+                assert!(!same_key(name, &key), "{:?}", key);
+            }
+        }
+    }
 }

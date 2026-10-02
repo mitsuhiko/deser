@@ -1,6 +1,10 @@
 //! Formats numbers without the `fmt` machinery.
 //!
-//! [`format_finite`] produces the same text as `zmij`.
+//! Floats are formatted with `zmij` when the `zmij` feature is enabled (the
+//! default), otherwise with [`format_finite`] which produces the same text,
+//! so the output does not depend on the feature.
+// without `zmij` only the tests use the fallback of floats
+#![cfg_attr(feature = "zmij", allow(dead_code))]
 use alloc::string::String;
 use core::fmt::{self, Debug, LowerExp, Write};
 use core::str::FromStr;
