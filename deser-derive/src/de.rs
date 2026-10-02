@@ -1404,16 +1404,22 @@ impl CompactStruct<'_> {
         // all fields from the 64th on
         let mut raw_bits = Vec::new();
         let mut raw_overflow = Vec::new();
+        // the fields that collect as bits, like the raw values
+        let mut collect_bits = Vec::new();
+        let mut collect_overflow = Vec::new();
         for (idx, x) in self.attrs.iter().enumerate() {
             let binding = &self.bindings[idx];
             let ty = &x.field().ty;
             let adapter = x.adapters().de();
             let member = syn::Index::from(idx);
             let raw = field_raw(ty, adapter);
+            let collects = field_collects(ty, adapter);
             if idx < 63 {
                 raw_bits.push(quote! { ((#raw.is_some() as u64) << #idx) });
+                collect_bits.push(quote! { ((#collects as u64) << #idx) });
             } else {
                 raw_overflow.push(quote! { #raw.is_some() });
+                collect_overflow.push(collects);
             }
             // what depends on the type of the field is done by its slot
             // (`FieldSlot`), which exists once per type and adapter
@@ -1555,6 +1561,11 @@ impl CompactStruct<'_> {
                     #[inline(always)]
                     fn raw_fields() -> u64 {
                         0 #(| #raw_bits)* | (((false #(|| #raw_overflow)*) as u64) << 63)
+                    }
+
+                    #[inline(always)]
+                    fn collect_fields() -> u64 {
+                        0 #(| #collect_bits)* | (((false #(|| #collect_overflow)*) as u64) << 63)
                     }
 
                     fn finish(

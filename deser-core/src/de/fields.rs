@@ -317,6 +317,20 @@ pub trait StructFields<'de>: Send {
         0
     }
 
+    /// Returns the fields that collect the values of a repeated key as
+    /// bits by index (see [`Deserialize::__private_collects`]).
+    ///
+    /// The last bit is set if a field from the 64th on collects.  Only the
+    /// fields whose bit is set are asked (see [`FieldSlot::collects`]), by
+    /// default all of them.
+    #[inline(always)]
+    fn collect_fields() -> u64
+    where
+        Self: Sized,
+    {
+        u64::MAX
+    }
+
     /// Builds the struct from the fields and places it in the slot.
     ///
     /// If [`StructFinish::ok`] returns `false` or required fields are
@@ -562,6 +576,9 @@ pub struct StructSink<'a, 'de> {
     // the fields that want raw values as bits by index (see
     // `StructFields::raw_fields`)
     raw: u64,
+    // the fields that collect as bits by index (see
+    // `StructFields::collect_fields`)
+    collects: u64,
     // the fields are empty once they are finished, they are not dropped
     finished: bool,
 }
@@ -581,6 +598,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
             fields,
             info,
             F::raw_fields(),
+            F::collect_fields(),
             &mut state.arena,
         ))
     }
@@ -591,6 +609,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
         fields: NonNull<dyn StructFields<'de> + 'a>,
         info: &'static StructInfo,
         raw: u64,
+        collects: u64,
     ) -> StructSink<'a, 'de> {
         StructSink {
             fields,
@@ -602,6 +621,7 @@ impl<'a, 'de> StructSink<'a, 'de> {
             errors: CollectedErrors::new(),
             info,
             raw,
+            collects,
             finished: false,
         }
     }
@@ -635,7 +655,10 @@ impl<'a, 'de> StructSink<'a, 'de> {
 
     /// Returns how this occurrence of a field is deserialized.
     fn collect(&mut self, index: usize, state: &State) -> Collect {
-        let collects = state.is_multimap() && self.fields().field(index).collects();
+        // the last bit stands for all fields from the 64th on
+        let collects = state.is_multimap()
+            && self.collects & (1 << index.min(63)) != 0
+            && self.fields().field(index).collects();
         match (collects, core::mem::replace(&mut self.key.repeated, false)) {
             (false, _) => Collect::No,
             (true, false) => Collect::First,

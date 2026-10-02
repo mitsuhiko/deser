@@ -163,6 +163,7 @@ impl<'a, 'de: 'a> ArenaStruct<'a, 'de> {
         fields: F,
         info: &'static StructInfo,
         raw: u64,
+        collects: u64,
         arena: &mut Arena,
     ) -> ArenaStruct<'a, 'de> {
         let (layout, offset) = struct_block_layout(Layout::new::<F>());
@@ -174,7 +175,7 @@ impl<'a, 'de: 'a> ArenaStruct<'a, 'de> {
             raw_fields.write(fields);
             let raw_fields =
                 NonNull::new_unchecked(raw_fields as *mut (dyn StructFields<'de> + 'a));
-            ArenaStruct::init(block, raw_fields, info, raw)
+            ArenaStruct::init(block, raw_fields, info, raw, collects)
         }
     }
 
@@ -189,11 +190,15 @@ impl<'a, 'de: 'a> ArenaStruct<'a, 'de> {
         fields: NonNull<dyn StructFields<'de> + 'a>,
         info: &'static StructInfo,
         raw: u64,
+        collects: u64,
     ) -> ArenaStruct<'a, 'de> {
         let ptr = block.cast::<StructSink<'a, 'de>>();
         // SAFETY: the block is valid for writes of the sink, the sink owns
         // the fields
-        unsafe { ptr.as_ptr().write(StructSink::new(fields, info, raw)) };
+        unsafe {
+            ptr.as_ptr()
+                .write(StructSink::new(fields, info, raw, collects))
+        };
         ArenaStruct {
             ptr: ptr as NonNull<dyn Sink<'de> + 'a>,
             _marker: PhantomData,
