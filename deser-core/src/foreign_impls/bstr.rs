@@ -32,7 +32,11 @@ use crate::ser::{Emit, Serialize, plain_atom};
 fn bstr_atom(bytes: &[u8]) -> Atom<'_> {
     match core::str::from_utf8(bytes) {
         Ok(value) => Atom::Str(Text::borrowed(value)),
-        Err(_) => Atom::Bytes(Bytes::borrowed(bytes).with_fallback(const { &BytesFormat::SEQ })),
+        Err(_) => {
+            let mut bytes = Bytes::borrowed(bytes);
+            bytes.fallback = Some(const { &BytesFormat::SEQ });
+            Atom::Bytes(bytes)
+        }
     }
 }
 

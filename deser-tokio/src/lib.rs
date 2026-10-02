@@ -18,9 +18,9 @@
 //! use deser_tokio::{Reader, Writer};
 //!
 //! const READ_LINES: DeserializerConfig =
-//!     DeserializerConfig::new().trailing(Trailing::Newline);
+//!     DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! const WRITE_LINES: SerializerConfig =
-//!     SerializerConfig::new().trailing(Trailing::Newline);
+//!     SerializerConfig::builder().trailing(Trailing::Newline).build();
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct Request {

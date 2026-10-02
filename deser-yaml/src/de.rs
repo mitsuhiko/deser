@@ -15,7 +15,7 @@ use crate::resolve::{
 };
 use crate::tag::NodeTag;
 
-/// The default for [`DeserializerConfig::alias_limit`].
+/// The default for [`DeserializerConfig::set_alias_limit`].
 const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
 
 /// Configures how YAML is deserialized.
@@ -31,8 +31,8 @@ const DEFAULT_ALIAS_LIMIT: usize = 1_000_000;
 /// ```
 /// use deser_yaml::{DeserializerConfig, Version};
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new()
-///     .version(Version::V1_1);
+/// const CONFIG: DeserializerConfig = DeserializerConfig::builder()
+///     .version(Version::V1_1).build();
 /// let (flag, mode): (bool, u32) = CONFIG.from_str("[yes, 0777]").unwrap();
 /// assert_eq!((flag, mode), (true, 0o777));
 /// ```
@@ -61,23 +61,31 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Sets the YAML version for documents that do not declare one.
     ///
     /// The version determines how plain scalars are resolved.  Documents
     /// that start with a `%YAML` directive use the version they declare.  The
     /// default is [`Version::V1_2`].
-    pub const fn version(mut self, version: Version) -> DeserializerConfig {
+    pub const fn set_version(&mut self, version: Version) {
         self.version = version;
-        self
     }
 
     /// Limits the number of events that aliases can expand to per document.
     ///
     /// Every scalar and every start and end of a collection that is replayed
     /// for an alias counts as one event.  The default is 1,000,000.
-    pub const fn alias_limit(mut self, limit: usize) -> DeserializerConfig {
+    pub const fn set_alias_limit(&mut self, limit: usize) {
         self.alias_limit = limit;
-        self
     }
 
     /// Enables or disables merge keys.
@@ -115,9 +123,8 @@ impl DeserializerConfig {
     /// entries of the mapping.
     ///
     /// When disabled, `<<` is a regular key.
-    pub const fn merge_keys(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_merge_keys(&mut self, yes: bool) {
         self.merge_keys = yes;
-        self
     }
 
     /// Enables or disables location tracking.
@@ -131,9 +138,8 @@ impl DeserializerConfig {
     /// the input.
     ///
     /// Values produced by aliases report the location of the anchored node.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes a value from YAML.
@@ -171,6 +177,67 @@ impl DeserializerConfig {
     }
 }
 
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets the YAML version for documents that do not declare one.
+    ///
+    /// See [`DeserializerConfig::set_version`].
+    pub const fn version(mut self, version: Version) -> DeserializerConfigBuilder {
+        self.value.set_version(version);
+        self
+    }
+
+    /// Limits the number of events that aliases can expand to per document.
+    ///
+    /// See [`DeserializerConfig::set_alias_limit`].
+    pub const fn alias_limit(mut self, limit: usize) -> DeserializerConfigBuilder {
+        self.value.set_alias_limit(limit);
+        self
+    }
+
+    /// Enables or disables merge keys.
+    ///
+    /// See [`DeserializerConfig::set_merge_keys`].
+    pub const fn merge_keys(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_merge_keys(yes);
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+}
+
 /// Deserializes YAML.
 ///
 /// A YAML stream can contain multiple documents.  Every call to
@@ -194,7 +261,7 @@ impl DeserializerConfig {
 /// Aliases (`*name`) are expanded: the events of the anchored node are
 /// replayed.  To protect against inputs that expand exponentially (the
 /// "billion laughs" attack) the number of events produced by aliases is
-/// limited, see [`DeserializerConfig::alias_limit`].
+/// limited, see [`DeserializerConfig::set_alias_limit`].
 pub struct Deserializer<'a> {
     input: &'a str,
     parser: Parser<'a>,
@@ -665,9 +732,10 @@ impl<'a> Deserializer<'a> {
             Source(source.clone()).set(driver.state_mut());
         }
         let input = self.input;
-        let rv = self
-            .drive_document(driver)
-            .map_err(|err| err.resolve_position(input.as_bytes()));
+        let rv = self.drive_document(driver).map_err(|mut err| {
+            err.resolve_position(input.as_bytes());
+            err
+        });
 
         if rv.is_err() && !self.failed {
             // skip the rest of the document so that the next one can be read
@@ -1057,9 +1125,8 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
             return Ok(unsafe { std::str::from_utf8_unchecked(bytes) });
         }
     }
-    std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(err.valid_up_to())
-    })
+    std::str::from_utf8(bytes)
+        .map_err(|err| Error::with_offset(ErrorKind::Syntax, "invalid UTF-8", err.valid_up_to()))
 }
 
 /// An iterator over the documents of a YAML stream.

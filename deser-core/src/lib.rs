@@ -61,6 +61,25 @@ pub use self::{de::Deserialize, ser::Serialize, stream::Streamed};
 #[cfg(feature = "derive")]
 pub mod derive;
 
+// # API Conventions
+//
+// The crates of deser follow these rules (and so should new APIs):
+//
+// * Values are changed with setters, `set_x(&mut self, value)` (a
+//   `const fn` where possible), and read with getters named after the
+//   value (`x(&self)`).  Types have no methods that take `self` and return
+//   a changed copy (`fn x(self, value) -> Self` or `with_x`), only
+//   conversions (`into_x`) and combinators that create something else
+//   (like `SinkHandle::ignore_null`).
+// * Constructors are `new` and `with_x(...)` / `from_x(...)` associated
+//   functions (like `ContainerShape::with_len`, `Context::with` or
+//   `Error::with_offset`).
+// * Types that are configured in one expression or as constants (the
+//   configurations of the formats and `Limits`) have a separate builder
+//   type, `XBuilder`, created with `X::builder()` (or `x.into_builder()`).
+//   Its methods have the names of the setters without `set_` and
+//   `build()` returns the value.
+//
 // # Internal APIs
 //
 // The `#[doc(hidden)]` items (mostly methods named `__private_*`) are not
@@ -79,7 +98,7 @@ pub mod derive;
 //   adapters forwarding to it) implements it.
 // * Internal protocols change behavior: raw values (see `ext::Raw`) and
 //   collections that collect the values of repeated keys.  What formats
-//   need is public (`State::set_raw_format`, `State::take_raw_request`,
+//   need is public (`State::declare_raw_format`, `State::take_raw_request`,
 //   `Error::is_raw_request`,
 //   `ContainerShape::with_multimap`, `DeserializeDriver::multimap_value`
 //   and `de::missing_multimap_value`), the side

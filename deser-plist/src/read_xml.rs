@@ -172,7 +172,7 @@ impl<'i> Reader<'i> {
                     return out.emit_at(start, self.pos, Atom::Ext(ExtValue::owned(uid)));
                 }
                 let shape = if empty {
-                    ContainerShape::new().with_len(0)
+                    ContainerShape::with_len(0)
                 } else {
                     ContainerShape::new()
                 };

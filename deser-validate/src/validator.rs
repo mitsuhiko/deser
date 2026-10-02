@@ -219,11 +219,12 @@ impl Violation {
     /// The error has the violation attached, the message is the same as
     /// the one of `#[deser(validate = ...)]`.
     pub fn into_error(self) -> Error {
-        Error::new(
+        let mut err = Error::new(
             ErrorKind::InvalidValue,
             format!("invalid value: {}", self.message),
-        )
-        .with_attachment(self)
+        );
+        err.set_attachment(self);
+        err
     }
 }
 

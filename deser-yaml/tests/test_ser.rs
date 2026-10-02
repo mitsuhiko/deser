@@ -73,10 +73,11 @@ volumes: []
 
 #[test]
 fn test_indentless_sequences() {
-    const CONFIG: SerializerConfig = SerializerConfig::new()
+    const CONFIG: SerializerConfig = SerializerConfig::builder()
         .indent_sequences(false)
         .indent(Indent::Spaces(4))
-        .compat(Version::V1_2);
+        .compat(Version::V1_2)
+        .build();
     let yaml = CONFIG.to_string(&service()).unwrap();
     assert_eq!(
         yaml,
@@ -105,9 +106,10 @@ volumes: []
 
 #[test]
 fn test_single_line() {
-    const LINE: SerializerConfig = SerializerConfig::new()
+    const LINE: SerializerConfig = SerializerConfig::builder()
         .indent(Indent::None)
-        .compat(Version::V1_2);
+        .compat(Version::V1_2)
+        .build();
     let yaml = LINE.to_string(&service()).unwrap();
     assert_eq!(
         yaml,
@@ -135,7 +137,9 @@ fn test_single_line() {
         data: vec![0; 100],
     };
     let yaml = LINE
+        .into_builder()
         .flow(FlowPolicy::LeafIfFits(8))
+        .build()
         .to_string(&value)
         .unwrap();
     assert_eq!(yaml.lines().count(), 1, "{}", yaml);
@@ -149,7 +153,12 @@ fn test_single_line() {
         ),
         ("k".into(), Value::Null),
     ]);
-    let yaml = LINE.null_style(NullStyle::Empty).to_string(&value).unwrap();
+    let yaml = LINE
+        .into_builder()
+        .null_style(NullStyle::Empty)
+        .build()
+        .to_string(&value)
+        .unwrap();
     assert_eq!(yaml, "{? [1]: !point {}, k: null}\n");
     assert_eq!(from_str::<Value>(&yaml).unwrap(), value);
 }
@@ -201,17 +210,19 @@ fn test_quoting() {
         to_string(&strings).unwrap(),
         "- plain\n- 'yes'\n- 'true'\n- '1.5'\n- '0777'\n- 'a: b'\n- ''\n- ' x'\n- it's\n- \"tab\\t\"\n"
     );
-    const V1_2: SerializerConfig = SerializerConfig::new().compat(Version::V1_2);
+    const V1_2: SerializerConfig = SerializerConfig::builder().compat(Version::V1_2).build();
     assert_eq!(
         V1_2.to_string(&["yes", "1_000", "0777"]).unwrap(),
         "- yes\n- 1_000\n- '0777'\n"
     );
-    const DOUBLE: SerializerConfig = SerializerConfig::new().quote_style(QuoteStyle::Double);
+    const DOUBLE: SerializerConfig = SerializerConfig::builder()
+        .quote_style(QuoteStyle::Double)
+        .build();
     assert_eq!(
         DOUBLE.to_string(&["plain", "yes"]).unwrap(),
         "- plain\n- \"yes\"\n"
     );
-    const ALL: SerializerConfig = SerializerConfig::new().quote_all(true);
+    const ALL: SerializerConfig = SerializerConfig::builder().quote_all(true).build();
     assert_eq!(
         ALL.to_string(&["plain", "a\nb"]).unwrap(),
         "- 'plain'\n- \"a\\nb\"\n"
@@ -235,7 +246,9 @@ fn test_block_scalars() {
     assert_eq!(to_string(&vec!["  a\nb"]).unwrap(), "- |2-\n    a\n  b\n");
     // carriage returns cannot be in block scalars
     assert_eq!(to_string(&"a\r\nb").unwrap(), "\"a\\r\\nb\"\n");
-    const QUOTED: SerializerConfig = SerializerConfig::new().multiline(MultilineStyle::Quoted);
+    const QUOTED: SerializerConfig = SerializerConfig::builder()
+        .multiline(MultilineStyle::Quoted)
+        .build();
     assert_eq!(QUOTED.to_string(&"a\nb").unwrap(), "\"a\\nb\"\n");
 
     // everything reads back
@@ -251,11 +264,14 @@ fn test_block_scalars() {
     ] {
         for config in [
             SerializerConfig::new(),
-            SerializerConfig::new().indent(Indent::Spaces(4)),
-            SerializerConfig::new()
+            SerializerConfig::builder()
+                .indent(Indent::Spaces(4))
+                .build(),
+            SerializerConfig::builder()
                 .indent_sequences(false)
-                .indent(Indent::Spaces(1)),
-            SerializerConfig::new().indent(Indent::None),
+                .indent(Indent::Spaces(1))
+                .build(),
+            SerializerConfig::builder().indent(Indent::None).build(),
         ] {
             for doc in [
                 Value::from(value),
@@ -280,9 +296,13 @@ fn test_block_scalars() {
 fn test_null_styles() {
     let value = (None::<u32>, BTreeMap::from([("a", None::<u32>)]));
     assert_eq!(to_string(&value).unwrap(), "- null\n- a: null\n");
-    const TILDE: SerializerConfig = SerializerConfig::new().null_style(NullStyle::Tilde);
+    const TILDE: SerializerConfig = SerializerConfig::builder()
+        .null_style(NullStyle::Tilde)
+        .build();
     assert_eq!(TILDE.to_string(&value).unwrap(), "- ~\n- a: ~\n");
-    const EMPTY: SerializerConfig = SerializerConfig::new().null_style(NullStyle::Empty);
+    const EMPTY: SerializerConfig = SerializerConfig::builder()
+        .null_style(NullStyle::Empty)
+        .build();
     assert_eq!(EMPTY.to_string(&value).unwrap(), "-\n- a:\n");
     assert_eq!(EMPTY.to_string(&()).unwrap(), "null\n");
     let parsed: (Option<u32>, BTreeMap<String, Option<u32>>) =
@@ -323,8 +343,9 @@ fn test_numbers() {
         let value = f64::from_bits(state);
         let yaml = to_string(&value).unwrap();
         for version in [Version::V1_1, Version::V1_2] {
-            let parsed: f64 = DeserializerConfig::new()
+            let parsed: f64 = DeserializerConfig::builder()
                 .version(version)
+                .build()
                 .from_str(&yaml)
                 .unwrap();
             assert!(parsed == value || value.is_nan(), "{} {:?}", yaml, version);
@@ -350,8 +371,9 @@ fn test_numbers() {
         let value = f32::from_bits(state);
         let yaml = to_string(&value).unwrap();
         for version in [Version::V1_1, Version::V1_2] {
-            let parsed: f32 = DeserializerConfig::new()
+            let parsed: f32 = DeserializerConfig::builder()
                 .version(version)
+                .build()
                 .from_str(&yaml)
                 .unwrap();
             assert!(
@@ -397,8 +419,8 @@ fn test_bytes() {
     assert_eq!(from_str::<Vec<u8>>(&yaml).unwrap(), long);
 
     // without native bytes the fallbacks and the configured format apply
-    const TEXT: SerializerConfig = SerializerConfig::new().binary(false);
-    let hex = deser::Context::new().with(BytesFormat::encoded::<Hex>());
+    const TEXT: SerializerConfig = SerializerConfig::builder().binary(false).build();
+    let hex = deser::Context::with(BytesFormat::encoded::<Hex>());
     let yaml = TEXT
         .to_string_with(&blob, |driver| driver.set_context(&hex))
         .unwrap();
@@ -409,7 +431,7 @@ fn test_bytes() {
             .unwrap(),
         blob
     );
-    let seq = deser::Context::new().with(BytesFormat::SEQ);
+    let seq = deser::Context::with(BytesFormat::SEQ);
     assert_eq!(
         TEXT.to_string_with(&vec![1u8, 2], |driver| driver.set_context(&seq))
             .unwrap(),
@@ -472,7 +494,7 @@ fn test_datetimes() {
         from_str::<(Datetime, Datetime, Datetime)>(&yaml).unwrap(),
         value
     );
-    const TAGGED: SerializerConfig = SerializerConfig::new().timestamp_tag(true);
+    const TAGGED: SerializerConfig = SerializerConfig::builder().timestamp_tag(true).build();
     assert_eq!(TAGGED.to_string(&date).unwrap(), "!!timestamp 2001-12-14\n");
     assert_eq!(
         from_str::<Datetime>("!!timestamp 2001-12-14").unwrap(),
@@ -501,9 +523,9 @@ fn test_documents() {
         ]
     );
 
-    const START: SerializerConfig = SerializerConfig::new().document_start(true);
+    const START: SerializerConfig = SerializerConfig::builder().document_start(true).build();
     assert_eq!(START.to_string(&1).unwrap(), "---\n1\n");
-    const DIRECTIVE: SerializerConfig = SerializerConfig::new().version_directive(true);
+    const DIRECTIVE: SerializerConfig = SerializerConfig::builder().version_directive(true).build();
     assert_eq!(DIRECTIVE.to_string(&1).unwrap(), "%YAML 1.2\n---\n1\n");
 
     // directives of later documents follow the end of the previous one
@@ -604,12 +626,17 @@ fn test_quoting_fuzz() {
     }
     let configs = [
         SerializerConfig::new(),
-        SerializerConfig::new().compat(Version::V1_2),
-        SerializerConfig::new().quote_style(QuoteStyle::Double),
-        SerializerConfig::new().multiline(MultilineStyle::Quoted),
-        SerializerConfig::new()
+        SerializerConfig::builder().compat(Version::V1_2).build(),
+        SerializerConfig::builder()
+            .quote_style(QuoteStyle::Double)
+            .build(),
+        SerializerConfig::builder()
+            .multiline(MultilineStyle::Quoted)
+            .build(),
+        SerializerConfig::builder()
             .flow(FlowPolicy::LeafIfFits(200))
-            .fold_width(Some(2)),
+            .fold_width(Some(2))
+            .build(),
     ];
     let styles = [
         None,
@@ -641,9 +668,10 @@ fn test_quoting_fuzz() {
                 &[Version::V1_1, Version::V1_2]
             };
             for &version in versions {
-                let parsed = DeserializerConfig::new()
+                let parsed = DeserializerConfig::builder()
                     .version(version)
                     .merge_keys(false)
+                    .build()
                     .from_str::<Value>(&yaml);
                 assert_eq!(
                     parsed.as_ref().ok(),
@@ -693,7 +721,7 @@ fn test_layout_hints() {
         empty: vec![],
         other: vec![3],
     };
-    const V1_2: SerializerConfig = SerializerConfig::new().compat(Version::V1_2);
+    const V1_2: SerializerConfig = SerializerConfig::builder().compat(Version::V1_2).build();
     let yaml = V1_2.to_string(&config).unwrap();
     assert_eq!(
         yaml,
@@ -711,9 +739,10 @@ other:
     );
 
     // the leaf policy writes collections of scalars in flow style if they fit
-    const LEAF: SerializerConfig = SerializerConfig::new()
+    const LEAF: SerializerConfig = SerializerConfig::builder()
         .compat(Version::V1_2)
-        .flow(FlowPolicy::LeafIfFits(20));
+        .flow(FlowPolicy::LeafIfFits(20))
+        .build();
     let yaml = LEAF.to_string(&config).unwrap();
     assert_eq!(
         yaml,
@@ -750,9 +779,10 @@ other: [3]
             ),
         ])),
     );
-    const EMPTY: SerializerConfig = SerializerConfig::new()
+    const EMPTY: SerializerConfig = SerializerConfig::builder()
         .null_style(NullStyle::Empty)
-        .flow(FlowPolicy::LeafIfFits(80));
+        .flow(FlowPolicy::LeafIfFits(80))
+        .build();
     let yaml = to_string_compact(&EMPTY, &value);
     assert_eq!(yaml, "!t {? [1]: null, k: \"a\\nb\", null: !u x}\n");
     assert_eq!(from_str::<Value>(&yaml).unwrap(), value);
@@ -846,7 +876,7 @@ fn test_scalar_styles() {
         not_folded: " leading\nspace".into(),
         list: vec!["a".into(), "b".into()],
     };
-    const WIDTH: SerializerConfig = SerializerConfig::new().fold_width(Some(30));
+    const WIDTH: SerializerConfig = SerializerConfig::builder().fold_width(Some(30)).build();
     let yaml = WIDTH.to_string(&value).unwrap();
     assert_eq!(
         yaml,
@@ -876,7 +906,7 @@ list:
 
 #[test]
 fn test_folding() {
-    const FOLD: SerializerConfig = SerializerConfig::new().fold_width(Some(20));
+    const FOLD: SerializerConfig = SerializerConfig::builder().fold_width(Some(20)).build();
     let long = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod";
     let yaml = FOLD.to_string(&BTreeMap::from([("text", long)])).unwrap();
     assert_eq!(
@@ -897,8 +927,9 @@ fn test_folding() {
         "trailing\n\n",
         "x",
     ] {
-        let yaml = SerializerConfig::new()
+        let yaml = SerializerConfig::builder()
             .fold_width(Some(10))
+            .build()
             .to_string_with(&value, |driver| {
                 driver.push_layer(ForceStyle(ScalarStyle::Folded))
             })
@@ -927,12 +958,13 @@ fn test_plain_scalars_round_trip() {
         round_trip("a: 0o17\nb: 1e3\n", SerializerConfig::new()),
         "a: 15\nb: 1000.0\n"
     );
-    let v1_2 = SerializerConfig::new().compat(Version::V1_2);
+    let v1_2 = SerializerConfig::builder().compat(Version::V1_2).build();
     assert_eq!(round_trip("a: 0o17\nb: 1e3\n", v1_2), "a: 0o17\nb: 1e3\n");
 
     // YAML 1.1 values that are strings in YAML 1.2 are written as value
-    let recording: Recording = DeserializerConfig::new()
+    let recording: Recording = DeserializerConfig::builder()
         .version(Version::V1_1)
+        .build()
         .from_str("a: yes\nb: 0777\nc: 1:30\nd: 1_000\ne: 0x1F\n")
         .unwrap();
     assert_eq!(

@@ -47,11 +47,11 @@ impl<'de, T: serde::Deserialize<'de>> Collector<'de, T> for Buffer<'de> {
         T::deserialize(ValueDe::new(&mut src)).map_err(|err| {
             // the error refers to the event that was consumed last.  The
             // driver would attach the location of the end of the value.
-            let err = err.into_deser();
-            match (err.offset(), src.offset) {
-                (None, Some(offset)) => err.with_offset(offset),
-                _ => err,
+            let mut err = err.into_deser();
+            if let (None, Some(offset)) = (err.offset(), src.offset) {
+                err.set_offset(offset);
             }
+            err
         })
     }
 }

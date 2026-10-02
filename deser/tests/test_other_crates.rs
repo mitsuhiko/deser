@@ -11,8 +11,8 @@ use deser::{Atom, ContainerShape, Deserialize, Error, Event, Order, Serialize};
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => Event::MapStart(ContainerShape::new().with_order(shape.order())),
-        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::new().with_order(shape.order())),
+        Event::MapStart(shape) => Event::MapStart(ContainerShape::with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::with_order(shape.order())),
         event => event,
     }
 }
@@ -64,14 +64,14 @@ fn roundtrip<T: Serialize + DeserializeOwned>(value: &T, expected: Vec<Event<'st
 }
 
 fn seq(order: Order, values: impl IntoIterator<Item = Event<'static>>) -> Vec<Event<'static>> {
-    let mut rv = vec![Event::SeqStart(ContainerShape::new().with_order(order))];
+    let mut rv = vec![Event::SeqStart(ContainerShape::with_order(order))];
     rv.extend(values);
     rv.push(Event::SeqEnd);
     rv
 }
 
 fn map(order: Order, entries: &[(&str, Event<'static>)]) -> Vec<Event<'static>> {
-    let mut rv = vec![Event::MapStart(ContainerShape::new().with_order(order))];
+    let mut rv = vec![Event::MapStart(ContainerShape::with_order(order))];
     for (key, value) in entries {
         rv.push(Event::from(key.to_string()));
         rv.push(value.clone());
@@ -469,9 +469,9 @@ mod with_bstr {
 
         // everything else bytes which are sequences in formats without bytes
         let value = BString::from(&b"hi\xff"[..]);
-        let expected = Event::Atom(Atom::Bytes(
-            deser::Bytes::new(&b"hi\xff"[..]).with_fallback(&BytesFormat::SEQ),
-        ));
+        let mut expected = deser::Bytes::new(&b"hi\xff"[..]);
+        expected.fallback = Some(&BytesFormat::SEQ);
+        let expected = Event::Atom(Atom::Bytes(expected));
         let rv = roundtrip(&value, vec![expected]);
         assert_eq!(rv, value);
         let rv: Box<BStr> = deserialize(vec![bytes(b"hi\xff")]).unwrap();

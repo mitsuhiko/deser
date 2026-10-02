@@ -29,8 +29,11 @@ pub type RawCbor<'a> = Raw<'a, Cbor>;
 pub(crate) static ID: RawFormatId = RawFormatId::new("cbor", false);
 
 /// The description of the format of raw CBOR values.
-static FORMAT: RawFormatInfo =
-    RawFormatInfo::new(&ID, replay, encode, fallback).with_data(&SCANNER);
+static FORMAT: RawFormatInfo = {
+    let mut info = RawFormatInfo::new(&ID, replay, encode, fallback);
+    info.set_data(&SCANNER);
+    info
+};
 
 /// Skips an item while validating it (see `Parser::raw_values`).
 ///

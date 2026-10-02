@@ -15,7 +15,7 @@ use crate::root::{Declarations, RootData};
 
 /// How the output is indented.
 ///
-/// See [`SerializerConfig::indent`].
+/// See [`SerializerConfig::set_indent`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum Indent {
@@ -35,10 +35,10 @@ pub enum Indent {
 /// [`Root`](crate::Root) of the value (or of the document the value was
 /// read from, if it's a value that keeps event data like a
 /// [`Recording`](deser_core::de::Recording)), the name of the struct (or
-/// enum) that is serialized or the configured [`root`](Self::root).  Maps
+/// enum) that is serialized or the configured [`set_root`](Self::set_root).  Maps
 /// are elements: keys with the
-/// [attribute prefix](Self::attribute_prefix) are attributes, the
-/// [text key](Self::text_key) is text and all other keys are child
+/// [attribute prefix](Self::set_attribute_prefix) are attributes, the
+/// [text key](Self::set_text_key) is text and all other keys are child
 /// elements.  Sequences are elements with the same name, one per value.
 /// Null values are left out.  Attributes can come after other keys, they
 /// are still written into the start tag.
@@ -75,7 +75,7 @@ pub enum Indent {
 /// );
 /// ```
 ///
-/// By default the output is a single line, [`indent`](Self::indent) writes
+/// By default the output is a single line, [`set_indent`](Self::set_indent) writes
 /// child elements on lines of their own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
@@ -102,6 +102,16 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets the name of the root element of values without a name.
     ///
     /// The root element is named after the [`Root`](crate::Root) of the
@@ -109,21 +119,18 @@ impl SerializerConfig {
     /// maps) are named with this.  This is useful where values cannot be
     /// wrapped in a `Root`, for instance when transcoding from another
     /// format.
-    pub const fn root(mut self, name: &'static str) -> SerializerConfig {
+    pub const fn set_root(&mut self, name: &'static str) {
         self.root = Some(name);
-        self
     }
 
     /// Sets the prefix of the keys that are attributes (default `@`).
-    pub const fn attribute_prefix(mut self, prefix: &'static str) -> SerializerConfig {
+    pub const fn set_attribute_prefix(&mut self, prefix: &'static str) {
         self.names.attribute_prefix = prefix;
-        self
     }
 
     /// Sets the key that is the text of an element (default `$text`).
-    pub const fn text_key(mut self, key: &'static str) -> SerializerConfig {
+    pub const fn set_text_key(&mut self, key: &'static str) {
         self.names.text_key = key;
-        self
     }
 
     /// Sets the prefixes of namespaces that are declared on the root
@@ -182,9 +189,8 @@ impl SerializerConfig {
     }
 
     /// Sets if the XML declaration is written (default `false`).
-    pub const fn declaration(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_declaration(&mut self, yes: bool) {
         self.declaration = yes;
-        self
     }
 
     /// Sets how the output is indented.
@@ -207,7 +213,7 @@ impl SerializerConfig {
     /// }
     ///
     /// const PRETTY: SerializerConfig =
-    ///     SerializerConfig::new().indent(Indent::Spaces(2));
+    ///     SerializerConfig::builder().indent(Indent::Spaces(2)).build();
     /// assert_eq!(
     ///     PRETTY.to_string(&Point { id: 1, x: 3, y: 4 }).unwrap(),
     ///     "<point id=\"1\">\n  <x>3</x>\n  <y>4</y>\n</point>"
@@ -221,7 +227,7 @@ impl SerializerConfig {
     /// * The text of elements is never changed, elements with text and
     ///   child elements (mixed content like `<p>x <b>y</b></p>`) are
     ///   written on a single line from the text on.  If the element is a
-    ///   struct whose [text key](Self::text_key) field comes after the
+    ///   struct whose [text key](Self::set_text_key) field comes after the
     ///   child element, the element is written on a single line from the
     ///   start (unless it has [`Layout::Expanded`]).
     /// * [`Mixed`](crate::Mixed) keeps whitespace as text by default, its
@@ -230,17 +236,16 @@ impl SerializerConfig {
     ///   [`hints`](deser_core::hints)) are written on a single line, also
     ///   their content.
     ///
-    /// With the [declaration](Self::declaration) the root element starts on
+    /// With the [declaration](Self::set_declaration) the root element starts on
     /// a new line.  The output never ends with a line break.
-    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+    pub const fn set_indent(&mut self, indent: Indent) {
         self.indent = indent;
-        self
     }
 
     /// Enables or disables pretty printing.
     ///
-    /// This is the same as [`indent`](Self::indent), XML has no spaces
-    /// after separators like JSON.
+    /// This is the same as [`set_indent`](Self::set_indent), XML has no
+    /// spaces after separators like JSON.
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -248,14 +253,14 @@ impl SerializerConfig {
     ///
     /// let value = BTreeMap::from([("a", 1), ("b", 2)]);
     /// const PRETTY: SerializerConfig =
-    ///     SerializerConfig::new().root("r").pretty(Indent::Tab);
+    ///     SerializerConfig::builder().root("r").pretty(Indent::Tab).build();
     /// assert_eq!(
     ///     PRETTY.to_string(&value).unwrap(),
     ///     "<r>\n\t<a>1</a>\n\t<b>2</b>\n</r>"
     /// );
     /// ```
-    pub const fn pretty(self, indent: Indent) -> SerializerConfig {
-        self.indent(indent)
+    pub const fn set_pretty(&mut self, indent: Indent) {
+        self.set_indent(indent);
     }
 
     /// Serializes a value.
@@ -349,6 +354,83 @@ impl SerializerConfig {
     }
 }
 
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets the name of the root element of values without a name.
+    ///
+    /// See [`SerializerConfig::set_root`].
+    pub const fn root(mut self, name: &'static str) -> SerializerConfigBuilder {
+        self.value.set_root(name);
+        self
+    }
+
+    /// Sets the prefix of the keys that are attributes (default `@`).
+    ///
+    /// See [`SerializerConfig::set_attribute_prefix`].
+    pub const fn attribute_prefix(mut self, prefix: &'static str) -> SerializerConfigBuilder {
+        self.value.set_attribute_prefix(prefix);
+        self
+    }
+
+    /// Sets the key that is the text of an element (default `$text`).
+    ///
+    /// See [`SerializerConfig::set_text_key`].
+    pub const fn text_key(mut self, key: &'static str) -> SerializerConfigBuilder {
+        self.value.set_text_key(key);
+        self
+    }
+
+    /// Sets if the XML declaration is written (default `false`).
+    ///
+    /// See [`SerializerConfig::set_declaration`].
+    pub const fn declaration(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_declaration(yes);
+        self
+    }
+
+    /// Sets how the output is indented.
+    ///
+    /// See [`SerializerConfig::set_indent`].
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfigBuilder {
+        self.value.set_indent(indent);
+        self
+    }
+
+    /// Enables or disables pretty printing.
+    ///
+    /// See [`SerializerConfig::set_pretty`].
+    pub const fn pretty(mut self, indent: Indent) -> SerializerConfigBuilder {
+        self.value.set_pretty(indent);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+}
+
 /// Serializes values to XML.
 ///
 /// This is the XML implementation of the [`Serializer`](ser::Serializer)
@@ -359,13 +441,13 @@ impl SerializerConfig {
 /// An XML document has a single root element, serializing a second value
 /// fails.  Values without a name (like maps) need a [`Root`](crate::Root)
 /// or the name of the root element in the configuration (see
-/// [`SerializerConfig::root`]).
+/// [`SerializerConfig::set_root`]).
 ///
 /// ```
 /// use std::collections::BTreeMap;
 /// use deser_xml::{Serializer, SerializerConfig};
 ///
-/// let mut serializer = Serializer::with_config(&SerializerConfig::new().root("r"));
+/// let mut serializer = Serializer::with_config(&SerializerConfig::builder().root("r").build());
 /// serializer.serialize(&BTreeMap::from([("@a", 1), ("b", 2)])).unwrap();
 /// assert!(serializer.serialize(&BTreeMap::from([("b", 3)])).is_err());
 /// assert_eq!(serializer.finish(), r#"<r a="1"><b>2</b></r>"#);
@@ -1761,7 +1843,10 @@ mod tests {
     #[test]
     fn test_maps_are_buffered() {
         // the keys of maps are not known, their elements are final at the end
-        let config = SerializerConfig::new().root("m").declaration(true);
+        let config = SerializerConfig::builder()
+            .root("m")
+            .declaration(true)
+            .build();
         let map = BTreeMap::from([
             ("a", BTreeMap::from([("$text", "1"), ("@x", "2")])),
             ("b", BTreeMap::from([("$text", "3"), ("@y", "4")])),
@@ -1796,11 +1881,12 @@ mod tests {
             SerializeRef::new(&Some(42)),
         ];
         for config in [
-            SerializerConfig::new().root("r"),
-            SerializerConfig::new()
+            SerializerConfig::builder().root("r").build(),
+            SerializerConfig::builder()
                 .root("r")
                 .declaration(true)
-                .indent(Indent::Spaces(2)),
+                .indent(Indent::Spaces(2))
+                .build(),
         ] {
             for value in values {
                 assert_eq!(
@@ -1814,7 +1900,9 @@ mod tests {
     #[test]
     fn test_indent_streams() {
         // indentation does not hold back output
-        let config = SerializerConfig::new().indent(Indent::Spaces(2));
+        let config = SerializerConfig::builder()
+            .indent(Indent::Spaces(2))
+            .build();
         assert_eq!(
             pieces(&config, &feed()).unwrap(),
             [
@@ -1884,8 +1972,9 @@ mod tests {
 
     #[test]
     fn test_nested_declarations_stream() {
-        const RESOLVE: crate::DeserializerConfig =
-            crate::DeserializerConfig::new().resolve_namespaces(true);
+        const RESOLVE: crate::DeserializerConfig = crate::DeserializerConfig::builder()
+            .resolve_namespaces(true)
+            .build();
         let input = r#"<a:r xmlns:a="urn:a"><b xmlns:a="urn:b"><x>1</x></b><a:y>2</a:y></a:r>"#;
         let mut value: deser_value::Value = RESOLVE.from_str(input).unwrap();
         let config = SerializerConfig::new();

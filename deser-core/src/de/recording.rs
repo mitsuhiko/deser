@@ -124,7 +124,7 @@ pub struct Recording(RecordBuf<'static>);
 /// assert_eq!(
 ///     events,
 ///     [
-///         Event::SeqStart(deser::ContainerShape::new().with_len(1)),
+///         Event::SeqStart(deser::ContainerShape::with_len(1)),
 ///         "borrowed".into(),
 ///         Event::SeqEnd,
 ///     ]
@@ -561,13 +561,13 @@ impl<'de> RecordBuf<'de> {
     #[cfg_attr(not(feature = "derive"), allow(dead_code))]
     pub(crate) fn attach_context(&self, err: Error, state: &mut State) -> Error {
         let Some(first) = self.events.first() else {
-            return state.attach_error_context(err);
+            return state.error_in_context(err);
         };
         let live = state.extensions().snapshot();
         let live_range = state.input_range;
         state.input_range = first.input_range;
         first.restore(state);
-        let err = state.attach_error_context(err);
+        let err = state.error_in_context(err);
         state.extensions_mut().restore(&live);
         state.input_range = live_range;
         err
@@ -1059,7 +1059,7 @@ fn close(events: &mut [RecordedEvent<'_>], start: usize) {
         count += 1;
     }
     if let Event::MapStart(ref mut shape) | Event::SeqStart(ref mut shape) = head.event {
-        *shape = shape.with_len(if is_map { count / 2 } else { count });
+        shape.set_len(if is_map { count / 2 } else { count });
     }
 }
 

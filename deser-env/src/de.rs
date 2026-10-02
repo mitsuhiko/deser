@@ -23,7 +23,7 @@ use crate::{Case, EnvVar};
 /// use deser_env::DeserializerConfig;
 ///
 /// const CONFIG: DeserializerConfig =
-///     DeserializerConfig::new().separator("_");
+///     DeserializerConfig::builder().separator("_").build();
 /// let value: BTreeMap<String, BTreeMap<String, u32>> =
 ///     CONFIG.from_vars("APP_", [("APP_SERVER_PORT", "80")]).unwrap();
 /// assert_eq!(value["server"]["port"], 80);
@@ -51,32 +51,39 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Sets the separator of nested keys.
     ///
     /// The default is `__` (`APP_SERVER__PORT` is `server.port`).  A single
     /// `_` cannot be told apart from the underscores in names, so
     /// `APP_MAX_CONNECTIONS` would be `max.connections`.  The empty string
     /// disables nesting, names are keys as they are.
-    pub const fn separator(mut self, separator: &'static str) -> DeserializerConfig {
+    pub const fn set_separator(&mut self, separator: &'static str) {
         self.separator = separator;
-        self
     }
 
     /// Sets how the case of names maps onto keys.
     ///
     /// The default is [`Case::Upper`] which lowercases the names.
-    pub const fn case(mut self, case: Case) -> DeserializerConfig {
+    pub const fn set_case(&mut self, case: Case) {
         self.case = case;
-        self
     }
 
     /// Sets how deeply keys can be nested.
     ///
     /// This is the number of separators in a name (after the prefix).
     /// Names that are nested deeper are an error.  The default is 16.
-    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
+    pub const fn set_max_depth(&mut self, depth: usize) {
         self.max_depth = depth;
-        self
     }
 
     /// Deserializes a value from the environment variables with a prefix.
@@ -97,6 +104,59 @@ impl DeserializerConfig {
         V: Into<Cow<'a, str>>,
     {
         Deserializer::from_vars_with_config(prefix, vars, self).deserialize()
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets the separator of nested keys.
+    ///
+    /// See [`DeserializerConfig::set_separator`].
+    pub const fn separator(mut self, separator: &'static str) -> DeserializerConfigBuilder {
+        self.value.set_separator(separator);
+        self
+    }
+
+    /// Sets how the case of names maps onto keys.
+    ///
+    /// See [`DeserializerConfig::set_case`].
+    pub const fn case(mut self, case: Case) -> DeserializerConfigBuilder {
+        self.value.set_case(case);
+        self
+    }
+
+    /// Sets how deeply keys can be nested.
+    ///
+    /// See [`DeserializerConfig::set_max_depth`].
+    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfigBuilder {
+        self.value.set_max_depth(depth);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -195,10 +255,9 @@ impl Deserializer<'static> {
                 Err(value) => match os_bytes(value) {
                     Some(bytes) => Value::Bytes(bytes),
                     None => {
-                        rv.fail(
-                            Error::new(ErrorKind::Syntax, "value is not valid unicode")
-                                .with_attachment(EnvVar::new(name.as_str().into())),
-                        );
+                        let mut err = Error::new(ErrorKind::Syntax, "value is not valid unicode");
+                        err.set_attachment(EnvVar::new(name.as_str().into()));
+                        rv.fail(err);
                         continue;
                     }
                 },
@@ -371,13 +430,12 @@ pub(crate) fn os_bytes(_value: OsString) -> Option<Vec<u8>> {
 struct CurrentVar(Option<Arc<str>>);
 
 impl deser_core::ErrorContext for CurrentVar {
-    fn add_context(err: Error, state: &deser_core::State) -> Error {
+    fn add_context(err: &mut Error, state: &deser_core::State) {
         if err.attachment::<EnvVar>().is_some() {
-            return err;
+            return;
         }
-        match state.event::<CurrentVar>() {
-            Some(CurrentVar(Some(name))) => err.with_attachment(EnvVar::new(name.clone())),
-            _ => err,
+        if let Some(CurrentVar(Some(name))) = state.event::<CurrentVar>() {
+            err.set_attachment(EnvVar::new(name.clone()));
         }
     }
 }
@@ -436,10 +494,11 @@ impl Tree {
             segments.clear();
             split_name(&var.name[var.prefix_len..], config.separator, &mut segments);
             if segments.len() > config.max_depth + 1 {
-                return Err(
-                    Error::new(ErrorKind::LimitExceeded, "name is nested too deeply")
-                        .with_attachment(EnvVar::new(var.name.clone())),
-                );
+                return Err(var_error(
+                    ErrorKind::LimitExceeded,
+                    "name is nested too deeply",
+                    &var.name,
+                ));
             }
             let mut node = 0;
             for (depth, &(start, end)) in segments.iter().enumerate() {
@@ -530,7 +589,11 @@ impl Tree {
             .iter()
             .map(|&child| self.nodes[child].values.len().max(1))
             .sum();
-        ContainerShape::new().with_len(len).with_multimap(true)
+        {
+            let mut shape = ContainerShape::with_len(len);
+            shape.set_multimap(true);
+            shape
+        }
     }
 
     /// Emits the events of the tree.
@@ -592,11 +655,11 @@ impl Tree {
                     let var = match policy {
                         DuplicateKeys::First => values[0],
                         DuplicateKeys::Error => {
-                            return Err(Error::new(
+                            return Err(var_error(
                                 ErrorKind::Syntax,
                                 "more than one variable for the same index",
-                            )
-                            .with_attachment(EnvVar::new(vars[values[1]].name.clone())));
+                                &vars[values[1]].name,
+                            ));
                         }
                         _ => values[values.len() - 1],
                     };
@@ -612,7 +675,7 @@ impl Tree {
                     let event = if is_map {
                         Event::MapStart(self.map_shape(&children))
                     } else {
-                        Event::SeqStart(ContainerShape::new().with_len(children.len()))
+                        Event::SeqStart(ContainerShape::with_len(children.len()))
                     };
                     emit_as(driver, event, node.name.as_ref())?;
                     stack.push(Frame {
@@ -622,11 +685,11 @@ impl Tree {
                     });
                 }
                 (&[var, ..], false) => {
-                    return Err(Error::new(
+                    return Err(var_error(
                         ErrorKind::Syntax,
                         "variable has a value and nested variables",
-                    )
-                    .with_attachment(EnvVar::new(vars[var].name.clone())));
+                        &vars[var].name,
+                    ));
                 }
             }
         }
@@ -721,4 +784,12 @@ fn test_split_name() {
     for name in ["__A", "A__", "A____B", "__"] {
         assert_eq!(split(name, "__"), [name], "{}", name);
     }
+}
+
+/// Creates an error about a variable.
+#[cold]
+fn var_error(kind: ErrorKind, msg: &'static str, name: &Arc<str>) -> Error {
+    let mut err = Error::new(kind, msg);
+    err.set_attachment(EnvVar::new(name.clone()));
+    err
 }

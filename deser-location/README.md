@@ -18,8 +18,8 @@ struct Config {
 }
 
 let input = "name: web\nworkers: 0\n";
-let config: Config = deser_yaml::DeserializerConfig::new()
-    .track_locations(true)
+let config: Config = deser_yaml::DeserializerConfig::builder()
+    .track_locations(true).build()
     .from_str(input)
     .unwrap();
 

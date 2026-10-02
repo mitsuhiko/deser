@@ -39,7 +39,10 @@ fn row(name: &str, age: u32) -> Row {
 
 #[test]
 fn test_read_in_chunks() {
-    let config = DeserializerConfig::new().comment(Some(b'#')).sep_line(true);
+    let config = DeserializerConfig::builder()
+        .comment(Some(b'#'))
+        .sep_line(true)
+        .build();
     let input =
         "\u{feff}sep=;\r\n# comment\r\nname;age\r\n\r\n\"ja\r\nne\";42\r\"jo\"\"hn\";23\r\n\r\n";
     for size in chunk_sizes(input.len()) {
@@ -96,7 +99,7 @@ fn test_errors_continue() {
 
 #[test]
 fn test_stream_errors_end_the_stream() {
-    let config = DeserializerConfig::new().max_record_len(16);
+    let config = DeserializerConfig::builder().max_record_len(16).build();
     let input = b"name,age\n\"this record never ends,1\njane,42\n";
     let mut reader = config.reader(Chunked { input, size: 4 });
     let err = reader.read::<Row>().unwrap_err();
@@ -134,7 +137,7 @@ fn test_reader_with_headers() {
     assert_eq!(reader.read::<Row>().unwrap(), Some(row("jane", 42)));
 
     // without names
-    let config = DeserializerConfig::new().headers(Headers::None);
+    let config = DeserializerConfig::builder().headers(Headers::None).build();
     let mut reader = config.reader(&b"jane,42\n"[..]);
     assert_eq!(
         reader.read::<(String, u32)>().unwrap(),
@@ -250,7 +253,7 @@ fn test_to_writer_streams_records() {
             map
         })
         .collect();
-    const FLEXIBLE: SerializerConfig = SerializerConfig::new().flexible(true);
+    const FLEXIBLE: SerializerConfig = SerializerConfig::builder().flexible(true).build();
     let expected = FLEXIBLE.to_string(&maps);
     let mut out = Pieces(Vec::new(), 0);
     let rv = FLEXIBLE.to_writer(&mut out, &maps);

@@ -27,8 +27,12 @@ pub enum Response {
     Error(String),
 }
 
-const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+const READ_LINES: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
+const WRITE_LINES: SerializerConfig = SerializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
 
 async fn handle(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();

@@ -2,12 +2,15 @@
 use deser::Event;
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 
-const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+const STOP: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Stop)
+    .build();
 
 #[test]
 fn test_writer() {
-    let mut writer = SerializerConfig::new()
+    let mut writer = SerializerConfig::builder()
         .trailing(Trailing::Stop)
+        .build()
         .writer(Vec::new());
     writer.write(&1).unwrap();
     writer.write(&vec![2, 3]).unwrap();
@@ -19,8 +22,9 @@ fn test_writer() {
     assert_eq!(reader.read::<u32>().unwrap(), Some(1));
     assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![2, 3]));
 
-    let mut writer = SerializerConfig::new()
+    let mut writer = SerializerConfig::builder()
         .trailing(Trailing::Newline)
+        .build()
         .writer(Vec::new());
     writer.write(&"a").unwrap();
     writer.write(&"b").unwrap();
@@ -54,8 +58,9 @@ fn test_writer_strict_and_layers() {
         }
     }
 
-    let mut writer = SerializerConfig::new()
+    let mut writer = SerializerConfig::builder()
         .trailing(Trailing::Newline)
+        .build()
         .writer(Vec::new());
     writer
         .write_with(&vec![1u64, 2], |driver| driver.push_layer(NumbersAsStrings))
@@ -130,14 +135,21 @@ fn test_partial_same_output() {
     ];
     let configs = [
         SerializerConfig::new(),
-        SerializerConfig::new().pretty(Indent::Spaces(2)),
-        SerializerConfig::new().pretty(Indent::Tab).compact(true),
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .pretty(Indent::Spaces(2))
-            .inline(InlinePolicy::LeafIfFits(40)),
-        SerializerConfig::new()
+            .build(),
+        SerializerConfig::builder()
+            .pretty(Indent::Tab)
+            .compact(true)
+            .build(),
+        SerializerConfig::builder()
+            .pretty(Indent::Spaces(2))
+            .inline(InlinePolicy::LeafIfFits(40))
+            .build(),
+        SerializerConfig::builder()
             .indent(Indent::Spaces(4))
-            .inline(InlinePolicy::LeafIfFits(20)),
+            .inline(InlinePolicy::LeafIfFits(20))
+            .build(),
     ];
     let configs = if miri { &configs[3..] } else { &configs[..] };
     let limits: &[usize] = if miri {
@@ -195,7 +207,7 @@ fn test_partial_same_output() {
 fn test_partial_streams() {
     // values of a stream are separated like with a single write
     for trailing in [Trailing::Newline, Trailing::Stop] {
-        let config = SerializerConfig::new().trailing(trailing);
+        let config = SerializerConfig::builder().trailing(trailing).build();
         let mut writer = config.writer(Vec::new());
         writer.set_buffer_limit(2);
         writer.write(&vec![1, 2, 3]).unwrap();
@@ -223,7 +235,9 @@ fn test_partial_errors() {
         }
     }
 
-    let config = SerializerConfig::new().trailing(Trailing::Newline);
+    let config = SerializerConfig::builder()
+        .trailing(Trailing::Newline)
+        .build();
 
     // a value that fails before anything was written is not written, the
     // stream continues
@@ -249,7 +263,9 @@ fn test_serializer_in_parts() {
     use deser_json::Serializer;
 
     // without IO: the output is taken while the value is written
-    let config = SerializerConfig::new().trailing(Trailing::Newline);
+    let config = SerializerConfig::builder()
+        .trailing(Trailing::Newline)
+        .build();
     let mut serializer = Serializer::with_config(&config);
     // miri is slow, it checks a smaller value
     let len = if cfg!(miri) { 60 } else { 200 };
@@ -279,10 +295,11 @@ fn test_serializer_in_parts() {
     assert_eq!(serializer.written(), 2);
 
     // output that was not taken is kept, pretty output keeps its columns
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .trailing(Trailing::Newline)
         .pretty(deser_json::Indent::Spaces(2))
-        .inline(deser_json::InlinePolicy::LeafIfFits(20));
+        .inline(deser_json::InlinePolicy::LeafIfFits(20))
+        .build();
     let mut serializer = Serializer::with_config(&config);
     let value = vec![vec![1, 2], (0..20).collect()];
     for _ in 0..2 {
@@ -293,7 +310,7 @@ fn test_serializer_in_parts() {
     assert_eq!(serializer.as_str(), format!("{single}\n{single}\n"));
 
     // continuing a stream
-    let config = SerializerConfig::new().trailing(Trailing::Stop);
+    let config = SerializerConfig::builder().trailing(Trailing::Stop).build();
     let mut serializer = Serializer::with_written(&config, 1);
     serializer.serialize(&2).unwrap();
     assert_eq!(serializer.finish(), "\n2");

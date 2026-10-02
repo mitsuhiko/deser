@@ -83,12 +83,17 @@ fn test_round_trip() {
 fn test_root() {
     // atoms at the root with a name
     assert_eq!(
-        SerializerConfig::new().root("n").to_string(&42).unwrap(),
+        SerializerConfig::builder()
+            .root("n")
+            .build()
+            .to_string(&42)
+            .unwrap(),
         "<n>42</n>"
     );
     assert_eq!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .root("n")
+            .build()
             .to_string(&None::<u32>)
             .unwrap(),
         "<n/>"
@@ -97,7 +102,11 @@ fn test_root() {
     let map = BTreeMap::from([("a", 1)]);
     assert!(to_string(&map).is_err());
     assert_eq!(
-        SerializerConfig::new().root("m").to_string(&map).unwrap(),
+        SerializerConfig::builder()
+            .root("m")
+            .build()
+            .to_string(&map)
+            .unwrap(),
         "<m><a>1</a></m>"
     );
     // empty structs
@@ -106,16 +115,18 @@ fn test_root() {
     assert_eq!(to_string(&Empty {}).unwrap(), "<Empty/>");
     // sequences have no root
     assert!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .root("s")
+            .build()
             .to_string(&[1, 2])
             .is_err()
     );
 
     assert_eq!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .root("n")
             .declaration(true)
+            .build()
             .to_string(&1)
             .unwrap(),
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><n>1</n>"
@@ -241,8 +252,9 @@ fn test_resolved_names() {
          <ns0:link ns1:href=\"/b\" ns0:rel=\"next\"/>\
          <ns2:creator>a</ns2:creator><ns2:creator>b</ns2:creator></ns0:feed>"
     );
-    const RESOLVE: deser_xml::DeserializerConfig =
-        deser_xml::DeserializerConfig::new().resolve_namespaces(true);
+    const RESOLVE: deser_xml::DeserializerConfig = deser_xml::DeserializerConfig::builder()
+        .resolve_namespaces(true)
+        .build();
     assert_eq!(RESOLVE.from_str::<Feed>(&xml).unwrap(), feed);
 
     // configured prefixes are used, generated ones skip them.  The default
@@ -265,7 +277,9 @@ fn test_resolved_names() {
     // default namespace, and the XML declaration before the root
     const PREFIXED: SerializerConfig = SerializerConfig::new()
         .namespaces(deser_xml::prefixes![atom as "", atom as "a", xlink])
-        .declaration(true);
+        .into_builder()
+        .declaration(true)
+        .build();
     let xml = PREFIXED.to_string(&feed).unwrap();
     assert_eq!(
         xml,
@@ -291,15 +305,20 @@ fn test_resolved_names() {
     // the xml prefix is never declared
     let value = BTreeMap::from([("@{http://www.w3.org/XML/1998/namespace}lang", "en")]);
     assert_eq!(
-        SerializerConfig::new().root("a").to_string(&value).unwrap(),
+        SerializerConfig::builder()
+            .root("a")
+            .build()
+            .to_string(&value)
+            .unwrap(),
         r#"<a xml:lang="en"/>"#
     );
 
     // names that are not names
     for name in ["{}a", "{urn:a", "{urn:a}", "{urn:a}x:y", "@{urn:a}1"] {
         let value = BTreeMap::from([(name, "1")]);
-        let err = SerializerConfig::new()
+        let err = SerializerConfig::builder()
             .root("a")
+            .build()
             .to_string(&value)
             .unwrap_err();
         assert!(err.message().ends_with("is not a name in XML"), "{name}");
@@ -342,14 +361,22 @@ fn test_attribute_order() {
     // maps: the text key sorts before the attribute prefix
     let map = BTreeMap::from([("$text", "x"), ("@a", "1"), ("@b", "2")]);
     assert_eq!(
-        SerializerConfig::new().root("m").to_string(&map).unwrap(),
+        SerializerConfig::builder()
+            .root("m")
+            .build()
+            .to_string(&map)
+            .unwrap(),
         r#"<m a="1" b="2">x</m>"#
     );
 
     // the prefixes of late attributes are declared on the root
     let map = BTreeMap::from([("$text", "x"), ("@{urn:a}a", "1")]);
     assert_eq!(
-        SerializerConfig::new().root("m").to_string(&map).unwrap(),
+        SerializerConfig::builder()
+            .root("m")
+            .build()
+            .to_string(&map)
+            .unwrap(),
         r#"<m xmlns:ns0="urn:a" ns0:a="1">x</m>"#
     );
 
@@ -375,19 +402,32 @@ fn test_errors() {
 
     // names that are not names
     let map = BTreeMap::from([("not a name", 1)]);
-    assert!(SerializerConfig::new().root("m").to_string(&map).is_err());
+    assert!(
+        SerializerConfig::builder()
+            .root("m")
+            .build()
+            .to_string(&map)
+            .is_err()
+    );
 
     // characters that cannot be written
     assert!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .root("m")
+            .build()
             .to_string(&"\u{1}")
             .is_err()
     );
 
     // sequences in sequences
     let map = BTreeMap::from([("a", vec![vec![1]])]);
-    assert!(SerializerConfig::new().root("m").to_string(&map).is_err());
+    assert!(
+        SerializerConfig::builder()
+            .root("m")
+            .build()
+            .to_string(&map)
+            .is_err()
+    );
 }
 
 #[test]
@@ -429,7 +469,10 @@ fn test_serializer() {
         .unwrap_err();
     assert!(err.message().starts_with("the name of the root element"));
     assert_eq!(serializer.as_str(), "");
-    let config = SerializerConfig::new().root("r").declaration(true);
+    let config = SerializerConfig::builder()
+        .root("r")
+        .declaration(true)
+        .build();
     let mut serializer = deser_xml::Serializer::with_config(&config);
     serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();
     assert_eq!(
@@ -444,7 +487,8 @@ fn test_serializer_trait() {
     fn write(ser: &mut dyn deser::ser::Serializer, value: deser::ser::SerializeRef<'_>) {
         ser.serialize_ref(value).unwrap();
     }
-    let mut serializer = deser_xml::Serializer::with_config(&SerializerConfig::new().root("r"));
+    let mut serializer =
+        deser_xml::Serializer::with_config(&SerializerConfig::builder().root("r").build());
     write(
         &mut serializer,
         deser::ser::SerializeRef::new(&vec![("a", 1)].into_iter().collect::<BTreeMap<_, _>>()),

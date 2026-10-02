@@ -64,9 +64,11 @@ impl Serialize for Seq {
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
-        ContainerShape::new()
-            .with_len(value.len())
-            .with_order(value.order())
+        {
+            let mut shape = ContainerShape::with_len(value.len());
+            shape.set_order(value.order());
+            shape
+        }
     }
 }
 
@@ -90,10 +92,12 @@ impl Serialize for Map {
     }
 
     fn container_shape(value: &Self) -> ContainerShape {
-        ContainerShape::new()
-            .with_len(value.len())
-            .with_order(value.order())
-            .with_multimap(value.is_multimap())
+        {
+            let mut shape = ContainerShape::with_len(value.len());
+            shape.set_order(value.order());
+            shape.set_multimap(value.is_multimap());
+            shape
+        }
     }
 }
 

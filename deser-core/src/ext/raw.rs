@@ -25,7 +25,7 @@ use crate::ser::{Emit, Serialize, SerializeHandle, SerializeRef};
 /// the input of the value, and serializers of the format write them as
 /// they are.  For this the format:
 ///
-/// * calls [`State::set_raw_format`](crate::State::set_raw_format) with
+/// * calls [`State::declare_raw_format`](crate::State::declare_raw_format) with
 ///   its [`RawFormatId`] in the deserializer (before the first event, it
 ///   returns the description of the format if the top-level value is
 ///   wanted as raw value) and in the serializer (before the first value).
@@ -69,7 +69,7 @@ pub unsafe trait TextRawFormat: RawFormat {}
 /// Formats are identified by the address of a static of this type.  Unlike
 /// the [`RawFormatInfo`] of the format it holds no functions: formats
 /// declare which raw values they pass on with it (see
-/// [`State::set_raw_format`](crate::State::set_raw_format)), so a program
+/// [`State::declare_raw_format`](crate::State::declare_raw_format)), so a program
 /// only contains the functions of the format (like its parser for
 /// `replay`) if it uses its raw values.
 pub struct RawFormatId {
@@ -150,12 +150,11 @@ impl RawFormatInfo {
     /// programs that use their raw values need here (like the scanner of
     /// raw values in the parser): as only raw values refer to the
     /// description, other programs do not contain it.
-    pub const fn with_data(mut self, data: &'static (dyn Any + Send + Sync)) -> RawFormatInfo {
+    pub const fn set_data(&mut self, data: &'static (dyn Any + Send + Sync)) {
         self.data = Some(data);
-        self
     }
 
-    /// Returns the data of the format (see [`with_data`](Self::with_data)).
+    /// Returns the data of the format (see [`set_data`](Self::set_data)).
     pub fn data(&self) -> Option<&'static (dyn Any + Send + Sync)> {
         self.data
     }
@@ -207,7 +206,7 @@ fn same_format(a: &'static RawFormatInfo, b: &'static RawFormatInfo) -> bool {
 ///   [`Deserialize::__private_raw`]).  They validate the value and pass on
 ///   its input instead of its events.
 /// * [`Raw`] values emit it when they are serialized and the serializer
-///   writes the format as it is (see [`State::set_raw_format`]).
+///   writes the format as it is (see [`State::declare_raw_format`]).
 ///
 /// It knows its format, so it's parsed into its value where it ends up in
 /// something that does not know it (for instance when a recording that

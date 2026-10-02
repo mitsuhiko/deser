@@ -279,11 +279,11 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for CheckSink<'a, 'de, T, V> {
         self.sink.get_mut().finish(state)?;
         if let Some(value) = self.sink.take() {
             if let Err(violation) = V::validate(&value) {
-                let err = violation.into_error();
-                return Err(match self.start {
-                    Some(start) => err.with_offset(start),
-                    None => err,
-                });
+                let mut err = violation.into_error();
+                if let Some(start) = self.start {
+                    err.set_offset(start);
+                }
+                return Err(err);
             }
             *self.out = Some(value);
         }

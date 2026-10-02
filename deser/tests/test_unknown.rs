@@ -33,7 +33,7 @@ fn map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
 /// The events of a recorded map, recordings know the length of maps.
 fn recorded_map<'a>(pairs: &[(&'a str, Event<'a>)]) -> Vec<Event<'a>> {
     let mut events = map(pairs);
-    events[0] = Event::MapStart(ContainerShape::new().with_len(pairs.len()));
+    events[0] = Event::MapStart(ContainerShape::with_len(pairs.len()));
     events
 }
 

@@ -14,7 +14,7 @@ use deser_core::{Atom, Bytes, Implicit, ImplicitValue};
 ///
 /// A document can declare its version with a `%YAML` directive.  The
 /// version configured with
-/// [`DeserializerConfig::version`](crate::DeserializerConfig::version) applies
+/// [`DeserializerConfig::set_version`](crate::DeserializerConfig::set_version) applies
 /// to documents that do not declare a version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]

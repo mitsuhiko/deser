@@ -116,7 +116,9 @@ fn setup(driver: &mut DeserializeDriver<'_, '_>, warnings: &IgnoredFields) {
 /// Applies a TOML file to the configuration.
 fn apply_file(config: &mut Config, source: &str, warnings: &IgnoredFields) -> Result<(), Error> {
     // the source is needed for the locations of the warnings
-    let toml = deser_toml::DeserializerConfig::new().track_locations(true);
+    let toml = deser_toml::DeserializerConfig::builder()
+        .track_locations(true)
+        .build();
     deser_toml::Deserializer::from_str_with_config(source, &toml)
         .update_with(config, |driver| setup(driver, warnings))
 }
@@ -139,7 +141,9 @@ fn apply_env(
 /// Applies `--set` overrides to the configuration.
 fn apply_overrides(config: &mut Config, overrides: &[&str]) -> Result<(), Error> {
     let query = overrides.join("&");
-    let urlencoded = deser_urlencoded::DeserializerConfig::new().nesting(Nesting::Dots);
+    let urlencoded = deser_urlencoded::DeserializerConfig::builder()
+        .nesting(Nesting::Dots)
+        .build();
     let warnings = IgnoredFields::new();
     deser_urlencoded::Deserializer::from_str_with_config(&query, &urlencoded)
         .update_with(config, |driver| setup(driver, &warnings))?;

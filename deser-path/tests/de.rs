@@ -191,7 +191,7 @@ fn test_unknown_field_paths() {
     let json = "{\"servers\": [\n  {\"host\": \"a\", \"port\": 1, \"tiemout\": 2}\n]}";
     deser_json::Deserializer::from_str_with_config(
         json,
-        &DeserializerConfig::new().track_locations(true),
+        &DeserializerConfig::builder().track_locations(true).build(),
     )
     .deserialize_with::<BTreeMap<String, Vec<Server>>, _>(|driver| {
         UnknownFields::Collect(ignored.clone()).set(driver.state_mut());

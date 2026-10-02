@@ -309,13 +309,14 @@ impl PathLayer {
 struct PathContext;
 
 impl ErrorContext for PathContext {
-    fn add_context(err: Error, state: &State) -> Error {
+    fn add_context(err: &mut Error, state: &State) {
         if err.attachment::<Path>().is_some() {
-            return err;
+            return;
         }
-        match state.get::<Path>() {
-            Some(path) if !path.segments.is_empty() => err.with_attachment(path.clone()),
-            _ => err,
+        if let Some(path) = state.get::<Path>()
+            && !path.segments.is_empty()
+        {
+            err.set_attachment(path.clone());
         }
     }
 }

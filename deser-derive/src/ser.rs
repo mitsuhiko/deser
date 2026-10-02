@@ -455,7 +455,7 @@ fn derive_indexed_struct(
         quote! { __deser::ContainerShape::new() }
     } else {
         let len = attrs.len();
-        quote! { __deser::ContainerShape::new().with_len(#len) }
+        quote! { __deser::ContainerShape::with_len(#len) }
     };
 
     let ser_trait = crate::forward::serialize_trait(container_attrs);
@@ -645,7 +645,7 @@ fn derive_tuple_struct(
                 }
 
                 fn container_shape(__value: &Self) -> __deser::ContainerShape {
-                    __deser::ContainerShape::new().with_len(#len)
+                    __deser::ContainerShape::with_len(#len)
                 }
 
                 fn serialize<'__a>(__value: &'__a Self, __state: &mut __deser::State) -> __deser::__derive::Result<__deser::ser::Emit<'__a>> {
@@ -658,7 +658,7 @@ fn derive_tuple_struct(
                 {
                     __deser::__derive::Ok(__deser::__derive::Begin::indexed_seq(
                         __value,
-                        __deser::ContainerShape::new().with_len(#len),
+                        __deser::ContainerShape::with_len(#len),
                     ))
                 }
             }

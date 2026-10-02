@@ -129,7 +129,7 @@ fn test_numbers() {
     );
     let value: Decimal = from_str("0.10000000000000000001").unwrap();
     assert_eq!(value.as_str(), "0.10000000000000000001");
-    const INEXACT: DeserializerConfig = DeserializerConfig::new().exact_numbers(false);
+    const INEXACT: DeserializerConfig = DeserializerConfig::builder().exact_numbers(false).build();
     let value: String = INEXACT.from_str("0.10").unwrap();
     assert_eq!(value, "0.10");
 }
@@ -222,7 +222,7 @@ fn test_locations() {
         c: Spanned<String>,
     }
 
-    let config = DeserializerConfig::new().track_locations(true);
+    let config = DeserializerConfig::builder().track_locations(true).build();
     let doc: Doc = config
         .from_str("a: 1 # c\nb: two  words  \nc:\n  '''\n  x\n  '''")
         .unwrap();

@@ -276,7 +276,11 @@ fn test_repeated() {
     {
         let mut driver = DeserializeDriver::new(&mut out);
         for event in [
-            Event::MapStart(ContainerShape::new().with_multimap(true)),
+            Event::MapStart({
+                let mut shape = ContainerShape::new();
+                shape.set_multimap(true);
+                shape
+            }),
             Atom::Lexical("page".into()).into(),
             Atom::Lexical("1".into()).into(),
             Atom::Lexical("tag".into()).into(),

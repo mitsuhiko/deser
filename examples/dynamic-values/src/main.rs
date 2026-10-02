@@ -153,7 +153,9 @@ fn merge() {
         "{\n  \"server\": {\n    \"host\": \"example.com\",\n    \"port\": \"eighty\"\n  }\n}";
 
     // values remember where they came from
-    let json = deser_json::DeserializerConfig::new().track_locations(true);
+    let json = deser_json::DeserializerConfig::builder()
+        .track_locations(true)
+        .build();
     let mut merged: Value = json.from_str(base).unwrap();
     deser_json::Deserializer::from_str_with_config(local, &json)
         .update(&mut merged)

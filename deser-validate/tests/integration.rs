@@ -43,7 +43,9 @@ const INVALID: &str = r#"{
 }"#;
 
 fn with_paths<'de, T: Deserialize<'de>>(input: &'de str) -> Result<T, deser::Error> {
-    let config = deser_json::DeserializerConfig::new().track_locations(true);
+    let config = deser_json::DeserializerConfig::builder()
+        .track_locations(true)
+        .build();
     deser_json::Deserializer::from_str_with_config(input, &config)
         .deserialize_with(|driver| driver.push_layer(PathLayer::new()))
 }
@@ -143,7 +145,7 @@ fn test_format_and_layer_errors_are_not_kept() {
 
     let err = deser_json::Deserializer::from_str(r#"{"a": [[[1]]]}"#)
         .deserialize_with::<std::collections::BTreeMap<String, Validated<u32>>, _>(|driver| {
-            driver.push_layer(Limits::new().max_depth(3))
+            driver.push_layer(Limits::builder().max_depth(3).build())
         })
         .unwrap_err();
     assert_eq!(err.message(), "recursion limit exceeded");
@@ -198,7 +200,8 @@ fn test_validated_error_limit() {
     }
 
     // below the limit the values keep their errors
-    let validation = Validation::new().max_errors(3);
+    let mut validation = Validation::new();
+    validation.set_max_errors(3);
     let rv = deser_json::Deserializer::from_str(r#"{"a": ["x", "y"], "b": ["z"]}"#)
         .deserialize_with::<Lists, _>(|driver| validation.setup(driver));
     let outcome = validation.finish(rv);
@@ -206,7 +209,8 @@ fn test_validated_error_limit() {
     assert_eq!(outcome.report.len(), 3);
 
     // the error that exceeds the limit ends the deserialization
-    let validation = Validation::new().max_errors(2);
+    let mut validation = Validation::new();
+    validation.set_max_errors(2);
     let rv = deser_json::Deserializer::from_str(r#"{"a": ["x", "y"], "b": ["z"]}"#)
         .deserialize_with::<Lists, _>(|driver| validation.setup(driver));
     let outcome = validation.finish(rv);
@@ -233,7 +237,9 @@ fn test_untagged_variants_do_not_keep_errors() {
 #[test]
 fn test_validation() {
     let validation = Validation::new();
-    let config = deser_json::DeserializerConfig::new().track_locations(true);
+    let config = deser_json::DeserializerConfig::builder()
+        .track_locations(true)
+        .build();
     let rv = deser_json::Deserializer::from_str_with_config(INVALID, &config)
         .deserialize_with::<Signup, _>(|driver| validation.setup(driver));
     let outcome = validation.finish(rv);
@@ -269,7 +275,8 @@ fn test_validation() {
 
 #[test]
 fn test_max_errors() {
-    let validation = Validation::new().max_errors(1);
+    let mut validation = Validation::new();
+    validation.set_max_errors(1);
     let rv = deser_json::Deserializer::from_str(r#"[1, "a", "b", "c"]"#)
         .deserialize_with::<Vec<u32>, _>(|driver| validation.setup(driver));
     let report = validation.finish(rv).into_result().unwrap_err();

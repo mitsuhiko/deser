@@ -7,8 +7,12 @@ use deser::de::Recording;
 use super::dialect::{Deserializer, DeserializerConfig, Trailing};
 
 pub const STRICT: DeserializerConfig = DeserializerConfig::new();
-pub const NEWLINE: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-pub const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+pub const NEWLINE: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
+pub const STOP: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Stop)
+    .build();
 
 /// A reader that returns the input in chunks of a fixed size.
 pub struct Chunked<'a> {

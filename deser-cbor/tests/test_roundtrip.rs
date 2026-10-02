@@ -11,7 +11,7 @@ use deser::de::DeserializeOwned;
 use deser::{Deserialize, Serialize};
 use deser_cbor::SerializerConfig;
 
-const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
+const CANONICAL: SerializerConfig = SerializerConfig::builder().canonical(true).build();
 
 fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T) {
     let bytes = deser_cbor::to_vec(&value).unwrap();

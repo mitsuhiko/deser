@@ -39,8 +39,9 @@ fn test_deep_nesting_roundtrip() {
     let rv: Node = deser_cbor::from_slice(&bytes).unwrap();
     assert_eq!(deser_cbor::to_vec(&rv).unwrap(), bytes);
     assert_eq!(
-        deser_cbor::SerializerConfig::new()
+        deser_cbor::SerializerConfig::builder()
             .canonical(true)
+            .build()
             .to_vec(&rv)
             .unwrap()
             .len(),

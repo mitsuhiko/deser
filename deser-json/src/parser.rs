@@ -327,7 +327,7 @@ impl Parser {
         let state = out.state_mut();
         // the request of the top-level value, or of a value whose
         // request came with the last input (the input ended before it)
-        if let Some(format) = state.set_raw_format(&crate::raw::ID) {
+        if let Some(format) = state.declare_raw_format(&crate::raw::ID) {
             if self.is_idle() {
                 self.partial = Pending::Raw;
             }
@@ -335,7 +335,10 @@ impl Parser {
         }
         let rv = match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
-            Err(err) if err.offset().is_none() => Err(err.with_offset(base + cur.pos)),
+            Err(mut err) if err.offset().is_none() => {
+                err.set_offset(base + cur.pos);
+                Err(err)
+            }
             Err(err) => Err(err),
         };
         if !self.partial.is_string() && self.scratch.capacity() != 0 {
@@ -1952,7 +1955,7 @@ fn eisel_lemire(significand: u64, exponent: i32) -> Option<f64> {
 /// Creates an error for the token at the offset.
 #[cold]
 fn token_error(offset: usize, msg: &'static str) -> Error {
-    Error::new(ErrorKind::Syntax, msg).with_offset(offset)
+    Error::with_offset(ErrorKind::Syntax, msg, offset)
 }
 
 /// Returns `true` if a decimal number without exponent is the shortest

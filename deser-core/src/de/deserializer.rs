@@ -43,7 +43,7 @@ use crate::{Context, State};
 /// assert_eq!(value, [1, 2, 3]);
 ///
 /// let rv = Numbers("1, 2, 3").deserialize_with::<Vec<u32>, _>(|driver| {
-///     driver.push_layer(Limits::new().max_items(2));
+///     driver.push_layer(Limits::builder().max_items(2).build());
 /// });
 /// assert_eq!(rv.unwrap_err().to_string(), "LimitExceeded: too many items");
 /// ```

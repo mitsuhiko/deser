@@ -50,7 +50,7 @@ fn borrowed_atom_into(
 }
 
 /// Returns an expression that is `true` if a field collects the values of
-/// a repeated key (see `ContainerShape::with_multimap`).
+/// a repeated key (see `ContainerShape::set_multimap`).
 fn field_collects(ty: &syn::Type, adapter: Option<&syn::Type>) -> TokenStream {
     match adapter {
         Some(adapter) => quote_spanned! { adapter.span()=>

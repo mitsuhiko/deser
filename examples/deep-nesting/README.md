@@ -20,7 +20,7 @@ depth anyway.
   levels deep into a recursive `Tree`.
 - Serializing it to CBOR, reading it back and serializing to JSON again,
   still without recursion.
-- `deser::de::Limits::new().max_depth(64)` as a layer to reject deep
+- `deser::de::Limits::builder().max_depth(64).build()` as a layer to reject deep
   input.
 - A custom iterative `Drop` for `Tree`. This is needed because Rust's own
   generated drop glue is recursive and would overflow. That limitation is

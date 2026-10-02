@@ -88,7 +88,7 @@ fn test_bytes_lenient() {
 
 #[test]
 fn test_bytes_config() {
-    let json = to_string_in(&blob(), &Context::new().with(BytesFormat::SEQ));
+    let json = to_string_in(&blob(), &Context::with(BytesFormat::SEQ));
     // values with adapters keep their format, keys cannot be sequences
     assert_eq!(
         json,
@@ -97,7 +97,7 @@ fn test_bytes_config() {
     assert_eq!(from_str::<Blob>(&json).unwrap(), blob());
 
     // the same context is used for writing and reading
-    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let hex = Context::with(BytesFormat::encoded::<Hex>());
     let json = to_string_in(&blob(), &hex);
     assert_eq!(
         json,
@@ -137,7 +137,7 @@ fn test_bytes_in_enums() {
     let json = r#"{"payload":"AQID","type":"Data"}"#;
     assert_eq!(from_str::<Message>(json).unwrap(), value);
 
-    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let hex = Context::with(BytesFormat::encoded::<Hex>());
     let json = r#"{"payload":"010203","type":"Data"}"#;
     assert_eq!(
         Deserializer::from_str(json)

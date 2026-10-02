@@ -12,7 +12,7 @@ use deser_path::{Path, PathLayer};
 
 type Rows = Vec<Vec<String>>;
 
-const NO_HEADERS: DeserializerConfig = DeserializerConfig::new().headers(Headers::None);
+const NO_HEADERS: DeserializerConfig = DeserializerConfig::builder().headers(Headers::None).build();
 
 /// Parses without names into strings.
 fn rows(input: &str) -> Rows {
@@ -22,7 +22,9 @@ fn rows(input: &str) -> Rows {
 fn rows_with(config: &DeserializerConfig, input: &str) -> Rows {
     config
         .clone()
+        .into_builder()
         .headers(Headers::None)
+        .build()
         .from_str(input)
         .unwrap()
 }
@@ -140,9 +142,10 @@ fn test_line_endings() {
     }
 
     // the ASCII record and unit separators
-    let config = DeserializerConfig::new()
+    let config = DeserializerConfig::builder()
         .delimiter(0x1f)
-        .terminator(Terminator::Byte(0x1e));
+        .terminator(Terminator::Byte(0x1e))
+        .build();
     assert_eq!(
         rows_with(&config, "a\x1fb\nc\x1ec\x1fd"),
         [row(&["a", "b\nc"]), row(&["c", "d"])]
@@ -151,7 +154,9 @@ fn test_line_endings() {
 
 #[test]
 fn test_blank_lines() {
-    let config = DeserializerConfig::new().skip_blank_lines(false);
+    let config = DeserializerConfig::builder()
+        .skip_blank_lines(false)
+        .build();
     assert_eq!(
         rows_with(&config, "a\n\nb\r\n\r\n"),
         [row(&["a"]), row(&[""]), row(&["b"]), row(&[""])]
@@ -162,7 +167,10 @@ fn test_blank_lines() {
 
 #[test]
 fn test_comments() {
-    let config = DeserializerConfig::new().comment(Some(b'#')).flexible(true);
+    let config = DeserializerConfig::builder()
+        .comment(Some(b'#'))
+        .flexible(true)
+        .build();
     assert_eq!(
         rows_with(&config, "# first\na,#b\n#\n  # c\n# last"),
         [row(&["a", "#b"]), row(&["  # c"])]
@@ -197,12 +205,14 @@ fn test_names() {
     assert_eq!(rows, [Row { a: 1, b: 2 }]);
 
     // given names
-    let config = DeserializerConfig::new().headers(Headers::Given(&["b", "a"]));
+    let config = DeserializerConfig::builder()
+        .headers(Headers::Given(&["b", "a"]))
+        .build();
     let rows: Vec<Row> = config.from_str("1,2\n").unwrap();
     assert_eq!(rows, [Row { a: 2, b: 1 }]);
 
     // skipped names, records are sequences
-    let config = DeserializerConfig::new().headers(Headers::Skip);
+    let config = DeserializerConfig::builder().headers(Headers::Skip).build();
     let rows: Vec<(u32, u32)> = config.from_str("a,b\n1,2\n").unwrap();
     assert_eq!(rows, [(1, 2)]);
 
@@ -229,7 +239,7 @@ fn test_duplicate_names() {
 
 #[test]
 fn test_trim() {
-    let config = DeserializerConfig::new().trim(Trim::Fields);
+    let config = DeserializerConfig::builder().trim(Trim::Fields).build();
     assert_eq!(
         rows_with(&config, " a , \"b \" ,\tc\t, \" \" \n"),
         [row(&["a", "b ", "c", " "])]
@@ -240,7 +250,7 @@ fn test_trim() {
         a: String,
         b: String,
     }
-    let config = DeserializerConfig::new().trim(Trim::Headers);
+    let config = DeserializerConfig::builder().trim(Trim::Headers).build();
     let rows: Vec<Row> = config.from_str(" a , b \n x , y \n").unwrap();
     assert_eq!(
         rows,
@@ -250,7 +260,9 @@ fn test_trim() {
         }]
     );
     let rows: Vec<Row> = config
+        .into_builder()
         .trim(Trim::All)
+        .build()
         .from_str(" a , b \n x , y \n")
         .unwrap();
     assert_eq!(
@@ -285,7 +297,7 @@ fn test_nulls() {
         ]
     );
 
-    let config = DeserializerConfig::new().nulls(Nulls::Empty);
+    let config = DeserializerConfig::builder().nulls(Nulls::Empty).build();
     let rows: Vec<Row> = config.from_str("text,number\n,\n\"\",1\n").unwrap();
     assert_eq!(
         rows,
@@ -301,7 +313,9 @@ fn test_nulls() {
         ]
     );
 
-    let config = DeserializerConfig::new().nulls(Nulls::Text("NULL"));
+    let config = DeserializerConfig::builder()
+        .nulls(Nulls::Text("NULL"))
+        .build();
     let rows: Vec<Row> = config
         .from_str("text,number\nNULL,NULL\n\"NULL\",\n")
         .unwrap();
@@ -337,7 +351,7 @@ fn test_flexible() {
     let err = from_str::<Vec<Row>>("a,b\n1,2,3\n").unwrap_err();
     assert_eq!(err.message(), "record has 3 fields, expected 2");
 
-    let config = DeserializerConfig::new().flexible(true);
+    let config = DeserializerConfig::builder().flexible(true).build();
     let rows: Vec<Row> = config.from_str("a,b\n1\n1,2,3,4\n").unwrap();
     assert_eq!(
         rows,
@@ -382,7 +396,7 @@ fn test_strict_quotes() {
     let err = NO_HEADERS.from_str::<Rows>("a, \"b\"\n").unwrap_err();
     assert_eq!(err.message(), "unexpected quote in an unquoted field");
 
-    let lenient = DeserializerConfig::new().lenient_quotes(true);
+    let lenient = DeserializerConfig::builder().lenient_quotes(true).build();
     assert_eq!(
         rows_with(&lenient, "5'10\",\"a\"b,\"c\"\"\"d\"\n"),
         [row(&["5'10\"", "ab", "c\"d"])]
@@ -390,7 +404,9 @@ fn test_strict_quotes() {
     // an unterminated quote is still an error
     assert!(
         lenient
+            .into_builder()
             .headers(Headers::None)
+            .build()
             .from_str::<Rows>("\"a")
             .is_err()
     );
@@ -422,15 +438,18 @@ fn test_record_errors_continue() {
 
 #[test]
 fn test_escapes() {
-    let config = DeserializerConfig::new()
+    let config = DeserializerConfig::builder()
         .escape(Escape::Backslash)
-        .double_quote(false);
+        .double_quote(false)
+        .build();
     assert_eq!(
         rows_with(&config, "a\\,b,\"c\\\"d\",e\\tf\\\\,g\\\nh\n"),
         [row(&["a,b", "c\"d", "e\tf\\", "g\nh"])]
     );
 
-    let config = DeserializerConfig::new().escape(Escape::Char(b'!'));
+    let config = DeserializerConfig::builder()
+        .escape(Escape::Char(b'!'))
+        .build();
     assert_eq!(
         rows_with(&config, "a!,b,\"c!\"d\",e!tf\n"),
         [row(&["a,b", "c\"d", "etf"])]
@@ -438,7 +457,9 @@ fn test_escapes() {
 
     // an escape at the end of the input
     let err = config
+        .into_builder()
         .headers(Headers::None)
+        .build()
         .from_str::<Rows>("a!")
         .unwrap_err();
     assert_eq!(err.message(), "escape character at the end of the input");
@@ -476,7 +497,7 @@ fn test_tsv() {
 
 #[test]
 fn test_sep_line() {
-    let config = DeserializerConfig::new().sep_line(true);
+    let config = DeserializerConfig::builder().sep_line(true).build();
     for input in ["sep=;\na;b\n", "SEP=;\r\na;b", "\u{feff}sep=;\na;b"] {
         assert_eq!(rows_with(&config, input), [row(&["a", "b"])], "{:?}", input);
     }
@@ -489,8 +510,9 @@ fn test_sep_line() {
 
 #[test]
 fn test_invalid_config() {
-    let err = DeserializerConfig::new()
+    let err = DeserializerConfig::builder()
         .quote(Some(b','))
+        .build()
         .from_str::<Rows>("a")
         .unwrap_err();
     assert_eq!(
@@ -539,7 +561,7 @@ fn test_lexical() {
         event: Event,
     }
 
-    let config = DeserializerConfig::new().nulls(Nulls::Empty);
+    let config = DeserializerConfig::builder().nulls(Nulls::Empty).build();
     let rows: Vec<Row> = config
         .from_str("id,kind,x,y,code,shift\n1,click,-3,4,,\n2,key,,,13,yes\n")
         .unwrap();
@@ -620,7 +642,7 @@ fn test_locations() {
         age: Spanned<u32>,
     }
 
-    let config = DeserializerConfig::new().track_locations(true);
+    let config = DeserializerConfig::builder().track_locations(true).build();
     let rows: Vec<Row> = config
         .from_str("name,age\njane,42\n\"jo\nhn\",23\n")
         .unwrap();
@@ -638,7 +660,10 @@ fn test_maps_and_sequences() {
     );
 
     // records can be deserialized one at a time into different types
-    let mut de = Deserializer::from_str_with_config("1,2\na,b,c\n", &NO_HEADERS.flexible(true));
+    let mut de = Deserializer::from_str_with_config(
+        "1,2\na,b,c\n",
+        &NO_HEADERS.into_builder().flexible(true).build(),
+    );
     assert_eq!(de.deserialize_record::<[u32; 2]>().unwrap(), Some([1, 2]));
     assert_eq!(
         de.deserialize_record::<(char, String, Cow<str>)>().unwrap(),

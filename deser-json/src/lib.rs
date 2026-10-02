@@ -38,7 +38,7 @@
 //! the number and its value as `f64`.  Types like `f64` get the value, types
 //! which deserialize decimal numbers exactly (like
 //! [`Decimal`](deser_core::ext::Decimal)) use the text.  See
-//! [`DeserializerConfig::exact_numbers`].
+//! [`DeserializerConfig::set_exact_numbers`].
 //!
 //! Strings without escape sequences are borrowed from the input, so types
 //! can borrow them:
@@ -98,35 +98,35 @@
 //!
 //! # Pretty Printing
 //!
-//! By default the output is compact.  [`SerializerConfig::pretty`] indents
+//! By default the output is compact.  [`SerializerConfig::set_pretty`] indents
 //! it and writes spaces after separators:
 //!
 //! ```rust
 //! use deser_json::{Indent, SerializerConfig};
 //!
 //! const PRETTY: SerializerConfig =
-//!     SerializerConfig::new().pretty(Indent::Spaces(2));
+//!     SerializerConfig::builder().pretty(Indent::Spaces(2)).build();
 //! let json = PRETTY.to_string(&vec![vec![1, 2]]).unwrap();
 //! assert_eq!(json, "[\n  [\n    1,\n    2\n  ]\n]");
 //! ```
 //!
 //! Indentation and spaces can also be configured on their own with
-//! [`SerializerConfig::indent`] and [`SerializerConfig::compact`].  Maps
+//! [`SerializerConfig::set_indent`] and [`SerializerConfig::set_compact`].  Maps
 //! and sequences with the [`Layout::Compact`](deser_core::hints::Layout) hint
 //! are written on a single line in indented output, short ones that only
-//! contain scalars can be too (see [`SerializerConfig::inline`]).
+//! contain scalars can be too (see [`SerializerConfig::set_inline`]).
 //!
 //! # JSON Lines
 //!
 //! By default only whitespace may follow a value.  What may follow is
-//! controlled by [`DeserializerConfig::trailing`] (see [`Trailing`]).  With
+//! controlled by [`DeserializerConfig::set_trailing`] (see [`Trailing`]).  With
 //! [`Trailing::Newline`] a [`Deserializer`] reads
 //! [JSON Lines](https://jsonlines.org/) (also known as NDJSON) one by one:
 //!
 //! ```rust
 //! use deser_json::{Deserializer, DeserializerConfig, Trailing};
 //!
-//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
 //! let lines = de.iter::<Vec<u32>>().collect::<Result<Vec<_>, _>>().unwrap();
 //! assert_eq!(lines, [vec![1, 2], vec![3]]);
@@ -135,13 +135,13 @@
 //! Errors only discard their line, so the remaining lines can still be
 //! read.  [`Trailing::Stop`] stops after the value without looking at what
 //! follows.  JSON Lines are written with a [`Serializer`] and
-//! [`SerializerConfig::trailing`]:
+//! [`SerializerConfig::set_trailing`]:
 //!
 //! ```rust
 //! use deser_json::{Serializer, SerializerConfig, Trailing};
 //!
 //! const LINES: SerializerConfig =
-//!     SerializerConfig::new().trailing(Trailing::Newline);
+//!     SerializerConfig::builder().trailing(Trailing::Newline).build();
 //! let mut serializer = Serializer::with_config(&LINES);
 //! for value in [vec![1, 2], vec![3]] {
 //!     serializer.serialize(&value).unwrap();
@@ -166,9 +166,9 @@
 //! use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 //!
 //! const READ_LINES: DeserializerConfig =
-//!     DeserializerConfig::new().trailing(Trailing::Newline);
+//!     DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! const WRITE_LINES: SerializerConfig =
-//!     SerializerConfig::new().trailing(Trailing::Newline);
+//!     SerializerConfig::builder().trailing(Trailing::Newline).build();
 //!
 //! let input = &b"{\"id\": 1}\n{\"id\": 2}\n"[..];
 //! let mut reader = READ_LINES.reader(input);
@@ -218,11 +218,15 @@ mod raw;
 mod scan;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
+};
 pub use self::raw::{Json, RawJson};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Indent, InlinePolicy, Serializer, SerializerConfig, to_string};
+pub use self::ser::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, to_string,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

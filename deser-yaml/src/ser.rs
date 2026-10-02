@@ -6,7 +6,7 @@ use crate::resolve::Version;
 
 /// How the output is indented.
 ///
-/// See [`SerializerConfig::indent`].
+/// See [`SerializerConfig::set_indent`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Indent {
@@ -86,19 +86,19 @@ pub enum NullStyle {
 /// YAML allows the same data to be written in many ways.  The defaults
 /// follow what is common for hand-written YAML:
 ///
-/// * block collections indented by two spaces (see [`indent`](Self::indent)),
+/// * block collections indented by two spaces (see [`set_indent`](Self::set_indent)),
 ///   sequences in mappings are indented
-///   ([`indent_sequences`](Self::indent_sequences)), empty collections are
+///   ([`set_indent_sequences`](Self::set_indent_sequences)), empty collections are
 ///   written as `{}` and `[]`.  Compact collections (see
 ///   [`hints`](deser_core::hints)) are written in flow style, see
-///   [`flow`](Self::flow).
+///   [`set_flow`](Self::set_flow).
 /// * strings are plain if possible, otherwise single-quoted (double-quoted if
 ///   they need escapes).  Strings are quoted if readers of YAML 1.1 would
 ///   read them as something else (`yes`, `0777`, timestamps, see
-///   [`compat`](Self::compat)).
+///   [`set_compat`](Self::set_compat)).
 /// * strings with line breaks are literal block scalars (`|`), the style of
 ///   individual strings can be requested (see [`style`](crate::style)).
-/// * bytes are written as `!!binary` (see [`binary`](Self::binary)).
+/// * bytes are written as `!!binary` (see [`set_binary`](Self::set_binary)).
 ///
 /// ```
 /// use std::collections::BTreeMap;
@@ -112,7 +112,7 @@ pub enum NullStyle {
 /// );
 ///
 /// const INDENTLESS: SerializerConfig =
-///     SerializerConfig::new().indent_sequences(false);
+///     SerializerConfig::builder().indent_sequences(false).build();
 /// assert_eq!(
 ///     INDENTLESS.to_string(&value).unwrap(),
 ///     "items:\n- a\n- 'yes'\n"
@@ -166,11 +166,21 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets how the output is indented.
     ///
     /// The default is [`Indent::Spaces(2)`](Indent::Spaces), values outside
     /// of `1..=9` are clamped.  With [`Indent::None`] documents are written
-    /// on a single line in flow style, the [flow policy](Self::flow) and
+    /// on a single line in flow style, the [flow policy](Self::set_flow) and
     /// [`Layout`](deser_core::hints::Layout) hints have no effect then:
     ///
     /// ```
@@ -185,26 +195,25 @@ impl SerializerConfig {
     ///
     /// let config = Config { name: "web".into(), ports: vec![80, 443] };
     /// const WIDE: SerializerConfig =
-    ///     SerializerConfig::new().indent(Indent::Spaces(4));
+    ///     SerializerConfig::builder().indent(Indent::Spaces(4)).build();
     /// assert_eq!(
     ///     WIDE.to_string(&config).unwrap(),
     ///     "name: web\nports:\n    - 80\n    - 443\n"
     /// );
     /// const LINE: SerializerConfig =
-    ///     SerializerConfig::new().indent(Indent::None);
+    ///     SerializerConfig::builder().indent(Indent::None).build();
     /// assert_eq!(
     ///     LINE.to_string(&config).unwrap(),
     ///     "{name: web, ports: [80, 443]}\n"
     /// );
     /// ```
-    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+    pub const fn set_indent(&mut self, indent: Indent) {
         self.indent = match indent {
             Indent::None => Indent::None,
             Indent::Spaces(0) => Indent::Spaces(1),
             Indent::Spaces(n) if n > 9 => Indent::Spaces(9),
             Indent::Spaces(n) => Indent::Spaces(n),
         };
-        self
     }
 
     /// Returns the number of spaces per indentation level of block
@@ -223,9 +232,8 @@ impl SerializerConfig {
     /// the keys of nested mappings (`key:\n  - a`).  With `false` they are at
     /// the column of the key (`key:\n- a`), which is how libyaml, PyYAML and
     /// `kubectl` write YAML.
-    pub const fn indent_sequences(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_indent_sequences(&mut self, yes: bool) {
         self.indent_sequences = yes;
-        self
     }
 
     /// Sets when collections are written in flow style.
@@ -248,15 +256,14 @@ impl SerializerConfig {
     ///     groups: vec![vec![1], vec![2, 3]],
     /// };
     /// const FLOW: SerializerConfig =
-    ///     SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80));
+    ///     SerializerConfig::builder().flow(FlowPolicy::LeafIfFits(80)).build();
     /// assert_eq!(
     ///     FLOW.to_string(&config).unwrap(),
     ///     "ports: [80, 443]\ngroups:\n  - [1]\n  - [2, 3]\n"
     /// );
     /// ```
-    pub const fn flow(mut self, policy: FlowPolicy) -> SerializerConfig {
+    pub const fn set_flow(&mut self, policy: FlowPolicy) {
         self.flow = policy;
-        self
     }
 
     /// Folds long strings at the given width.
@@ -267,33 +274,28 @@ impl SerializerConfig {
     /// unchanged.  By default strings are not folded.  The width is also used
     /// for strings with the [`Folded`](crate::style::Folded) hint (80 if not
     /// set).
-    pub const fn fold_width(mut self, width: Option<usize>) -> SerializerConfig {
+    pub const fn set_fold_width(&mut self, width: Option<usize>) {
         self.fold_width = width;
-        self
     }
 
     /// Sets how strings are quoted that cannot be written plain.
-    pub const fn quote_style(mut self, style: QuoteStyle) -> SerializerConfig {
+    pub const fn set_quote_style(&mut self, style: QuoteStyle) {
         self.quote_style = style;
-        self
     }
 
     /// Quotes all strings, including strings with line breaks.
-    pub const fn quote_all(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_quote_all(&mut self, yes: bool) {
         self.quote_all = yes;
-        self
     }
 
     /// Sets how strings with line breaks are written.
-    pub const fn multiline(mut self, style: MultilineStyle) -> SerializerConfig {
+    pub const fn set_multiline(&mut self, style: MultilineStyle) {
         self.multiline = style;
-        self
     }
 
     /// Sets how null is written.
-    pub const fn null_style(mut self, style: NullStyle) -> SerializerConfig {
+    pub const fn set_null_style(&mut self, style: NullStyle) {
         self.null_style = style;
-        self
     }
 
     /// Sets the oldest YAML version that readers of the output may use.
@@ -308,12 +310,11 @@ impl SerializerConfig {
     ///
     /// assert_eq!(deser_yaml::to_string(&"yes").unwrap(), "'yes'\n");
     /// const V1_2: SerializerConfig =
-    ///     SerializerConfig::new().compat(Version::V1_2);
+    ///     SerializerConfig::builder().compat(Version::V1_2).build();
     /// assert_eq!(V1_2.to_string(&"yes").unwrap(), "yes\n");
     /// ```
-    pub const fn compat(mut self, version: Version) -> SerializerConfig {
+    pub const fn set_compat(&mut self, version: Version) {
         self.compat = version;
-        self
     }
 
     /// Writes bytes as `!!binary`.
@@ -334,8 +335,8 @@ impl SerializerConfig {
     ///     deser_yaml::to_string(&b"\xfb\xff").unwrap(),
     ///     "!!binary +/8=\n"
     /// );
-    /// const TEXT: SerializerConfig = SerializerConfig::new().binary(false);
-    /// let url_safe = Context::new().with(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// const TEXT: SerializerConfig = SerializerConfig::builder().binary(false).build();
+    /// let url_safe = Context::with(BytesFormat::encoded::<Base64UrlNoPad>());
     /// let yaml = TEXT
     ///     .to_string_with(&b"\xfb\xff", |driver| driver.set_context(&url_safe))
     ///     .unwrap();
@@ -346,9 +347,8 @@ impl SerializerConfig {
     /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
     /// formats than base64 (or sequences) need to be deserialized with the
     /// same format in the context.
-    pub const fn binary(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_binary(&mut self, yes: bool) {
         self.binary = yes;
-        self
     }
 
     /// Writes date-times with the `!!timestamp` tag.
@@ -358,24 +358,21 @@ impl SerializerConfig {
     /// 1.1 readers resolve as timestamps and YAML 1.2 readers as strings
     /// (which date / time types accept).  With the tag all readers resolve
     /// them as timestamps.  Local date-times and times are always strings.
-    pub const fn timestamp_tag(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_timestamp_tag(&mut self, yes: bool) {
         self.timestamp_tag = yes;
-        self
     }
 
     /// Always starts documents with `---`.
     ///
     /// When writing a stream of documents (see [`deser::io`](deser_core::io)), documents
     /// after the first one always start with `---`.
-    pub const fn document_start(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_document_start(&mut self, yes: bool) {
         self.document_start = yes;
-        self
     }
 
     /// Starts documents with a `%YAML 1.2` directive.
-    pub const fn version_directive(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_version_directive(&mut self, yes: bool) {
         self.version_directive = yes;
-        self
     }
 
     /// Ends documents with a document end marker (`...`).
@@ -390,15 +387,14 @@ impl SerializerConfig {
     /// use deser_yaml::{Serializer, SerializerConfig};
     ///
     /// const ENDED: SerializerConfig =
-    ///     SerializerConfig::new().end_documents(true);
+    ///     SerializerConfig::builder().end_documents(true).build();
     /// let mut serializer = Serializer::with_config(&ENDED);
     /// serializer.serialize(&"a").unwrap();
     /// serializer.serialize(&"b").unwrap();
     /// assert_eq!(serializer.finish(), "a\n...\n---\nb\n...\n");
     /// ```
-    pub const fn end_documents(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_end_documents(&mut self, yes: bool) {
         self.end_documents = yes;
-        self
     }
 
     /// Creates the emitter of a document which writes into the output.
@@ -556,6 +552,147 @@ impl SerializerConfig {
         let mut out = String::new();
         self.document_whole(0, &mut driver, &mut out)?;
         Ok(out)
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets how the output is indented.
+    ///
+    /// See [`SerializerConfig::set_indent`].
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfigBuilder {
+        self.value.set_indent(indent);
+        self
+    }
+
+    /// Indents sequences that are values of mappings.
+    ///
+    /// See [`SerializerConfig::set_indent_sequences`].
+    pub const fn indent_sequences(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_indent_sequences(yes);
+        self
+    }
+
+    /// Sets when collections are written in flow style.
+    ///
+    /// See [`SerializerConfig::set_flow`].
+    pub const fn flow(mut self, policy: FlowPolicy) -> SerializerConfigBuilder {
+        self.value.set_flow(policy);
+        self
+    }
+
+    /// Folds long strings at the given width.
+    ///
+    /// See [`SerializerConfig::set_fold_width`].
+    pub const fn fold_width(mut self, width: Option<usize>) -> SerializerConfigBuilder {
+        self.value.set_fold_width(width);
+        self
+    }
+
+    /// Sets how strings are quoted that cannot be written plain.
+    ///
+    /// See [`SerializerConfig::set_quote_style`].
+    pub const fn quote_style(mut self, style: QuoteStyle) -> SerializerConfigBuilder {
+        self.value.set_quote_style(style);
+        self
+    }
+
+    /// Quotes all strings, including strings with line breaks.
+    ///
+    /// See [`SerializerConfig::set_quote_all`].
+    pub const fn quote_all(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_quote_all(yes);
+        self
+    }
+
+    /// Sets how strings with line breaks are written.
+    ///
+    /// See [`SerializerConfig::set_multiline`].
+    pub const fn multiline(mut self, style: MultilineStyle) -> SerializerConfigBuilder {
+        self.value.set_multiline(style);
+        self
+    }
+
+    /// Sets how null is written.
+    ///
+    /// See [`SerializerConfig::set_null_style`].
+    pub const fn null_style(mut self, style: NullStyle) -> SerializerConfigBuilder {
+        self.value.set_null_style(style);
+        self
+    }
+
+    /// Sets the oldest YAML version that readers of the output may use.
+    ///
+    /// See [`SerializerConfig::set_compat`].
+    pub const fn compat(mut self, version: Version) -> SerializerConfigBuilder {
+        self.value.set_compat(version);
+        self
+    }
+
+    /// Writes bytes as `!!binary`.
+    ///
+    /// See [`SerializerConfig::set_binary`].
+    pub const fn binary(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_binary(yes);
+        self
+    }
+
+    /// Writes date-times with the `!!timestamp` tag.
+    ///
+    /// See [`SerializerConfig::set_timestamp_tag`].
+    pub const fn timestamp_tag(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_timestamp_tag(yes);
+        self
+    }
+
+    /// Always starts documents with `---`.
+    ///
+    /// See [`SerializerConfig::set_document_start`].
+    pub const fn document_start(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_document_start(yes);
+        self
+    }
+
+    /// Starts documents with a `%YAML 1.2` directive.
+    ///
+    /// See [`SerializerConfig::set_version_directive`].
+    pub const fn version_directive(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_version_directive(yes);
+        self
+    }
+
+    /// Ends documents with a document end marker (`...`).
+    ///
+    /// See [`SerializerConfig::set_end_documents`].
+    pub const fn end_documents(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_end_documents(yes);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 

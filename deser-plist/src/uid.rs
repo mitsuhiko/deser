@@ -22,7 +22,7 @@ use deser_core::{Atom, Error};
 /// ```
 /// use deser_plist::{Format, SerializerConfig, Uid};
 ///
-/// let config = SerializerConfig::new().format(Format::Binary);
+/// let config = SerializerConfig::builder().format(Format::Binary).build();
 /// let bytes = config.to_vec(&vec![Uid::new(1), Uid::new(2)]).unwrap();
 /// let value: Vec<Uid> = deser_plist::from_slice(&bytes).unwrap();
 /// assert_eq!(value, [Uid::new(1), Uid::new(2)]);

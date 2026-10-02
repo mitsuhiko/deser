@@ -26,7 +26,7 @@ OpenStep format only has strings, so there the types parse their values.
   into a `BTreeMap<String, String>`.
 - An OpenStep dictionary where `800` and `NO` are strings which the
   fields parse into `u32` and `bool`, and written back in the style of
-  Xcode (`SerializerConfig::new().format(Format::Ascii)`).
+  Xcode (`SerializerConfig::builder().format(Format::Ascii).build()`).
 - An error in a text format with its line and column.
 
 ## What you should see

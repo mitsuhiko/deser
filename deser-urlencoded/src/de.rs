@@ -22,7 +22,7 @@ use crate::encoding::{Decoded, decode};
 /// use deser_urlencoded::{DeserializerConfig, Nesting};
 ///
 /// const CONFIG: DeserializerConfig =
-///     DeserializerConfig::new().nesting(Nesting::Dots);
+///     DeserializerConfig::builder().nesting(Nesting::Dots).build();
 /// let value: BTreeMap<String, BTreeMap<String, u32>> =
 ///     CONFIG.from_str("a.b=1").unwrap();
 /// assert_eq!(value["a"]["b"], 1);
@@ -52,14 +52,23 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Sets how nested keys are written.
     ///
     /// The default is [`Nesting::Brackets`] (`a[b][0]=1`).  With
     /// [`Nesting::Flat`] keys are taken as they are, see [`Nesting`] for
     /// more information.
-    pub const fn nesting(mut self, nesting: Nesting) -> DeserializerConfig {
+    pub const fn set_nesting(&mut self, nesting: Nesting) {
         self.nesting = nesting;
-        self
     }
 
     /// Sets how deeply keys can be nested.
@@ -67,18 +76,16 @@ impl DeserializerConfig {
     /// This is the number of nested keys after the first one (`a[b][c]` has
     /// a depth of 2).  Keys that are nested deeper are an error.  The
     /// default is 16.
-    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
+    pub const fn set_max_depth(&mut self, depth: usize) {
         self.max_depth = depth;
-        self
     }
 
     /// Sets the maximum number of parameters.
     ///
     /// Inputs with more parameters (`key=value` pairs) are an error.  The
     /// default is 4096.
-    pub const fn max_params(mut self, max: usize) -> DeserializerConfig {
+    pub const fn set_max_params(&mut self, max: usize) {
         self.max_params = max;
-        self
     }
 
     /// Enables or disables location tracking.
@@ -87,9 +94,8 @@ impl DeserializerConfig {
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
     /// [`Source`]).  This copies the input.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes a value from a query string.
@@ -127,6 +133,67 @@ impl DeserializerConfig {
             &mut Deserializer::from_slice_with_config(bytes, self),
             driver,
         )
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets how nested keys are written.
+    ///
+    /// See [`DeserializerConfig::set_nesting`].
+    pub const fn nesting(mut self, nesting: Nesting) -> DeserializerConfigBuilder {
+        self.value.set_nesting(nesting);
+        self
+    }
+
+    /// Sets how deeply keys can be nested.
+    ///
+    /// See [`DeserializerConfig::set_max_depth`].
+    pub const fn max_depth(mut self, depth: usize) -> DeserializerConfigBuilder {
+        self.value.set_max_depth(depth);
+        self
+    }
+
+    /// Sets the maximum number of parameters.
+    ///
+    /// See [`DeserializerConfig::set_max_params`].
+    pub const fn max_params(mut self, max: usize) -> DeserializerConfigBuilder {
+        self.value.set_max_params(max);
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -201,10 +268,11 @@ impl<'a> Deserializer<'a> {
             Ok(input) => Deserializer::from_str_with_config(input, config),
             Err(err) => Deserializer {
                 input: "",
-                error: Some(
-                    Error::new(ErrorKind::Syntax, "input is not valid UTF-8")
-                        .with_offset(err.valid_up_to()),
-                ),
+                error: Some(Error::with_offset(
+                    ErrorKind::Syntax,
+                    "input is not valid UTF-8",
+                    err.valid_up_to(),
+                )),
                 config: config.clone(),
             },
         }
@@ -265,8 +333,10 @@ impl<'a> Deserializer<'a> {
         // otherwise
         DuplicateKeys::Last.set_default(state);
         LexicalRules::LENIENT.set(state);
-        tree.emit(driver)
-            .map_err(|err| err.resolve_position(self.input.as_bytes()))
+        tree.emit(driver).map_err(|mut err| {
+            err.resolve_position(self.input.as_bytes());
+            err
+        })
     }
 }
 
@@ -355,8 +425,11 @@ impl<'a> Tree<'a> {
             }
             params += 1;
             if params > config.max_params {
-                return Err(Error::new(ErrorKind::LimitExceeded, "too many parameters")
-                    .with_offset(pair_start));
+                return Err(Error::with_offset(
+                    ErrorKind::LimitExceeded,
+                    "too many parameters",
+                    pair_start,
+                ));
             }
             let (raw_key, raw_value, value_start) = match pair.find('=') {
                 Some(pos) => (&pair[..pos], &pair[pos + 1..], pair_start + pos + 1),
@@ -366,8 +439,11 @@ impl<'a> Tree<'a> {
             let key = match decode(raw_key) {
                 Decoded::Text(key) => key,
                 Decoded::Bytes(_) => {
-                    return Err(Error::new(ErrorKind::Syntax, "key is not valid UTF-8")
-                        .with_offset(key_range.0));
+                    return Err(Error::with_offset(
+                        ErrorKind::Syntax,
+                        "key is not valid UTF-8",
+                        key_range.0,
+                    ));
                 }
             };
             let value = decode(raw_value);
@@ -375,10 +451,11 @@ impl<'a> Tree<'a> {
             segments.clear();
             let first = split_key(&key, config.nesting, &mut segments);
             if segments.len() > config.max_depth {
-                return Err(
-                    Error::new(ErrorKind::LimitExceeded, "key is nested too deeply")
-                        .with_offset(key_range.0),
-                );
+                return Err(Error::with_offset(
+                    ErrorKind::LimitExceeded,
+                    "key is nested too deeply",
+                    key_range.0,
+                ));
             }
             let mut node = tree.child(&mut lookup, 0, Segment::Name(0, first), &key, key_range);
             for segment in segments.iter().copied() {
@@ -440,7 +517,11 @@ impl<'a> Tree<'a> {
             .iter()
             .map(|&child| self.nodes[child].values.len().max(1))
             .sum();
-        ContainerShape::new().with_len(len).with_multimap(true)
+        {
+            let mut shape = ContainerShape::with_len(len);
+            shape.set_multimap(true);
+            shape
+        }
     }
 
     /// Decides how a node with nested keys is emitted.
@@ -454,11 +535,11 @@ impl<'a> Tree<'a> {
             }
         }
         if pushes && (names || indexes) {
-            return Err(Error::new(
+            return Err(Error::with_offset(
                 ErrorKind::Syntax,
                 "`[]` cannot be combined with other nested keys",
-            )
-            .with_offset(node.key_range.0));
+                node.key_range.0,
+            ));
         }
         if pushes {
             return Ok(Container::Seq(node.children.clone()));
@@ -557,11 +638,11 @@ impl<'a> Tree<'a> {
                     let (value, range) = match policy {
                         DuplicateKeys::First => &values[0],
                         DuplicateKeys::Error => {
-                            return Err(Error::new(
+                            return Err(Error::with_offset(
                                 ErrorKind::Syntax,
                                 "index given more than once",
-                            )
-                            .with_offset(values[1].1.0));
+                                values[1].1.0,
+                            ));
                         }
                         _ => &values[values.len() - 1],
                     };
@@ -575,7 +656,7 @@ impl<'a> Tree<'a> {
                     let event = if is_map {
                         Event::MapStart(self.map_shape(&children))
                     } else {
-                        Event::SeqStart(ContainerShape::new().with_len(children.len()))
+                        Event::SeqStart(ContainerShape::with_len(children.len()))
                     };
                     emit_at(driver, event, node.key_range)?;
                     stack.push(Frame {
@@ -586,10 +667,11 @@ impl<'a> Tree<'a> {
                     });
                 }
                 (_, false) => {
-                    return Err(
-                        Error::new(ErrorKind::Syntax, "key has a value and nested keys")
-                            .with_offset(node.key_range.0),
-                    );
+                    return Err(Error::with_offset(
+                        ErrorKind::Syntax,
+                        "key has a value and nested keys",
+                        node.key_range.0,
+                    ));
                 }
             }
         }

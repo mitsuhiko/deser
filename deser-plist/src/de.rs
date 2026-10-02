@@ -17,7 +17,7 @@ use crate::{read_ascii, read_binary, read_xml};
 /// ```
 /// use deser_plist::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::new().track_locations(true);
+/// const CONFIG: DeserializerConfig = DeserializerConfig::builder().track_locations(true).build();
 /// assert_eq!(CONFIG.from_slice::<Vec<u32>>(b"(1, 2)").unwrap(), [1, 2]);
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -33,6 +33,16 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Enables or disables location tracking for the text formats.
     ///
     /// The byte range of every event is always published into the state
@@ -42,9 +52,8 @@ impl DeserializerConfig {
     /// into lines and columns, for instance with the `Spanned` type of
     /// [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes a value from a property list.
@@ -65,6 +74,43 @@ impl DeserializerConfig {
             &mut Deserializer::from_slice_with_config(input, self),
             driver,
         )
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Enables or disables location tracking for the text formats.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -177,7 +223,7 @@ impl<'a> Deserializer<'a> {
             .unwrap_or(self.input);
         let text = core::str::from_utf8(input).map_err(|err| {
             let offset = self.input.len() - input.len() + err.valid_up_to();
-            Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(offset)
+            Error::with_offset(ErrorKind::Syntax, "invalid UTF-8", offset)
         })?;
         self.drive_text(text, &mut Borrowing(driver))
     }
@@ -190,12 +236,15 @@ impl<'a> Deserializer<'a> {
             read_xml::parse(text, out)
         } else {
             // everything is text, `YES` and `NO` are booleans
-            LexicalRules::STRICT
-                .with_lenient_bools(true)
-                .set(out.state_mut());
+            let mut rules = LexicalRules::STRICT;
+            rules.set_lenient_bools(true);
+            rules.set(out.state_mut());
             read_ascii::parse(text, out)
         };
-        rv.map_err(|err| err.resolve_position(text.as_bytes()))
+        rv.map_err(|mut err| {
+            err.resolve_position(text.as_bytes());
+            err
+        })
     }
 }
 

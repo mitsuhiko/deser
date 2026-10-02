@@ -18,22 +18,25 @@ struct Server {
 }
 
 fn json(input: &str) -> Value {
-    deser_json::DeserializerConfig::new()
+    deser_json::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(input)
         .unwrap()
 }
 
 fn toml(input: &str) -> Value {
-    deser_toml::DeserializerConfig::new()
+    deser_toml::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(input)
         .unwrap()
 }
 
 fn yaml(input: &str) -> Value {
-    deser_yaml::DeserializerConfig::new()
+    deser_yaml::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(input)
         .unwrap()
 }
@@ -141,8 +144,9 @@ fn test_path_and_spanned() {
 #[test]
 fn test_duplicate_key_location() {
     let input = "{\"a\": 1,\n \"a\": 2}";
-    let err = deser_json::DeserializerConfig::new()
+    let err = deser_json::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str::<Value>(input)
         .unwrap_err();
     assert_eq!(location(&err), (Some(2), Some(2)));

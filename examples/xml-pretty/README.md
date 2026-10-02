@@ -27,7 +27,7 @@ vocabularies also need their namespaces declared with prefixes.
   whitespace is text.  The shapes are `Mixed<Shape, SkipWhitespace>`,
   whose whitespace is not content, so they are indented.
 - Both versions read back into the same value with
-  `DeserializerConfig::resolve_namespaces`.
+  `DeserializerConfig::set_resolve_namespaces`.
 
 ## What you should see
 

@@ -19,7 +19,8 @@ use crate::value::{Kind, Value};
 /// use deser::Order;
 /// use deser_value::{Seq, Value};
 ///
-/// let mut seq = Seq::new().with_order(Order::Sorted);
+/// let mut seq = Seq::new();
+/// seq.set_order(Order::Sorted);
 /// seq.push(Value::from(1));
 /// seq.push(Value::from(2));
 /// assert_eq!(seq.len(), 2);
@@ -61,12 +62,6 @@ impl Seq {
         self.order = order;
     }
 
-    /// Sets the order of the values and returns the sequence.
-    pub fn with_order(mut self, order: Order) -> Seq {
-        self.order = order;
-        self
-    }
-
     /// Returns `true` if the sequence holds the values of a repeated key.
     ///
     /// Within a multimap (see [`Map::is_multimap`](crate::Map::is_multimap))
@@ -81,19 +76,13 @@ impl Seq {
         self.repeated = yes;
     }
 
-    /// Sets if the sequence holds the values of a repeated key and returns
-    /// the sequence.
-    pub fn with_repeated(mut self, yes: bool) -> Seq {
-        self.repeated = yes;
-        self
-    }
-
     /// Creates an empty sequence with the order and the repeated flag of
     /// this one.
     pub(crate) fn empty_like(&self, capacity: usize) -> Seq {
-        Seq::with_capacity(capacity)
-            .with_order(self.order)
-            .with_repeated(self.repeated)
+        let mut seq = Seq::with_capacity(capacity);
+        seq.set_order(self.order);
+        seq.set_repeated(self.repeated);
+        seq
     }
 
     /// Converts the sequence into a vector.

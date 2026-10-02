@@ -4,6 +4,35 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- **Breaking:** the APIs follow the same conventions everywhere: values
+  are changed with setters (`set_x(&mut self, ...)`) and read with
+  getters, there are no methods that return a changed copy anymore.
+  Types that are configured in one expression have a separate builder.
+  * The configurations of the formats (`DeserializerConfig` and
+    `SerializerConfig`) have setters (`config.set_track_locations(true)`)
+    and builders: `DeserializerConfig::builder().track_locations(true).build()`
+    (also in constants) and `config.into_builder()` to start from an
+    existing configuration.  The same goes for `Limits`
+    (`Limits::builder().max_depth(64).build()`).
+  * `ContainerShape`: `set_len`, `set_len_hint`, `set_order` and
+    `set_multimap` replace the `with_` methods, `ContainerShape::with_len`
+    and `ContainerShape::with_order` are constructors.
+  * `Error`: `set_offset`, `set_position`, `set_attachment` and
+    `set_source` replace the `with_` methods, `resolve_position` changes
+    the error in place, `Error::with_offset` and `Error::with_position` are
+    constructors.  `ErrorContext::add_context` and
+    `State::attach_error_context` change the error in place.
+  * `Context::with` is a constructor, values are added with
+    `Context::set` (was `insert`).  `CollectErrors::with_max_errors` and
+    `CollectErrors::set_max_errors`, `Validation::set_max_errors`,
+    `LexicalRules::set_lenient_bools` and `set_empty_is_null` (with
+    getters), `RawFormatInfo::set_data`.  `Bytes::with_fallback` was
+    removed, the field `fallback` is public.
+  * `deser-value`: the `with_` methods of `Map`, `Seq` and `Value` were
+    removed, they have setters.
+  * `State::set_collect_errors` no longer returns the previous setting,
+    it's returned by `State::collect_errors`.  `State::set_raw_format` was
+    renamed to `State::declare_raw_format` as it's not a setter.
 - Added `Context`: configuration (typed values) that is given to
   serializations and deserializations from the outside, created once and
   shared.  Its values are the defaults of the extension values of the
@@ -169,7 +198,7 @@ All notable changes to deser are documented here.
   values (like `deser_value::Value`) receive it parsed.  Formats support
   them with the new
   `deser::ext::{Raw, RawFormat, RawFormatId, RawFormatInfo, RawInput}`,
-  `State::set_raw_format`, `State::take_raw_request` and
+  `State::declare_raw_format`, `State::take_raw_request` and
   `Error::is_raw_request`.  Formats declare their raw values with a
   `RawFormatId` and get the `RawFormatInfo` (with the functions of the
   format) from the request, so programs that do not use raw values do

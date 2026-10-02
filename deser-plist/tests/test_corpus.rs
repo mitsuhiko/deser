@@ -95,8 +95,9 @@ fn test_roundtrip() {
         }
         let value = parse(&fs::read(&path).unwrap());
         for format in [Format::Xml, Format::Binary, Format::Ascii] {
-            let bytes = SerializerConfig::new()
+            let bytes = SerializerConfig::builder()
                 .format(format)
+                .build()
                 .to_vec(&value)
                 .unwrap();
             assert_eq!(Format::detect(&bytes), format, "{name}");

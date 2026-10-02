@@ -17,7 +17,7 @@ use crate::encoding::encode;
 ///
 /// let value = BTreeMap::from([("a", vec![1, 2])]);
 /// let with = |arrays| {
-///     SerializerConfig::new().arrays(arrays).to_string(&value).unwrap()
+///     SerializerConfig::builder().arrays(arrays).build().to_string(&value).unwrap()
 /// };
 /// assert_eq!(with(ArrayFormat::Repeat), "a=1&a=2");
 /// assert_eq!(with(ArrayFormat::Brackets), "a%5B%5D=1&a%5B%5D=2");
@@ -80,12 +80,21 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets how sequences are written.
     ///
     /// The default is [`ArrayFormat::Repeat`].
-    pub const fn arrays(mut self, format: ArrayFormat) -> SerializerConfig {
+    pub const fn set_arrays(&mut self, format: ArrayFormat) {
         self.arrays = format;
-        self
     }
 
     /// Sets how the keys of nested maps are written.
@@ -93,15 +102,13 @@ impl SerializerConfig {
     /// The default is [`Nesting::Brackets`] (`a[b]=1`), with
     /// [`Nesting::Dots`] they are written as `a.b=1`.  With
     /// [`Nesting::Flat`] nested maps are an error.
-    pub const fn nesting(mut self, nesting: Nesting) -> SerializerConfig {
+    pub const fn set_nesting(&mut self, nesting: Nesting) {
         self.nesting = nesting;
-        self
     }
 
     /// Sets if spaces are written as `+` (the default) or as `%20`.
-    pub const fn space_as_plus(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_space_as_plus(&mut self, yes: bool) {
         self.space_as_plus = yes;
-        self
     }
 
     /// Serializes the given value.
@@ -245,6 +252,59 @@ impl SerializerConfig {
         out: &mut String,
     ) -> Result<(), Error> {
         self.serialize_whole(driver, out, &mut false)
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets how sequences are written.
+    ///
+    /// See [`SerializerConfig::set_arrays`].
+    pub const fn arrays(mut self, format: ArrayFormat) -> SerializerConfigBuilder {
+        self.value.set_arrays(format);
+        self
+    }
+
+    /// Sets how the keys of nested maps are written.
+    ///
+    /// See [`SerializerConfig::set_nesting`].
+    pub const fn nesting(mut self, nesting: Nesting) -> SerializerConfigBuilder {
+        self.value.set_nesting(nesting);
+        self
+    }
+
+    /// Sets if spaces are written as `+` (the default) or as `%20`.
+    ///
+    /// See [`SerializerConfig::set_space_as_plus`].
+    pub const fn space_as_plus(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_space_as_plus(yes);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 

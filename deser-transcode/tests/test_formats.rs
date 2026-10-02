@@ -208,7 +208,9 @@ fn test_deep_nesting() {
 }
 
 fn to_xml<'de>(de: &mut impl deser::de::Deserializer<'de>) -> Result<String, deser::Error> {
-    let mut ser = deser_xml::Serializer::with_config(&deser_xml::SerializerConfig::new().root("r"));
+    let mut ser = deser_xml::Serializer::with_config(
+        &deser_xml::SerializerConfig::builder().root("r").build(),
+    );
     transcode(de, &mut ser)?;
     Ok(ser.finish())
 }

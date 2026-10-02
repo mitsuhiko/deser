@@ -308,9 +308,9 @@ pub struct BytesFallback<F>(PhantomData<fn() -> F>);
 impl<T: BytesBuf, F: BytesFallbackFormat> Serialize<T> for BytesFallback<F> {
     #[inline]
     fn serialize<'a>(value: &'a T, _state: &mut State) -> Result<Emit<'a>, Error> {
-        Ok(Emit::Atom(Atom::Bytes(
-            Bytes::borrowed(value.bytes()).with_fallback(const { &F::FORMAT }),
-        )))
+        let mut bytes = Bytes::borrowed(value.bytes());
+        bytes.fallback = Some(const { &F::FORMAT });
+        Ok(Emit::Atom(Atom::Bytes(bytes)))
     }
 
     #[inline]

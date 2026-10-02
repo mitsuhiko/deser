@@ -7,8 +7,12 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncWriteExt, duplex};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+const LINES: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
+const WRITE_LINES: SerializerConfig = SerializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Message {
@@ -172,7 +176,9 @@ async fn test_codec() {
 #[tokio::test]
 async fn test_codec_values_at_the_end() {
     // numbers are only complete at the end of the stream
-    let config = DeserializerConfig::new().trailing(Trailing::Stop);
+    let config = DeserializerConfig::builder()
+        .trailing(Trailing::Stop)
+        .build();
     let values = FramedRead::new(
         &b"1 2 3"[..],
         Codec::<_, _, u32>::new(StreamDeserializer::with_config(&config), Serializer::new()),
@@ -183,7 +189,9 @@ async fn test_codec_values_at_the_end() {
     assert_eq!(values, [1, 2, 3]);
 }
 
-const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+const STOP: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Stop)
+    .build();
 
 #[tokio::test]
 async fn test_feeding_read_is_cancellation_safe() {

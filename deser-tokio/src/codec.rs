@@ -23,9 +23,9 @@ use deser_core::stream::{InputBuffer, Status};
 /// use tokio_util::codec::Framed;
 ///
 /// const READ_LINES: DeserializerConfig =
-///     DeserializerConfig::new().trailing(Trailing::Newline);
+///     DeserializerConfig::builder().trailing(Trailing::Newline).build();
 /// const WRITE_LINES: SerializerConfig =
-///     SerializerConfig::new().trailing(Trailing::Newline);
+///     SerializerConfig::builder().trailing(Trailing::Newline).build();
 ///
 /// let (client, server) = tokio::io::duplex(1024);
 /// let codec = || {

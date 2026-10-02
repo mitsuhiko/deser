@@ -53,8 +53,9 @@ fn test_serialize() {
     // written as it is
     assert_eq!(deser_msgpack::to_vec(&envelope).unwrap(), input);
     // canonical output encodes the value again
-    let canonical = SerializerConfig::new()
+    let canonical = SerializerConfig::builder()
         .canonical(true)
+        .build()
         .to_vec(&envelope)
         .unwrap();
     assert!(

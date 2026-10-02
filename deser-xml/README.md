@@ -44,8 +44,8 @@ let xml = deser_xml::to_string(&feed).unwrap();
   into them or transcoded keep their root element and namespaces.
 * `deser_xml::Serializer` implements deser's `Serializer` trait for code
   that does not know the format upfront (like `deser-transcode`).  Values
-  without a name (like maps) need a `Root` or `SerializerConfig::root`.
-* `SerializerConfig::pretty` indents child elements where the whitespace
+  without a name (like maps) need a `Root` or `SerializerConfig::set_root`.
+* `SerializerConfig::set_pretty` indents child elements where the whitespace
   is not text, mixed content stays on a single line.
 * Parsing is done by [quick-xml](https://crates.io/crates/quick-xml), the
   events are passed on while the document is parsed and text is borrowed

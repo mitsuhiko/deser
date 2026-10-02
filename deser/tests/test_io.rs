@@ -34,7 +34,7 @@ impl StreamDeserializer for Lines {
             });
         }
         if input.first() == Some(&b'!') {
-            return Err(Error::new(ErrorKind::Syntax, "bang").with_offset(0));
+            return Err(Error::with_offset(ErrorKind::Syntax, "bang", 0));
         }
         match input[*scanned..].iter().position(|&b| b == b'\n') {
             Some(index) => {
@@ -74,7 +74,10 @@ impl StreamDeserializer for Lines {
             Err(_) => driver.emit_borrowed(line),
         }
         // errors of the format refer to the frame
-        .map_err(|err| err.with_position(0, 1, 1))
+        .map_err(|mut err| {
+            err.set_position(0, 1, 1);
+            err
+        })
     }
 }
 
@@ -572,10 +575,10 @@ impl<'de> deser::Deserialize<'de> for Offset {
 fn test_reader_context() {
     let mut reader = Reader::new("1\n2\n3\n".as_bytes(), Lines::default());
     assert_eq!(reader.read::<Offset>().unwrap(), Some(Offset(1)));
-    reader.set_context(deser::Context::new().with(10u64));
+    reader.set_context(deser::Context::with(10u64));
     assert_eq!(reader.read::<Offset>().unwrap(), Some(Offset(12)));
     // a context given to the driver takes precedence
-    let context = deser::Context::new().with(100u64);
+    let context = deser::Context::with(100u64);
     assert_eq!(
         reader
             .read_with::<Offset, _>(|driver| driver.set_context(&context))

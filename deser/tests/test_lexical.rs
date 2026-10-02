@@ -49,7 +49,11 @@ fn deserialize_with_rules<T: DeserializeOwned>(
 
 /// The start of a multimap, like the maps of query strings.
 fn multimap_start<'a>() -> Event<'a> {
-    Event::MapStart(deser::ContainerShape::new().with_multimap(true))
+    Event::MapStart({
+        let mut shape = deser::ContainerShape::new();
+        shape.set_multimap(true);
+        shape
+    })
 }
 
 /// Events of a map where keys and values are lexical, like a query string.

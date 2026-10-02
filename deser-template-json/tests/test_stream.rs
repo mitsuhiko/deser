@@ -4,8 +4,12 @@ use deser::{Deserialize, ErrorKind};
 use dialect::{Deserializer, DeserializerConfig, Trailing};
 
 const STRICT: DeserializerConfig = DeserializerConfig::new();
-const NEWLINE: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const STOP: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Stop);
+const NEWLINE: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
+const STOP: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Stop)
+    .build();
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Row {
@@ -260,7 +264,7 @@ fn test_borrowed() {
 fn test_locations() {
     use deser_location::Spanned;
 
-    let config = NEWLINE.track_locations(true);
+    let config = NEWLINE.into_builder().track_locations(true).build();
     let items = stream::<Spanned<Vec<Spanned<u32>>>>(&config, "[1]\n\n  [2, 3]\n").unwrap();
     let spans = items
         .iter()

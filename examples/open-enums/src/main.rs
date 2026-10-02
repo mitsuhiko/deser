@@ -24,7 +24,7 @@ fn main() {
     let mut steps = OpenEnums::new();
     pipeline::register(&mut steps).unwrap();
     pipeline_extras::register(&mut steps).unwrap();
-    let context = Context::new().with(steps);
+    let context = Context::with(steps);
 
     let pipeline: Pipeline = deser_json::Deserializer::from_str(INPUT)
         .deserialize_in(&context)

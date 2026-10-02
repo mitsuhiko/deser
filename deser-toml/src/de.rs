@@ -23,7 +23,7 @@ use crate::parser::{ROOT, parse};
 /// use deser_toml::DeserializerConfig;
 ///
 /// const CONFIG: DeserializerConfig =
-///     DeserializerConfig::new().track_locations(true);
+///     DeserializerConfig::builder().track_locations(true).build();
 /// let value: BTreeMap<String, u32> = CONFIG.from_str("a = 1").unwrap();
 /// assert_eq!(value["a"], 1);
 /// ```
@@ -46,6 +46,16 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
@@ -60,9 +70,8 @@ impl DeserializerConfig {
     /// whole document for the root table), tables created by dotted keys
     /// report the location of the key.  Arrays of tables report the
     /// location of their first header.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes a value from TOML.
@@ -100,6 +109,43 @@ impl DeserializerConfig {
             &mut Deserializer::from_slice_with_config(bytes, self),
             driver,
         )
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -218,7 +264,10 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             Source(self.input.into()).set(driver.state_mut());
         }
-        emit(&doc, driver).map_err(|err| err.resolve_position(self.input.as_bytes()))
+        emit(&doc, driver).map_err(|mut err| {
+            err.resolve_position(self.input.as_bytes());
+            err
+        })
     }
 }
 
@@ -282,7 +331,7 @@ enum Frame {
 /// Emits the events of a document.
 fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
     let mut stack = vec![Frame::Table(ROOT, 0)];
-    let shape = ContainerShape::new().with_len(doc.tables[ROOT].entries.len());
+    let shape = ContainerShape::with_len(doc.tables[ROOT].entries.len());
     emit_at(driver, Event::MapStart(shape), doc.tables[ROOT].span)?;
 
     while let Some(frame) = stack.last_mut() {
@@ -326,7 +375,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                 if table.kind == TableKind::Inline {
                     Layout::Compact.set(driver.state_mut());
                 }
-                let shape = ContainerShape::new().with_len(table.entries.len());
+                let shape = ContainerShape::with_len(table.entries.len());
                 emit_at(driver, Event::MapStart(shape), table.span)?;
                 stack.push(Frame::Table(id, 0));
             }
@@ -341,7 +390,7 @@ fn emit<'a>(doc: &Document<'a>, driver: &mut DeserializeDriver<'_, 'a>) -> Resul
                 {
                     Layout::Compact.set(driver.state_mut());
                 }
-                let shape = ContainerShape::new().with_len(array.items.len());
+                let shape = ContainerShape::with_len(array.items.len());
                 emit_at(driver, Event::SeqStart(shape), array.span)?;
                 stack.push(Frame::Array(id, 0));
             }
@@ -375,9 +424,8 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
             return Ok(unsafe { std::str::from_utf8_unchecked(bytes) });
         }
     }
-    std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(err.valid_up_to())
-    })
+    std::str::from_utf8(bytes)
+        .map_err(|err| Error::with_offset(ErrorKind::Syntax, "invalid UTF-8", err.valid_up_to()))
 }
 
 /// Deserializes a value from TOML.

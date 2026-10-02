@@ -183,7 +183,7 @@ fn single_byte(value: &Value) -> Option<u8> {
 fn parse_config(config: &Value) -> Option<DeserializerConfig> {
     // PapaParse does not skip blank lines and accepts records with other
     // numbers of fields (without names)
-    let mut rv = DeserializerConfig::new()
+    let mut rv = DeserializerConfig::builder()
         .headers(Headers::None)
         .skip_blank_lines(false)
         .flexible(true);
@@ -226,7 +226,7 @@ fn parse_config(config: &Value) -> Option<DeserializerConfig> {
             rv = rv.escape(Escape::Char(escape)).double_quote(false);
         }
     }
-    Some(rv)
+    Some(rv.build())
 }
 
 fn run_parse(config: &Value, input: &str, expected: &Value) -> Outcome {
@@ -258,7 +258,7 @@ fn run_parse(config: &Value, input: &str, expected: &Value) -> Outcome {
 /// Translates the configuration of a case for writing.
 fn unparse_config(config: &Value) -> Option<SerializerConfig> {
     // PapaParse writes CRLF by default
-    let mut rv = SerializerConfig::new().terminator(Terminator::CrLf);
+    let mut rv = SerializerConfig::builder().terminator(Terminator::CrLf);
     let Kind::Map(map) = config.kind() else {
         return None;
     };
@@ -290,7 +290,7 @@ fn unparse_config(config: &Value) -> Option<SerializerConfig> {
             rv = rv.escape(Escape::Char(escape)).double_quote(false);
         }
     }
-    Some(rv)
+    Some(rv.build())
 }
 
 fn run_unparse(config_value: &Value, input: &Value, expected: &Value) -> Outcome {

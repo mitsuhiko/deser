@@ -183,12 +183,17 @@ fn test_partial_writer() {
     ];
     let configs = [
         SerializerConfig::new(),
-        SerializerConfig::new().flow(FlowPolicy::LeafIfFits(30)),
-        SerializerConfig::new().flow(FlowPolicy::LeafIfFits(80)),
-        SerializerConfig::new().indent(Indent::None),
-        SerializerConfig::new()
+        SerializerConfig::builder()
+            .flow(FlowPolicy::LeafIfFits(30))
+            .build(),
+        SerializerConfig::builder()
+            .flow(FlowPolicy::LeafIfFits(80))
+            .build(),
+        SerializerConfig::builder().indent(Indent::None).build(),
+        SerializerConfig::builder()
             .end_documents(true)
-            .version_directive(true),
+            .version_directive(true)
+            .build(),
     ];
     for config in &configs {
         for limit in [1, 7, 100, usize::MAX] {

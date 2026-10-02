@@ -81,12 +81,12 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
 
 #[cold]
 pub(crate) fn syntax_error(offset: usize, msg: &str) -> Error {
-    Error::new(ErrorKind::Syntax, format!("syntax error: {}", msg)).with_offset(offset)
+    Error::with_offset(ErrorKind::Syntax, format!("syntax error: {}", msg), offset)
 }
 
 #[cold]
 pub(crate) fn eof_error(offset: usize) -> Error {
-    Error::new(ErrorKind::EndOfFile, "unexpected end of input").with_offset(offset)
+    Error::with_offset(ErrorKind::EndOfFile, "unexpected end of input", offset)
 }
 
 /// The seconds between the Unix epoch and the epoch of property lists

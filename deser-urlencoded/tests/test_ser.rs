@@ -72,7 +72,7 @@ fn test_atoms() {
          &big=340282366920938463463374607431768211455&bytes=Af8%3D"
     );
 
-    let config = SerializerConfig::new().space_as_plus(false);
+    let config = SerializerConfig::builder().space_as_plus(false).build();
     assert_eq!(
         config.to_string(&BTreeMap::from([("a b", "c d")])).unwrap(),
         "a%20b=c%20d"
@@ -112,7 +112,9 @@ fn query() -> Query {
 
 #[test]
 fn test_arrays_and_nesting() {
-    let config = SerializerConfig::new().arrays(ArrayFormat::Indices);
+    let config = SerializerConfig::builder()
+        .arrays(ArrayFormat::Indices)
+        .build();
     let out = config.to_string(&query()).unwrap();
     assert_eq!(
         out,
@@ -122,20 +124,22 @@ fn test_arrays_and_nesting() {
     );
     assert_eq!(from_str::<Query>(&out).unwrap(), query());
 
-    let config = config.nesting(Nesting::Dots);
+    let mut config = config;
+    config.set_nesting(Nesting::Dots);
     let out = config.to_string(&query()).unwrap();
     assert_eq!(
         out,
         "q=x+y&tags.0=a&tags.1=b&scores.0=1&scores.1=&filter.max=5&filter.min=1\
          &items.0.id=1&items.0.name=one&items.1.id=2"
     );
-    let dots = DeserializerConfig::new().nesting(Nesting::Dots);
+    let dots = DeserializerConfig::builder().nesting(Nesting::Dots).build();
     assert_eq!(dots.from_str::<Query>(&out).unwrap(), query());
 
     // the other formats do not support sequences of maps
     for arrays in [ArrayFormat::Repeat, ArrayFormat::Brackets] {
-        let err = SerializerConfig::new()
+        let err = SerializerConfig::builder()
             .arrays(arrays)
+            .build()
             .to_string(&query())
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::UnsupportedType);
@@ -163,8 +167,9 @@ fn test_arrays_and_nesting() {
         "tags=a&tags=b&one=1&filter%5Bx%5D=true&filter%5Bx%5D=false"
     );
     assert_eq!(from_str::<Simple>(&out).unwrap(), simple);
-    let out = SerializerConfig::new()
+    let out = SerializerConfig::builder()
         .arrays(ArrayFormat::Brackets)
+        .build()
         .to_string(&simple)
         .unwrap();
     assert_eq!(
@@ -174,8 +179,9 @@ fn test_arrays_and_nesting() {
     );
     assert_eq!(from_str::<Simple>(&out).unwrap(), simple);
 
-    let err = SerializerConfig::new()
+    let err = SerializerConfig::builder()
         .nesting(Nesting::Flat)
+        .build()
         .to_string(&simple)
         .unwrap_err();
     assert_eq!(
@@ -208,7 +214,9 @@ fn test_enums() {
         filter: Filter::Range { min: 1, max: 2 },
         names: vec![Filter::Name("a".into())],
     };
-    let config = SerializerConfig::new().arrays(ArrayFormat::Indices);
+    let config = SerializerConfig::builder()
+        .arrays(ArrayFormat::Indices)
+        .build();
     let out = config.to_string(&value).unwrap();
     assert_eq!(
         out,
@@ -312,7 +320,9 @@ fn test_partial_writer() {
     };
     for config in [
         SerializerConfig::new(),
-        SerializerConfig::new().arrays(ArrayFormat::Indices),
+        SerializerConfig::builder()
+            .arrays(ArrayFormat::Indices)
+            .build(),
     ] {
         let expected = config.to_string(&params).unwrap();
         for limit in [1, 10, 100, usize::MAX] {

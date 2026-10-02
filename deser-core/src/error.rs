@@ -130,7 +130,7 @@ pub enum ErrorCategory {
 ///
 /// Besides the location in the input, which is built into errors, layers
 /// and other code can attach typed values to errors with
-/// [`Error::with_attachment`] and retrieve them with
+/// [`Error::set_attachment`] and retrieve them with
 /// [`Error::attachment`].  An error holds at most one attachment per type.
 /// For instance the `deser-path` crate attaches the path of the value an
 /// error refers to.
@@ -151,9 +151,8 @@ pub enum ErrorCategory {
 ///     }
 /// }
 ///
-/// let err = Error::new(ErrorKind::InvalidType, "unexpected string")
-///     .with_position(12, 2, 5)
-///     .with_attachment(FileName("config.json".into()));
+/// let mut err = Error::with_position(ErrorKind::InvalidType, "unexpected string", 12, 2, 5);
+/// err.set_attachment(FileName("config.json".into()));
 /// assert_eq!(err.attachment::<FileName>().unwrap().0, "config.json");
 /// assert_eq!(
 ///     err.to_string(),
@@ -182,7 +181,7 @@ pub trait ErrorContext: 'static {
     /// This is invoked with the state as it was when the error happened.
     /// Context that is already attached to the error should not be
     /// replaced.
-    fn add_context(err: Error, state: &State) -> Error;
+    fn add_context(err: &mut Error, state: &State);
 }
 
 /// The message of the result that requests a raw value, identified by its
@@ -200,8 +199,7 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// ```
 /// use deser::{Error, ErrorKind};
 ///
-/// let err = Error::new(ErrorKind::InvalidType, "unexpected string")
-///     .with_position(12, 2, 5);
+/// let err = Error::with_position(ErrorKind::InvalidType, "unexpected string", 12, 2, 5);
 /// assert_eq!(
 ///     err.to_string(),
 ///     "InvalidType: unexpected string at line 2 column 5"
@@ -231,14 +229,12 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// ```
 /// use deser::{Error, ErrorKind};
 ///
-/// let err = Error::from_errors([
-///     Error::new(ErrorKind::MissingField, "missing field `a`")
-///         .with_offset(0),
-///     Error::new(ErrorKind::InvalidType, "unexpected string")
-///         .with_offset(9),
+/// let mut err = Error::from_errors([
+///     Error::with_offset(ErrorKind::MissingField, "missing field `a`", 0),
+///     Error::with_offset(ErrorKind::InvalidType, "unexpected string", 9),
 /// ])
-/// .unwrap()
-/// .resolve_position(b"{\n  \"b\": \"x\"}");
+/// .unwrap();
+/// err.resolve_position(b"{\n  \"b\": \"x\"}");
 /// assert_eq!(err.errors().count(), 2);
 /// assert_eq!(err.kind(), ErrorKind::MissingField);
 /// assert_eq!(
@@ -304,6 +300,34 @@ impl Error {
                 collected: false,
             })),
         }
+    }
+
+    /// Creates a new error at a byte offset in the input (see
+    /// [`set_offset`](Self::set_offset)).
+    #[cold]
+    pub fn with_offset<M: Into<Cow<'static, str>>>(
+        kind: ErrorKind,
+        msg: M,
+        offset: usize,
+    ) -> Error {
+        let mut err = Error::new(kind, msg);
+        err.set_offset(offset);
+        err
+    }
+
+    /// Creates a new error at a byte offset with its line and column (see
+    /// [`set_position`](Self::set_position)).
+    #[cold]
+    pub fn with_position<M: Into<Cow<'static, str>>>(
+        kind: ErrorKind,
+        msg: M,
+        offset: usize,
+        line: usize,
+        column: usize,
+    ) -> Error {
+        let mut err = Error::new(kind, msg);
+        err.set_position(offset, line, column);
+        err
     }
 
     /// Combines errors into one.
@@ -392,6 +416,15 @@ impl Error {
     }
 
     /// Applies a function to every error this error holds.
+    /// Changes every error (see [`errors`](Self::errors)).
+    pub(crate) fn for_each_mut(&mut self, mut f: impl FnMut(&mut Error)) {
+        if let ErrorInner::Multiple(ref mut errors) = *self.inner {
+            errors.iter_mut().for_each(f);
+        } else {
+            f(self)
+        }
+    }
+
     pub(crate) fn map_each(mut self, mut f: impl FnMut(Error) -> Error) -> Error {
         if let ErrorInner::Multiple(ref mut errors) = *self.inner {
             for err in errors.iter_mut() {
@@ -420,9 +453,8 @@ impl Error {
     }
 
     /// Attaches another error as source to this error.
-    pub fn with_source<E: core::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
+    pub fn set_source<E: core::error::Error + Send + Sync + 'static>(&mut self, source: E) {
         self.data_mut().source = Some(Box::new(source));
-        self
     }
 
     /// Creates the result of an event that requests the next value as raw
@@ -436,7 +468,7 @@ impl Error {
     ///
     /// This is not an error: sinks return it from the event before a value
     /// that deserializes into a [`Raw`](crate::ext::Raw) value of the format
-    /// that is parsed (see [`State::set_raw_format`](crate::State::set_raw_format)).
+    /// that is parsed (see [`State::declare_raw_format`](crate::State::declare_raw_format)).
     /// Deserializers of formats with raw values check the errors of events
     /// with this.  If it's `true`, the event was accepted and the format
     /// passes on the input of the next value as
@@ -513,19 +545,17 @@ impl Error {
     /// Sets the byte offset in the input the error refers to.
     ///
     /// A previously set line and column are discarded.
-    pub fn with_offset(mut self, offset: usize) -> Self {
+    pub fn set_offset(&mut self, offset: usize) {
         let data = self.data_mut();
         data.offset = Some(offset);
         data.line_column = None;
-        self
     }
 
     /// Sets the byte offset together with its line and column (1-based).
-    pub fn with_position(mut self, offset: usize, line: usize, column: usize) -> Self {
+    pub fn set_position(&mut self, offset: usize, line: usize, column: usize) {
         let data = self.data_mut();
         data.offset = Some(offset);
         data.line_column = Some((line, column));
-        self
     }
 
     /// Resolves the offset into line and column.
@@ -538,23 +568,21 @@ impl Error {
     /// ```
     /// use deser::{Error, ErrorKind};
     ///
-    /// let err = Error::new(ErrorKind::InvalidValue, "bad value")
-    ///     .with_offset(7)
-    ///     .resolve_position(b"[1,\n  x]");
+    /// let mut err = Error::with_offset(ErrorKind::InvalidValue, "bad value", 7);
+    /// err.resolve_position(b"[1,\n  x]");
     /// assert_eq!((err.line(), err.column()), (Some(2), Some(4)));
     /// ```
     ///
     /// The positions of further errors (see [`errors`](Self::errors)) are
     /// resolved as well.
-    pub fn resolve_position(self, source: &[u8]) -> Self {
-        self.map_each(|mut err| {
+    pub fn resolve_position(&mut self, source: &[u8]) {
+        self.for_each_mut(|err| {
             let data = err.data_mut();
             if let (Some(offset), None) = (data.offset, data.line_column) {
                 let pos = Position::of(source, offset);
                 data.line_column = Some((pos.line, pos.column));
             }
-            err
-        })
+        });
     }
 
     /// Moves the position of the error by the position of the input it
@@ -597,7 +625,7 @@ impl Error {
     ///
     /// An attachment of the same type is replaced but keeps its position
     /// in the [`Display`](fmt::Display) output.  See [`ErrorAttachment`].
-    pub fn with_attachment<T: ErrorAttachment>(mut self, value: T) -> Self {
+    pub fn set_attachment<T: ErrorAttachment>(&mut self, value: T) {
         let type_id = TypeId::of::<T>();
         let value = Box::new(value);
         let attachments = &mut self.data_mut().attachments;
@@ -605,7 +633,6 @@ impl Error {
             Some(attachment) => attachment.value = value,
             None => attachments.push(Attachment { type_id, value }),
         }
-        self
     }
 
     /// Returns the attachment of the given type.
@@ -718,7 +745,9 @@ impl fmt::Debug for DebugAttachments<'_> {
 #[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Error {
-        Error::new(ErrorKind::Io, err.to_string()).with_source(err)
+        let mut rv = Error::new(ErrorKind::Io, err.to_string());
+        rv.set_source(err);
+        rv
     }
 }
 

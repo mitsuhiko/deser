@@ -36,7 +36,7 @@ fn config_events() -> Vec<Event<'static>> {
 
 #[test]
 fn test_deserialize_in() {
-    let context = Context::new().with(UnknownFields::Error);
+    let context = Context::with(UnknownFields::Error);
 
     let config: Config = Events(config_events()).deserialize().unwrap();
     assert_eq!(config.name, "x");
@@ -55,7 +55,7 @@ fn test_deserialize_in() {
 
 #[test]
 fn test_state_overrides_context() {
-    let context = Context::new().with(UnknownFields::Error);
+    let context = Context::with(UnknownFields::Error);
     let config: Config = Events(config_events())
         .deserialize_with(|driver| {
             driver.set_context(&context);
@@ -68,7 +68,7 @@ fn test_state_overrides_context() {
 
 #[test]
 fn test_update_in() {
-    let context = Context::new().with(DuplicateKeys::Last);
+    let context = Context::with(DuplicateKeys::Last);
     let mut map = BTreeMap::<String, u32>::new();
     Events(vec![
         Event::map_start(),
@@ -87,7 +87,7 @@ fn test_update_in() {
 fn test_state_get() {
     let mut state = State::new();
     assert_eq!(state.get::<u32>(), None);
-    state.set_context(Context::new().with(1u32));
+    state.set_context(Context::with(1u32));
     assert_eq!(state.get::<u32>(), Some(&1));
     assert_eq!(state.context().get::<u32>(), Some(&1));
     // `get_mut` starts from the default of the type, not the context
@@ -124,8 +124,7 @@ impl Serializer for Collect {
 fn test_serialize_in() {
     let mut out = Collect::default();
     out.serialize(&FromState).unwrap();
-    out.serialize_in(&FromState, &Context::new().with(42u32))
-        .unwrap();
+    out.serialize_in(&FromState, &Context::with(42u32)).unwrap();
     assert_eq!(out.0, vec![Event::from(0u64), Event::from(42u64)]);
 }
 
@@ -137,7 +136,7 @@ fn test_set_default() {
     assert_eq!(DuplicateKeys::of(&state), DuplicateKeys::Last);
 
     let mut state = State::new();
-    state.set_context(Context::new().with(DuplicateKeys::First));
+    state.set_context(Context::with(DuplicateKeys::First));
     DuplicateKeys::Last.set_default(&mut state);
     assert_eq!(DuplicateKeys::of(&state), DuplicateKeys::First);
 }
@@ -157,13 +156,13 @@ fn test_collect_errors() {
     let err = Events(events()).deserialize::<Vec<u32>>().unwrap_err();
     assert_eq!(err.errors().count(), 1);
 
-    let all = Context::new().with(CollectErrors::new());
+    let all = Context::with(CollectErrors::new());
     let err = Events(events())
         .deserialize_in::<Vec<u32>>(&all)
         .unwrap_err();
     assert_eq!(err.errors().count(), 3);
 
-    let limited = Context::new().with(CollectErrors::new().max_errors(1));
+    let limited = Context::with(CollectErrors::with_max_errors(1));
     let err = Events(events())
         .deserialize_in::<Vec<u32>>(&limited)
         .unwrap_err();

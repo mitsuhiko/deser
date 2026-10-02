@@ -35,7 +35,7 @@
 //!
 //! The variables with names that start with a prefix (like `APP_`) are a
 //! map.  The prefix is removed and the rest of the name is split at the
-//! separator (`__` by default, see [`DeserializerConfig::separator`]) into
+//! separator (`__` by default, see [`DeserializerConfig::set_separator`]) into
 //! nested keys which are lowercased (see [`Case`]):
 //!
 //! | variables                               | deser                                     |
@@ -95,7 +95,7 @@
 //! Sequences can be given with indexes (`APP_HOSTS__0`) without changes to
 //! the types.  A single variable (`APP_HOSTS=a`) is a list of one value and
 //! a list without variables is empty (the maps of the environment are
-//! [multimaps](deser_core::ContainerShape::with_multimap), like query
+//! [multimaps](deser_core::ContainerShape::set_multimap), like query
 //! strings).  Lists in a single variable (`APP_HOSTS=a,b,c`) use the
 //! [`Separated`](deser_core::adapters::Separated) adapter, with
 //! [`TrimWhitespace`](deser_core::adapters::TrimWhitespace) to allow spaces
@@ -212,8 +212,8 @@ use deser_core::de::{
 };
 use deser_core::{Atom, Error, ErrorAttachment, ErrorKind};
 
-pub use self::de::{Deserializer, DeserializerConfig};
-pub use self::ser::{SerializerConfig, to_vars};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder};
+pub use self::ser::{SerializerConfig, SerializerConfigBuilder, to_vars};
 
 /// How the case of names maps onto keys.
 ///
@@ -226,7 +226,7 @@ pub use self::ser::{SerializerConfig, to_vars};
 ///     deser_env::from_vars("APP_", vars).unwrap();
 /// assert_eq!(value["server"]["port"], 80);
 ///
-/// let preserve = DeserializerConfig::new().case(Case::Preserve);
+/// let preserve = DeserializerConfig::builder().case(Case::Preserve).build();
 /// let value: BTreeMap<String, BTreeMap<String, u16>> =
 ///     preserve.from_vars("APP_", vars).unwrap();
 /// assert_eq!(value["Server"]["Port"], 80);
@@ -369,7 +369,10 @@ where
 /// let workers: Option<usize> = deser_env::var("WORKERS").unwrap();
 /// ```
 pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
-    let attach = |err: Error| err.with_attachment(EnvVar::new(name.into()));
+    let attach = |mut err: Error| {
+        err.set_attachment(EnvVar::new(name.into()));
+        err
+    };
     let value = match std::env::var_os(name) {
         Some(value) => value,
         None => {

@@ -89,7 +89,7 @@ fn events<T: for<'de> Deserialize<'de>>(values: &[[f32; 2]], pairs: bool) {
     let mut out = None::<T>;
     {
         let mut driver = DeserializeDriver::new(&mut out);
-        let shape = |len| Event::SeqStart(ContainerShape::new().with_len(len));
+        let shape = |len| Event::SeqStart(ContainerShape::with_len(len));
         driver
             .emit(shape(values.len() * if pairs { 1 } else { 2 }))
             .unwrap();

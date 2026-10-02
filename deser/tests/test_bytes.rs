@@ -11,10 +11,10 @@ use deser::{Atom, BytesFormat, Deserialize, Error, ErrorKind, Event, Serialize};
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -222,7 +222,7 @@ fn test_adapters_serialize() {
         (Event::SeqEnd, None),
         ("keys".into(), None),
         (
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             None,
         ),
         (bytes(&[9]), dotted),

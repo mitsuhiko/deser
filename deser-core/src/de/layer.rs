@@ -175,7 +175,7 @@ impl<'n, 'de> Next<'n, 'de> {
 ///
 /// let mut out = None::<Vec<Vec<u32>>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.push_layer(Limits::new().max_depth(1));
+/// driver.push_layer(Limits::builder().max_depth(1).build());
 /// driver.emit(Event::seq_start()).unwrap();
 /// let err = driver.emit(Event::seq_start()).unwrap_err();
 /// assert_eq!(err.to_string(), "LimitExceeded: recursion limit exceeded");
@@ -207,33 +207,34 @@ impl Limits {
         }
     }
 
+    /// Returns a builder for the configuration (see [`LimitsBuilder`]).
+    pub const fn builder() -> LimitsBuilder {
+        LimitsBuilder::new()
+    }
+
     /// Limits the nesting depth of maps and sequences.
     ///
     /// With a depth of 1, maps and sequences cannot contain other maps and
     /// sequences.
-    pub const fn max_depth(mut self, depth: usize) -> Limits {
+    pub const fn set_max_depth(&mut self, depth: usize) {
         self.max_depth = Some(depth);
-        self
     }
 
     /// Limits the total number of events.
     ///
     /// Every atom and every start and end of a map or sequence counts.
-    pub const fn max_events(mut self, events: usize) -> Limits {
+    pub const fn set_max_events(&mut self, events: usize) {
         self.max_events = Some(events);
-        self
     }
 
     /// Limits the number of items in a sequence and entries in a map.
-    pub const fn max_items(mut self, items: usize) -> Limits {
+    pub const fn set_max_items(&mut self, items: usize) {
         self.max_items = Some(items);
-        self
     }
 
     /// Limits the length of strings and bytes (in bytes).
-    pub const fn max_len(mut self, len: usize) -> Limits {
+    pub const fn set_max_len(&mut self, len: usize) {
         self.max_len = Some(len);
-        self
     }
 
     /// Accounts for an item in the current container.
@@ -247,6 +248,67 @@ impl Limits {
             }
         }
         Ok(())
+    }
+}
+
+/// Builds a [`Limits`].
+///
+/// The methods have the names of the setters of [`Limits`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct LimitsBuilder {
+    value: Limits,
+}
+
+impl LimitsBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> LimitsBuilder {
+        LimitsBuilder {
+            value: Limits::new(),
+        }
+    }
+
+    /// Limits the nesting depth of maps and sequences.
+    ///
+    /// See [`Limits::set_max_depth`].
+    pub const fn max_depth(mut self, depth: usize) -> LimitsBuilder {
+        self.value.set_max_depth(depth);
+        self
+    }
+
+    /// Limits the total number of events.
+    ///
+    /// See [`Limits::set_max_events`].
+    pub const fn max_events(mut self, events: usize) -> LimitsBuilder {
+        self.value.set_max_events(events);
+        self
+    }
+
+    /// Limits the number of items in a sequence and entries in a map.
+    ///
+    /// See [`Limits::set_max_items`].
+    pub const fn max_items(mut self, items: usize) -> LimitsBuilder {
+        self.value.set_max_items(items);
+        self
+    }
+
+    /// Limits the length of strings and bytes (in bytes).
+    ///
+    /// See [`Limits::set_max_len`].
+    pub const fn max_len(mut self, len: usize) -> LimitsBuilder {
+        self.value.set_max_len(len);
+        self
+    }
+
+    /// Returns the built [`Limits`].
+    pub fn build(self) -> Limits {
+        self.value
+    }
+}
+
+impl Default for LimitsBuilder {
+    fn default() -> LimitsBuilder {
+        LimitsBuilder::new()
     }
 }
 

@@ -16,17 +16,17 @@ use crate::write_text::TextWriter;
 
 /// Configures how values are serialized to property lists.
 ///
-/// The [`format`](Self::format) selects the encoding, by default XML is
+/// The [`set_format`](Self::set_format) selects the encoding, by default XML is
 /// written.
 ///
 /// ```
 /// use deser_plist::{Format, SerializerConfig};
 ///
-/// const BINARY: SerializerConfig = SerializerConfig::new().format(Format::Binary);
+/// const BINARY: SerializerConfig = SerializerConfig::builder().format(Format::Binary).build();
 /// let bytes = BINARY.to_vec(&vec![1, 2, 3]).unwrap();
 /// assert!(bytes.starts_with(b"bplist00"));
 ///
-/// const ASCII: SerializerConfig = SerializerConfig::new().format(Format::Ascii);
+/// const ASCII: SerializerConfig = SerializerConfig::builder().format(Format::Ascii).build();
 /// assert_eq!(ASCII.to_string(&vec![1, 2, 3]).unwrap(), "(\n\t1,\n\t2,\n\t3,\n)\n");
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -42,10 +42,19 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets the format to write.
-    pub const fn format(mut self, format: Format) -> SerializerConfig {
+    pub const fn set_format(&mut self, format: Format) {
         self.format = format;
-        self
     }
 
     /// Serializes the given value.
@@ -185,6 +194,43 @@ impl SerializerConfig {
                 Err(err)
             }
         }
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets the format to write.
+    ///
+    /// See [`SerializerConfig::set_format`].
+    pub const fn format(mut self, format: Format) -> SerializerConfigBuilder {
+        self.value.set_format(format);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 

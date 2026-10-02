@@ -194,9 +194,10 @@ fn test_serialize() {
 
 #[test]
 fn test_config() {
-    let config = DeserializerConfig::new()
+    let config = DeserializerConfig::builder()
         .attribute_prefix("-")
-        .text_key("#text");
+        .text_key("#text")
+        .build();
 
     #[derive(Debug, Deserialize, PartialEq)]
     enum Inline {

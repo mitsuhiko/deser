@@ -84,12 +84,19 @@ fn test_writer_same_output() {
         SerializeRef::new(&Some(42)),
     ];
     let configs = [
-        SerializerConfig::new().root("root"),
-        SerializerConfig::new()
+        SerializerConfig::builder().root("root").build(),
+        SerializerConfig::builder()
             .root("root")
-            .indent(Indent::Spaces(2)),
-        SerializerConfig::new().root("root").declaration(true),
-        SerializerConfig::new().root("root").indent(Indent::Tab),
+            .indent(Indent::Spaces(2))
+            .build(),
+        SerializerConfig::builder()
+            .root("root")
+            .declaration(true)
+            .build(),
+        SerializerConfig::builder()
+            .root("root")
+            .indent(Indent::Tab)
+            .build(),
     ];
     let limits: &[usize] = if miri {
         &[1, 100, usize::MAX]
@@ -130,7 +137,7 @@ fn test_writer_pieces() {
     let map: BTreeMap<String, String> = (0..if miri { 60 } else { 500 })
         .map(|x| (format!("k{x}"), x.to_string()))
         .collect();
-    let config = SerializerConfig::new().root("map");
+    let config = SerializerConfig::builder().root("map").build();
     let (out, writes) = streamed(&config, &map, 64);
     assert_eq!(out, config.to_string(&map).unwrap());
     assert!(writes <= 2, "{writes}");
@@ -167,7 +174,9 @@ fn test_writer_namespaces() {
         out.starts_with("<ns0:root xmlns:ns0=\"urn:root\" xmlns:ns1=\"urn:a\">"),
         "{out}"
     );
-    const READ: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    const READ: DeserializerConfig = DeserializerConfig::builder()
+        .resolve_namespaces(true)
+        .build();
     let read: Root = READ.from_slice(out.as_bytes()).unwrap();
     assert_eq!(read, root);
 

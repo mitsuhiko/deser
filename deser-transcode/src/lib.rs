@@ -54,7 +54,7 @@
 //! use deser_json::{DeserializerConfig, Trailing};
 //! use deser_transcode::Transcoder;
 //!
-//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! let mut de = deser_json::Deserializer::from_str_with_config(
 //!     "{\"a\": 1}\n{\"a\": 2}\n",
 //!     &config,
@@ -76,7 +76,7 @@
 //! use deser_json::{DeserializerConfig, Trailing};
 //! use deser_transcode::Transcoder;
 //!
-//! let config = DeserializerConfig::new().trailing(Trailing::Newline);
+//! let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! let input = &b"{\"a\": 1}\n{\"a\": 2}\n"[..];
 //! let mut de = config.reader(input);
 //! let mut ser = deser_yaml::SerializerConfig::new().writer(Vec::new());
@@ -127,7 +127,7 @@ where
 /// let err = deser_transcode::transcode_with(
 ///     &mut de,
 ///     &mut ser,
-///     |driver| driver.push_layer(Limits::new().max_depth(2)),
+///     |driver| driver.push_layer(Limits::builder().max_depth(2).build()),
 ///     |_driver| {},
 /// )
 /// .unwrap_err();

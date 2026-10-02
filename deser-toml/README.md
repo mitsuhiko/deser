@@ -57,7 +57,7 @@ assert_eq!((err.line(), err.column()), (Some(2), Some(32)));
 * Arbitrarily nested arrays and inline tables do not overflow the stack.
 * The serializer writes maps as tables and sequences of maps as arrays of
   tables.  The output is compatible with TOML 1.0.
-* Source locations (see `DeserializerConfig::track_locations`).
+* Source locations (see `DeserializerConfig::set_track_locations`).
 * `from_reader` and `to_writer` work with `std::io`, the configurations
   with `deser::io` and async runtimes (`deser-tokio`).
 

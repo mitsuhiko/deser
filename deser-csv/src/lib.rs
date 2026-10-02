@@ -60,7 +60,7 @@
 //!
 //! let input = "id,kind,radius,width,height\n1,circle,2,,\n2,rect,,3,4\n";
 //! let config =
-//!     deser_csv::DeserializerConfig::new().nulls(deser_csv::Nulls::Empty);
+//!     deser_csv::DeserializerConfig::builder().nulls(deser_csv::Nulls::Empty).build();
 //! let rows: Vec<Row> = config.from_str(input).unwrap();
 //! assert_eq!(rows[1].shape, Shape::Rect { width: 3.0, height: 4.0 });
 //! ```
@@ -95,7 +95,7 @@
 //! Input is UTF-8, a byte order mark at the start is skipped (and UTF-16
 //! input is reported as such).  Fields which are not UTF-8 are passed on as
 //! bytes.  The `sep=;` line Excel writes can be enabled with
-//! [`DeserializerConfig::sep_line`].
+//! [`DeserializerConfig::set_sep_line`].
 //!
 //! # Errors
 //!
@@ -172,10 +172,10 @@ mod parser;
 mod ser;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Records};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder, Records};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Serializer, SerializerConfig, to_string};
+pub use self::ser::{Serializer, SerializerConfig, SerializerConfigBuilder, to_string};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
@@ -193,17 +193,17 @@ use deser_core::de::Deserialize;
 ///     deser_csv::from_str("a,b\n1,2\n").unwrap();
 /// assert_eq!(rows[0]["b"], 2);
 ///
-/// let config = DeserializerConfig::new().headers(Headers::None);
+/// let config = DeserializerConfig::builder().headers(Headers::None).build();
 /// let rows: Vec<Vec<u32>> = config.from_str("1,2\n3,4\n").unwrap();
 /// assert_eq!(rows, [[1, 2], [3, 4]]);
 ///
-/// let config = DeserializerConfig::new().headers(Headers::Skip);
+/// let config = DeserializerConfig::builder().headers(Headers::Skip).build();
 /// let rows: Vec<(String, u32)> =
 ///     config.from_str("name,age\njane,42\n").unwrap();
 /// assert_eq!(rows, [("jane".to_string(), 42)]);
 ///
 /// let config =
-///     DeserializerConfig::new().headers(Headers::Given(&["a", "b"]));
+///     DeserializerConfig::builder().headers(Headers::Given(&["a", "b"])).build();
 /// let rows: Vec<BTreeMap<String, u32>> = config.from_str("1,2\n").unwrap();
 /// assert_eq!(rows[0]["a"], 1);
 /// ```
@@ -248,10 +248,10 @@ pub enum Terminator {
 /// ```
 /// use deser_csv::{DeserializerConfig, Escape, Headers};
 ///
-/// let config = DeserializerConfig::new()
+/// let config = DeserializerConfig::builder()
 ///     .headers(Headers::None)
 ///     .escape(Escape::Backslash)
-///     .double_quote(false);
+///     .double_quote(false).build();
 /// let rows: Vec<Vec<String>> = config.from_str(r#""a\"b",c\,d"#).unwrap();
 /// assert_eq!(rows, [["a\"b", "c,d"]]);
 /// ```
@@ -297,7 +297,7 @@ impl Escape {
 ///     age: u32,
 /// }
 ///
-/// let config = DeserializerConfig::new().trim(Trim::All);
+/// let config = DeserializerConfig::builder().trim(Trim::All).build();
 /// let rows: Vec<Row> =
 ///     config.from_str("name , age\n \"jane \" , 42\n").unwrap();
 /// assert_eq!((rows[0].name.as_str(), rows[0].age), ("jane ", 42));
@@ -324,11 +324,11 @@ pub enum Trim {
 /// ```
 /// use deser_csv::{DeserializerConfig, Headers, Nulls};
 ///
-/// let config = DeserializerConfig::new().headers(Headers::None);
+/// let mut config = DeserializerConfig::builder().headers(Headers::None).build();
 /// let rows: Vec<Vec<Option<String>>> = config.from_str(",\"\"\n").unwrap();
 /// assert_eq!(rows, [[Some("".to_string()), Some("".to_string())]]);
 ///
-/// let config = config.nulls(Nulls::Empty);
+/// config.set_nulls(Nulls::Empty);
 /// let rows: Vec<Vec<Option<String>>> = config.from_str(",\"\"\n").unwrap();
 /// assert_eq!(rows, [[None, Some("".to_string())]]);
 /// ```
@@ -352,7 +352,7 @@ pub enum Nulls {
 ///
 /// let rows = vec![("a b", 1), ("c,d", 2)];
 /// let with = |style| {
-///     SerializerConfig::new().quote_style(style).to_string(&rows).unwrap()
+///     SerializerConfig::builder().quote_style(style).build().to_string(&rows).unwrap()
 /// };
 /// assert_eq!(with(QuoteStyle::Necessary), "a b,1\n\"c,d\",2\n");
 /// assert_eq!(with(QuoteStyle::Always), "\"a b\",\"1\"\n\"c,d\",\"2\"\n");

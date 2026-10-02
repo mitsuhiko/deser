@@ -12,8 +12,12 @@ use std::io::{BufWriter, Write};
 use deser::{Deserialize, Serialize};
 use deser_json::{DeserializerConfig, SerializerConfig, Trailing};
 
-const READ_LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
-const WRITE_LINES: SerializerConfig = SerializerConfig::new().trailing(Trailing::Newline);
+const READ_LINES: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
+const WRITE_LINES: SerializerConfig = SerializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Config {

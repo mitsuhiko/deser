@@ -59,7 +59,7 @@ fn test_bytes_default() {
 #[test]
 fn test_bytes_config() {
     // the same context is used for writing and reading
-    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let hex = Context::with(BytesFormat::encoded::<Hex>());
     let toml = SerializerConfig::new()
         .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();
@@ -69,7 +69,7 @@ fn test_bytes_config() {
         .unwrap();
     assert_eq!(value, blob());
 
-    let seq = Context::new().with(BytesFormat::SEQ);
+    let seq = Context::with(BytesFormat::SEQ);
     let toml = SerializerConfig::new()
         .to_string_with(&blob(), |driver| driver.set_context(&seq))
         .unwrap();
@@ -86,7 +86,7 @@ fn test_same_as_json() {
         BytesFormat::encoded::<Hex>(),
     ] {
         let value = blob();
-        let context = Context::new().with(format);
+        let context = Context::with(format);
         let toml = SerializerConfig::new()
             .to_string_with(&value, |driver| driver.set_context(&context))
             .unwrap();

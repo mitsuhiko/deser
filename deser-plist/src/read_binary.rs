@@ -247,7 +247,7 @@ impl<'i> Reader<'i> {
                 if self.open[object] {
                     return Err(syntax_error(pos, "object references itself"));
                 }
-                let shape = ContainerShape::new().with_len(len);
+                let shape = ContainerShape::with_len(len);
                 out.emit_at(
                     pos,
                     end,

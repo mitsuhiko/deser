@@ -77,16 +77,18 @@ pub fn parse_err(input: &[u8]) -> String {
 
 /// Serializes a value in the given format.
 pub fn write(value: &impl Serialize, format: Format) -> Vec<u8> {
-    SerializerConfig::new()
+    SerializerConfig::builder()
         .format(format)
+        .build()
         .to_vec(value)
         .unwrap()
 }
 
 /// Serializes a value in a text format.
 pub fn write_str(value: &impl Serialize, format: Format) -> String {
-    SerializerConfig::new()
+    SerializerConfig::builder()
         .format(format)
+        .build()
         .to_string(value)
         .unwrap()
 }

@@ -29,7 +29,7 @@ use crate::error::Error;
 /// use deser::{BytesFormat, Context};
 ///
 /// // writes and reads URL-safe base64 in formats without native bytes
-/// let context = Context::new().with(BytesFormat::encoded::<Base64Url>());
+/// let context = Context::with(BytesFormat::encoded::<Base64Url>());
 /// # let _ = context;
 /// ```
 ///

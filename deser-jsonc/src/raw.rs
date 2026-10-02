@@ -35,8 +35,11 @@ const NAME: &str = "jsonc";
 pub(crate) static ID: RawFormatId = RawFormatId::new(NAME, true);
 
 /// The description of the format of the raw values of this dialect.
-static FORMAT: RawFormatInfo =
-    RawFormatInfo::new(&ID, replay, encode, fallback).with_data(&SCANNER);
+static FORMAT: RawFormatInfo = {
+    let mut info = RawFormatInfo::new(&ID, replay, encode, fallback);
+    info.set_data(&SCANNER);
+    info
+};
 
 /// Skips a raw value while validating it (see `parser::raw_value`).
 ///

@@ -201,14 +201,12 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             let input = &self.data[self.start..self.end];
             let frame = match self.deserializer.frame(input, self.eof) {
                 Ok(frame) => frame,
-                Err(err) => {
+                Err(mut err) => {
                     self.failed = true;
                     let base = self.position;
-                    let err = if self.deserializer.is_text() {
-                        err.resolve_position(input)
-                    } else {
-                        err
-                    };
+                    if self.deserializer.is_text() {
+                        err.resolve_position(input);
+                    }
                     return Err(err.shift_position(base));
                 }
             };
@@ -275,13 +273,11 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             let progress = match self.deserializer.peek(input, self.eof) {
                 Ok(Some(progress)) => progress,
                 Ok(None) => return self.poll(),
-                Err(err) => {
+                Err(mut err) => {
                     self.failed = true;
-                    let err = if self.deserializer.is_text() {
-                        err.resolve_position(input)
-                    } else {
-                        err
-                    };
+                    if self.deserializer.is_text() {
+                        err.resolve_position(input);
+                    }
                     return Err(err.shift_position(self.position));
                 }
             };
@@ -421,10 +417,11 @@ impl<D: StreamDeserializer> InputBuffer<D> {
                 self.partial = true;
                 if self.eof {
                     self.failed = true;
-                    return Err(self.locate(
-                        Error::new(ErrorKind::EndOfFile, "unexpected end of input")
-                            .with_offset(self.position.offset),
-                    ));
+                    return Err(self.locate(Error::with_offset(
+                        ErrorKind::EndOfFile,
+                        "unexpected end of input",
+                        self.position.offset,
+                    )));
                 }
                 Ok(Status::NeedInput)
             }
@@ -447,19 +444,19 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     ///
     /// This is only possible for offsets in the buffered data.
     fn locate(&self, err: Error) -> Error {
-        err.map_each(|err| match err.offset() {
-            Some(offset)
-                if self.deserializer.is_text()
-                    && err.line().is_none()
-                    && offset >= self.position.offset
-                    && offset - self.position.offset <= self.end - self.start =>
+        err.map_each(|mut err| {
+            if let Some(offset) = err.offset()
+                && self.deserializer.is_text()
+                && err.line().is_none()
+                && offset >= self.position.offset
+                && offset - self.position.offset <= self.end - self.start
             {
                 let mut position = self.position;
                 position
                     .advance(&self.data[self.start..self.start + offset - self.position.offset]);
-                err.with_position(offset, position.line, position.column)
+                err.set_position(offset, position.line, position.column);
             }
-            _ => err,
+            err
         })
     }
 
@@ -629,8 +626,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         let (start, _, _) = self.ready.expect("no value is ready");
         let mut position = self.position;
         position.advance(&self.data[self.start..self.start + start]);
-        Error::new(ErrorKind::Syntax, "unexpected value after the end")
-            .with_position(0, 1, 1)
+        Error::with_position(ErrorKind::Syntax, "unexpected value after the end", 0, 1, 1)
             .shift_position(position)
     }
 }

@@ -190,7 +190,7 @@ fn test_category_of_formats_and_layers() {
         ErrorKind::Syntax,
     )
     .deserialize_with::<Vec<Vec<u32>>, _>(|driver| {
-        driver.push_layer(Limits::new().max_depth(1));
+        driver.push_layer(Limits::builder().max_depth(1).build());
     })
     .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::LimitExceeded);

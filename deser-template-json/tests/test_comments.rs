@@ -84,8 +84,9 @@ fn test_spans() {
         b: Spanned<Vec<Spanned<bool>>>,
     }
 
-    let doc: Doc = DeserializerConfig::new()
+    let doc: Doc = DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str("{\n  // a\n  \"a\": /* one */ 1,\n  \"b\": [true, /**/ false,],\n}")
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
@@ -96,14 +97,18 @@ fn test_spans() {
 
 #[test]
 fn test_values_separated_by_comments() {
-    let config = DeserializerConfig::new().trailing(Trailing::Stop);
+    let config = DeserializerConfig::builder()
+        .trailing(Trailing::Stop)
+        .build();
     let mut de = Deserializer::from_str_with_config("1 /* a */ 2 // b\n 3 // end", &config);
     let values = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2, 3]);
     assert!(de.is_end());
     de.end().unwrap();
 
-    let config = DeserializerConfig::new().trailing(Trailing::Newline);
+    let config = DeserializerConfig::builder()
+        .trailing(Trailing::Newline)
+        .build();
     let mut de = Deserializer::from_str_with_config("// header\n1 // one\n\n// x\n2\n", &config);
     let values = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2]);

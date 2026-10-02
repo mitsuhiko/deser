@@ -95,16 +95,10 @@ impl Map {
         self.inner.order = order;
     }
 
-    /// Sets the order of the entries and returns the map.
-    pub fn with_order(mut self, order: Order) -> Map {
-        self.inner.order = order;
-        self
-    }
-
     /// Returns `true` if the map is a multimap.
     ///
     /// Maps that are deserialized from multimaps (like query strings, see
-    /// [`ContainerShape::with_multimap`](deser_core::ContainerShape::with_multimap))
+    /// [`ContainerShape::set_multimap`](deser_core::ContainerShape::set_multimap))
     /// are multimaps.  The values of a key that was given more than once
     /// are a [`Seq`](crate::Seq) marked as
     /// [repeated](crate::Seq::is_repeated).  When the map is deserialized
@@ -123,12 +117,11 @@ impl Map {
     ///     page: Vec<u32>,
     /// }
     ///
-    /// let mut map = Map::new().with_multimap(true);
-    /// map.insert(
-    ///     "tag",
-    ///     Seq::from(vec![Value::from("a"), Value::from("b")])
-    ///         .with_repeated(true),
-    /// );
+    /// let mut map = Map::new();
+    /// map.set_multimap(true);
+    /// let mut tags = Seq::from(vec![Value::from("a"), Value::from("b")]);
+    /// tags.set_repeated(true);
+    /// map.insert("tag", tags);
     /// map.insert("page", 1);
     /// let query: Query = deser_value::from_value(&Value::from(map)).unwrap();
     /// assert_eq!(
@@ -145,10 +138,13 @@ impl Map {
         self.inner.multimap = yes;
     }
 
-    /// Sets if the map is a multimap and returns the map.
-    pub fn with_multimap(mut self, yes: bool) -> Map {
-        self.inner.multimap = yes;
-        self
+    /// Creates an empty map with the order and the multimap flag of this
+    /// one.
+    pub(crate) fn empty_like(&self, capacity: usize) -> Map {
+        let mut map = Map::with_capacity(capacity);
+        map.set_order(self.order());
+        map.set_multimap(self.is_multimap());
+        map
     }
 
     /// Returns the number of entries.

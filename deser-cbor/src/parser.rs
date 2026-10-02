@@ -434,7 +434,7 @@ impl Parser {
         out: &mut O,
     ) -> Result<usize, Result<Progress, Error>> {
         let state = out.state_mut();
-        if let Some(format) = state.set_raw_format(&crate::raw::ID)
+        if let Some(format) = state.declare_raw_format(&crate::raw::ID)
             && self.frame.is_none()
             && !self.complete
         {
@@ -677,7 +677,7 @@ impl<'a> Cursor<'a> {
                 if !head.is_indefinite()
                     && let Ok(len) = usize::try_from(head.arg)
                 {
-                    shape = shape.with_len(len);
+                    shape.set_len(len);
                 }
                 let frame = Frame {
                     is_map,
@@ -941,10 +941,11 @@ impl<'a> Cursor<'a> {
         let start = self.pos;
         let head = self.read_head()?;
         if head.major != MAJOR_BYTES {
-            return Err(
-                Error::new(ErrorKind::Syntax, "invalid bignum, expected byte string")
-                    .with_offset(self.base + start),
-            );
+            return Err(Error::with_offset(
+                ErrorKind::Syntax,
+                "invalid bignum, expected byte string",
+                self.base + start,
+            ));
         }
         let bytes = self.read_string(head, buffer)?;
         let skip = bytes.iter().take_while(|&&b| b == 0).count();
@@ -1146,12 +1147,12 @@ fn is_utf8(bytes: &[u8]) -> bool {
 
 #[cold]
 pub(crate) fn syntax_error(offset: usize, msg: &str) -> Error {
-    Error::new(ErrorKind::Syntax, format!("syntax error: {}", msg)).with_offset(offset)
+    Error::with_offset(ErrorKind::Syntax, format!("syntax error: {}", msg), offset)
 }
 
 #[cold]
 fn eof_error(offset: usize) -> Error {
-    Error::new(ErrorKind::EndOfFile, "unexpected end of input").with_offset(offset)
+    Error::with_offset(ErrorKind::EndOfFile, "unexpected end of input", offset)
 }
 
 #[test]

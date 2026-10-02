@@ -214,7 +214,7 @@ fn recover_element(
     match rv {
         Ok(()) => Ok(()),
         Err(err) if state.discards_errors => Err(err),
-        Err(err) => sink.recover(state.attach_error_context(err), state),
+        Err(err) => sink.recover(state.error_in_context(err), state),
     }
 }
 

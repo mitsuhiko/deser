@@ -21,7 +21,9 @@ mod raw;
 mod scan;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
+};
 pub use self::raw::{Json5, RawJson5};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]

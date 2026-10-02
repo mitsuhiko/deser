@@ -324,12 +324,6 @@ impl Value {
         self.meta = meta.filter(|meta| !meta.is_empty()).map(Box::new);
     }
 
-    /// Sets the meta data of the value and returns it.
-    pub fn with_meta(mut self, meta: Meta) -> Value {
-        self.set_meta(Some(meta));
-        self
-    }
-
     /// Returns the span of the value in the input.
     ///
     /// This is a shortcut for the span of the [`Meta`].
@@ -917,11 +911,9 @@ impl<K: Into<Value>, V: Into<Value>> FromIterator<(K, V)> for Value {
 /// Converts bytes into owned bytes, retaining the fallback.
 pub(crate) fn owned_bytes(bytes: Bytes<'_>) -> Bytes<'static> {
     let fallback = bytes.fallback;
-    let owned = Bytes::new(bytes.into_owned());
-    match fallback {
-        Some(format) => owned.with_fallback(format),
-        None => owned,
-    }
+    let mut owned = Bytes::new(bytes.into_owned());
+    owned.fallback = fallback;
+    owned
 }
 
 impl PartialEq<str> for Value {

@@ -9,10 +9,10 @@ use deser::{Atom, Deserialize, Error, Event, Serialize};
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -1176,6 +1176,6 @@ fn test_untagged_variant_shapes() {
     let (event, _, _) = driver.next().unwrap().unwrap();
     assert_eq!(
         event.to_static(),
-        Event::MapStart(deser::ContainerShape::new().with_len(1))
+        Event::MapStart(deser::ContainerShape::with_len(1))
     );
 }

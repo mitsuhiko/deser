@@ -50,8 +50,8 @@
 //!     port: u16,
 //! }
 //!
-//! let value: Value = DeserializerConfig::new()
-//!     .track_locations(true)
+//! let value: Value = DeserializerConfig::builder()
+//!     .track_locations(true).build()
 //!     .from_str("{\n  \"port\": \"80\"\n}")
 //!     .unwrap();
 //! let err = from_value::<Config>(&value).unwrap_err();

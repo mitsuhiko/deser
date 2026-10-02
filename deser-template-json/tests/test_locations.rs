@@ -24,8 +24,9 @@ const INPUT: &str = r#"{
 
 #[test]
 fn test_spans() {
-    let doc: Doc = dialect::DeserializerConfig::new()
+    let doc: Doc = dialect::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(INPUT)
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
@@ -44,8 +45,9 @@ fn test_spans() {
 
 #[test]
 fn test_spans_from_slice() {
-    let doc: Doc = dialect::DeserializerConfig::new()
+    let doc: Doc = dialect::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_slice(INPUT.as_bytes())
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
@@ -76,8 +78,9 @@ fn test_spans_through_buffering() {
     // the tag comes last, so all fields are buffered and replayed
     let input =
         "{\n  \"url\": \"http://x\",\n  \"headers\": [\"a\", \"b\"],\n  \"type\": \"Http\"\n}";
-    let backend: Backend = dialect::DeserializerConfig::new()
+    let backend: Backend = dialect::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(input)
         .unwrap();
     let Backend::Http { url, headers } = backend;
@@ -104,8 +107,9 @@ enum Adjacent {
 #[test]
 fn test_spans_through_enum_buffering() {
     let input = "[\n  \"x\",\n  {\"c\": 42, \"t\": \"Value\"}\n]";
-    let (text, adjacent): (NumberOrText, Adjacent) = dialect::DeserializerConfig::new()
+    let (text, adjacent): (NumberOrText, Adjacent) = dialect::DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(input)
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());

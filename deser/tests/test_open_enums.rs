@@ -26,7 +26,7 @@ fn context() -> Context {
         .unwrap()
         .register::<dyn Plugin, Other>()
         .unwrap();
-    Context::new().with(variants)
+    Context::with(variants)
 }
 
 fn deserialize<T: DeserializeOwned>(events: Vec<Event<'_>>) -> Result<T, Error> {
@@ -122,9 +122,9 @@ fn test_external() {
     assert_eq!(
         serialize(&shape),
         vec![
-            Event::MapStart(ContainerShape::new().with_len(1)),
+            Event::MapStart(ContainerShape::with_len(1)),
             "Circle".into(),
-            Event::MapStart(ContainerShape::new().with_len(1)),
+            Event::MapStart(ContainerShape::with_len(1)),
             "radius".into(),
             2u64.into(),
             Event::MapEnd,
@@ -313,7 +313,7 @@ fn test_adjacent() {
     assert_eq!(
         serialize(&message),
         vec![
-            Event::MapStart(ContainerShape::new().with_len(2)),
+            Event::MapStart(ContainerShape::with_len(2)),
             "t".into(),
             2u64.into(),
             "c".into(),
@@ -428,7 +428,7 @@ fn test_unregistered() {
     // the variants of other open enums
     let mut variants = OpenEnums::new();
     variants.register::<dyn Plugin, Other>().unwrap();
-    let context = Context::new().with(variants);
+    let context = Context::with(variants);
     let err = deserialize_in::<Box<dyn Shape>>(vec!["Point".into()], &context).unwrap_err();
     assert!(
         err.to_string()
@@ -438,7 +438,7 @@ fn test_unregistered() {
     // only registered variants are deserialized
     let mut variants = OpenEnums::new();
     variants.register::<dyn Shape, Circle>().unwrap();
-    let context = Context::new().with(variants);
+    let context = Context::with(variants);
     let err = deserialize_in::<Box<dyn Shape>>(vec!["Point".into()], &context).unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -449,7 +449,7 @@ fn test_unregistered() {
     assert_eq!(
         serialize(&Point as &dyn Shape),
         vec![
-            Event::MapStart(ContainerShape::new().with_len(1)),
+            Event::MapStart(ContainerShape::with_len(1)),
             "Point".into(),
             ().into(),
             Event::MapEnd

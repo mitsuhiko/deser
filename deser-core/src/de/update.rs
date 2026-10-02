@@ -284,9 +284,11 @@ impl<'a, 'de, T: Send> Sink<'de> for CheckedUpdateSink<'a, 'de, T> {
         rv?;
         // SAFETY: nothing borrows the value anymore
         let value = unsafe { self.value.as_ref() };
-        (self.check)(value).map_err(|err| match (err.offset(), self.start) {
-            (None, Some(start)) => err.with_offset(start),
-            _ => err,
+        (self.check)(value).map_err(|mut err| {
+            if let (None, Some(start)) = (err.offset(), self.start) {
+                err.set_offset(start);
+            }
+            err
         })
     }
 
@@ -515,7 +517,7 @@ impl<'a, T> UpdateTarget<'a, T> {
 /// Collections that collect the values of a repeated key one at a time.
 ///
 /// In a multimap (see
-/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap))
 /// the fields of structs and the values of maps with these types receive
 /// every value of their key (see [`Deserialize::__private_collects`]).
 pub(crate) trait Collection<T>: Sized + Send {

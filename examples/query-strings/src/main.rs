@@ -120,7 +120,9 @@ fn main() {
     // sequences can be written with brackets instead (they are encoded like
     // browsers do)
     let search: Search = deser_urlencoded::from_str("q=x&tags[]=a&tags[]=b&limit=1").unwrap();
-    let brackets = SerializerConfig::new().arrays(ArrayFormat::Brackets);
+    let brackets = SerializerConfig::builder()
+        .arrays(ArrayFormat::Brackets)
+        .build();
     let query = brackets.to_string(&search).unwrap();
     println!("{}\n", query);
     assert_eq!(query, "q=x&tags%5B%5D=a&tags%5B%5D=b&limit=1&exact=false");

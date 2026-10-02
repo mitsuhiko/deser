@@ -914,9 +914,9 @@ fn describe_char(c: char) -> String {
 /// Creates an error with the location of the byte offset.
 #[cold]
 pub(crate) fn error_at(input: &str, pos: usize, kind: ErrorKind, msg: &str) -> Error {
-    Error::new(kind, msg.to_string())
-        .with_offset(pos.min(input.len()))
-        .resolve_position(input.as_bytes())
+    let mut err = Error::with_offset(kind, msg.to_string(), pos.min(input.len()));
+    err.resolve_position(input.as_bytes());
+    err
 }
 
 type NumberError = (ErrorKind, &'static str);

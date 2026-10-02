@@ -204,8 +204,9 @@ fn test_well_known_types() {
     let value: Decimal = deser_json::from_str("\"-12.50\"").unwrap();
     assert_eq!(value, decimal);
     // unless disabled
-    let value: Decimal = deser_json::DeserializerConfig::new()
+    let value: Decimal = deser_json::DeserializerConfig::builder()
         .exact_numbers(false)
+        .build()
         .from_str("-12.50")
         .unwrap();
     assert_eq!(value.as_str(), "-12.5");
@@ -344,12 +345,16 @@ fn test_serializer() {
     assert_eq!(serializer.finish(), "[1,2]");
 
     // values are separated according to `trailing`
-    let mut serializer = Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Stop));
+    let mut serializer =
+        Serializer::with_config(&SerializerConfig::builder().trailing(Trailing::Stop).build());
     serializer.serialize(&1).unwrap();
     serializer.serialize(&2).unwrap();
     assert_eq!(serializer.as_str(), "1\n2");
-    let mut serializer =
-        Serializer::with_config(&SerializerConfig::new().trailing(Trailing::Newline));
+    let mut serializer = Serializer::with_config(
+        &SerializerConfig::builder()
+            .trailing(Trailing::Newline)
+            .build(),
+    );
     serializer.serialize(&1).unwrap();
     // a value that fails writes nothing
     let invalid = std::collections::BTreeMap::from([(vec![1u32], 1u32)]);

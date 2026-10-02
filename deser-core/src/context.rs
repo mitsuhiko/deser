@@ -24,7 +24,7 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// use deser::{Context, Event};
 /// use std::collections::BTreeMap;
 ///
-/// let context = Context::new().with(DuplicateKeys::Last);
+/// let context = Context::with(DuplicateKeys::Last);
 ///
 /// let mut out = None::<BTreeMap<String, u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
@@ -66,17 +66,18 @@ impl Context {
         Context { values: None }
     }
 
-    /// Returns the context with a value, replacing a value of the same type.
-    pub fn with<T: Debug + Send + Sync + 'static>(mut self, value: T) -> Context {
-        self.insert(value);
-        self
+    /// Creates a context with a value.
+    pub fn with<T: Debug + Send + Sync + 'static>(value: T) -> Context {
+        let mut context = Context::new();
+        context.set(value);
+        context
     }
 
-    /// Inserts a value, replacing a value of the same type.
+    /// Sets a value, replacing a value of the same type.
     ///
     /// If the values are shared with clones of the context, they are copied
     /// (the values themselves are shared).
-    pub fn insert<T: Debug + Send + Sync + 'static>(&mut self, value: T) {
+    pub fn set<T: Debug + Send + Sync + 'static>(&mut self, value: T) {
         let values = Arc::make_mut(self.values.get_or_insert_with(Default::default));
         let value: Arc<dyn DebugAny> = Arc::new(value);
         match values
@@ -128,14 +129,15 @@ fn test_context() {
     assert!(empty.is_empty());
     assert_eq!(empty.get::<u32>(), None);
 
-    let context = Context::new().with(1u32).with("x");
+    let mut context = Context::with(1u32);
+    context.set("x");
     assert_eq!(context.get::<u32>(), Some(&1));
     assert_eq!(context.get::<&str>(), Some(&"x"));
     assert_eq!(context.get::<u64>(), None);
 
     // clones share the values until they are changed
     let mut other = context.clone();
-    other.insert(2u32);
+    other.set(2u32);
     assert_eq!(context.get::<u32>(), Some(&1));
     assert_eq!(other.get::<u32>(), Some(&2));
     assert_eq!(other.get::<&str>(), Some(&"x"));

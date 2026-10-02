@@ -1058,7 +1058,7 @@
 //!
 //! let mut variants = OpenEnums::new();
 //! register(&mut variants).unwrap();
-//! let context = Context::new().with(variants);
+//! let context = Context::with(variants);
 //!
 //! // `{"steps": [{"type": "upper"}]}`, for instance with
 //! // `deser_json::Deserializer::from_str(input).deserialize_in(&context)`

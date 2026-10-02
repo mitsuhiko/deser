@@ -15,7 +15,9 @@ pub enum Event {
     Logout { user: String },
 }
 
-const LINES: DeserializerConfig = DeserializerConfig::new().trailing(Trailing::Newline);
+const LINES: DeserializerConfig = DeserializerConfig::builder()
+    .trailing(Trailing::Newline)
+    .build();
 
 const INPUT: &str = r#"{"event": "login", "user": "jane"}
 {"event": "upload", "user": "jane", "bytes": 1024}

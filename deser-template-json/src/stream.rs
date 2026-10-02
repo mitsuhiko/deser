@@ -134,9 +134,11 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
         (pos, _) if pos == input.len() && eof => Ok(Progress::End),
         //#(comments) an incomplete comment is scanned again with more input
         (pos, false) if !eof => Ok(Progress::NeedMore { consumed: pos }),
-        (pos, _) => {
-            Err(Error::new(ErrorKind::Syntax, "garbage after input").with_offset(offset + pos))
-        }
+        (pos, _) => Err(Error::with_offset(
+            ErrorKind::Syntax,
+            "garbage after input",
+            offset + pos,
+        )),
     }
 }
 
@@ -427,7 +429,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 
 /// Reads a stream of JSON values (see [`deser::stream`](deser_core::stream)).
 ///
-/// How the stream is split depends on [`DeserializerConfig::trailing`]:
+/// How the stream is split depends on [`DeserializerConfig::set_trailing`]:
 ///
 /// * [`Trailing::Strict`]: the stream holds a single value which is parsed
 ///   once the whole stream was read.
@@ -451,7 +453,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
 /// use deser_template_json::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig =
-///     DeserializerConfig::new().trailing(Trailing::Newline);
+///     DeserializerConfig::builder().trailing(Trailing::Newline).build();
 /// let mut reader = LINES.reader(&b"[1, 2]\n[3]\n"[..]);
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));

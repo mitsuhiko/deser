@@ -180,7 +180,9 @@ fn drawing() -> Drawing {
 }
 
 fn main() {
-    const READ: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    const READ: DeserializerConfig = DeserializerConfig::builder()
+        .resolve_namespaces(true)
+        .build();
     let drawing = drawing();
 
     // SVG is the default namespace, XLink and Dublin Core have their
@@ -200,8 +202,10 @@ fn main() {
     assert_eq!(READ.from_str::<Drawing>(&xml).unwrap(), drawing);
 
     // the same pretty printed, with the declaration on a line of its own
-    const PRETTY: SerializerConfig = COMPACT.declaration(true).pretty(Indent::Spaces(2));
-    let xml = PRETTY.to_string(&drawing).unwrap();
+    let mut pretty = COMPACT.clone();
+    pretty.set_declaration(true);
+    pretty.set_pretty(Indent::Spaces(2));
+    let xml = pretty.to_string(&drawing).unwrap();
     println!("pretty:\n{xml}");
     assert!(xml.contains("\n  <metadata>\n    <dc:creator>Jane</dc:creator>\n"));
     // the label is mixed content, its whitespace is text

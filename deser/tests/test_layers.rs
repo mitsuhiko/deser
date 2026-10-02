@@ -13,10 +13,10 @@ use deser::{
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -236,14 +236,20 @@ fn test_limits() {
             Event::SeqEnd,
         ]
     };
-    assert_eq!(check(Limits::new().max_depth(2), nested()), Ok(()));
     assert_eq!(
-        check(Limits::new().max_depth(1), nested()),
+        check(Limits::builder().max_depth(2).build(), nested()),
+        Ok(())
+    );
+    assert_eq!(
+        check(Limits::builder().max_depth(1).build(), nested()),
         Err("LimitExceeded: recursion limit exceeded at offset 1".into())
     );
-    assert_eq!(check(Limits::new().max_events(5), nested()), Ok(()));
     assert_eq!(
-        check(Limits::new().max_events(4), nested()),
+        check(Limits::builder().max_events(5).build(), nested()),
+        Ok(())
+    );
+    assert_eq!(
+        check(Limits::builder().max_events(4).build(), nested()),
         Err("LimitExceeded: too many events at offset 4".into())
     );
 
@@ -261,15 +267,15 @@ fn test_limits() {
             Event::MapEnd,
         ]
     };
-    assert_eq!(check(Limits::new().max_items(3), map()), Ok(()));
+    assert_eq!(check(Limits::builder().max_items(3).build(), map()), Ok(()));
     assert_eq!(
-        check(Limits::new().max_items(2), map()),
+        check(Limits::builder().max_items(2).build(), map()),
         Err("LimitExceeded: too many items at offset 7".into())
     );
-    assert_eq!(check(Limits::new().max_len(1), map()), Ok(()));
+    assert_eq!(check(Limits::builder().max_len(1).build(), map()), Ok(()));
     assert_eq!(
         check(
-            Limits::new().max_len(3),
+            Limits::builder().max_len(3).build(),
             vec![Event::seq_start(), "abcd".into(), Event::SeqEnd]
         ),
         Err("LimitExceeded: string or bytes too long at offset 1".into())
@@ -322,7 +328,7 @@ fn test_error_context() {
     // errors of layers get the context too
     let mut out = None::<Vec<u32>>;
     let mut driver = DeserializeDriver::new(&mut out);
-    driver.push_layer(Limits::new().max_len(0));
+    driver.push_layer(Limits::builder().max_len(0).build());
     let err = emit_all(&mut driver, vec![Event::seq_start(), "x".into()]).unwrap_err();
     assert_eq!(err.offset(), Some(1));
 }
@@ -338,13 +344,10 @@ impl ErrorAttachment for Depths {
 }
 
 impl ErrorContext for Depths {
-    fn add_context(mut err: Error, state: &State) -> Error {
+    fn add_context(err: &mut Error, state: &State) {
         match err.attachment_mut::<Depths>() {
-            Some(depths) => {
-                depths.0.push(state.depth());
-                err
-            }
-            None => err.with_attachment(Depths(vec![state.depth()])),
+            Some(depths) => depths.0.push(state.depth()),
+            None => err.set_attachment(Depths(vec![state.depth()])),
         }
     }
 }
@@ -376,10 +379,9 @@ impl Layer for MarkKeys {
 }
 
 impl ErrorContext for Marker {
-    fn add_context(err: Error, state: &State) -> Error {
-        match state.get::<Marker>() {
-            Some(marker) => err.with_attachment(marker.clone()),
-            None => err,
+    fn add_context(err: &mut Error, state: &State) {
+        if let Some(marker) = state.get::<Marker>() {
+            err.set_attachment(marker.clone());
         }
     }
 }
@@ -511,7 +513,7 @@ fn test_ser_layers() {
     assert_eq!(
         events,
         [
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "a".into(),
             1u64.into(),
             "c".into(),
@@ -587,7 +589,7 @@ fn test_ser_layers_compose_with_delayed_keys() {
     assert_eq!(
         events,
         [
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "A".into(),
             1u64.into(),
             Event::MapEnd

@@ -26,12 +26,11 @@ use crate::{Escape, Headers, Nulls, Terminator, Trim};
 /// ```
 /// use deser_csv::DeserializerConfig;
 ///
-/// const SEMICOLONS: DeserializerConfig =
-///     DeserializerConfig::new().delimiter(b';');
-/// let rows: Vec<(String, u32)> = SEMICOLONS
+/// const SEMICOLONS: DeserializerConfig = DeserializerConfig::builder()
+///     .delimiter(b';')
 ///     .headers(deser_csv::Headers::None)
-///     .from_str("a;1\nb;2\n")
-///     .unwrap();
+///     .build();
+/// let rows: Vec<(String, u32)> = SEMICOLONS.from_str("a;1\nb;2\n").unwrap();
 /// assert_eq!(rows, [("a".into(), 1), ("b".into(), 2)]);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +80,16 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Creates the configuration for tab separated values.
     ///
     /// Fields are separated by tabs and are not quoted.  Tabs, line breaks
@@ -91,7 +100,7 @@ impl DeserializerConfig {
     /// TSV of [IANA](https://www.iana.org/assignments/media-types/text/tab-separated-values)
     /// (which cannot contain tabs and line breaks in fields) as well.  For
     /// TSV with quotes (as written by spreadsheets) use
-    /// `DeserializerConfig::new().delimiter(b'\t')`.
+    /// `DeserializerConfig::builder().delimiter(b'\t').build()`.
     ///
     /// ```
     /// use deser_csv::DeserializerConfig;
@@ -109,60 +118,55 @@ impl DeserializerConfig {
     /// assert_eq!(rows[1].note, None);
     /// ```
     pub const fn tsv() -> DeserializerConfig {
-        DeserializerConfig::new()
-            .delimiter(b'\t')
-            .quote(None)
-            .escape(Escape::Backslash)
-            .nulls(Nulls::Text("\\N"))
+        let mut config = DeserializerConfig::new();
+        config.set_delimiter(b'\t');
+        config.set_quote(None);
+        config.set_escape(Escape::Backslash);
+        config.set_nulls(Nulls::Text("\\N"));
+        config
     }
 
     /// Sets the character that separates fields (`,` by default).
     ///
     /// Special characters (the delimiter, quote, escape and terminator)
     /// have to be distinct ASCII characters, otherwise deserializing fails.
-    pub const fn delimiter(mut self, delimiter: u8) -> DeserializerConfig {
+    pub const fn set_delimiter(&mut self, delimiter: u8) {
         self.delimiter = delimiter;
-        self
     }
 
     /// Sets the character that quotes fields (`"` by default).
     ///
     /// Quoted fields can contain the delimiter and line breaks.  With
     /// `None` quotes are regular characters.
-    pub const fn quote(mut self, quote: Option<u8>) -> DeserializerConfig {
+    pub const fn set_quote(&mut self, quote: Option<u8>) {
         self.quote = quote;
-        self
     }
 
     /// Sets if two quotes in a quoted field are a quote (`true` by
     /// default).
     ///
     /// Without doubled quotes, quotes in quoted fields have to be escaped
-    /// (see [`escape`](Self::escape)).
-    pub const fn double_quote(mut self, yes: bool) -> DeserializerConfig {
+    /// (see [`set_escape`](Self::set_escape)).
+    pub const fn set_double_quote(&mut self, yes: bool) {
         self.double_quote = yes;
-        self
     }
 
     /// Sets how characters are escaped (not at all by default).
-    pub const fn escape(mut self, escape: Escape) -> DeserializerConfig {
+    pub const fn set_escape(&mut self, escape: Escape) {
         self.escape = escape;
-        self
     }
 
     /// Sets what ends records ([`Terminator::Newline`] by default).
-    pub const fn terminator(mut self, terminator: Terminator) -> DeserializerConfig {
+    pub const fn set_terminator(&mut self, terminator: Terminator) {
         self.terminator = terminator;
-        self
     }
 
     /// Sets the character that starts comment lines (none by default).
     ///
     /// Lines that start with it are skipped.  The character only starts a
     /// comment at the start of a line (`a,#b` is a regular record).
-    pub const fn comment(mut self, comment: Option<u8>) -> DeserializerConfig {
+    pub const fn set_comment(&mut self, comment: Option<u8>) {
         self.comment = comment;
-        self
     }
 
     /// Sets where the names of the columns come from ([`Headers::First`] by
@@ -170,18 +174,16 @@ impl DeserializerConfig {
     ///
     /// With names, records are maps of the names to the fields.  Without
     /// names ([`Headers::None`]) records are sequences.
-    pub const fn headers(mut self, headers: Headers) -> DeserializerConfig {
+    pub const fn set_headers(&mut self, headers: Headers) {
         self.headers = headers;
-        self
     }
 
     /// Sets which whitespace is removed ([`Trim::None`] by default).
     ///
     /// Spaces and tabs are removed from the start and end of unquoted
     /// fields and around the quotes of quoted fields (`a, "b" ,c`).
-    pub const fn trim(mut self, trim: Trim) -> DeserializerConfig {
+    pub const fn set_trim(&mut self, trim: Trim) {
         self.trim = trim;
-        self
     }
 
     /// Sets which fields are null ([`Nulls::None`] by default).
@@ -189,18 +191,16 @@ impl DeserializerConfig {
     /// Without nulls, empty fields are `None` for optionals of types that
     /// do not accept the empty string (like `Option<u32>`) and `Some("")`
     /// for strings.  Quoted fields are never null.
-    pub const fn nulls(mut self, nulls: Nulls) -> DeserializerConfig {
+    pub const fn set_nulls(&mut self, nulls: Nulls) {
         self.nulls = nulls;
-        self
     }
 
     /// Sets if blank lines are skipped (`true` by default).
     ///
     /// Otherwise a blank line is a record with a single empty field.  Lines
     /// with only whitespace are not blank.
-    pub const fn skip_blank_lines(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_skip_blank_lines(&mut self, yes: bool) {
         self.skip_blank_lines = yes;
-        self
     }
 
     /// Sets if records can have a different number of fields (`false` by
@@ -211,9 +211,8 @@ impl DeserializerConfig {
     /// missing fields are missing in the map and fields without names are
     /// keyed with their index (`"3"`), so they end up in a flattened map
     /// or are ignored like unknown fields.
-    pub const fn flexible(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_flexible(&mut self, yes: bool) {
         self.flexible = yes;
-        self
     }
 
     /// Sets if quotes that do not follow the rules are accepted (`false` by
@@ -223,9 +222,8 @@ impl DeserializerConfig {
     /// the closing quote of a field (`"a"b`) are errors.  With lenient
     /// quotes the quotes of unquoted fields are regular characters and
     /// characters after the closing quote are part of the field (`ab`).
-    pub const fn lenient_quotes(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_lenient_quotes(&mut self, yes: bool) {
         self.lenient_quotes = yes;
-        self
     }
 
     /// Sets if a `sep=` line at the start selects the delimiter (`false` by
@@ -237,14 +235,13 @@ impl DeserializerConfig {
     /// ```
     /// use std::collections::BTreeMap;
     ///
-    /// let config = deser_csv::DeserializerConfig::new().sep_line(true);
+    /// let config = deser_csv::DeserializerConfig::builder().sep_line(true).build();
     /// let rows: Vec<BTreeMap<String, u32>> =
     ///     config.from_str("sep=;\na;b\n1;2\n").unwrap();
     /// assert_eq!(rows[0]["b"], 2);
     /// ```
-    pub const fn sep_line(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_sep_line(&mut self, yes: bool) {
         self.sep_line = yes;
-        self
     }
 
     /// Sets the maximum length of a record in a stream in bytes (64 MiB by
@@ -254,9 +251,8 @@ impl DeserializerConfig {
     /// record is an error which ends the stream, which protects from
     /// streams that never end a record (like a quoted field that is never
     /// closed).  Inputs in memory are not limited.
-    pub const fn max_record_len(mut self, len: usize) -> DeserializerConfig {
+    pub const fn set_max_record_len(&mut self, len: usize) {
         self.max_record_len = len;
-        self
     }
 
     /// Enables or disables location tracking.
@@ -265,9 +261,8 @@ impl DeserializerConfig {
     /// (see [`State::input_range`](deser_core::State::input_range)).  When
     /// enabled additionally the input is set as source (see
     /// [`Source`]).  This copies the input.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes the records of a string.
@@ -331,6 +326,155 @@ impl DeserializerConfig {
             self.terminator,
             self.comment,
         )
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets the character that separates fields (`,` by default).
+    ///
+    /// See [`DeserializerConfig::set_delimiter`].
+    pub const fn delimiter(mut self, delimiter: u8) -> DeserializerConfigBuilder {
+        self.value.set_delimiter(delimiter);
+        self
+    }
+
+    /// Sets the character that quotes fields (`"` by default).
+    ///
+    /// See [`DeserializerConfig::set_quote`].
+    pub const fn quote(mut self, quote: Option<u8>) -> DeserializerConfigBuilder {
+        self.value.set_quote(quote);
+        self
+    }
+
+    /// Sets if two quotes in a quoted field are a quote (`true` by
+    ///
+    /// See [`DeserializerConfig::set_double_quote`].
+    pub const fn double_quote(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_double_quote(yes);
+        self
+    }
+
+    /// Sets how characters are escaped (not at all by default).
+    ///
+    /// See [`DeserializerConfig::set_escape`].
+    pub const fn escape(mut self, escape: Escape) -> DeserializerConfigBuilder {
+        self.value.set_escape(escape);
+        self
+    }
+
+    /// Sets what ends records ([`Terminator::Newline`] by default).
+    ///
+    /// See [`DeserializerConfig::set_terminator`].
+    pub const fn terminator(mut self, terminator: Terminator) -> DeserializerConfigBuilder {
+        self.value.set_terminator(terminator);
+        self
+    }
+
+    /// Sets the character that starts comment lines (none by default).
+    ///
+    /// See [`DeserializerConfig::set_comment`].
+    pub const fn comment(mut self, comment: Option<u8>) -> DeserializerConfigBuilder {
+        self.value.set_comment(comment);
+        self
+    }
+
+    /// Sets where the names of the columns come from ([`Headers::First`] by
+    ///
+    /// See [`DeserializerConfig::set_headers`].
+    pub const fn headers(mut self, headers: Headers) -> DeserializerConfigBuilder {
+        self.value.set_headers(headers);
+        self
+    }
+
+    /// Sets which whitespace is removed ([`Trim::None`] by default).
+    ///
+    /// See [`DeserializerConfig::set_trim`].
+    pub const fn trim(mut self, trim: Trim) -> DeserializerConfigBuilder {
+        self.value.set_trim(trim);
+        self
+    }
+
+    /// Sets which fields are null ([`Nulls::None`] by default).
+    ///
+    /// See [`DeserializerConfig::set_nulls`].
+    pub const fn nulls(mut self, nulls: Nulls) -> DeserializerConfigBuilder {
+        self.value.set_nulls(nulls);
+        self
+    }
+
+    /// Sets if blank lines are skipped (`true` by default).
+    ///
+    /// See [`DeserializerConfig::set_skip_blank_lines`].
+    pub const fn skip_blank_lines(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_skip_blank_lines(yes);
+        self
+    }
+
+    /// Sets if records can have a different number of fields (`false` by
+    ///
+    /// See [`DeserializerConfig::set_flexible`].
+    pub const fn flexible(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_flexible(yes);
+        self
+    }
+
+    /// Sets if quotes that do not follow the rules are accepted (`false` by
+    ///
+    /// See [`DeserializerConfig::set_lenient_quotes`].
+    pub const fn lenient_quotes(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_lenient_quotes(yes);
+        self
+    }
+
+    /// Sets if a `sep=` line at the start selects the delimiter (`false` by
+    ///
+    /// See [`DeserializerConfig::set_sep_line`].
+    pub const fn sep_line(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_sep_line(yes);
+        self
+    }
+
+    /// Sets the maximum length of a record in a stream in bytes (64 MiB by
+    ///
+    /// See [`DeserializerConfig::set_max_record_len`].
+    pub const fn max_record_len(mut self, len: usize) -> DeserializerConfigBuilder {
+        self.value.set_max_record_len(len);
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -424,11 +568,11 @@ impl StreamState {
             return Ok(Frame::Incomplete { consumed: 0 });
         }
         if input.starts_with(b"\xff\xfe") || input.starts_with(b"\xfe\xff") {
-            return Err(Error::new(
+            return Err(Error::with_offset(
                 ErrorKind::Syntax,
                 "input is UTF-16, only UTF-8 is supported",
-            )
-            .with_offset(0));
+                0,
+            ));
         }
         let bom = if input.starts_with(BOM) { BOM.len() } else { 0 };
         let rest = &input[bom..];
@@ -478,7 +622,7 @@ impl StreamState {
     /// Takes the names of the columns from the record that was scanned.
     fn read_names(&mut self, record: &[u8]) -> Result<(), Error> {
         if let Some((offset, msg)) = self.scanner.error {
-            return Err(Error::new(ErrorKind::Syntax, msg).with_offset(offset));
+            return Err(Error::with_offset(ErrorKind::Syntax, msg, offset));
         }
         let dialect = self.dialect.as_ref().unwrap();
         let mut names = Vec::with_capacity(self.scanner.fields.len());
@@ -493,8 +637,11 @@ impl StreamState {
             match core::str::from_utf8(text) {
                 Ok(name) => names.push(name.to_string()),
                 Err(_) => {
-                    return Err(Error::new(ErrorKind::Syntax, "name is not valid UTF-8")
-                        .with_offset(field.span_start));
+                    return Err(Error::with_offset(
+                        ErrorKind::Syntax,
+                        "name is not valid UTF-8",
+                        field.span_start,
+                    ));
                 }
             }
         }
@@ -529,7 +676,7 @@ impl StreamState {
             .as_ref()
             .expect("records are emitted after the start");
         if let Some((offset, msg)) = scanner.error {
-            return Err(Error::new(ErrorKind::Syntax, msg).with_offset(base + offset));
+            return Err(Error::with_offset(ErrorKind::Syntax, msg, base + offset));
         }
         // everything in a CSV file is text, like in a query string
         LexicalRules::LENIENT.set(driver.state_mut());
@@ -545,7 +692,7 @@ impl StreamState {
             (None, None) => expected_len.unwrap_or(fields.len()),
         };
         if fields.len() != expected && !config.flexible {
-            return Err(Error::new(
+            return Err(Error::with_offset(
                 ErrorKind::Syntax,
                 format!(
                     "record has {} field{}, expected {}",
@@ -553,11 +700,11 @@ impl StreamState {
                     if fields.len() == 1 { "" } else { "s" },
                     expected
                 ),
-            )
-            .with_offset(base));
+                base,
+            ));
         }
 
-        let shape = ContainerShape::new().with_len(fields.len());
+        let mut shape = ContainerShape::with_len(fields.len());
         let emitter = FieldEmitter {
             dialect,
             nulls: config.nulls,
@@ -574,7 +721,8 @@ impl StreamState {
         match names {
             Some(names) => {
                 // header names can repeat: records are multimaps
-                driver.emit(Event::MapStart(shape.with_multimap(true)))?;
+                shape.set_multimap(true);
+                driver.emit(Event::MapStart(shape))?;
                 for (index, field) in fields.iter().enumerate() {
                     emitter.set_range(driver, field);
                     match names.get(index) {
@@ -847,7 +995,10 @@ impl<'a> Deserializer<'a> {
     /// Returns `false` if there are no more records.
     pub fn drive_record(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<bool, Error> {
         let rv = self.drive_record_impl(driver);
-        rv.map_err(|err| err.resolve_position(self.input))
+        rv.map_err(|mut err| {
+            err.resolve_position(self.input);
+            err
+        })
     }
 
     fn drive_record_impl(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<bool, Error> {
@@ -911,7 +1062,10 @@ impl<'a> Deserializer<'a> {
     /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         let rv = self.drive_impl(driver);
-        rv.map_err(|err| err.resolve_position(self.input))
+        rv.map_err(|mut err| {
+            err.resolve_position(self.input);
+            err
+        })
     }
 
     fn drive_impl(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
@@ -921,8 +1075,11 @@ impl<'a> Deserializer<'a> {
         // one, so that the sequence does not grow record by record
         let mut next = self.next_record()?;
         let shape = match next {
-            Some((start, _)) => ContainerShape::new()
-                .with_len_hint((input.len() - start) / (self.pos - start).max(1)),
+            Some((start, _)) => {
+                let mut shape = ContainerShape::new();
+                shape.set_len_hint((input.len() - start) / (self.pos - start).max(1));
+                shape
+            }
             None => ContainerShape::new(),
         };
         driver.emit(Event::SeqStart(shape))?;
@@ -963,10 +1120,10 @@ trait ShiftOffset {
 }
 
 impl ShiftOffset for Error {
-    fn shift_offset(self, base: usize) -> Error {
-        match self.offset() {
-            Some(offset) => self.with_offset(base + offset),
-            None => self,
+    fn shift_offset(mut self, base: usize) -> Error {
+        if let Some(offset) = self.offset() {
+            self.set_offset(base + offset);
         }
+        self
     }
 }

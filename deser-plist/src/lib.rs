@@ -25,7 +25,7 @@
 //! assert!(xml.contains("<key>BundleName</key>\n\t<string>Demo</string>"));
 //! assert_eq!(deser_plist::from_slice::<Info>(xml.as_bytes()).unwrap(), info);
 //!
-//! let binary = SerializerConfig::new().format(Format::Binary).to_vec(&info).unwrap();
+//! let binary = SerializerConfig::builder().format(Format::Binary).build().to_vec(&info).unwrap();
 //! assert_eq!(deser_plist::from_slice::<Info>(&binary).unwrap(), info);
 //! ```
 //!
@@ -110,11 +110,11 @@ mod write_binary;
 mod write_text;
 mod write_xml;
 
-pub use self::de::{Deserializer, DeserializerConfig, from_slice};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder, from_slice};
 pub use self::format::Format;
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Serializer, SerializerConfig, to_string, to_vec};
+pub use self::ser::{Serializer, SerializerConfig, SerializerConfigBuilder, to_string, to_vec};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

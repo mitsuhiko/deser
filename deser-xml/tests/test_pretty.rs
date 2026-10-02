@@ -4,7 +4,9 @@ use deser::hints::{Compact, Expanded};
 use deser::{Deserialize, Serialize};
 use deser_xml::{Indent, Mixed, SerializerConfig, SkipWhitespace, from_str};
 
-const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+const PRETTY: SerializerConfig = SerializerConfig::builder()
+    .pretty(Indent::Spaces(2))
+    .build();
 
 /// Serializes pretty and checks that the value reads back the same.
 fn pretty<T>(value: &T) -> String
@@ -109,25 +111,45 @@ fn test_indent() {
     );
 
     let map = BTreeMap::from([("a", BTreeMap::from([("b", 1)]))]);
-    const CONFIG: SerializerConfig = SerializerConfig::new().root("m");
+    const CONFIG: SerializerConfig = SerializerConfig::builder().root("m").build();
     assert_eq!(
-        CONFIG.indent(Indent::Tab).to_string(&map).unwrap(),
+        CONFIG
+            .into_builder()
+            .indent(Indent::Tab)
+            .build()
+            .to_string(&map)
+            .unwrap(),
         "<m>\n\t<a>\n\t\t<b>1</b>\n\t</a>\n</m>"
     );
     assert_eq!(
-        CONFIG.indent(Indent::Spaces(0)).to_string(&map).unwrap(),
+        CONFIG
+            .into_builder()
+            .indent(Indent::Spaces(0))
+            .build()
+            .to_string(&map)
+            .unwrap(),
         "<m>\n<a>\n<b>1</b>\n</a>\n</m>"
     );
     assert_eq!(
         CONFIG
+            .into_builder()
             .indent(Indent::Spaces(4))
             .indent(Indent::None)
+            .build()
             .to_string(&map)
             .unwrap(),
         "<m><a><b>1</b></a></m>"
     );
     // single values at the root
-    assert_eq!(PRETTY.root("n").to_string(&42).unwrap(), "<n>42</n>");
+    assert_eq!(
+        PRETTY
+            .into_builder()
+            .root("n")
+            .build()
+            .to_string(&42)
+            .unwrap(),
+        "<n>42</n>"
+    );
 }
 
 #[test]
@@ -152,7 +174,9 @@ fn test_declaration_and_namespaces() {
     };
     assert_eq!(
         PRETTY
+            .into_builder()
             .declaration(true)
+            .build()
             .namespaces(deser_xml::prefixes![atom as ""])
             .to_string(&feed)
             .unwrap(),
@@ -273,7 +297,7 @@ fn test_text_fields() {
 #[test]
 fn test_maps() {
     // the keys are not known, text is found when it comes
-    let config = PRETTY.root("m");
+    let config = PRETTY.into_builder().root("m").build();
     let map = BTreeMap::from([("$text", "x"), ("@a", "1"), ("b", "2")]);
     assert_eq!(config.to_string(&map).unwrap(), r#"<m a="1">x<b>2</b></m>"#);
     let map = BTreeMap::from([("@a", "1"), ("b", "2"), ("c", "3")]);
@@ -360,7 +384,12 @@ fn test_mixed() {
         Block::Text("text".into()),
         Block::Paragraph(Mixed::from(vec![Inline::Bold("c".into())])),
     ]);
-    let xml = PRETTY.root("doc").to_string(&doc).unwrap();
+    let xml = PRETTY
+        .into_builder()
+        .root("doc")
+        .build()
+        .to_string(&doc)
+        .unwrap();
     assert_eq!(
         xml,
         "<doc>\n  <p><b>a</b></p>\n  <p><b>b</b></p>text<p><b>c</b></p></doc>"

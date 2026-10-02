@@ -15,7 +15,7 @@ pub(crate) trait EventOut {
 
 fn shape(len: Option<usize>) -> ContainerShape {
     match len {
-        Some(len) => ContainerShape::new().with_len(len),
+        Some(len) => ContainerShape::with_len(len),
         None => ContainerShape::new(),
     }
 }
@@ -38,7 +38,7 @@ impl<'e, E: EventOut + ?Sized> EventSerializer<'e, E> {
 
     fn begin_variant(&mut self, variant: &'static str) -> Result<(), Error> {
         self.out
-            .emit(Event::MapStart(ContainerShape::new().with_len(1)))?;
+            .emit(Event::MapStart(ContainerShape::with_len(1)))?;
         self.out
             .emit(Event::Atom(Atom::Str(Text::borrowed(variant))))
     }

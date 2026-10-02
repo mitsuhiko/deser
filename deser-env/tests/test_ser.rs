@@ -72,15 +72,16 @@ fn test_basics() {
 #[test]
 fn test_config() {
     let value = BTreeMap::from([("server", BTreeMap::from([("Port", 80)]))]);
-    let out = SerializerConfig::new()
+    let out = SerializerConfig::builder()
         .separator("_")
         .case(Case::Preserve)
+        .build()
         .to_vars("app.", &value)
         .unwrap();
     assert_eq!(vars(&out), [("app.server_Port", "80")]);
 
     // without a separator only flat values can be written
-    let flat = SerializerConfig::new().separator("");
+    let flat = SerializerConfig::builder().separator("").build();
     assert_eq!(
         vars(&flat.to_vars("", &BTreeMap::from([("a__b", 1)])).unwrap()),
         [("A__B", "1")]

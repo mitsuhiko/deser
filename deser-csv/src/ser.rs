@@ -24,7 +24,7 @@ use crate::{Escape, Nulls, QuoteStyle, Terminator};
 ///
 /// The value is a sequence of records.  Records are maps (for instance
 /// structs), the keys of the first record are the names of the columns
-/// which are written first (see [`headers`](Self::headers)), or sequences
+/// which are written first (see [`set_headers`](Self::set_headers)), or sequences
 /// (for instance tuples).  Fields are written in the order of the names,
 /// missing fields are empty and keys that are not a column are an error.
 /// Fields cannot hold maps or sequences (see
@@ -32,9 +32,9 @@ use crate::{Escape, Nulls, QuoteStyle, Terminator};
 ///
 /// Numbers are written with the shortest text that reads back as the same
 /// value, booleans as `true` and `false`, null as an empty field (see
-/// [`nulls`](Self::nulls)) and bytes as base64 (or the
+/// [`set_nulls`](Self::set_nulls)) and bytes as base64 (or the
 /// [`BytesFormat`](deser_core::BytesFormat) of the context).  Fields are quoted if necessary (see
-/// [`quote_style`](Self::quote_style)).
+/// [`set_quote_style`](Self::set_quote_style)).
 ///
 /// ```
 /// use deser_csv::{SerializerConfig, Terminator};
@@ -48,7 +48,7 @@ use crate::{Escape, Nulls, QuoteStyle, Terminator};
 /// let rows =
 ///     [Row { name: "a", note: Some("x;y") }, Row { name: "b", note: None }];
 /// let config =
-///     SerializerConfig::new().delimiter(b';').terminator(Terminator::CrLf);
+///     SerializerConfig::builder().delimiter(b';').terminator(Terminator::CrLf).build();
 /// assert_eq!(
 ///     config.to_string(&rows).unwrap(),
 ///     "name;note\r\na;\"x;y\"\r\nb;\r\n"
@@ -93,6 +93,16 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Creates the configuration for tab separated values.
     ///
     /// This is the counterpart of
@@ -106,66 +116,60 @@ impl SerializerConfig {
     /// assert_eq!(tsv, "a\\tb\t1\nc\t\\N\n");
     /// ```
     pub const fn tsv() -> SerializerConfig {
-        SerializerConfig::new()
-            .delimiter(b'\t')
-            .quote(None)
-            .escape(Escape::Backslash)
-            .nulls(Nulls::Text("\\N"))
+        let mut config = SerializerConfig::new();
+        config.set_delimiter(b'\t');
+        config.set_quote(None);
+        config.set_escape(Escape::Backslash);
+        config.set_nulls(Nulls::Text("\\N"));
+        config
     }
 
     /// Sets the character that separates fields (`,` by default).
-    pub const fn delimiter(mut self, delimiter: u8) -> SerializerConfig {
+    pub const fn set_delimiter(&mut self, delimiter: u8) {
         self.delimiter = delimiter;
-        self
     }
 
     /// Sets the character that quotes fields (`"` by default).
     ///
     /// Without quotes, fields that need them are an error (unless they
-    /// can be escaped, see [`escape`](Self::escape)).
-    pub const fn quote(mut self, quote: Option<u8>) -> SerializerConfig {
+    /// can be escaped, see [`set_escape`](Self::set_escape)).
+    pub const fn set_quote(&mut self, quote: Option<u8>) {
         self.quote = quote;
-        self
     }
 
     /// Sets if quotes in quoted fields are doubled (`true` by default).
     ///
-    /// Otherwise they are escaped (see [`escape`](Self::escape)).
-    pub const fn double_quote(mut self, yes: bool) -> SerializerConfig {
+    /// Otherwise they are escaped (see [`set_escape`](Self::set_escape)).
+    pub const fn set_double_quote(&mut self, yes: bool) {
         self.double_quote = yes;
-        self
     }
 
     /// Sets how characters are escaped (not at all by default).
     ///
     /// With an escape character, special characters in unquoted fields are
     /// escaped instead of quoting the field.
-    pub const fn escape(mut self, escape: Escape) -> SerializerConfig {
+    pub const fn set_escape(&mut self, escape: Escape) {
         self.escape = escape;
-        self
     }
 
     /// Sets the line ending (`\n` by default, see [`Terminator`]).
-    pub const fn terminator(mut self, terminator: Terminator) -> SerializerConfig {
+    pub const fn set_terminator(&mut self, terminator: Terminator) {
         self.terminator = terminator;
-        self
     }
 
     /// Sets when fields are quoted ([`QuoteStyle::Necessary`] by default).
-    pub const fn quote_style(mut self, style: QuoteStyle) -> SerializerConfig {
+    pub const fn set_quote_style(&mut self, style: QuoteStyle) {
         self.quote_style = style;
-        self
     }
 
     /// Sets if the names of the columns are written before the first
     /// record (`true` by default).
     ///
     /// The names are the keys of the first record (or the given columns,
-    /// see [`columns`](Self::columns)).  Records that are sequences have no
+    /// see [`set_columns`](Self::set_columns)).  Records that are sequences have no
     /// names.
-    pub const fn headers(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_headers(&mut self, yes: bool) {
         self.headers = yes;
-        self
     }
 
     /// Sets the names of the columns (by default they are the keys of the
@@ -187,16 +191,15 @@ impl SerializerConfig {
     ///     Shape::Circle { radius: 1.0 },
     ///     Shape::Rect { width: 2.0, height: 3.0 },
     /// ];
-    /// let config = deser_csv::SerializerConfig::new()
-    ///     .columns(&["kind", "radius", "width", "height"]);
+    /// let config = deser_csv::SerializerConfig::builder()
+    ///     .columns(&["kind", "radius", "width", "height"]).build();
     /// assert_eq!(
     ///     config.to_string(&shapes).unwrap(),
     ///     "kind,radius,width,height\ncircle,1.0,,\nrect,,2.0,3.0\n"
     /// );
     /// ```
-    pub const fn columns(mut self, names: &'static [&'static str]) -> SerializerConfig {
+    pub const fn set_columns(&mut self, names: &'static [&'static str]) {
         self.columns = Some(names);
-        self
     }
 
     /// Sets how null is written ([`Nulls::None`] by default).
@@ -204,16 +207,14 @@ impl SerializerConfig {
     /// Null is written as an empty field unless it's [`Nulls::Text`].
     /// Strings that would read back as null are quoted (the empty string
     /// with [`Nulls::Empty`]).
-    pub const fn nulls(mut self, nulls: Nulls) -> SerializerConfig {
+    pub const fn set_nulls(&mut self, nulls: Nulls) {
         self.nulls = nulls;
-        self
     }
 
     /// Sets if records can have a different number of fields (`false` by
     /// default).
-    pub const fn flexible(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_flexible(&mut self, yes: bool) {
         self.flexible = yes;
-        self
     }
 
     /// Sets if strings that spreadsheets would run as formulas are escaped
@@ -227,13 +228,12 @@ impl SerializerConfig {
     /// (as recommended by OWASP).  Numbers are written as they are.
     ///
     /// ```
-    /// let config = deser_csv::SerializerConfig::new().escape_formulas(true);
+    /// let config = deser_csv::SerializerConfig::builder().escape_formulas(true).build();
     /// let rows = vec![("=1+2", -3)];
     /// assert_eq!(config.to_string(&rows).unwrap(), "\"'=1+2\",-3\n");
     /// ```
-    pub const fn escape_formulas(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_escape_formulas(&mut self, yes: bool) {
         self.escape_formulas = yes;
-        self
     }
 
     /// Serializes the records of a value.
@@ -373,6 +373,123 @@ impl SerializerConfig {
             scratch: writer.scratch.bytes,
         };
         rv
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets the character that separates fields (`,` by default).
+    ///
+    /// See [`SerializerConfig::set_delimiter`].
+    pub const fn delimiter(mut self, delimiter: u8) -> SerializerConfigBuilder {
+        self.value.set_delimiter(delimiter);
+        self
+    }
+
+    /// Sets the character that quotes fields (`"` by default).
+    ///
+    /// See [`SerializerConfig::set_quote`].
+    pub const fn quote(mut self, quote: Option<u8>) -> SerializerConfigBuilder {
+        self.value.set_quote(quote);
+        self
+    }
+
+    /// Sets if quotes in quoted fields are doubled (`true` by default).
+    ///
+    /// See [`SerializerConfig::set_double_quote`].
+    pub const fn double_quote(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_double_quote(yes);
+        self
+    }
+
+    /// Sets how characters are escaped (not at all by default).
+    ///
+    /// See [`SerializerConfig::set_escape`].
+    pub const fn escape(mut self, escape: Escape) -> SerializerConfigBuilder {
+        self.value.set_escape(escape);
+        self
+    }
+
+    /// Sets the line ending (`\n` by default, see [`Terminator`]).
+    ///
+    /// See [`SerializerConfig::set_terminator`].
+    pub const fn terminator(mut self, terminator: Terminator) -> SerializerConfigBuilder {
+        self.value.set_terminator(terminator);
+        self
+    }
+
+    /// Sets when fields are quoted ([`QuoteStyle::Necessary`] by default).
+    ///
+    /// See [`SerializerConfig::set_quote_style`].
+    pub const fn quote_style(mut self, style: QuoteStyle) -> SerializerConfigBuilder {
+        self.value.set_quote_style(style);
+        self
+    }
+
+    /// Sets if the names of the columns are written before the first
+    ///
+    /// See [`SerializerConfig::set_headers`].
+    pub const fn headers(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_headers(yes);
+        self
+    }
+
+    /// Sets the names of the columns (by default they are the keys of the
+    ///
+    /// See [`SerializerConfig::set_columns`].
+    pub const fn columns(mut self, names: &'static [&'static str]) -> SerializerConfigBuilder {
+        self.value.set_columns(names);
+        self
+    }
+
+    /// Sets how null is written ([`Nulls::None`] by default).
+    ///
+    /// See [`SerializerConfig::set_nulls`].
+    pub const fn nulls(mut self, nulls: Nulls) -> SerializerConfigBuilder {
+        self.value.set_nulls(nulls);
+        self
+    }
+
+    /// Sets if records can have a different number of fields (`false` by
+    ///
+    /// See [`SerializerConfig::set_flexible`].
+    pub const fn flexible(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_flexible(yes);
+        self
+    }
+
+    /// Sets if strings that spreadsheets would run as formulas are escaped
+    ///
+    /// See [`SerializerConfig::set_escape_formulas`].
+    pub const fn escape_formulas(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_escape_formulas(yes);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 
@@ -676,7 +793,7 @@ impl SerializerConfig {
     /// [`deser::io::Writer`](deser_core::io::Writer)).
     ///
     /// Every value is a record, the names of the columns are written before
-    /// the first one (see [`headers`](Self::headers)).  A record that fails
+    /// the first one (see [`set_headers`](Self::set_headers)).  A record that fails
     /// to serialize is not written.
     ///
     /// ```

@@ -70,7 +70,7 @@ impl LexicalRules {
     /// These formats typically also allow keys to repeat, a key given once
     /// can then stand for a sequence of one value.  That is not a rule of
     /// the text but of the maps they emit (see
-    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap)).
+    /// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap)).
     pub const LENIENT: LexicalRules = LexicalRules {
         lenient_bools: true,
         empty_is_null: true,
@@ -90,16 +90,26 @@ impl LexicalRules {
 
     /// Sets if booleans are also `yes`, `on` and `1` and `no`, `off` and
     /// `0` (ignoring ASCII case).
-    pub const fn with_lenient_bools(mut self, yes: bool) -> LexicalRules {
+    pub const fn set_lenient_bools(&mut self, yes: bool) {
         self.lenient_bools = yes;
-        self
+    }
+
+    /// Returns `true` if booleans are also `yes`, `on` and `1` and `no`,
+    /// `off` and `0` (see [`set_lenient_bools`](Self::set_lenient_bools)).
+    pub const fn lenient_bools(&self) -> bool {
+        self.lenient_bools
     }
 
     /// Sets if empty text is a missing value for types that do not accept
     /// it.
-    pub const fn with_empty_is_null(mut self, yes: bool) -> LexicalRules {
+    pub const fn set_empty_is_null(&mut self, yes: bool) {
         self.empty_is_null = yes;
-        self
+    }
+
+    /// Returns `true` if empty text is a missing value for types that do
+    /// not accept it (see [`set_empty_is_null`](Self::set_empty_is_null)).
+    pub const fn empty_is_null(&self) -> bool {
+        self.empty_is_null
     }
 }
 

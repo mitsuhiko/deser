@@ -83,7 +83,7 @@ impl Clone for Declarations {
 /// ```
 ///
 /// The name of the root is used over the name of the type of the value
-/// and the [configured name](crate::SerializerConfig::root), its namespaces
+/// and the [configured name](crate::SerializerConfig::set_root), its namespaces
 /// are declared before the [configured
 /// ones](crate::SerializerConfig::namespaces) (which are left out if their
 /// prefix is taken).  Only documents have a root: in other places, and when

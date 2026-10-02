@@ -222,8 +222,9 @@ fn test_integers() {
     let value = u64::MAX as i128 + 1;
     let bytes = write(&value, Format::Binary);
     assert_eq!(deser_plist::from_slice::<i128>(&bytes).unwrap(), value);
-    let err = SerializerConfig::new()
+    let err = SerializerConfig::builder()
         .format(Format::Binary)
+        .build()
         .to_vec(&u128::MAX)
         .unwrap_err();
     assert!(err.to_string().contains("out of range"), "{err}");
@@ -284,8 +285,9 @@ fn test_data() {
         xml_doc("<data>\n</data>\n")
     );
     // `Vec<u8>` is data
-    let bytes = SerializerConfig::new()
+    let bytes = SerializerConfig::builder()
         .format(Format::Binary)
+        .build()
         .to_vec(&vec![1u8, 2])
         .unwrap();
     assert_eq!(parse(&bytes), Value::Bytes(vec![1, 2]));
@@ -352,13 +354,15 @@ fn test_other_extensions() {
 
 #[test]
 fn test_serializer() {
-    let mut serializer = Serializer::with_config(&SerializerConfig::new().format(Format::Ascii));
+    let mut serializer =
+        Serializer::with_config(&SerializerConfig::builder().format(Format::Ascii).build());
     serializer.serialize(&1u32).unwrap();
     assert!(serializer.serialize(&2u32).is_err());
     assert_eq!(serializer.finish(), b"1\n");
 
-    let err = SerializerConfig::new()
+    let err = SerializerConfig::builder()
         .format(Format::Binary)
+        .build()
         .to_string(&1u32)
         .unwrap_err();
     assert!(

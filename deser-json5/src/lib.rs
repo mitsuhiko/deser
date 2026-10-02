@@ -44,7 +44,7 @@
 //! can represent NaN and infinite floats: [`to_string`] and [`to_writer`]
 //! write them as `NaN`, `Infinity` and `-Infinity` where `deser-json`
 //! writes `null`.  A [`SerializerConfig`] needs
-//! [`non_finite_floats`](SerializerConfig::non_finite_floats) for this:
+//! [`set_non_finite_floats`](SerializerConfig::set_non_finite_floats) for this:
 //!
 //! ```rust
 //! use deser_json5::{Indent, SerializerConfig};
@@ -52,9 +52,9 @@
 //! let values = vec![1.5, f64::NAN, f64::NEG_INFINITY];
 //! assert_eq!(deser_json5::to_string(&values).unwrap(), "[1.5,NaN,-Infinity]");
 //!
-//! const PRETTY: SerializerConfig = SerializerConfig::new()
+//! const PRETTY: SerializerConfig = SerializerConfig::builder()
 //!     .pretty(Indent::Spaces(2))
-//!     .non_finite_floats(true);
+//!     .non_finite_floats(true).build();
 //! assert_eq!(
 //!     PRETTY.to_string(&values).unwrap(),
 //!     "[\n  1.5,\n  NaN,\n  -Infinity\n]"
@@ -91,18 +91,23 @@ mod raw;
 mod scan;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
+};
 pub use self::raw::{Json5, RawJson5};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing};
+pub use deser_json::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, Trailing,
+};
 
 use alloc::string::String;
 use deser_core::{Error, Serialize};
 
 /// The configuration of [`to_string`] and [`to_writer`].
-const SERIALIZER_CONFIG: SerializerConfig = SerializerConfig::new().non_finite_floats(true);
+const SERIALIZER_CONFIG: SerializerConfig =
+    SerializerConfig::builder().non_finite_floats(true).build();
 
 /// Serializes a value to JSON5.
 ///

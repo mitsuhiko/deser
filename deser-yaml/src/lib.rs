@@ -71,7 +71,7 @@
 //! type.
 //!
 //! Aliases are expanded: every alias produces the events of the node it
-//! refers to (see [`DeserializerConfig::alias_limit`]).
+//! refers to (see [`DeserializerConfig::set_alias_limit`]).
 //!
 //! # Serialization
 //!
@@ -80,7 +80,7 @@
 //! output looks can be configured with [`SerializerConfig`] (indentation,
 //! quoting, null, bytes, ...).  Values are always written so that they read
 //! back as the same values, also by readers of YAML 1.1 (such as PyYAML)
-//! unless configured otherwise with [`SerializerConfig::compat`]:
+//! unless configured otherwise with [`SerializerConfig::set_compat`]:
 //!
 //! | deser                                   | YAML                                          |
 //! |-----------------------------------------|-----------------------------------------------|
@@ -89,8 +89,8 @@
 //! | `F32`, `F64`                            | `1.5`, `1.0e+20`, `.inf`, `.nan` (the shortest text for the precision) |
 //! | `Str`                                   | plain if possible, otherwise quoted (see [`QuoteStyle`]), with line breaks as literal block scalar (see [`MultilineStyle`]) |
 //! | [`Implicit`](deser_core::Atom::Implicit) | its text if readers read it as the same value (`1.10`, `0x1F`, `~`), otherwise the value |
-//! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::binary`]) |
-//! | [`Datetime`](deser_core::ext::Datetime)      | timestamp (see [`SerializerConfig::timestamp_tag`]) |
+//! | `Bytes`                                 | `!!binary` (see [`SerializerConfig::set_binary`]) |
+//! | [`Datetime`](deser_core::ext::Datetime)      | timestamp (see [`SerializerConfig::set_timestamp_tag`]) |
 //! | maps and sequences                      | block mappings and sequences, flow style (`[a, b]`, `{a: 1}`) if compact (see [`FlowPolicy`]), keys that are collections or long use `? key` |
 //!
 //! The style of individual values can be requested with hints: the
@@ -156,7 +156,7 @@
 //! use deser_yaml::{DeserializerConfig, SerializerConfig};
 //!
 //! const ENDED: SerializerConfig =
-//!     SerializerConfig::new().end_documents(true);
+//!     SerializerConfig::builder().end_documents(true).build();
 //! let mut writer = ENDED.writer(Vec::new());
 //! writer.write(&vec![1, 2]).unwrap();
 //! writer.write(&"done").unwrap();
@@ -201,13 +201,15 @@ mod stream;
 pub mod style;
 mod tag;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
+};
 pub use self::resolve::Version;
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
 pub use self::ser::{
     FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Serializer, SerializerConfig,
-    to_string,
+    SerializerConfigBuilder, to_string,
 };
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]

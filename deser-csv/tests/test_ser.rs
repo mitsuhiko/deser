@@ -51,17 +51,20 @@ fn test_roundtrip() {
 fn test_null_and_empty() {
     // with `Nulls::Empty`, the empty string is quoted
     let rows = vec![(Some(""), None::<u32>)];
-    let config = SerializerConfig::new().nulls(Nulls::Empty);
+    let config = SerializerConfig::builder().nulls(Nulls::Empty).build();
     let csv = config.to_string(&rows).unwrap();
     assert_eq!(csv, "\"\",\n");
-    let back: Vec<(Option<String>, Option<u32>)> = DeserializerConfig::new()
+    let back: Vec<(Option<String>, Option<u32>)> = DeserializerConfig::builder()
         .headers(Headers::None)
         .nulls(Nulls::Empty)
+        .build()
         .from_str(&csv)
         .unwrap();
     assert_eq!(back, [(Some("".into()), None)]);
 
-    let config = SerializerConfig::new().nulls(Nulls::Text("NULL"));
+    let config = SerializerConfig::builder()
+        .nulls(Nulls::Text("NULL"))
+        .build();
     let rows = vec![(Some("NULL"), None::<u32>)];
     assert_eq!(config.to_string(&rows).unwrap(), "\"NULL\",NULL\n");
 }
@@ -80,7 +83,7 @@ fn test_columns() {
     let err = to_string(&rows).unwrap_err();
     assert_eq!(err.message(), "field `c` is not a column");
 
-    let config = SerializerConfig::new().headers(false);
+    let config = SerializerConfig::builder().headers(false).build();
     assert_eq!(
         config.to_string(&vec![BTreeMap::from([("a", 1)])]).unwrap(),
         "1\n"
@@ -93,7 +96,7 @@ fn test_sequences() {
     assert_eq!(to_string(&rows).unwrap(), "1,2\n3,4\n");
     let err = to_string(&vec![vec![1, 2], vec![3]]).unwrap_err();
     assert_eq!(err.message(), "record has 1 fields, expected 2");
-    let config = SerializerConfig::new().flexible(true);
+    let config = SerializerConfig::builder().flexible(true).build();
     assert_eq!(
         config.to_string(&vec![vec![1, 2], vec![3]]).unwrap(),
         "1,2\n3\n"
@@ -151,32 +154,37 @@ fn test_values() {
 #[test]
 fn test_dialects() {
     let rows = vec![("a;b", "c\td"), ("e", "f\"g")];
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .delimiter(b';')
-        .terminator(Terminator::CrLf);
+        .terminator(Terminator::CrLf)
+        .build();
     assert_eq!(
         config.to_string(&rows).unwrap(),
         "\"a;b\";c\td\r\ne;\"f\"\"g\"\r\n"
     );
 
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .escape(Escape::Backslash)
         .double_quote(false)
-        .quote_style(QuoteStyle::NonNumeric);
+        .quote_style(QuoteStyle::NonNumeric)
+        .build();
     assert_eq!(
         config.to_string(&vec![("a\"b\\", 1)]).unwrap(),
         "\"a\\\"b\\\\\",1\n"
     );
 
-    let config = SerializerConfig::new().escape(Escape::Char(b'!'));
+    let config = SerializerConfig::builder()
+        .escape(Escape::Char(b'!'))
+        .build();
     assert_eq!(
         config.to_string(&vec![("a,b!", "c")]).unwrap(),
         "a!,b!!,c\n"
     );
 
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .delimiter(0x1f)
-        .terminator(Terminator::Byte(0x1e));
+        .terminator(Terminator::Byte(0x1e))
+        .build();
     assert_eq!(
         config.to_string(&vec![("a", "b\nc")]).unwrap(),
         "a\x1fb\nc\x1e"
@@ -185,12 +193,14 @@ fn test_dialects() {
 
 #[test]
 fn test_never_quote() {
-    let config = SerializerConfig::new().quote_style(QuoteStyle::Never);
+    let config = SerializerConfig::builder()
+        .quote_style(QuoteStyle::Never)
+        .build();
     assert_eq!(config.to_string(&vec![("a", "b")]).unwrap(), "a,b\n");
     let err = config.to_string(&vec![("a,b", "c")]).unwrap_err();
     assert_eq!(err.message(), "field \"a,b\" needs to be quoted");
 
-    let config = SerializerConfig::new().quote(None);
+    let config = SerializerConfig::builder().quote(None).build();
     assert!(config.to_string(&vec![("a\nb", "c")]).is_err());
 }
 
@@ -207,7 +217,9 @@ fn test_tsv() {
         "tab\\there\tline\\nbreak\nback\\\\slash\t\\N\n\\\\N\t\n"
     );
     let back: Vec<(String, Option<String>)> = DeserializerConfig::tsv()
+        .into_builder()
         .headers(Headers::None)
+        .build()
         .from_str(&tsv)
         .unwrap();
     let expected: Vec<(String, Option<String>)> = rows
@@ -217,14 +229,17 @@ fn test_tsv() {
     assert_eq!(back, expected);
 
     // text that reads as null is escaped
-    let config = SerializerConfig::tsv().nulls(Nulls::Text("NULL"));
+    let config = SerializerConfig::tsv()
+        .into_builder()
+        .nulls(Nulls::Text("NULL"))
+        .build();
     let tsv = config.to_string(&vec![("NULL", None::<u32>)]).unwrap();
     assert_eq!(tsv, "\\NULL\tNULL\n");
 }
 
 #[test]
 fn test_escape_formulas() {
-    let config = SerializerConfig::new().escape_formulas(true);
+    let config = SerializerConfig::builder().escape_formulas(true).build();
     let rows = vec![("=HYPERLINK(\"x\")", -1.5), ("+1", 2.0), ("a", 3.0)];
     assert_eq!(
         config.to_string(&rows).unwrap(),

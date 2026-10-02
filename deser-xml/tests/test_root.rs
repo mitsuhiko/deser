@@ -5,7 +5,9 @@ use deser::de::Recording;
 use deser_value::Value;
 use deser_xml::{DeserializerConfig, Root, SerializerConfig, from_str, to_string};
 
-const RESOLVE: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+const RESOLVE: DeserializerConfig = DeserializerConfig::builder()
+    .resolve_namespaces(true)
+    .build();
 
 /// Reads a document into a recording and writes it again.
 fn round_trip(config: &DeserializerConfig, input: &str) -> String {
@@ -29,8 +31,9 @@ fn test_root_of_values() {
 
     // the configured name is for values without one
     assert_eq!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .root("r")
+            .build()
             .to_string(&recording)
             .unwrap(),
         input
@@ -150,7 +153,7 @@ fn test_serialize_root() {
         to_string(&Root::new("p", Point { x: 1 })).unwrap(),
         r#"<p x="1"/>"#
     );
-    let config = SerializerConfig::new().root("r");
+    let config = SerializerConfig::builder().root("r").build();
     assert_eq!(
         config.to_string(&Point { x: 1 }).unwrap(),
         r#"<point x="1"/>"#
@@ -186,7 +189,11 @@ fn test_serialize_root() {
     // only documents have a root
     let value = BTreeMap::from([("a", Root::new("b", 1))]);
     assert_eq!(
-        SerializerConfig::new().root("r").to_string(&value).unwrap(),
+        SerializerConfig::builder()
+            .root("r")
+            .build()
+            .to_string(&value)
+            .unwrap(),
         "<r><a>1</a></r>"
     );
 }

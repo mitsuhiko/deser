@@ -303,9 +303,9 @@ fn test_recording() {
         recording.events().cloned().collect::<Vec<_>>(),
         // the lengths of the containers are known once they are recorded
         vec![
-            Event::MapStart(ContainerShape::new().with_len(1)),
+            Event::MapStart(ContainerShape::with_len(1)),
             "a".into(),
-            Event::SeqStart(ContainerShape::new().with_len(0)),
+            Event::SeqStart(ContainerShape::with_len(0)),
             Event::SeqEnd,
             Event::MapEnd
         ]

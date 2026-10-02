@@ -59,7 +59,9 @@ fn main() {
 
     // untrusted input can be limited
     let err = deser_json::Deserializer::from_str(&json)
-        .deserialize_with::<Tree, _>(|driver| driver.push_layer(Limits::new().max_depth(64)))
+        .deserialize_with::<Tree, _>(|driver| {
+            driver.push_layer(Limits::builder().max_depth(64).build())
+        })
         .err()
         .unwrap();
     println!("with limits: {}", err);

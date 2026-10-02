@@ -40,7 +40,7 @@ assert_eq!(
 * Reads all well-formed CBOR including indefinite length strings, arrays
   and maps and CBOR sequences.
 * Writes the preferred serialization (shortest integers, lengths and
-  lossless floats).  `SerializerConfig::canonical` additionally sorts map
+  lossless floats).  `SerializerConfig::set_canonical` additionally sorts map
   entries for a deterministic encoding (for instance for signing).
 * Date-times (tags 0, 1 and 1004), UUIDs (tag 37), decimal fractions
   (tag 4) and bignums (tags 2 and 3) map onto deser's well-known types, so

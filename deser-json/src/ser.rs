@@ -18,7 +18,7 @@ use crate::scan::skip_to_escape;
 
 /// How the output is indented.
 ///
-/// See [`SerializerConfig::indent`] and [`SerializerConfig::pretty`].
+/// See [`SerializerConfig::set_indent`] and [`SerializerConfig::set_pretty`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum Indent {
@@ -38,7 +38,7 @@ pub enum Indent {
 /// Maps and sequences with the [`Layout::Compact`](deser_core::hints::Layout)
 /// hint are always written on a single line, the ones with
 /// [`Layout::Expanded`](deser_core::hints::Layout) never (unless they are in a
-/// map or sequence on a single line).  See [`SerializerConfig::inline`].
+/// map or sequence on a single line).  See [`SerializerConfig::set_inline`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum InlinePolicy {
@@ -55,7 +55,7 @@ pub enum InlinePolicy {
 /// Configures how values are serialized to JSON.
 ///
 /// By default the output is as short as possible: no line breaks and no
-/// spaces.  [`pretty`](Self::pretty) writes every entry on a line of its
+/// spaces.  [`set_pretty`](Self::set_pretty) writes every entry on a line of its
 /// own:
 ///
 /// ```
@@ -69,7 +69,7 @@ pub enum InlinePolicy {
 /// );
 ///
 /// const PRETTY: SerializerConfig =
-///     SerializerConfig::new().pretty(Indent::Spaces(2));
+///     SerializerConfig::builder().pretty(Indent::Spaces(2)).build();
 /// assert_eq!(
 ///     PRETTY.to_string(&value).unwrap(),
 ///     "{\n  \"name\": [\n    \"a\",\n    \"b\"\n  ]\n}"
@@ -110,10 +110,20 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets what follows the values of a stream.
     ///
     /// This is the counterpart of
-    /// [`DeserializerConfig::trailing`](crate::DeserializerConfig::trailing)
+    /// [`DeserializerConfig::set_trailing`](crate::DeserializerConfig::set_trailing)
     /// for writing more than one value (with a [`Serializer`] or a stream
     /// writer), it does not affect [`to_string`](Self::to_string):
     ///
@@ -128,15 +138,14 @@ impl SerializerConfig {
     /// use deser_json::{Serializer, SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
-    ///     SerializerConfig::new().trailing(Trailing::Newline);
+    ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
     /// let mut serializer = Serializer::with_config(&LINES);
     /// serializer.serialize(&vec![1, 2]).unwrap();
     /// serializer.serialize(&vec![3]).unwrap();
     /// assert_eq!(serializer.finish(), "[1,2]\n[3]\n");
     /// ```
-    pub const fn trailing(mut self, trailing: Trailing) -> SerializerConfig {
+    pub const fn set_trailing(&mut self, trailing: Trailing) {
         self.trailing = trailing;
-        self
     }
 
     /// Returns what follows the values of a stream.
@@ -150,18 +159,17 @@ impl SerializerConfig {
     /// Otherwise every entry of a map or sequence is written on a line of
     /// its own, indented by its depth.  Empty maps and sequences are always
     /// written as `{}` and `[]`.  This does not change the spaces after
-    /// separators, see [`compact`](Self::compact).  To indent with spaces
-    /// after separators use [`pretty`](Self::pretty).
+    /// separators, see [`set_compact`](Self::set_compact).  To indent with spaces
+    /// after separators use [`set_pretty`](Self::set_pretty).
     ///
     /// ```
     /// use deser_json::{Indent, SerializerConfig};
     ///
-    /// const TAB: SerializerConfig = SerializerConfig::new().indent(Indent::Tab);
+    /// const TAB: SerializerConfig = SerializerConfig::builder().indent(Indent::Tab).build();
     /// assert_eq!(TAB.to_string(&vec![1, 2]).unwrap(), "[\n\t1,\n\t2\n]");
     /// ```
-    pub const fn indent(mut self, indent: Indent) -> SerializerConfig {
+    pub const fn set_indent(&mut self, indent: Indent) {
         self.indent = indent;
-        self
     }
 
     /// Controls the spaces after separators.
@@ -175,12 +183,11 @@ impl SerializerConfig {
     /// use deser_json::SerializerConfig;
     ///
     /// let value = BTreeMap::from([("a", vec![1, 2])]);
-    /// const SPACED: SerializerConfig = SerializerConfig::new().compact(false);
+    /// const SPACED: SerializerConfig = SerializerConfig::builder().compact(false).build();
     /// assert_eq!(SPACED.to_string(&value).unwrap(), r#"{"a": [1, 2]}"#);
     /// ```
-    pub const fn compact(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_compact(&mut self, yes: bool) {
         self.compact = yes;
-        self
     }
 
     /// Sets when maps and sequences are written on a single line in
@@ -200,9 +207,9 @@ impl SerializerConfig {
     ///     name: "line",
     ///     points: vec![vec![0, 0], vec![3, 4]],
     /// };
-    /// const CONFIG: SerializerConfig = SerializerConfig::new()
+    /// const CONFIG: SerializerConfig = SerializerConfig::builder()
     ///     .pretty(Indent::Spaces(2))
-    ///     .inline(InlinePolicy::LeafIfFits(80));
+    ///     .inline(InlinePolicy::LeafIfFits(80)).build();
     /// assert_eq!(CONFIG.to_string(&shape).unwrap(), r#"{
     ///   "name": "line",
     ///   "points": [
@@ -212,16 +219,15 @@ impl SerializerConfig {
     /// }"#);
     /// ```
     ///
-    /// This has no effect without [indentation](Self::indent).
-    pub const fn inline(mut self, policy: InlinePolicy) -> SerializerConfig {
+    /// This has no effect without [indentation](Self::set_indent).
+    pub const fn set_inline(&mut self, policy: InlinePolicy) {
         self.inline = policy;
-        self
     }
 
     /// Enables or disables pretty printing.
     ///
-    /// This sets the [indentation](Self::indent) and writes spaces after
-    /// separators (see [`compact`](Self::compact)) unless the indentation
+    /// This sets the [indentation](Self::set_indent) and writes spaces after
+    /// separators (see [`set_compact`](Self::set_compact)) unless the indentation
     /// is [`Indent::None`], in which case the output is compact again.
     ///
     /// ```
@@ -230,15 +236,14 @@ impl SerializerConfig {
     ///
     /// let value = BTreeMap::from([("a", 1)]);
     /// const PRETTY: SerializerConfig =
-    ///     SerializerConfig::new().pretty(Indent::Spaces(4));
+    ///     SerializerConfig::builder().pretty(Indent::Spaces(4)).build();
     /// assert_eq!(PRETTY.to_string(&value).unwrap(), "{\n    \"a\": 1\n}");
-    /// const NOT_PRETTY: SerializerConfig = PRETTY.pretty(Indent::None);
+    /// const NOT_PRETTY: SerializerConfig = PRETTY.into_builder().pretty(Indent::None).build();
     /// assert_eq!(NOT_PRETTY.to_string(&value).unwrap(), r#"{"a":1}"#);
     /// ```
-    pub const fn pretty(mut self, indent: Indent) -> SerializerConfig {
+    pub const fn set_pretty(&mut self, indent: Indent) {
         self.indent = indent;
         self.compact = matches!(indent, Indent::None);
-        self
     }
 
     /// Writes NaN and infinite floats as `NaN`, `Infinity` and `-Infinity`.
@@ -255,15 +260,14 @@ impl SerializerConfig {
     /// let values = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
     /// assert_eq!(deser_json::to_string(&values).unwrap(), "[null,null,null]");
     /// const NON_FINITE: SerializerConfig =
-    ///     SerializerConfig::new().non_finite_floats(true);
+    ///     SerializerConfig::builder().non_finite_floats(true).build();
     /// assert_eq!(
     ///     NON_FINITE.to_string(&values).unwrap(),
     ///     "[NaN,Infinity,-Infinity]"
     /// );
     /// ```
-    pub const fn non_finite_floats(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_non_finite_floats(&mut self, yes: bool) {
         self.non_finite_floats = yes;
-        self
     }
 
     /// Serializes the given value.
@@ -427,9 +431,86 @@ impl SerializerConfig {
     }
 }
 
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets what follows the values of a stream.
+    ///
+    /// See [`SerializerConfig::set_trailing`].
+    pub const fn trailing(mut self, trailing: Trailing) -> SerializerConfigBuilder {
+        self.value.set_trailing(trailing);
+        self
+    }
+
+    /// Sets how the output is indented.
+    ///
+    /// See [`SerializerConfig::set_indent`].
+    pub const fn indent(mut self, indent: Indent) -> SerializerConfigBuilder {
+        self.value.set_indent(indent);
+        self
+    }
+
+    /// Controls the spaces after separators.
+    ///
+    /// See [`SerializerConfig::set_compact`].
+    pub const fn compact(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_compact(yes);
+        self
+    }
+
+    /// Sets when maps and sequences are written on a single line in
+    ///
+    /// See [`SerializerConfig::set_inline`].
+    pub const fn inline(mut self, policy: InlinePolicy) -> SerializerConfigBuilder {
+        self.value.set_inline(policy);
+        self
+    }
+
+    /// Enables or disables pretty printing.
+    ///
+    /// See [`SerializerConfig::set_pretty`].
+    pub const fn pretty(mut self, indent: Indent) -> SerializerConfigBuilder {
+        self.value.set_pretty(indent);
+        self
+    }
+
+    /// Writes NaN and infinite floats as `NaN`, `Infinity` and `-Infinity`.
+    ///
+    /// See [`SerializerConfig::set_non_finite_floats`].
+    pub const fn non_finite_floats(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_non_finite_floats(yes);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+}
+
 /// Declares that raw values of JSON are written as they are.
 fn accept_raw(driver: &mut SerializeDriver<'_>) {
-    driver.state_mut().set_raw_format(&crate::raw::ID);
+    driver.state_mut().declare_raw_format(&crate::raw::ID);
 }
 
 /// Writes the events of a value.
@@ -498,7 +579,7 @@ impl ValueWriter {
 /// Serializes values into JSON.
 ///
 /// Every call to [`serialize`](Self::serialize) writes a value.  What
-/// follows the values depends on [`SerializerConfig::trailing`]: by default
+/// follows the values depends on [`SerializerConfig::set_trailing`]: by default
 /// only a single value can be written, with [`Trailing::Newline`] every
 /// value is followed by a line break ([JSON Lines](https://jsonlines.org/)).
 ///
@@ -506,7 +587,7 @@ impl ValueWriter {
 /// use deser_json::{Serializer, SerializerConfig, Trailing};
 ///
 /// const LINES: SerializerConfig =
-///     SerializerConfig::new().trailing(Trailing::Newline);
+///     SerializerConfig::builder().trailing(Trailing::Newline).build();
 /// let mut serializer = Serializer::with_config(&LINES);
 /// serializer.serialize(&vec![1, 2]).unwrap();
 /// serializer.serialize(&"x").unwrap();
@@ -590,7 +671,7 @@ impl Serializer {
     /// number of values.
     ///
     /// This is useful to append to a stream that was written before (see
-    /// [`SerializerConfig::trailing`] for what separates the values).
+    /// [`SerializerConfig::set_trailing`] for what separates the values).
     pub fn with_written(config: &SerializerConfig, written: usize) -> Serializer {
         Serializer {
             config: config.clone(),
@@ -802,7 +883,7 @@ impl SerializerConfig {
     /// Creates a writer of a stream of values (see
     /// [`deser::io::Writer`](deser_core::io::Writer)).
     ///
-    /// What follows the values depends on [`trailing`](Self::trailing).
+    /// What follows the values depends on [`set_trailing`](Self::set_trailing).
     /// The output of large values is written in parts while they are
     /// serialized.
     ///
@@ -810,7 +891,7 @@ impl SerializerConfig {
     /// use deser_json::{SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
-    ///     SerializerConfig::new().trailing(Trailing::Newline);
+    ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
     /// let mut writer = LINES.writer(Vec::new());
     /// writer.write(&1).unwrap();
     /// writer.write(&"x").unwrap();

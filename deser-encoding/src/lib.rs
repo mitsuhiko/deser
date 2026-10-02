@@ -51,7 +51,7 @@
 //! assert_eq!(deser_json::from_str::<Blob>(&json).unwrap(), blob);
 //!
 //! // all bytes as hex (in the context of the serialization)
-//! let hex = deser::Context::new().with(BytesFormat::encoded::<Hex>());
+//! let hex = deser::Context::with(BytesFormat::encoded::<Hex>());
 //! let mut ser = deser_json::Serializer::new();
 //! ser.serialize_in(&b"\x01\xff", &hex).unwrap();
 //! assert_eq!(ser.finish(), r#""01ff""#);
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(HEX.encode(b"\x01\xff").as_deref(), Some("01ff"));
         assert_eq!(HEX.decode("01FF").unwrap(), b"\x01\xff");
 
-        let context = deser::Context::new().with(HEX);
+        let context = deser::Context::with(HEX);
         assert_eq!(
             deser_json::Deserializer::from_str(r#""01ff""#)
                 .deserialize_in::<Vec<u8>>(&context)

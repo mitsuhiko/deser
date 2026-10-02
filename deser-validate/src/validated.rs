@@ -213,7 +213,8 @@ impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
             self.start = state.input_range().map(|range| range.start);
         }
         if self.outer.is_none() {
-            self.outer = Some(state.set_collect_errors(true));
+            self.outer = Some(state.collect_errors());
+            state.set_collect_errors(true);
         }
         self.sink()
     }
@@ -230,13 +231,14 @@ impl<'a, 'de, T, V> ValidatedSink<'a, 'de, T, V> {
     ///
     /// The rest of the value is ignored.  While errors are discarded and
     /// once the limit of errors is reached, the error is returned instead.
-    fn fail(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+    fn fail(&mut self, mut err: Error, state: &mut State) -> Result<(), Error> {
         if state.discards_errors() || state.error_limit_reached() {
             self.end(state);
             return Err(err);
         }
         self.sink = None;
-        self.error = Some(state.attach_error_context(err));
+        state.attach_error_context(&mut err);
+        self.error = Some(err);
         Ok(())
     }
 
@@ -367,15 +369,15 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for ValidatedSink<'a, 'de, T, 
             && let Err(violation) = V::validate(value)
         {
             // the value is kept, it's invalid
-            let err = violation.into_error();
-            let err = match self.start {
-                Some(start) => err.with_offset(start),
-                None => err,
-            };
+            let mut err = violation.into_error();
+            if let Some(start) = self.start {
+                err.set_offset(start);
+            }
             if state.discards_errors() {
                 return Err(err);
             }
-            self.error = Some(state.attach_error_context(err));
+            state.attach_error_context(&mut err);
+            self.error = Some(err);
         }
         if value.is_none() && self.error.is_none() {
             return Ok(());
@@ -398,11 +400,10 @@ impl<'a, 'de, T: Send, V: Validator<T>> Sink<'de> for ValidatedSink<'a, 'de, T, 
 }
 
 /// Resolves the position of an error that is kept and reports it.
-fn report_error(err: Error, state: &mut State) -> Error {
-    let err = match Locations::source_map(state) {
-        Some(source_map) => err.resolve_position(source_map.source().as_bytes()),
-        None => err,
-    };
+fn report_error(mut err: Error, state: &mut State) -> Error {
+    if let Some(source_map) = Locations::source_map(state) {
+        err.resolve_position(source_map.source().as_bytes());
+    }
     ReportHandle::report(&err, state);
     err
 }

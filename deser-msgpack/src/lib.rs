@@ -31,7 +31,7 @@
 //! [`Datetime`](deser_core::ext::Datetime) or [`Uuid`](deser_core::ext::Uuid))
 //! are written as their fallback, which usually is a string.  Integers
 //! which do not fit into 64 bits cannot be written.  With
-//! [`SerializerConfig::canonical`] map entries are sorted to produce a
+//! [`SerializerConfig::set_canonical`] map entries are sorted to produce a
 //! deterministic encoding.
 //!
 //! Deserialization accepts all well-formed MessagePack.  Map keys can be of
@@ -130,7 +130,7 @@ pub use self::ext::Ext;
 pub use self::raw::{Msgpack, RawMsgpack};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Serializer, SerializerConfig, to_vec};
+pub use self::ser::{Serializer, SerializerConfig, SerializerConfigBuilder, to_vec};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

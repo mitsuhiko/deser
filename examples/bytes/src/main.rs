@@ -57,7 +57,7 @@ fn main() {
     // the format of bytes in the context only changes plain bytes, the
     // values that requested a representation keep it.  The context is
     // used for reading as well.
-    let url_safe = Context::new().with(BytesFormat::encoded::<Base64Url>());
+    let url_safe = Context::with(BytesFormat::encoded::<Base64Url>());
     let mut ser = deser_json::Serializer::new();
     ser.serialize_in(&blob, &url_safe).unwrap();
     let json = ser.finish();
@@ -67,7 +67,7 @@ fn main() {
         .deserialize_in(&url_safe)
         .unwrap();
     assert_eq!(read, blob);
-    let seq = Context::new().with(BytesFormat::SEQ);
+    let seq = Context::with(BytesFormat::SEQ);
     let mut ser = deser_toml::Serializer::new();
     ser.serialize_in(&blob, &seq).unwrap();
     let toml = ser.finish();

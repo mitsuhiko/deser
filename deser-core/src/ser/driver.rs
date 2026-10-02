@@ -533,7 +533,7 @@ impl<'a> SerializeDriver<'a> {
         );
         let rv = match self.advance() {
             Ok(rv) => rv,
-            Err(err) => return Err(self.state.attach_error_context(err)),
+            Err(err) => return Err(self.state.error_in_context(err)),
         };
         self.delivered = rv.is_some();
         // The event and the value borrow from the values held by the driver
@@ -580,7 +580,7 @@ impl<'a> SerializeDriver<'a> {
     {
         match self.drive_impl(Plain(f)) {
             Ok(_) => Ok(()),
-            Err(err) => Err(self.state.attach_error_context(err)),
+            Err(err) => Err(self.state.error_in_context(err)),
         }
     }
 
@@ -593,7 +593,7 @@ impl<'a> SerializeDriver<'a> {
     pub fn drive_sink<S: EventSink>(&mut self, sink: &mut S) -> Result<(), Error> {
         match self.drive_impl(Sink(sink)) {
             Ok(_) => Ok(()),
-            Err(err) => Err(self.state.attach_error_context(err)),
+            Err(err) => Err(self.state.error_in_context(err)),
         }
     }
 
@@ -654,7 +654,7 @@ impl<'a> SerializeDriver<'a> {
     pub fn drive_until<S: EventSink>(&mut self, sink: &mut S) -> Result<bool, Error> {
         match self.drive_impl(Pausable(sink)) {
             Ok(done) => Ok(done),
-            Err(err) => Err(self.state.attach_error_context(err)),
+            Err(err) => Err(self.state.error_in_context(err)),
         }
     }
 
@@ -1291,7 +1291,7 @@ fn test_map_emitting() {
     assert_eq!(
         events,
         vec![
-            Event::MapStart(crate::ContainerShape::new().with_order(crate::Order::Sorted)),
+            Event::MapStart(crate::ContainerShape::with_order(crate::Order::Sorted)),
             Event::seq_start(),
             1u64.into(),
             2u64.into(),

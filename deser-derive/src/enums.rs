@@ -1745,7 +1745,7 @@ pub(crate) fn derive_serialize(
         all_none &= len.is_none();
     }
     let container_shape = if all_one {
-        quote! { __deser::ContainerShape::new().with_len(1) }
+        quote! { __deser::ContainerShape::with_len(1) }
     } else if all_none {
         quote! { __deser::ContainerShape::new() }
     } else {
@@ -1753,7 +1753,7 @@ pub(crate) fn derive_serialize(
         for info in &variants {
             let pattern = info.wildcard_pattern(ident);
             arms.push(match len_of(info) {
-                Some(len) => quote! { #pattern => __deser::ContainerShape::new().with_len(#len), },
+                Some(len) => quote! { #pattern => __deser::ContainerShape::with_len(#len), },
                 None => quote! { #pattern => __deser::ContainerShape::new(), },
             });
         }

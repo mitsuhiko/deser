@@ -13,7 +13,7 @@ with the next line.
 
 ## What it shows
 
-- `DeserializerConfig::new().trailing(Trailing::Newline)` makes a
+- `DeserializerConfig::builder().trailing(Trailing::Newline).build()` makes a
   `deser_json::Deserializer` read one value per line.
 - A `while !de.is_end() { de.deserialize::<Event>() }` loop. An error
   (bad syntax or a type mismatch) only discards its own line. Empty lines

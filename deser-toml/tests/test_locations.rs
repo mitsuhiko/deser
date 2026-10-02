@@ -34,8 +34,9 @@ x = true
 
 #[test]
 fn test_spans() {
-    let doc: Doc = DeserializerConfig::new()
+    let doc: Doc = DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(INPUT)
         .unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
@@ -59,8 +60,9 @@ fn test_spans() {
 
 #[test]
 fn test_root_span() {
-    let doc: Spanned<Nested> = DeserializerConfig::new()
+    let doc: Spanned<Nested> = DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str("x = true\n")
         .unwrap();
     assert_eq!(format!("{:?}", doc.span.unwrap()), "1:1-2:1");

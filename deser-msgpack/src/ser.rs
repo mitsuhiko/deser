@@ -18,7 +18,7 @@ use crate::ext::{Ext, TIMESTAMP, encode_timestamp};
 /// written in their shortest form.  Floats keep their precision: `f32` is
 /// written as float 32 and `f64` as float 64.
 ///
-/// If [`canonical`](Self::canonical) is enabled, the output is additionally
+/// If [`set_canonical`](Self::set_canonical) is enabled, the output is additionally
 /// deterministic: the entries of maps are sorted by the bytewise
 /// lexicographic order of their encoded keys and duplicate keys are
 /// rejected.
@@ -28,7 +28,7 @@ use crate::ext::{Ext, TIMESTAMP, encode_timestamp};
 /// use deser_msgpack::SerializerConfig;
 ///
 /// const CANONICAL: SerializerConfig =
-///     SerializerConfig::new().canonical(true);
+///     SerializerConfig::builder().canonical(true).build();
 /// let map = HashMap::from([("b", 1), ("a", 2)]);
 /// assert_eq!(CANONICAL.to_vec(&map).unwrap(), b"\x82\xa1a\x02\xa1b\x01");
 /// ```
@@ -165,7 +165,7 @@ impl Writer {
     /// canonical.
     fn accept_raw(&self, driver: &mut SerializeDriver<'_>) {
         if !self.canonical {
-            driver.state_mut().set_raw_format(&crate::raw::ID);
+            driver.state_mut().declare_raw_format(&crate::raw::ID);
         }
     }
 
@@ -617,15 +617,24 @@ impl SerializerConfig {
         SerializerConfig { canonical: false }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Enables or disables the deterministic encoding.
     ///
     /// When enabled, the entries of maps are sorted by the bytewise
     /// lexicographic order of their encoded keys and duplicate keys are an
     /// error.  This makes the output independent of the iteration
     /// order of maps such as `HashMap`.
-    pub const fn canonical(mut self, yes: bool) -> SerializerConfig {
+    pub const fn set_canonical(&mut self, yes: bool) {
         self.canonical = yes;
-        self
     }
 
     /// Serializes the given value.
@@ -724,6 +733,43 @@ impl SerializerConfig {
         let mut writer = Writer::new(self.canonical, Vec::with_capacity(128));
         writer.drive_whole(driver)?;
         Ok(writer.out)
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Enables or disables the deterministic encoding.
+    ///
+    /// See [`SerializerConfig::set_canonical`].
+    pub const fn canonical(mut self, yes: bool) -> SerializerConfigBuilder {
+        self.value.set_canonical(yes);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 

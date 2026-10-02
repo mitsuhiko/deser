@@ -33,8 +33,9 @@ alias: *n
 
 #[test]
 fn test_spans() {
-    let doc: Doc = DeserializerConfig::new()
+    let doc: Doc = DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str(INPUT)
         .unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());

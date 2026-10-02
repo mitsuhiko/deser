@@ -6,7 +6,7 @@ use crate::common::Value;
 #[test]
 fn test_reader_and_writer() {
     for format in [Format::Xml, Format::Binary, Format::Ascii] {
-        let config = SerializerConfig::new().format(format);
+        let config = SerializerConfig::builder().format(format).build();
         let mut out = Vec::new();
         config.to_writer(&mut out, &vec!["a", "b"]).unwrap();
         assert_eq!(out, config.to_vec(&vec!["a", "b"]).unwrap());
@@ -68,7 +68,7 @@ fn test_partial_writer() {
         SerializeRef::new(&empty),
     ];
     for format in [Format::Xml, Format::Ascii, Format::Binary] {
-        let config = SerializerConfig::new().format(format);
+        let config = SerializerConfig::builder().format(format).build();
         for value in values {
             let expected = config.to_vec(&value).unwrap();
             for limit in [1, 13, 500, usize::MAX] {

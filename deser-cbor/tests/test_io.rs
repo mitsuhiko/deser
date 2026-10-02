@@ -203,7 +203,7 @@ fn test_feeding_with_limits() {
         size: 2,
     });
     let limits = |driver: &mut deser::de::DeserializeDriver<'_, '_>| {
-        driver.push_layer(Limits::new().max_depth(2))
+        driver.push_layer(Limits::builder().max_depth(2).build())
     };
     let err = reader.read_with::<Recording, _>(limits).unwrap_err();
     assert_eq!(
@@ -331,7 +331,7 @@ mod partial {
         ];
         for config in [
             SerializerConfig::new(),
-            SerializerConfig::new().canonical(true),
+            SerializerConfig::builder().canonical(true).build(),
         ] {
             for value in values {
                 let expected = config.to_vec(&value).unwrap();
@@ -372,7 +372,7 @@ mod partial {
         assert_eq!(writes, 1);
 
         // as are maps in canonical mode
-        let config = SerializerConfig::new().canonical(true);
+        let config = SerializerConfig::builder().canonical(true).build();
         let map: HashMap<u64, u64> = (0..if miri { 100 } else { 1000 }).map(|x| (x, x)).collect();
         let (out, writes) = streamed(&config, &map, 64);
         assert_eq!(out, config.to_vec(&map).unwrap());

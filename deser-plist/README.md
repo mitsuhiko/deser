@@ -22,8 +22,8 @@ struct Info {
 let info = Info { bundle_name: "Demo".into(), bundle_version: 42 };
 
 let xml = deser_plist::to_vec(&info).unwrap();
-let binary = SerializerConfig::new()
-    .format(Format::Binary)
+let binary = SerializerConfig::builder()
+    .format(Format::Binary).build()
     .to_vec(&info)
     .unwrap();
 

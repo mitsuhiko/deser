@@ -6,10 +6,10 @@ use deser::{Deserialize, Event, Serialize};
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }

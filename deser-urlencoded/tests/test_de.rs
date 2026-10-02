@@ -275,7 +275,7 @@ fn test_nested() {
         expected
     );
 
-    const DOTS: DeserializerConfig = DeserializerConfig::new().nesting(Nesting::Dots);
+    const DOTS: DeserializerConfig = DeserializerConfig::builder().nesting(Nesting::Dots).build();
     assert_eq!(
         DOTS.from_str::<Shelf>(
             "name=fiction&books.0.title=Dune&books.0.pages=412&books.1.title=Emma\
@@ -428,7 +428,7 @@ fn test_duplicate_keys() {
     assert_eq!(from_str::<Body>(input).unwrap().single, "y");
 
     // the context overrides the default of the format
-    let first = Context::new().with(DuplicateKeys::First);
+    let first = Context::with(DuplicateKeys::First);
     assert_eq!(
         Deserializer::from_str(input)
             .deserialize_in::<Body>(&first)
@@ -437,7 +437,7 @@ fn test_duplicate_keys() {
         "x"
     );
 
-    let strict = Context::new().with(DuplicateKeys::Error);
+    let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_str(input)
         .deserialize_with::<Body, _>(|driver| {
             driver.set_context(&strict);
@@ -530,10 +530,10 @@ fn test_errors() {
     let err = from_str::<Map>(&format!("a{}=1", "[b]".repeat(17))).unwrap_err();
     assert_eq!(err.message(), "key is nested too deeply");
     assert!(from_str::<Map>(&format!("a{}=1", "[b]".repeat(16))).is_ok());
-    let config = DeserializerConfig::new().max_depth(2);
+    let config = DeserializerConfig::builder().max_depth(2).build();
     assert!(config.from_str::<Map>("a[b][c][d]=1").is_err());
 
-    let config = DeserializerConfig::new().max_params(2);
+    let config = DeserializerConfig::builder().max_params(2).build();
     let err = config.from_str::<Map>("a=1&b=2&&c=3").unwrap_err();
     assert_eq!(err.message(), "too many parameters");
     assert_eq!(err.offset(), Some(9));
@@ -700,7 +700,7 @@ fn test_default_on_error_with_repeated_keys() {
     );
 
     // a duplicate key is an error of the struct, not of the value
-    let strict = Context::new().with(DuplicateKeys::Error);
+    let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_str("page=1&page=2&tags=1")
         .deserialize_in::<Query>(&strict)
         .unwrap_err();

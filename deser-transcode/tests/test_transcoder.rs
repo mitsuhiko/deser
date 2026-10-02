@@ -4,7 +4,9 @@ use deser_transcode::{Transcoder, transcode, transcode_with};
 
 #[test]
 fn test_stream() {
-    let config = deser_json::DeserializerConfig::new().trailing(deser_json::Trailing::Newline);
+    let config = deser_json::DeserializerConfig::builder()
+        .trailing(deser_json::Trailing::Newline)
+        .build();
     let mut de =
         deser_json::Deserializer::from_str_with_config("{\"a\": 1}\n[1, 2]\n\"x\"\n", &config);
     let mut ser = deser_yaml::Serializer::new();
@@ -32,7 +34,9 @@ fn test_io_streams() {
     }
 
     // JSON Lines (framed) from a reader into YAML documents on a writer
-    let config = deser_json::DeserializerConfig::new().trailing(deser_json::Trailing::Newline);
+    let config = deser_json::DeserializerConfig::builder()
+        .trailing(deser_json::Trailing::Newline)
+        .build();
     let mut de = config.reader(Chunked(b"{\"a\": \"x\"}\n[1, 2]\n"));
     let mut ser = deser_yaml::SerializerConfig::new().writer(Vec::new());
     let mut transcoder = Transcoder::new();
@@ -47,7 +51,9 @@ fn test_io_streams() {
     cbor.serialize(&42u32).unwrap();
     let cbor = cbor.finish();
     let mut de = deser_cbor::DeserializerConfig::new().reader(Chunked(&cbor));
-    let lines = deser_json::SerializerConfig::new().trailing(deser_json::Trailing::Newline);
+    let lines = deser_json::SerializerConfig::builder()
+        .trailing(deser_json::Trailing::Newline)
+        .build();
     let mut ser = lines.writer(Vec::new());
     while !de.is_end().unwrap() {
         transcoder.transcode(&mut de, &mut ser).unwrap();
@@ -84,7 +90,7 @@ fn test_layers() {
     let err = transcode_with(
         &mut de,
         &mut ser,
-        |driver| driver.push_layer(Limits::new().max_items(2)),
+        |driver| driver.push_layer(Limits::builder().max_items(2).build()),
         |_| {},
     )
     .unwrap_err();

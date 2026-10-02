@@ -76,9 +76,11 @@ impl<'a> Deserializer<'a> {
 impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
         let mut source = None;
-        drive(self.value, driver, &mut source).map_err(|err| match source {
-            Some(source) => err.resolve_position(source.as_bytes()),
-            None => err,
+        drive(self.value, driver, &mut source).map_err(|mut err| {
+            if let Some(source) = source {
+                err.resolve_position(source.as_bytes());
+            }
+            err
         })
     }
 }
@@ -170,9 +172,11 @@ fn drive<'de>(
                     let mut map_shape = shape(map.len(), map.order());
                     if map.is_multimap() {
                         // the entries include the values of repeated keys
-                        map_shape = ContainerShape::new()
-                            .with_order(map.order())
-                            .with_multimap(true);
+                        map_shape = {
+                            let mut shape = ContainerShape::with_order(map.order());
+                            shape.set_multimap(true);
+                            shape
+                        };
                     }
                     driver.emit(Event::MapStart(map_shape))?;
                     stack.push(Frame::Map(
@@ -213,7 +217,11 @@ fn drive<'de>(
 }
 
 fn shape(len: usize, order: deser_core::Order) -> ContainerShape {
-    ContainerShape::new().with_len(len).with_order(order)
+    {
+        let mut shape = ContainerShape::with_len(len);
+        shape.set_order(order);
+        shape
+    }
 }
 
 /// Returns the atom of a value without children.

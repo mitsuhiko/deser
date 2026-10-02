@@ -179,25 +179,26 @@ fn test_malformed_names() {
 #[test]
 fn test_config() {
     // the separator can be changed
-    let single = DeserializerConfig::new().separator("_");
+    let single = DeserializerConfig::builder().separator("_").build();
     let value: Nested = single
         .from_vars("APP_", [("APP_SERVER_PORT", "80")])
         .unwrap();
     assert_eq!(value["server"]["port"], "80");
-    let flat = DeserializerConfig::new().separator("");
+    let flat = DeserializerConfig::builder().separator("").build();
     let value: BTreeMap<String, String> = flat.from_vars("", [("A__B", "1")]).unwrap();
     assert_eq!(value["a__b"], "1");
 
     // the case can be preserved
-    let preserve = DeserializerConfig::new().case(Case::Preserve);
+    let preserve = DeserializerConfig::builder().case(Case::Preserve).build();
     let value: Nested = preserve.from_vars("", [("Server__Port", "80")]).unwrap();
     assert_eq!(value["Server"]["Port"], "80");
     let value: Nested = from_vars("", [("Server__Port", "80")]).unwrap();
     assert_eq!(value["server"]["port"], "80");
 
     // the depth is limited
-    let err = DeserializerConfig::new()
+    let err = DeserializerConfig::builder()
         .max_depth(1)
+        .build()
         .from_vars::<BTreeMap<String, Nested>, _, _, _>("", [("A__B__C", "1")])
         .unwrap_err();
     assert_eq!(err.message(), "name is nested too deeply");
@@ -219,7 +220,7 @@ fn test_duplicate_keys() {
     // sorted by name: `APP_PORT` comes first
     assert_eq!(from_vars::<Config, _, _, _>("APP_", vars).unwrap().port, 2);
     // the context overrides the default of the format
-    let first = Context::new().with(DuplicateKeys::First);
+    let first = Context::with(DuplicateKeys::First);
     assert_eq!(
         Deserializer::from_vars("APP_", vars)
             .deserialize_in::<Config>(&first)
@@ -227,13 +228,13 @@ fn test_duplicate_keys() {
             .port,
         1
     );
-    let strict = Context::new().with(DuplicateKeys::Error);
+    let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_vars("APP_", vars)
         .deserialize_in::<Config>(&strict)
         .unwrap_err();
     assert_eq!(env_var(&err), Some("APP_port"));
     // with the case preserved these are different keys
-    let preserve = DeserializerConfig::new().case(Case::Preserve);
+    let preserve = DeserializerConfig::builder().case(Case::Preserve).build();
     let value: BTreeMap<String, u16> = preserve.from_vars("APP_", vars).unwrap();
     assert_eq!(value.len(), 2);
 }

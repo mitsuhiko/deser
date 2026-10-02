@@ -116,7 +116,9 @@ mod scan;
 mod ser;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, from_slice, from_str,
+};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
 pub use self::ser::{Serializer, SerializerConfig, to_string};

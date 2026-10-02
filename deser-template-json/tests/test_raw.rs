@@ -297,8 +297,9 @@ fn test_serialize_events() {
     assert!(events[3].contains("U64(1)"), "{events:?}");
 
     // pretty JSON writes raw JSON as it is too
-    let pretty = deser_json::SerializerConfig::new()
+    let pretty = deser_json::SerializerConfig::builder()
         .pretty(deser_json::Indent::Spaces(2))
+        .build()
         .to_string(&vec![raw])
         .unwrap();
     if IS_JSON {

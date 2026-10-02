@@ -66,7 +66,10 @@ fn expected_value(info: &[Value]) -> Value {
 }
 
 fn load(input: &str, version: Version) -> Result<Value, Error> {
-    DeserializerConfig::new().version(version).from_str(input)
+    DeserializerConfig::builder()
+        .version(version)
+        .build()
+        .from_str(input)
 }
 
 fn run_schema(schema: &str, version: Version, directive: &str) {

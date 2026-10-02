@@ -7,7 +7,9 @@ use crate::ext::{Date, Datetime, Duration, Offset, Time, Timestamp};
 
 #[cold]
 fn range_error(err: ::time::error::ComponentRange) -> Error {
-    out_of_range(err.to_string()).with_source(err)
+    let mut rv = out_of_range(err.to_string());
+    rv.set_source(err);
+    rv
 }
 
 fn date_to_known(value: ::time::Date) -> Result<Date, Error> {

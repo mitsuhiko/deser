@@ -821,13 +821,16 @@ fn test_limits() {
             .map(|_| ())
             .map_err(|err| err.to_string())
     };
-    assert_eq!(parse(Limits::new().max_depth(3).max_len(5)), Ok(()));
     assert_eq!(
-        parse(Limits::new().max_depth(2)),
+        parse(Limits::builder().max_depth(3).max_len(5).build()),
+        Ok(())
+    );
+    assert_eq!(
+        parse(Limits::builder().max_depth(2).build()),
         Err("LimitExceeded: recursion limit exceeded at line 1 column 8".into())
     );
     assert_eq!(
-        parse(Limits::new().max_len(4)),
+        parse(Limits::builder().max_len(4).build()),
         Err("LimitExceeded: string or bytes too long at line 1 column 19".into())
     );
 }

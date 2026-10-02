@@ -50,9 +50,9 @@
 //!   deserialized into parses.  An empty element is `None` for optionals of
 //!   types that do not accept the empty text.
 //! * **A map** otherwise.  Attributes are entries whose key has the
-//!   [attribute prefix](DeserializerConfig::attribute_prefix) (`@href`),
+//!   [attribute prefix](DeserializerConfig::set_attribute_prefix) (`@href`),
 //!   child elements are entries with their name and text is an entry with
-//!   the [text key](DeserializerConfig::text_key) (`$text`).  Whitespace
+//!   the [text key](DeserializerConfig::set_text_key) (`$text`).  Whitespace
 //!   between child elements is not text.
 //!
 //! | XML                                   | deser                                   |
@@ -65,7 +65,7 @@
 //! | `<a><b>1</b><c/><b>2</b></a>`         | `{"b": "1", "c": "", "b": "2"}`         |
 //! | `<p>x <b>y</b> z</p>`                 | `{"$text": "x ", "b": "y", "$text": " z"}` |
 //!
-//! Maps are [multimaps](deser_core::ContainerShape::with_multimap) whose
+//! Maps are [multimaps](deser_core::ContainerShape::set_multimap) whose
 //! order is [significant](deser_core::Order::Significant): an element can
 //! have more than one child with the same name.  Fields and map values
 //! that are collections (like `Vec<T>`) collect all of them, also if other
@@ -161,7 +161,7 @@
 //! they were.  Namespaces can be given prefixes
 //! that are used regardless of the prefixes of the document (see
 //! [`DeserializerConfig::namespaces`]) or be
-//! [resolved](DeserializerConfig::resolve_namespaces) into names like
+//! [resolved](DeserializerConfig::set_resolve_namespaces) into names like
 //! `{http://www.w3.org/2005/Atom}title` (see [`qname!`] and
 //! [`namespace!`]), which the serializer writes with prefixes.
 //! CDATA sections are text, the
@@ -172,8 +172,8 @@
 //!
 //! # Pretty Printing
 //!
-//! By default the output is a single line.  [`SerializerConfig::pretty`]
-//! (or [`indent`](SerializerConfig::indent)) writes child elements on
+//! By default the output is a single line.  [`SerializerConfig::set_pretty`]
+//! (or [`set_indent`](SerializerConfig::set_indent)) writes child elements on
 //! lines of their own, but only where the whitespace is not text: the text
 //! of elements is kept as it is and mixed content stays on a single line.
 //!
@@ -188,7 +188,7 @@
 //! }
 //!
 //! const PRETTY: SerializerConfig =
-//!     SerializerConfig::new().pretty(Indent::Spaces(2));
+//!     SerializerConfig::builder().pretty(Indent::Spaces(2)).build();
 //! let item = Item { name: "x", tag: vec!["a", "b"] };
 //! assert_eq!(
 //!     PRETTY.to_string(&item).unwrap(),
@@ -245,12 +245,14 @@ mod root;
 mod ser;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, from_slice, from_str,
+};
 pub use self::mixed::{KeepWhitespace, Mixed, SkipWhitespace, Whitespace};
 pub use self::root::Root;
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Indent, Serializer, SerializerConfig, to_string};
+pub use self::ser::{Indent, Serializer, SerializerConfig, SerializerConfigBuilder, to_string};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
@@ -258,9 +260,9 @@ pub use self::stream::from_reader;
 /// Writes a name in a namespace as `{uri}local`.
 ///
 /// This is the notation for names in namespaces (see
-/// [`DeserializerConfig::resolve_namespaces`]).  With `@` in front it's
+/// [`DeserializerConfig::set_resolve_namespaces`]).  With `@` in front it's
 /// the name of an attribute with the default
-/// [attribute prefix](DeserializerConfig::attribute_prefix).  The name is
+/// [attribute prefix](DeserializerConfig::set_attribute_prefix).  The name is
 /// a literal, so it can be used for `rename`:
 ///
 /// ```

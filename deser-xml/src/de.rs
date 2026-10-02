@@ -40,21 +40,29 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Sets the prefix of the keys of attributes.
     ///
     /// The default is `@`: `<a href="x"/>` is `{"@href": "x"}`.
-    pub const fn attribute_prefix(mut self, prefix: &'static str) -> DeserializerConfig {
+    pub const fn set_attribute_prefix(&mut self, prefix: &'static str) {
         self.names.attribute_prefix = prefix;
-        self
     }
 
     /// Sets the key of the text of elements that are maps.
     ///
     /// The default is `$text`: `<a href="x">y</a>` is
     /// `{"@href": "x", "$text": "y"}`.
-    pub const fn text_key(mut self, key: &'static str) -> DeserializerConfig {
+    pub const fn set_text_key(&mut self, key: &'static str) {
         self.names.text_key = key;
-        self
     }
 
     /// Sets the prefixes of namespaces.
@@ -64,7 +72,7 @@ impl DeserializerConfig {
     /// with this prefix, whichever prefix the document uses.  The empty
     /// prefix leaves only the local name.  Names in other namespaces are
     /// passed on as written or, if namespaces are
-    /// [resolved](Self::resolve_namespaces), as `{uri}local`.  The table
+    /// [resolved](Self::set_resolve_namespaces), as `{uri}local`.  The table
     /// can be written with [`prefixes!`](crate::prefixes).
     ///
     /// ```
@@ -133,7 +141,7 @@ impl DeserializerConfig {
     /// }
     ///
     /// const CONFIG: DeserializerConfig =
-    ///     DeserializerConfig::new().resolve_namespaces(true);
+    ///     DeserializerConfig::builder().resolve_namespaces(true).build();
     /// let xml = r#"
     ///     <feed xmlns="http://www.w3.org/2005/Atom">
     ///       <title>Example</title>
@@ -144,9 +152,8 @@ impl DeserializerConfig {
     /// assert_eq!(feed.title, "Example");
     /// assert_eq!(feed.link.href, "/a");
     /// ```
-    pub const fn resolve_namespaces(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_resolve_namespaces(&mut self, yes: bool) {
         self.resolve_namespaces = yes;
-        self
     }
 
     /// Enables or disables location tracking.
@@ -155,9 +162,8 @@ impl DeserializerConfig {
     /// (see [`State::input_range`](deser_core::State::input_range)), this
     /// controls if the input is published as [`Source`] so that errors can
     /// be resolved into lines and columns.  The default is `true`.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Deserializes a value from a string with this configuration.
@@ -193,6 +199,67 @@ impl DeserializerConfig {
             &mut Deserializer::from_slice_with_config(bytes, self),
             driver,
         )
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets the prefix of the keys of attributes.
+    ///
+    /// See [`DeserializerConfig::set_attribute_prefix`].
+    pub const fn attribute_prefix(mut self, prefix: &'static str) -> DeserializerConfigBuilder {
+        self.value.set_attribute_prefix(prefix);
+        self
+    }
+
+    /// Sets the key of the text of elements that are maps.
+    ///
+    /// See [`DeserializerConfig::set_text_key`].
+    pub const fn text_key(mut self, key: &'static str) -> DeserializerConfigBuilder {
+        self.value.set_text_key(key);
+        self
+    }
+
+    /// Enables or disables resolving namespaces.
+    ///
+    /// See [`DeserializerConfig::set_resolve_namespaces`].
+    pub const fn resolve_namespaces(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_resolve_namespaces(yes);
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -257,10 +324,11 @@ impl<'a> Deserializer<'a> {
             Ok(input) => Deserializer::from_str_with_config(input, config),
             Err(err) => Deserializer {
                 input: "",
-                error: Some(
-                    Error::new(ErrorKind::Syntax, "input is not valid UTF-8")
-                        .with_offset(err.valid_up_to()),
-                ),
+                error: Some(Error::with_offset(
+                    ErrorKind::Syntax,
+                    "input is not valid UTF-8",
+                    err.valid_up_to(),
+                )),
                 config: config.clone(),
             },
         }
@@ -327,7 +395,10 @@ impl<'a> Deserializer<'a> {
             declarations: None,
         }
         .run(driver)
-        .map_err(|err| err.resolve_position(self.input.as_bytes()))
+        .map_err(|mut err| {
+            err.resolve_position(self.input.as_bytes());
+            err
+        })
     }
 }
 
@@ -342,7 +413,11 @@ impl<'a> de::Deserializer<'a> for Deserializer<'a> {
 /// Booleans are `true` and `false` (XML Schema also allows `1` and `0`,
 /// which are integers here), an empty element is a missing value for types
 /// that do not accept it (`<age/>` is `None` for an `Option<u32>`).
-const TEXT_RULES: LexicalRules = LexicalRules::STRICT.with_empty_is_null(true);
+const TEXT_RULES: LexicalRules = {
+    let mut rules = LexicalRules::STRICT;
+    rules.set_empty_is_null(true);
+    rules
+};
 
 /// A byte range in the input.
 type Range = (usize, usize);
@@ -452,16 +527,18 @@ impl<'a> Parser<'a, '_> {
                 | XmlEvent::DocType(_) => {}
                 XmlEvent::Eof => {
                     if !self.stack.is_empty() {
-                        return Err(Error::new(
+                        return Err(Error::with_offset(
                             ErrorKind::EndOfFile,
                             "unexpected end of input, an element is not closed",
-                        )
-                        .with_offset(start));
+                            start,
+                        ));
                     }
                     if !self.root_done {
-                        return Err(
-                            Error::new(ErrorKind::EndOfFile, "no root element").with_offset(start)
-                        );
+                        return Err(Error::with_offset(
+                            ErrorKind::EndOfFile,
+                            "no root element",
+                            start,
+                        ));
                     }
                     return Ok(());
                 }
@@ -481,11 +558,11 @@ impl<'a> Parser<'a, '_> {
             element.is_map = true;
             emit_at(
                 driver,
-                Event::MapStart(
-                    ContainerShape::new()
-                        .with_order(Order::Significant)
-                        .with_multimap(true),
-                ),
+                Event::MapStart({
+                    let mut shape = ContainerShape::with_order(Order::Significant);
+                    shape.set_multimap(true);
+                    shape
+                }),
                 element.start,
             )?;
         }
@@ -524,8 +601,11 @@ impl<'a> Parser<'a, '_> {
     ) -> Result<(), Error> {
         if self.stack.is_empty() {
             if self.root_done {
-                return Err(Error::new(ErrorKind::Syntax, "more than one root element")
-                    .with_offset(range.0));
+                return Err(Error::with_offset(
+                    ErrorKind::Syntax,
+                    "more than one root element",
+                    range.0,
+                ));
             }
             self.root = Some(self.root_data(tag, range.0)?);
         } else {
@@ -549,8 +629,11 @@ impl<'a> Parser<'a, '_> {
 
         for attr in tag.attributes() {
             let attr = attr.map_err(|err| {
-                Error::new(ErrorKind::Syntax, format!("invalid attribute: {err}"))
-                    .with_offset(range.0)
+                Error::with_offset(
+                    ErrorKind::Syntax,
+                    format!("invalid attribute: {err}"),
+                    range.0,
+                )
             })?;
             let raw = attr.key.as_ref();
             // namespace declarations are not data
@@ -666,10 +749,11 @@ impl<'a> Parser<'a, '_> {
                 Ok(())
             }
             None if is_blank(&text) => Ok(()),
-            None => Err(
-                Error::new(ErrorKind::Syntax, "text outside of the root element")
-                    .with_offset(range.0),
-            ),
+            None => Err(Error::with_offset(
+                ErrorKind::Syntax,
+                "text outside of the root element",
+                range.0,
+            )),
         }
     }
 
@@ -689,11 +773,11 @@ impl<'a> Parser<'a, '_> {
             Namespace::Alias(alias) => Cow::Owned(format!("{alias}:{local}")),
             Namespace::Uri(uri) => Cow::Owned(format!("{{{uri}}}{local}")),
             Namespace::Unknown if self.config.resolve_namespaces => {
-                return Err(Error::new(
+                return Err(Error::with_offset(
                     ErrorKind::Syntax,
                     format!("the prefix of `{written}` is not declared"),
-                )
-                .with_offset(offset));
+                    offset,
+                ));
             }
             Namespace::Written | Namespace::Unknown => match reborrow(self.input, written) {
                 Some(written) => Cow::Borrowed(written),
@@ -779,14 +863,16 @@ fn resolve_reference(reference: &BytesRef<'_>, offset: usize) -> Result<char, Er
         "amp" => Ok('&'),
         "apos" => Ok('\''),
         "quot" => Ok('"'),
-        name => Err(
-            Error::new(ErrorKind::Syntax, format!("unknown entity `&{name};`")).with_offset(offset),
-        ),
+        name => Err(Error::with_offset(
+            ErrorKind::Syntax,
+            format!("unknown entity `&{name};`"),
+            offset,
+        )),
     }
 }
 
 fn xml_error(err: quick_xml::Error, offset: usize) -> Error {
-    Error::new(ErrorKind::Syntax, format!("invalid XML: {err}")).with_offset(offset)
+    Error::with_offset(ErrorKind::Syntax, format!("invalid XML: {err}"), offset)
 }
 
 fn emit_key<'a>(

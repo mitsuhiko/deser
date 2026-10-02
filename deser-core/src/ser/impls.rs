@@ -321,7 +321,7 @@ macro_rules! serialize_slice {
                 }
 
                 fn container_shape(value: &$ty) -> $crate::ContainerShape {
-                    $crate::ContainerShape::new().with_len(value.len())
+                    $crate::ContainerShape::with_len(value.len())
                 }
 
                 fn serialize<'a>(
@@ -528,7 +528,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<VecDeque<T>> for VecDeque<A> {
     }
 
     fn container_shape(value: &VecDeque<T>) -> ContainerShape {
-        ContainerShape::new().with_len(value.len())
+        ContainerShape::with_len(value.len())
     }
 
     fn serialize<'a>(value: &'a VecDeque<T>, state: &mut State) -> Result<Emit<'a>, Error> {
@@ -594,7 +594,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<LinkedList<T>> for LinkedList<A> {
     begin_without_finish!(LinkedList<T>);
 
     fn container_shape(value: &LinkedList<T>) -> ContainerShape {
-        ContainerShape::new().with_len(value.len())
+        ContainerShape::with_len(value.len())
     }
 
     fn serialize<'a>(value: &'a LinkedList<T>, state: &mut State) -> Result<Emit<'a>, Error> {
@@ -620,7 +620,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<BinaryHeap<T>> for BinaryHeap<A> {
     }
 
     fn container_shape(value: &BinaryHeap<T>) -> ContainerShape {
-        ContainerShape::new().with_len(value.len())
+        ContainerShape::with_len(value.len())
     }
 
     fn serialize<'a>(value: &'a BinaryHeap<T>, state: &mut State) -> Result<Emit<'a>, Error> {
@@ -670,9 +670,7 @@ macro_rules! serialize_map {
                 }
 
                 fn container_shape(value: &$ty) -> $crate::ContainerShape {
-                    $crate::ContainerShape::new()
-                        .with_order($crate::Order::$order)
-                        .with_len(value.len())
+                    { let mut shape = $crate::ContainerShape::with_order($crate::Order::$order); shape.set_len(value.len()); shape }
                 }
 
                 fn serialize<'a>(
@@ -759,9 +757,7 @@ macro_rules! serialize_set {
                 }
 
                 fn container_shape(value: &$ty) -> $crate::ContainerShape {
-                    $crate::ContainerShape::new()
-                        .with_order($crate::Order::$order)
-                        .with_len(value.len())
+                    { let mut shape = $crate::ContainerShape::with_order($crate::Order::$order); shape.set_len(value.len()); shape }
                 }
 
                 fn describe(_value: &$ty, d: &mut dyn $crate::ser::Describe) {
@@ -914,7 +910,7 @@ macro_rules! serialize_for_tuple {
             }
 
             fn container_shape(_value: &($($name,)*)) -> ContainerShape {
-                ContainerShape::new().with_len(0 $(+ count_one!($name))*)
+                ContainerShape::with_len(0 $(+ count_one!($name))*)
             }
 
             fn describe(_value: &($($name,)*), d: &mut dyn Describe) {
@@ -1006,7 +1002,7 @@ impl<T: Sync, A: Serialize<T>, const N: usize> Serialize<[T; N]> for [A; N] {
     }
 
     fn container_shape(value: &[T; N]) -> ContainerShape {
-        ContainerShape::new().with_len(value.len())
+        ContainerShape::with_len(value.len())
     }
 
     fn serialize<'a>(value: &'a [T; N], state: &mut State) -> Result<Emit<'a>, Error> {

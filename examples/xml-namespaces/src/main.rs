@@ -129,7 +129,9 @@ const UNUSUAL: &str = r#"<a:feed xmlns:a="http://www.w3.org/2005/Atom"
 "#;
 
 fn main() {
-    const RESOLVE: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    const RESOLVE: DeserializerConfig = DeserializerConfig::builder()
+        .resolve_namespaces(true)
+        .build();
 
     let feed: Feed = RESOLVE.from_str(USUAL).unwrap();
     println!("{:#?}", feed);

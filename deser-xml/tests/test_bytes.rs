@@ -26,7 +26,7 @@ fn test_bytes_default() {
 #[test]
 fn test_bytes_config() {
     // the same context is used for writing and reading
-    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let hex = Context::with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
         .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();
@@ -51,7 +51,7 @@ fn test_bytes_config() {
 #[cfg(feature = "io")]
 #[test]
 fn test_bytes_config_reader() {
-    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let hex = Context::with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
         .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();

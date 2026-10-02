@@ -177,35 +177,44 @@ fn roundtrip_configs() -> Vec<(&'static str, SerializerConfig)> {
         ("default", SerializerConfig::new()),
         (
             "indentless",
-            SerializerConfig::new()
+            SerializerConfig::builder()
                 .indent_sequences(false)
-                .indent(Indent::Spaces(4)),
+                .indent(Indent::Spaces(4))
+                .build(),
         ),
         (
             "quoted",
-            SerializerConfig::new()
+            SerializerConfig::builder()
                 .quote_all(true)
                 .quote_style(QuoteStyle::Double)
-                .multiline(MultilineStyle::Quoted),
+                .multiline(MultilineStyle::Quoted)
+                .build(),
         ),
         (
             "compact",
-            SerializerConfig::new()
+            SerializerConfig::builder()
                 .indent(Indent::Spaces(1))
                 .compat(Version::V1_2)
-                .null_style(NullStyle::Empty),
+                .null_style(NullStyle::Empty)
+                .build(),
         ),
         (
             "flow",
-            SerializerConfig::new().flow(FlowPolicy::LeafIfFits(60)),
+            SerializerConfig::builder()
+                .flow(FlowPolicy::LeafIfFits(60))
+                .build(),
         ),
         (
             "folded",
-            SerializerConfig::new()
+            SerializerConfig::builder()
                 .flow(FlowPolicy::LeafIfFits(8))
-                .fold_width(Some(4)),
+                .fold_width(Some(4))
+                .build(),
         ),
-        ("single line", SerializerConfig::new().indent(Indent::None)),
+        (
+            "single line",
+            SerializerConfig::builder().indent(Indent::None).build(),
+        ),
     ]
 }
 
@@ -236,7 +245,7 @@ fn check_roundtrip(case: &Case) -> Outcome {
             Err(_) => return Outcome::Fail(format!("[{}] serializer panicked", name)),
         };
         // without indentation every document is on a line of its own
-        if config == SerializerConfig::new().indent(Indent::None)
+        if config == SerializerConfig::builder().indent(Indent::None).build()
             && output.lines().filter(|line| *line != "---").count() != docs.len()
         {
             return Outcome::Fail(format!(

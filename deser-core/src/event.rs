@@ -595,13 +595,6 @@ impl<'a> Bytes<'a> {
         }
     }
 
-    /// Sets the format that is used by formats without native bytes.
-    #[inline]
-    pub fn with_fallback(mut self, format: &'static BytesFormat) -> Bytes<'a> {
-        self.fallback = Some(format);
-        self
-    }
-
     /// Returns the data.
     #[inline]
     pub fn data(&self) -> &[u8] {
@@ -761,7 +754,7 @@ const MAX_PREALLOCATION: usize = 1024 * 1024;
 /// * [`order`](Self::order): how significant the order of the elements is.
 /// * [`len`](Self::len): the number of elements (entries for maps) if known.
 ///   Formats that can only estimate it give a hint instead (see
-///   [`with_len_hint`](Self::with_len_hint)).
+///   [`set_len_hint`](Self::set_len_hint)).
 /// * [`is_multimap`](Self::is_multimap): the keys of the map can be given
 ///   more than once.
 ///
@@ -769,7 +762,7 @@ const MAX_PREALLOCATION: usize = 1024 * 1024;
 /// use deser::{ContainerShape, Order};
 ///
 /// const SHAPE: ContainerShape =
-///     ContainerShape::new().with_order(Order::Sorted);
+///     ContainerShape::with_order(Order::Sorted);
 /// assert_eq!(SHAPE.order(), Order::Sorted);
 /// assert_eq!(SHAPE.len(), None);
 /// ```
@@ -789,15 +782,31 @@ impl ContainerShape {
         }
     }
 
+    /// Creates a shape with a number of elements (see
+    /// [`set_len`](Self::set_len)).
+    #[inline]
+    pub const fn with_len(len: usize) -> ContainerShape {
+        let mut shape = ContainerShape::new();
+        shape.set_len(len);
+        shape
+    }
+
+    /// Creates a shape with an order (see [`set_order`](Self::set_order)).
+    #[inline]
+    pub const fn with_order(order: Order) -> ContainerShape {
+        let mut shape = ContainerShape::new();
+        shape.set_order(order);
+        shape
+    }
+
     /// Sets the number of elements.
     ///
     /// Serializers can rely on it, for instance to write the length in
     /// front of the elements.
     #[inline]
-    pub const fn with_len(mut self, len: usize) -> ContainerShape {
+    pub const fn set_len(&mut self, len: usize) {
         self.len = len;
         self.flags &= !LEN_HINT;
-        self
     }
 
     /// Sets an estimate of the number of elements.
@@ -811,25 +820,25 @@ impl ContainerShape {
     /// ```
     /// use deser::ContainerShape;
     ///
-    /// let shape = ContainerShape::new().with_len_hint(10);
+    /// let mut shape = ContainerShape::new();
+    /// shape.set_len_hint(10);
     /// assert_eq!(shape.len(), None);
     /// assert_eq!(shape.cautious_capacity::<u64>(), 10);
     ///
     /// // the length replaces the estimate once it's known
-    /// assert_eq!(shape.with_len(3).len(), Some(3));
+    /// shape.set_len(3);
+    /// assert_eq!(shape.len(), Some(3));
     /// ```
     #[inline]
-    pub const fn with_len_hint(mut self, len: usize) -> ContainerShape {
+    pub const fn set_len_hint(&mut self, len: usize) {
         self.len = len;
         self.flags |= LEN_HINT;
-        self
     }
 
     /// Sets the order.
     #[inline]
-    pub const fn with_order(mut self, order: Order) -> ContainerShape {
+    pub const fn set_order(&mut self, order: Order) {
         self.flags = (self.flags & !ORDER_MASK) | order.to_bits();
-        self
     }
 
     /// Returns the number of elements (entries for maps) if known.
@@ -851,7 +860,7 @@ impl ContainerShape {
     /// Returns the number of elements of type `T` to preallocate.
     ///
     /// This is the [`len`](Self::len) of the shape (or its estimate, see
-    /// [`with_len_hint`](Self::with_len_hint)), capped so that no more
+    /// [`set_len_hint`](Self::set_len_hint)), capped so that no more
     /// than about a megabyte is preallocated, and `0` if the length is
     /// unknown.  As the length comes from the input it must not be trusted
     /// for allocations: a container that is larger grows as its elements
@@ -860,10 +869,10 @@ impl ContainerShape {
     /// ```
     /// use deser::ContainerShape;
     ///
-    /// let shape = ContainerShape::new().with_len(10);
+    /// let shape = ContainerShape::with_len(10);
     /// assert_eq!(shape.cautious_capacity::<u64>(), 10);
     ///
-    /// let shape = ContainerShape::new().with_len(usize::MAX - 1);
+    /// let shape = ContainerShape::with_len(usize::MAX - 1);
     /// assert_eq!(shape.cautious_capacity::<u64>(), 1024 * 1024 / 8);
     /// assert_eq!(ContainerShape::new().cautious_capacity::<u64>(), 0);
     /// ```
@@ -920,9 +929,9 @@ impl ContainerShape {
     ///
     /// let mut out = None::<Query>;
     /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver
-    ///     .emit(Event::MapStart(ContainerShape::new().with_multimap(true)))
-    ///     .unwrap();
+    /// let mut shape = ContainerShape::new();
+    /// shape.set_multimap(true);
+    /// driver.emit(Event::MapStart(shape)).unwrap();
     /// for (key, value) in [("tag", "a"), ("page", "1"), ("tag", "b")] {
     ///     driver.emit(key).unwrap();
     ///     driver.emit(Atom::Lexical(value.into())).unwrap();
@@ -936,18 +945,17 @@ impl ContainerShape {
     /// }));
     /// ```
     #[inline]
-    pub const fn with_multimap(mut self, yes: bool) -> ContainerShape {
+    pub const fn set_multimap(&mut self, yes: bool) {
         if yes {
             self.flags |= MULTIMAP;
         } else {
             self.flags &= !MULTIMAP;
         }
-        self
     }
 
     /// Returns `true` if the keys of the map can be given more than once.
     ///
-    /// See [`with_multimap`](Self::with_multimap).
+    /// See [`set_multimap`](Self::set_multimap).
     #[inline]
     pub const fn is_multimap(&self) -> bool {
         self.flags & MULTIMAP != 0
@@ -979,12 +987,12 @@ impl fmt::Debug for ContainerShape {
 #[cfg(test)]
 pub(crate) fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => Event::MapStart(
-            ContainerShape::new()
-                .with_order(shape.order())
-                .with_multimap(shape.is_multimap()),
-        ),
-        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::new().with_order(shape.order())),
+        Event::MapStart(shape) => Event::MapStart({
+            let mut shape = ContainerShape::with_order(shape.order());
+            shape.set_multimap(shape.is_multimap());
+            shape
+        }),
+        Event::SeqStart(shape) => Event::SeqStart(ContainerShape::with_order(shape.order())),
         event => event,
     }
 }

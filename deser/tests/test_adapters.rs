@@ -14,10 +14,10 @@ use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize, State};
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -104,7 +104,7 @@ fn test_display_from_str() {
             "fallback".into(),
             "::1".into(),
             "aliases".into(),
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "a".into(),
             Event::seq_start(),
             "1".into(),
@@ -224,11 +224,11 @@ fn test_containers() {
             "boxed".into(),
             "5".into(),
             "set".into(),
-            Event::SeqStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::SeqStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "6".into(),
             Event::SeqEnd,
             "map".into(),
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Arbitrary)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Arbitrary)),
             "1".into(),
             true.into(),
             Event::MapEnd,
@@ -548,7 +548,7 @@ fn test_custom_adapter() {
             "data".into(),
             "0102ab".into(),
             "parts".into(),
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "a".into(),
             "ff".into(),
             Event::MapEnd,
@@ -1350,7 +1350,11 @@ fn test_skip_blank() {
 
     // repeated keys of multimaps
     let value = config(
-        ContainerShape::new().with_multimap(true),
+        {
+            let mut shape = ContainerShape::new();
+            shape.set_multimap(true);
+            shape
+        },
         vec![
             "tags".into(),
             lexical(""),

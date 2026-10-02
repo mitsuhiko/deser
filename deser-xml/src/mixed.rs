@@ -21,7 +21,7 @@ use crate::Names;
 /// the text key.  `Mixed` keeps the order instead.  Every child element
 /// and every text between them is a value of `T`, which receives it as a
 /// map with a single entry: the name of the element (or the
-/// [text key](crate::DeserializerConfig::text_key) for text) and its
+/// [text key](crate::DeserializerConfig::set_text_key) for text) and its
 /// value.  This is what externally tagged enums expect:
 ///
 /// ```
@@ -122,7 +122,7 @@ use crate::Names;
 /// When serialized, each value becomes the entries of the element it
 /// serializes as (unit variants are empty elements).  As whitespace is
 /// text, indented output (see
-/// [`SerializerConfig::indent`](crate::SerializerConfig::indent)) writes
+/// [`SerializerConfig::set_indent`](crate::SerializerConfig::set_indent)) writes
 /// the content on a single line, unless it's [`SkipWhitespace`].
 pub struct Mixed<T, W = KeepWhitespace>(pub Vec<T>, PhantomData<fn() -> W>);
 

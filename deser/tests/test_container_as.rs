@@ -13,12 +13,8 @@ use deser::{Deserialize, Error, ErrorKind, Event, Serialize, State};
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => {
-            Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
-        Event::SeqStart(shape) => {
-            Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
+        Event::MapStart(shape) => Event::MapStart(deser::ContainerShape::with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(deser::ContainerShape::with_order(shape.order())),
         event => event,
     }
 }

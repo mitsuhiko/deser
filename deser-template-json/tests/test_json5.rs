@@ -95,9 +95,12 @@ fn test_non_finite_roundtrip() {
     // a configuration has to enable it, the default writes JSON
     let config = dialect::SerializerConfig::new();
     assert_eq!(config.to_string(&values).unwrap(), "[null,null]");
-    let config = config.non_finite_floats(true);
+    let config = config.into_builder().non_finite_floats(true).build();
     assert_eq!(config.to_string(&values).unwrap(), "[-Infinity,NaN]");
-    let config = config.pretty(dialect::Indent::Spaces(2));
+    let config = config
+        .into_builder()
+        .pretty(dialect::Indent::Spaces(2))
+        .build();
     assert_eq!(
         config.to_string(&values).unwrap(),
         "[\n  -Infinity,\n  NaN\n]"
@@ -142,8 +145,9 @@ fn test_spans() {
         hex: Spanned<u32>,
     }
 
-    let doc: Doc = DeserializerConfig::new()
+    let doc: Doc = DeserializerConfig::builder()
         .track_locations(true)
+        .build()
         .from_str("{\n  key: 'välue', // c\n  hex: 0xFF,\n}")
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());

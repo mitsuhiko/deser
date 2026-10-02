@@ -38,7 +38,7 @@ pub(crate) type FieldCollects = fn(usize) -> bool;
 /// How the value of a field is deserialized.
 ///
 /// In a multimap (see
-/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap))
 /// fields that are collections collect the values of all occurrences of
 /// their key.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -962,7 +962,7 @@ pub fn missing_field(missing: &[bool], names: &[&str], state: &State) -> Error {
             .iter()
             .zip(names)
             .filter(|(missing, _)| **missing)
-            .map(|(_, name)| state.attach_error_context(new_missing_field_error(name, state)));
+            .map(|(_, name)| state.error_in_context(new_missing_field_error(name, state)));
         if let Some(err) = Error::from_errors(errors) {
             return err;
         }

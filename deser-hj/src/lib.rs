@@ -78,10 +78,15 @@ mod parser;
 mod scan;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice, from_str};
+pub use self::de::{
+    Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
 #[cfg(feature = "io")]
 pub use deser_json::to_writer;
-pub use deser_json::{Indent, InlinePolicy, Serializer, SerializerConfig, Trailing, to_string};
+pub use deser_json::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, Trailing,
+    to_string,
+};

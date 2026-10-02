@@ -73,7 +73,7 @@ impl StreamState {
 /// A document ends where the next one starts (at a `---` line) or at a
 /// document end marker (`...`).  When reading a stream that stays open
 /// (for instance a socket), the writer should end every document with `...`
-/// (see [`SerializerConfig::end_documents`](crate::SerializerConfig::end_documents)), otherwise a document is only
+/// (see [`SerializerConfig::set_end_documents`](crate::SerializerConfig::set_end_documents)), otherwise a document is only
 /// complete once the next one starts.  Comments and directives before a
 /// document belong to it.
 ///

@@ -146,22 +146,24 @@ fn add_repeated(map: &mut Map, key: &Value, value: Value) {
         Kind::Seq(ref mut seq) if seq.is_repeated() => seq.items.push(value),
         _ => {
             let first = std::mem::replace(existing, Value::from(()));
-            *existing = Value::from(Seq::from(vec![first, value]).with_repeated(true));
+            let mut seq = Seq::from(vec![first, value]);
+            seq.set_repeated(true);
+            *existing = Value::from(seq);
         }
     }
 }
 
 #[cold]
 fn duplicate_key(key: &Value) -> Error {
-    let err = Error::new(
+    let mut err = Error::new(
         ErrorKind::DuplicateKey,
         format!("duplicate map key {:?}", key),
     );
     // point at the key if its location is known
-    match key.span() {
-        Some(span) => err.with_offset(span.range().start),
-        None => err,
+    if let Some(span) = key.span() {
+        err.set_offset(span.range().start);
     }
+    err
 }
 
 impl<'a, 'de> Sink<'de> for ValueSink<'a> {
@@ -188,11 +190,10 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         }
         let shape = state.container_shape();
         self.meta = capture_meta(state);
-        self.building = Building::Map(
-            Map::with_capacity(shape.cautious_capacity::<(Value, Value)>())
-                .with_order(shape.order())
-                .with_multimap(shape.is_multimap()),
-        );
+        let mut map = Map::with_capacity(shape.cautious_capacity::<(Value, Value)>());
+        map.set_order(shape.order());
+        map.set_multimap(shape.is_multimap());
+        self.building = Building::Map(map);
         Ok(())
     }
 
@@ -205,9 +206,9 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         }
         let shape = state.container_shape();
         self.meta = capture_meta(state);
-        self.building = Building::Seq(
-            Seq::with_capacity(shape.cautious_capacity::<Value>()).with_order(shape.order()),
-        );
+        let mut seq = Seq::with_capacity(shape.cautious_capacity::<Value>());
+        seq.set_order(shape.order());
+        self.building = Building::Seq(seq);
         Ok(())
     }
 
@@ -258,7 +259,9 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         match self.building {
             Building::Map(_) => self.flush(),
             Building::None if !matches!(self.out, Out::Seq(_)) => {
-                self.building = Building::Map(Map::new().with_multimap(state.is_multimap()));
+                let mut map = Map::new();
+                map.set_multimap(state.is_multimap());
+                self.building = Building::Map(map);
             }
             _ => return Ok(None),
         }

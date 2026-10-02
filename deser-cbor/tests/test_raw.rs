@@ -54,8 +54,9 @@ fn test_serialize() {
     // written as it is
     assert_eq!(deser_cbor::to_vec(&envelope).unwrap(), input);
     // canonical output encodes the value again (with its tag)
-    let canonical = SerializerConfig::new()
+    let canonical = SerializerConfig::builder()
         .canonical(true)
+        .build()
         .to_vec(&envelope)
         .unwrap();
     assert!(

@@ -21,7 +21,7 @@ what the types match, and the serializer turns them back into prefixes.
   `{http://www.w3.org/2005/Atom}title`, `atom!()` is the URI).
 - Two documents with different prefixes (a default namespace, prefixes
   on the root and on inner elements) read into the same value with
-  `DeserializerConfig::resolve_namespaces`.
+  `DeserializerConfig::set_resolve_namespaces`.
 - Attributes without prefix are in no namespace (`@href`), the `xml`
   prefix is kept (`@xml:lang`).
 - XHTML content read in order with `Mixed`, its variants named after

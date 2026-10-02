@@ -24,7 +24,7 @@ use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
 /// use deser_hj::DeserializerConfig;
 ///
 /// const CONFIG: DeserializerConfig =
-///     DeserializerConfig::new().exact_numbers(false);
+///     DeserializerConfig::builder().exact_numbers(false).build();
 /// let value: Vec<f64> = CONFIG.from_str("[0.10, 1e5]").unwrap();
 /// assert_eq!(value, [0.1, 1e5]);
 /// ```
@@ -51,6 +51,16 @@ impl DeserializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
     /// Controls what may follow a value.
     ///
     /// By default ([`Trailing::Strict`]) only whitespace may follow the
@@ -66,7 +76,7 @@ impl DeserializerConfig {
     ///         .is_err()
     /// );
     /// const STOP: DeserializerConfig =
-    ///     DeserializerConfig::new().trailing(Trailing::Stop);
+    ///     DeserializerConfig::builder().trailing(Trailing::Stop).build();
     /// assert_eq!(STOP.from_str::<Vec<u32>>("[1] trash").unwrap(), [1]);
     /// ```
     ///
@@ -79,7 +89,7 @@ impl DeserializerConfig {
     /// };
     ///
     /// const LINES: DeserializerConfig =
-    ///     DeserializerConfig::new().trailing(Trailing::Newline);
+    ///     DeserializerConfig::builder().trailing(Trailing::Newline).build();
     /// let mut de =
     ///     Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
     /// let mut values = Vec::new();
@@ -91,9 +101,8 @@ impl DeserializerConfig {
     /// }
     /// assert_eq!(values, [1, 3]);
     /// ```
-    pub const fn trailing(mut self, trailing: Trailing) -> DeserializerConfig {
+    pub const fn set_trailing(&mut self, trailing: Trailing) {
         self.trailing = trailing;
-        self
     }
 
     /// Returns what may follow a value.
@@ -115,9 +124,8 @@ impl DeserializerConfig {
     /// ranges into lines and columns, for instance with the `Spanned` type
     /// of [`deser-location`](https://docs.rs/deser-location).  This copies
     /// the input.
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_track_locations(&mut self, yes: bool) {
         self.track_locations = yes;
-        self
     }
 
     /// Enables or disables exact numbers.
@@ -148,14 +156,13 @@ impl DeserializerConfig {
     /// plain floats as the text can be recovered from the value.  This keeps
     /// the common case fast.  When disabled, all floats are emitted as plain
     /// floats.
-    pub const fn exact_numbers(mut self, yes: bool) -> DeserializerConfig {
+    pub const fn set_exact_numbers(&mut self, yes: bool) {
         self.exact_numbers = yes;
-        self
     }
 
     /// Deserializes JSON from the given string.
     ///
-    /// What may follow the value depends on [`trailing`](Self::trailing).
+    /// What may follow the value depends on [`set_trailing`](Self::set_trailing).
     /// With [`Trailing::Newline`] this reads the first line.
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_str(s, driver))
@@ -194,11 +201,64 @@ impl DeserializerConfig {
     }
 }
 
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Controls what may follow a value.
+    ///
+    /// See [`DeserializerConfig::set_trailing`].
+    pub const fn trailing(mut self, trailing: Trailing) -> DeserializerConfigBuilder {
+        self.value.set_trailing(trailing);
+        self
+    }
+
+    /// Enables or disables location tracking.
+    ///
+    /// See [`DeserializerConfig::set_track_locations`].
+    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_track_locations(yes);
+        self
+    }
+
+    /// Enables or disables exact numbers.
+    ///
+    /// See [`DeserializerConfig::set_exact_numbers`].
+    pub const fn exact_numbers(mut self, yes: bool) -> DeserializerConfigBuilder {
+        self.value.set_exact_numbers(yes);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        self.value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+}
+
 /// Deserializes a serializable from JSON.
 ///
 /// Every call to [`deserialize`](Self::deserialize) reads the next value.
 /// What may follow a value is controlled by
-/// [`DeserializerConfig::trailing`].  By default only whitespace may follow
+/// [`DeserializerConfig::set_trailing`].  By default only whitespace may follow
 /// so there is only a single value.  With [`Trailing::Newline`] the
 /// deserializer reads [JSON Lines](https://jsonlines.org/):
 ///
@@ -207,7 +267,7 @@ impl DeserializerConfig {
 ///     Deserializer, DeserializerConfig, Trailing,
 /// };
 ///
-/// let config = DeserializerConfig::new().trailing(Trailing::Newline);
+/// let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 /// let mut de =
 ///     Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
 /// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
@@ -317,9 +377,10 @@ impl<'a> Deserializer<'a> {
         if self.is_end() {
             return Ok(());
         }
-        Err(Error::new(ErrorKind::Syntax, "garbage after input")
-            .with_offset(self.next_token())
-            .resolve_position(self.input))
+        let mut err =
+            Error::with_offset(ErrorKind::Syntax, "garbage after input", self.next_token());
+        err.resolve_position(self.input);
+        Err(err)
     }
 
     /// Returns where the next token starts (or the end of the input).
@@ -344,7 +405,7 @@ impl<'a> Deserializer<'a> {
     /// Deserializes the next value.
     ///
     /// What may follow the value depends on
-    /// [`DeserializerConfig::trailing`].  Fails with
+    /// [`DeserializerConfig::set_trailing`].  Fails with
     /// [`ErrorKind::EndOfFile`] if there are no more values.
     ///
     /// If a value fails to deserialize (because it's malformed or does not
@@ -392,7 +453,7 @@ impl<'a> Deserializer<'a> {
     ///     Deserializer, DeserializerConfig, Trailing,
     /// };
     ///
-    /// let config = DeserializerConfig::new().trailing(Trailing::Newline);
+    /// let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
     /// let mut de = Deserializer::from_str_with_config("1\n2\n3\n", &config);
     /// let items = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(items, [1, 2, 3]);
@@ -463,14 +524,14 @@ impl<'a> Deserializer<'a> {
 
     /// Attaches the location to an error.
     #[cold]
-    fn locate_error(&self, err: Error) -> Error {
+    fn locate_error(&self, mut err: Error) -> Error {
         // errors of the parser are located at the current position, errors
         // of the sinks at the event that failed
-        let err = match err.offset() {
-            Some(_) => err,
-            None => err.with_offset(self.pos),
-        };
-        err.resolve_position(self.input)
+        if err.offset().is_none() {
+            err.set_offset(self.pos);
+        }
+        err.resolve_position(self.input);
+        err
     }
 
     fn drive_impl(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {

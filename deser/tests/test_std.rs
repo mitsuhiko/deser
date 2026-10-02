@@ -18,12 +18,8 @@ use deser::{Atom, Deserialize, Error, ErrorKind, Event, Serialize};
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => {
-            Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
-        Event::SeqStart(shape) => {
-            Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
+        Event::MapStart(shape) => Event::MapStart(deser::ContainerShape::with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(deser::ContainerShape::with_order(shape.order())),
         event => event,
     }
 }
@@ -219,7 +215,7 @@ fn test_hash_set_with_hasher() {
     assert_eq!(
         events,
         vec![
-            Event::SeqStart(deser::ContainerShape::new().with_order(deser::Order::Arbitrary)),
+            Event::SeqStart(deser::ContainerShape::with_order(deser::Order::Arbitrary)),
             1u64.into(),
             Event::SeqEnd
         ]

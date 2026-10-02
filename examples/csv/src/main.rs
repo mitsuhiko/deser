@@ -41,7 +41,7 @@ const INPUT: &str = "\u{feff}id,customer,kind,isbn,copies,value,tags,note\r\n\
 fn main() {
     // empty fields are null, so `copies` of a gift is missing instead of
     // an empty number
-    let config = DeserializerConfig::new().nulls(Nulls::Empty);
+    let config = DeserializerConfig::builder().nulls(Nulls::Empty).build();
     let mut reader = config.reader(INPUT.as_bytes());
     let mut orders = Vec::new();
     loop {
@@ -75,8 +75,9 @@ fn main() {
     const COLUMNS: &[&str] = &[
         "id", "customer", "kind", "isbn", "copies", "value", "tags", "note",
     ];
-    let csv = SerializerConfig::new()
+    let csv = SerializerConfig::builder()
         .columns(COLUMNS)
+        .build()
         .to_string(&orders)
         .unwrap();
     println!("\n{}", csv);
@@ -85,10 +86,9 @@ fn main() {
 
     // TSV as databases write it: escapes instead of quotes and `\N` for
     // null
-    let tsv = SerializerConfig::tsv()
-        .columns(COLUMNS)
-        .to_string(&orders)
-        .unwrap();
+    let mut config = SerializerConfig::tsv();
+    config.set_columns(COLUMNS);
+    let tsv = config.to_string(&orders).unwrap();
     println!("{}", tsv);
     let back: Vec<Order> = DeserializerConfig::tsv().from_str(&tsv).unwrap();
     assert_eq!(back, orders);

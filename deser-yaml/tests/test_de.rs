@@ -141,7 +141,7 @@ fn test_plain_scalars_as_strings() {
     assert_eq!(err.message(), "unexpected float, expected u32");
 
     // YAML 1.1 has other booleans and numbers
-    let config = DeserializerConfig::new().version(Version::V1_1);
+    let config = DeserializerConfig::builder().version(Version::V1_1).build();
     assert!(config.from_str::<bool>("yes").unwrap());
     assert_eq!(config.from_str::<String>("yes").unwrap(), "yes");
     assert_eq!(config.from_str::<u32>("1:30").unwrap(), 90);
@@ -184,7 +184,7 @@ true: yes",
         #[deser(rename = "null")]
         nothing: bool,
     }
-    let config = DeserializerConfig::new().version(Version::V1_1);
+    let config = DeserializerConfig::builder().version(Version::V1_1).build();
     let workflow: Workflow = config
         .from_str(
             "on: push
@@ -221,7 +221,7 @@ fn test_plain_scalar_enums() {
         One,
     }
 
-    let config = DeserializerConfig::new().version(Version::V1_1);
+    let config = DeserializerConfig::builder().version(Version::V1_1).build();
     assert_eq!(config.from_str::<Answer>("yes").unwrap(), Answer::Yes);
     assert_eq!(config.from_str::<Answer>("no").unwrap(), Answer::No);
     assert_eq!(from_str::<Answer>("1").unwrap(), Answer::One);
@@ -489,14 +489,18 @@ fn test_alias_limit() {
     );
 
     let input = "a: &a [1, 2]\nb: [*a, *a]";
-    let mut de =
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new().alias_limit(8));
+    let mut de = Deserializer::from_str_with_config(
+        input,
+        &DeserializerConfig::builder().alias_limit(8).build(),
+    );
     assert_eq!(
         de.deserialize::<Value>().unwrap(),
         map! { "a" => seq![1, 2], "b" => seq![seq![1, 2], seq![1, 2]] }
     );
-    let mut de =
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new().alias_limit(7));
+    let mut de = Deserializer::from_str_with_config(
+        input,
+        &DeserializerConfig::builder().alias_limit(7).build(),
+    );
     assert!(de.deserialize::<Value>().is_err());
 }
 
@@ -504,7 +508,7 @@ fn test_alias_limit() {
 fn test_max_depth() {
     let parse = |max_depth| {
         Deserializer::from_str("[[[[1]]]]").deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(deser::de::Limits::new().max_depth(max_depth))
+            driver.push_layer(deser::de::Limits::builder().max_depth(max_depth).build())
         })
     };
     assert!(parse(4).is_ok());
@@ -638,8 +642,9 @@ fn test_versions() {
             "yes", "No", "on", 777, 511, "1_000", "1:30", "0b101", 3000.0
         ]
     );
-    let value: Value = DeserializerConfig::new()
+    let value: Value = DeserializerConfig::builder()
         .version(Version::V1_1)
+        .build()
         .from_str(input)
         .unwrap();
     assert_eq!(
@@ -650,11 +655,11 @@ fn test_versions() {
     // the directive overrides the configured version
     let mut de = Deserializer::from_str_with_config(
         "%YAML 1.1\n--- yes\n...\n%YAML 1.2\n--- yes\n--- yes\n",
-        &DeserializerConfig::new().version(Version::V1_1),
+        &DeserializerConfig::builder().version(Version::V1_1).build(),
     );
     assert_eq!(
         de.config().clone(),
-        DeserializerConfig::new().version(Version::V1_1)
+        DeserializerConfig::builder().version(Version::V1_1).build()
     );
     assert_eq!(de.deserialize::<Value>().unwrap(), Value::Bool(true));
     assert_eq!(de.deserialize::<Value>().unwrap(), "yes".into());
@@ -818,8 +823,9 @@ fn test_merge_key_semantics() {
 fn test_merge_keys_disabled_or_quoted() {
     let value: Value = from_str("'<<': 1\n\"<<\": 2\n").unwrap();
     assert_eq!(value, map! { "<<" => 1, "<<" => 2 });
-    let value: Value = DeserializerConfig::new()
+    let value: Value = DeserializerConfig::builder()
         .merge_keys(false)
+        .build()
         .from_str("<<: {x: 1}")
         .unwrap();
     assert_eq!(value, map! { "<<" => map! { "x" => 1 } });
@@ -906,7 +912,9 @@ fn test_error_locations() {
     // the limits of the configuration are enforced by a layer
     use deser::de::Limits;
     let err = Deserializer::from_str("a: [1, 2, 3]")
-        .deserialize_with::<Value, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
+        .deserialize_with::<Value, _>(|driver| {
+            driver.push_layer(Limits::builder().max_items(2).build())
+        })
         .unwrap_err();
     assert_eq!(
         err.to_string(),

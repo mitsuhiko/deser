@@ -207,11 +207,11 @@ pub fn unknown_field(
         Some(fields)
     };
     let make_error = || {
-        let err = unknown_field_error(key, fields);
-        match offset {
-            Some(offset) => err.with_offset(offset),
-            None => err,
+        let mut err = unknown_field_error(key, fields);
+        if let Some(offset) = offset {
+            err.set_offset(offset);
         }
+        err
     };
     decide(make_error, deny, state)
 }
@@ -234,12 +234,12 @@ fn decide(make_error: impl FnOnce() -> Error, deny: bool, state: &mut State) -> 
 
 /// Attaches the context of the current event to an error that is not
 /// returned (and thus not located by the drivers and formats).
-fn located(err: Error, state: &State) -> Error {
-    let err = state.attach_error_context(err);
-    match state.get::<Source>() {
-        Some(source) => err.resolve_position(source.0.as_bytes()),
-        None => err,
+fn located(mut err: Error, state: &State) -> Error {
+    state.attach_error_context(&mut err);
+    if let Some(source) = state.get::<Source>() {
+        err.resolve_position(source.0.as_bytes());
     }
+    err
 }
 
 /// Reports a key a flattened value took but did not use (see

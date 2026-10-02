@@ -180,7 +180,7 @@ fn main() {
             driver.push_layer(limits);
         })
     };
-    let err = parse(Limits::new().max_items(5)).unwrap_err();
+    let err = parse(Limits::builder().max_items(5).build()).unwrap_err();
     println!("{}", err);
     assert_eq!(
         err.attachment::<Path>().unwrap().to_string(),

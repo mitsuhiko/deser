@@ -10,10 +10,10 @@ use deser::{Atom, ContainerShape, Deserialize, Error, ErrorKind, Event, Serializ
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -153,7 +153,7 @@ fn test_external_capture() {
                 events_of(content),
                 recorded(vec![
                     // recordings know the length of containers
-                    Event::SeqStart(ContainerShape::new().with_len(2)),
+                    Event::SeqStart(ContainerShape::with_len(2)),
                     1u64.into(),
                     2u64.into(),
                     Event::SeqEnd
@@ -544,12 +544,12 @@ fn test_program_config() {
             Event::seq_start(),
             Event::map_start(),
             "bash".into(),
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             Event::MapEnd,
             Event::MapEnd,
             Event::map_start(),
             "vim".into(),
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "theme".into(),
             "dark".into(),
             Event::MapEnd,

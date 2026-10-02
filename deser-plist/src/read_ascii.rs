@@ -55,7 +55,7 @@ impl<'i> Reader<'i> {
         self.skip()?;
         if self.pos == self.src.len() {
             // an empty `.strings` file
-            out.emit_at(0, 0, Event::MapStart(ContainerShape::new().with_len(0)))?;
+            out.emit_at(0, 0, Event::MapStart(ContainerShape::with_len(0)))?;
             return out.emit_at(0, 0, Event::MapEnd);
         }
         if self.is_strings_file()? {

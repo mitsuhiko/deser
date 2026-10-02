@@ -10,12 +10,8 @@ use deser::{Atom, Deserialize, Error, Event, Serialize};
 /// Removes the length from container starts, the tests are not about it.
 fn without_len(event: Event<'static>) -> Event<'static> {
     match event {
-        Event::MapStart(shape) => {
-            Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
-        Event::SeqStart(shape) => {
-            Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
-        }
+        Event::MapStart(shape) => Event::MapStart(deser::ContainerShape::with_order(shape.order())),
+        Event::SeqStart(shape) => Event::SeqStart(deser::ContainerShape::with_order(shape.order())),
         event => event,
     }
 }
@@ -117,7 +113,7 @@ fn test_tuple_struct_shape() {
     let (event, _, _) = driver.next().unwrap().unwrap();
     assert_eq!(
         event.to_static(),
-        Event::SeqStart(deser::ContainerShape::new().with_len(3))
+        Event::SeqStart(deser::ContainerShape::with_len(3))
     );
 }
 

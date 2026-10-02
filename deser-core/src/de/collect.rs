@@ -14,7 +14,7 @@ use crate::error::Error;
 /// use deser::de::{CollectErrors, DeserializeDriver};
 /// use deser::{Context, Event};
 ///
-/// let context = Context::new().with(CollectErrors::new().max_errors(10));
+/// let context = Context::with(CollectErrors::with_max_errors(10));
 ///
 /// let mut out = None::<Vec<u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
@@ -36,11 +36,20 @@ impl CollectErrors {
         CollectErrors { max: None }
     }
 
+    /// Collects errors up to a limit (see [`set_max_errors`](Self::set_max_errors)).
+    pub const fn with_max_errors(max: usize) -> CollectErrors {
+        CollectErrors { max: Some(max) }
+    }
+
     /// Limits the number of errors that are collected (see
     /// [`State::set_max_errors`]).
-    pub const fn max_errors(mut self, max: usize) -> CollectErrors {
+    pub const fn set_max_errors(&mut self, max: usize) {
         self.max = Some(max);
-        self
+    }
+
+    /// Returns the limit of errors (see [`set_max_errors`](Self::set_max_errors)).
+    pub const fn max_errors(&self) -> Option<usize> {
+        self.max
     }
 }
 
@@ -141,14 +150,14 @@ impl CollectedErrors {
         // once they were complete) do not count again
         let new = err.uncollected_count();
         if new == 0 && state.collects_errors() || state.take_error_slots(new) {
-            self.add(state.attach_error_context(err).mark_collected());
+            self.add(state.error_in_context(err).mark_collected());
             Ok(())
         } else if self.errors.is_none() {
             Err(err)
         } else {
             // the new errors are not marked as collected: the containers the
             // error passes through do not collect it either
-            self.add(state.attach_error_context(err));
+            self.add(state.error_in_context(err));
             Err(self.take().unwrap())
         }
     }
@@ -161,7 +170,7 @@ impl CollectedErrors {
     /// of an event attached yet get the context of the current event.
     #[cold]
     pub fn push(&mut self, err: Error, state: &State) {
-        self.add(state.attach_error_context(err).mark_collected());
+        self.add(state.error_in_context(err).mark_collected());
     }
 
     /// Takes the collected errors as a single error.

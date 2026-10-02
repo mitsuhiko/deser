@@ -555,8 +555,9 @@ fn test_deserializer() {
 
     // the depth is limited with a layer
     let limited = |input: &[u8]| {
-        Deserializer::from_slice(input)
-            .deserialize_with::<Value, _>(|driver| driver.push_layer(Limits::new().max_depth(2)))
+        Deserializer::from_slice(input).deserialize_with::<Value, _>(|driver| {
+            driver.push_layer(Limits::builder().max_depth(2).build())
+        })
     };
     assert!(limited(b"((()))").is_err());
     assert!(limited(b"(())").is_ok());
@@ -585,7 +586,7 @@ fn test_locations() {
         b: Spanned<Vec<Spanned<String>>>,
     }
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
-    let config = DeserializerConfig::new().track_locations(true);
+    let config = DeserializerConfig::builder().track_locations(true).build();
 
     let doc: Doc = config
         .from_slice(b"{\n  a = 1;\n  b = (x, \"y\");\n}")

@@ -244,7 +244,7 @@ fn tag_display(tag: Tag<'static>) -> Cow<'static, str> {
 ///
 /// let mut variants = OpenEnums::new();
 /// variants.register::<dyn Shape, Circle>().unwrap();
-/// let context = Context::new().with(variants);
+/// let context = Context::with(variants);
 /// ```
 ///
 /// Libraries that provide variants usually provide a function that
@@ -469,9 +469,9 @@ pub fn describe<O: ?Sized + OpenEnum>(value: &O, d: &mut dyn Describe) {
 /// Returns the shape of the trait object of an open enum.
 pub fn container_shape<O: ?Sized + OpenEnum>() -> ContainerShape {
     match O::INFO.repr {
-        OpenRepr::External => ContainerShape::new().with_len(1),
+        OpenRepr::External => ContainerShape::with_len(1),
         OpenRepr::Internal { .. } => ContainerShape::new(),
-        OpenRepr::Adjacent { .. } => ContainerShape::new().with_len(2),
+        OpenRepr::Adjacent { .. } => ContainerShape::with_len(2),
     }
 }
 

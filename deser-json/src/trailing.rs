@@ -2,7 +2,7 @@
 
 /// Controls what may follow a value.
 ///
-/// See [`DeserializerConfig::trailing`](crate::DeserializerConfig::trailing).
+/// See [`DeserializerConfig::set_trailing`](crate::DeserializerConfig::set_trailing).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Trailing {
     /// Only whitespace may follow the value.

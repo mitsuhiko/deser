@@ -277,7 +277,7 @@ fn test_layer_errors_are_not_recovered() {
     let mut de = dialect::Deserializer::from_str(r#"[1, ["x", [[[1]]]]]"#);
     let err = de
         .deserialize_with::<Items<Vec<Vec<u32>>>, _>(|driver| {
-            driver.push_layer(Limits::new().max_depth(4))
+            driver.push_layer(Limits::builder().max_depth(4).build())
         })
         .unwrap_err();
     assert_eq!(
@@ -439,7 +439,9 @@ fn test_adapters_do_not_hide_syntax_errors() {
 fn test_default_on_error_with_limits() {
     let mut de = dialect::Deserializer::from_str(r#"{"point": [[[[1]]]], "after": 1}"#);
     let err = de
-        .deserialize_with::<Lenient, _>(|driver| driver.push_layer(Limits::new().max_depth(3)))
+        .deserialize_with::<Lenient, _>(|driver| {
+            driver.push_layer(Limits::builder().max_depth(3).build())
+        })
         .unwrap_err();
     assert_eq!(
         err.to_string(),

@@ -272,9 +272,13 @@ impl Validation {
     ///
     /// See [`State::set_max_errors`].  This limits the errors that fail
     /// the deserialization, not the errors that values keep.
-    pub fn max_errors(mut self, max: usize) -> Validation {
+    pub fn set_max_errors(&mut self, max: usize) {
         self.max_errors = Some(max);
-        self
+    }
+
+    /// Returns the limit of errors (see [`set_max_errors`](Self::set_max_errors)).
+    pub fn max_errors(&self) -> Option<usize> {
+        self.max_errors
     }
 
     /// Sets up a deserialization.

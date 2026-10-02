@@ -43,7 +43,7 @@ Why use it:
 * **Borrowing:** strings without escapes are passed on borrowed so types
   can hold `&str` pointing into the input.
 * **Numbers without loss:** 128 bit integers are written and read as
-  numbers, and with `DeserializerConfig::exact_numbers` decimals such as
+  numbers, and with `DeserializerConfig::set_exact_numbers` decimals such as
   `0.10` keep their exact text for types like `rust_decimal::Decimal`.
 * **Bytes:** `Vec<u8>` is base64 by default and can be configured in the
   context or per field (hex, arrays of integers, ...).
@@ -56,6 +56,6 @@ Why use it:
   Values are parsed while their input arrives, so only incomplete tokens
   are buffered, and written while they are serialized.
 * **Source locations:** errors carry line and column and with
-  `DeserializerConfig::track_locations` values can be wrapped in
+  `DeserializerConfig::set_track_locations` values can be wrapped in
   [`deser_location::Spanned`](https://docs.rs/deser-location) to learn
   where they came from.

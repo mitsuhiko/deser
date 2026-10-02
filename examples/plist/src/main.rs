@@ -131,8 +131,9 @@ fn main() {
         bookmark: vec![0x62, 0x6f, 0x6f, 0x6b, 0x00, 0x02],
         proxy: None,
     };
-    let binary = SerializerConfig::new()
+    let binary = SerializerConfig::builder()
         .format(Format::Binary)
+        .build()
         .to_vec(&prefs)
         .unwrap();
     println!(
@@ -171,8 +172,9 @@ fn main() {
     assert!(!window.fullscreen);
 
     // and written back in the style of Xcode
-    let ascii = SerializerConfig::new()
+    let ascii = SerializerConfig::builder()
         .format(Format::Ascii)
+        .build()
         .to_string(&window)
         .unwrap();
     println!("\n{}", ascii);

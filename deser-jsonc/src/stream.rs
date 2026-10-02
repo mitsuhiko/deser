@@ -105,9 +105,11 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
         (pos, _) if pos == input.len() && eof => Ok(Progress::End),
         // an incomplete comment is scanned again with more input
         (pos, false) if !eof => Ok(Progress::NeedMore { consumed: pos }),
-        (pos, _) => {
-            Err(Error::new(ErrorKind::Syntax, "garbage after input").with_offset(offset + pos))
-        }
+        (pos, _) => Err(Error::with_offset(
+            ErrorKind::Syntax,
+            "garbage after input",
+            offset + pos,
+        )),
     }
 }
 
@@ -285,7 +287,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 
 /// Reads a stream of JSON values (see [`deser::stream`](deser_core::stream)).
 ///
-/// How the stream is split depends on [`DeserializerConfig::trailing`]:
+/// How the stream is split depends on [`DeserializerConfig::set_trailing`]:
 ///
 /// * [`Trailing::Strict`]: the stream holds a single value which is parsed
 ///   once the whole stream was read.
@@ -309,7 +311,7 @@ fn scan_structure(input: &[u8], pos: &mut usize, value: &mut Value) -> Option<us
 /// use deser_jsonc::{DeserializerConfig, Trailing};
 ///
 /// const LINES: DeserializerConfig =
-///     DeserializerConfig::new().trailing(Trailing::Newline);
+///     DeserializerConfig::builder().trailing(Trailing::Newline).build();
 /// let mut reader = LINES.reader(&b"[1, 2]\n[3]\n"[..]);
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![1, 2]));
 /// assert_eq!(reader.read::<Vec<u32>>().unwrap(), Some(vec![3]));

@@ -148,7 +148,7 @@ fn test_structs() {
     }
     let err = from_str::<Single>("<a><name>x</name><name>y</name></a>").unwrap_err();
     assert_eq!(err.message(), "duplicate field `name`");
-    let last = deser::Context::new().with(DuplicateKeys::Last);
+    let last = deser::Context::with(DuplicateKeys::Last);
     assert_eq!(
         Deserializer::from_str("<a><name>x</name><name>y</name></a>")
             .deserialize_in::<Single>(&last)
@@ -357,7 +357,9 @@ fn test_resolve_namespaces() {
         amount: u32,
     }
 
-    const CONFIG: DeserializerConfig = DeserializerConfig::new().resolve_namespaces(true);
+    const CONFIG: DeserializerConfig = DeserializerConfig::builder()
+        .resolve_namespaces(true)
+        .build();
     let expected = Envelope {
         body: Body {
             price: vec![
@@ -436,9 +438,10 @@ fn test_resolve_namespaces() {
 
 #[test]
 fn test_config() {
-    const CONFIG: DeserializerConfig = DeserializerConfig::new()
+    const CONFIG: DeserializerConfig = DeserializerConfig::builder()
         .attribute_prefix("")
-        .text_key("#text");
+        .text_key("#text")
+        .build();
     let value: BTreeMap<String, String> = CONFIG.from_str(r#"<a href="x">y</a>"#).unwrap();
     assert_eq!(value["href"], "x");
     assert_eq!(value["#text"], "y");
@@ -485,7 +488,7 @@ fn test_limits() {
     // elements are maps if they have attributes or child elements
     let parse = |max_depth| {
         Deserializer::from_str("<a><b><c/></b></a>").deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(Limits::new().max_depth(max_depth))
+            driver.push_layer(Limits::builder().max_depth(max_depth).build())
         })
     };
     assert!(parse(2).is_ok());

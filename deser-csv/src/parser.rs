@@ -626,14 +626,14 @@ impl Scanner {
         self.pos = pos;
         if !eof {
             if pos > options.max_record_len {
-                return Err(Error::new(
+                return Err(Error::with_offset(
                     ErrorKind::LimitExceeded,
                     format!(
                         "record is longer than the maximum of {} bytes",
                         options.max_record_len
                     ),
-                )
-                .with_offset(0));
+                    0,
+                ));
             }
             return Ok(Scan::Incomplete);
         }

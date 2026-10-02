@@ -27,9 +27,10 @@ impl Read for Chunked<'_> {
     }
 }
 
-const BASE: DeserializerConfig = DeserializerConfig::new()
+const BASE: DeserializerConfig = DeserializerConfig::builder()
     .headers(Headers::None)
-    .flexible(true);
+    .flexible(true)
+    .build();
 
 fn csv(rows: &[&[&str]]) -> Result<Csv, String> {
     Ok(rows
@@ -191,62 +192,77 @@ fn test_rows() {
 fn test_dialects() {
     parses_to(
         "term_weird",
-        &BASE.terminator(Terminator::Byte(b'z')),
+        &BASE
+            .into_builder()
+            .terminator(Terminator::Byte(b'z'))
+            .build(),
         "zza,bzc,dzz",
         csv(&[&["a", "b"], &["c", "d"]]),
     );
     parses_to(
         "ascii_delimited",
-        &BASE.delimiter(0x1f).terminator(Terminator::Byte(0x1e)),
+        &BASE
+            .into_builder()
+            .delimiter(0x1f)
+            .terminator(Terminator::Byte(0x1e))
+            .build(),
         "a\x1fb\x1ec\x1fd",
         csv(&[&["a", "b"], &["c", "d"]]),
     );
     parses_to(
         "quote_change",
-        &BASE.quote(Some(b'z')),
+        &BASE.into_builder().quote(Some(b'z')).build(),
         "zaz",
         csv(&[&["a"]]),
     );
     parses_to(
         "quote_escapes_no_double",
-        &BASE.double_quote(false).lenient_quotes(true),
+        &BASE
+            .into_builder()
+            .double_quote(false)
+            .lenient_quotes(true)
+            .build(),
         r#""a""b""#,
         // csv-core keeps the second closing quote: `a"b"`
         csv(&[&["ab"]]),
     );
     parses_to(
         "quote_escapes",
-        &BASE.escape(Escape::Char(b'\\')),
+        &BASE.into_builder().escape(Escape::Char(b'\\')).build(),
         r#""a\"b""#,
         csv(&[&[r#"a"b"#]]),
     );
     parses_to(
         "quote_escapes_change",
-        &BASE.escape(Escape::Char(b'z')),
+        &BASE.into_builder().escape(Escape::Char(b'z')).build(),
         r#""az"b""#,
         csv(&[&[r#"a"b"#]]),
     );
     parses_to(
         "quote_escapes_with_comma",
-        &BASE.escape(Escape::Char(b'\\')).double_quote(false),
+        &BASE
+            .into_builder()
+            .escape(Escape::Char(b'\\'))
+            .double_quote(false)
+            .build(),
         r#""\"A,B\"""#,
         csv(&[&[r#""A,B""#]]),
     );
     parses_to(
         "quoting_disabled",
-        &BASE.quote(None),
+        &BASE.into_builder().quote(None).build(),
         r#""abc,foo""#,
         csv(&[&[r#""abc"#, r#"foo""#]]),
     );
     parses_to(
         "delimiter_tabs",
-        &BASE.delimiter(b'\t'),
+        &BASE.into_builder().delimiter(b'\t').build(),
         "a\tb",
         csv(&[&["a", "b"]]),
     );
     parses_to(
         "delimiter_weird",
-        &BASE.delimiter(b'z'),
+        &BASE.into_builder().delimiter(b'z').build(),
         "azb",
         csv(&[&["a", "b"]]),
     );
@@ -254,7 +270,7 @@ fn test_dialects() {
     // character), deser-csv rejects conflicting special characters
     parses_to(
         "quote_delimiter",
-        &BASE.quote(Some(b',')),
+        &BASE.into_builder().quote(Some(b',')).build(),
         ",a,,b",
         error("the quote character conflicts with another special character"),
     );
@@ -272,7 +288,7 @@ fn test_quotes() {
     );
     parses_to(
         "quote_outer_space (lenient)",
-        &BASE.lenient_quotes(true),
+        &BASE.into_builder().lenient_quotes(true).build(),
         "  \"a\"  ",
         csv(&[&["  \"a\"  "]]),
     );
@@ -284,7 +300,7 @@ fn test_quotes() {
     );
     parses_to(
         "quote_no_escapes (lenient)",
-        &BASE.lenient_quotes(true),
+        &BASE.into_builder().lenient_quotes(true).build(),
         r#""a\"b""#,
         // csv-core keeps the quote at the end: `a\b"`
         csv(&[&[r#"a\b"#]]),
@@ -293,7 +309,7 @@ fn test_quotes() {
 
 #[test]
 fn test_comments() {
-    let config = BASE.comment(Some(b'#'));
+    let config = BASE.into_builder().comment(Some(b'#')).build();
     parses_to(
         "comment_1",
         &config,
@@ -320,7 +336,7 @@ fn test_comments() {
     );
     parses_to(
         "comment_3",
-        &BASE.comment(Some(b'\n')),
+        &BASE.into_builder().comment(Some(b'\n')).build(),
         "foo\n# hi\nbar\n",
         error("the comment character must be an ASCII character that is not special"),
     );

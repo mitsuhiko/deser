@@ -92,16 +92,16 @@ pub struct State {
     // the arena the sinks of the deserialization are allocated in
     pub(crate) arena: Arena,
     // the format of the raw values that pass through as they are (see
-    // `set_raw_format`)
+    // `declare_raw_format`)
     pub(crate) raw_format: Option<&'static RawFormatId>,
     // deserialization: the next value (or the top-level value) is wanted
-    // as raw value of the format (see `set_raw_format` and
+    // as raw value of the format (see `declare_raw_format` and
     // `take_raw_request`)
     pub(crate) raw_requested: Option<&'static RawFormatInfo>,
 }
 
 /// The function of an [`ErrorContext`].
-type AddContextFn = fn(Error, &State) -> Error;
+type AddContextFn = fn(&mut Error, &State);
 
 impl State {
     /// Creates an empty state.
@@ -193,13 +193,22 @@ impl State {
     /// this is usually configured from the outside.
     ///
     /// Types can change this for the values in them, for instance to
-    /// collect the errors of a part of the input.  The previous setting is
-    /// returned.  While errors are thrown away (for instance while an
+    /// collect the errors of a part of the input (and restore the previous
+    /// setting, see [`collect_errors`](Self::collect_errors), afterwards).  While errors are thrown away (for instance while an
     /// untagged enum tries its variants) they are never collected.  See
     /// [`set_max_errors`](Self::set_max_errors) to limit the number of
     /// errors that are collected.
-    pub fn set_collect_errors(&mut self, yes: bool) -> bool {
-        core::mem::replace(&mut self.collect_errors, yes)
+    pub fn set_collect_errors(&mut self, yes: bool) {
+        self.collect_errors = yes;
+    }
+
+    /// Returns `true` if maps and sequences are set to collect the errors
+    /// of their items (see [`set_collect_errors`](Self::set_collect_errors)).
+    ///
+    /// This is the setting, see [`collects_errors`](Self::collects_errors)
+    /// for whether errors are collected at the moment.
+    pub fn collect_errors(&self) -> bool {
+        self.collect_errors
     }
 
     /// Returns `true` if the errors of items are collected.
@@ -312,7 +321,7 @@ impl State {
     ///   it is.  Raw values of other formats are serialized as the values
     ///   they hold.
     #[inline(always)]
-    pub fn set_raw_format(
+    pub fn declare_raw_format(
         &mut self,
         format: &'static RawFormatId,
     ) -> Option<&'static RawFormatInfo> {
@@ -341,7 +350,7 @@ impl State {
     /// deserializes into a [`Raw`](crate::ext::Raw) value (for instance the
     /// key of the field) and return the result from the event.  If the
     /// format passes on the input of values of the format (see
-    /// [`set_raw_format`](Self::set_raw_format)), the result is the request
+    /// [`declare_raw_format`](Self::declare_raw_format)), the result is the request
     /// (see [`Error::is_raw_request`]), otherwise the value is deserialized
     /// from its events.  The drivers pass the request on to the format,
     /// which emits the next value as [`RawInput`](crate::ext::RawInput).
@@ -363,7 +372,7 @@ impl State {
     }
 
     /// Returns `true` if the serializer writes raw values of the format as
-    /// they are (see [`set_raw_format`](Self::set_raw_format)).
+    /// they are (see [`declare_raw_format`](Self::declare_raw_format)).
     #[inline]
     pub(crate) fn accepts_raw(&self, format: &'static RawFormatInfo) -> bool {
         self.raw_format
@@ -597,7 +606,7 @@ impl State {
     /// Returns `true` if the innermost open container is a multimap.
     ///
     /// A multimap is a map whose keys can be given more than once (see
-    /// [`ContainerShape::with_multimap`]).  This is the case while its
+    /// [`ContainerShape::set_multimap`]).  This is the case while its
     /// keys and values are deserialized and while its sink is finished
     /// (in [`Sink::finish`](crate::de::Sink::finish)), which includes the
     /// keys and values that flattened fields take.  Within a nested map or
@@ -678,10 +687,9 @@ impl State {
     /// impl ErrorAttachment for Depth {}
     ///
     /// impl ErrorContext for Depth {
-    ///     fn add_context(err: Error, state: &State) -> Error {
-    ///         match err.attachment::<Depth>() {
-    ///             Some(_) => err,
-    ///             None => err.with_attachment(Depth(state.depth())),
+    ///     fn add_context(err: &mut Error, state: &State) {
+    ///         if err.attachment::<Depth>().is_none() {
+    ///             err.set_attachment(Depth(state.depth()));
     ///         }
     ///     }
     /// }
@@ -707,26 +715,38 @@ impl State {
     /// [`add_error_context`](Self::add_error_context)): the start of the
     /// input range of the event is attached as offset (unless the error
     /// has one) and the registered types add their context.  Errors that
-    /// already have the context of an event attached are returned
-    /// unchanged.  This is for sinks that handle the errors of their values
+    /// already have the context of an event attached are not changed.
+    /// This is for sinks that handle the errors of their values
     /// themselves instead of returning them, so that they have the same
     /// context as the errors the driver sees.
+    #[inline]
+    pub fn attach_error_context(&self, err: &mut Error) {
+        self.attach_error_context_impl(err)
+    }
+
+    /// Returns an error with the context of the current event attached (see
+    /// [`attach_error_context`](Self::attach_error_context)).
+    #[inline]
+    pub(crate) fn error_in_context(&self, mut err: Error) -> Error {
+        self.attach_error_context_impl(&mut err);
+        err
+    }
+
     #[cold]
     #[inline(never)]
-    pub fn attach_error_context(&self, mut err: Error) -> Error {
+    fn attach_error_context_impl(&self, err: &mut Error) {
         if err.has_context() {
-            return err;
+            return;
         }
         err.set_has_context();
         if err.offset().is_none()
             && let Some(range) = self.input_range()
         {
-            err = err.with_offset(range.start);
+            err.set_offset(range.start);
         }
         for (_, f) in self.error_context.iter() {
-            err = f(err, self);
+            f(err, self);
         }
-        err
     }
 }
 

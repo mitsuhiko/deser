@@ -414,7 +414,7 @@ fn test_meta() {
     // empty meta data is not retained
     value.set_meta(Some(deser_value::Meta::new()));
     assert!(value.meta().is_none());
-    let mut value = value.with_meta(meta);
+    value.set_meta(Some(meta));
     assert!(value.meta().is_some());
 
     // replacing the kind retains the meta data

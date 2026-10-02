@@ -64,7 +64,7 @@ fn test_no_read_while_a_value_is_complete() {
     assert_eq!(
         reader.read::<Recording>().unwrap().map(events),
         Some(vec![
-            Event::MapStart(ContainerShape::new().with_len(0)),
+            Event::MapStart(ContainerShape::with_len(0)),
             Event::MapEnd
         ])
     );
@@ -296,7 +296,9 @@ fn test_feeding_with_layers() {
         size: 2,
     });
     let err = reader
-        .read_with::<Vec<u32>, _>(|driver| driver.push_layer(Limits::new().max_items(2)))
+        .read_with::<Vec<u32>, _>(|driver| {
+            driver.push_layer(Limits::builder().max_items(2).build())
+        })
         .unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -406,7 +408,9 @@ mod streamed {
     fn test_framed_values() {
         // JSON Lines are read from frames, the elements are handed out once
         // the line is complete
-        let lines = DeserializerConfig::new().trailing(Trailing::Newline);
+        let lines = DeserializerConfig::builder()
+            .trailing(Trailing::Newline)
+            .build();
         let input = b"{\"total\": 1, \"items\": [{\"id\": 0, \"name\": \"item 0\"}], \"next\": null}\n{\"total\": 0, \"items\": [], \"next\": \"x\"}\n";
         let mut reader = lines.reader(&input[..]);
         assert_eq!(
@@ -440,7 +444,9 @@ mod streamed {
         }
 
         let input = br#"{"inner": {"values": [1, 2, 3]}} {"inner": {"values": []}}"#;
-        let stop = DeserializerConfig::new().trailing(Trailing::Stop);
+        let stop = DeserializerConfig::builder()
+            .trailing(Trailing::Stop)
+            .build();
         let mut reader = stop.reader(Chunked { input, size: 3 });
         let mut rv = Vec::new();
         while let Some(next) = reader.read_next::<Outer, u32>().unwrap() {

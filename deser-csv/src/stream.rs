@@ -17,7 +17,7 @@ use crate::de::{DeserializerConfig, StreamState};
 /// of records (like fields that do not fit the type or records with the
 /// wrong number of fields) only discard the record, reading continues with
 /// the next one.  Errors of the stream (like a record that exceeds
-/// [`max_record_len`](DeserializerConfig::max_record_len)) end it.
+/// [`set_max_record_len`](DeserializerConfig::set_max_record_len)) end it.
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
@@ -128,7 +128,10 @@ impl de::StreamDeserializer for StreamDeserializer {
     ) -> Result<(), Error> {
         self.state
             .emit_record(&self.config, frame, 0, false, driver)
-            .map_err(|err| err.resolve_position(frame))
+            .map_err(|mut err| {
+                err.resolve_position(frame);
+                err
+            })
     }
 
     fn is_text(&self) -> bool {

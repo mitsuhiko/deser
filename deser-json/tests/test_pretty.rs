@@ -4,7 +4,9 @@ use deser::Serialize;
 use deser::hints::{Compact, Expanded};
 use deser_json::{Indent, InlinePolicy, SerializerConfig, to_string};
 
-const PRETTY: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(2));
+const PRETTY: SerializerConfig = SerializerConfig::builder()
+    .pretty(Indent::Spaces(2))
+    .build();
 
 #[derive(Serialize)]
 struct Service {
@@ -65,17 +67,21 @@ fn test_pretty() {
   "command": null
 }"#
     );
-    const FOUR: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(4));
+    const FOUR: SerializerConfig = SerializerConfig::builder()
+        .pretty(Indent::Spaces(4))
+        .build();
     assert_eq!(
         FOUR.to_string(&vec![vec![1]]).unwrap(),
         "[\n    [\n        1\n    ]\n]"
     );
-    const TAB: SerializerConfig = SerializerConfig::new().pretty(Indent::Tab);
+    const TAB: SerializerConfig = SerializerConfig::builder().pretty(Indent::Tab).build();
     assert_eq!(
         TAB.to_string(&vec![vec![1]]).unwrap(),
         "[\n\t[\n\t\t1\n\t]\n]"
     );
-    const ZERO: SerializerConfig = SerializerConfig::new().pretty(Indent::Spaces(0));
+    const ZERO: SerializerConfig = SerializerConfig::builder()
+        .pretty(Indent::Spaces(0))
+        .build();
     assert_eq!(
         ZERO.to_string(&vec![vec![1, 2]]).unwrap(),
         "[\n[\n1,\n2\n]\n]"
@@ -110,8 +116,9 @@ fn test_deep_nesting() {
         value.push(']');
     }
     let parsed: deser::de::Recording = deser_json::from_str(&value).unwrap();
-    let json = SerializerConfig::new()
+    let json = SerializerConfig::builder()
         .pretty(Indent::Spaces(width))
+        .build()
         .to_string(&parsed)
         .unwrap();
     let indent = " ".repeat(width * (depth - 1));
@@ -122,23 +129,25 @@ fn test_deep_nesting() {
 #[test]
 fn test_compact_setting() {
     let value = BTreeMap::from([("a", vec![1, 2]), ("b", vec![])]);
-    const SPACED: SerializerConfig = SerializerConfig::new().compact(false);
+    const SPACED: SerializerConfig = SerializerConfig::builder().compact(false).build();
     assert_eq!(
         SPACED.to_string(&value).unwrap(),
         r#"{"a": [1, 2], "b": []}"#
     );
     // indentation without spaces after separators
-    const INDENTED: SerializerConfig = SerializerConfig::new().indent(Indent::Spaces(2));
+    const INDENTED: SerializerConfig = SerializerConfig::builder()
+        .indent(Indent::Spaces(2))
+        .build();
     assert_eq!(
         INDENTED.to_string(&value).unwrap(),
         "{\n  \"a\":[\n    1,\n    2\n  ],\n  \"b\":[]\n}"
     );
     // pretty with no indentation is the default again
-    const RESET: SerializerConfig = PRETTY.pretty(Indent::None);
+    const RESET: SerializerConfig = PRETTY.into_builder().pretty(Indent::None).build();
     assert_eq!(RESET, SerializerConfig::new());
     assert_eq!(RESET.to_string(&value).unwrap(), r#"{"a":[1,2],"b":[]}"#);
     // the order matters
-    const PRETTY_COMPACT: SerializerConfig = PRETTY.compact(true);
+    const PRETTY_COMPACT: SerializerConfig = PRETTY.into_builder().compact(true).build();
     assert_eq!(PRETTY_COMPACT, INDENTED);
 }
 
@@ -179,8 +188,9 @@ fn test_layout_hints() {
         r#"{"point":{"x":1,"y":2},"matrix":[[1,2],[3]],"rows":[[1,2]],"list":[1]}"#
     );
     assert_eq!(
-        SerializerConfig::new()
+        SerializerConfig::builder()
             .compact(false)
+            .build()
             .to_string(&value)
             .unwrap(),
         r#"{"point": {"x": 1, "y": 2}, "matrix": [[1, 2], [3]], "rows": [[1, 2]], "list": [1]}"#
@@ -209,9 +219,11 @@ fn test_same_as_compact() {
     let compact = to_string(&value).unwrap();
     for config in [
         PRETTY,
-        SerializerConfig::new().indent(Indent::Tab),
-        SerializerConfig::new().compact(false),
-        SerializerConfig::new().pretty(Indent::Spaces(3)),
+        SerializerConfig::builder().indent(Indent::Tab).build(),
+        SerializerConfig::builder().compact(false).build(),
+        SerializerConfig::builder()
+            .pretty(Indent::Spaces(3))
+            .build(),
     ] {
         let json = config.to_string(&value).unwrap();
         assert_eq!(strip(&json), compact, "{}", json);
@@ -220,7 +232,10 @@ fn test_same_as_compact() {
 
 #[test]
 fn test_inline() {
-    const INLINE: SerializerConfig = PRETTY.inline(InlinePolicy::LeafIfFits(20));
+    const INLINE: SerializerConfig = PRETTY
+        .into_builder()
+        .inline(InlinePolicy::LeafIfFits(20))
+        .build();
     assert_eq!(
         INLINE.to_string(&service()).unwrap(),
         r#"{
@@ -253,24 +268,34 @@ fn test_inline() {
         (15, "{\n  \"k\": [\n    1,\n    2,\n    3\n  ]\n}"),
         (14, "{\n  \"k\": [\n    1,\n    2,\n    3\n  ]\n}"),
     ] {
-        let config = PRETTY.inline(InlinePolicy::LeafIfFits(width));
+        let config = PRETTY
+            .into_builder()
+            .inline(InlinePolicy::LeafIfFits(width))
+            .build();
         assert_eq!(config.to_string(&value).unwrap(), expected, "{}", width);
     }
     // characters are counted, not bytes
-    let config = PRETTY.inline(InlinePolicy::LeafIfFits(12));
+    let config = PRETTY
+        .into_builder()
+        .inline(InlinePolicy::LeafIfFits(12))
+        .build();
     assert_eq!(
         config.to_string(&vec!["äöü", "ß"]).unwrap(),
         r#"["äöü", "ß"]"#
     );
-    let config = PRETTY.inline(InlinePolicy::LeafIfFits(11));
+    let config = PRETTY
+        .into_builder()
+        .inline(InlinePolicy::LeafIfFits(11))
+        .build();
     assert_eq!(
         config.to_string(&vec!["äöü", "ß"]).unwrap(),
         "[\n  \"äöü\",\n  \"ß\"\n]"
     );
     // without spaces after separators
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .indent(Indent::Tab)
-        .inline(InlinePolicy::LeafIfFits(13));
+        .inline(InlinePolicy::LeafIfFits(13))
+        .build();
     assert_eq!(
         config
             .to_string(&vec![vec!["a, b", "c"], vec!["long, long", "x"]])
@@ -278,9 +303,10 @@ fn test_inline() {
         "[\n\t[\"a, b\",\"c\"],\n\t[\n\t\t\"long, long\",\n\t\t\"x\"\n\t]\n]"
     );
     // no effect without indentation
-    let config = SerializerConfig::new()
+    let config = SerializerConfig::builder()
         .compact(false)
-        .inline(InlinePolicy::LeafIfFits(1));
+        .inline(InlinePolicy::LeafIfFits(1))
+        .build();
     assert_eq!(config.to_string(&vec![vec![1, 2]]).unwrap(), "[[1, 2]]");
 }
 
@@ -299,7 +325,10 @@ fn test_inline_layout_hints() {
         compact: vec![vec![1, 2, 3, 4, 5, 6, 7, 8, 9]],
         auto: vec![2],
     };
-    let config = PRETTY.inline(InlinePolicy::LeafIfFits(20));
+    let config = PRETTY
+        .into_builder()
+        .inline(InlinePolicy::LeafIfFits(20))
+        .build();
     assert_eq!(
         config.to_string(&value).unwrap(),
         r#"{
@@ -329,10 +358,11 @@ fn test_inline_widths() {
         // miri is too slow to check every width
         let widths = (0..80).filter(|width| !cfg!(miri) || width % 8 == 0 || *width == 79);
         for width in widths {
-            let config = SerializerConfig::new()
+            let config = SerializerConfig::builder()
                 .indent(Indent::Spaces(2))
                 .compact(compact_setting)
-                .inline(InlinePolicy::LeafIfFits(width));
+                .inline(InlinePolicy::LeafIfFits(width))
+                .build();
             let json = config.to_string(&value).unwrap();
             assert_eq!(strip(&json), compact, "{}", json);
             for line in json.lines() {

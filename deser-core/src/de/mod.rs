@@ -268,7 +268,7 @@ pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 #[doc(hidden)]
 pub use self::impls::DeserializeArc;
-pub use self::layer::{Layer, LayerEvent, Limits, Next};
+pub use self::layer::{Layer, LayerEvent, Limits, LimitsBuilder, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::{RecordBuf, Recording};
@@ -1117,7 +1117,7 @@ pub trait Deserialize<'de, T: Send = Self>: Sized + Send {
     ///
     /// This is `true` for collections like `Vec<T>` and sets (and
     /// `Option`s of them).  In a multimap (see
-    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+    /// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap))
     /// fields and map values of these types receive every value of their
     /// key through [`__private_collect_into`](Self::__private_collect_into)
     /// and [`__private_collect_update`](Self::__private_collect_update).
@@ -1202,7 +1202,7 @@ impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
 /// Returns the value of a key that is missing in a multimap.
 ///
 /// In a multimap (see
-/// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+/// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap))
 /// collections like `Vec<T>` and sets are empty if their key is missing.
 /// Other types have their [`initial_value`](Deserialize::initial_value)
 /// (`None` for `Option<T>`).  `None` means that the value is required.

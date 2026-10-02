@@ -95,7 +95,7 @@ const _: () = {
 #[derive(Copy, Clone)]
 enum Container {
     /// A map, the first flag is `true` if a key is expected next, the
-    /// second if it's a multimap (see [`ContainerShape::with_multimap`]).
+    /// second if it's a multimap (see [`ContainerShape::set_multimap`]).
     Map(bool, bool),
     /// A sequence, the flag is `true` if the sink builds sequences that
     /// are its elements inline (see [`Sink::__private_seq`]).
@@ -208,7 +208,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Creates a driver for one value of a key in a multimap.
     ///
     /// In a multimap (see
-    /// [`ContainerShape::with_multimap`](crate::ContainerShape::with_multimap))
+    /// [`ContainerShape::set_multimap`](crate::ContainerShape::set_multimap))
     /// collections like `Vec<T>` and sets collect the values of a repeated
     /// key.  This deserializes a value as if it was the only value of such
     /// a key: collections take it as their only item, other types are
@@ -624,7 +624,7 @@ impl<'de> DriverCore<'de> {
             Err(err) if err.is_raw_request() => Err(err),
             // the error is thrown away (see `State::discard_errors`)
             Err(err) if self.state.discards_errors => Err(err),
-            Err(err) => Err(self.state.attach_error_context(err)),
+            Err(err) => Err(self.state.error_in_context(err)),
         };
         self.state.clear_event();
         rv
@@ -729,7 +729,7 @@ impl<'de> DriverCore<'de> {
             // the error is thrown away (see `State::discard_errors`)
             err
         } else {
-            self.state.attach_error_context(err)
+            self.state.error_in_context(err)
         };
         // an element that is built inline failed, it gets a null sink for
         // its remaining events like the sink of an element

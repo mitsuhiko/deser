@@ -13,9 +13,9 @@ use deser_tokio::{Reader, Writer};
 use tokio::net::TcpStream;
 
 const READ_LINES: DeserializerConfig =
-    DeserializerConfig::new().trailing(Trailing::Newline);
+    DeserializerConfig::builder().trailing(Trailing::Newline).build();
 const WRITE_LINES: SerializerConfig =
-    SerializerConfig::new().trailing(Trailing::Newline);
+    SerializerConfig::builder().trailing(Trailing::Newline).build();
 
 #[derive(Serialize, Deserialize)]
 struct Request {

@@ -78,22 +78,30 @@ impl SerializerConfig {
         }
     }
 
+    /// Returns a builder for the configuration (see [`SerializerConfigBuilder`]).
+    pub const fn builder() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> SerializerConfigBuilder {
+        SerializerConfigBuilder { value: self }
+    }
+
     /// Sets the separator of nested keys.
     ///
     /// The default is `__`, see
-    /// [`DeserializerConfig::separator`](crate::DeserializerConfig::separator).
+    /// [`DeserializerConfig::set_separator`](crate::DeserializerConfig::set_separator).
     /// With the empty string nested maps and sequences are an error.
-    pub const fn separator(mut self, separator: &'static str) -> SerializerConfig {
+    pub const fn set_separator(&mut self, separator: &'static str) {
         self.separator = separator;
-        self
     }
 
     /// Sets how keys map onto names.
     ///
     /// The default is [`Case::Upper`] which uppercases keys.
-    pub const fn case(mut self, case: Case) -> SerializerConfig {
+    pub const fn set_case(&mut self, case: Case) {
         self.case = case;
-        self
     }
 
     /// Serializes a value into variables with a prefix.
@@ -132,6 +140,51 @@ impl SerializerConfig {
         };
         driver.drive(|event, state| writer.event(event, state))?;
         Ok(writer.out)
+    }
+}
+
+/// Builds a [`SerializerConfig`].
+///
+/// The methods have the names of the setters of [`SerializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SerializerConfigBuilder {
+    value: SerializerConfig,
+}
+
+impl SerializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> SerializerConfigBuilder {
+        SerializerConfigBuilder {
+            value: SerializerConfig::new(),
+        }
+    }
+
+    /// Sets the separator of nested keys.
+    ///
+    /// See [`SerializerConfig::set_separator`].
+    pub const fn separator(mut self, separator: &'static str) -> SerializerConfigBuilder {
+        self.value.set_separator(separator);
+        self
+    }
+
+    /// Sets how keys map onto names.
+    ///
+    /// See [`SerializerConfig::set_case`].
+    pub const fn case(mut self, case: Case) -> SerializerConfigBuilder {
+        self.value.set_case(case);
+        self
+    }
+
+    /// Returns the built [`SerializerConfig`].
+    pub const fn build(self) -> SerializerConfig {
+        self.value
+    }
+}
+
+impl Default for SerializerConfigBuilder {
+    fn default() -> SerializerConfigBuilder {
+        SerializerConfigBuilder::new()
     }
 }
 

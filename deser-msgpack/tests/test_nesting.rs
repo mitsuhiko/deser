@@ -39,8 +39,9 @@ fn test_deep_nesting_roundtrip() {
     let rv: Node = deser_msgpack::from_slice(&bytes).unwrap();
     assert_eq!(deser_msgpack::to_vec(&rv).unwrap(), bytes);
     assert_eq!(
-        deser_msgpack::SerializerConfig::new()
+        deser_msgpack::SerializerConfig::builder()
             .canonical(true)
+            .build()
             .to_vec(&rv)
             .unwrap()
             .len(),

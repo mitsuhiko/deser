@@ -8,10 +8,10 @@ use deser::{Atom, Event, Serialize};
 fn without_len(event: deser::Event<'static>) -> deser::Event<'static> {
     match event {
         deser::Event::MapStart(shape) => {
-            deser::Event::MapStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::MapStart(deser::ContainerShape::with_order(shape.order()))
         }
         deser::Event::SeqStart(shape) => {
-            deser::Event::SeqStart(deser::ContainerShape::new().with_order(shape.order()))
+            deser::Event::SeqStart(deser::ContainerShape::with_order(shape.order()))
         }
         event => event,
     }
@@ -123,7 +123,7 @@ fn test_set() {
     assert_eq!(
         events,
         vec![
-            Event::SeqStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::SeqStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             "bar".into(),
             "foo".into(),
             Event::SeqEnd
@@ -143,15 +143,17 @@ fn test_shape_forwarding() {
 
     let mut map = std::collections::HashMap::new();
     map.insert(1u32, 2u32);
-    let arbitrary = deser::ContainerShape::new()
-        .with_order(deser::Order::Arbitrary)
-        .with_len(1);
+    let arbitrary = {
+        let mut shape = deser::ContainerShape::with_order(deser::Order::Arbitrary);
+        shape.set_len(1);
+        shape
+    };
     assert_eq!(top_shape(&map), Some(arbitrary));
     assert_eq!(top_shape(&&map), Some(arbitrary));
     assert_eq!(top_shape(&Box::new(&map)), Some(arbitrary));
     assert_eq!(top_shape(&Some(&map)), Some(arbitrary));
     assert_eq!(top_shape(&None::<u32>), None);
-    let len = |len| Some(deser::ContainerShape::new().with_len(len));
+    let len = |len| Some(deser::ContainerShape::with_len(len));
     assert_eq!(top_shape(&vec![1u32]), len(1));
     assert_eq!(top_shape(&[1u32, 2, 3]), len(3));
     assert_eq!(top_shape(&(1, "x")), len(2));
@@ -196,7 +198,7 @@ fn test_is_map_key() {
         (1u64.into(), false),
         ("tags".into(), true),
         (
-            Event::MapStart(deser::ContainerShape::new().with_order(deser::Order::Sorted)),
+            Event::MapStart(deser::ContainerShape::with_order(deser::Order::Sorted)),
             false,
         ),
         (2u64.into(), true),

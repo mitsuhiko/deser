@@ -95,7 +95,7 @@
 //! let query: Query = deser_urlencoded::from_str("page=1&page=2").unwrap();
 //! assert_eq!(query.page, 2);
 //!
-//! let strict = Context::new().with(DuplicateKeys::Error);
+//! let strict = Context::with(DuplicateKeys::Error);
 //! assert!(deser_urlencoded::Deserializer::from_str("page=1&page=2")
 //!     .deserialize_in::<Query>(&strict)
 //!     .is_err());
@@ -157,7 +157,7 @@
 //! Serializing works the other way around (see [`SerializerConfig`]), how
 //! sequences are written can be configured (see [`ArrayFormat`]).
 //!
-//! [multimap]: deser_core::ContainerShape::with_multimap
+//! [multimap]: deser_core::ContainerShape::set_multimap
 //!
 //! # Streams
 //!
@@ -182,10 +182,12 @@ mod num;
 mod ser;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{ArrayFormat, Serializer, SerializerConfig, to_string};
+pub use self::ser::{
+    ArrayFormat, Serializer, SerializerConfig, SerializerConfigBuilder, to_string,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
@@ -204,11 +206,11 @@ use deser_core::de::Deserialize;
 /// let value: Nested = deser_urlencoded::from_str("a[b]=1").unwrap();
 /// assert_eq!(value["a"]["b"], 1);
 ///
-/// let dots = DeserializerConfig::new().nesting(Nesting::Dots);
+/// let dots = DeserializerConfig::builder().nesting(Nesting::Dots).build();
 /// let value: Nested = dots.from_str("a.b=1").unwrap();
 /// assert_eq!(value["a"]["b"], 1);
 ///
-/// let flat = DeserializerConfig::new().nesting(Nesting::Flat);
+/// let flat = DeserializerConfig::builder().nesting(Nesting::Flat).build();
 /// let value: BTreeMap<String, u32> = flat.from_str("a[b]=1").unwrap();
 /// assert_eq!(value["a[b]"], 1);
 /// ```

@@ -7,7 +7,7 @@ use common::{Value, hex, ser, to_hex};
 use deser::Serialize;
 use deser_msgpack::SerializerConfig;
 
-const CANONICAL: SerializerConfig = SerializerConfig::new().canonical(true);
+const CANONICAL: SerializerConfig = SerializerConfig::builder().canonical(true).build();
 
 #[test]
 fn test_basic() {
@@ -453,7 +453,7 @@ impl Serialize for Liar {
     }
 
     fn container_shape(value: &Self) -> deser::ContainerShape {
-        deser::ContainerShape::new().with_len(value.0)
+        deser::ContainerShape::with_len(value.0)
     }
 }
 

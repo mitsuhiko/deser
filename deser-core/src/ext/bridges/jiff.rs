@@ -9,10 +9,11 @@ use crate::ext::{Date, Datetime, Duration, Offset, Time, Timestamp};
 
 #[cold]
 fn jiff_error(err: ::jiff::Error) -> Error {
-    let rv = invalid(err.to_string());
+    #[allow(unused_mut)]
+    let mut rv = invalid(err.to_string());
     // the errors of jiff only implement `Error` with `std`
     #[cfg(feature = "std")]
-    let rv = rv.with_source(err);
+    rv.set_source(err);
     rv
 }
 

@@ -83,7 +83,9 @@ fn main() {
     );
 
     // the same value in other formats
-    let pretty = deser_json::SerializerConfig::new().pretty(deser_json::Indent::Spaces(2));
+    let pretty = deser_json::SerializerConfig::builder()
+        .pretty(deser_json::Indent::Spaces(2))
+        .build();
     println!("{}", pretty.to_string(&manifest).unwrap());
     println!("{}", deser_yaml::to_string(&manifest).unwrap());
 

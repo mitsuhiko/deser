@@ -40,7 +40,7 @@ assert_eq!(
   [msgpack-test-suite](https://github.com/kawanet/msgpack-test-suite).
 * Writes integers and lengths in their shortest form, floats keep their
   precision (`f32` is float 32, `f64` is float 64).
-  `SerializerConfig::canonical` additionally sorts map entries for a
+  `SerializerConfig::set_canonical` additionally sorts map entries for a
   deterministic encoding (for instance for hashing or signing).
 * Timestamps (extension type `-1`) map onto deser's well-known
   `Timestamp`, so `std::time::SystemTime` and the timestamp types of
