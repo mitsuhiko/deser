@@ -58,7 +58,9 @@ const DEAD: usize = 1;
 /// was dropped while the block was alive).  Footers and chunk headers are
 /// at least 4-aligned, the tags do not overlap addresses.
 const ORPHAN: usize = 2;
-const _: () = assert!(FOOTER_ALIGN > (ORPHAN | DEAD) && align_of::<Chunk>() > (ORPHAN | DEAD));
+/// All tag bits of a footer.
+const TAG_MASK: usize = ORPHAN | DEAD;
+const _: () = assert!(FOOTER_ALIGN > TAG_MASK && align_of::<Chunk>() > TAG_MASK);
 
 /// The header of a chunk, the data follows it.
 struct Chunk {
