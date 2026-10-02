@@ -367,13 +367,14 @@ impl Parser {
                 if let Err(err) = $rv {
                     // the next value is requested as raw value, this is
                     // not an error
-                    if is_raw_request(&err) {
-                        partial = Pending::Raw;
-                    } else {
-                        self.container = container;
-                        self.expect = $expect;
-                        self.recoverable = Some(cur.pos);
-                        return Err(err);
+                    match sink_error(err) {
+                        None => partial = Pending::Raw,
+                        Some(err) => {
+                            self.container = container;
+                            self.expect = $expect;
+                            self.recoverable = Some(cur.pos);
+                            return Err(err);
+                        }
                     }
                 }
             };
@@ -732,6 +733,19 @@ fn raw_value<'i, O: Out<'i>>(
 #[inline(always)]
 fn is_raw_request(err: &Error) -> bool {
     err.is_raw_request()
+}
+
+/// Returns the error of an event or `None` if it requests the next value as
+/// raw value.  This is out of line so that the error handling after every
+/// event stays small.
+#[cold]
+#[inline(never)]
+fn sink_error(err: Error) -> Option<Error> {
+    if is_raw_request(&err) {
+        None
+    } else {
+        Some(err)
+    }
 }
 
 #[inline(never)]

@@ -396,6 +396,27 @@ next byte.  Checking the byte first (only looking for runs of spaces
 after a whitespace character) is fewer instructions for compact JSON but
 made parsing Twitter and citm-catalog 15%-20% slower.  Not understood.
 
+Classifying all eight bytes of the word as whitespace (space, line feed,
+tab, carriage return with a few SWAR operations) instead of comparing
+with eight spaces was slower everywhere although citm-catalog is 71%
+whitespace: skipping to the first other byte of the word with its
+trailing zeros made deserializing 5%-35% slower (also Canada which has
+no whitespace, the position then depends on the data instead of
+predicted branches), only skipping words of any whitespace and continuing
+byte by byte up to 11% (the check of the word fails at the end of every
+run and before every token of compact JSON, and it is inlined at every
+call site).
+
+### Error Handling After Events
+
+The parser checks the result of every event (`sink!`).  When raw values
+were added, the check whether an error requests a raw value was inlined
+in all of them, which made deserializing 2%-8% slower (citm-catalog,
+GitHub, Twitter, tree) without being executed.  The error is handled by
+the cold `sink_error` now, which brought it back.  The same for
+`DriverCore::finish_event` (the error path of every event in the
+driver) made no difference.
+
 ### Allocations and the Arena
 
 The JSON datasets allocate as often as serde_json (see `allocs`), most
