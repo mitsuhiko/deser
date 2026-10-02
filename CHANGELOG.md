@@ -140,6 +140,14 @@ All notable changes to deser are documented here.
   NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
   `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable
   it, so these floats roundtrip through JSON5.
+- `deser-csv`: reading is 17% faster and writing twice as fast.  Fields
+  are found with masks of the special characters of 64 bytes (with SIMD
+  on aarch64 and x86_64), floats are formatted with `zmij` by default
+  (the new `zmij` feature, the output is the same) and numbers, short
+  fields and the names of columns are written and compared without
+  `memcpy` and `memcmp`.  Empty fields of optional numbers and booleans
+  no longer create an error that is thrown away, and derived structs do
+  not ask every field of a record if it collects repeated columns.
 
 ## 0.9.1
 

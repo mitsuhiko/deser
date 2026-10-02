@@ -463,10 +463,41 @@ allocations automatically make this faster.
 
 The parser finds the fields of a record in one pass and emits from that
 record.  Most time was in the drivers and sinks; `table/events/ser` alone
-was about 1 ms.  Formatting floats with the standard library was about 8%
-of writing, so a faster formatter would only address a small part.
+was about 1 ms.
 
 Empty optional numbers used to construct an error message for every field
-and throw it away, accounting for about a third of reading.  That was fixed.
-Keep successful empty/optional handling out of error construction when
-changing lexical conversion or adapters.
+and throw it away, accounting for about a third of reading.  After that
+was fixed the error was still created (without a message) and thrown away,
+about 4% of reading `table`: `Deserialize::__private_rejects_empty_lexical`
+now tells `Option` that numbers and booleans reject empty text, which
+makes them `None` without delivering it.  Keep successful empty/optional
+handling out of error construction when changing lexical conversion or
+adapters.
+
+Scanning `table` (1.9 MB, 220,000 fields) took 1.05 ms looking at the
+bytes one by one, mostly for the mispredicted branch at the end of every
+field.  Finding the end of a field eight bytes at a time (with the
+position of the first special character from `trailing_zeros`) was 40%
+slower: the fields are short and the next search depends on the result
+of the last one, while the predicted byte loop runs ahead.  What helped is
+a mask of the special characters of 64 bytes (NEON, SSE2 or SWAR) that is
+kept for the fields that follow, together with scanning unquoted fields
+after each other without going through the modes: 0.65 ms.  The rest is
+storing the fields.
+
+Records are multimaps (names can repeat), which made derived structs ask
+every field if it collects (a virtual call per field, about 4% of
+reading); `StructFields::collect_fields` has these as bits.  The lenient
+rules for booleans compared with all eight spellings ignoring case before
+the exact ones (about 2.5%).  Fields of strings are not checked for UTF-8
+again.
+
+Writing was 3.1 times slower than `csv`, now 1.6 times.  It formatted
+numbers into a buffer and copied them (with `memcpy` calls for a few
+bytes), formatted floats with the standard library, looked for special
+characters in the bytes after the last full word one by one and compared
+every key with the name of its column with `memcmp`.  Fields of up to 32
+bytes are now copied with two writes that overlap, floats are formatted
+with `zmij` and words that overlap cover short fields and keys.  What is
+left are the drivers (`emit_plain_fields` and the plain sink are about a
+quarter) and dropping atoms.

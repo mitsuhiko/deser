@@ -149,7 +149,7 @@ in [PERF_NOTES.md](PERF_NOTES.md).
 | point-cloud/toml         | 3.38 ms  | 8.55 ms  | 0.40x | 2.74 ms  | 3.22 ms  | 0.85x |
 | registry/toml            | 1.92 ms  | 3.54 ms  | 0.54x | 1.36 ms  | 1.46 ms  | 0.94x |
 | tree/toml                | 6.12 ms  | 13.92 ms | 0.44x | 5.95 ms  | 8.03 ms  | 0.74x |
-| table/csv                | 6.21 ms  | 3.60 ms  | 1.73x | 5.32 ms  | 1.70 ms  | 3.12x |
+| table/csv                | 5.34 ms  | 3.80 ms  | 1.41x | 2.73 ms  | 1.68 ms  | 1.62x |
 
 `blobs` has no serde counterpart (serde has no bytes for `Vec<u8>`):
 de/ser take 689/512 us in JSON, 515/179 us in CBOR, 462/175 us in
