@@ -73,22 +73,18 @@ pub(crate) trait Erased: Sync {
 }
 
 impl<A: Serialize<T>, T: ?Sized + Sync> Erased for Adapted<A, T> {
-    #[inline]
     fn erased_serialize(&self, state: &mut State) -> Result<Emit<'_>, Error> {
         A::serialize(&self.value, state)
     }
 
-    #[inline]
     fn erased_finish(&self, state: &mut State) -> Result<(), Error> {
         A::finish(&self.value, state)
     }
 
-    #[inline]
     fn erased_is_optional(&self) -> bool {
         A::is_optional(&self.value)
     }
 
-    #[inline]
     fn erased_container_shape(&self) -> ContainerShape {
         A::container_shape(&self.value)
     }
@@ -97,22 +93,18 @@ impl<A: Serialize<T>, T: ?Sized + Sync> Erased for Adapted<A, T> {
         A::describe(&self.value, d)
     }
 
-    #[inline]
     fn erased_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
         A::__private_begin(&self.value, state)
     }
 
-    #[inline]
     fn erased_is_plain_value(&self) -> bool {
         A::__private_is_plain_value(&self.value)
     }
 
-    #[inline]
     fn erased_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
         A::__private_emit_plain(&self.value, sink)
     }
 
-    #[inline]
     fn erased_plain_cost(&self, budget: usize) -> Option<usize> {
         A::__private_plain_cost(&self.value, budget)
     }

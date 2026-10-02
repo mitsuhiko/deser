@@ -486,6 +486,10 @@ fn derive_indexed_struct(
 
             #[automatically_derived]
             impl #impl_generics __deser::__derive::IndexedStruct for #ident #ty_generics #bounded_where_clause {
+                // only called through the vtable: small enough to be
+                // inlinable it would be copied into every codegen unit
+                // that creates the vtable
+                #[inline(never)]
                 fn field(&self, __index: usize) -> __deser::__derive::StructField<'_> {
                     match __index {
                         #(
