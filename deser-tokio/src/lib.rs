@@ -135,6 +135,20 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
         }
     }
 
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// by the callback of [`read_with`](Self::read_with) takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.buffer.set_context(context);
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        self.buffer.context()
+    }
+
     /// Reads more input into the buffer.
     fn poll_read_more(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         let mut buf = ReadBuf::new(self.buffer.read_buf());
@@ -514,6 +528,8 @@ pub struct Writer<W, S: StreamSerializer> {
     // output is being written, if the future is dropped meanwhile it's
     // unknown what was written
     writing: bool,
+    // the context the values are serialized in
+    context: deser_core::Context,
 }
 
 impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
@@ -528,7 +544,22 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
             serializer,
             limit: DEFAULT_BUFFER_LIMIT,
             writing: false,
+            context: deser_core::Context::new(),
         }
+    }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// by the callback of [`write_with`](Self::write_with) takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 
     /// Sets how much output of a value is buffered before it's written.
@@ -577,6 +608,7 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
         }
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
+        driver.state_mut().set_default_context(self.context.clone());
         // output that was not written (for instance of values serialized
         // before the serializer was given to the writer) comes first
         self.write_output().await?;

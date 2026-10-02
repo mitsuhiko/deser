@@ -38,8 +38,8 @@ All notable changes to deser are documented here.
   shared.  Its values are the defaults of the extension values of the
   `State` (`State::get` returns the value of the state or the one of the
   context).  The deserializers and serializers of the formats, the drivers,
-  `io::Reader`, `io::Writer` and `stream::InputBuffer` have `set_context`
-  and `context`.  A context set on the driver (for instance in the setup
+  `io::Reader`, `io::Writer`, `stream::InputBuffer` and the readers,
+  writers and codec of `deser-tokio` have `set_context` and `context`.  A context set on the driver (for instance in the setup
   callback of `deserialize_with`) takes precedence over the one of the
   deserializer or serializer (see `State::set_default_context`).
 - **Breaking:** configuration given from the outside moved into the

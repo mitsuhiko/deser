@@ -75,6 +75,19 @@ impl<D: StreamDeserializer, S: StreamSerializer, T> Codec<D, S, T> {
         &self.serializer
     }
 
+    /// Sets the context the values are deserialized and serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.buffer.set_context(context);
+    }
+
+    /// Returns the context the values are deserialized and serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        self.buffer.context()
+    }
+
     fn decode_buffered(&mut self, src: &mut BytesMut) -> Result<Option<T>, Error>
     where
         T: DeserializeOwned,
@@ -131,7 +144,11 @@ impl<D: StreamDeserializer, S: StreamSerializer, T, V: Serialize> tokio_util::co
     fn encode(&mut self, item: V, dst: &mut BytesMut) -> Result<(), Error> {
         // the value is written at once, the output is moved to the
         // destination
-        self.serializer.serialize(&item)?;
+        let mut driver = deser_core::ser::SerializeDriver::new(&item);
+        driver
+            .state_mut()
+            .set_default_context(self.buffer.context().clone());
+        self.serializer.drive(&mut driver)?;
         dst.extend_from_slice(self.serializer.output());
         self.serializer.clear_output();
         Ok(())
