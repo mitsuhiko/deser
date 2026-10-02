@@ -83,7 +83,9 @@ impl BytesFormat {
     ///
     /// This is [`BytesFormat::BASE64`] unless the state or the context has a
     /// different one.
-    #[inline]
+    // not inlined: serializers read it once per value, inlining the lookup
+    // into their loops made them slower
+    #[inline(never)]
     pub fn of(state: &State) -> BytesFormat {
         state.get::<BytesFormat>().copied().unwrap_or_default()
     }
