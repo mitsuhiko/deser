@@ -4,6 +4,14 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
+- Added `Context`: configuration (typed values) that is given to
+  serializations and deserializations from the outside, created once and
+  shared.  Its values are the defaults of the extension values of the
+  `State` (`State::get` returns the value of the state or the one of the
+  context).  It's passed with `Deserializer::deserialize_in`,
+  `Deserializer::update_in`, `Serializer::serialize_in`, the
+  `set_context` methods of the drivers and of `io::Reader`, `io::Writer`
+  and `stream::InputBuffer`.
 - **Breaking:** merged `DeserializeAs` into `Deserialize`, which has a
   type parameter for the type of the value: `Deserialize<'de, T = Self>`.
   Adapters implement `Deserialize<'de, T>` with the methods of

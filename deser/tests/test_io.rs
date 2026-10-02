@@ -547,3 +547,39 @@ fn test_writer_state() {
         .unwrap();
     assert_eq!(writer.into_inner(), b"jane 42\n");
 }
+
+/// A number offset by the `u64` of the state.
+#[derive(Debug, PartialEq)]
+struct Offset(u64);
+
+impl<'de> deser::Deserialize<'de> for Offset {
+    fn deserialize_atom(
+        slot: &mut deser::de::Slot<Offset>,
+        atom: Atom,
+        state: &mut deser::State,
+    ) -> Result<(), Error> {
+        match atom {
+            Atom::U64(value) => {
+                slot.set(Offset(value + state.get::<u64>().copied().unwrap_or(0)));
+                Ok(())
+            }
+            other => deser::de::default_atom(slot, other, state),
+        }
+    }
+}
+
+#[test]
+fn test_reader_context() {
+    let mut reader = Reader::new("1\n2\n3\n".as_bytes(), Lines::default());
+    assert_eq!(reader.read::<Offset>().unwrap(), Some(Offset(1)));
+    reader.set_context(deser::Context::new().with(10u64));
+    assert_eq!(reader.read::<Offset>().unwrap(), Some(Offset(12)));
+    // a context given to the driver takes precedence
+    let context = deser::Context::new().with(100u64);
+    assert_eq!(
+        reader
+            .read_with::<Offset, _>(|driver| driver.set_context(&context))
+            .unwrap(),
+        Some(Offset(103))
+    );
+}

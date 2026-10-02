@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::any::TypeId;
 use core::fmt;
 
+use crate::Context;
 use crate::arena::{Arena, Buffer};
 use crate::error::{Error, ErrorContext};
 use crate::event::ContainerShape;
@@ -49,6 +50,11 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// register types that add context to errors (see
 /// [`add_error_context`](Self::add_error_context)).
 ///
+/// The extension values default to the values of the [`Context`] of the
+/// serialization or deserialization (see [`set_context`](Self::set_context)):
+/// the context is the configuration given from the outside, the state holds
+/// what changes while values are processed.
+///
 /// Extension values have to be [`Send`] and [`Sync`] so that the state is
 /// too.  This means that the state never prevents an ongoing serialization
 /// or deserialization from moving between threads.  They are `Sync` as
@@ -56,6 +62,8 @@ pub(crate) const NO_RANGE: (usize, usize) = (usize::MAX, 0);
 /// recordings can be serialized.
 pub struct State {
     extensions: Extensions,
+    // the defaults of the extension values
+    context: Context,
     // the number of open containers
     pub(crate) depth: usize,
     // the shape of the container that is currently started
@@ -103,6 +111,7 @@ impl State {
     pub fn new() -> State {
         State {
             extensions: Extensions::default(),
+            context: Context::new(),
             depth: 0,
             container_shape: ContainerShape::new(),
             is_map_key: false,
@@ -373,15 +382,42 @@ impl State {
 
     /// Returns an extension value.
     ///
-    /// Returns `None` if the value was never set.
+    /// This is the value set in the state or, if there is none, the value
+    /// of the [context](Self::context).  Returns `None` if neither has a
+    /// value of the type.
     #[inline]
     pub fn get<T: fmt::Debug + Send + Sync + 'static>(&self) -> Option<&T> {
-        self.extensions.get()
+        match self.extensions.get() {
+            Some(value) => Some(value),
+            None => self.context.get(),
+        }
+    }
+
+    /// Returns the context of the serialization or deserialization.
+    ///
+    /// The context holds the configuration given from the outside, its
+    /// values are the defaults of the extension values (see
+    /// [`get`](Self::get)).
+    #[inline]
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
+    /// Sets the context of the serialization or deserialization.
+    ///
+    /// This replaces the context.  The drivers forward this (see
+    /// [`DeserializeDriver::set_context`](crate::de::DeserializeDriver::set_context)
+    /// and [`SerializeDriver::set_context`](crate::ser::SerializeDriver::set_context)),
+    /// which is typically done before the first event.
+    pub fn set_context(&mut self, context: Context) {
+        self.context = context;
     }
 
     /// Returns a mutable extension value.
     ///
-    /// If the value was never set, it's initialized with the default value.
+    /// If the value was never set in the state, it's initialized with the
+    /// default value of the type (not the value of the context, which is
+    /// hidden by the value of the state from then on).
     #[inline]
     pub fn get_mut<T: Default + fmt::Debug + Send + Sync + 'static>(&mut self) -> &mut T {
         self.extensions.get_mut()

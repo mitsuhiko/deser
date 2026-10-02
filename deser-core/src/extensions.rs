@@ -4,7 +4,7 @@ use core::any::{Any, TypeId, type_name};
 use core::fmt::{self, Debug};
 
 #[derive(Copy, Clone)]
-pub(crate) struct TypeKey(TypeId, &'static str);
+pub(crate) struct TypeKey(pub(crate) TypeId, &'static str);
 
 impl TypeKey {
     pub(crate) fn of<T: 'static>() -> TypeKey {
@@ -26,7 +26,7 @@ impl Debug for TypeKey {
     }
 }
 
-trait DebugAny: Any + Debug + Send + Sync {
+pub(crate) trait DebugAny: Any + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;

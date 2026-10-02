@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-use crate::Text;
 use crate::arena::{Alloc, Buffer};
 use crate::error::Error;
 use crate::ser::layer::{EventFn, Layer, Next};
@@ -13,6 +12,7 @@ use crate::ser::{
     IndexedStruct, PLAIN_BUDGET, PlainSink, Serialize, SerializeRef, StructField,
 };
 use crate::{Atom, Event, State};
+use crate::{Context, Text};
 
 use super::{MapEmitter, SeqEmitter, SerializeHandle, StructEmitter};
 
@@ -497,6 +497,15 @@ impl<'a> SerializeDriver<'a> {
     /// serializable values can then pick up.
     pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
+    }
+
+    /// Sets the context of the serialization.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).  This replaces the context, it's
+    /// cheap as the values are shared.
+    pub fn set_context(&mut self, context: &Context) {
+        self.state.set_context(context.clone());
     }
 
     /// Adds a layer.

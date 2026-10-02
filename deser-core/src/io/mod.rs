@@ -106,6 +106,7 @@ use core::any::Any;
 use core::marker::PhantomData;
 use std::io::{Read, Write};
 
+use crate::Context;
 use crate::de::{
     Deserialize, DeserializeDriver, DeserializeOwned, Deserializer, StreamDeserializer,
 };
@@ -148,6 +149,15 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
     }
 
     /// Fails if a value is being read with [`read_next`](Self::read_next).
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).  A context set by the callback of
+    /// [`read_with`](Self::read_with) takes precedence.
+    pub fn set_context(&mut self, context: Context) {
+        self.buffer.set_context(context);
+    }
+
     fn ensure_idle(&self) -> Result<(), Error> {
         match self.pending {
             Some(_) => Err(Error::new(
@@ -506,6 +516,7 @@ pub struct Writer<W, S: StreamSerializer> {
     writer: W,
     serializer: S,
     limit: usize,
+    context: Context,
 }
 
 impl<W: Write, S: StreamSerializer> Writer<W, S> {
@@ -519,7 +530,17 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
             writer,
             serializer,
             limit: DEFAULT_BUFFER_LIMIT,
+            context: Context::new(),
         }
+    }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).  A context set by the callback of
+    /// [`write_with`](Self::write_with) takes precedence.
+    pub fn set_context(&mut self, context: Context) {
+        self.context = context;
     }
 
     /// Sets how much output of a value is buffered before it's written.
@@ -604,7 +625,9 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// stream holds an incomplete value and the writer refuses to write
     /// more values (see [`StreamSerializer::in_progress`]).
     pub fn write<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        self.write_driver(&mut SerializeDriver::new(&value))
+        let mut driver = SerializeDriver::new(&value);
+        driver.set_context(&self.context);
+        self.write_driver(&mut driver)
     }
 
     /// Serializes a value with a configured driver and writes it.
@@ -617,6 +640,7 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         let mut driver = SerializeDriver::new(&value);
+        driver.set_context(&self.context);
         setup(&mut driver);
         self.write_driver(&mut driver)
     }

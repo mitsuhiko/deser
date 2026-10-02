@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use crate::State;
 use crate::Text;
 use crate::arena::Buffer;
 use crate::de::layer::{Layer, LayerEvent, Next};
@@ -10,6 +9,7 @@ use crate::de::lexical::ContentKey;
 use crate::de::{Deserialize, InlineEvent, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
+use crate::{Context, State};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
 ///
@@ -381,6 +381,15 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// next into the state.
     pub fn state_mut(&mut self) -> &mut State {
         &mut self.core.state
+    }
+
+    /// Sets the context of the deserialization.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).  This replaces the context, it's
+    /// cheap as the values are shared.
+    pub fn set_context(&mut self, context: &Context) {
+        self.core.state.set_context(context.clone());
     }
 
     /// Adds a layer.

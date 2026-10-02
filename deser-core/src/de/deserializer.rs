@@ -1,6 +1,6 @@
-use crate::State;
 use crate::de::{Deserialize, DeserializeDriver, SinkHandle};
 use crate::error::{Error, ErrorKind};
+use crate::{Context, State};
 
 /// Deserializes values from an input.
 ///
@@ -75,6 +75,17 @@ pub trait Deserializer<'de> {
         })
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).
+    fn deserialize_in<T: Deserialize<'de>>(&mut self, context: &Context) -> Result<T, Error>
+    where
+        Self: Sized,
+    {
+        self.deserialize_with(|driver| driver.set_context(context))
+    }
+
     /// Updates an existing value with the next value.
     ///
     /// See [`Deserialize::deserialize_update`].  If this fails, the value
@@ -84,6 +95,20 @@ pub trait Deserializer<'de> {
         Self: Sized,
     {
         self.update_with(value, |_| {})
+    }
+
+    /// Updates an existing value with the next value in a context.
+    ///
+    /// See [`update`](Self::update) and [`deserialize_in`](Self::deserialize_in).
+    fn update_in<T: Deserialize<'de>>(
+        &mut self,
+        value: &mut T,
+        context: &Context,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        self.update_with(value, |driver| driver.set_context(context))
     }
 
     /// Updates an existing value with the next value after setting up the

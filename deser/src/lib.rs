@@ -173,8 +173,9 @@ pub use deser_core::derive;
 
 #[doc(inline)]
 pub use deser_core::{
-    Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorAttachment, ErrorCategory, ErrorContext,
-    ErrorKind, Event, EventData, Implicit, ImplicitValue, Order, Position, Source, State, Text,
+    Atom, Bytes, BytesFormat, ContainerShape, Context, Error, ErrorAttachment, ErrorCategory,
+    ErrorContext, ErrorKind, Event, EventData, Implicit, ImplicitValue, Order, Position, Source,
+    State, Text,
 };
 
 // common re-exports

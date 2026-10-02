@@ -1,9 +1,9 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::Position;
 use crate::de::{Deserialize, DeserializeDriver, Frame, Progress, StreamDeserializer};
 use crate::error::{Error, ErrorKind};
+use crate::{Context, Position};
 
 /// The minimum number of bytes offered to read into.
 const READ_SIZE: usize = 8 * 1024;
@@ -92,6 +92,8 @@ pub struct InputBuffer<D: StreamDeserializer> {
     failed: bool,
     // a value is being deserialized in parts
     partial: bool,
+    // the context of the values (see `set_context`)
+    context: Context,
 }
 
 impl<D: StreamDeserializer> InputBuffer<D> {
@@ -112,6 +114,29 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             done: false,
             failed: false,
             partial: false,
+            context: Context::new(),
+        }
+    }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The context is given to the drivers the values are deserialized
+    /// with (see [`DeserializeDriver::set_context`]) unless they have a
+    /// context already.
+    pub fn set_context(&mut self, context: Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
+    /// Gives the context to a driver which has none.
+    #[inline]
+    fn apply_context(&self, driver: &mut DeserializeDriver<'_, '_>) {
+        if !self.context.is_empty() && driver.state().context().is_empty() {
+            driver.set_context(&self.context);
         }
     }
 
@@ -368,6 +393,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             self.deserializer.supports_partial(),
             "the stream deserializer does not support partial deserialization"
         );
+        self.apply_context(driver);
         // a value that was framed already (see `peek`)
         if self.ready.is_some() {
             return self.drive_transient(driver).map(|()| Status::Ready);
@@ -565,6 +591,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     ///
     /// Panics if no value is ready (see [`poll`](Self::poll)).
     pub fn drive<'a>(&'a mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        self.apply_context(driver);
         let (range, position) = self.take_ready();
         let frame = &self.data[range];
         self.deserializer

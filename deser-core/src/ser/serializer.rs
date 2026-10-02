@@ -1,3 +1,4 @@
+use crate::Context;
 use crate::error::Error;
 use crate::ser::{Serialize, SerializeDriver, SerializeRef};
 
@@ -78,6 +79,18 @@ pub trait Serializer {
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         self.drive(&mut driver)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`]).
+    fn serialize_in<T>(&mut self, value: &T, context: &Context) -> Result<(), Error>
+    where
+        T: Serialize + ?Sized,
+        Self: Sized,
+    {
+        self.serialize_with(value, |driver| driver.set_context(context))
     }
 
     /// Serializes the value of a reference.
