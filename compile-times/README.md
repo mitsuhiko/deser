@@ -125,27 +125,47 @@ parentheses is how much larger they are than hello world (in KiB).
 | hello world                     | 334 KiB          | 279 KiB         |
 | serde                           | 418 KiB (+84)    | 311 KiB (+32)   |
 | miniserde                       | 383 KiB (+49)    | 295 KiB (+16)   |
-| deser                           | 635 KiB (+301)   | 409 KiB (+129)  |
-| deser (without zmij)            | 652 KiB (+318)   | 441 KiB (+162)  |
+| deser                           | 602 KiB (+268)   | 409 KiB (+129)  |
+| deser (without zmij)            | 619 KiB (+285)   | 441 KiB (+162)  |
 | serde, 100 types                | 1226 KiB (+892)  | 860 KiB (+581)  |
 | miniserde, 100 types            | 644 KiB (+310)   | 491 KiB (+211)  |
-| deser, 100 types                | 1110 KiB (+776)  | 671 KiB (+391)  |
-| deser (without zmij), 100 types | 1127 KiB (+793)  | 703 KiB (+424)  |
+| deser, 100 types                | 996 KiB (+662)   | 671 KiB (+391)  |
+| deser (without zmij), 100 types | 1013 KiB (+679)  | 687 KiB (+408)  |
 
-* The fixed cost of deser is high: the small program is 217 KiB larger
+* The fixed cost of deser is high: the small program is 184 KiB larger
   than with serde (98 KiB optimized for size).  The derived code of
   the small program is only 3.5 KiB, the rest is the runtime (the
   drivers, the JSON reader and writer, errors, extension values like big
   integers and base64 bytes) and the parts of the standard library it
   uses.
-* A type costs less than with serde: 4.8 KiB per struct and enum
+* A type costs less than with serde: 3.9 KiB per struct and enum
   against 8.1 KiB with serde (2.6 KiB against 5.5 KiB optimized for
-  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 9%
+  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 19%
   smaller than serde (22% optimized for size).  It was 6.5 KiB (3.9 KiB): the fields are
   deserialized by slots that exist once per type of field (see above),
   functions like `from_str` only create the sink of the value for every
   type (`deserialize_value`) and the helpers that serialize, describe
   and look up unit enums are not inlined into every type.
+* Functions that are only called through a vtable must not be
+  inlinable: rustc copies inlinable functions (those marked `#[inline]`
+  and small ones it infers) into every codegen unit that refers to them,
+  and the vtable refers to them where it's created.  The derived
+  `IndexedStruct::field` became small enough to be inferred when
+  `Serialize` stopped being a trait object and existed twice per struct,
+  like the `Erased` shims of `SerializeRef` (49 KiB with 100 types, the
+  profile optimized for size has one codegen unit and is not affected).
+  `field` is `#[inline(never)]` now.
+* Functions like `to_string` only erase the type of the value
+  (`SerializeRef`) and call a function that is not generic.  Going
+  through `to_string_with` for every type cost 65 KiB with 100 types.
+  The JSON writer is chosen where the configuration is a constant, so
+  the pretty printer is only linked if it's used.
+* Formats declare their raw values with a `RawFormatId` (which has no
+  functions) and get the `RawFormatInfo` from the raw value that
+  requests one: when they referred to the description of their format,
+  every program that wrote JSON contained the JSON parser (`replay`) and
+  every program that read it the scanner of raw values.  A program that
+  only writes JSON was 52 KiB larger.
 * The serialize driver is specialized for every writer it drives (the
   writers' event handlers are inlined into it for speed), every writer a
   program can reach costs a copy of it.  The formats keep the pausable
