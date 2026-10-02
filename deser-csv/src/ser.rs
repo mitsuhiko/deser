@@ -252,7 +252,7 @@ impl SerializerConfig {
     ///
     /// The value has to be a sequence of records.
     pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
-        self.to_string_with(value, |_| {})
+        self.to_string_ref(SerializeRef::new(&value))
     }
 
     /// Serializes the records of a value with a configured driver.
@@ -269,6 +269,18 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
+        let mut out = Vec::new();
+        self.write_whole(&mut WriterState::default(), &mut driver, true, &mut out)?;
+        Ok(into_string(out))
+    }
+
+    /// Serializes a value whose type is erased (see
+    /// [`to_string`](Self::to_string)).
+    ///
+    /// This is not generic: the code that exists for every type only
+    /// erases it.
+    fn to_string_ref(&self, value: SerializeRef<'_>) -> Result<String, Error> {
+        let mut driver = SerializeDriver::from_ref(value);
         let mut out = Vec::new();
         self.write_whole(&mut WriterState::default(), &mut driver, true, &mut out)?;
         Ok(into_string(out))

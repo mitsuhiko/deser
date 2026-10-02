@@ -630,7 +630,7 @@ impl SerializerConfig {
 
     /// Serializes the given value.
     pub fn to_vec<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, Error> {
-        self.to_vec_with(value, |_| {})
+        self.to_vec_ref(SerializeRef::new(&value))
     }
 
     /// Serializes the given value with a configured driver.
@@ -647,6 +647,16 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
+        self.serialize_driver(&mut driver)
+    }
+
+    /// Serializes a value whose type is erased (see
+    /// [`to_vec`](Self::to_vec)).
+    ///
+    /// This is not generic: the code that exists for every type only
+    /// erases it.
+    fn to_vec_ref(&self, value: SerializeRef<'_>) -> Result<Vec<u8>, Error> {
+        let mut driver = SerializeDriver::from_ref(value);
         self.serialize_driver(&mut driver)
     }
 

@@ -304,7 +304,31 @@ impl SerializerConfig {
     // configurations (see `serialize_driver`)
     #[inline]
     pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
-        self.to_string_with(value, |_| {})
+        // the code that exists for every type only erases it.  If the
+        // configuration is a constant (like the one of `to_string`) only
+        // the writer that is used ends up in the binary.
+        let value = SerializeRef::new(&value);
+        if self.is_compact() {
+            self.to_string_compact(value)
+        } else {
+            self.to_string_pretty(value)
+        }
+    }
+
+    /// Serializes a value without indentation (see `to_string`).
+    #[inline(never)]
+    fn to_string_compact(&self, value: SerializeRef<'_>) -> Result<String, Error> {
+        let mut driver = SerializeDriver::from_ref(value);
+        accept_raw(&mut driver);
+        self.serialize_compact(&mut driver)
+    }
+
+    /// Serializes a value with the pretty writer (see `to_string`).
+    #[inline(never)]
+    fn to_string_pretty(&self, value: SerializeRef<'_>) -> Result<String, Error> {
+        let mut driver = SerializeDriver::from_ref(value);
+        accept_raw(&mut driver);
+        self.serialize_pretty(&mut driver)
     }
 
     /// Serializes the given value with a configured driver.
