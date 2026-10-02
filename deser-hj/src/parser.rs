@@ -455,7 +455,7 @@ impl Parser {
                     // keys without quotes end at whitespace and punctuators
                     _ => {
                         cur.hit_end = false;
-                        let rv = cur.parse_quoteless_key();
+                        let rv = cur.detached(|cur| cur.parse_quoteless_key());
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Key)
                         }
@@ -578,7 +578,7 @@ impl Parser {
         macro_rules! quoteless {
             ($start:expr) => {{
                 cur.pos = $start;
-                let rv = cur.parse_quoteless();
+                let rv = cur.detached(|cur| cur.parse_quoteless());
                 if cur.hit_end && !eof {
                     suspend!($start, Expect::Value)
                 }
@@ -596,7 +596,7 @@ impl Parser {
         macro_rules! multiline_string {
             ($start:expr) => {{
                 cur.hit_end = false;
-                let rv = cur.parse_multiline_str(scratch, $start);
+                let rv = cur.detached(|cur| cur.parse_multiline_str(scratch, $start));
                 if cur.hit_end && !eof {
                     suspend!($start, Expect::Value)
                 }
@@ -640,7 +640,7 @@ impl Parser {
                 // a map key at the root starts a map without braces
                 if container == Container::Top && partial.is_none() && byte != b'{' && byte != b'['
                 {
-                    match cur.is_map_key() {
+                    match cur.detached(|cur| cur.is_map_key()) {
                         Some(true) => {
                             stack.push(container);
                             container = Container::Braceless;
@@ -802,6 +802,10 @@ fn eof_error() -> Error {
 }
 
 /// Reads tokens from the input.
+///
+/// The parser keeps its cursor in registers: functions that are not
+/// inlined get a copy of it (see [`detached`](Self::detached)).
+#[derive(Clone, Copy)]
 pub(crate) struct Cursor<'a> {
     pub(crate) input: &'a [u8],
     pub(crate) pos: usize,
@@ -857,6 +861,25 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// Calls a function which is not inlined with a copy of the cursor and
+    /// takes the copy back.
+    ///
+    /// If the address of the cursor of the parser was passed to a function,
+    /// the cursor would have to be kept in memory and every token would
+    /// load and store the position.
+    #[inline(always)]
+    fn detached<R>(&mut self, f: impl FnOnce(&mut Cursor<'a>) -> R) -> R {
+        let mut copy = *self;
+        let rv = f(&mut copy);
+        // the input and the options do not change, they stay in registers
+        self.pos = copy.pos;
+        self.hit_end = copy.hit_end;
+        self.partial = copy.partial;
+        self.number_start = copy.number_start;
+        self.truncated = copy.truncated;
+        rv
+    }
+
     /// Parses a string, the cursor is after the opening quote at `start`.
     ///
     /// An incomplete string continues where it stopped.  If the string is
@@ -886,7 +909,7 @@ impl<'a> Cursor<'a> {
                 }
             }
         }
-        self.parse_str_slow(buffer, start, resume)
+        self.detached(|cur| cur.parse_str_slow(buffer, start, resume))
     }
 
     /// Parses a string that is incomplete or has escapes (see
@@ -1009,6 +1032,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    #[inline]
     fn next_or_nul(&mut self) -> u8 {
         self.next().unwrap_or(b'\0')
     }

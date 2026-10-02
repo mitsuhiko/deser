@@ -500,7 +500,7 @@ impl Parser {
                     #[cfg(json5)]
                     b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' | b'\\' | 0x80..=0xff => {
                         cur.hit_end = false;
-                        let rv = cur.parse_identifier(scratch);
+                        let rv = cur.detached(|cur| cur.parse_identifier(scratch));
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Key)
                         }
@@ -514,7 +514,7 @@ impl Parser {
                     #[cfg(hjson)]
                     _ => {
                         cur.hit_end = false;
-                        let rv = cur.parse_quoteless_key();
+                        let rv = cur.detached(|cur| cur.parse_quoteless_key());
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Key)
                         }
@@ -638,19 +638,35 @@ impl Parser {
         #[cfg(not(hjson))]
         macro_rules! number {
             ($byte:expr, $start:expr) => {{
-                cur.number_start = $start;
-                cur.truncated = false;
-                let rv = match $byte {
-                    b'-' => {
-                        let first_digit = cur.next_or_nul();
-                        cur.parse_integer(false, first_digit)
+                let lead = cur.number_lead($byte);
+                if !matches!(lead, Lead::Integer(_)) {
+                    cur.number_start = $start;
+                    cur.truncated = false;
+                }
+                let rv = match lead {
+                    Lead::Integer(number) => Ok(number),
+                    Lead::Fraction(nonnegative, significand) => {
+                        cur.detached(|cur| cur.parse_decimal(nonnegative, significand, 0))
                     }
-                    #[cfg(json5)]
-                    b'+' => {
-                        let first_digit = cur.next_or_nul();
-                        cur.parse_integer(true, first_digit)
+                    Lead::Exponent(nonnegative, significand) => cur.detached(|cur| {
+                        cur.parse_exponent(nonnegative, significand, 0)
+                            .map(Number::Literal)
+                    }),
+                    Lead::Other => {
+                        cur.pos = $start + 1;
+                        match $byte {
+                            b'-' => {
+                                let first_digit = cur.next_or_nul();
+                                cur.detached(|cur| cur.parse_integer(false, first_digit))
+                            }
+                            #[cfg(json5)]
+                            b'+' => {
+                                let first_digit = cur.next_or_nul();
+                                cur.detached(|cur| cur.parse_integer(true, first_digit))
+                            }
+                            byte => cur.detached(|cur| cur.parse_integer(true, byte)),
+                        }
                     }
-                    byte => cur.parse_integer(true, byte),
                 };
                 // the number might continue
                 if cur.hit_end && !eof {
@@ -674,7 +690,7 @@ impl Parser {
         macro_rules! quoteless {
             ($start:expr) => {{
                 cur.pos = $start;
-                let rv = cur.parse_quoteless();
+                let rv = cur.detached(|cur| cur.parse_quoteless());
                 if cur.hit_end && !eof {
                     suspend!($start, Expect::Value)
                 }
@@ -693,7 +709,7 @@ impl Parser {
         macro_rules! multiline_string {
             ($start:expr) => {{
                 cur.hit_end = false;
-                let rv = cur.parse_multiline_str(scratch, $start);
+                let rv = cur.detached(|cur| cur.parse_multiline_str(scratch, $start));
                 if cur.hit_end && !eof {
                     suspend!($start, Expect::Value)
                 }
@@ -742,7 +758,7 @@ impl Parser {
                         let _ = next_byte!(Expect::Value);
                         let start = cur.pos;
                         partial = Pending::None;
-                        match raw_value(cur, scratch, eof, base, out) {
+                        match cur.detached(|cur| raw_value(cur, scratch, eof, base, out)) {
                             RawValue::Emitted(rv) => sink!(rv, Expect::AfterValue),
                             RawValue::Incomplete => {
                                 partial = Pending::Raw;
@@ -760,7 +776,7 @@ impl Parser {
                 #[cfg(hjson)]
                 if container == Container::Top && partial.is_none() && byte != b'{' && byte != b'['
                 {
-                    match cur.is_map_key() {
+                    match cur.detached(|cur| cur.is_map_key()) {
                         Some(true) => {
                             stack.push(container);
                             container = Container::Braceless;
@@ -801,7 +817,7 @@ impl Parser {
                             b't' => (b"rue", Event::from(true)),
                             _ => (b"alse", Event::from(false)),
                         };
-                        let rv = cur.parse_ident(rest);
+                        let rv = cur.detached(|cur| cur.parse_ident(rest));
                         if cur.hit_end && !eof {
                             suspend!(start, Expect::Value)
                         }
@@ -1077,7 +1093,26 @@ fn eof_error() -> Error {
     Error::new(ErrorKind::EndOfFile, "unexpected end of file")
 }
 
+/// The start of a number (see [`Cursor::number_lead`]).
+#[cfg(not(hjson))]
+enum Lead<'a> {
+    /// An integer, the number is complete.
+    Integer(Number<'a>),
+    /// The integer part (with the sign) of a number with a fraction, the
+    /// cursor is at the decimal point.
+    Fraction(bool, u64),
+    /// The integer part (with the sign) of a number with an exponent, the
+    /// cursor is at the `e`.
+    Exponent(bool, u64),
+    /// Any other number, it's parsed from the start.
+    Other,
+}
+
 /// Reads tokens from the input.
+///
+/// The parser keeps its cursor in registers: functions that are not
+/// inlined get a copy of it (see [`detached`](Self::detached)).
+#[derive(Clone, Copy)]
 pub(crate) struct Cursor<'a> {
     pub(crate) input: &'a [u8],
     pub(crate) pos: usize,
@@ -1140,6 +1175,25 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// Calls a function which is not inlined with a copy of the cursor and
+    /// takes the copy back.
+    ///
+    /// If the address of the cursor of the parser was passed to a function,
+    /// the cursor would have to be kept in memory and every token would
+    /// load and store the position.
+    #[inline(always)]
+    fn detached<R>(&mut self, f: impl FnOnce(&mut Cursor<'a>) -> R) -> R {
+        let mut copy = *self;
+        let rv = f(&mut copy);
+        // the input and the options do not change, they stay in registers
+        self.pos = copy.pos;
+        self.hit_end = copy.hit_end;
+        self.partial = copy.partial;
+        self.number_start = copy.number_start;
+        self.truncated = copy.truncated;
+        rv
+    }
+
     /// Parses a string, the cursor is after the opening quote at `start`.
     ///
     /// An incomplete string continues where it stopped.  If the string is
@@ -1173,7 +1227,7 @@ impl<'a> Cursor<'a> {
                 }
             }
         }
-        self.parse_str_slow(buffer, start, resume)
+        self.detached(|cur| cur.parse_str_slow(buffer, start, resume))
     }
 
     /// Parses a string that is incomplete or has escapes (see
@@ -1516,6 +1570,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    #[inline]
     fn next_or_nul(&mut self) -> u8 {
         self.next().unwrap_or(b'\0')
     }
@@ -1566,6 +1621,49 @@ impl<'a> Cursor<'a> {
         // move the digits to the top of the word, the bytes below them are
         // zeros (leading zeros of the number)
         Some((combine_digits(digits << (64 - 8 * count)), count))
+    }
+
+    /// Parses the integer part of a number of up to nine digits, the
+    /// cursor is after its first byte.
+    ///
+    /// This is inlined into the parser: integers are complete, the
+    /// fraction or exponent of a float continues out of line.  Everything
+    /// else (and numbers near the end of the input) is
+    /// [`Lead::Other`], the cursor is anywhere then.
+    #[cfg(not(hjson))]
+    #[inline(always)]
+    fn number_lead(&mut self, first: u8) -> Lead<'a> {
+        let nonnegative = first != b'-';
+        let first = if nonnegative {
+            first
+        } else {
+            match self.input.get(self.pos) {
+                Some(&first) => {
+                    self.pos += 1;
+                    first
+                }
+                None => return Lead::Other,
+            }
+        };
+        //# a leading zero might be a hexadecimal number in JSON5
+        if !matches!(first, b'1'..=b'9') {
+            return Lead::Other;
+        }
+        let Some((digits, count)) = self.digits() else {
+            return Lead::Other;
+        };
+        if count == 8 {
+            return Lead::Other;
+        }
+        let value = u64::from(first - b'0') * POW10_U64[count] + digits;
+        // the digits ended before the end of the input (there were eight
+        // bytes)
+        match self.input[self.pos] {
+            b'.' => Lead::Fraction(nonnegative, value),
+            b'e' | b'E' => Lead::Exponent(nonnegative, value),
+            _ if nonnegative => Lead::Integer(Number::U64(value)),
+            _ => Lead::Integer(Number::I64(-(value as i64))),
+        }
     }
 
     #[inline]

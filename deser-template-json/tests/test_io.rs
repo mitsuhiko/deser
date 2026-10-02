@@ -23,6 +23,17 @@ fn test_stop_in_chunks() {
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_numbers_in_chunks() {
+    // numbers whose start is parsed by the parser continue across chunks
+    check_stream(
+        &STOP,
+        "1\n-2\n12.5\n123456789\n-1234567890\n3e2\n0\n-0.5\n12345678.875e-3\n7",
+        10,
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_values_without_whitespace() {
     check_stream(&STOP, r#"[1]{"a":2}"x"3"#, 4);
 }

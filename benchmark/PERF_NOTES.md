@@ -344,6 +344,31 @@ are separate branches: when the position after the digits was computed
 from the count (a data dependency instead of a predicted branch) nine
 digit integers (citm-catalog) were 8% slower to parse.
 
+### JSON Cursor in Registers
+
+The parser's `Cursor` (the input, the position and a few flags) was kept
+on the stack because its address was passed to the functions that are
+not inlined (`parse_integer`, `parse_str_slow`, ...): every token loaded
+and stored the position and loaded the input again.  These functions get
+a copy of the cursor now (`Cursor::detached`), only the fields they can
+change are taken back, so the cursor of the parser stays in registers.
+
+Alone this made strings and structure 3%-5% faster but numbers 3%-4%
+slower (canada, point-cloud), as every number copied the cursor out and
+back.  `Cursor::number_lead` parses the integer part of numbers of up to
+nine digits in the parser: integers are complete there, floats continue
+with their fraction or exponent out of line (starting again from the
+first digit cost point-cloud 6%).  Taking back only the fields that can
+change (not the input and the options) was another 2%-3% for floats.
+Together deserializing got 2%-7% faster for all JSON datasets (canada
+4%, point-cloud 7%, tree 7%, citm-catalog 4%, Twitter 5%), ignoring
+Twitter 6.5%.
+
+Measuring this needed interleaved single rounds (`time FILTER 1` of the
+binaries in turns, 15-20 times) and a copy of the baseline binary as
+control: with other load on the machine runs of several rounds differed
+by up to 10% between binaries, in both directions.
+
 ### JSON Strings
 
 `Cursor::parse_str` handles strings without escapes (the string is a

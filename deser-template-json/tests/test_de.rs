@@ -556,6 +556,83 @@ fn test_borrowing() {
 }
 
 #[test]
+fn test_number_forms() {
+    use deser::ext::Number;
+
+    // integers of up to nine digits are parsed by the parser, everything
+    // else continues (or starts again) out of line: longer integers, the
+    // fractions and exponents of floats, leading zeros and numbers at the
+    // end of the input
+    let ints: Vec<i64> = from_str(
+        "[0, -0, 7, -7, 12, -123, 99999999, 100000000, 123456789, -123456789,
+          1234567890, -1234567890, 9007199254740993, -9223372036854775808]",
+    )
+    .unwrap();
+    assert_eq!(
+        ints,
+        [
+            0,
+            0,
+            7,
+            -7,
+            12,
+            -123,
+            99999999,
+            100000000,
+            123456789,
+            -123456789,
+            1234567890,
+            -1234567890,
+            9007199254740993,
+            i64::MIN
+        ]
+    );
+    assert_eq!(from_str::<u64>("18446744073709551615").unwrap(), u64::MAX);
+    for (input, value) in [
+        ("7", 7),
+        ("-7", -7),
+        ("12345678", 12345678),
+        ("123456789", 123456789),
+        ("-123456789", -123456789),
+    ] {
+        assert_eq!(from_str::<i64>(input).unwrap(), value, "{input}");
+    }
+
+    let floats: Vec<f64> = from_str(
+        "[0.5, -0.5, 1.5, -12.25, 123456789.5, 1234567890.5, 1e3, -1E3, 12e-2,
+          123456789e1, 3.0e2, 1.5E+2, 12345678.875e-3]",
+    )
+    .unwrap();
+    assert_eq!(
+        floats,
+        [
+            0.5,
+            -0.5,
+            1.5,
+            -12.25,
+            123456789.5,
+            1234567890.5,
+            1e3,
+            -1e3,
+            0.12,
+            1234567890.0,
+            300.0,
+            150.0,
+            12345.678875
+        ]
+    );
+    let zero: f64 = from_str("-0.0").unwrap();
+    assert!(zero == 0.0 && zero.is_sign_negative());
+    assert_eq!(from_str::<f64>("12.5").unwrap(), 12.5);
+    assert_eq!(from_str::<f64>("-1e2").unwrap(), -100.0);
+
+    // the text of numbers starts at their sign
+    let numbers: Vec<Number> = from_str("[12.50, -3.10e2, 7E0]").unwrap();
+    let texts = numbers.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+    assert_eq!(texts, ["12.50", "-3.10e2", "7E0"]);
+}
+
+#[test]
 fn test_exact_numbers() {
     use deser::ext::{BigInt, Decimal, Number};
 
