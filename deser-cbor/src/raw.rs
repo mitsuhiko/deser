@@ -2,11 +2,12 @@
 use alloc::vec::Vec;
 
 use deser_core::de::{self, DeserializeDriver};
-use deser_core::ext::{Raw, RawFormat, RawFormatInfo};
+use deser_core::ext::{Raw, RawFormat, RawFormatId, RawFormatInfo};
 use deser_core::ser::SerializeRef;
 use deser_core::{Atom, Bytes, Error};
 
 use crate::de::Deserializer;
+use crate::parser::Cursor;
 
 /// The CBOR format of [`RawCbor`] values.
 pub struct Cbor;
@@ -20,9 +21,28 @@ pub struct Cbor;
 /// information.
 pub type RawCbor<'a> = Raw<'a, Cbor>;
 
+/// The identity of the format of raw CBOR values.
+///
+/// The parser and the serializer declare the raw values they pass on with
+/// it, the description (with the functions) is only referred to by the raw
+/// values.
+pub(crate) static ID: RawFormatId = RawFormatId::new("cbor", false);
+
 /// The description of the format of raw CBOR values.
-pub(crate) static FORMAT: RawFormatInfo =
-    RawFormatInfo::new("cbor", false, replay, encode, fallback);
+static FORMAT: RawFormatInfo =
+    RawFormatInfo::new(&ID, replay, encode, fallback).with_data(&SCANNER);
+
+/// Skips an item while validating it (see `Parser::raw_values`).
+///
+/// The parser gets it from the description of the format, so that only
+/// programs with raw values of the format contain it.
+pub(crate) struct Scanner(pub(crate) ScanFn);
+
+/// Skips the item at the cursor (see `parser::skip_raw`).
+type ScanFn = for<'i> fn(&mut Cursor<'i>, &mut Vec<u8>) -> Result<(), Error>;
+
+/// The scanner of raw values.
+static SCANNER: Scanner = Scanner(crate::parser::skip_raw);
 
 impl RawFormat for Cbor {
     #[inline(always)]

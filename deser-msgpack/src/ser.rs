@@ -165,7 +165,7 @@ impl Writer {
     /// canonical.
     fn accept_raw(&self, driver: &mut SerializeDriver<'_>) {
         if !self.canonical {
-            driver.state_mut().set_raw_format(&crate::raw::FORMAT);
+            driver.state_mut().set_raw_format(&crate::raw::ID);
         }
     }
 
@@ -531,7 +531,7 @@ impl Writer {
         // raw MessagePack is written as it is, the serialization only
         // passes it on if it is (see `accept_raw`)
         if let Some(raw) = ext.downcast_value_ref::<RawInput>()
-            && core::ptr::eq(raw.format(), &crate::raw::FORMAT)
+            && raw.is_format(&crate::raw::ID)
         {
             extend(&mut self.out, raw.as_bytes());
             Ok(())

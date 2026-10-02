@@ -5,8 +5,8 @@ use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
-use deser_core::ext::RawInput;
 use deser_core::ext::{ExtValue, Number as ExactNumber};
+use deser_core::ext::{RawFormatInfo, RawInput};
 use deser_core::{Atom, Error, ErrorKind, Event, State};
 
 use crate::copy::extend;
@@ -231,6 +231,10 @@ pub(crate) struct Parser {
     // the last error was an error of a sink, the rest of the value
     // continues at the position
     recoverable: Option<usize>,
+    // the format of the raw value that is requested by `Pending::Raw` if
+    // it's no longer with the state (the top-level value or a value that
+    // continues with more input), see `raw_value`
+    raw_format: Option<&'static RawFormatInfo>,
 }
 
 impl Default for Parser {
@@ -242,6 +246,7 @@ impl Default for Parser {
             scratch: Vec::new(),
             partial: Pending::None,
             recoverable: None,
+            raw_format: None,
         }
     }
 }
@@ -272,6 +277,7 @@ impl Parser {
         self.expect = Expect::Value;
         self.partial = Pending::None;
         self.recoverable = None;
+        self.raw_format = None;
     }
 
     /// Returns where the rest of the value continues if the last error was
@@ -319,9 +325,13 @@ impl Parser {
         // the raw values that are passed on, and the top-level value might
         // be one of them
         let state = out.state_mut();
-        let requested = state.set_raw_format(&crate::raw::FORMAT);
-        if requested && self.is_idle() {
-            self.partial = Pending::Raw;
+        // the request of the top-level value, or of a value whose
+        // request came with the last input (the input ended before it)
+        if let Some(format) = state.set_raw_format(&crate::raw::ID) {
+            if self.is_idle() {
+                self.partial = Pending::Raw;
+            }
+            self.raw_format = Some(format);
         }
         let rv = match self.run(&mut cur, eof, base, options.exact_numbers, out) {
             Ok(progress) => Ok(progress),
@@ -589,10 +599,20 @@ impl Parser {
                         let _ = next_byte!(Expect::Value);
                         let start = cur.pos;
                         partial = Pending::None;
-                        match cur.detached(|cur| raw_value(cur, scratch, eof, base, out)) {
+                        // the format the raw value requested, from the
+                        // request if it was not kept (see `raw_format`)
+                        let format = match self.raw_format.take() {
+                            Some(format) => format,
+                            None => match out.state_mut().take_raw_request() {
+                                Some(format) => format,
+                                None => return Err(raw_without_format()),
+                            },
+                        };
+                        match cur.detached(|cur| raw_value(cur, scratch, eof, base, format, out)) {
                             RawValue::Emitted(rv) => sink!(rv, Expect::AfterValue),
                             RawValue::Incomplete => {
                                 partial = Pending::Raw;
+                                self.raw_format = Some(format);
                                 suspend!(start, Expect::Value)
                             }
                             RawValue::Failed(err) => return Err(err),
@@ -721,10 +741,23 @@ fn raw_value<'i, O: Out<'i>>(
     scratch: &mut Vec<u8>,
     eof: bool,
     base: usize,
+    format: &'static RawFormatInfo,
     out: &mut O,
 ) -> RawValue {
     let start = cur.pos;
-    match skip_raw(cur, scratch, eof, base, out.state_mut()) {
+    // the scanner comes with the description of the format of the raw value
+    // (see `raw::Scanner`): programs without raw values do not contain it
+    let scanned = match format
+        .data()
+        .and_then(|data| data.downcast_ref::<crate::raw::Scanner>())
+    {
+        Some(scanner) => (scanner.0)(cur, scratch, eof, base, out.state_mut()),
+        None => Err(Error::new(
+            ErrorKind::Unexpected,
+            "raw value of an unknown format requested",
+        )),
+    };
+    match scanned {
         Ok(true) => {}
         Ok(false) => return RawValue::Incomplete,
         Err(err) => return RawValue::Failed(err),
@@ -733,7 +766,10 @@ fn raw_value<'i, O: Out<'i>>(
     // SAFETY: the value was validated (see `skip_raw`).  The input is valid
     // UTF-8: strings were validated if the input is a byte slice,
     // everything else is ASCII (or validated like comments).
-    let value = unsafe { RawInput::new(input, &crate::raw::FORMAT) };
+    // The format is the one of the raw value that requested it, which is
+    // this dialect: referring to its description here would bring its
+    // functions (like the serializer) into every program.
+    let value = unsafe { RawInput::new(input, format) };
     out.state_mut()
         .set_input_range(base + start, base + cur.pos);
     RawValue::Emitted(out.emit_input(Atom::Ext(ExtValue::owned_value::<RawInput>(value))))
@@ -759,14 +795,23 @@ fn sink_error(err: Error) -> Option<Error> {
     }
 }
 
+/// The error if a raw value is requested without the description of its
+/// format (see `State::take_raw_request`), which sinks never do.
+#[cold]
+fn raw_without_format() -> Error {
+    Error::new(
+        ErrorKind::Unexpected,
+        "raw value requested without a format",
+    )
+}
+
 /// Skips a value that is wanted as raw value while validating it, the
 /// cursor is at its first byte.
 ///
 /// Returns `false` if the input ends within the value (or after a number
 /// which could continue) and more input can follow.  Then the value is
 /// skipped again once more input is there.
-#[inline(always)]
-fn skip_raw(
+pub(crate) fn skip_raw(
     cur: &mut Cursor<'_>,
     scratch: &mut Vec<u8>,
     eof: bool,

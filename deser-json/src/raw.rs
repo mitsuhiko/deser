@@ -6,11 +6,12 @@ use alloc::vec::Vec;
 use core::str;
 
 use deser_core::de::{self, DeserializeDriver};
-use deser_core::ext::{Raw, RawFormat, RawFormatInfo, TextRawFormat};
+use deser_core::ext::{Raw, RawFormat, RawFormatId, RawFormatInfo, TextRawFormat};
 use deser_core::ser::SerializeRef;
-use deser_core::{Atom, Error, Text};
+use deser_core::{Atom, Error, State, Text};
 
 use crate::de::Deserializer;
+use crate::parser::Cursor;
 
 /// The JSON format of [`RawJson`] values.
 pub struct Json;
@@ -29,8 +30,29 @@ pub(crate) type Dialect = Json;
 /// The name of the format of the raw values of this dialect.
 const NAME: &str = "json";
 
+/// The identity of the format of the raw values of this dialect.
+///
+/// The parser and the serializer declare the raw values they pass on with
+/// it, the description (with the functions) is only referred to by the raw
+/// values.
+pub(crate) static ID: RawFormatId = RawFormatId::new(NAME, true);
+
 /// The description of the format of the raw values of this dialect.
-pub(crate) static FORMAT: RawFormatInfo = RawFormatInfo::new(NAME, true, replay, encode, fallback);
+static FORMAT: RawFormatInfo =
+    RawFormatInfo::new(&ID, replay, encode, fallback).with_data(&SCANNER);
+
+/// Skips a raw value while validating it (see `parser::raw_value`).
+///
+/// The parser gets it from the description of the format, so that only
+/// programs with raw values of the dialect contain it.
+pub(crate) struct Scanner(pub(crate) ScanFn);
+
+/// Skips a value at the cursor (see `parser::skip_raw`).
+type ScanFn =
+    for<'i> fn(&mut Cursor<'i>, &mut Vec<u8>, bool, usize, &mut State) -> Result<bool, Error>;
+
+/// The scanner of the raw values of this dialect.
+static SCANNER: Scanner = Scanner(crate::parser::skip_raw);
 
 impl RawFormat for Dialect {
     #[inline(always)]

@@ -11,7 +11,7 @@ use core::str;
 
 use deser_core::Text;
 use deser_core::de::DeserializeDriver;
-use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, RawInput, Uuid};
+use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, RawFormatInfo, RawInput, Uuid};
 use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, State};
 
 use crate::float::f16_to_f64;
@@ -175,8 +175,8 @@ pub(crate) struct Parser {
     // where the last call stopped
     position: usize,
     // the next item (or the items of the current array) is requested as
-    // raw value (see `Parser::raw_values`)
-    raw: bool,
+    // raw value of the format (see `Parser::raw_values`)
+    raw: Option<&'static RawFormatInfo>,
 }
 
 impl Parser {
@@ -188,7 +188,7 @@ impl Parser {
         self.frame = None;
         self.complete = false;
         self.recoverable = None;
-        self.raw = false;
+        self.raw = None;
     }
 
     /// Returns where the last call stopped (also after an error).
@@ -434,15 +434,16 @@ impl Parser {
         out: &mut O,
     ) -> Result<usize, Result<Progress, Error>> {
         let state = out.state_mut();
-        let requested = state.set_raw_format(&crate::raw::FORMAT);
-        if requested && self.frame.is_none() && !self.complete {
-            self.raw = true;
+        if let Some(format) = state.set_raw_format(&crate::raw::ID)
+            && self.frame.is_none()
+            && !self.complete
+        {
+            self.raw = Some(format);
         }
-        if !self.raw {
+        let Some(format) = self.raw.take() else {
             return Ok(pos);
-        }
-        self.raw = false;
-        let (pos, frame) = self.raw_values(input, pos, base, eof, self.frame, out)?;
+        };
+        let (pos, frame) = self.raw_values(input, pos, base, eof, format, out)?;
         self.frame = frame;
         Ok(pos)
     }
@@ -463,7 +464,8 @@ impl Parser {
     ) -> Result<usize, Result<Progress, Error>> {
         self.complete = false;
         self.recoverable = None;
-        let (pos, frame) = self.raw_values(input, self.position, base, eof, self.frame, out)?;
+        let format = requested_format(out.state_mut()).map_err(Err)?;
+        let (pos, frame) = self.raw_values(input, self.position, base, eof, format, out)?;
         self.frame = frame;
         self.position = pos;
         Ok(pos)
@@ -481,9 +483,10 @@ impl Parser {
         pos: usize,
         base: usize,
         eof: bool,
-        mut frame: Option<Frame>,
+        mut format: &'static RawFormatInfo,
         out: &mut O,
     ) -> Continue {
+        let mut frame = self.frame;
         let mut cur = Cursor {
             input,
             pos,
@@ -506,11 +509,23 @@ impl Parser {
             }
             let start = cur.pos;
             self.position = start;
-            if let Err(err) = cur.skip_item(&mut self.scratch) {
+            // the scanner comes with the description of the format of the
+            // raw value (see `raw::Scanner`): programs without raw values
+            // do not contain it
+            let Some(scanner) = format
+                .data()
+                .and_then(|data| data.downcast_ref::<crate::raw::Scanner>())
+            else {
+                return Err(Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "raw value of an unknown format requested",
+                )));
+            };
+            if let Err(err) = (scanner.0)(&mut cur, &mut self.scratch) {
                 if cur.hit_end && !eof {
                     // the item is parsed again with more input
                     self.frame = frame;
-                    self.raw = true;
+                    self.raw = Some(format);
                     return Err(Ok(Progress::NeedMore(start)));
                 }
                 self.position = cur.pos;
@@ -530,13 +545,19 @@ impl Parser {
                 }
             }
             // SAFETY: the item was validated
-            let value = unsafe { RawInput::new(&input[start..cur.pos], &crate::raw::FORMAT) };
+            // The format is the one of the raw value that requested it:
+            // referring to the description of the format here would bring
+            // its functions (like the serializer) into every program.
+            let value = unsafe { RawInput::new(&input[start..cur.pos], format) };
             let event = Event::Atom(Atom::Ext(ExtValue::owned_value::<RawInput>(value)));
             self.position = cur.pos;
             let more = match cur.emit_borrowed(out, start, event) {
                 Ok(()) => false,
                 // the next item is requested too
-                Err(err) if err.is_raw_request() => true,
+                Err(err) if err.is_raw_request() => {
+                    format = requested_format(out.state_mut()).map_err(Err)?;
+                    true
+                }
                 Err(err) => {
                     // as if the item was accepted, the rest is skipped
                     self.frame = frame;
@@ -554,6 +575,23 @@ impl Parser {
             }
         }
     }
+}
+
+/// Skips an item that is requested as raw value while validating it (see
+/// `Parser::raw_values` and `raw::Scanner`).
+pub(crate) fn skip_raw(cur: &mut Cursor<'_>, buffer: &mut Vec<u8>) -> Result<(), Error> {
+    cur.skip_item(buffer)
+}
+
+/// Returns the format of the raw value that the result of an event
+/// requested (see `State::take_raw_request`).
+fn requested_format(state: &mut State) -> Result<&'static RawFormatInfo, Error> {
+    state.take_raw_request().ok_or_else(|| {
+        Error::new(
+            ErrorKind::Unexpected,
+            "raw value requested without a format",
+        )
+    })
 }
 
 /// Reads data items from the input.

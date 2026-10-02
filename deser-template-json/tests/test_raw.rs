@@ -328,6 +328,22 @@ fn test_reader_in_chunks() {
             "{size}"
         );
     }
+    // the items of a sequence of raw values are requested after the item
+    // before them, the input can end in between
+    let input = "[ 1 , {\"a\": [2]} ,\n [3, \"x\"] ]";
+    for size in super::common::chunk_sizes(input.len()) {
+        let items: Vec<RawText<'static>> = dialect::from_reader(super::common::Chunked {
+            input: input.as_bytes(),
+            size,
+        })
+        .unwrap();
+        let items = items.iter().map(|item| item.get()).collect::<Vec<_>>();
+        if KEEPS_INPUT {
+            assert_eq!(items, ["1", "{\"a\": [2]}", "[3, \"x\"]"], "{size}");
+        } else {
+            assert_eq!(items, ["1", "{\"a\":[2]}", "[3,\"x\"]"], "{size}");
+        }
+    }
 }
 
 #[test]

@@ -6,7 +6,7 @@ use core::fmt;
 use crate::arena::{Arena, Buffer};
 use crate::error::{Error, ErrorContext};
 use crate::event::ContainerShape;
-use crate::ext::RawFormatInfo;
+use crate::ext::{RawFormatId, RawFormatInfo};
 use crate::extensions::{EventData, Extensions};
 
 /// The input range of events without one.
@@ -84,9 +84,10 @@ pub struct State {
     pub(crate) arena: Arena,
     // the format of the raw values that pass through as they are (see
     // `set_raw_format`)
-    pub(crate) raw_format: Option<&'static RawFormatInfo>,
-    // deserialization: the top-level value is wanted as raw value of the
-    // format (see `set_raw_format`)
+    pub(crate) raw_format: Option<&'static RawFormatId>,
+    // deserialization: the next value (or the top-level value) is wanted
+    // as raw value of the format (see `set_raw_format` and
+    // `take_raw_request`)
     pub(crate) raw_requested: Option<&'static RawFormatInfo>,
 }
 
@@ -281,26 +282,43 @@ impl State {
     /// Declares the format of the raw values that pass through as they are.
     ///
     /// Formats with raw values (see [`Raw`](crate::ext::Raw)) call this with
-    /// the description of their format:
+    /// the identity of their format:
     ///
     /// * Deserializers call it before they emit the first event.  Sinks
     ///   then request values that deserialize into raw values of the format
     ///   (see [`Error::is_raw_request`]) and the format passes on their
     ///   input as [`RawInput`](crate::ext::RawInput) rather than their
     ///   events.  The top-level value is requested before the
-    ///   deserialization starts: this returns `true` if the top-level value
-    ///   is wanted as raw value.  Only the first call can return `true`.
+    ///   deserialization starts: if it's wanted as raw value, this returns
+    ///   the description of the format the raw value wants, which the
+    ///   input is emitted with.  Only the first call can return it.
     /// * Serializers call it before the first value and ignore the result.
     ///   Raw values of the format are then emitted as
     ///   [`RawInput`](crate::ext::RawInput), which the serializer writes as
     ///   it is.  Raw values of other formats are serialized as the values
     ///   they hold.
     #[inline(always)]
-    pub fn set_raw_format(&mut self, format: &'static RawFormatInfo) -> bool {
+    pub fn set_raw_format(
+        &mut self,
+        format: &'static RawFormatId,
+    ) -> Option<&'static RawFormatInfo> {
         self.raw_format = Some(format);
         self.raw_requested
             .take()
-            .is_some_and(|requested| core::ptr::eq(requested, format))
+            .filter(|requested| core::ptr::eq(requested.id(), format))
+    }
+
+    /// Takes the description of the format of the raw value that the
+    /// result of an event requested (see [`Error::is_raw_request`]).
+    ///
+    /// Formats emit the input of the value with it (see
+    /// [`RawInput::new`](crate::ext::RawInput::new)): it's the description
+    /// of their own format, but as it comes from the raw value the
+    /// functions of the format are only in programs that use its raw
+    /// values.
+    #[inline]
+    pub fn take_raw_request(&mut self) -> Option<&'static RawFormatInfo> {
+        self.raw_requested.take()
     }
 
     /// Requests the next value as raw value of a format.
@@ -322,7 +340,10 @@ impl State {
     #[inline]
     pub fn __private_request_raw(&mut self, format: &'static RawFormatInfo) -> Result<(), Error> {
         match self.raw_format {
-            Some(own) if core::ptr::eq(own, format) => Err(Error::raw_request()),
+            Some(own) if core::ptr::eq(own, format.id()) => {
+                self.raw_requested = Some(format);
+                Err(Error::raw_request())
+            }
             _ => Ok(()),
         }
     }
@@ -332,7 +353,7 @@ impl State {
     #[inline]
     pub(crate) fn accepts_raw(&self, format: &'static RawFormatInfo) -> bool {
         self.raw_format
-            .is_some_and(|own| core::ptr::eq(own, format))
+            .is_some_and(|own| core::ptr::eq(own, format.id()))
     }
 
     /// Takes the state out, leaving an empty state that does not allocate.

@@ -169,7 +169,7 @@ pub use self::datetime::{Date, Datetime, Offset, Time, Timestamp};
 pub use self::decimal::Decimal;
 pub use self::duration::Duration;
 pub use self::number::Number;
-pub use self::raw::{Raw, RawFormat, RawFormatInfo, RawInput, TextRawFormat};
+pub use self::raw::{Raw, RawFormat, RawFormatId, RawFormatInfo, RawInput, TextRawFormat};
 pub use self::uuid::Uuid;
 
 /// A type that can be passed through deser as an extension to the data model.

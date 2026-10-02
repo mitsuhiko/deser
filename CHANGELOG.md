@@ -119,10 +119,14 @@ All notable changes to deser are documented here.
   Raw values are deserialized later with `Raw::deserialize`, other
   formats serialize the value they hold, types that do not take raw
   values (like `deser_value::Value`) receive it parsed.  Formats support
-  them with the
-  new `deser::ext::{Raw, RawFormat, RawFormatInfo, RawInput}`,
-  `State::set_raw_format` and `Error::is_raw_request`.  See the new
-  `raw-values` example.
+  them with the new
+  `deser::ext::{Raw, RawFormat, RawFormatId, RawFormatInfo, RawInput}`,
+  `State::set_raw_format`, `State::take_raw_request` and
+  `Error::is_raw_request`.  Formats declare their raw values with a
+  `RawFormatId` and get the `RawFormatInfo` (with the functions of the
+  format) from the request, so programs that do not use raw values do
+  not contain them (like the JSON parser in a program that only writes
+  JSON).  See the new `raw-values` example.
 - Added `deser::de::deserialize_value` to implement functions like
   `from_str` of formats so that only the code that depends on the type
   of the value exists once per type.  The formats no longer use hidden

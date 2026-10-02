@@ -73,7 +73,8 @@ pub mod derive;
 //   adapters forwarding to it) implements it.
 // * Internal protocols change behavior: raw values (see `ext::Raw`) and
 //   collections that collect the values of repeated keys.  What formats
-//   need is public (`State::set_raw_format`, `Error::is_raw_request`,
+//   need is public (`State::set_raw_format`, `State::take_raw_request`,
+//   `Error::is_raw_request`,
 //   `ContainerShape::with_multimap`, `DeserializeDriver::multimap_value`
 //   and `de::missing_multimap_value`), the side
 //   of the types (which types want raw values or collect, used by the

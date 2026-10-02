@@ -1,5 +1,6 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
+use core::any::Any;
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -25,14 +26,22 @@ use crate::ser::{Emit, Serialize, SerializeHandle, SerializeRef};
 /// they are.  For this the format:
 ///
 /// * calls [`State::set_raw_format`](crate::State::set_raw_format) with
-///   its description in the deserializer (before the first event, it
-///   returns whether the top-level value is wanted as raw value) and in
-///   the serializer (before the first value).
+///   its [`RawFormatId`] in the deserializer (before the first event, it
+///   returns the description of the format if the top-level value is
+///   wanted as raw value) and in the serializer (before the first value).
 /// * checks with [`Error::is_raw_request`](crate::Error::is_raw_request)
-///   whether the result of an event requests the next value as raw value.
+///   whether the result of an event requests the next value as raw value
+///   and takes the description of the format with
+///   [`State::take_raw_request`](crate::State::take_raw_request).
 /// * validates a value that is wanted as raw value and emits its input as
-///   [`RawInput`] (an [`Atom::Ext`]) rather than its events.
-/// * writes the [`RawInput`] of its format as it is when serializing.
+///   [`RawInput`] (an [`Atom::Ext`]) with that description rather than
+///   its events.
+/// * writes the [`RawInput`] of its format as it is when serializing
+///   (see [`RawInput::is_format`]).
+///
+/// The parser and the serializer only refer to the [`RawFormatId`]: the
+/// functions of the format (like `replay`, which brings in its parser)
+/// are only in programs that use its raw values.
 ///
 /// Formats that do not do this still have raw values: the values are
 /// encoded with the format then.
@@ -51,49 +60,31 @@ pub trait RawFormat: 'static {
 ///
 /// # Safety
 ///
-/// The format must be described as text (see [`RawFormatInfo::new`]): its
+/// The format must be described as text (see [`RawFormatId::new`]): its
 /// parser only passes on and its encoder only produces valid UTF-8.
 pub unsafe trait TextRawFormat: RawFormat {}
 
-/// Describes a [`RawFormat`] at runtime.
+/// Identifies a [`RawFormat`].
 ///
-/// Formats that can pass on the input of values define a static of this
-/// type.  It travels with the input of values (see [`RawInput`]) so that
-/// code which does not know the format can still parse it.
-pub struct RawFormatInfo {
+/// Formats are identified by the address of a static of this type.  Unlike
+/// the [`RawFormatInfo`] of the format it holds no functions: formats
+/// declare which raw values they pass on with it (see
+/// [`State::set_raw_format`](crate::State::set_raw_format)), so a program
+/// only contains the functions of the format (like its parser for
+/// `replay`) if it uses its raw values.
+pub struct RawFormatId {
     name: &'static str,
     is_text: bool,
-    replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
-    encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
-    fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
 }
 
-impl RawFormatInfo {
-    /// Creates the description of a format.
+impl RawFormatId {
+    /// Creates the identity of a format.
     ///
     /// * `name` is the name of the format (like `"json"`).
     /// * `is_text` is `true` if the encoding is text.  The encoded values
     ///   must then be valid UTF-8.
-    /// * `replay` parses a value and emits its events into the driver.
-    /// * `encode` encodes a value.
-    /// * `fallback` returns the fallback atom of an encoded value (see
-    ///   [`Extension::fallback`](crate::ext::Extension::fallback)).  It
-    ///   must be [`Atom::Null`] for null, so that optionals are `None` for
-    ///   it, and must not be an extension value.
-    pub const fn new(
-        name: &'static str,
-        is_text: bool,
-        replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
-        encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
-        fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
-    ) -> RawFormatInfo {
-        RawFormatInfo {
-            name,
-            is_text,
-            replay,
-            encode,
-            fallback,
-        }
+    pub const fn new(name: &'static str, is_text: bool) -> RawFormatId {
+        RawFormatId { name, is_text }
     }
 
     /// Returns the name of the format.
@@ -104,6 +95,84 @@ impl RawFormatInfo {
     /// Returns `true` if the encoding of the format is text.
     pub fn is_text(&self) -> bool {
         self.is_text
+    }
+}
+
+impl fmt::Debug for RawFormatId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RawFormatId").field(&self.name).finish()
+    }
+}
+
+/// Describes a [`RawFormat`] at runtime.
+///
+/// Formats that can pass on the input of values define a static of this
+/// type.  It travels with the input of values (see [`RawInput`]) so that
+/// code which does not know the format can still parse it.  Formats are
+/// identified by their [`RawFormatId`].
+pub struct RawFormatInfo {
+    id: &'static RawFormatId,
+    replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
+    encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
+    fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
+    data: Option<&'static (dyn Any + Send + Sync)>,
+}
+
+impl RawFormatInfo {
+    /// Creates the description of a format.
+    ///
+    /// * `id` identifies the format.
+    /// * `replay` parses a value and emits its events into the driver.
+    /// * `encode` encodes a value.
+    /// * `fallback` returns the fallback atom of an encoded value (see
+    ///   [`Extension::fallback`](crate::ext::Extension::fallback)).  It
+    ///   must be [`Atom::Null`] for null, so that optionals are `None` for
+    ///   it, and must not be an extension value.
+    pub const fn new(
+        id: &'static RawFormatId,
+        replay: for<'de> fn(&'de [u8], &mut DeserializeDriver<'_, 'de>) -> Result<(), Error>,
+        encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
+        fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
+    ) -> RawFormatInfo {
+        RawFormatInfo {
+            id,
+            replay,
+            encode,
+            fallback,
+            data: None,
+        }
+    }
+
+    /// Attaches data of the format to the description.
+    ///
+    /// The format gets it back from the description of raw values that are
+    /// requested (see [`data`](Self::data)).  Formats keep what only
+    /// programs that use their raw values need here (like the scanner of
+    /// raw values in the parser): as only raw values refer to the
+    /// description, other programs do not contain it.
+    pub const fn with_data(mut self, data: &'static (dyn Any + Send + Sync)) -> RawFormatInfo {
+        self.data = Some(data);
+        self
+    }
+
+    /// Returns the data of the format (see [`with_data`](Self::with_data)).
+    pub fn data(&self) -> Option<&'static (dyn Any + Send + Sync)> {
+        self.data
+    }
+
+    /// Returns the identity of the format.
+    pub fn id(&self) -> &'static RawFormatId {
+        self.id
+    }
+
+    /// Returns the name of the format.
+    pub fn name(&self) -> &'static str {
+        self.id.name
+    }
+
+    /// Returns `true` if the encoding of the format is text.
+    pub fn is_text(&self) -> bool {
+        self.id.is_text
     }
 
     /// Records an encoded value.
@@ -119,14 +188,14 @@ impl RawFormatInfo {
 
 impl fmt::Debug for RawFormatInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("RawFormatInfo").field(&self.name).finish()
+        f.debug_tuple("RawFormatInfo").field(&self.id.name).finish()
     }
 }
 
 /// Returns `true` if two descriptions are the same format.
 #[inline(always)]
 fn same_format(a: &'static RawFormatInfo, b: &'static RawFormatInfo) -> bool {
-    core::ptr::eq(a, b)
+    core::ptr::eq(a.id, b.id)
 }
 
 /// The encoded input of a value.
@@ -176,7 +245,7 @@ impl<'a> RawInput<'a> {
     pub fn as_str(&self) -> Option<&str> {
         // SAFETY: the input of text formats is valid UTF-8, see `new`
         self.format
-            .is_text
+            .is_text()
             .then(|| unsafe { core::str::from_utf8_unchecked(&self.bytes) })
     }
 
@@ -188,6 +257,15 @@ impl<'a> RawInput<'a> {
     /// Returns `true` if the value is of the format `F`.
     pub fn is<F: RawFormat>(&self) -> bool {
         same_format(self.format, F::info())
+    }
+
+    /// Returns `true` if the value is of the format with the identity.
+    ///
+    /// Serializers check with this whether they write a value as it is
+    /// (unlike [`is`](Self::is), this does not refer to the functions of
+    /// the format).
+    pub fn is_format(&self, id: &'static RawFormatId) -> bool {
+        core::ptr::eq(self.format.id, id)
     }
 
     /// Detaches the input from the data it borrows.
@@ -306,7 +384,7 @@ impl<'de> Sink<'de> for NoFinish<'_, '_, 'de> {
 impl fmt::Debug for RawInput<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("RawInput");
-        debug.field("format", &self.format.name);
+        debug.field("format", &self.format.id.name);
         match self.as_str() {
             Some(text) => debug.field("text", &text),
             None => debug.field("bytes", &self.bytes),
@@ -415,7 +493,7 @@ impl<'a, F: RawFormat> Raw<'a, F> {
     pub fn new<B: Into<Cow<'a, [u8]>>>(bytes: B) -> Result<Raw<'a, F>, Error> {
         let bytes = bytes.into();
         let info = F::info();
-        if info.is_text && core::str::from_utf8(&bytes).is_err() {
+        if info.is_text() && core::str::from_utf8(&bytes).is_err() {
             return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8"));
         }
         {
@@ -430,7 +508,7 @@ impl<'a, F: RawFormat> Raw<'a, F> {
     pub fn encode<T: Serialize + ?Sized>(value: &T) -> Result<Raw<'static, F>, Error> {
         let info = F::info();
         let bytes = (info.encode)(SerializeRef::new(&value))?;
-        if info.is_text && core::str::from_utf8(&bytes).is_err() {
+        if info.is_text() && core::str::from_utf8(&bytes).is_err() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "the encoding of a text format is not utf-8",
@@ -528,7 +606,7 @@ impl<F: RawFormat> Clone for Raw<'_, F> {
 impl<F: RawFormat> fmt::Debug for Raw<'_, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_tuple("Raw");
-        debug.field(&self.input.format.name);
+        debug.field(&self.input.format.id.name);
         match self.input.as_str() {
             Some(text) => debug.field(&text),
             None => debug.field(&self.input.bytes),

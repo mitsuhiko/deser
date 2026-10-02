@@ -460,7 +460,7 @@ impl SerializerConfig {
 
 /// Declares that raw values of JSON are written as they are.
 fn accept_raw(driver: &mut SerializeDriver<'_>) {
-    driver.state_mut().set_raw_format(&crate::raw::FORMAT);
+    driver.state_mut().set_raw_format(&crate::raw::ID);
 }
 
 /// Writes the events of a value.
@@ -1230,7 +1230,7 @@ impl Output {
         // raw values of JSON are written as they are, the serialization
         // only passes them on if they are (see `accept_raw`)
         if let Some(raw) = ext.downcast_value_ref::<RawInput>()
-            && core::ptr::eq(raw.format(), &crate::raw::FORMAT)
+            && raw.is_format(&crate::raw::ID)
             && let Some(text) = raw.as_str()
         {
             self.write_str(text);

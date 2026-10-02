@@ -2,11 +2,12 @@
 use alloc::vec::Vec;
 
 use deser_core::de::{self, DeserializeDriver};
-use deser_core::ext::{Raw, RawFormat, RawFormatInfo};
+use deser_core::ext::{Raw, RawFormat, RawFormatId, RawFormatInfo};
 use deser_core::ser::SerializeRef;
 use deser_core::{Atom, Bytes, Error};
 
 use crate::de::Deserializer;
+use crate::parser::Cursor;
 
 /// The MessagePack format of [`RawMsgpack`] values.
 pub struct Msgpack;
@@ -21,9 +22,28 @@ pub struct Msgpack;
 /// [`Raw`] for more information.
 pub type RawMsgpack<'a> = Raw<'a, Msgpack>;
 
+/// The identity of the format of raw MessagePack values.
+///
+/// The parser and the serializer declare the raw values they pass on with
+/// it, the description (with the functions) is only referred to by the raw
+/// values.
+pub(crate) static ID: RawFormatId = RawFormatId::new("msgpack", false);
+
 /// The description of the format of raw MessagePack values.
-pub(crate) static FORMAT: RawFormatInfo =
-    RawFormatInfo::new("msgpack", false, replay, encode, fallback);
+static FORMAT: RawFormatInfo =
+    RawFormatInfo::new(&ID, replay, encode, fallback).with_data(&SCANNER);
+
+/// Skips an item while validating it (see `Parser::raw_values`).
+///
+/// The parser gets it from the description of the format, so that only
+/// programs with raw values of the format contain it.
+pub(crate) struct Scanner(pub(crate) ScanFn);
+
+/// Skips the item at the cursor (see `parser::skip_raw`).
+type ScanFn = for<'i> fn(&mut Cursor<'i>) -> Result<(), Error>;
+
+/// The scanner of raw values.
+static SCANNER: Scanner = Scanner(crate::parser::skip_raw);
 
 impl RawFormat for Msgpack {
     #[inline(always)]
