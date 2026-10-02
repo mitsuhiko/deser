@@ -66,6 +66,10 @@ All notable changes to deser are documented here.
   preallocate for the length that the input declares, capped at about a
   megabyte.  The standard containers and `deser_value::Value` use it, so
   input cannot request large allocations it does not fill.
+- Added `ContainerShape::with_len_hint`, an estimate of the number of
+  elements for formats that cannot know it upfront.  It's only used to
+  preallocate (`cautious_capacity`), `len` remains unknown so serializers
+  that write lengths do not rely on it.
 - Added `Deserialize::expecting`, what a value expects in error messages
   (like `Sink::expecting` of its sink, which reports it).  The derive
   implements it with the name of the type (or `#[deser(expecting)]`),

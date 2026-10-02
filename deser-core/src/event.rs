@@ -745,6 +745,7 @@ impl Order {
 
 const ORDER_MASK: u32 = 0b11;
 const MULTIMAP: u32 = 0b100;
+const LEN_HINT: u32 = 0b1000;
 const UNKNOWN_LEN: usize = usize::MAX;
 
 /// The maximum number of bytes that
@@ -759,6 +760,8 @@ const MAX_PREALLOCATION: usize = 1024 * 1024;
 ///
 /// * [`order`](Self::order): how significant the order of the elements is.
 /// * [`len`](Self::len): the number of elements (entries for maps) if known.
+///   Formats that can only estimate it give a hint instead (see
+///   [`with_len_hint`](Self::with_len_hint)).
 /// * [`is_multimap`](Self::is_multimap): the keys of the map can be given
 ///   more than once.
 ///
@@ -787,9 +790,38 @@ impl ContainerShape {
     }
 
     /// Sets the number of elements.
+    ///
+    /// Serializers can rely on it, for instance to write the length in
+    /// front of the elements.
     #[inline]
     pub const fn with_len(mut self, len: usize) -> ContainerShape {
         self.len = len;
+        self.flags &= !LEN_HINT;
+        self
+    }
+
+    /// Sets an estimate of the number of elements.
+    ///
+    /// The estimate is only used to preallocate containers (see
+    /// [`cautious_capacity`](Self::cautious_capacity)), [`len`](Self::len)
+    /// remains unknown.  A format that cannot know the length of a
+    /// container before its end (like the number of records of a CSV file)
+    /// can give one so that the container does not grow element by element.
+    ///
+    /// ```
+    /// use deser::ContainerShape;
+    ///
+    /// let shape = ContainerShape::new().with_len_hint(10);
+    /// assert_eq!(shape.len(), None);
+    /// assert_eq!(shape.cautious_capacity::<u64>(), 10);
+    ///
+    /// // the length replaces the estimate once it's known
+    /// assert_eq!(shape.with_len(3).len(), Some(3));
+    /// ```
+    #[inline]
+    pub const fn with_len_hint(mut self, len: usize) -> ContainerShape {
+        self.len = len;
+        self.flags |= LEN_HINT;
         self
     }
 
@@ -809,7 +841,7 @@ impl ContainerShape {
     #[inline]
     #[allow(clippy::len_without_is_empty)]
     pub const fn len(&self) -> Option<usize> {
-        if self.len == UNKNOWN_LEN {
+        if self.len == UNKNOWN_LEN || self.flags & LEN_HINT != 0 {
             None
         } else {
             Some(self.len)
@@ -818,7 +850,8 @@ impl ContainerShape {
 
     /// Returns the number of elements of type `T` to preallocate.
     ///
-    /// This is the [`len`](Self::len) of the shape, capped so that no more
+    /// This is the [`len`](Self::len) of the shape (or its estimate, see
+    /// [`with_len_hint`](Self::with_len_hint)), capped so that no more
     /// than about a megabyte is preallocated, and `0` if the length is
     /// unknown.  As the length comes from the input it must not be trusted
     /// for allocations: a container that is larger grows as its elements
@@ -840,10 +873,10 @@ impl ContainerShape {
             0 => MAX_PREALLOCATION,
             size => MAX_PREALLOCATION / size,
         };
-        match self.len() {
-            Some(len) if len < max => len,
-            Some(_) => max,
-            None => 0,
+        match self.len {
+            UNKNOWN_LEN => 0,
+            len if len < max => len,
+            _ => max,
         }
     }
 
@@ -932,6 +965,9 @@ impl fmt::Debug for ContainerShape {
         let mut s = f.debug_struct("ContainerShape");
         s.field("len", &self.len()).field("order", &self.order());
         // rare, only shown if set
+        if self.flags & LEN_HINT != 0 && self.len != UNKNOWN_LEN {
+            s.field("len_hint", &self.len);
+        }
         if self.is_multimap() {
             s.field("is_multimap", &true);
         }
