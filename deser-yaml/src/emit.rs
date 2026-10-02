@@ -204,6 +204,8 @@ impl<'a> Scalar<'a> {
 
 pub(crate) struct Emitter {
     config: SerializerConfig,
+    /// How bytes are written (from the state).
+    bytes: BytesFormat,
     pub(crate) out: String,
     stack: Vec<Frame>,
     pending: Option<Pending>,
@@ -250,9 +252,10 @@ impl EventSink for Emitter {
 }
 
 impl Emitter {
-    pub(crate) fn new(config: &SerializerConfig, out: String) -> Emitter {
+    pub(crate) fn new(config: &SerializerConfig, out: String, bytes: BytesFormat) -> Emitter {
         Emitter {
             config: config.clone(),
+            bytes,
             out,
             stack: Vec::new(),
             pending: None,
@@ -643,7 +646,7 @@ impl Emitter {
         // bytes that are sequences are written as sequences of integers
         if let Atom::Bytes(ref bytes) = atom
             && !self.config.binary
-            && bytes.fallback.copied().unwrap_or(self.config.bytes) == BytesFormat::SEQ
+            && bytes.fallback.copied().unwrap_or(self.bytes) == BytesFormat::SEQ
         {
             self.emit(
                 Event::seq_start(),
@@ -778,7 +781,7 @@ impl Emitter {
                 let format = if self.config.binary {
                     BytesFormat::BASE64
                 } else {
-                    bytes.fallback.copied().unwrap_or(self.config.bytes)
+                    bytes.fallback.copied().unwrap_or(self.bytes)
                 };
                 // sequences are handled before, keys are always strings
                 let encoded = format

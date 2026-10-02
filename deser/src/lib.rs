@@ -68,6 +68,17 @@ pub struct Account {
 //! formats do not do IO themselves (see [`stream`]), so they also work with
 //! other kinds of IO and without the standard library.
 //!
+//! Configuration that is given to a serialization or deserialization from
+//! the outside, like how bytes are represented in formats without native
+//! bytes ([`BytesFormat`]), what happens with repeated keys
+//! ([`DuplicateKeys`](de::DuplicateKeys)) or unknown fields
+//! ([`UnknownFields`](de::UnknownFields)) and whether errors are collected
+//! ([`CollectErrors`](de::CollectErrors)), is held in a [`Context`].  It's
+//! created once and passed in with
+//! [`deserialize_in`](de::Deserializer::deserialize_in) and
+//! [`serialize_in`](ser::Serializer::serialize_in) (or the `set_context`
+//! methods of the drivers, readers and writers).
+//!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].
 //!

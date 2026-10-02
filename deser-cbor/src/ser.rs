@@ -898,6 +898,18 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
+    }
+
     /// Returns the output written so far (that was not cleared).
     pub fn output(&self) -> &[u8] {
         &self.out

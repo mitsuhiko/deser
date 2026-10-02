@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::str;
 
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
-use deser_core::{BytesFormat, Error, ErrorKind, Source};
+use deser_core::{Error, ErrorKind, Source};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -34,7 +34,6 @@ pub struct DeserializerConfig {
     track_locations: bool,
     exact_numbers: bool,
     trailing: Trailing,
-    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -50,39 +49,7 @@ impl DeserializerConfig {
             track_locations: false,
             exact_numbers: true,
             trailing: Trailing::Strict,
-            bytes: BytesFormat::BASE64,
         }
-    }
-
-    /// Sets how strings are decoded into bytes.
-    ///
-    /// JSON has no bytes, types that expect bytes (like `Vec<u8>`) accept
-    /// strings and sequences of integers instead.  By default strings are
-    /// decoded as base64, both with the standard and the URL-safe alphabet
-    /// and with or without padding.  This changes how strings are decoded,
-    /// for [`BytesFormat::SEQ`] they are still decoded as base64.
-    ///
-    /// ```
-    /// let value: Vec<u8> =
-    ///     deser_json5::from_str(r#""Af8=""#).unwrap();
-    /// assert_eq!(value, [1, 255]);
-    /// let value: Vec<u8> =
-    ///     deser_json5::from_str(r#""Af8""#).unwrap();
-    /// assert_eq!(value, [1, 255]);
-    /// let value: Vec<u8> =
-    ///     deser_json5::from_str("[1, 255]").unwrap();
-    /// assert_eq!(value, [1, 255]);
-    /// ```
-    ///
-    /// Strings in other encodings than base64 need this, for instance hex
-    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
-    /// [`deser-encoding`](https://docs.rs/deser-encoding)).
-    ///
-    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).  Values
-    /// that use an adapter for bytes are not affected.
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
-        self
     }
 
     /// Controls what may follow a value.
@@ -133,11 +100,6 @@ impl DeserializerConfig {
     /// Returns what may follow a value.
     pub(crate) fn trailing_mode(&self) -> Trailing {
         self.trailing
-    }
-
-    /// Returns how strings are decoded into bytes.
-    pub(crate) fn bytes_format(&self) -> BytesFormat {
-        self.bytes
     }
 
     /// Returns `true` if exact numbers are enabled.
@@ -410,6 +372,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Returns an iterator over the remaining values.
     ///
     /// This is useful to read JSON Lines (see [`Trailing::Newline`]).  The
@@ -458,9 +431,6 @@ impl<'a> Deserializer<'a> {
                 }
             };
             Source(source).set(driver.state_mut());
-        }
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(driver.state_mut());
         }
 
         // for JSON Lines the input is cut off at the end of the line.  The

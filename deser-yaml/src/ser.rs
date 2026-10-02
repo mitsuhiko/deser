@@ -133,7 +133,6 @@ pub struct SerializerConfig {
     pub(crate) null_style: NullStyle,
     pub(crate) compat: Version,
     pub(crate) binary: bool,
-    pub(crate) bytes: BytesFormat,
     pub(crate) timestamp_tag: bool,
     pub(crate) document_start: bool,
     pub(crate) version_directive: bool,
@@ -160,7 +159,6 @@ impl SerializerConfig {
             null_style: NullStyle::Null,
             compat: Version::V1_1,
             binary: true,
-            bytes: BytesFormat::BASE64,
             timestamp_tag: false,
             document_start: false,
             version_directive: false,
@@ -325,38 +323,31 @@ impl SerializerConfig {
     /// representation for formats without native bytes (see
     /// [`BytesFallback`](deser_core::adapters::BytesFallback)).  With
     /// `false` bytes are represented like in JSON: in the format they request
-    /// or the format configured with [`bytes`](Self::bytes).
+    /// or the [`BytesFormat`] of the [`Context`](deser_core::Context).
     ///
     /// ```
     /// use deser::adapters::Base64UrlNoPad;
-    /// use deser::BytesFormat;
+    /// use deser::{BytesFormat, Context};
     /// use deser_yaml::SerializerConfig;
     ///
     /// assert_eq!(
     ///     deser_yaml::to_string(&b"\xfb\xff").unwrap(),
     ///     "!!binary +/8=\n"
     /// );
-    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
-    ///     .binary(false)
-    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
-    /// assert_eq!(URL_SAFE.to_string(&b"\xfb\xff").unwrap(), "-_8\n");
+    /// const TEXT: SerializerConfig = SerializerConfig::new().binary(false);
+    /// let url_safe = Context::new().with(BytesFormat::encoded::<Base64UrlNoPad>());
+    /// let yaml = TEXT
+    ///     .to_string_with(&b"\xfb\xff", |driver| driver.set_context(&url_safe))
+    ///     .unwrap();
+    /// assert_eq!(yaml, "-_8\n");
     /// ```
     ///
     /// More encodings (such as hex) are provided by
     /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
-    /// formats than base64 (or sequences) need to be
-    /// deserialized with the same format (see
-    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
+    /// formats than base64 (or sequences) need to be deserialized with the
+    /// same format in the context.
     pub const fn binary(mut self, yes: bool) -> SerializerConfig {
         self.binary = yes;
-        self
-    }
-
-    /// Sets how bytes are represented if [`binary`](Self::binary) is off.
-    ///
-    /// The default is [`BytesFormat::BASE64`].
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -414,7 +405,7 @@ impl SerializerConfig {
     ///
     /// This writes what precedes the document, `index` is the number of
     /// documents written before.
-    pub(crate) fn emitter(&self, index: usize, mut out: String) -> Emitter {
+    pub(crate) fn emitter(&self, index: usize, mut out: String, bytes: BytesFormat) -> Emitter {
         if self.version_directive {
             // directives can only follow the end of a document
             if index > 0 && !self.end_documents {
@@ -424,7 +415,7 @@ impl SerializerConfig {
         } else if self.document_start || index > 0 {
             out.push_str("---\n");
         }
-        Emitter::new(self, out)
+        Emitter::new(self, out, bytes)
     }
 
     /// Writes the end of a document once its value was written.
@@ -450,7 +441,7 @@ impl SerializerConfig {
         out: &mut String,
     ) -> Result<(), Error> {
         let len = out.len();
-        let mut emitter = self.emitter(index, std::mem::take(out));
+        let mut emitter = self.emitter(index, std::mem::take(out), BytesFormat::of(driver.state()));
         let rv = driver
             .drive(|event, state| emitter.event(event, state))
             .and_then(|()| self.end_document(&mut emitter));
@@ -498,7 +489,7 @@ impl SerializerConfig {
                     true => std::mem::take(out),
                     false => String::new(),
                 };
-                Box::new(self.emitter(index, buffer))
+                Box::new(self.emitter(index, buffer, BytesFormat::of(driver.state())))
             }
         };
         // after an error the document is abandoned, its emitter is dropped
@@ -687,6 +678,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the documents written so far (that were not cleared).

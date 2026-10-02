@@ -148,9 +148,10 @@ fn test_structs() {
     }
     let err = from_str::<Single>("<a><name>x</name><name>y</name></a>").unwrap_err();
     assert_eq!(err.message(), "duplicate field `name`");
-    const LAST: DeserializerConfig = DeserializerConfig::new().duplicate_keys(DuplicateKeys::Last);
+    let last = deser::Context::new().with(DuplicateKeys::Last);
     assert_eq!(
-        LAST.from_str::<Single>("<a><name>x</name><name>y</name></a>")
+        Deserializer::from_str("<a><name>x</name><name>y</name></a>")
+            .deserialize_in::<Single>(&last)
             .unwrap()
             .name,
         "y"

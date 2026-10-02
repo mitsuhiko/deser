@@ -8,10 +8,13 @@ use alloc::string::String;
 /// JSON objects can contain the same key more than once and query strings
 /// commonly repeat keys.  Where a single value is expected (the field of a
 /// struct or an entry of a map) the policy decides what happens.  It's an
-/// extension value in the [`State`] (see [`set`](Self::set)).  The default is
+/// extension value, usually configured in the [`Context`](crate::Context)
+/// (or in the [`State`], see [`set`](Self::set)).  The default is
 /// [`Error`](Self::Error): if the same key could mean different values to
 /// different parsers (a proxy might use the first value, the application the
-/// last) the input is rejected.
+/// last) the input is rejected.  Formats can have other defaults (query
+/// strings and environment variables use the last value), which the
+/// context overrides.
 ///
 /// ```
 /// use std::collections::BTreeMap;
@@ -52,6 +55,14 @@ impl DuplicateKeys {
     #[inline]
     pub fn set(self, state: &mut State) {
         *state.get_mut::<DuplicateKeys>() = self;
+    }
+
+    /// Sets the policy unless the state or the context has one.
+    ///
+    /// Formats use this for their default (see [`State::set_default`]).
+    #[inline]
+    pub fn set_default(self, state: &mut State) {
+        state.set_default(self);
     }
 
     /// Decides if a duplicate value is used.

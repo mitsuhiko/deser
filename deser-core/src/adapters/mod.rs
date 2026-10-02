@@ -84,8 +84,10 @@
 //! have to represent them differently.  In deser the convention is:
 //!
 //! * Formats without native bytes write bytes as base64 strings (RFC 4648,
-//!   standard alphabet with padding).  They can be configured with a
-//!   different [`BytesFormat`](crate::BytesFormat) (for instance to write sequences of integers).
+//!   standard alphabet with padding).  A different
+//!   [`BytesFormat`](crate::BytesFormat) can be configured in the
+//!   [`Context`](crate::Context) (for instance to write sequences of
+//!   integers).
 //! * Types that expect bytes accept a string and decode it.  By default
 //!   this is lenient base64: both the standard and the URL-safe alphabet
 //!   are accepted and the padding is optional.  Sequences of integers are

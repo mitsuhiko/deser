@@ -28,50 +28,12 @@ use deser_core::ext::{Datetime, Number, Timestamp};
 /// [`to_string`](Self::to_string) works like the
 /// [`to_string`] function.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SerializerConfig {
-    bytes: BytesFormat,
-}
+pub struct SerializerConfig {}
 
 impl SerializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> SerializerConfig {
-        SerializerConfig {
-            bytes: BytesFormat::BASE64,
-        }
-    }
-
-    /// Sets how bytes are represented.
-    ///
-    /// TOML has no bytes, by default they are written as base64 strings
-    /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [bytes](deser_core::adapters#bytes)) which takes precedence.  Keys cannot be
-    /// arrays, bytes in keys are always strings.
-    ///
-    /// ```
-    /// use std::collections::BTreeMap;
-    /// use deser::adapters::Base64UrlNoPad;
-    /// use deser::BytesFormat;
-    /// use deser_toml::SerializerConfig;
-    ///
-    /// let mut value = BTreeMap::new();
-    /// value.insert("a", vec![251u8, 255]);
-    /// assert_eq!(deser_toml::to_string(&value).unwrap(), "a = \"+/8=\"\n");
-    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
-    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
-    /// assert_eq!(URL_SAFE.to_string(&value).unwrap(), "a = \"-_8\"\n");
-    /// const SEQ: SerializerConfig =
-    ///     SerializerConfig::new().bytes(BytesFormat::SEQ);
-    /// assert_eq!(SEQ.to_string(&value).unwrap(), "a = [251, 255]\n");
-    /// ```
-    ///
-    /// More encodings (such as hex) are provided by
-    /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
-    /// formats than base64 (or arrays) need to be
-    /// deserialized with the same format (see
-    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
-        self
+        SerializerConfig {}
     }
 
     /// Serializes the given value.
@@ -115,7 +77,7 @@ impl SerializerConfig {
             doc: Document::default(),
             stack: Vec::new(),
             done: false,
-            bytes: self.bytes,
+            bytes: BytesFormat::of(driver.state()),
         };
         driver.drive(|event, state| builder.event(event, state))?;
         if !builder.done {
@@ -199,6 +161,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the configuration.

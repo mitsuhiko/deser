@@ -9,7 +9,7 @@ use deser_core::Text;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, Frame, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};
 use crate::{Escape, Headers, Nulls, Terminator, Trim};
@@ -50,7 +50,6 @@ pub struct DeserializerConfig {
     pub(crate) lenient_quotes: bool,
     pub(crate) sep_line: bool,
     pub(crate) max_record_len: usize,
-    pub(crate) bytes: BytesFormat,
     pub(crate) track_locations: bool,
 }
 
@@ -78,7 +77,6 @@ impl DeserializerConfig {
             lenient_quotes: false,
             sep_line: false,
             max_record_len: 64 * 1024 * 1024,
-            bytes: BytesFormat::BASE64,
             track_locations: false,
         }
     }
@@ -258,16 +256,6 @@ impl DeserializerConfig {
     /// closed).  Inputs in memory are not limited.
     pub const fn max_record_len(mut self, len: usize) -> DeserializerConfig {
         self.max_record_len = len;
-        self
-    }
-
-    /// Sets how fields are decoded into bytes.
-    ///
-    /// Types that expect bytes (like `Vec<u8>`) decode fields as base64 by
-    /// default.  Fields which are not UTF-8 are passed on as bytes (see
-    /// [bytes](deser_core::adapters#bytes)).
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -543,9 +531,6 @@ impl StreamState {
         if let Some((offset, msg)) = scanner.error {
             return Err(Error::new(ErrorKind::Syntax, msg).with_offset(base + offset));
         }
-        if config.bytes != BytesFormat::BASE64 {
-            config.bytes.set(driver.state_mut());
-        }
         // everything in a CSV file is text, like in a query string
         LexicalRules::LENIENT.set(driver.state_mut());
         let fields = &scanner.fields[..];
@@ -788,6 +773,17 @@ impl<'a> Deserializer<'a> {
         F: FnOnce(&mut DeserializeDriver<'_, 'a>),
     {
         de::Deserializer::deserialize_with(self, setup)
+    }
+
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
     }
 
     /// Deserializes the next record.

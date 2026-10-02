@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use deser::adapters::{Base64UrlNoPad, BytesFallback, IntSeq};
-use deser::{BytesFormat, Deserialize, Serialize};
+use deser::{BytesFormat, Context, Deserialize, Serialize};
 use deser_encoding::Hex;
-use deser_toml::{DeserializerConfig, SerializerConfig, from_str, to_string};
+use deser_toml::{Deserializer, SerializerConfig, from_str, to_string};
 
 use crate::common;
 
@@ -58,21 +58,20 @@ fn test_bytes_default() {
 
 #[test]
 fn test_bytes_config() {
-    const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
+    // the same context is used for writing and reading
+    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
     let toml = SerializerConfig::new()
-        .bytes(HEX)
-        .to_string(&blob())
+        .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();
     assert!(toml.starts_with("plain = \"0001ff\"\narray = \"686921\"\n"));
-    let value = DeserializerConfig::new()
-        .bytes(HEX)
-        .from_str::<Blob>(&toml)
+    let value = Deserializer::from_str(&toml)
+        .deserialize_in::<Blob>(&hex)
         .unwrap();
     assert_eq!(value, blob());
 
+    let seq = Context::new().with(BytesFormat::SEQ);
     let toml = SerializerConfig::new()
-        .bytes(BytesFormat::SEQ)
-        .to_string(&blob())
+        .to_string_with(&blob(), |driver| driver.set_context(&seq))
         .unwrap();
     assert!(toml.starts_with("plain = [0, 1, 255]\narray = [104, 105, 33]\n"));
     assert_eq!(from_str::<Blob>(&toml).unwrap(), blob());
@@ -87,33 +86,28 @@ fn test_same_as_json() {
         BytesFormat::encoded::<Hex>(),
     ] {
         let value = blob();
+        let context = Context::new().with(format);
         let toml = SerializerConfig::new()
-            .bytes(format)
-            .to_string(&value)
+            .to_string_with(&value, |driver| driver.set_context(&context))
             .unwrap();
         let json = deser_json::SerializerConfig::new()
-            .bytes(format)
-            .to_string(&value)
+            .to_string_with(&value, |driver| driver.set_context(&context))
             .unwrap();
 
         // convert both into a generic value to compare them
-        let from_toml: BTreeMap<String, Value> = deser_toml::DeserializerConfig::new()
-            .bytes(format)
-            .from_str(&toml)
+        let from_toml: BTreeMap<String, Value> = deser_toml::Deserializer::from_str(&toml)
+            .deserialize_in(&context)
             .unwrap();
-        let from_json: BTreeMap<String, Value> = deser_json::DeserializerConfig::new()
-            .bytes(format)
-            .from_str(&json)
+        let from_json: BTreeMap<String, Value> = deser_json::Deserializer::from_str(&json)
+            .deserialize_in(&context)
             .unwrap();
         assert_eq!(from_toml, from_json, "{:?}", format);
 
-        let value_from_toml: Blob = deser_toml::DeserializerConfig::new()
-            .bytes(format)
-            .from_str(&toml)
+        let value_from_toml: Blob = deser_toml::Deserializer::from_str(&toml)
+            .deserialize_in(&context)
             .unwrap();
-        let value_from_json: Blob = deser_json::DeserializerConfig::new()
-            .bytes(format)
-            .from_str(&json)
+        let value_from_json: Blob = deser_json::Deserializer::from_str(&json)
+            .deserialize_in(&context)
             .unwrap();
         assert_eq!(value_from_toml, value);
         assert_eq!(value_from_json, value);

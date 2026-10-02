@@ -6,7 +6,6 @@
 //! The program registers the steps it accepts and reads a pipeline from
 //! JSON with them, runs it and writes it back.  Unknown steps are errors
 //! that list the steps that are registered.
-use deser::de::Deserializer;
 use deser::{Context, OpenEnums};
 use pipeline::{Pipeline, Replace, Step, Trim};
 

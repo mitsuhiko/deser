@@ -397,18 +397,24 @@ fn test_bytes() {
     assert_eq!(from_str::<Vec<u8>>(&yaml).unwrap(), long);
 
     // without native bytes the fallbacks and the configured format apply
-    const HEX: SerializerConfig = SerializerConfig::new()
-        .binary(false)
-        .bytes(BytesFormat::encoded::<Hex>());
-    let yaml = HEX.to_string(&blob).unwrap();
+    const TEXT: SerializerConfig = SerializerConfig::new().binary(false);
+    let hex = deser::Context::new().with(BytesFormat::encoded::<Hex>());
+    let yaml = TEXT
+        .to_string_with(&blob, |driver| driver.set_context(&hex))
+        .unwrap();
     assert_eq!(yaml, "data: 01ff\ndigest: '0203'\nlegacy:\n  - 4\n");
-    const HEX_DE: DeserializerConfig =
-        DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
-    assert_eq!(HEX_DE.from_str::<Blob>(&yaml).unwrap(), blob);
-    const SEQ: SerializerConfig = SerializerConfig::new()
-        .binary(false)
-        .bytes(BytesFormat::SEQ);
-    assert_eq!(SEQ.to_string(&vec![1u8, 2]).unwrap(), "- 1\n- 2\n");
+    assert_eq!(
+        deser_yaml::Deserializer::from_str(&yaml)
+            .deserialize_in::<Blob>(&hex)
+            .unwrap(),
+        blob
+    );
+    let seq = deser::Context::new().with(BytesFormat::SEQ);
+    assert_eq!(
+        TEXT.to_string_with(&vec![1u8, 2], |driver| driver.set_context(&seq))
+            .unwrap(),
+        "- 1\n- 2\n"
+    );
 }
 
 #[test]

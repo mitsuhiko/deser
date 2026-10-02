@@ -82,7 +82,6 @@ pub struct SerializerConfig {
     names: Names,
     root: Option<&'static str>,
     declaration: bool,
-    bytes: BytesFormat,
     indent: Indent,
 }
 
@@ -99,7 +98,6 @@ impl SerializerConfig {
             names: Names::new(),
             root: None,
             declaration: false,
-            bytes: BytesFormat::BASE64,
             indent: Indent::None,
         }
     }
@@ -260,17 +258,6 @@ impl SerializerConfig {
         self.indent(indent)
     }
 
-    /// Sets how bytes are written (default base64).
-    ///
-    /// XML has no bytes, they are written as text in this format.
-    /// [`BytesFormat::SEQ`] is written as base64.  Bytes in other formats
-    /// than base64 need to be deserialized with the same format (see
-    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
-        self
-    }
-
     /// Serializes a value.
     pub fn to_string<T: Serialize + ?Sized>(&self, value: &T) -> Result<String, Error> {
         self.to_string_ref(SerializeRef::new(&value))
@@ -305,7 +292,7 @@ impl SerializerConfig {
 
     /// Serializes the value of a driver into a document.
     fn serialize_driver(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
-        let mut writer = Writer::new(self);
+        let mut writer = Writer::new(self, BytesFormat::of(driver.state()));
         driver.drive_sink(&mut writer)?;
         writer.finish()?;
         Ok(writer.out)
@@ -337,7 +324,9 @@ impl SerializerConfig {
             }
             return Ok(true);
         }
-        let mut writer = value.take().unwrap_or_else(|| Box::new(Writer::new(self)));
+        let mut writer = value
+            .take()
+            .unwrap_or_else(|| Box::new(Writer::new(self, BytesFormat::of(driver.state()))));
         // after an error the value is abandoned, its writer is dropped
         let done = if limit == usize::MAX {
             driver.drive_sink(&mut *writer)?;
@@ -485,6 +474,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the output written so far (that was not cleared).
@@ -706,6 +707,8 @@ enum Key {
 /// Writes the events of a document.
 pub(crate) struct Writer {
     config: SerializerConfig,
+    /// How bytes are written (from the state).
+    bytes: BytesFormat,
     /// The output that was not passed on yet, it starts at `base` in the
     /// document.
     out: String,
@@ -807,7 +810,7 @@ impl EventSink for Writer {
 }
 
 impl Writer {
-    fn new(config: &SerializerConfig) -> Writer {
+    fn new(config: &SerializerConfig, bytes: BytesFormat) -> Writer {
         let mut out = String::new();
         if config.declaration {
             out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -817,6 +820,7 @@ impl Writer {
         }
         Writer {
             config: config.clone(),
+            bytes,
             out,
             base: 0,
             limit: usize::MAX,
@@ -1488,7 +1492,7 @@ impl Writer {
             Atom::F32(value) => Cow::Owned(float_text(value)),
             Atom::F64(value) => Cow::Owned(float_text(value)),
             Atom::Bytes(ref bytes) => {
-                let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
+                let format = bytes.fallback.copied().unwrap_or(self.bytes);
                 Cow::Owned(
                     format
                         .encode(bytes)

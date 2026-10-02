@@ -71,7 +71,9 @@
 //! that are collections (like `Vec<T>`) collect all of them, also if other
 //! elements are between them.  A single child element is a collection of
 //! one value and a missing one an empty collection.  For other types
-//! [`DeserializerConfig::duplicate_keys`] decides.
+//! the [`DuplicateKeys`](deser_core::de::DuplicateKeys) policy of the
+//! [`Context`](deser_core::Context) decides (repeated elements are an error
+//! by default).
 //!
 //! Whether an element is text or a map depends on the document, the type
 //! it's deserialized into decides what it wants (the text key is the

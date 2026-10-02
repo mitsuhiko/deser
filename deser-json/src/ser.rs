@@ -85,7 +85,6 @@ pub enum InlinePolicy {
 /// [`to_string`] function.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
-    bytes: BytesFormat,
     indent: Indent,
     compact: bool,
     inline: InlinePolicy,
@@ -103,7 +102,6 @@ impl SerializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> SerializerConfig {
         SerializerConfig {
-            bytes: BytesFormat::BASE64,
             indent: Indent::None,
             compact: true,
             inline: InlinePolicy::Never,
@@ -243,37 +241,6 @@ impl SerializerConfig {
         self
     }
 
-    /// Sets how bytes are represented.
-    ///
-    /// JSON has no bytes, by default they are written as base64 strings
-    /// ([`BytesFormat::BASE64`]).  Values can request a different format
-    /// (see [bytes](deser_core::adapters#bytes)) which takes precedence.  Map keys cannot be
-    /// sequences, bytes in keys are always strings.
-    ///
-    /// ```
-    /// use deser::adapters::Base64UrlNoPad;
-    /// use deser::BytesFormat;
-    /// use deser_json::SerializerConfig;
-    ///
-    /// assert_eq!(deser_json::to_string(&b"\xfb\xff").unwrap(), r#""+/8=""#);
-    /// const URL_SAFE: SerializerConfig = SerializerConfig::new()
-    ///     .bytes(BytesFormat::encoded::<Base64UrlNoPad>());
-    /// assert_eq!(URL_SAFE.to_string(&b"\xfb\xff").unwrap(), r#""-_8""#);
-    /// const SEQ: SerializerConfig =
-    ///     SerializerConfig::new().bytes(BytesFormat::SEQ);
-    /// assert_eq!(SEQ.to_string(&b"\xfb\xff").unwrap(), "[251,255]");
-    /// ```
-    ///
-    /// More encodings (such as hex) are provided by
-    /// [`deser-encoding`](https://docs.rs/deser-encoding).  Bytes in other
-    /// formats than base64 (or sequences) need to be
-    /// deserialized with the same format (see
-    /// [`DeserializerConfig::bytes`](crate::DeserializerConfig::bytes)).
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
-        self
-    }
-
     /// Writes NaN and infinite floats as `NaN`, `Infinity` and `-Infinity`.
     ///
     /// JSON cannot represent these values, by default (`false`) they are
@@ -405,7 +372,8 @@ impl SerializerConfig {
     /// Serializes the value of a driver without indentation.
     #[inline(never)]
     fn serialize_compact(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
-        let mut writer = self.compact_writer(Buffer::with_capacity(128));
+        let bytes = BytesFormat::of(driver.state());
+        let mut writer = self.compact_writer(Buffer::with_capacity(128), bytes);
         driver.drive_sink(&mut writer)?;
         Ok(writer.ser.out.into_string())
     }
@@ -413,17 +381,18 @@ impl SerializerConfig {
     /// Serializes the value of a driver with the pretty writer.
     #[inline(never)]
     fn serialize_pretty(&self, driver: &mut SerializeDriver<'_>) -> Result<String, Error> {
-        let mut writer = self.pretty_writer(Buffer::with_capacity(128));
+        let bytes = BytesFormat::of(driver.state());
+        let mut writer = self.pretty_writer(Buffer::with_capacity(128), bytes);
         driver.drive(|event, state| writer.event(event, state))?;
         Ok(writer.finish())
     }
 
     /// Creates the writer for compact output.
-    fn compact_writer(&self, out: Buffer) -> Writer {
+    fn compact_writer(&self, out: Buffer, bytes: BytesFormat) -> Writer {
         Writer {
             ser: Output {
                 out,
-                bytes: self.bytes,
+                bytes,
                 non_finite_floats: self.non_finite_floats,
             },
             stack: Vec::new(),
@@ -435,10 +404,10 @@ impl SerializerConfig {
     }
 
     /// Creates the writer for everything but compact output.
-    fn pretty_writer(&self, out: Buffer) -> PrettyWriter {
+    fn pretty_writer(&self, out: Buffer, bytes: BytesFormat) -> PrettyWriter {
         let ser = Output {
             out,
-            bytes: self.bytes,
+            bytes,
             non_finite_floats: self.non_finite_floats,
         };
         let inline_width = match self.inline {
@@ -449,11 +418,11 @@ impl SerializerConfig {
     }
 
     /// Creates the writer for a value which writes into the buffer.
-    pub(crate) fn value_writer(&self, out: Buffer) -> ValueWriter {
+    pub(crate) fn value_writer(&self, out: Buffer, bytes: BytesFormat) -> ValueWriter {
         if self.is_compact() {
-            ValueWriter::Compact(self.compact_writer(out))
+            ValueWriter::Compact(self.compact_writer(out, bytes))
         } else {
-            ValueWriter::Pretty(self.pretty_writer(out))
+            ValueWriter::Pretty(self.pretty_writer(out, bytes))
         }
     }
 }
@@ -664,6 +633,18 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
+    }
+
     /// Returns the output written so far (that was not cleared).
     pub fn as_str(&self) -> &str {
         // SAFETY: the output is valid UTF-8, see `out`
@@ -748,7 +729,9 @@ impl ser::StreamSerializer for Serializer {
                 self.start_value()?;
                 // a writer that completes the value at once is not boxed
                 let out = Buffer::from_vec(core::mem::take(&mut self.out));
-                let writer = self.config.value_writer(out);
+                let writer = self
+                    .config
+                    .value_writer(out, BytesFormat::of(driver.state()));
                 if limit == usize::MAX {
                     return self.drive_whole(writer, driver, rollback);
                 }

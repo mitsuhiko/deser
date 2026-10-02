@@ -80,7 +80,27 @@
 //! `HashSet<T>`) collect the values of all occurrences of their key, also
 //! if other keys are between them.  A key given once is a collection of one
 //! value and a missing key an empty collection.  Types that expect a single
-//! value receive the last one (see [`DeserializerConfig::duplicate_keys`]).
+//! value receive the last one unless the [`Context`](deser_core::Context) has
+//! another [`DuplicateKeys`](deser_core::de::DuplicateKeys) policy:
+//!
+//! ```
+//! use deser::de::DuplicateKeys;
+//! use deser::Context;
+//!
+//! #[derive(deser::Deserialize)]
+//! struct Query {
+//!     page: u32,
+//! }
+//!
+//! let query: Query = deser_urlencoded::from_str("page=1&page=2").unwrap();
+//! assert_eq!(query.page, 2);
+//!
+//! let strict = Context::new().with(DuplicateKeys::Error);
+//! assert!(deser_urlencoded::Deserializer::from_str("page=1&page=2")
+//!     .deserialize_in::<Query>(&strict)
+//!     .is_err());
+//! ```
+//!
 //! `a[]=1` is always a sequence.  Indexes that start at `0` and have no
 //! gaps are sequences, other indexes are map keys.
 //!

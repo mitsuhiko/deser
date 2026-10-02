@@ -5,7 +5,7 @@ use deser_core::Text;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::Nesting;
 use crate::encoding::{Decoded, decode};
@@ -32,8 +32,6 @@ pub struct DeserializerConfig {
     nesting: Nesting,
     max_depth: usize,
     max_params: usize,
-    duplicate_keys: DuplicateKeys,
-    bytes: BytesFormat,
     track_locations: bool,
 }
 
@@ -50,8 +48,6 @@ impl DeserializerConfig {
             nesting: Nesting::Brackets,
             max_depth: 16,
             max_params: 4096,
-            duplicate_keys: DuplicateKeys::Last,
-            bytes: BytesFormat::BASE64,
             track_locations: false,
         }
     }
@@ -82,48 +78,6 @@ impl DeserializerConfig {
     /// default is 4096.
     pub const fn max_params(mut self, max: usize) -> DeserializerConfig {
         self.max_params = max;
-        self
-    }
-
-    /// Sets what happens if a key that stands for a single value is given
-    /// more than once.
-    ///
-    /// Maps are multimaps (see [`ContainerShape::with_multimap`]): a key
-    /// is passed on once per value.  Collections (like `Vec<T>`) collect
-    /// all of them, for other types this decides which value is used.  The default is [`DuplicateKeys::Last`]
-    /// which matches what many web frameworks do (and makes the pattern of a
-    /// hidden input for unchecked checkboxes work).
-    ///
-    /// ```
-    /// use deser::de::DuplicateKeys;
-    /// use deser_urlencoded::DeserializerConfig;
-    ///
-    /// #[derive(deser::Deserialize)]
-    /// struct Query {
-    ///     page: u32,
-    /// }
-    ///
-    /// let query: Query = deser_urlencoded::from_str("page=1&page=2").unwrap();
-    /// assert_eq!(query.page, 2);
-    ///
-    /// const STRICT: DeserializerConfig =
-    ///     DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
-    /// assert!(STRICT.from_str::<Query>("page=1&page=2").is_err());
-    /// ```
-    pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
-        self.duplicate_keys = policy;
-        self
-    }
-
-    /// Sets how strings are decoded into bytes.
-    ///
-    /// Types that expect bytes (like `Vec<u8>`) decode values as base64
-    /// by default, both with the standard and the URL-safe alphabet and
-    /// with or without padding.  Values which are not UTF-8 after
-    /// percent-decoding are passed on as bytes (see
-    /// [bytes](deser_core::adapters#bytes)).
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -281,6 +235,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Parses the input and feeds the events into the given driver.
     ///
     /// The whole input is parsed before the first event is emitted, so
@@ -296,10 +261,9 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             Source(self.input.into()).set(state);
         }
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(state);
-        }
-        self.config.duplicate_keys.set(state);
+        // the last value of repeated keys is used unless the context says
+        // otherwise
+        DuplicateKeys::Last.set_default(state);
         LexicalRules::LENIENT.set(state);
         tree.emit(driver)
             .map_err(|err| err.resolve_position(self.input.as_bytes()))

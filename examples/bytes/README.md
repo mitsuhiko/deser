@@ -25,9 +25,10 @@ The `Blob` struct has four byte fields, each with a different strategy:
 
 It also shows:
 
-- `SerializerConfig::bytes(...)` changes the format-wide default for
-  plain bytes. The example uses URL-safe base64 for JSON and integer
-  arrays for TOML. Fields with an explicit adapter are not affected.
+- A `BytesFormat` in the `Context` changes the default for plain bytes,
+  for writing and reading. The example uses URL-safe base64 for JSON and
+  integer arrays for TOML. Fields with an explicit adapter are not
+  affected.
 - Reading accepts standard and URL-safe base64 (with or without padding),
   as well as integer arrays, for plain bytes.
 - `Hex` comes from `deser-encoding`. The base64 variants and `IntSeq`

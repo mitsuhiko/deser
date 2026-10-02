@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 use deser_core::hints::Layout;
-use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Implicit, ImplicitValue, Source};
+use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Source};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};
@@ -42,7 +42,6 @@ pub struct DeserializerConfig {
     alias_limit: usize,
     merge_keys: bool,
     track_locations: bool,
-    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -59,7 +58,6 @@ impl DeserializerConfig {
             alias_limit: DEFAULT_ALIAS_LIMIT,
             merge_keys: true,
             track_locations: false,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -135,30 +133,6 @@ impl DeserializerConfig {
     /// Values produced by aliases report the location of the anchored node.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
-        self
-    }
-
-    /// Sets how strings are decoded into bytes.
-    ///
-    /// Bytes are native in YAML (`!!binary`).  Strings that types which
-    /// expect bytes (like `Vec<u8>`) receive are decoded as base64 by
-    /// default.  This is only needed to read bytes written with
-    /// [`SerializerConfig::binary`](crate::SerializerConfig::binary) off and
-    /// another format than base64, for instance hex
-    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
-    /// [`deser-encoding`](https://docs.rs/deser-encoding)).
-    ///
-    /// ```
-    /// let bytes: Vec<u8> = deser_yaml::from_str("!!binary Af8=").unwrap();
-    /// assert_eq!(bytes, [1, 255]);
-    /// let bytes: Vec<u8> = deser_yaml::from_str("Af8").unwrap();
-    /// assert_eq!(bytes, [1, 255]);
-    /// ```
-    ///
-    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).
-    /// Values that use an adapter for bytes are not affected.
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -626,6 +600,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Returns an iterator over the remaining documents.
     ///
     /// The iterator stops after the first error.
@@ -678,9 +663,6 @@ impl<'a> Deserializer<'a> {
         if self.config.track_locations {
             let source = self.source.get_or_insert_with(|| self.input.into());
             Source(source.clone()).set(driver.state_mut());
-        }
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(driver.state_mut());
         }
         let input = self.input;
         let rv = self

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use deser::adapters::{Flag, Separated, TrimWhitespace};
 use deser::de::{Deserializer as _, DuplicateKeys, IgnoredFields, UnknownFields};
-use deser::{Deserialize, ErrorKind};
+use deser::{Context, Deserialize, ErrorKind};
 use deser_env::{Case, Deserializer, DeserializerConfig, EnvVar, from_vars};
 use deser_path::{Path, PathLayer};
 
@@ -218,17 +218,18 @@ fn test_duplicate_keys() {
     let vars = [("APP_PORT", "1"), ("APP_port", "2")];
     // sorted by name: `APP_PORT` comes first
     assert_eq!(from_vars::<Config, _, _, _>("APP_", vars).unwrap().port, 2);
-    let first = DeserializerConfig::new().duplicate_keys(DuplicateKeys::First);
+    // the context overrides the default of the format
+    let first = Context::new().with(DuplicateKeys::First);
     assert_eq!(
-        first
-            .from_vars::<Config, _, _, _>("APP_", vars)
+        Deserializer::from_vars("APP_", vars)
+            .deserialize_in::<Config>(&first)
             .unwrap()
             .port,
         1
     );
-    let strict = DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
-    let err = strict
-        .from_vars::<Config, _, _, _>("APP_", vars)
+    let strict = Context::new().with(DuplicateKeys::Error);
+    let err = Deserializer::from_vars("APP_", vars)
+        .deserialize_in::<Config>(&strict)
         .unwrap_err();
     assert_eq!(env_var(&err), Some("APP_port"));
     // with the case preserved these are different keys

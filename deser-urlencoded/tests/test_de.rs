@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use deser::de::DuplicateKeys;
-use deser::{Deserialize, ErrorKind};
+use deser::{Context, Deserialize, ErrorKind};
 use deser_path::{Path, PathLayer};
 use deser_urlencoded::{Deserializer, DeserializerConfig, Nesting, from_slice, from_str};
 
@@ -427,22 +427,30 @@ fn test_duplicate_keys() {
     let input = "single=x&single=y&multi=a&multi=b";
     assert_eq!(from_str::<Body>(input).unwrap().single, "y");
 
-    const FIRST: DeserializerConfig =
-        DeserializerConfig::new().duplicate_keys(DuplicateKeys::First);
-    assert_eq!(FIRST.from_str::<Body>(input).unwrap().single, "x");
+    // the context overrides the default of the format
+    let first = Context::new().with(DuplicateKeys::First);
+    assert_eq!(
+        Deserializer::from_str(input)
+            .deserialize_in::<Body>(&first)
+            .unwrap()
+            .single,
+        "x"
+    );
 
-    const STRICT: DeserializerConfig =
-        DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
-    let err = Deserializer::from_str_with_config(input, &STRICT)
-        .deserialize_with::<Body, _>(|driver| driver.push_layer(PathLayer::new()))
+    let strict = Context::new().with(DuplicateKeys::Error);
+    let err = Deserializer::from_str(input)
+        .deserialize_with::<Body, _>(|driver| {
+            driver.set_context(&strict);
+            driver.push_layer(PathLayer::new());
+        })
         .unwrap_err();
     assert_eq!(err.message(), "duplicate field `single`");
     assert_eq!(err.attachment::<Path>().unwrap().to_string(), "single");
     assert_eq!(err.offset(), Some(16));
     // sequences still get all values
     assert_eq!(
-        STRICT
-            .from_str::<Body>("single=x&multi=a&multi=b")
+        Deserializer::from_str("single=x&multi=a&multi=b")
+            .deserialize_in::<Body>(&strict)
             .unwrap()
             .multi,
         ["a", "b"]
@@ -692,13 +700,14 @@ fn test_default_on_error_with_repeated_keys() {
     );
 
     // a duplicate key is an error of the struct, not of the value
-    const STRICT: DeserializerConfig =
-        DeserializerConfig::new().duplicate_keys(DuplicateKeys::Error);
-    let err = STRICT
-        .from_str::<Query>("page=1&page=2&tags=1")
+    let strict = Context::new().with(DuplicateKeys::Error);
+    let err = Deserializer::from_str("page=1&page=2&tags=1")
+        .deserialize_in::<Query>(&strict)
         .unwrap_err();
     assert_eq!(err.message(), "duplicate field `page`");
-    let query = STRICT.from_str::<Query>("page=1&tags=1&tags=2").unwrap();
+    let query = Deserializer::from_str("page=1&tags=1&tags=2")
+        .deserialize_in::<Query>(&strict)
+        .unwrap();
     assert_eq!(
         query,
         Query {

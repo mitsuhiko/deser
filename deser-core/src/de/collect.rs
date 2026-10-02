@@ -3,6 +3,47 @@
 use crate::State;
 use crate::error::Error;
 
+/// Collects the errors of a whole deserialization (a value of the
+/// [`Context`](crate::Context)).
+///
+/// With this in the context, maps and sequences collect the errors of their
+/// items and deserialization continues to find the other errors (see
+/// [`State::set_collect_errors`]).  The limit of errors is optional:
+///
+/// ```
+/// use deser::de::{CollectErrors, DeserializeDriver};
+/// use deser::{Context, Event};
+///
+/// let context = Context::new().with(CollectErrors::new().max_errors(10));
+///
+/// let mut out = None::<Vec<u32>>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// driver.set_context(&context);
+/// let mut rv = Ok(());
+/// for event in [Event::seq_start(), "a".into(), 1u64.into(), true.into(), Event::SeqEnd] {
+///     rv = rv.and_then(|()| driver.emit(event));
+/// }
+/// assert_eq!(rv.unwrap_err().errors().count(), 2);
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CollectErrors {
+    pub(crate) max: Option<usize>,
+}
+
+impl CollectErrors {
+    /// Collects errors without limit.
+    pub const fn new() -> CollectErrors {
+        CollectErrors { max: None }
+    }
+
+    /// Limits the number of errors that are collected (see
+    /// [`State::set_max_errors`]).
+    pub const fn max_errors(mut self, max: usize) -> CollectErrors {
+        self.max = Some(max);
+        self
+    }
+}
+
 /// The errors a map or sequence collected from its items.
 ///
 /// This is a helper for sinks that collect the errors of their items (see

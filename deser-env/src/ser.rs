@@ -19,8 +19,8 @@ use crate::Case;
 /// that are empty are not written as variables cannot represent them.
 ///
 /// Numbers are written with the shortest text that reads back as the same
-/// value, booleans as `true` and `false` and bytes as base64 (see
-/// [`bytes`](Self::bytes)).  Keys that are empty or contain the separator
+/// value, booleans as `true` and `false` and bytes as base64 (or the
+/// [`BytesFormat`](deser_core::BytesFormat) of the context).  Keys that are empty or contain the separator
 /// are an error as they would not read back.
 ///
 /// ```
@@ -61,7 +61,6 @@ use crate::Case;
 pub struct SerializerConfig {
     separator: &'static str,
     case: Case,
-    bytes: BytesFormat,
 }
 
 impl Default for SerializerConfig {
@@ -76,7 +75,6 @@ impl SerializerConfig {
         SerializerConfig {
             separator: "__",
             case: Case::Upper,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -95,16 +93,6 @@ impl SerializerConfig {
     /// The default is [`Case::Upper`] which uppercases keys.
     pub const fn case(mut self, case: Case) -> SerializerConfig {
         self.case = case;
-        self
-    }
-
-    /// Sets how bytes are represented.
-    ///
-    /// By default bytes are written as base64 ([`BytesFormat::BASE64`]).
-    /// Values can request a different format (see
-    /// [bytes](deser_core::adapters#bytes)) which takes precedence.
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -137,6 +125,7 @@ impl SerializerConfig {
         setup(&mut driver);
         let mut writer = Writer {
             config: self,
+            bytes: BytesFormat::of(driver.state()),
             out: Vec::new(),
             name: prefix.to_string(),
             stack: Vec::new(),
@@ -182,6 +171,8 @@ enum Frame {
 /// Writes the events of a value.
 struct Writer<'c> {
     config: &'c SerializerConfig,
+    /// How bytes are written (from the state).
+    bytes: BytesFormat,
     out: Vec<(String, String)>,
     /// The name of the current value.
     name: String,
@@ -269,7 +260,7 @@ impl Writer<'_> {
     fn value(&mut self, event: Event, in_seq: bool) -> Result<(), Error> {
         match event {
             Event::Atom(atom) => {
-                let value = match value_text(&atom, self.config.bytes)? {
+                let value = match value_text(&atom, self.bytes)? {
                     Some(value) => value,
                     // nulls in sequences are empty values to keep the
                     // positions of the other values

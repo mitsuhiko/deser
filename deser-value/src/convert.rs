@@ -60,6 +60,17 @@ impl<'a> Deserializer<'a> {
     {
         de::Deserializer::deserialize_with(self, setup)
     }
+
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
 }
 
 impl<'de> de::Deserializer<'de> for Deserializer<'de> {
@@ -346,6 +357,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the values serialized so far.

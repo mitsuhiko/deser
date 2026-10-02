@@ -2,10 +2,10 @@
 //!
 //! Bytes (`Vec<u8>`, `[u8; N]`, `Cow<[u8]>`) are part of the data model.
 //! CBOR and MessagePack have native bytes, JSON and TOML do not.  There they
-//! are written as base64 strings by default and can be configured per format
-//! or per value:
+//! are written as base64 strings by default and can be configured in the
+//! context or per value:
 //!
-//! * a plain `Vec<u8>` uses the format's configuration (base64 unless
+//! * a plain `Vec<u8>` uses the format of the context (base64 unless
 //!   configured otherwise) and native bytes in CBOR and MessagePack,
 //! * `#[deser(as = Hex)]` makes it a hex string in all formats (also CBOR).
 //!   deser provides the base64 encodings, `Hex` comes from `deser-encoding`,
@@ -17,7 +17,7 @@
 //! When reading, all of them accept native bytes and strings in their
 //! encoding, plain bytes also accept arrays of integers.
 use deser::adapters::{Base64Url, BytesFallback, IntSeq};
-use deser::{BytesFormat, Deserialize, Serialize};
+use deser::{BytesFormat, Context, Deserialize, Serialize};
 use deser_encoding::Hex;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -54,19 +54,23 @@ fn main() {
     println!("TOML:\n{}", toml);
     assert_eq!(deser_toml::from_str::<Blob>(&toml).unwrap(), blob);
 
-    // the format configuration only changes plain bytes, the values that
-    // requested a representation keep it.
-    const URL_SAFE: BytesFormat = BytesFormat::encoded::<Base64Url>();
-    let json = deser_json::SerializerConfig::new()
-        .bytes(URL_SAFE)
-        .to_string(&blob)
-        .unwrap();
+    // the format of bytes in the context only changes plain bytes, the
+    // values that requested a representation keep it.  The context is
+    // used for reading as well.
+    let url_safe = Context::new().with(BytesFormat::encoded::<Base64Url>());
+    let mut ser = deser_json::Serializer::new();
+    ser.serialize_in(&blob, &url_safe).unwrap();
+    let json = ser.finish();
     println!("JSON with URL safe base64:\n{}\n", json);
     assert!(json.starts_with(r#"{"data":"aGVsbG8g_w==","digest":"2cf24dba5fb0a30e""#));
-    let toml = deser_toml::SerializerConfig::new()
-        .bytes(BytesFormat::SEQ)
-        .to_string(&blob)
+    let read: Blob = deser_json::Deserializer::from_str(&json)
+        .deserialize_in(&url_safe)
         .unwrap();
+    assert_eq!(read, blob);
+    let seq = Context::new().with(BytesFormat::SEQ);
+    let mut ser = deser_toml::Serializer::new();
+    ser.serialize_in(&blob, &seq).unwrap();
+    let toml = ser.finish();
     println!("TOML with arrays of integers:\n{}", toml);
     assert!(toml.starts_with("data = [104, 101, 108, 108, 111, 32, 255]\n"));
 

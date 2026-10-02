@@ -4,7 +4,7 @@ use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
-use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Source};
 
 use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};
@@ -30,7 +30,6 @@ use crate::parser::{ROOT, parse};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
     track_locations: bool,
-    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -44,38 +43,7 @@ impl DeserializerConfig {
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
             track_locations: false,
-            bytes: BytesFormat::BASE64,
         }
-    }
-
-    /// Sets how strings are decoded into bytes.
-    ///
-    /// TOML has no bytes, types that expect bytes (like `Vec<u8>`) accept
-    /// strings and arrays of integers instead.  By default strings are
-    /// decoded as base64, both with the standard and the URL-safe alphabet
-    /// and with or without padding.  This changes how strings are decoded,
-    /// for [`BytesFormat::SEQ`] they are still decoded as base64.
-    ///
-    /// ```
-    /// use std::collections::BTreeMap;
-    ///
-    /// let value: BTreeMap<String, Vec<u8>> =
-    ///     deser_toml::from_str("a = \"Af8=\"").unwrap();
-    /// assert_eq!(value["a"], [1, 255]);
-    /// let value: BTreeMap<String, Vec<u8>> =
-    ///     deser_toml::from_str("a = [1, 255]").unwrap();
-    /// assert_eq!(value["a"], [1, 255]);
-    /// ```
-    ///
-    /// Strings in other encodings than base64 need this, for instance hex
-    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
-    /// [`deser-encoding`](https://docs.rs/deser-encoding)).
-    ///
-    /// The format is placed into the state (see [bytes](deser_core::adapters#bytes)).  Values
-    /// that use an adapter for bytes are not affected.
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
-        self
     }
 
     /// Enables or disables location tracking.
@@ -223,6 +191,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Parses the input and feeds the events into the given driver.
     ///
     /// The whole document is parsed before the first event is emitted, so
@@ -238,9 +217,6 @@ impl<'a> Deserializer<'a> {
 
         if self.config.track_locations {
             Source(self.input.into()).set(driver.state_mut());
-        }
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(driver.state_mut());
         }
         emit(&doc, driver).map_err(|err| err.resolve_position(self.input.as_bytes()))
     }

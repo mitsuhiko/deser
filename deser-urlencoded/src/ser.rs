@@ -55,14 +55,13 @@ pub enum ArrayFormat {
 /// Keys and values are percent-encoded like `application/x-www-form-urlencoded`
 /// (ASCII alphanumerics and `*-._` are kept, space is written as `+`).
 /// Numbers are written with the shortest text that reads back as the same
-/// value, booleans as `true` and `false` and bytes as base64 (see
-/// [`bytes`](Self::bytes)).
+/// value, booleans as `true` and `false` and bytes as base64 (or the
+/// [`BytesFormat`](deser_core::BytesFormat) of the context).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializerConfig {
     arrays: ArrayFormat,
     nesting: Nesting,
     space_as_plus: bool,
-    bytes: BytesFormat,
 }
 
 impl Default for SerializerConfig {
@@ -78,7 +77,6 @@ impl SerializerConfig {
             arrays: ArrayFormat::Repeat,
             nesting: Nesting::Brackets,
             space_as_plus: true,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -103,16 +101,6 @@ impl SerializerConfig {
     /// Sets if spaces are written as `+` (the default) or as `%20`.
     pub const fn space_as_plus(mut self, yes: bool) -> SerializerConfig {
         self.space_as_plus = yes;
-        self
-    }
-
-    /// Sets how bytes are represented.
-    ///
-    /// By default bytes are written as base64 ([`BytesFormat::BASE64`]).
-    /// Values can request a different format (see [bytes](deser_core::adapters#bytes))
-    /// which takes precedence.
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -153,9 +141,10 @@ impl SerializerConfig {
     }
 
     /// Creates the writer of a value which writes into the output.
-    pub(crate) fn value_writer(&self, out: String) -> Writer {
+    pub(crate) fn value_writer(&self, out: String, bytes: BytesFormat) -> Writer {
         Writer {
             config: self.clone(),
+            bytes,
             separate: false,
             out,
             key: String::new(),
@@ -187,7 +176,7 @@ impl SerializerConfig {
         }
         let len = out.len();
         let mut writer = value.take().unwrap_or_else(|| {
-            let mut writer = self.value_writer(String::new());
+            let mut writer = self.value_writer(String::new(), BytesFormat::of(driver.state()));
             writer.separate = *separate;
             Box::new(writer)
         });
@@ -237,7 +226,7 @@ impl SerializerConfig {
         separate: &mut bool,
     ) -> Result<(), Error> {
         let len = out.len();
-        let mut writer = self.value_writer(std::mem::take(out));
+        let mut writer = self.value_writer(std::mem::take(out), BytesFormat::of(driver.state()));
         writer.separate = *separate;
         let rv = driver.drive(|event, state| writer.event(event, state));
         *out = writer.out;
@@ -365,6 +354,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the output written so far (that was not cleared).
@@ -517,6 +518,8 @@ enum Frame {
 /// Writes the events of a value.
 pub(crate) struct Writer {
     config: SerializerConfig,
+    /// How bytes are written (from the state).
+    bytes: BytesFormat,
     /// `true` if the next parameter needs a separator.
     separate: bool,
     out: String,
@@ -716,7 +719,7 @@ impl Writer {
             Atom::F32(value) => Cow::Owned(float_text(value)),
             Atom::F64(value) => Cow::Owned(float_text(value)),
             Atom::Bytes(ref bytes) => {
-                let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
+                let format = bytes.fallback.copied().unwrap_or(self.bytes);
                 Cow::Owned(
                     format
                         .encode(bytes)

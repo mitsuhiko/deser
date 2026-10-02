@@ -5,6 +5,7 @@ use core::fmt;
 
 use crate::Context;
 use crate::arena::{Arena, Buffer};
+use crate::de::CollectErrors;
 use crate::error::{Error, ErrorContext};
 use crate::event::ContainerShape;
 use crate::ext::{RawFormatId, RawFormatInfo};
@@ -186,6 +187,10 @@ impl State {
     ///     ]
     /// );
     /// ```
+    ///
+    /// Errors can also be collected for a whole deserialization by placing
+    /// [`CollectErrors`] in the [context](Self::set_context), which is how
+    /// this is usually configured from the outside.
     ///
     /// Types can change this for the values in them, for instance to
     /// collect the errors of a part of the input.  The previous setting is
@@ -393,6 +398,18 @@ impl State {
         }
     }
 
+    /// Sets an extension value unless the state or the context has one.
+    ///
+    /// Formats use this for their defaults of values that are configured
+    /// in the context, for instance query strings use the last of repeated
+    /// keys unless the context has a [`DuplicateKeys`](crate::de::DuplicateKeys)
+    /// policy.
+    pub fn set_default<T: Default + fmt::Debug + Send + Sync + 'static>(&mut self, value: T) {
+        if self.get::<T>().is_none() {
+            *self.get_mut::<T>() = value;
+        }
+    }
+
     /// Returns the context of the serialization or deserialization.
     ///
     /// The context holds the configuration given from the outside, its
@@ -410,6 +427,11 @@ impl State {
     /// and [`SerializeDriver::set_context`](crate::ser::SerializeDriver::set_context)),
     /// which is typically done before the first event.
     pub fn set_context(&mut self, context: Context) {
+        if let Some(collect) = context.get::<CollectErrors>() {
+            self.collect_errors = true;
+            self.remaining_errors = collect.max.unwrap_or(usize::MAX);
+            self.error_limit_reached = false;
+        }
         self.context = context;
     }
 

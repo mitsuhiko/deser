@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
 use deser_core::de::{
-    self, ContentKey, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules,
-    deserialize_value,
+    self, ContentKey, Deserialize, DeserializeDriver, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, BytesFormat, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
 use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, BytesStart, Event as XmlEvent};
 use quick_xml::name::{QName, ResolveResult};
@@ -22,9 +21,7 @@ use crate::root::{Declarations, RootData};
 pub struct DeserializerConfig {
     pub(crate) names: Names,
     resolve_namespaces: bool,
-    duplicate_keys: DuplicateKeys,
     track_locations: bool,
-    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -39,9 +36,7 @@ impl DeserializerConfig {
         DeserializerConfig {
             names: Names::new(),
             resolve_namespaces: false,
-            duplicate_keys: DuplicateKeys::Error,
             track_locations: true,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -154,18 +149,6 @@ impl DeserializerConfig {
         self
     }
 
-    /// Sets what happens if an element that stands for a single value is
-    /// given more than once.
-    ///
-    /// Elements are [multimaps](deser_core::ContainerShape::with_multimap):
-    /// collections (like `Vec<T>`) collect all child elements with their
-    /// name, for other types this decides.  The default is
-    /// [`DuplicateKeys::Error`].
-    pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
-        self.duplicate_keys = policy;
-        self
-    }
-
     /// Enables or disables location tracking.
     ///
     /// The byte range of every event is always published into the state
@@ -174,39 +157,6 @@ impl DeserializerConfig {
     /// be resolved into lines and columns.  The default is `true`.
     pub const fn track_locations(mut self, yes: bool) -> DeserializerConfig {
         self.track_locations = yes;
-        self
-    }
-
-    /// Sets how text is decoded into bytes.
-    ///
-    /// XML has no bytes, types that expect bytes (like `Vec<u8>`) accept
-    /// text instead.  By default text is decoded as base64, both with the
-    /// standard and the URL-safe alphabet and with or without padding.
-    /// This changes how text is decoded, for [`BytesFormat::SEQ`] it's
-    /// still decoded as base64.
-    ///
-    /// ```
-    /// #[derive(deser::Deserialize)]
-    /// struct Blob {
-    ///     data: Vec<u8>,
-    /// }
-    ///
-    /// let blob: Blob = deser_xml::from_str("<Blob><data>Af8=</data></Blob>").unwrap();
-    /// assert_eq!(blob.data, [1, 255]);
-    /// let blob: Blob = deser_xml::from_str("<Blob><data>Af8</data></Blob>").unwrap();
-    /// assert_eq!(blob.data, [1, 255]);
-    /// ```
-    ///
-    /// Text in other encodings than base64 needs this, for instance hex
-    /// (`BytesFormat::encoded::<deser_encoding::Hex>()` with
-    /// [`deser-encoding`](https://docs.rs/deser-encoding)), as written
-    /// with [`SerializerConfig::bytes`](crate::SerializerConfig::bytes).
-    ///
-    /// The format is placed into the state (see
-    /// [bytes](deser_core::adapters#bytes)).  Values that use an adapter for
-    /// bytes are not affected.
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -338,6 +288,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Parses the document and feeds the events into the driver.
     ///
     /// Events are emitted while the document is parsed.  Text is passed on
@@ -350,10 +311,6 @@ impl<'a> Deserializer<'a> {
         let state = driver.state_mut();
         if self.config.track_locations {
             Source(self.input.into()).set(state);
-        }
-        self.config.duplicate_keys.set(state);
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(state);
         }
         TEXT_RULES.set(state);
         // elements with attributes are text for types that expect text,

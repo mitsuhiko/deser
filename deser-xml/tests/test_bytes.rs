@@ -1,4 +1,4 @@
-use deser::{BytesFormat, Deserialize, Serialize};
+use deser::{BytesFormat, Context, Deserialize, Serialize};
 use deser_encoding::Hex;
 use deser_xml::{Deserializer, DeserializerConfig, SerializerConfig, from_str, to_string};
 
@@ -25,20 +25,24 @@ fn test_bytes_default() {
 
 #[test]
 fn test_bytes_config() {
-    const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
+    // the same context is used for writing and reading
+    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
-        .bytes(HEX)
-        .to_string(&blob())
+        .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();
     assert_eq!(xml, r#"<Blob attr="686921"><data>0001ff</data></Blob>"#);
-    let config = DeserializerConfig::new().bytes(HEX);
-    assert_eq!(config.from_str::<Blob>(&xml).unwrap(), blob());
-    assert_eq!(config.from_slice::<Blob>(xml.as_bytes()).unwrap(), blob());
-
-    // the deserializer keeps the configuration
-    let mut de = Deserializer::from_str_with_config(&xml, &config);
-    assert_eq!(de.config(), &config);
-    assert_eq!(de.deserialize::<Blob>().unwrap(), blob());
+    assert_eq!(
+        Deserializer::from_str(&xml)
+            .deserialize_in::<Blob>(&hex)
+            .unwrap(),
+        blob()
+    );
+    assert_eq!(
+        Deserializer::from_slice(xml.as_bytes())
+            .deserialize_in::<Blob>(&hex)
+            .unwrap(),
+        blob()
+    );
 
     // without it the hex text is not base64
     assert!(from_str::<Blob>(&xml).is_err());
@@ -47,14 +51,12 @@ fn test_bytes_config() {
 #[cfg(feature = "io")]
 #[test]
 fn test_bytes_config_reader() {
-    const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
+    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
-        .bytes(HEX)
-        .to_string(&blob())
+        .to_string_with(&blob(), |driver| driver.set_context(&hex))
         .unwrap();
-    let value: Blob = DeserializerConfig::new()
-        .bytes(HEX)
-        .from_reader(xml.as_bytes())
-        .unwrap();
+    let mut reader = DeserializerConfig::new().reader(xml.as_bytes());
+    reader.set_context(hex);
+    let value: Blob = reader.read().unwrap().unwrap();
     assert_eq!(value, blob());
 }

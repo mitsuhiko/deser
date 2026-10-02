@@ -9,20 +9,29 @@ use crate::error::Error;
 
 /// How bytes are represented in formats without native bytes.
 ///
-/// This is used in three places:
+/// It's an extension value, usually configured in the
+/// [`Context`](crate::Context) (or in the [`State`], see
+/// [`set`](Self::set)).  It's used in three places:
 ///
-/// * The serializers of formats without native bytes (JSON and TOML) can be
-///   configured with a format.  It's used for all bytes that do not request
-///   a format.  The default is [`BytesFormat::BASE64`].
+/// * The serializers of formats without native bytes (like JSON and TOML)
+///   write all bytes that do not request a format in it.  The default is
+///   [`BytesFormat::BASE64`].
 /// * Bytes can carry a format as fallback (see
 ///   [`Bytes::fallback`](crate::Bytes::fallback)) which takes precedence
-///   over the configuration of the serializer.  The
+///   over the format of the context.  The
 ///   [`BytesFallback`](crate::adapters::BytesFallback) adapter does this.
-/// * The types that expect bytes decode strings with the format placed into
-///   the [`State`] (see [`set`](Self::set)).  The deserializers of formats
-///   without native bytes can be configured to do this, otherwise lenient
-///   base64 is used.  Strings are decoded as base64 for
+/// * The types that expect bytes decode strings with it.  Without a format
+///   lenient base64 is used.  Strings are decoded as base64 for
 ///   [`BytesFormat::SEQ`].
+///
+/// ```
+/// use deser::adapters::Base64Url;
+/// use deser::{BytesFormat, Context};
+///
+/// // writes and reads URL-safe base64 in formats without native bytes
+/// let context = Context::new().with(BytesFormat::encoded::<Base64Url>());
+/// # let _ = context;
+/// ```
 ///
 /// ```
 /// use deser::adapters::Base64UrlNoPad;
@@ -70,10 +79,10 @@ impl BytesFormat {
         })
     }
 
-    /// Returns the format the types that expect bytes decode strings with.
+    /// Returns the format of a serialization or deserialization.
     ///
-    /// This is [`BytesFormat::BASE64`] unless the deserializer of the format
-    /// [`set`](Self::set) a different one.
+    /// This is [`BytesFormat::BASE64`] unless the state or the context has a
+    /// different one.
     #[inline]
     pub fn of(state: &State) -> BytesFormat {
         state.get::<BytesFormat>().copied().unwrap_or_default()

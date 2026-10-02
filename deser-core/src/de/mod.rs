@@ -262,7 +262,7 @@ use self::atoms::{
     default_borrowed_key_atom, default_borrowed_value_atom, default_container, default_key_atom,
     default_value_atom,
 };
-pub use self::collect::CollectedErrors;
+pub use self::collect::{CollectErrors, CollectedErrors};
 pub use self::deserializer::{Deserializer, deserialize_value};
 pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;

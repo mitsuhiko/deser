@@ -11,7 +11,23 @@ All notable changes to deser are documented here.
   context).  It's passed with `Deserializer::deserialize_in`,
   `Deserializer::update_in`, `Serializer::serialize_in`, the
   `set_context` methods of the drivers and of `io::Reader`, `io::Writer`
-  and `stream::InputBuffer`.
+  and `stream::InputBuffer`.  The format crates have `deserialize_in` and
+  `serialize_in` on their deserializers and serializers.
+- **Breaking:** configuration given from the outside moved into the
+  context.  The `bytes` options of the deserializer and serializer
+  configurations of the formats (JSON, JSONC, JSON5, Hjson, TOML, YAML,
+  XML, CSV, query strings and environment variables) and the
+  `duplicate_keys` options (XML, query strings and environment variables)
+  were removed: put a `BytesFormat` or a `DuplicateKeys` policy into the
+  context instead, the same context configures writing and reading.  The
+  serializers write bytes in the `BytesFormat` of the state (or context).
+  Formats with other defaults apply them unless the context has a value
+  (`State::set_default` and `DuplicateKeys::set_default`), query strings
+  and environment variables still use the last of repeated keys by
+  default.
+- Added `CollectErrors`, a value of the context that makes the whole
+  deserialization collect errors (like `State::set_collect_errors`, with
+  an optional limit).
 - Added open enums (behind the `open-enums` feature, off by default): a
   trait marked with `#[deser::open_enum]` is an enum whose variants are
   the implementations marked with `#[deser::variant]`, which can be in any

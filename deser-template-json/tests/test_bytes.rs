@@ -1,10 +1,18 @@
 use super::dialect;
 use std::collections::BTreeMap;
 
+use deser::Context;
 use deser::adapters::{Base64UrlNoPad, BytesFallback, IntSeq};
 use deser::{BytesFormat, Deserialize, Serialize};
 use deser_encoding::Hex;
-use dialect::{DeserializerConfig, SerializerConfig, from_str, to_string};
+use dialect::{Deserializer, Serializer, from_str, to_string};
+
+/// Serializes a value as JSON in a context.
+fn to_string_in<T: Serialize>(value: &T, context: &Context) -> String {
+    let mut ser = Serializer::new();
+    ser.serialize_in(value, context).unwrap();
+    ser.finish()
+}
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {
@@ -80,8 +88,7 @@ fn test_bytes_lenient() {
 
 #[test]
 fn test_bytes_config() {
-    const SEQ: SerializerConfig = SerializerConfig::new().bytes(BytesFormat::SEQ);
-    let json = SEQ.to_string(&blob()).unwrap();
+    let json = to_string_in(&blob(), &Context::new().with(BytesFormat::SEQ));
     // values with adapters keep their format, keys cannot be sequences
     assert_eq!(
         json,
@@ -89,18 +96,15 @@ fn test_bytes_config() {
     );
     assert_eq!(from_str::<Blob>(&json).unwrap(), blob());
 
-    const HEX: BytesFormat = BytesFormat::encoded::<Hex>();
-    let json = SerializerConfig::new()
-        .bytes(HEX)
-        .to_string(&blob())
-        .unwrap();
+    // the same context is used for writing and reading
+    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
+    let json = to_string_in(&blob(), &hex);
     assert_eq!(
         json,
         r#"{"plain":"0001ff","array":"686921","hex":"dead","url":"-_8","seq":[1,2],"missing":null,"keys":{"01":1},"hex_keys":{"02":2}}"#
     );
-    let value = DeserializerConfig::new()
-        .bytes(HEX)
-        .from_str::<Blob>(&json)
+    let value = Deserializer::from_str(&json)
+        .deserialize_in::<Blob>(&hex)
         .unwrap();
     assert_eq!(value, blob());
 
@@ -133,9 +137,14 @@ fn test_bytes_in_enums() {
     let json = r#"{"payload":"AQID","type":"Data"}"#;
     assert_eq!(from_str::<Message>(json).unwrap(), value);
 
-    const HEX: DeserializerConfig = DeserializerConfig::new().bytes(BytesFormat::encoded::<Hex>());
+    let hex = Context::new().with(BytesFormat::encoded::<Hex>());
     let json = r#"{"payload":"010203","type":"Data"}"#;
-    assert_eq!(HEX.from_str::<Message>(json).unwrap(), value);
+    assert_eq!(
+        Deserializer::from_str(json)
+            .deserialize_in::<Message>(&hex)
+            .unwrap(),
+        value
+    );
 
     assert_eq!(
         from_str::<Content>(r#""AQID""#).unwrap(),

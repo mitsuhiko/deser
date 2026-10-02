@@ -45,8 +45,8 @@ Why use it:
 * **Numbers without loss:** 128 bit integers are written and read as
   numbers, and with `DeserializerConfig::exact_numbers` decimals such as
   `0.10` keep their exact text for types like `rust_decimal::Decimal`.
-* **Bytes:** `Vec<u8>` is base64 by default and can be configured per
-  format or per field (hex, arrays of integers, ...).
+* **Bytes:** `Vec<u8>` is base64 by default and can be configured in the
+  context or per field (hex, arrays of integers, ...).
 * **Unlimited nesting:** a million nested arrays do not overflow the stack.
 * **JSON Lines:** a `Deserializer` can read one value per line and
   recovers from errors in individual lines, a `Serializer` writes them.

@@ -7,7 +7,7 @@ use deser_core::Text;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, DeserializeOwned, DuplicateKeys, LexicalRules,
 };
-use deser_core::{Atom, Bytes, BytesFormat, ContainerShape, Error, ErrorKind, Event};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event};
 
 use crate::{Case, EnvVar};
 
@@ -33,8 +33,6 @@ pub struct DeserializerConfig {
     separator: &'static str,
     case: Case,
     max_depth: usize,
-    duplicate_keys: DuplicateKeys,
-    bytes: BytesFormat,
 }
 
 impl Default for DeserializerConfig {
@@ -50,8 +48,6 @@ impl DeserializerConfig {
             separator: "__",
             case: Case::Upper,
             max_depth: 16,
-            duplicate_keys: DuplicateKeys::Last,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -80,30 +76,6 @@ impl DeserializerConfig {
     /// Names that are nested deeper are an error.  The default is 16.
     pub const fn max_depth(mut self, depth: usize) -> DeserializerConfig {
         self.max_depth = depth;
-        self
-    }
-
-    /// Sets what happens if more than one variable stands for the same key.
-    ///
-    /// This can only happen if names differ in case (`APP_PORT` and
-    /// `APP_port`) and [`Case::Upper`] makes them the same key.  The key
-    /// is passed on once per variable, in the order of the names, like a
-    /// repeated key in a query string (maps are multimaps, see
-    /// [`ContainerShape::with_multimap`]).  Collections (like `Vec<T>`)
-    /// collect all values, for other types this decides which one is used.
-    /// The default is [`DuplicateKeys::Last`].
-    pub const fn duplicate_keys(mut self, policy: DuplicateKeys) -> DeserializerConfig {
-        self.duplicate_keys = policy;
-        self
-    }
-
-    /// Sets how strings are decoded into bytes.
-    ///
-    /// Types that expect bytes (like `Vec<u8>`) decode values as base64 by
-    /// default (see [bytes](deser_core::adapters#bytes)).  Values which are
-    /// not valid unicode are passed on as bytes on Unix.
-    pub const fn bytes(mut self, format: BytesFormat) -> DeserializerConfig {
-        self.bytes = format;
         self
     }
 
@@ -327,6 +299,17 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
+    /// Deserializes the next value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn deserialize_in<T: Deserialize<'a>>(
+        &mut self,
+        context: &deser_core::Context,
+    ) -> Result<T, Error> {
+        de::Deserializer::deserialize_in(self, context)
+    }
+
     /// Feeds the events of the variables into the given driver.
     ///
     /// The variables are a map (see the [crate documentation](crate)).  All
@@ -340,10 +323,9 @@ impl<'a> Deserializer<'a> {
         }
         let tree = Tree::build(&self.vars, &self.config)?;
         let state = driver.state_mut();
-        if self.config.bytes != BytesFormat::BASE64 {
-            self.config.bytes.set(state);
-        }
-        self.config.duplicate_keys.set(state);
+        // the last value of repeated keys is used unless the context says
+        // otherwise
+        DuplicateKeys::Last.set_default(state);
         LexicalRules::LENIENT.set(state);
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)

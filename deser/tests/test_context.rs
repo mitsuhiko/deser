@@ -2,7 +2,7 @@
 //! deserializations from the outside).
 use std::collections::BTreeMap;
 
-use deser::de::{DeserializeDriver, Deserializer, DuplicateKeys, UnknownFields};
+use deser::de::{CollectErrors, DeserializeDriver, Deserializer, DuplicateKeys, UnknownFields};
 use deser::ser::{SerializeDriver, Serializer};
 use deser::{Context, Deserialize, Error, Event, Serialize, State};
 
@@ -127,4 +127,45 @@ fn test_serialize_in() {
     out.serialize_in(&FromState, &Context::new().with(42u32))
         .unwrap();
     assert_eq!(out.0, vec![Event::from(0u64), Event::from(42u64)]);
+}
+
+#[test]
+fn test_set_default() {
+    // formats set their defaults unless the context has a value
+    let mut state = State::new();
+    state.set_default(DuplicateKeys::Last);
+    assert_eq!(DuplicateKeys::of(&state), DuplicateKeys::Last);
+
+    let mut state = State::new();
+    state.set_context(Context::new().with(DuplicateKeys::First));
+    DuplicateKeys::Last.set_default(&mut state);
+    assert_eq!(DuplicateKeys::of(&state), DuplicateKeys::First);
+}
+
+#[test]
+fn test_collect_errors() {
+    let events = || {
+        vec![
+            Event::seq_start(),
+            "a".into(),
+            1u64.into(),
+            "b".into(),
+            "c".into(),
+            Event::SeqEnd,
+        ]
+    };
+    let err = Events(events()).deserialize::<Vec<u32>>().unwrap_err();
+    assert_eq!(err.errors().count(), 1);
+
+    let all = Context::new().with(CollectErrors::new());
+    let err = Events(events())
+        .deserialize_in::<Vec<u32>>(&all)
+        .unwrap_err();
+    assert_eq!(err.errors().count(), 3);
+
+    let limited = Context::new().with(CollectErrors::new().max_errors(1));
+    let err = Events(events())
+        .deserialize_in::<Vec<u32>>(&limited)
+        .unwrap_err();
+    assert_eq!(err.errors().count(), 2);
 }

@@ -32,8 +32,8 @@ use crate::{Escape, Nulls, QuoteStyle, Terminator};
 ///
 /// Numbers are written with the shortest text that reads back as the same
 /// value, booleans as `true` and `false`, null as an empty field (see
-/// [`nulls`](Self::nulls)) and bytes as base64 (see
-/// [`bytes`](Self::bytes)).  Fields are quoted if necessary (see
+/// [`nulls`](Self::nulls)) and bytes as base64 (or the
+/// [`BytesFormat`](deser_core::BytesFormat) of the context).  Fields are quoted if necessary (see
 /// [`quote_style`](Self::quote_style)).
 ///
 /// ```
@@ -67,7 +67,6 @@ pub struct SerializerConfig {
     nulls: Nulls,
     flexible: bool,
     escape_formulas: bool,
-    bytes: BytesFormat,
 }
 
 impl Default for SerializerConfig {
@@ -91,7 +90,6 @@ impl SerializerConfig {
             nulls: Nulls::None,
             flexible: false,
             escape_formulas: false,
-            bytes: BytesFormat::BASE64,
         }
     }
 
@@ -238,16 +236,6 @@ impl SerializerConfig {
         self
     }
 
-    /// Sets how bytes are represented.
-    ///
-    /// By default bytes are written as base64 ([`BytesFormat::BASE64`]).
-    /// Values can request a different format (see
-    /// [bytes](deser_core::adapters#bytes)) which takes precedence.
-    pub const fn bytes(mut self, format: BytesFormat) -> SerializerConfig {
-        self.bytes = format;
-        self
-    }
-
     /// Serializes the records of a value.
     ///
     /// The value has to be a sequence of records.
@@ -349,6 +337,7 @@ impl SerializerConfig {
             encoder: FieldEncoder {
                 config: self,
                 dialect,
+                bytes: BytesFormat::of(driver.state()),
                 plain: matches!(self.quote_style, QuoteStyle::Necessary | QuoteStyle::Never)
                     && self.nulls == Nulls::None
                     && !self.escape_formulas,
@@ -590,6 +579,18 @@ impl Serializer {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         ser::Serializer::serialize_with(self, value, setup)
+    }
+
+    /// Serializes a value in a context.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).
+    pub fn serialize_in<T: Serialize + ?Sized>(
+        &mut self,
+        value: &T,
+        context: &deser_core::Context,
+    ) -> Result<(), Error> {
+        ser::Serializer::serialize_in(self, value, context)
     }
 
     /// Returns the output written so far (that was not cleared).
@@ -1139,6 +1140,8 @@ struct Text<'a> {
 struct FieldEncoder<'a> {
     config: &'a SerializerConfig,
     dialect: &'a Dialect,
+    /// How bytes are written (from the state).
+    bytes: BytesFormat,
     /// Text without special characters is written as it is: fields are
     /// only quoted if necessary, null is empty and formulas are not
     /// escaped.
@@ -1320,7 +1323,7 @@ impl FieldEncoder<'_> {
                 false
             }
             Atom::Bytes(ref bytes) => {
-                let format = bytes.fallback.copied().unwrap_or(self.config.bytes);
+                let format = bytes.fallback.copied().unwrap_or(self.bytes);
                 let text = format
                     .encode(bytes)
                     .or_else(|| BytesFormat::BASE64.encode(bytes))
