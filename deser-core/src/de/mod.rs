@@ -1126,6 +1126,21 @@ pub trait Deserialize<'de, T: Send = Self>: Sized + Send {
         false
     }
 
+    /// Returns `true` if the value rejects empty lexical atoms.
+    ///
+    /// Optionals of such values are `None` for empty text (if it's a
+    /// missing value, see [`LexicalRules`]) without delivering it, which
+    /// saves creating the error that would be thrown away (optional numbers
+    /// are empty in every other row of some CSV files).  This is `true` for
+    /// numbers and booleans.
+    ///
+    /// Internal protocol, not public API yet (see `lib.rs`).
+    #[doc(hidden)]
+    #[inline(always)]
+    fn __private_rejects_empty_lexical() -> bool {
+        false
+    }
+
     /// Returns a sink for a value that is added to the collection in the
     /// slot.
     ///

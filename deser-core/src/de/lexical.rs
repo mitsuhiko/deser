@@ -190,6 +190,12 @@ pub(crate) fn parse_bool(value: &str, state: &State) -> Result<bool, Error> {
 /// environment variables and command lines are accepted, ignoring ASCII
 /// case.
 pub(crate) fn parse_bool_with(value: &str, lenient: bool, state: &State) -> Result<bool, Error> {
+    // the common spellings first
+    match value {
+        "true" => return Ok(true),
+        "false" => return Ok(false),
+        _ => {}
+    }
     if lenient {
         const TRUE: [&str; 4] = ["true", "yes", "on", "1"];
         const FALSE: [&str; 4] = ["false", "no", "off", "0"];
@@ -205,11 +211,7 @@ pub(crate) fn parse_bool_with(value: &str, lenient: bool, state: &State) -> Resu
             ))
         }
     } else {
-        match value {
-            "true" => Ok(true),
-            "false" => Ok(false),
-            _ => Err(invalid(value, "bool (true or false)", state)),
-        }
+        Err(invalid(value, "bool (true or false)", state))
     }
 }
 

@@ -85,6 +85,11 @@ impl<'de> Deserialize<'de> for bool {
     fn __private_atom_default() -> Option<Self> {
         Some(false)
     }
+
+    #[inline(always)]
+    fn __private_rejects_empty_lexical() -> bool {
+        true
+    }
 }
 
 impl<'de> Deserialize<'de> for String {
@@ -206,6 +211,11 @@ macro_rules! int_atom {
         fn __private_atom_default() -> Option<Self> {
             Some(0)
         }
+
+        #[inline(always)]
+        fn __private_rejects_empty_lexical() -> bool {
+            true
+        }
     };
 }
 
@@ -278,6 +288,11 @@ macro_rules! deserialize_float {
             #[inline]
             fn __private_atom_default() -> Option<Self> {
                 Some(0.0)
+            }
+
+            #[inline(always)]
+            fn __private_rejects_empty_lexical() -> bool {
+                true
             }
 
             #[inline]
@@ -1358,6 +1373,9 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Option<T>> for Optio
             drop(A::deserialize_into(inner, state));
             Ok(())
         } else if is_empty_lexical(&atom, state) {
+            if A::__private_rejects_empty_lexical() {
+                return Ok(());
+            }
             if !empty_lexical_or_none(atom, state, |atom, state| {
                 A::__private_atom_into(inner, atom, state)
             })? {
@@ -1380,6 +1398,9 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Option<T>> for Optio
             drop(A::deserialize_into(inner, state));
             Ok(())
         } else if is_empty_lexical(&atom, state) {
+            if A::__private_rejects_empty_lexical() {
+                return Ok(());
+            }
             if !empty_lexical_or_none(atom, state, |atom, state| {
                 A::__private_borrowed_atom_into(inner, atom, state)
             })? {
