@@ -223,14 +223,14 @@ fn test_duplicate_keys() {
     let first = Context::with(DuplicateKeys::First);
     assert_eq!(
         Deserializer::from_vars("APP_", vars)
-            .deserialize_in::<Config>(&first)
+            .deserialize_with::<Config, _>(|driver| driver.set_context(first.clone()))
             .unwrap()
             .port,
         1
     );
     let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_vars("APP_", vars)
-        .deserialize_in::<Config>(&strict)
+        .deserialize_with::<Config, _>(|driver| driver.set_context(strict.clone()))
         .unwrap_err();
     assert_eq!(env_var(&err), Some("APP_port"));
     // with the case preserved these are different keys

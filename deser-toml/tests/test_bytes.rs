@@ -61,17 +61,17 @@ fn test_bytes_config() {
     // the same context is used for writing and reading
     let hex = Context::with(BytesFormat::encoded::<Hex>());
     let toml = SerializerConfig::new()
-        .to_string_with(&blob(), |driver| driver.set_context(&hex))
+        .to_string_with(&blob(), |driver| driver.set_context(hex.clone()))
         .unwrap();
     assert!(toml.starts_with("plain = \"0001ff\"\narray = \"686921\"\n"));
     let value = Deserializer::from_str(&toml)
-        .deserialize_in::<Blob>(&hex)
+        .deserialize_with::<Blob, _>(|driver| driver.set_context(hex.clone()))
         .unwrap();
     assert_eq!(value, blob());
 
     let seq = Context::with(BytesFormat::SEQ);
     let toml = SerializerConfig::new()
-        .to_string_with(&blob(), |driver| driver.set_context(&seq))
+        .to_string_with(&blob(), |driver| driver.set_context(seq.clone()))
         .unwrap();
     assert!(toml.starts_with("plain = [0, 1, 255]\narray = [104, 105, 33]\n"));
     assert_eq!(from_str::<Blob>(&toml).unwrap(), blob());
@@ -88,26 +88,26 @@ fn test_same_as_json() {
         let value = blob();
         let context = Context::with(format);
         let toml = SerializerConfig::new()
-            .to_string_with(&value, |driver| driver.set_context(&context))
+            .to_string_with(&value, |driver| driver.set_context(context.clone()))
             .unwrap();
         let json = deser_json::SerializerConfig::new()
-            .to_string_with(&value, |driver| driver.set_context(&context))
+            .to_string_with(&value, |driver| driver.set_context(context.clone()))
             .unwrap();
 
         // convert both into a generic value to compare them
         let from_toml: BTreeMap<String, Value> = deser_toml::Deserializer::from_str(&toml)
-            .deserialize_in(&context)
+            .deserialize_with(|driver| driver.set_context(context.clone()))
             .unwrap();
         let from_json: BTreeMap<String, Value> = deser_json::Deserializer::from_str(&json)
-            .deserialize_in(&context)
+            .deserialize_with(|driver| driver.set_context(context.clone()))
             .unwrap();
         assert_eq!(from_toml, from_json, "{:?}", format);
 
         let value_from_toml: Blob = deser_toml::Deserializer::from_str(&toml)
-            .deserialize_in(&context)
+            .deserialize_with(|driver| driver.set_context(context.clone()))
             .unwrap();
         let value_from_json: Blob = deser_json::Deserializer::from_str(&json)
-            .deserialize_in(&context)
+            .deserialize_with(|driver| driver.set_context(context.clone()))
             .unwrap();
         assert_eq!(value_from_toml, value);
         assert_eq!(value_from_json, value);

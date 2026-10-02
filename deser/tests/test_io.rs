@@ -581,7 +581,7 @@ fn test_reader_context() {
     let context = deser::Context::with(100u64);
     assert_eq!(
         reader
-            .read_with::<Offset, _>(|driver| driver.set_context(&context))
+            .read_with::<Offset, _>(|driver| driver.set_context(context.clone()))
             .unwrap(),
         Some(Offset(103))
     );

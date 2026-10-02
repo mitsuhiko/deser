@@ -15,9 +15,9 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// handled ([`UnknownFields`](crate::de::UnknownFields)), how bytes are
 /// decoded from strings ([`BytesFormat`](crate::BytesFormat)) or data
 /// that types need, such as the variants of open enums.  It's created once
-/// and passed to every serialization or deserialization that uses it, for
-/// instance with
-/// [`Deserializer::deserialize_in`](crate::de::Deserializer::deserialize_in):
+/// and given to every serialization or deserialization that uses it with
+/// the `set_context` methods of the deserializers and serializers of the
+/// formats, the drivers, readers and writers:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, DuplicateKeys};
@@ -28,7 +28,7 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 ///
 /// let mut out = None::<BTreeMap<String, u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(&context);
+/// driver.set_context(context.clone());
 /// for event in [
 ///     Event::map_start(),
 ///     "a".into(),

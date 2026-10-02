@@ -1060,11 +1060,15 @@
 //! register(&mut variants).unwrap();
 //! let context = Context::with(variants);
 //!
-//! // `{"steps": [{"type": "upper"}]}`, for instance with
-//! // `deser_json::Deserializer::from_str(input).deserialize_in(&context)`
+//! // `{"steps": [{"type": "upper"}]}`, for instance with a JSON
+//! // deserializer:
+//! //
+//! //     let mut de = deser_json::Deserializer::from_str(input);
+//! //     de.set_context(context.clone());
+//! //     let pipeline: Pipeline = de.deserialize()?;
 //! let mut out = None::<Pipeline>;
 //! let mut driver = DeserializeDriver::new(&mut out);
-//! driver.set_context(&context);
+//! driver.set_context(context.clone());
 //! for event in [
 //!     Event::map_start(),
 //!     "steps".into(),

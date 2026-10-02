@@ -431,7 +431,7 @@ fn test_duplicate_keys() {
     let first = Context::with(DuplicateKeys::First);
     assert_eq!(
         Deserializer::from_str(input)
-            .deserialize_in::<Body>(&first)
+            .deserialize_with::<Body, _>(|driver| driver.set_context(first.clone()))
             .unwrap()
             .single,
         "x"
@@ -440,7 +440,7 @@ fn test_duplicate_keys() {
     let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_str(input)
         .deserialize_with::<Body, _>(|driver| {
-            driver.set_context(&strict);
+            driver.set_context(strict.clone());
             driver.push_layer(PathLayer::new());
         })
         .unwrap_err();
@@ -450,7 +450,7 @@ fn test_duplicate_keys() {
     // sequences still get all values
     assert_eq!(
         Deserializer::from_str("single=x&multi=a&multi=b")
-            .deserialize_in::<Body>(&strict)
+            .deserialize_with::<Body, _>(|driver| driver.set_context(strict.clone()))
             .unwrap()
             .multi,
         ["a", "b"]
@@ -702,11 +702,11 @@ fn test_default_on_error_with_repeated_keys() {
     // a duplicate key is an error of the struct, not of the value
     let strict = Context::with(DuplicateKeys::Error);
     let err = Deserializer::from_str("page=1&page=2&tags=1")
-        .deserialize_in::<Query>(&strict)
+        .deserialize_with::<Query, _>(|driver| driver.set_context(strict.clone()))
         .unwrap_err();
     assert_eq!(err.message(), "duplicate field `page`");
     let query = Deserializer::from_str("page=1&tags=1&tags=2")
-        .deserialize_in::<Query>(&strict)
+        .deserialize_with::<Query, _>(|driver| driver.set_context(strict.clone()))
         .unwrap();
     assert_eq!(
         query,

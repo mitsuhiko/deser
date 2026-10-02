@@ -53,7 +53,8 @@
 //! // all bytes as hex (in the context of the serialization)
 //! let hex = deser::Context::with(BytesFormat::encoded::<Hex>());
 //! let mut ser = deser_json::Serializer::new();
-//! ser.serialize_in(&b"\x01\xff", &hex).unwrap();
+//! ser.set_context(hex);
+//! ser.serialize(&b"\x01\xff").unwrap();
 //! assert_eq!(ser.finish(), r#""01ff""#);
 //! ```
 //!
@@ -319,7 +320,7 @@ mod tests {
         let context = deser::Context::with(HEX);
         assert_eq!(
             deser_json::Deserializer::from_str(r#""01ff""#)
-                .deserialize_in::<Vec<u8>>(&context)
+                .deserialize_with::<Vec<u8>, _>(|driver| driver.set_context(context.clone()))
                 .unwrap(),
             [1, 255]
         );

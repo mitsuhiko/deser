@@ -207,6 +207,8 @@ pub struct Deserializer<'a> {
     /// An error that is reported instead of deserializing.
     error: Option<Error>,
     config: DeserializerConfig,
+    // the context the values are deserialized in
+    context: deser_core::Context,
 }
 
 impl Deserializer<'static> {
@@ -230,6 +232,7 @@ impl Deserializer<'static> {
             vars: Vec::new(),
             error: None,
             config: config.clone(),
+            context: deser_core::Context::new(),
         };
         for (name, value) in std::env::vars_os() {
             let name = match name.into_string() {
@@ -300,6 +303,7 @@ impl<'a> Deserializer<'a> {
             vars: Vec::new(),
             error: None,
             config: config.clone(),
+            context: deser_core::Context::new(),
         };
         for (name, value) in vars {
             let name = name.into();
@@ -358,17 +362,6 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
-    /// Deserializes the next value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn deserialize_in<T: Deserialize<'a>>(
-        &mut self,
-        context: &deser_core::Context,
-    ) -> Result<T, Error> {
-        de::Deserializer::deserialize_in(self, context)
-    }
-
     /// Feeds the events of the variables into the given driver.
     ///
     /// The variables are a map (see the [crate documentation](crate)).  All
@@ -389,10 +382,26 @@ impl<'a> Deserializer<'a> {
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)
     }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `deserialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
+    }
 }
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         Deserializer::drive(self, driver)
     }
 }

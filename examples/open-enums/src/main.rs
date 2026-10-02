@@ -26,9 +26,9 @@ fn main() {
     pipeline_extras::register(&mut steps).unwrap();
     let context = Context::with(steps);
 
-    let pipeline: Pipeline = deser_json::Deserializer::from_str(INPUT)
-        .deserialize_in(&context)
-        .unwrap();
+    let mut de = deser_json::Deserializer::from_str(INPUT);
+    de.set_context(context.clone());
+    let pipeline: Pipeline = de.deserialize().unwrap();
     println!("parsed: {:?}", pipeline);
     let output = pipeline.run("  hello world!  ");
     println!("output: {}", output);
@@ -63,10 +63,10 @@ fn main() {
     println!("steps:  {}", deser_json::to_string(&steps).unwrap());
 
     // unknown steps are errors
-    let err =
-        deser_json::Deserializer::from_str(r#"{"name": "x", "steps": [{"type": "reverse"}]}"#)
-            .deserialize_in::<Pipeline>(&context)
-            .unwrap_err();
+    let mut de =
+        deser_json::Deserializer::from_str(r#"{"name": "x", "steps": [{"type": "reverse"}]}"#);
+    de.set_context(context);
+    let err = de.deserialize::<Pipeline>().unwrap_err();
     println!("error:  {}", err);
     assert!(err.to_string().contains(
         "unknown variant `reverse` of Step, expected one of `repeat`, `replace`, `trim`, `upper`"

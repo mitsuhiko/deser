@@ -135,8 +135,8 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// Gives the context to a driver which has none.
     #[inline]
     fn apply_context(&self, driver: &mut DeserializeDriver<'_, '_>) {
-        if !self.context.is_empty() && driver.state().context().is_empty() {
-            driver.set_context(&self.context);
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
         }
     }
 

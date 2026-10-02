@@ -36,12 +36,17 @@ use crate::value::{Kind, Value};
 /// deserialized from.
 pub struct Deserializer<'a> {
     value: &'a Value,
+    // the context the values are deserialized in
+    context: deser_core::Context,
 }
 
 impl<'a> Deserializer<'a> {
     /// Creates a deserializer for a value.
     pub fn new(value: &'a Value) -> Deserializer<'a> {
-        Deserializer { value }
+        Deserializer {
+            value,
+            context: deser_core::Context::new(),
+        }
     }
 
     /// Deserializes the value.
@@ -61,20 +66,25 @@ impl<'a> Deserializer<'a> {
         de::Deserializer::deserialize_with(self, setup)
     }
 
-    /// Deserializes the next value in a context.
+    /// Sets the context the values are deserialized in.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn deserialize_in<T: Deserialize<'a>>(
-        &mut self,
-        context: &deser_core::Context,
-    ) -> Result<T, Error> {
-        de::Deserializer::deserialize_in(self, context)
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `deserialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 }
 
 impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         let mut source = None;
         drive(self.value, driver, &mut source).map_err(|mut err| {
             if let Some(source) = source {
@@ -337,6 +347,8 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value, Error> {
 #[derive(Debug, Default, Clone)]
 pub struct Serializer {
     values: Vec<Value>,
+    // the context the values are serialized in
+    context: deser_core::Context,
 }
 
 impl Serializer {
@@ -367,18 +379,6 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Serializes a value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn serialize_in<T: Serialize + ?Sized>(
-        &mut self,
-        value: &T,
-        context: &deser_core::Context,
-    ) -> Result<(), Error> {
-        ser::Serializer::serialize_in(self, value, context)
-    }
-
     /// Returns the values serialized so far.
     pub fn values(&self) -> &[Value] {
         &self.values
@@ -388,10 +388,26 @@ impl Serializer {
     pub fn finish(self) -> Vec<Value> {
         self.values
     }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `serialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
+    }
 }
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         let mut out = None;
         {
             let mut de = DeserializeDriver::new(&mut out);

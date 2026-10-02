@@ -59,17 +59,19 @@ fn main() {
     // used for reading as well.
     let url_safe = Context::with(BytesFormat::encoded::<Base64Url>());
     let mut ser = deser_json::Serializer::new();
-    ser.serialize_in(&blob, &url_safe).unwrap();
+    ser.set_context(url_safe.clone());
+    ser.serialize(&blob).unwrap();
     let json = ser.finish();
     println!("JSON with URL safe base64:\n{}\n", json);
     assert!(json.starts_with(r#"{"data":"aGVsbG8g_w==","digest":"2cf24dba5fb0a30e""#));
-    let read: Blob = deser_json::Deserializer::from_str(&json)
-        .deserialize_in(&url_safe)
-        .unwrap();
+    let mut de = deser_json::Deserializer::from_str(&json);
+    de.set_context(url_safe);
+    let read: Blob = de.deserialize().unwrap();
     assert_eq!(read, blob);
     let seq = Context::with(BytesFormat::SEQ);
     let mut ser = deser_toml::Serializer::new();
-    ser.serialize_in(&blob, &seq).unwrap();
+    ser.set_context(seq);
+    ser.serialize(&blob).unwrap();
     let toml = ser.finish();
     println!("TOML with arrays of integers:\n{}", toml);
     assert!(toml.starts_with("data = [104, 101, 108, 108, 111, 32, 255]\n"));

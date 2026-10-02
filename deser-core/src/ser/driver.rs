@@ -502,10 +502,14 @@ impl<'a> SerializeDriver<'a> {
     /// Sets the context of the serialization.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`]).  This replaces the context, it's
-    /// cheap as the values are shared.
-    pub fn set_context(&mut self, context: &Context) {
-        self.state.set_context(context.clone());
+    /// of the state (see [`Context`]).  This replaces the context.
+    pub fn set_context(&mut self, context: Context) {
+        self.state.set_context(context);
+    }
+
+    /// Returns the context of the serialization.
+    pub fn context(&self) -> &Context {
+        self.state.context()
     }
 
     /// Adds a layer.

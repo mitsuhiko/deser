@@ -28,18 +28,18 @@ fn test_bytes_config() {
     // the same context is used for writing and reading
     let hex = Context::with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
-        .to_string_with(&blob(), |driver| driver.set_context(&hex))
+        .to_string_with(&blob(), |driver| driver.set_context(hex.clone()))
         .unwrap();
     assert_eq!(xml, r#"<Blob attr="686921"><data>0001ff</data></Blob>"#);
     assert_eq!(
         Deserializer::from_str(&xml)
-            .deserialize_in::<Blob>(&hex)
+            .deserialize_with::<Blob, _>(|driver| driver.set_context(hex.clone()))
             .unwrap(),
         blob()
     );
     assert_eq!(
         Deserializer::from_slice(xml.as_bytes())
-            .deserialize_in::<Blob>(&hex)
+            .deserialize_with::<Blob, _>(|driver| driver.set_context(hex.clone()))
             .unwrap(),
         blob()
     );
@@ -53,7 +53,7 @@ fn test_bytes_config() {
 fn test_bytes_config_reader() {
     let hex = Context::with(BytesFormat::encoded::<Hex>());
     let xml = SerializerConfig::new()
-        .to_string_with(&blob(), |driver| driver.set_context(&hex))
+        .to_string_with(&blob(), |driver| driver.set_context(hex.clone()))
         .unwrap();
     let mut reader = DeserializerConfig::new().reader(xml.as_bytes());
     reader.set_context(hex);

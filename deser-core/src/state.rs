@@ -429,6 +429,18 @@ impl State {
         &self.context
     }
 
+    /// Sets the context unless the state has one.
+    ///
+    /// Formats use this for the context they were given: a context set on
+    /// the driver (for instance in the setup callback of
+    /// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with))
+    /// takes precedence.
+    pub fn set_default_context(&mut self, context: Context) {
+        if self.context.is_empty() && !context.is_empty() {
+            self.set_context(context);
+        }
+    }
+
     /// Sets the context of the serialization or deserialization.
     ///
     /// This replaces the context.  The drivers forward this (see

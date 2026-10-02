@@ -42,13 +42,13 @@ fn test_deserialize_in() {
     assert_eq!(config.name, "x");
 
     let err = Events(config_events())
-        .deserialize_in::<Config>(&context)
+        .deserialize_with::<Config, _>(|driver| driver.set_context(context.clone()))
         .unwrap_err();
     assert_eq!(err.message(), "unknown field `nmae`, expected `name`");
 
     // the same context can be used for many deserializations
     let err = Events(config_events())
-        .deserialize_in::<Config>(&context)
+        .deserialize_with::<Config, _>(|driver| driver.set_context(context.clone()))
         .unwrap_err();
     assert_eq!(err.message(), "unknown field `nmae`, expected `name`");
 }
@@ -58,7 +58,7 @@ fn test_state_overrides_context() {
     let context = Context::with(UnknownFields::Error);
     let config: Config = Events(config_events())
         .deserialize_with(|driver| {
-            driver.set_context(&context);
+            driver.set_context(context.clone());
             // set in the state, this hides the value of the context
             UnknownFields::Ignore.set(driver.state_mut());
         })
@@ -78,7 +78,7 @@ fn test_update_in() {
         2u64.into(),
         Event::MapEnd,
     ])
-    .update_in(&mut map, &context)
+    .update_with(&mut map, |driver| driver.set_context(context.clone()))
     .unwrap();
     assert_eq!(map["a"], 2);
 }
@@ -124,7 +124,10 @@ impl Serializer for Collect {
 fn test_serialize_in() {
     let mut out = Collect::default();
     out.serialize(&FromState).unwrap();
-    out.serialize_in(&FromState, &Context::with(42u32)).unwrap();
+    out.serialize_with(&FromState, |driver| {
+        driver.set_context(Context::with(42u32).clone())
+    })
+    .unwrap();
     assert_eq!(out.0, vec![Event::from(0u64), Event::from(42u64)]);
 }
 
@@ -158,13 +161,13 @@ fn test_collect_errors() {
 
     let all = Context::with(CollectErrors::new());
     let err = Events(events())
-        .deserialize_in::<Vec<u32>>(&all)
+        .deserialize_with::<Vec<u32>, _>(|driver| driver.set_context(all.clone()))
         .unwrap_err();
     assert_eq!(err.errors().count(), 3);
 
     let limited = Context::with(CollectErrors::with_max_errors(1));
     let err = Events(events())
-        .deserialize_in::<Vec<u32>>(&limited)
+        .deserialize_with::<Vec<u32>, _>(|driver| driver.set_context(limited.clone()))
         .unwrap_err();
     assert_eq!(err.errors().count(), 2);
 }

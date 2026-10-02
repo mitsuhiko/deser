@@ -278,6 +278,8 @@ pub struct Deserializer<'a> {
     /// The input as source for location tracking, shared by all documents.
     source: Option<Arc<str>>,
     doc: Document<'a>,
+    // the context the values are deserialized in
+    context: deser_core::Context,
 }
 
 /// A node event as it is recorded for anchors.
@@ -577,6 +579,7 @@ impl<'a> Deserializer<'a> {
             track_merges: config.merge_keys && input.contains("<<"),
             source: None,
             doc: Document::default(),
+            context: deser_core::Context::new(),
         }
     }
 
@@ -665,17 +668,6 @@ impl<'a> Deserializer<'a> {
         F: FnOnce(&mut DeserializeDriver<'_, 'a>),
     {
         de::Deserializer::deserialize_with(self, setup)
-    }
-
-    /// Deserializes the next value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn deserialize_in<T: Deserialize<'a>>(
-        &mut self,
-        context: &deser_core::Context,
-    ) -> Result<T, Error> {
-        de::Deserializer::deserialize_in(self, context)
     }
 
     /// Returns an iterator over the remaining documents.
@@ -1073,6 +1065,21 @@ impl<'a> Deserializer<'a> {
             }
         }
     }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `deserialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
+    }
 }
 
 #[inline]
@@ -1153,6 +1160,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         Deserializer::drive(self, driver)
     }
 }

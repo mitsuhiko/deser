@@ -802,6 +802,8 @@ pub struct Serializer {
     item: Option<Box<Writer>>,
     // a value was started with `drive_partial` and is not complete
     in_progress: bool,
+    // the context the values are serialized in
+    context: deser_core::Context,
 }
 
 impl Default for Serializer {
@@ -823,6 +825,7 @@ impl Clone for Serializer {
             written: self.written,
             item: None,
             in_progress: self.in_progress,
+            context: self.context.clone(),
         }
     }
 }
@@ -852,6 +855,7 @@ impl Serializer {
             written: 0,
             item: None,
             in_progress: false,
+            context: deser_core::Context::new(),
         }
     }
 
@@ -887,18 +891,6 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Serializes a value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn serialize_in<T: Serialize + ?Sized>(
-        &mut self,
-        value: &T,
-        context: &deser_core::Context,
-    ) -> Result<(), Error> {
-        ser::Serializer::serialize_in(self, value, context)
-    }
-
     /// Returns the output written so far (that was not cleared).
     pub fn output(&self) -> &[u8] {
         &self.out
@@ -907,6 +899,21 @@ impl Serializer {
     /// Returns the output.
     pub fn finish(self) -> Vec<u8> {
         self.out
+    }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `serialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 }
 
@@ -938,6 +945,7 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         if self.item.is_none() && self.in_progress {
             return Err(Error::in_progress());
         }

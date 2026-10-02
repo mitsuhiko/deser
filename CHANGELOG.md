@@ -37,11 +37,11 @@ All notable changes to deser are documented here.
   serializations and deserializations from the outside, created once and
   shared.  Its values are the defaults of the extension values of the
   `State` (`State::get` returns the value of the state or the one of the
-  context).  It's passed with `Deserializer::deserialize_in`,
-  `Deserializer::update_in`, `Serializer::serialize_in`, the
-  `set_context` methods of the drivers and of `io::Reader`, `io::Writer`
-  and `stream::InputBuffer`.  The format crates have `deserialize_in` and
-  `serialize_in` on their deserializers and serializers.
+  context).  The deserializers and serializers of the formats, the drivers,
+  `io::Reader`, `io::Writer` and `stream::InputBuffer` have `set_context`
+  and `context`.  A context set on the driver (for instance in the setup
+  callback of `deserialize_with`) takes precedence over the one of the
+  deserializer or serializer (see `State::set_default_context`).
 - **Breaking:** configuration given from the outside moved into the
   context.  The `bytes` options of the deserializer and serializer
   configurations of the formats (JSON, JSONC, JSON5, Hjson, TOML, YAML,

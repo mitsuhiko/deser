@@ -40,7 +40,7 @@ fn deserialize_in<T: DeserializeOwned>(
     let mut out = None;
     {
         let mut driver = DeserializeDriver::new(&mut out);
-        driver.set_context(context);
+        driver.set_context(context.clone());
         for event in events {
             driver.emit(event)?;
         }

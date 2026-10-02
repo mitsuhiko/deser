@@ -18,7 +18,7 @@ use crate::error::Error;
 ///
 /// let mut out = None::<Vec<u32>>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(&context);
+/// driver.set_context(context.clone());
 /// let mut rv = Ok(());
 /// for event in [Event::seq_start(), "a".into(), 1u64.into(), true.into(), Event::SeqEnd] {
 ///     rv = rv.and_then(|()| driver.emit(event));

@@ -335,12 +335,11 @@ impl SerializerConfig {
     ///     deser_yaml::to_string(&b"\xfb\xff").unwrap(),
     ///     "!!binary +/8=\n"
     /// );
-    /// const TEXT: SerializerConfig = SerializerConfig::builder().binary(false).build();
-    /// let url_safe = Context::with(BytesFormat::encoded::<Base64UrlNoPad>());
-    /// let yaml = TEXT
-    ///     .to_string_with(&b"\xfb\xff", |driver| driver.set_context(&url_safe))
-    ///     .unwrap();
-    /// assert_eq!(yaml, "-_8\n");
+    /// let config = SerializerConfig::builder().binary(false).build();
+    /// let mut ser = deser_yaml::Serializer::with_config(&config);
+    /// ser.set_context(Context::with(BytesFormat::encoded::<Base64UrlNoPad>()));
+    /// ser.serialize(&b"\xfb\xff").unwrap();
+    /// assert_eq!(ser.finish(), "-_8\n");
     /// ```
     ///
     /// More encodings (such as hex) are provided by
@@ -723,6 +722,8 @@ pub struct Serializer {
     document: Option<Box<Emitter>>,
     // a document was started with `drive_partial` and is not complete
     in_progress: bool,
+    // the context the values are serialized in
+    context: deser_core::Context,
 }
 
 impl Default for Serializer {
@@ -744,6 +745,7 @@ impl Clone for Serializer {
             written: self.written,
             document: None,
             in_progress: self.in_progress,
+            context: self.context.clone(),
         }
     }
 }
@@ -782,6 +784,7 @@ impl Serializer {
             written,
             document: None,
             in_progress: false,
+            context: deser_core::Context::new(),
         }
     }
 
@@ -817,18 +820,6 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Serializes a value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn serialize_in<T: Serialize + ?Sized>(
-        &mut self,
-        value: &T,
-        context: &deser_core::Context,
-    ) -> Result<(), Error> {
-        ser::Serializer::serialize_in(self, value, context)
-    }
-
     /// Returns the documents written so far (that were not cleared).
     pub fn as_str(&self) -> &str {
         &self.out
@@ -837,6 +828,21 @@ impl Serializer {
     /// Returns the documents.
     pub fn finish(self) -> String {
         self.out
+    }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `serialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 }
 
@@ -868,6 +874,7 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         if self.document.is_none() && self.in_progress {
             return Err(Error::in_progress());
         }

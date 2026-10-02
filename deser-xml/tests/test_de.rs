@@ -151,7 +151,7 @@ fn test_structs() {
     let last = deser::Context::with(DuplicateKeys::Last);
     assert_eq!(
         Deserializer::from_str("<a><name>x</name><name>y</name></a>")
-            .deserialize_in::<Single>(&last)
+            .deserialize_with::<Single, _>(|driver| driver.set_context(last.clone()))
             .unwrap()
             .name,
         "y"

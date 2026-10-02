@@ -118,6 +118,8 @@ pub struct Serializer {
     config: SerializerConfig,
     out: String,
     written: usize,
+    // the context the values are serialized in
+    context: deser_core::Context,
 }
 
 impl Default for Serializer {
@@ -138,6 +140,7 @@ impl Serializer {
             config: config.clone(),
             out: String::new(),
             written: 0,
+            context: deser_core::Context::new(),
         }
     }
 
@@ -163,18 +166,6 @@ impl Serializer {
         ser::Serializer::serialize_with(self, value, setup)
     }
 
-    /// Serializes a value in a context.
-    ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).
-    pub fn serialize_in<T: Serialize + ?Sized>(
-        &mut self,
-        value: &T,
-        context: &deser_core::Context,
-    ) -> Result<(), Error> {
-        ser::Serializer::serialize_in(self, value, context)
-    }
-
     /// Returns the configuration.
     pub fn config(&self) -> &SerializerConfig {
         &self.config
@@ -189,10 +180,26 @@ impl Serializer {
     pub fn finish(self) -> String {
         self.out
     }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)).  A context set
+    /// on the driver (for instance in the setup callback of `serialize_with`)
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
+    }
 }
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         if self.written > 0 {
             return Err(Error::new(
                 ErrorKind::InvalidState,

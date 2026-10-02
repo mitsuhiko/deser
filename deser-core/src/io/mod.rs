@@ -158,6 +158,11 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         self.buffer.set_context(context);
     }
 
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &Context {
+        self.buffer.context()
+    }
+
     fn ensure_idle(&self) -> Result<(), Error> {
         match self.pending {
             Some(_) => Err(Error::new(
@@ -543,6 +548,11 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
         self.context = context;
     }
 
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
     /// Sets how much output of a value is buffered before it's written.
     ///
     /// If the format supports it (see
@@ -625,9 +635,7 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// stream holds an incomplete value and the writer refuses to write
     /// more values (see [`StreamSerializer::in_progress`]).
     pub fn write<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let mut driver = SerializeDriver::new(&value);
-        driver.set_context(&self.context);
-        self.write_driver(&mut driver)
+        self.write_driver(&mut SerializeDriver::new(&value))
     }
 
     /// Serializes a value with a configured driver and writes it.
@@ -640,13 +648,13 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
         F: FnOnce(&mut SerializeDriver<'_>),
     {
         let mut driver = SerializeDriver::new(&value);
-        driver.set_context(&self.context);
         setup(&mut driver);
         self.write_driver(&mut driver)
     }
 
     /// Serializes the value of a driver and writes it.
     fn write_driver(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
+        driver.state_mut().set_default_context(self.context.clone());
         if self.serializer.in_progress() {
             return Err(Error::in_progress());
         }

@@ -10,7 +10,8 @@ use dialect::{Deserializer, Serializer, from_str, to_string};
 /// Serializes a value as JSON in a context.
 fn to_string_in<T: Serialize>(value: &T, context: &Context) -> String {
     let mut ser = Serializer::new();
-    ser.serialize_in(value, context).unwrap();
+    ser.serialize_with(value, |driver| driver.set_context(context.clone()))
+        .unwrap();
     ser.finish()
 }
 
@@ -104,7 +105,7 @@ fn test_bytes_config() {
         r#"{"plain":"0001ff","array":"686921","hex":"dead","url":"-_8","seq":[1,2],"missing":null,"keys":{"01":1},"hex_keys":{"02":2}}"#
     );
     let value = Deserializer::from_str(&json)
-        .deserialize_in::<Blob>(&hex)
+        .deserialize_with::<Blob, _>(|driver| driver.set_context(hex.clone()))
         .unwrap();
     assert_eq!(value, blob());
 
@@ -141,7 +142,7 @@ fn test_bytes_in_enums() {
     let json = r#"{"payload":"010203","type":"Data"}"#;
     assert_eq!(
         Deserializer::from_str(json)
-            .deserialize_in::<Message>(&hex)
+            .deserialize_with::<Message, _>(|driver| driver.set_context(hex.clone()))
             .unwrap(),
         value
     );
@@ -150,4 +151,34 @@ fn test_bytes_in_enums() {
         from_str::<Content>(r#""AQID""#).unwrap(),
         Content::Bytes(vec![1, 2, 3])
     );
+}
+
+/// The context of a deserializer applies to all values it reads.
+#[test]
+fn test_context_of_deserializer() {
+    let config = dialect::DeserializerConfig::builder()
+        .trailing(dialect::Trailing::Newline)
+        .build();
+    let mut de = Deserializer::from_str_with_config("\"01ff\"\n\"dead\"\n", &config);
+    de.set_context(Context::with(BytesFormat::encoded::<Hex>()));
+    let values = de.iter::<Vec<u8>>().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(values, [vec![1, 255], vec![0xde, 0xad]]);
+
+    // a context set on the driver takes precedence
+    let mut de = Deserializer::from_str("\"AQID\"");
+    de.set_context(Context::with(BytesFormat::encoded::<Hex>()));
+    let value: Vec<u8> = de
+        .deserialize_with(|driver| driver.set_context(Context::with(BytesFormat::BASE64)))
+        .unwrap();
+    assert_eq!(value, [1, 2, 3]);
+
+    // and so does the context of a serializer
+    let config = dialect::SerializerConfig::builder()
+        .trailing(dialect::Trailing::Newline)
+        .build();
+    let mut ser = Serializer::with_config(&config);
+    ser.set_context(Context::with(BytesFormat::SEQ));
+    ser.serialize(&b"\x01\x02"[..].to_vec()).unwrap();
+    ser.serialize(&b"\x03"[..].to_vec()).unwrap();
+    assert_eq!(ser.finish(), "[1,2]\n[3]\n");
 }

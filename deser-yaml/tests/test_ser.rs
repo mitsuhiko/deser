@@ -422,18 +422,18 @@ fn test_bytes() {
     const TEXT: SerializerConfig = SerializerConfig::builder().binary(false).build();
     let hex = deser::Context::with(BytesFormat::encoded::<Hex>());
     let yaml = TEXT
-        .to_string_with(&blob, |driver| driver.set_context(&hex))
+        .to_string_with(&blob, |driver| driver.set_context(hex.clone()))
         .unwrap();
     assert_eq!(yaml, "data: 01ff\ndigest: '0203'\nlegacy:\n  - 4\n");
     assert_eq!(
         deser_yaml::Deserializer::from_str(&yaml)
-            .deserialize_in::<Blob>(&hex)
+            .deserialize_with::<Blob, _>(|driver| driver.set_context(hex.clone()))
             .unwrap(),
         blob
     );
     let seq = deser::Context::with(BytesFormat::SEQ);
     assert_eq!(
-        TEXT.to_string_with(&vec![1u8, 2], |driver| driver.set_context(&seq))
+        TEXT.to_string_with(&vec![1u8, 2], |driver| driver.set_context(seq.clone()))
             .unwrap(),
         "- 1\n- 2\n"
     );
