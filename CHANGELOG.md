@@ -62,6 +62,10 @@ All notable changes to deser are documented here.
   as sink (a `deser::de::Slot`, which dereferences to the `Option<T>`),
   so no macro, no sink and no `deserialize_into` are needed.
   `deserialize_borrowed_atom` receives borrowed atoms.
+- Added `ContainerShape::cautious_capacity`, the number of elements to
+  preallocate for the length that the input declares, capped at about a
+  megabyte.  The standard containers and `deser_value::Value` use it, so
+  input cannot request large allocations it does not fill.
 - Added `Deserialize::expecting`, what a value expects in error messages
   (like `Sink::expecting` of its sink, which reports it).  The derive
   implements it with the name of the type (or `#[deser(expecting)]`),

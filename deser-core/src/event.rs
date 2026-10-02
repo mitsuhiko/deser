@@ -747,6 +747,10 @@ const ORDER_MASK: u32 = 0b11;
 const MULTIMAP: u32 = 0b100;
 const UNKNOWN_LEN: usize = usize::MAX;
 
+/// The maximum number of bytes that
+/// [`ContainerShape::cautious_capacity`] preallocates.
+const MAX_PREALLOCATION: usize = 1024 * 1024;
+
 /// Facts about a map or sequence.
 ///
 /// The shape is carried by [`Event::MapStart`] and [`Event::SeqStart`].  It
@@ -797,6 +801,11 @@ impl ContainerShape {
     }
 
     /// Returns the number of elements (entries for maps) if known.
+    ///
+    /// During deserialization the length comes from the input and is not
+    /// trusted: a few bytes can declare a container with billions of
+    /// elements that are never sent.  To preallocate a container use
+    /// [`cautious_capacity`](Self::cautious_capacity) instead.
     #[inline]
     #[allow(clippy::len_without_is_empty)]
     pub const fn len(&self) -> Option<usize> {
@@ -804,6 +813,37 @@ impl ContainerShape {
             None
         } else {
             Some(self.len)
+        }
+    }
+
+    /// Returns the number of elements of type `T` to preallocate.
+    ///
+    /// This is the [`len`](Self::len) of the shape, capped so that no more
+    /// than about a megabyte is preallocated, and `0` if the length is
+    /// unknown.  As the length comes from the input it must not be trusted
+    /// for allocations: a container that is larger grows as its elements
+    /// arrive instead.
+    ///
+    /// ```
+    /// use deser::ContainerShape;
+    ///
+    /// let shape = ContainerShape::new().with_len(10);
+    /// assert_eq!(shape.cautious_capacity::<u64>(), 10);
+    ///
+    /// let shape = ContainerShape::new().with_len(usize::MAX - 1);
+    /// assert_eq!(shape.cautious_capacity::<u64>(), 1024 * 1024 / 8);
+    /// assert_eq!(ContainerShape::new().cautious_capacity::<u64>(), 0);
+    /// ```
+    #[inline]
+    pub const fn cautious_capacity<T>(&self) -> usize {
+        let max = match core::mem::size_of::<T>() {
+            0 => MAX_PREALLOCATION,
+            size => MAX_PREALLOCATION / size,
+        };
+        match self.len() {
+            Some(len) if len < max => len,
+            Some(_) => max,
+            None => 0,
         }
     }
 

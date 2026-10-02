@@ -484,7 +484,8 @@ where
 
         fn seq(&mut self, state: &mut State) -> Result<(), Error> {
             self.is_seq = true;
-            self.vec.reserve(cautious_capacity::<T>(state));
+            self.vec
+                .reserve(state.container_shape().cautious_capacity::<T>());
             // the first item is requested as raw value when it starts
             if let Some(format) = A::__private_raw() {
                 state.__private_request_raw(format)?;
@@ -737,21 +738,6 @@ impl<T: Send> Collection<T> for Box<[T]> {
     }
 }
 
-/// The maximum number of bytes that are preallocated for the declared
-/// length of a container.
-///
-/// The length comes from the input which is not trusted.
-const MAX_PREALLOCATION: usize = 1024 * 1024;
-
-/// Returns the number of elements to preallocate for a container.
-#[inline]
-fn cautious_capacity<T>(state: &State) -> usize {
-    match state.container_shape().len() {
-        Some(len) => len.min(MAX_PREALLOCATION / core::mem::size_of::<T>().max(1)),
-        None => 0,
-    }
-}
-
 /// Maps that can be deserialized.
 pub(crate) trait MapTarget<K, V>: Default + Send {
     /// The name of the type for error messages.
@@ -942,7 +928,8 @@ where
         }
 
         fn map(&mut self, state: &mut State) -> Result<(), Error> {
-            self.map.reserve_entries(cautious_capacity::<(K, V)>(state));
+            self.map
+                .reserve_entries(state.container_shape().cautious_capacity::<(K, V)>());
             self.duplicate_keys = DuplicateKeys::of(state);
             Ok(())
         }
@@ -1214,7 +1201,8 @@ where
         }
 
         fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-            self.set.reserve_elements(cautious_capacity::<T>(state));
+            self.set
+                .reserve_elements(state.container_shape().cautious_capacity::<T>());
             Ok(())
         }
 

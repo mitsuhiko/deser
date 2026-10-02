@@ -346,3 +346,13 @@ fn test_raw_values() {
     assert_eq!(value["a"][0], deser_value::Value::from(1u64));
     assert_eq!(deser_yaml::to_string(&value).unwrap(), "a:\n  - 1\n  - 2\n");
 }
+
+#[test]
+fn test_cbor_declared_lengths_are_not_trusted() {
+    // an array and a map that claim billions of items but are empty: the
+    // preallocation is capped, deserialization fails at the end of input.
+    let array = [0x9b, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff];
+    assert!(deser_cbor::from_slice::<Value>(&array).is_err());
+    let map = [0xbb, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff];
+    assert!(deser_cbor::from_slice::<Value>(&map).is_err());
+}

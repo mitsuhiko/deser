@@ -7,10 +7,6 @@ use crate::map::Map;
 use crate::seq::Seq;
 use crate::value::{Kind, Meta, Span, Value, owned_bytes};
 
-/// Containers are not preallocated beyond this number of elements as the
-/// length comes from the input.
-const MAX_PREALLOC: usize = 1024;
-
 /// Where a [`ValueSink`] places the value.
 enum Out<'a> {
     Value(&'a mut Option<Value>),
@@ -193,7 +189,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         let shape = state.container_shape();
         self.meta = capture_meta(state);
         self.building = Building::Map(
-            Map::with_capacity(shape.len().unwrap_or(0).min(MAX_PREALLOC))
+            Map::with_capacity(shape.cautious_capacity::<(Value, Value)>())
                 .with_order(shape.order())
                 .with_multimap(shape.is_multimap()),
         );
@@ -210,8 +206,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         let shape = state.container_shape();
         self.meta = capture_meta(state);
         self.building = Building::Seq(
-            Seq::with_capacity(shape.len().unwrap_or(0).min(MAX_PREALLOC))
-                .with_order(shape.order()),
+            Seq::with_capacity(shape.cautious_capacity::<Value>()).with_order(shape.order()),
         );
         Ok(())
     }
