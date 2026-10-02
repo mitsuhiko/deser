@@ -69,7 +69,8 @@ All notable changes to deser are documented here.
 - Added `ContainerShape::with_len_hint`, an estimate of the number of
   elements for formats that cannot know it upfront.  It's only used to
   preallocate (`cautious_capacity`), `len` remains unknown so serializers
-  that write lengths do not rely on it.
+  that write lengths do not rely on it.  `deser-csv` estimates the number
+  of records from the first one.
 - Added `Deserialize::expecting`, what a value expects in error messages
   (like `Sink::expecting` of its sink, which reports it).  The derive
   implements it with the name of the type (or `#[deser(expecting)]`),

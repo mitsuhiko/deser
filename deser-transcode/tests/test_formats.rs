@@ -257,3 +257,25 @@ fn test_yaml_to_xml() {
         r#"<r><title>T</title><entry id="1"/><entry id="2"/></r>"#
     );
 }
+
+#[test]
+fn test_csv_to_msgpack_and_cbor() {
+    // CSV only estimates the number of records (from the first one, which
+    // is shorter here), the binary formats write the counted length
+    let input = "a,b\n1,x\n22,yyyyyy\n333,zzzzzzzzzzzz\n";
+    let value: deser_value::Value = deser_csv::from_str(input).unwrap();
+
+    let mut de = deser_csv::Deserializer::from_str(input);
+    let mut ser = deser_msgpack::Serializer::new();
+    transcode(&mut de, &mut ser).unwrap();
+    let msgpack = ser.finish();
+    assert_eq!(msgpack[0], 0x93);
+    assert_eq!(msgpack, deser_msgpack::to_vec(&value).unwrap());
+
+    let mut de = deser_csv::Deserializer::from_str(input);
+    let mut ser = deser_cbor::Serializer::new();
+    transcode(&mut de, &mut ser).unwrap();
+    let cbor = ser.finish();
+    assert_eq!(cbor[0], 0x83);
+    assert_eq!(cbor, deser_cbor::to_vec(&value).unwrap());
+}

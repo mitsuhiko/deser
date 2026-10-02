@@ -19,6 +19,7 @@ deser-core = { version = "0.9.1", path = "../deser-core", default-features = fal
 [dev-dependencies]
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
 deser-cbor = { path = "../deser-cbor" }
+deser-csv = { path = "../deser-csv" }
 deser-json = { path = "../deser-json" }
 deser-msgpack = { path = "../deser-msgpack" }
 deser-path = { path = "../deser-path" }

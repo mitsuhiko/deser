@@ -912,10 +912,19 @@ impl<'a> Deserializer<'a> {
     fn drive_impl(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         self.set_source(driver);
         let input = self.input;
-        driver.emit(Event::seq_start())?;
-        while let Some((start, end)) = self.next_record()? {
+        // the number of records is estimated from the length of the first
+        // one, so that the sequence does not grow record by record
+        let mut next = self.next_record()?;
+        let shape = match next {
+            Some((start, _)) => ContainerShape::new()
+                .with_len_hint((input.len() - start) / (self.pos - start).max(1)),
+            None => ContainerShape::new(),
+        };
+        driver.emit(Event::SeqStart(shape))?;
+        while let Some((start, end)) = next {
             self.state
                 .emit_record(&self.config, &input[start..end], start, driver)?;
+            next = self.next_record()?;
         }
         driver.emit(Event::SeqEnd)
     }
